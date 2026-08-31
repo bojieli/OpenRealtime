@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 repository_root="$(cd "${script_dir}/.." && pwd)"
@@ -49,15 +50,30 @@ presentation_url="http://${presentation_address}"
 companion_log="${runtime_root}/companion.log"
 browser_log="${runtime_root}/browser.log"
 application_log="${runtime_root}/application.log"
+browser_snapshot="${runtime_root}/browser-live.json"
+native_snapshot="${runtime_root}/native-live.json"
 binary="${runtime_root}/openrealtime"
+proof_validator="${runtime_root}/companionproof"
+process_validator="${runtime_root}/companionprocess"
 proof_nonce="$(openssl rand -hex 32)"
+gateway_token="$(openssl rand -hex 32)"
 
 cd "${repository_root}"
 go build -trimpath -o "${binary}" ./cmd/openrealtime
+go build -trimpath -o "${proof_validator}" ./internal/cmd/companionproof
+go build -trimpath -o "${process_validator}" ./internal/cmd/companionprocess
 /usr/bin/codesign --force --sign - "${binary}"
 /usr/bin/codesign --verify --strict "${binary}"
-export OPENREALTIME_HOSTED_COMPANION_TOKEN="hosted-companion-private-token"
-"${binary}" companion \
+server_executable_digest="$(shasum -a 256 "${binary}" | awk '{print $1}')"
+server_executable_file_identity="$(stat -f '%d:%i:%z:%m:%p' "${binary}")"
+server_code_directory_hash="$(/usr/bin/codesign -d --verbose=4 "${binary}" 2>&1 | \
+  sed -n 's/^CDHash=//p')"
+if [[ ! "${server_executable_digest}" =~ ^[0-9a-f]{64}$ || \
+      ! "${server_code_directory_hash}" =~ ^[0-9a-f]{40}$ ]]; then
+  printf '%s\n' "temporary companion server lacks an exact signed executable identity" >&2
+  exit 1
+fi
+OPENREALTIME_HOSTED_COMPANION_TOKEN="${gateway_token}" "${binary}" companion \
   -server-listen "${server_address}" \
   -webrtc-listen "${webrtc_address}" \
   -presentation-listen "${presentation_address}" \
@@ -124,23 +140,84 @@ wait_for_metrics() {
 server_identity() {
   curl -fsS "${server_url}/healthz" | python3 -c 'import json, sys
 value = json.load(sys.stdin)
+profile = value.get("server_profile") or {}
+entries = profile.get("entries") or {}
+exports = profile.get("exports") or {}
+expected_entries = {"gateway", "http-router", "inspection", "observability", "realtime", "session-api", "sessions"}
+if value.get("binding") != "cascade" or value.get("model") != "openrealtime":
+  raise SystemExit("companion server selected an unexpected binding or model")
+if value.get("ownership") is None or value.get("capabilities") is None:
+  raise SystemExit("companion server omitted ownership or capabilities")
+protocol = value.get("protocol") or {}
+if protocol.get("openai_realtime") != "pinned" or (protocol.get("openrealtime") or {}).get("version") != 1:
+  raise SystemExit("companion server selected an unexpected protocol profile")
+if set(entries) != expected_entries or set(exports) != {"realtime_http"} or profile.get("format_version") != 1 or profile.get("realm") != "server" or profile.get("state") != "active":
+  raise SystemExit("companion server plugin population is not exact")
+stable_entries = {}
+runtime_digests = set()
+for name, entry in entries.items():
+  runtime = entry.get("runtime") or {}
+  digest = runtime.get("digest", "")
+  services = entry.get("services") or []
+  if entry.get("state") != "active" or entry.get("desired") is not True or entry.get("error") not in (None, ""):
+    raise SystemExit("companion server plugin is not active")
+  if not isinstance(digest, str) or len(digest) != 71 or not digest.startswith("sha256:"):
+    raise SystemExit("companion server plugin lacks runtime identity")
+  runtime_digests.add(digest)
+  stable_entries[name] = {
+    "identity": entry.get("identity"), "implementation": entry.get("implementation"),
+    "runtime": runtime, "state": entry.get("state"), "desired": entry.get("desired"),
+    "services": services,
+  }
+if len(runtime_digests) != 1:
+  raise SystemExit("linked companion server plugins do not share one executable identity")
+stable_exports = {}
+for name, export in exports.items():
+  if export.get("available") is not True or not isinstance(export.get("revision"), int) or export["revision"] <= 0:
+    raise SystemExit("companion server export is unavailable")
+  stable_exports[name] = export
 identity = {
   "binding": value.get("binding"),
   "model": value.get("model"),
+  "ownership": value.get("ownership"),
+  "capabilities": value.get("capabilities"),
   "protocol": value.get("protocol"),
-  "server_profile": (value.get("server_profile") or {}).get("fingerprint"),
+  "server_profile": profile.get("fingerprint"),
+  "entries": stable_entries,
+  "exports": stable_exports,
 }
 print(json.dumps(identity, sort_keys=True, separators=(",", ":")))'
 }
 
-companion_children() {
-  ps -axo pid=,ppid= | awk -v parent="${companion_pid}" '$2 == parent { print $1 }' | sort -n | tr '\n' ' '
+listener_owner() {
+  /usr/sbin/lsof -nP -iTCP:"$1" -sTCP:LISTEN -Fp 2>/dev/null | \
+    sed -n 's/^p//p' | sort -u
+}
+
+assert_no_private_material() {
+  local files=("${companion_log}" "${browser_log}" "${application_log}" \
+    "${browser_snapshot}" "${native_snapshot}")
+  if ! printf '%s' "${gateway_token}" | python3 -c 'import re, sys
+secret = sys.stdin.buffer.read()
+for path in sys.argv[1:]:
+  with open(path, "rb") as source: payload = source.read((64 << 20) + 1)
+  if len(payload) > (64 << 20) or secret in payload or re.search(rb"mgmt_[A-Za-z0-9_-]{16,512}", payload):
+    raise SystemExit(1)' "${files[@]}"; then
+    printf '%s\n' "hosted companion evidence retained credential-shaped private material" >&2
+    return 1
+  fi
+  if [[ "${management_receipt:-}" == *"${gateway_token}"* || \
+        "${management_receipt:-}" == *"mgmt_"* ]]; then
+    printf '%s\n' "hosted companion receipt retained private material" >&2
+    return 1
+  fi
 }
 
 wait_for_http "${server_url}/healthz" 200
 wait_for_http "${presentation_url}/client/v1/manifest" 200
 wait_for_http "${server_url}/" 404
 wait_for_http "${server_url}/client/v1/manifest" 404
+wait_for_metrics 0 0 0
 
 for _ in $(seq 1 100); do
   native_endpoint_file="$(sed -n 's/^  native file  //p' "${companion_log}" | tail -n 1)"
@@ -166,9 +243,27 @@ if not valid: raise SystemExit("generated native endpoint directory is not one p
   "${native_endpoint_file}"
 
 initial_server_identity="$(server_identity)"
-initial_children="$(companion_children)"
-if [[ "$(wc -w <<<"${initial_children}")" -ne 2 ]]; then
-  printf '%s\n' "companion child population is not exact: ${initial_children}" >&2
+server_identity_digest="sha256:$(printf '%s' "${initial_server_identity}" | shasum -a 256 | awk '{print $1}')"
+server_runtime_digest="$(python3 -c 'import json,sys
+value=json.loads(sys.argv[1]); entries=value.get("entries") or {}
+digests={((entry.get("runtime") or {}).get("digest")) for entry in entries.values()}
+if len(digests) != 1: raise SystemExit("server runtime digest is not unique")
+print(next(iter(digests)))' "${initial_server_identity}")"
+initial_process_receipt="$("${process_validator}" -binary "${binary}" \
+  -companion-pid "${companion_pid}" -runtime-digest "${server_runtime_digest}")"
+if [[ "${initial_process_receipt}" != OPENREALTIME_COMPANION_PROCESS_RECEIPT\ * ]]; then
+  printf '%s\n' "Darwin process validator omitted its exact receipt" >&2
+  exit 1
+fi
+server_pid="$(python3 -c 'import json,sys
+print(json.loads(sys.argv[1].split(" ",1)[1])["server"]["pid"])' "${initial_process_receipt}")"
+presentation_pid="$(python3 -c 'import json,sys
+print(json.loads(sys.argv[1].split(" ",1)[1])["presentation"]["pid"])' "${initial_process_receipt}")"
+if [[ "$(listener_owner 18765)" != "${server_pid}" || \
+      "$(listener_owner 18766)" != "${server_pid}" || \
+      "$(listener_owner 18767)" != "${presentation_pid}" || \
+      -n "$(listener_owner 18768)" ]]; then
+  printf '%s\n' "companion listener ownership is not exact before client launch" >&2
   exit 1
 fi
 
@@ -189,26 +284,43 @@ fi
 browser_manifest="$(curl -fsS "${presentation_url}/client/v1/manifest")"
 browser_manifest_fingerprint="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["fingerprint"])' <<<"${browser_manifest}")"
 browser_plan_fingerprint="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["plan"]["fingerprint"])' <<<"${browser_manifest}")"
-OPENREALTIME_COMPANION_PROOF_NONCE="${proof_nonce}" \
+env -u OPENREALTIME_HOSTED_COMPANION_TOKEN \
+  OPENREALTIME_COMPANION_PROOF_NONCE="${proof_nonce}" \
+  OPENREALTIME_COMPANION_BROWSER_SNAPSHOT="${browser_snapshot}" \
+  OPENREALTIME_COMPANION_BROWSER_PROFILE_PARENT="${runtime_root}" \
   CHROMIUM="${chromium}" CDP_PORT=18768 \
   node cmd/openrealtime/testdata/companion_browser.mjs "${presentation_url}" | tee "${browser_log}"
 wait_for_metrics 1 1 0
 
 browser_proof="$(sed -n 's/^OPENREALTIME_COMPANION_BROWSER_PROOF //p' "${browser_log}" | tail -n 1)"
-browser_session_id="$(python3 -c 'import json, re, sys
+browser_session_id="$(python3 -c 'import hashlib, json, os, re, stat, sys, urllib.parse
 value = json.loads(sys.argv[1])
+management = value.get("management") or {}
+digest = re.compile(r"sha256:[0-9a-f]{64}")
+session = value.get("session_id", "")
+parsed = urllib.parse.urlsplit(management.get("url", ""))
+info = os.stat(sys.argv[6], follow_symlinks=False)
+with open(sys.argv[6], "rb") as source: payload = source.read((32 << 20) + 1)
 valid = (
-  value.get("schema") == "openrealtime/browser/hosted-companion-proof/v1" and
+  value.get("schema") == "openrealtime/browser/hosted-companion-proof/v3" and
   value.get("nonce") == sys.argv[2] and
   value.get("transport") == "webrtc" and
   value.get("manifest_fingerprint") == sys.argv[3] and
   value.get("plan_fingerprint") == sys.argv[4] and
   value.get("endpoint") == sys.argv[5] and
-  re.fullmatch(r"sess_[A-Za-z0-9_-]{1,128}", value.get("session_id", ""))
+  re.fullmatch(r"sess_[A-Za-z0-9_-]{1,128}", session) and
+  management.get("session_id") == session and management.get("resource") == "live" and
+  parsed.scheme == "http" and parsed.netloc == "127.0.0.1:18767" and
+  parsed.path == "/client/v1/management/sessions/" + urllib.parse.quote(session, safe="") + "/live" and
+  not parsed.query and not parsed.fragment and
+  stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1 and
+  0 < len(payload) <= (32 << 20) and management.get("payload_bytes") == len(payload) and
+  digest.fullmatch(management.get("payload_digest", "")) is not None and
+  management["payload_digest"] == "sha256:" + hashlib.sha256(payload).hexdigest()
 )
 if not valid: raise SystemExit("browser proof is invalid")
-print(value["session_id"])' "${browser_proof}" "${proof_nonce}" "${browser_manifest_fingerprint}" \
-  "${browser_plan_fingerprint}" "${presentation_url}")"
+print(session)' "${browser_proof}" "${proof_nonce}" "${browser_manifest_fingerprint}" \
+  "${browser_plan_fingerprint}" "${presentation_url}" "${browser_snapshot}")"
 
 manifest_resource="$(find "${application}/Contents/Resources" -type f \
   -name native-observer-client-manifest.json -print)"
@@ -222,8 +334,10 @@ expected_native_endpoint="ws://${presentation_address}/client/v1/realtime"
 
 executable="${application}/Contents/MacOS/OpenRealtimeMac"
 executable_digest="$(shasum -a 256 "${executable}" | awk '{print $1}')"
+env -u OPENREALTIME_HOSTED_COMPANION_TOKEN \
 OPENREALTIME_NATIVE_PROFILE=observer-developer \
 OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY="${native_endpoint_file}" \
+OPENREALTIME_HOSTED_MANAGEMENT_SNAPSHOT="${native_snapshot}" \
   "${executable}" "--openrealtime-hosted-smoke=${proof_nonce}" \
   >"${application_log}" 2>&1 &
 application_pid="$!"
@@ -246,25 +360,48 @@ if [[ -z "${native_proof}" ]]; then
   sed -n '1,240p' "${application_log}" >&2
   exit 1
 fi
-native_session_id="$(python3 -c 'import json, re, sys
+native_session_id="$(python3 -c 'import hashlib, json, os, re, stat, sys, urllib.parse
 value = json.loads(sys.argv[1])
+management = value.get("management") or {}
+digest = re.compile(r"sha256:[0-9a-f]{64}")
+session = value.get("session_id", "")
+info = os.stat(sys.argv[6], follow_symlinks=False)
+parsed = urllib.parse.urlsplit(management.get("response_url", ""))
+with open(sys.argv[6], "rb") as source: payload = source.read((32 << 20) + 1)
 valid = (
-  value.get("schema") == "openrealtime/macos/hosted-companion-proof/v1" and
+  value.get("schema") == "openrealtime/macos/hosted-companion-proof/v3" and
   value.get("nonce") == sys.argv[2] and
   value.get("transport") == "websocket" and
   value.get("distribution") == "observer-developer" and
   value.get("manifest_fingerprint") == sys.argv[3] and
   value.get("endpoint_fingerprint") == sys.argv[4] and
   value.get("endpoint") == sys.argv[5] and
-  re.fullmatch(r"sess_[A-Za-z0-9_-]{1,128}", value.get("session_id", ""))
+  re.fullmatch(r"sess_[A-Za-z0-9_-]{1,128}", session) and
+  management.get("session_id") == session and management.get("resource") == "live" and
+  parsed.scheme == "http" and parsed.netloc == "127.0.0.1:18765" and
+  parsed.path == "/openrealtime/v1/sessions/" + urllib.parse.quote(session, safe="") + "/live" and
+  not parsed.query and not parsed.fragment and
+  stat.S_ISREG(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1 and
+  0 < len(payload) <= (32 << 20) and management.get("payload_bytes") == len(payload) and
+  digest.fullmatch(management.get("payload_digest", "")) is not None and
+  management["payload_digest"] == "sha256:" + hashlib.sha256(payload).hexdigest()
 )
 if not valid: raise SystemExit("native proof is invalid")
-print(value["session_id"])' "${native_proof}" "${proof_nonce}" "${expected_manifest_fingerprint}" \
-  "${expected_endpoint_fingerprint}" "${expected_native_endpoint}")"
+print(session)' "${native_proof}" "${proof_nonce}" "${expected_manifest_fingerprint}" \
+  "${expected_endpoint_fingerprint}" "${expected_native_endpoint}" "${native_snapshot}")"
 if [[ "${browser_session_id}" == "${native_session_id}" ]]; then
   printf '%s\n' "browser and native app reported the same session identity" >&2
   exit 1
 fi
+management_receipt="$("${proof_validator}" \
+  -browser "${browser_snapshot}" -browser-session "${browser_session_id}" \
+  -native "${native_snapshot}" -native-session "${native_session_id}" \
+  -nonce "${proof_nonce}" -server-identity-digest "${server_identity_digest}")"
+if [[ "${management_receipt}" != OPENREALTIME_COMPANION_MANAGEMENT_RECEIPT\ * ]]; then
+  printf '%s\n' "companion management validator omitted its exact receipt" >&2
+  exit 1
+fi
+assert_no_private_material
 
 for _ in $(seq 1 300); do
   if ! kill -0 "${application_pid}" 2>/dev/null; then
@@ -287,9 +424,26 @@ wait_for_metrics 2 2 0
 wait_for_http "${server_url}/" 404
 wait_for_http "${server_url}/client/v1/manifest" 404
 wait_for_http "${presentation_url}/client/v1/manifest" 200
-if [[ "$(server_identity)" != "${initial_server_identity}" || \
-      "$(companion_children)" != "${initial_children}" ]]; then
-  printf '%s\n' "server or companion process identity changed between browser and native sessions" >&2
+if [[ "$(server_identity)" != "${initial_server_identity}" ]]; then
+  printf '%s\n' "server identity changed between browser and native sessions" >&2
+  exit 1
+fi
+final_process_receipt="$("${process_validator}" -binary "${binary}" \
+  -companion-pid "${companion_pid}" -runtime-digest "${server_runtime_digest}")"
+if [[ "${final_process_receipt}" != "${initial_process_receipt}" || \
+      "$(listener_owner 18765)" != "${server_pid}" || \
+      "$(listener_owner 18766)" != "${server_pid}" || \
+      "$(listener_owner 18767)" != "${presentation_pid}" || \
+      -n "$(listener_owner 18768)" || \
+      "$(shasum -a 256 "${binary}" | awk '{print $1}')" != "${server_executable_digest}" || \
+      "$(stat -f '%d:%i:%z:%m:%p' "${binary}")" != "${server_executable_file_identity}" ]]; then
+  printf '%s\n' "companion process, executable, argv, code, or listener identity changed" >&2
+  exit 1
+fi
+/usr/bin/codesign --verify --strict "${binary}"
+if [[ "$(/usr/bin/codesign -d --verbose=4 "${binary}" 2>&1 | sed -n 's/^CDHash=//p')" != \
+      "${server_code_directory_hash}" ]]; then
+  printf '%s\n' "companion executable CodeDirectory changed" >&2
   exit 1
 fi
 
@@ -300,6 +454,12 @@ if ! wait "${companion_pid}"; then
   exit 1
 fi
 companion_pid=""
+for stopped_pid in "${server_pid}" "${presentation_pid}"; do
+  if kill -0 "${stopped_pid}" 2>/dev/null; then
+    printf '%s\n' "companion child PID survived supervisor shutdown" >&2
+    exit 1
+  fi
+done
 if [[ -e "${native_endpoint_file}" ]]; then
   printf '%s\n' "companion retained its generated native endpoint directory after shutdown" >&2
   exit 1
@@ -326,4 +486,7 @@ fi
 
 printf '%s\n' "hosted companion browser and assembled native app passed on one clean server"
 printf '%s\n' "browser session=${browser_session_id} native session=${native_session_id}"
+printf '%s\n' "${management_receipt}"
+printf '%s\n' "${initial_process_receipt}"
 printf '%s\n' "native executable sha256=${executable_digest}"
+printf '%s\n' "server executable sha256=${server_executable_digest} cdhash=${server_code_directory_hash}"
