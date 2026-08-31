@@ -167,12 +167,6 @@ var (
 	nativeArtifactCache      sync.Map
 )
 
-// NewNativeBundle is the compatibility constructor for the original explicit
-// effects-enabled developer distribution.
-func NewNativeBundle() (*NativeBundle, error) {
-	return NewNativeEffectsDeveloperBundle()
-}
-
 func NewNativeEffectsDeveloperBundle() (*NativeBundle, error) {
 	return NewNativeBundleForDistribution(NativeEffectsDeveloperDistribution)
 }
