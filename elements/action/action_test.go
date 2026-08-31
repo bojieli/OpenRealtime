@@ -292,6 +292,159 @@ func TestProvenanceJoinRejectsUnselectedBasisAndCrossSessionEvidence(t *testing.
 	}
 }
 
+// The join is the only place that sees the candidate and the cognition result
+// together, so it is the only place that can catch drift *between* them.
+// validateAuthorityCandidate and validateProvenanceResult each bind one
+// artifact's payload to its own envelope, and both artifacts reach the join
+// only under one run key, so run and session drift is already impossible here.
+// What survives to the join is cross-artifact provenance: a result that claims
+// a different canonical context prefix, a different source revision, or that
+// is not causally descended from the candidate's own activation evidence. A
+// result that borrows another run's authority arrives looking exactly like
+// this, so every one of these must reject rather than authorize.
+func TestProvenanceJoinRejectsCandidateResultProvenanceDrift(t *testing.T) {
+	tests := []struct {
+		name string
+		edit func(*element.Envelope, *element.Envelope, *element.Envelope)
+		code string
+	}{
+		{
+			name: "result names a different canonical context version",
+			edit: func(_, _, result *element.Envelope) {
+				value := result.Payload.(cognitionelements.Result)
+				value.ContextVersion = 3
+				result.Payload = value
+			},
+			code: "context_mismatch",
+		},
+		{
+			name: "result names a different canonical context tail",
+			edit: func(_, _, result *element.Envelope) {
+				value := result.Payload.(cognitionelements.Result)
+				value.ContextTailID = "other-observation"
+				result.Payload = value
+			},
+			code: "context_mismatch",
+		},
+		{
+			name: "result names a different source revision",
+			edit: func(_, _, result *element.Envelope) {
+				value := result.Payload.(cognitionelements.Result)
+				value.Invocation.SourceRevision = 8
+				result.Payload = value
+			},
+			code: "source_revision_mismatch",
+		},
+		{
+			name: "result did not descend from the candidate activation trigger",
+			edit: func(_, _, result *element.Envelope) {
+				result.CausalParents = slices.DeleteFunc(result.CausalParents,
+					func(value string) bool { return value == "activation-trigger" })
+			},
+			code: "result_cause_mismatch",
+		},
+		{
+			name: "result did not descend from the candidate context envelope",
+			edit: func(_, _, result *element.Envelope) {
+				result.CausalParents = slices.DeleteFunc(result.CausalParents,
+					func(value string) bool { return value == "context-envelope" })
+			},
+			code: "result_cause_mismatch",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mounted, done, cancel := mountGraph(t, provenanceJoinGraph,
+				map[string]json.RawMessage{"join": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())
+			defer stopMounted(t, mounted, done, cancel)
+			candidate, proposal, result := provenanceJoinEvidence("drift-run", "drift-call", "join-session")
+			test.edit(&candidate, &proposal, &result)
+			send(t, mustIngressAction(t, mounted, "candidate"), candidate)
+			send(t, mustIngressAction(t, mounted, "proposal"), proposal)
+			send(t, mustIngressAction(t, mounted, "result"), result)
+			outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+			if outcome.Kind != OutcomeRejected || outcome.Code != test.code {
+				t.Fatalf("rejection = %+v", outcome)
+			}
+			assertNoEnvelope(t, mustEgressAction(t, mounted, "provenance"))
+		})
+	}
+}
+
+// Run and session agreement cannot be driven through the element's ports: both
+// artifacts are bound to their own envelopes upstream and only ever meet under
+// one run key. The checks are kept anyway, because the join must not depend on
+// callers for its own invariant, and they are pinned here so that "unreachable"
+// stays a property of the callers rather than a licence to delete the guard.
+func TestCandidateResultBindingRefusesRunAndSessionDriftItCannotReachThroughPorts(t *testing.T) {
+	base := func() (authoritycontract.Candidate, element.Envelope, provenanceResult) {
+		candidate, _, result := provenanceJoinEvidence("defence-run", "defence-call", "join-session")
+		value := result.Payload.(cognitionelements.Result)
+		return candidate.Payload.(authoritycontract.Candidate), candidate, provenanceResult{
+			envelope: result, value: value,
+			byCallID: map[string]cognitionelements.ToolProposal{"defence-call": value.ToolProposals[0]},
+		}
+	}
+	if candidate, envelope, result := base(); func() bool {
+		code, err := validateCandidateResultBinding(candidate, envelope, result)
+		return code == "" && err == nil
+	}() != true {
+		t.Fatal("undrifted candidate and result must bind")
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*authoritycontract.Candidate, *element.Envelope, *provenanceResult)
+		code string
+	}{
+		{
+			name: "result payload names another run",
+			edit: func(_ *authoritycontract.Candidate, _ *element.Envelope, result *provenanceResult) {
+				result.value.RunID = "other-run"
+			},
+			code: "model_run_mismatch",
+		},
+		{
+			name: "result envelope names another run",
+			edit: func(_ *authoritycontract.Candidate, _ *element.Envelope, result *provenanceResult) {
+				result.envelope.RunID = "other-run"
+			},
+			code: "model_run_mismatch",
+		},
+		{
+			name: "candidate envelope names another session",
+			edit: func(_ *authoritycontract.Candidate, envelope *element.Envelope, _ *provenanceResult) {
+				envelope.SessionID = "other-session"
+			},
+			code: "session_mismatch",
+		},
+		{
+			name: "result envelope names another session",
+			edit: func(_ *authoritycontract.Candidate, _ *element.Envelope, result *provenanceResult) {
+				result.envelope.SessionID = "other-session"
+			},
+			code: "session_mismatch",
+		},
+		{
+			name: "candidate carries no session",
+			edit: func(candidate *authoritycontract.Candidate, envelope *element.Envelope, result *provenanceResult) {
+				candidate.SessionID = ""
+				envelope.SessionID = ""
+				result.envelope.SessionID = ""
+			},
+			code: "session_mismatch",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate, envelope, result := base()
+			test.edit(&candidate, &envelope, &result)
+			code, err := validateCandidateResultBinding(candidate, envelope, result)
+			if code != test.code || err == nil {
+				t.Fatalf("binding = %q (%v), want %q", code, err, test.code)
+			}
+		})
+	}
+}
+
 func TestProvenanceJoinAllowsSpeechOnlyManualResultButNeverAuthorizesWithoutContext(t *testing.T) {
 	t.Run("speech only", func(t *testing.T) {
 		mounted, done, cancel := mountGraph(t, provenanceJoinGraph,
