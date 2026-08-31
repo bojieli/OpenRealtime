@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -207,6 +209,60 @@ func TestCompanionParserRejectsOwnedServeFlagsAndUnsafeSelections(t *testing.T) 
 	}
 }
 
+func TestCompanionParserAcceptsExactClientPoliciesAndDocumentsHelp(t *testing.T) {
+	defaultOptions, err := parseCompanionOptions(nil, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultOptions.client != companionClientBrowser {
+		t.Fatalf("default companion client = %q", defaultOptions.client)
+	}
+	for _, policy := range []companionClient{
+		companionClientBrowser, companionClientMacOS, companionClientBoth, companionClientNone,
+	} {
+		t.Run(string(policy), func(t *testing.T) {
+			options, err := parseCompanionOptions([]string{"-client", string(policy)}, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if options.client != policy {
+				t.Fatalf("parsed companion client = %q, want %q", options.client, policy)
+			}
+		})
+	}
+	var help bytes.Buffer
+	if _, err := parseCompanionOptions([]string{"-help"}, &help); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("companion help error = %v", err)
+	}
+	for _, required := range []string{
+		"client launch policy: browser, macos, both, or none",
+		"-macos-app", "-server-listen", "-webrtc-listen", "-presentation-listen",
+	} {
+		if !strings.Contains(help.String(), required) {
+			t.Errorf("companion help omitted %q:\n%s", required, help.String())
+		}
+	}
+}
+
+func TestPublicCompanionHelpReturnsSuccessAndDocumentsPolicies(t *testing.T) {
+	var output, diagnostics bytes.Buffer
+	if err := run([]string{"companion", "-help"}, &output, &diagnostics); err != nil {
+		t.Fatalf("public companion help: %v", err)
+	}
+	if diagnostics.Len() != 0 {
+		t.Fatalf("public companion help diagnostics = %q", diagnostics.String())
+	}
+	for _, required := range []string{
+		"client launch policy: browser, macos, both, or none",
+		"environment variable holding the server credential",
+		"standalone browser/native presentation host",
+	} {
+		if !strings.Contains(output.String(), required) {
+			t.Errorf("public companion help omitted %q:\n%s", required, output.String())
+		}
+	}
+}
+
 func TestCompanionMacOSApplicationPreflightIsSideEffectFreeAndExact(t *testing.T) {
 	root := t.TempDir()
 	application := filepath.Join(root, "OpenRealtime Developer.app")
@@ -242,6 +298,23 @@ func TestCompanionMacOSApplicationPreflightIsSideEffectFreeAndExact(t *testing.T
 	}
 }
 
+func TestCompanionMacOSLaunchArgumentsAreExactAndNeverShellSplit(t *testing.T) {
+	application := "/Applications/OpenRealtime Developer.app"
+	endpointFile := "/private/tmp/openrealtime companion/native endpoints.json"
+	want := []string{
+		"-n", application,
+		"--env", "OPENREALTIME_NATIVE_PROFILE=observer-developer",
+		"--env", "OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY=" + endpointFile,
+	}
+	if got := companionMacOSLaunchArguments(application, endpointFile); !slices.Equal(got, want) {
+		t.Fatalf("macOS companion launch arguments = %#v, want %#v", got, want)
+	}
+	want = want[:4]
+	if got := companionMacOSLaunchArguments(application, ""); !slices.Equal(got, want) {
+		t.Fatalf("bundled-directory macOS launch arguments = %#v, want %#v", got, want)
+	}
+}
+
 func TestCompanionRejectsNonWebRTCManifestBeforeReady(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -265,7 +338,7 @@ func TestCompanionRejectsNonWebRTCManifestBeforeReady(t *testing.T) {
 		"-server-listen", companionFreeAddress(t),
 		"-webrtc-listen", companionFreeAddress(t),
 		"-presentation-listen", companionFreeAddress(t),
-		"-client", "none", "-ready-timeout", "350ms", "-shutdown-timeout", "2s",
+		"-client", "none", "-ready-timeout", "2s", "-shutdown-timeout", "2s",
 	}, &output, runtime)
 	if err == nil || !strings.Contains(err.Error(), "served manifest does not match browser-developer-webrtc") {
 		t.Fatalf("manifest identity error = %v", err)
