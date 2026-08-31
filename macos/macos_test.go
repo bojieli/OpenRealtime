@@ -416,3 +416,24 @@ func TestNativeCaptureStartsCleanUpAfterThemselves(t *testing.T) {
 		t.Error("a browser start that never captured a frame leaves its bridge running")
 	}
 }
+
+// A server `error` event that does not end the connection still has to reach
+// the operator. The browser client renders snapshot.last_error unconditionally;
+// the native client used to read it only in the failed phase, so a refused
+// event or provider failure left no visible trace outside the raw protocol log.
+func TestNativeModelSurfacesEveryServerError(t *testing.T) {
+	model, err := os.ReadFile("Sources/OpenRealtimeMac/DeveloperModel.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := os.ReadFile("Sources/OpenRealtimeMac/ContentView.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(model), "sessionErrorText = String(((snapshot[\"last_error\"] as? String) ?? \"\").prefix(1_024))") {
+		t.Error("native model no longer projects last_error outside the failed phase")
+	}
+	if !strings.Contains(string(view), "model.sessionErrorText") {
+		t.Error("native view no longer displays the projected session error")
+	}
+}

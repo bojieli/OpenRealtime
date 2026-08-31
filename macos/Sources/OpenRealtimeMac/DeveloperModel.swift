@@ -21,6 +21,7 @@ final class DeveloperModel: ObservableObject {
     @Published private(set) var sessionID = ""
     @Published private(set) var updatedSessionID = ""
     @Published var statusText = "not connected"
+    @Published var sessionErrorText = ""
     @Published var negotiationText = ""
     @Published var transportDiagnosticsText = "transport idle"
     @Published var effectsStatusText = "host effects idle"
@@ -562,6 +563,12 @@ final class DeveloperModel: ObservableObject {
             connectionState = .disconnected
             statusText = reason.isEmpty ? "not connected" : reason
         }
+
+        // The reducer records every server `error` event, not only the ones
+        // that end the connection. Reading it in the failed phase alone left a
+        // refused event or a provider failure with no visible trace outside the
+        // raw protocol log.
+        sessionErrorText = String(((snapshot["last_error"] as? String) ?? "").prefix(1_024))
 
         if let extensionObject = session["openrealtime"] as? [String: Any],
            extensionObject["present"] as? Bool == true {

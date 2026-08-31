@@ -100,6 +100,12 @@ struct ContentView: View {
                 Text(model.negotiationText).font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            if !model.sessionErrorText.isEmpty {
+                Label(model.sessionErrorText, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.red)
+                    .lineLimit(2).textSelection(.enabled)
+                    .accessibilityLabel("Session error: \(model.sessionErrorText)")
+            }
             Spacer()
             Button("Connect") { model.connect() }
                 .buttonStyle(.borderedProminent)
