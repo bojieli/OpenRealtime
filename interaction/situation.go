@@ -226,7 +226,18 @@ func (state Situation) AvailableActs() []Act {
 		// required count/translation from unrelated end-of-story silence, so
 		// leave answer available there. Empty TranscriptEvent keeps the tuned
 		// legacy observation space exactly as before.
-		if !state.Speaking && (!state.Restricted || state.TranscriptEvent == TranscriptFinal) {
+		// A restriction such as "tell me when the build finishes and say
+		// nothing else" removes ordinary answers, not the one answer the
+		// restriction itself reserves. A final transcript is one typed proof
+		// that the reserved condition may have arrived; a visual observation
+		// and a standing-policy quiet timer are the two non-speech proofs. In
+		// all three cases the policy model still chooses between silence and
+		// answer from the exact evidence. Withdrawing answer here would leave
+		// silence as the only executable option precisely when the promised
+		// condition needs deciding.
+		reservedConditionEvidence := state.TranscriptEvent == TranscriptFinal ||
+			state.Seen != "" || len(state.Seeing) > 0 || state.Quiet
+		if !state.Speaking && (!state.Restricted || reservedConditionEvidence) {
 			acts = append(acts, ActAnswer)
 		}
 	}

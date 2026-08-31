@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -39,6 +40,24 @@ func TestValidateSemanticOutcomeRequiresExactConsistentBoundedChoice(t *testing.
 		Option: "answer", Index: 1, Confidence: 0.7, Measured: true,
 	}, options); err != nil {
 		t.Fatalf("valid exact outcome: %v", err)
+	}
+}
+
+func TestSemanticExplicitCreateDoesNotAskProviderToChooseSingletonAct(t *testing.T) {
+	runner := semanticAdmissionRunner{}
+	act, outcome, err := runner.decideAct(context.Background(), "create", interaction.Situation{
+		AllowedActs: []interaction.Act{interaction.ActStaySilent},
+	})
+	if err != nil || act != interaction.ActStaySilent || outcome.Index != 0 ||
+		outcome.Option != string(interaction.ActStaySilent) || outcome.Measured {
+		t.Fatalf("singleton explicit-create act = %q, %+v, %v", act, outcome, err)
+	}
+	_, _, err = runner.decideAct(context.Background(), "create", interaction.Situation{
+		AgentSpeaking: true,
+		AllowedActs:   []interaction.Act{interaction.ActAnswer},
+	})
+	if err == nil || !strings.Contains(err.Error(), "no executable act") {
+		t.Fatalf("empty explicit-create act set error = %v", err)
 	}
 }
 

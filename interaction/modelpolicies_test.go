@@ -81,6 +81,25 @@ func TestVisualIntentPolicySeparatesAuthorityFromPixelGrounding(t *testing.T) {
 	}
 }
 
+func TestSingleExecutableActDoesNotCallPolicyProvider(t *testing.T) {
+	decider := &recordingDecider{answer: string(interaction.ActAnswer)}
+	model, err := interaction.NewInteractionModel(decider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	act, outcome, err := model.Decide(context.Background(), interaction.Situation{
+		Seen:        "the build is still running",
+		AllowedActs: []interaction.Act{interaction.ActStaySilent},
+	})
+	if err != nil || act != interaction.ActStaySilent || outcome.Index != 0 ||
+		outcome.Option != string(interaction.ActStaySilent) || outcome.Measured {
+		t.Fatalf("single executable act = %q, %+v, %v", act, outcome, err)
+	}
+	if decisions := decider.decisions(); len(decisions) != 0 {
+		t.Fatalf("singleton act was sent to policy provider: %+v", decisions)
+	}
+}
+
 func TestExplicitVisualAuthorityCompilesOnlyUnambiguousImperatives(t *testing.T) {
 	tests := []struct {
 		name string

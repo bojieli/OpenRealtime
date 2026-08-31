@@ -987,6 +987,13 @@ func (runner *semanticAdmissionRunner) decideAct(
 	// situation, prompt, and executable act set, and still cannot generate text
 	// or tools.
 	acts := situation.AvailableActs()
+	switch len(acts) {
+	case 0:
+		return coreinteraction.ActStaySilent, coreinteraction.Outcome{},
+			errors.New("semantic admission situation has no executable act")
+	case 1:
+		return acts[0], coreinteraction.Outcome{Index: 0, Option: string(acts[0])}, nil
+	}
 	options := make([]string, len(acts))
 	for index, act := range acts {
 		options[index] = string(act)
