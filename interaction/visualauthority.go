@@ -30,6 +30,87 @@ func ExplicitVisualAuthority(task string) (VisualIntent, bool) {
 	return VisualIntentNone, false
 }
 
+// ExplicitVisualMonitor recognizes narrow, user-authored future screen
+// conditions whose fulfillment includes a visible control action. It is the
+// monitor counterpart to ExplicitVisualAuthority: the function grants no
+// coordinate and does not claim that the condition is present. It only lets a
+// deployment without a learned interaction classifier arm the direct-pixel
+// actor for later frames instead of asking that actor to infer controller
+// lifetime through a generated continuation bit.
+//
+// A named visual condition and an explicit operation are both required. Thus
+// "call me if the build finishes" and "explain how to acknowledge an alert"
+// remain semantic work, while both "acknowledge an alert if it appears" and
+// "if an alert appears, acknowledge it" establish monitor authority.
+func ExplicitVisualMonitor(task string) bool {
+	words := visualAuthorityWords(task)
+	if len(words) == 0 || !hasFutureVisualCondition(words) || !hasNamedVisualCondition(words) {
+		return false
+	}
+	for _, clause := range visualAuthorityClauses(strings.ToLower(strings.TrimSpace(task))) {
+		for _, segment := range splitVisualAuthoritySegments(visualAuthorityWords(clause)) {
+			segment = trimVisualMonitorLeadIn(segment)
+			if explicitDirectVisualSegment(segment) || explicitMonitoredPronounAction(segment) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func trimVisualMonitorLeadIn(words []string) []string {
+	words = trimVisualAuthorityLeadIn(words)
+	futureLead := len(words) > 0
+	if futureLead {
+		switch words[0] {
+		case "if", "when", "whenever", "once", "until":
+		default:
+			futureLead = len(words) >= 3 && words[0] == "as" && words[1] == "soon" && words[2] == "as"
+		}
+	}
+	if futureLead {
+		boundary := -1
+		for index, word := range words {
+			if boundary >= 0 {
+				break
+			}
+			switch word {
+			case "appear", "appeared", "appears", "arrive", "arrived", "arrives", "open", "opened", "opens", "show", "shown", "shows":
+				boundary = index
+			}
+		}
+		if boundary >= 0 {
+			words = words[boundary+1:]
+		}
+	}
+	for len(words) > 0 && (words[0] == "silently" || words[0] == "immediately") {
+		words = words[1:]
+	}
+	return words
+}
+
+func hasNamedVisualCondition(words []string) bool {
+	for _, word := range words {
+		switch word {
+		case "alert", "banner", "dialog", "modal", "notification", "prompt", "warning":
+			return true
+		}
+	}
+	return false
+}
+
+func explicitMonitoredPronounAction(words []string) bool {
+	if len(words) < 2 || words[0] != "acknowledge" {
+		return false
+	}
+	switch words[1] {
+	case "it", "that", "this", "them":
+		return true
+	default:
+		return false
+	}
+}
+
 // ExplicitVisualActionCount returns the number of complete, unambiguous screen
 // actions present in the task so far. It uses the same deliberately narrow
 // grammar as ExplicitVisualAuthority: this is controller state for deciding

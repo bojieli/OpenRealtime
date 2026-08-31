@@ -103,27 +103,6 @@ func (visualDirectDecider) Decide(
 	return interaction.Outcome{}, nil
 }
 
-type visualMonitorDecider struct{}
-
-func (visualMonitorDecider) Name() string { return "visual-monitor" }
-func (visualMonitorDecider) Decide(
-	_ context.Context, decision interaction.Decision,
-) (interaction.Outcome, error) {
-	want := string(interaction.ActStaySilent)
-	for _, option := range decision.Options {
-		if option == string(interaction.VisualIntentMonitor) {
-			want = option
-			break
-		}
-	}
-	for index, option := range decision.Options {
-		if option == want {
-			return interaction.Outcome{Index: index, Option: option}, nil
-		}
-	}
-	return interaction.Outcome{}, nil
-}
-
 func visualReflexVideoConfig() cascade.Config {
 	config := videoConfig(nil)
 	config.Observers = []perception.Factory{perception.VideoFactory(perception.VideoConfig{
@@ -287,8 +266,8 @@ func TestMixedUserAndVisualBatchPreservesActionAndVoiceBranches(t *testing.T) {
 	config := visualReflexVideoConfig()
 	config.Perception = func() (v1.PerceptionProvider, error) {
 		return &scriptedASR{
-			partials: []string{"present the overview and acknowledge an alert if it appears"},
-			final:    "present the overview and acknowledge an alert if it appears",
+			partials: []string{"click Acknowledge and present the overview"},
+			final:    "click Acknowledge and present the overview",
 		}, nil
 	}
 	config.Fast = fast
@@ -679,14 +658,7 @@ func TestArmedDirectVisionCannotBeDiscardedByATextStaySilentDecision(t *testing.
 	}
 }
 
-func TestMonitorAuthorityStartsVoiceBeforeGroundingTheNextFrame(t *testing.T) {
-	model, err := interaction.NewInteractionModel(visualMonitorDecider{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	policies := interaction.Defaults()
-	policies.Interaction = model
-
+func TestCompiledMonitorAuthorityStartsVoiceBeforeGroundingTheNextFrame(t *testing.T) {
 	dispatched := make(chan trajectory.ToolCall, 1)
 	reflex := newVisualReflex([]continuation.Event{{
 		Kind: continuation.EventToolCall,
@@ -696,7 +668,6 @@ func TestMonitorAuthorityStartsVoiceBeforeGroundingTheNextFrame(t *testing.T) {
 		},
 	}})
 	config := visualReflexVideoConfig()
-	config.Policies = policies
 	config.VisualReflex = reflex
 	config.Perception = func() (v1.PerceptionProvider, error) {
 		return &scriptedASR{final: "Present the overview and if an alert appears acknowledge it."}, nil
@@ -723,6 +694,10 @@ func TestMonitorAuthorityStartsVoiceBeforeGroundingTheNextFrame(t *testing.T) {
 		}
 		return false
 	}, "initial screen was not retained")
+	// Retention is the canonical append. Let its observer-only safe point close
+	// before stating the monitor so this fixture is specifically testing a
+	// retained pre-condition frame rather than a deliberately mixed batch.
+	time.Sleep(50 * time.Millisecond)
 
 	speak(t, runtime, 3)
 	fast := config.Fast.(*scriptedProvider)

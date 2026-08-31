@@ -197,14 +197,16 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	)
 	// Monitor authority already says that the requested action belongs to a
 	// future visual condition. Arm that condition from the user's words and let
-	// the next observer frame be the first grounding opportunity. Running the
+	// the next observer frame be the first grounding opportunity. A mixed batch
+	// already carrying fresh visual evidence is that opportunity and therefore
+	// continues into grounding below. Running the
 	// visual actor on the retained pre-condition frame here only makes it say
 	// WAIT, and—more importantly—serializes an independent spoken obligation
 	// such as "present this while watching for an alert" behind a full VLM
 	// deadline. At 5 fps the next direct-pixel observation is at most one frame
 	// away; no visual narration or coordinate guess is introduced.
 	monitorArmedFromUser := batchHasUserObservation(batch) &&
-		visualAuthority == interaction.VisualIntentMonitor
+		visualAuthority == interaction.VisualIntentMonitor && !visualObservation(batch)
 	if monitorArmedFromUser {
 		runtime.armVisualMonitor(request.VisualIntentID)
 		// This is the same semantic handoff a visual WAIT produces: the silent
@@ -561,9 +563,13 @@ func (runtime *runtime) processParallelVisual(ctx context.Context, batch eventlo
 	if !runtime.parallelVisualIntentAuthorized(ctx, intentID, task) {
 		return false, nil
 	}
-	standing, _, _ := runtime.cognitionExtras(runtime.latestRevision(batch))
+	revision := runtime.latestRevision(batch)
+	if runtime.visualRevisionHandled(intentID, revision, true) {
+		return true, nil
+	}
+	standing, _, _ := runtime.cognitionExtras(revision)
 	request := cognition.Request{
-		SourceRevision: runtime.latestRevision(batch), VisualIntentID: intentID,
+		SourceRevision: revision, VisualIntentID: intentID,
 		VisualTask: task,
 		Standing:   standing, Counting: runtime.countingIsInForce(), Silent: true,
 		InFlight: inFlightToolNames(snapshot), PendingRepair: len(trajectory.PendingRepairs(snapshot)) > 0,
@@ -905,9 +911,17 @@ func (runtime *runtime) visualInteractionIntent(
 		return interaction.VisualIntentNone
 	}
 	// A deployment without an interaction model keeps the pre-existing visual
-	// actor contract. The visual actor still has ACT/WAIT/ABSTAIN and the action
-	// boundary; this classifier is the stronger composed treatment.
+	// actor contract. An explicit future visual condition is the one controller
+	// distinction that cannot safely be delegated to ACT's generated private
+	// continuation bit: the retained pre-condition frame is not actionable, and
+	// a false bit on an unrelated immediate action would disable every later
+	// frame. Compile that narrow authority locally; all other tasks retain the
+	// compatibility behavior in which the visual actor has ACT/WAIT/ABSTAIN and
+	// the action boundary.
 	if runtime.policies.Interaction == nil {
+		if interaction.ExplicitVisualMonitor(task) {
+			return interaction.VisualIntentMonitor
+		}
 		return interaction.VisualIntentDirect
 	}
 	runtime.visualActionMu.Lock()

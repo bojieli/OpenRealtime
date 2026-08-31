@@ -189,6 +189,17 @@ func TestVisualRevisionDedupeSeparatesAcousticAndGroundedCounters(t *testing.T) 
 	}
 }
 
+func TestVisualIntentFallbackCompilesExplicitFutureMonitor(t *testing.T) {
+	runtime := &runtime{policies: interaction.Defaults()}
+	task := "Present the launch overview. If a deployment alert appears, acknowledge it immediately without stopping your presentation."
+	if got := runtime.visualInteractionIntent(t.Context(), "meeting-turn", task, true); got != interaction.VisualIntentMonitor {
+		t.Fatalf("fallback visual intent = %q, want %q", got, interaction.VisualIntentMonitor)
+	}
+	if got := runtime.visualInteractionIntent(t.Context(), "meeting-turn", "Go to Overview.", true); got != interaction.VisualIntentDirect {
+		t.Fatalf("fallback direct visual intent = %q, want %q", got, interaction.VisualIntentDirect)
+	}
+}
+
 func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t *testing.T) {
 	instruction := trajectory.Item{
 		ID: "first-instruction", Kind: trajectory.KindInstruction, InvocationID: "visual-1",

@@ -132,6 +132,34 @@ func TestExplicitVisualAuthorityCompilesOnlyUnambiguousImperatives(t *testing.T)
 	}
 }
 
+func TestExplicitVisualMonitorRequiresNamedFutureConditionAndVisibleOperation(t *testing.T) {
+	tests := []struct {
+		name string
+		task string
+		want bool
+	}{
+		{
+			name: "condition before pronoun action",
+			task: "Present the launch overview. If a deployment alert appears, acknowledge it immediately without stopping your presentation.",
+			want: true,
+		},
+		{name: "punctuation free ASR", task: "Present the overview and if an alert appears acknowledge it.", want: true},
+		{name: "action before condition", task: "Silently acknowledge an alert if it appears.", want: true},
+		{name: "watch then navigate", task: "Watch for the warning, then go to Overview.", want: true},
+		{name: "semantic callback", task: "Call me if the deployment succeeds.", want: false},
+		{name: "semantic explanation", task: "Explain how to acknowledge an alert if it appears.", want: false},
+		{name: "condition without operation", task: "Tell me if an alert appears.", want: false},
+		{name: "direct without future condition", task: "Acknowledge the alert now.", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := interaction.ExplicitVisualMonitor(test.task); got != test.want {
+				t.Fatalf("ExplicitVisualMonitor(%q) = %t, want %t", test.task, got, test.want)
+			}
+		})
+	}
+}
+
 func TestExplicitVisualActionCountWaitsForCompleteOrderedCommands(t *testing.T) {
 	tests := []struct {
 		task string
