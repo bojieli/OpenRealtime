@@ -69,9 +69,9 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}
 	identity := launched.Plan.Identity()
 	if identity.SourceDigest != "sha256:6cd6055326de6d9c3723eef2cafa272e8afdf588152e7875cd7ff0333913d20f" ||
-		identity.LockDigest != "sha256:cc99b91ea22a2a56f89573b9890693173eadd8be45b52d9a0bca4b2dd2de659e" ||
-		identity.GraphFingerprint != "sha256:78c91c1067bc6f91cb5563890004d817dc5871af9999982ae8d39b5cfbb9c7b6" ||
-		identity.PlanFingerprint != "sha256:310650ad7018c976a03323be5d043064d4fb676814837b40b3013cd2ef88b0f5" {
+		identity.LockDigest != "sha256:475e8258f1414af70a105a3b8edd2ebe75c4c357b6c3b2596b184da48d0c9dcc" ||
+		identity.GraphFingerprint != "sha256:f68480630636dd783a43af4d64ba458fda785cfded58c05cdefc3eb2ca574a87" ||
+		identity.PlanFingerprint != "sha256:46c8052a38ee2482aef5c38bf23128c21fa10a3556961e6878823d2a57bf8376" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -301,6 +301,128 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 	settled := receiveRealtimeCU(t, model.invocations, "post-effect visual cognition")
 	if settled.Number != 3 || settled.LastSource != realtimecu.SourceScreen || settled.ToolResults != 1 {
 		t.Fatalf("post-effect cognition = %+v", settled)
+	}
+}
+
+func TestRealtimeComputerUseFailedEffectRequiresNewCanonicalUserIntent(t *testing.T) {
+	target := computeruse.Target{
+		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
+	}
+	descriptor := testRealtimeCUDescriptor()
+	model := &visualReactivationRealtimeCUModel{
+		descriptor: descriptor, invocations: make(chan visualReactivationInvocation, 4),
+	}
+	observer := newTestRealtimeCUObserver("failed-effect-observer")
+	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
+		RuntimeArtifact: testRealtimeCUArtifact("failed-effect-runtime", "1"),
+		Model: realtimecu.ModelPlugin{
+			Reference: "go://test/realtime-cu/failed-effect-model/v1",
+			Artifact:  testRealtimeCUArtifact("failed-effect-model", "2"), Descriptor: descriptor,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return model, nil
+			},
+		},
+		Observer: realtimecu.ObserverPlugin{
+			Reference: "go://test/realtime-cu/failed-effect-observer/v1", Name: observer.name,
+			Artifact: testRealtimeCUArtifact("failed-effect-observer", "3"),
+			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
+			Factory: func(context.Context, legacy.Options) (realtimecu.Observer, error) {
+				return observer, nil
+			},
+		},
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := newTestRealtimeCUSink()
+	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{
+		Sink: sink, SessionID: "realtime-cu-failed-effect",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if closeErr := runtime.Close(ctx, errors.New("test complete")); closeErr != nil {
+			t.Errorf("close failed-effect runtime: %v", closeErr)
+		}
+	})
+	if err := runtime.Update(context.Background(), legacy.Settings{
+		Instruction: "when smoke appears, click the alarm", Tools: testRealtimeCUToolSpecs(t, target),
+		Observers: []string{observer.name},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	initial := receiveRealtimeCU(t, model.invocations, "initial failed-effect cognition")
+	if initial.Number != 1 || initial.LastSource != realtimecu.SourceMicrophone {
+		t.Fatalf("initial failed-effect cognition = %+v", initial)
+	}
+	// Receiving the model-side fixture record precedes the graph's result
+	// commit. Wait until that no-proposal generation is settled before sending
+	// the visual trigger, or the frame can correctly be ignored as overlapping.
+	select {
+	case call := <-sink.calls:
+		t.Fatalf("condition-absent user turn emitted an effect: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceCamera, CapturedNS: 200,
+		Image: []byte{1}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	triggered := receiveRealtimeCU(t, model.invocations, "failed-effect camera cognition")
+	if triggered.Number != 2 || triggered.LastSource != realtimecu.SourceCamera {
+		t.Fatalf("failed-effect camera cognition = %+v", triggered)
+	}
+	callEvent := receiveRealtimeCU(t, sink.calls, "failed client effect")
+	if len(callEvent.Calls) != 1 {
+		t.Fatalf("failed client effect = %+v", callEvent)
+	}
+	call := callEvent.Calls[0]
+	if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+		CallID: call.CallID, Name: call.Name, Error: "action target is outside the viewport",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	consequence := receiveRealtimeCU(t, observer.consequences, "failed action visual consequence")
+	if consequence.CallID != call.CallID || consequence.CanonicalResultItemID == "" {
+		t.Fatalf("failed action consequence = %+v", consequence)
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 300,
+		Image: []byte{2}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("failed effect automatically reopened cognition: %+v", invocation)
+	case call := <-sink.calls:
+		t.Fatalf("failed effect automatically emitted another action: %+v", call)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 400,
+		PCM16LE: []byte{2, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fresh := receiveRealtimeCU(t, model.invocations, "new user intent after failed effect")
+	if fresh.Number != 3 || fresh.LastSource != realtimecu.SourceMicrophone || fresh.ToolResults != 1 {
+		t.Fatalf("new user intent after failed effect = %+v", fresh)
 	}
 }
 

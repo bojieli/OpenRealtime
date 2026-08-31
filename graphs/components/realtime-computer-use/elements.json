@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 3,
+      "revision": 4,
       "ports": [
         {
           "name": "authority",

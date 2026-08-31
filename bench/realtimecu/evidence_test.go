@@ -2,6 +2,7 @@ package realtimecu
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -95,6 +96,62 @@ func TestEvidenceAttemptCoversExactlySixteenAuthoredCases(t *testing.T) {
 	drifted.Task.Deadline++
 	if err := drifted.validate(); err == nil || !strings.Contains(err.Error(), "differs") {
 		t.Fatalf("drifted evidence attempt error = %v", err)
+	}
+}
+
+func TestRunCaseReturnsActionBudgetFailureThroughProtocolErrorChannel(t *testing.T) {
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	item.Task.MaxActions = 1
+	started := time.Unix(1_000, 0)
+	secondFailed := false
+	environment := realtimeCURunEnvironment{episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+		return realtimeCURunEpisode{
+			ready: func(context.Context) error { return nil }, started: func() time.Time { return started },
+			surface:       &fixtureRunSurface{},
+			captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			result: func(context.Context) (PageResult, error) {
+				return PageResult{Reason: "fixture action budget terminal"}, nil
+			},
+		}, nil
+	}}
+	outcome, evidenceErr := runCase(context.Background(), environment, Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		FrameRate: 3, Timeout: 10 * time.Second,
+		dependencies: &runDependencies{
+			playSamples: func(ctx context.Context, config bench.SessionConfig, _ []int16) (bench.Transcript, error) {
+				if err := config.Ready(ctx); err != nil {
+					return bench.Transcript{}, err
+				}
+				arguments := json.RawMessage(`{"source":"screen","x":10,"y":20}`)
+				if output, err := config.HandleTool(ctx, bench.ToolRequest{
+					CallID: "action-1", Name: "computer.click", Arguments: arguments,
+					Received: started.Add(time.Second),
+				}); err != nil || len(output) == 0 {
+					t.Fatalf("first action output=%s error=%v", output, err)
+				}
+				if output, err := config.HandleTool(ctx, bench.ToolRequest{
+					CallID: "action-2", Name: "computer.click", Arguments: arguments,
+					Received: started.Add(2 * time.Second),
+				}); err == nil || len(output) != 0 ||
+					!strings.Contains(err.Error(), "task action budget of 1 is exhausted") {
+					t.Fatalf("second action output=%s error=%v", output, err)
+				} else {
+					secondFailed = true
+				}
+				return bench.Transcript{PlaybackMS: 3_000, Moments: []bench.Moment{
+					{Kind: bench.MomentReady, AtMS: 0},
+					{Kind: bench.MomentToolCall, CallID: "action-1", Name: "computer.click", AtMS: 1_000},
+					{Kind: bench.MomentToolCall, CallID: "action-2", Name: "computer.click", AtMS: 2_000},
+				}}, nil
+			},
+			now: func() time.Time { return started.Add(3 * time.Second) },
+		},
+	}, item)
+	if evidenceErr != nil || !secondFailed || !outcome.Completed ||
+		outcome.Metrics["action_count"] != 2 || outcome.Metrics["invalid_action_count"] != 1 ||
+		!strings.Contains(outcome.Notes["actions"], "task action budget of 1 is exhausted") {
+		t.Fatalf("outcome=%+v evidence=%v second_failed=%t", outcome, evidenceErr, secondFailed)
 	}
 }
 

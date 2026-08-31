@@ -226,6 +226,9 @@ type SessionConfig struct {
 	// function refuses every call, which is correct for a suite with no tools.
 	Respond func(name string, arguments json.RawMessage) (json.RawMessage, error)
 	// HandleTool is the context-aware form used by interactive environments.
+	// A returned error is sent through Realtime's canonical plain-text
+	// "Error: ..." function-output convention so the graph can distinguish a
+	// failed invocation from successful JSON that happens to contain an error.
 	// It takes precedence over Respond and receives the call identity so an
 	// evaluator can retain an exact action trace and propagate idempotency.
 	HandleTool func(context.Context, ToolRequest) (json.RawMessage, error)
@@ -1146,20 +1149,20 @@ func (recorder *recorder) answer(
 	ctx context.Context, client realtimeSession,
 	config SessionConfig, callID, name string, arguments json.RawMessage,
 ) error {
-	output := json.RawMessage(`{"error":"no tools are available in this task"}`)
+	output := toolFailureOutput("no tools are available in this task")
 	if config.HandleTool != nil {
 		produced, err := config.HandleTool(ctx, ToolRequest{
 			CallID: callID, Name: name, Arguments: arguments, Received: time.Now(),
 		})
 		if err != nil {
-			output = json.RawMessage(fmt.Sprintf("{%q:%q}", "error", err.Error()))
+			output = toolFailureOutput(err.Error())
 		} else if len(produced) > 0 {
 			output = produced
 		}
 	} else if config.Respond != nil {
 		produced, err := config.Respond(name, arguments)
 		if err != nil {
-			output = json.RawMessage(fmt.Sprintf("{%q:%q}", "error", err.Error()))
+			output = toolFailureOutput(err.Error())
 		} else if len(produced) > 0 {
 			output = produced
 		}
@@ -1180,6 +1183,14 @@ func (recorder *recorder) answer(
 		return fmt.Errorf("resume after %s: %w", name, err)
 	}
 	return nil
+}
+
+func toolFailureOutput(message string) json.RawMessage {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "tool invocation failed"
+	}
+	return json.RawMessage("Error: " + message)
 }
 
 func encodePCM(samples []int16) []byte {

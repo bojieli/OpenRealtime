@@ -381,7 +381,7 @@ func runCase(
 			actionMu.Lock()
 			actions = append(actions, record)
 			actionMu.Unlock()
-			return json.RawMessage(`{"error":"action budget exhausted"}`), nil
+			return nil, errors.New(record.Error)
 		}
 		toolResult, dispatchErr := dispatcher.Dispatch(toolContext, trajectory.ToolCall{
 			CallID: request.CallID, Name: request.Name, Arguments: request.Arguments,
@@ -396,10 +396,10 @@ func runCase(
 		actions = append(actions, record)
 		actionMu.Unlock()
 		if dispatchErr != nil {
-			return json.RawMessage(fmt.Sprintf(`{"error":%q}`, dispatchErr.Error())), nil
+			return nil, dispatchErr
 		}
 		if toolResult.Error != "" {
-			return json.RawMessage(fmt.Sprintf(`{"error":%q}`, toolResult.Error)), nil
+			return nil, errors.New(toolResult.Error)
 		}
 		return toolResult.Output, nil
 	}

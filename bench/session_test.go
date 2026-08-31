@@ -416,6 +416,58 @@ func TestSessionNegotiatesAndStreamsLiveVideo(t *testing.T) {
 	}
 }
 
+func TestSessionToolHandlerFailureUsesCanonicalRealtimeErrorOutput(t *testing.T) {
+	stub := &realtimeStub{done: make(chan struct{})}
+	server := httptest.NewServer(http.HandlerFunc(stub.serve))
+	t.Cleanup(server.Close)
+
+	transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+		Endpoint:          "ws" + strings.TrimPrefix(server.URL, "http"),
+		Timeout:           5 * time.Second,
+		WorkingTimeout:    time.Second,
+		TrailingSilence:   time.Millisecond,
+		PostPlaybackQuiet: 50 * time.Millisecond,
+		Video: []bench.VideoStream{{
+			Source: "screen", Width: 640, Height: 360, Interval: 10 * time.Millisecond,
+			Capture: func(context.Context) ([]byte, error) {
+				return []byte{0xff, 0xd8, 0xff, 0xd9}, nil
+			},
+		}},
+		HandleTool: func(context.Context, bench.ToolRequest) (json.RawMessage, error) {
+			return nil, errors.New("action budget exhausted")
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("play failed tool result: %v", err)
+	}
+	select {
+	case <-stub.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the failed-tool session did not close")
+	}
+	const want = "Error: action budget exhausted"
+	sawWire, sawTranscript := false, false
+	for _, message := range stub.snapshot() {
+		if message["type"] != "conversation.item.create" {
+			continue
+		}
+		item, _ := message["item"].(map[string]any)
+		if item["call_id"] == "fast_click_1" && item["output"] == want {
+			sawWire = true
+		}
+	}
+	for _, moment := range transcript.Moments {
+		if moment.Kind == bench.MomentToolResult && moment.CallID == "fast_click_1" &&
+			moment.Text == want {
+			sawTranscript = true
+		}
+	}
+	if !sawWire || !sawTranscript {
+		t.Fatalf("failed tool result wire=%t transcript=%t moments=%+v messages=%+v",
+			sawWire, sawTranscript, transcript.Moments, stub.snapshot())
+	}
+}
+
 func TestSessionObserverSelectionValidationPrecedesDial(t *testing.T) {
 	for _, observers := range [][]string{{" duplicate", "duplicate"}, {"duplicate", "duplicate"}} {
 		_, err := bench.PlaySamples(t.Context(), bench.SessionConfig{

@@ -24,7 +24,7 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v3"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v4"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumActivationMemory   = 1_000_000
@@ -35,7 +35,9 @@ const (
 // proposal authority while grounding cognition in each newest screen/camera
 // prefix. Exactly one generation may be unsettled: a result with no proposal
 // releases the next changed frame, while a proposed effect remains closed
-// until a screen observation names its exact canonical tool result. The
+// until a screen observation names its exact canonical tool result. A failed
+// result terminally clears that selected intent at the same visual safe point;
+// it cannot reopen cognition without a new canonical user task. The
 // selected user item must be a canonical causal ancestor of the current visual
 // tail; ProposalAdmission independently re-derives and checks that authority,
 // so this element cannot weaken the shared effect contract.
@@ -43,7 +45,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      3,
+		Revision:      4,
 		Ports: []element.Port{
 			{Name: "committed", Direction: element.Input,
 				Type: stateelements.ObservationCommitOutcomeType(), Cardinality: element.One,
@@ -257,7 +259,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:3", ActivationDescriptor()); err != nil {
+		"implementation:4", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -439,6 +441,11 @@ func (runner *activationRunner) acceptCommit(
 					"visual consequence does not settle the one active computer effect")
 			}
 			runner.active = nil
+			if resultItem.ToolResult.Error != "" {
+				runner.intent = nil
+				return runner.ignore(ctx, envelope, commit, "effect_failed",
+					"the failed computer effect terminally cleared the selected user intent")
+			}
 		}
 	}
 	generationID := activationGenerationID(runner.config.Role, envelope.SessionID, commit, basis.ID)
