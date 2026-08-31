@@ -31,7 +31,7 @@ func newAggregateFixture(t testing.TB, cases ...string) aggregateFixture {
     "category": "latency",
     "start_ms": 1,
     "end_ms": 2,
-    "evidence": "A short pause from 1-2 ms is audible.",
+    "evidence": "A short pause is audible from 1 ms to 2 ms.",
     "impact": "The response feels slightly delayed."
   }],
   "minor_observations": [],

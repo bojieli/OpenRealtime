@@ -653,6 +653,30 @@ func TestMeetingRunHermeticGraphNativeAllFourWithReviewBundle(t *testing.T) {
 			t.Fatalf("graph-native review attempt = %+v", attempt)
 		}
 	}
+	receipts := bundle.EvaluationReceipts()
+	if len(receipts) != len(manifest.Attempts) {
+		t.Fatalf("graph-native evaluation receipts = %d, want %d",
+			len(receipts), len(manifest.Attempts))
+	}
+	for index, attempt := range manifest.Attempts {
+		mediaDirectory := filepath.Join(directory, filepath.FromSlash(filepath.Dir(attempt.MediaManifest.Path)))
+		mediaManifest, err := reviewmedia.VerifyBundle(mediaDirectory, attempt.MediaManifest.SHA256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		maximumMS, err := meetingFindingTimestampMaximumMS(mediaManifest.AttemptEndUS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opened, err := revieweval.VerifyEvaluationBundle(
+			context.Background(), revieweval.EvaluationBundleOptions{Directory: receipts[index].Directory},
+			receipts[index],
+		)
+		if err != nil || opened.Record.FindingTimestampMaximumMS != maximumMS {
+			t.Fatalf("graph-native review timeline case=%s maximum=%d want=%d error=%v",
+				attempt.Case, opened.Record.FindingTimestampMaximumMS, maximumMS, err)
+		}
+	}
 }
 
 func TestMeetingRunHermeticGraphNativeAllFourRealFFmpegReviewEndToEnd(t *testing.T) {
@@ -907,6 +931,88 @@ func TestMeetingReviewBundleSealsSourceBeforeReviewerAndRetriesOnlyMissingSiblin
 		if counts[task.ID] != want {
 			t.Fatalf("reviewer calls for %s = %d, want %d", task.ID, counts[task.ID], want)
 		}
+	}
+}
+
+func TestMeetingReviewBundleReviewsOnlyAttemptsAdmittedToSealedSource(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "partial-source-population")
+	reviewer := &fixtureMeetingReviewer{}
+	lease := openFixtureMeetingReviewer(t, reviewer)
+	bundle, err := NewReviewBundle(ReviewBundleOptions{Directory: directory, Reviewer: lease})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeMeetingReviewTreeRemovable(t, directory)
+	result := completeFixtureMeetingReviewAttempts(t, bundle)
+
+	// Corrupt only the provider-neutral projection for the second case after
+	// earlier evidence has been retained. The media receipt and deterministic
+	// attempt stay intact, but PrepareContext must refuse the nonexistent file.
+	// This exercises the exact boundary that previously left the mutable attempt
+	// in the advisory input map after omitting it from the source manifest.
+	omitted := Suite()[1].ID
+	bundle.mu.Lock()
+	pending := bundle.pending[omitted]
+	if pending.MediaReceipt.Manifest.Audio == nil {
+		bundle.mu.Unlock()
+		t.Fatal("fixture media has no retained audio")
+	}
+	pending.MediaReceipt.Manifest.Audio.Path = "missing-provider-input.wav"
+	bundle.pending[omitted] = pending
+	bundle.mu.Unlock()
+
+	finishErr := bundle.FinishSuite(context.Background(), result)
+	if finishErr == nil || !strings.Contains(finishErr.Error(), "retained 3 of 4 attempts") {
+		t.Fatalf("diagnostic partial source finish = %v", finishErr)
+	}
+	sourceReceipt, err := bundle.SourceReceipt()
+	if err != nil {
+		t.Fatal(err)
+	}
+	openedSource, err := VerifyMeetingReviewSource(
+		context.Background(), sourceReceipt.Directory, sourceReceipt,
+	)
+	if err != nil {
+		t.Fatalf("verify diagnostic source: %v", err)
+	}
+	if openedSource.Manifest.Complete || openedSource.Manifest.Reportable ||
+		len(openedSource.Manifest.Attempts) != ExpectedTasks()-1 ||
+		len(openedSource.Manifest.Missing) != 1 ||
+		openedSource.Manifest.Missing[0].Case != omitted ||
+		!strings.Contains(openedSource.Manifest.Missing[0].Reason,
+			"stage=prepare_context code=media_refused") {
+		t.Fatalf("diagnostic source population = %+v", openedSource.Manifest)
+	}
+	for _, attempt := range openedSource.Manifest.Attempts {
+		if attempt.Case == omitted {
+			t.Fatal("PrepareContext-refused attempt escaped into the sealed source population")
+		}
+	}
+
+	reviewer.mu.Lock()
+	requests := slices.Clone(reviewer.requests)
+	reviewer.mu.Unlock()
+	if len(requests) != ExpectedTasks()-1 || slices.Contains(requests, omitted) {
+		t.Fatalf("reviewer requests = %v, omitted case %q must not be called", requests, omitted)
+	}
+	if _, err := bundle.Receipt(); err == nil {
+		t.Fatal("incomplete diagnostic review unexpectedly received a reportable commit receipt")
+	}
+	manifest := readMeetingReviewManifest(t, directory)
+	if manifest.Complete || manifest.Reportable ||
+		!reflect.DeepEqual(manifest.Missing, openedSource.Manifest.Missing) ||
+		len(manifest.Attempts) != ExpectedTasks()-1 {
+		t.Fatalf("diagnostic review population = %+v", manifest)
+	}
+	if retryErr := bundle.FinishSuite(context.Background(), result); retryErr == nil ||
+		retryErr.Error() != finishErr.Error() {
+		t.Fatalf("finished diagnostic retry = %v, want stable %v", retryErr, finishErr)
+	}
+	reviewer.mu.Lock()
+	retryRequests := slices.Clone(reviewer.requests)
+	reviewer.mu.Unlock()
+	if !reflect.DeepEqual(retryRequests, requests) {
+		t.Fatalf("finished diagnostic retried provider calls: before %v, after %v", requests, retryRequests)
 	}
 }
 
@@ -1570,6 +1676,48 @@ func TestMeetingReviewBundleFinalVerificationRejectsPostReviewMediaMutation(t *t
 	}
 	if _, err := bundle.SourceReceipt(); err == nil {
 		t.Fatal("mutated media unexpectedly produced a sealed source receipt")
+	}
+}
+
+func TestSealMeetingReviewSourceRetainsRequiredEmptyNamespaces(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "source")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	makeMeetingReviewTreeRemovable(t, directory)
+	for _, relative := range []string{"contexts", "media"} {
+		if err := os.Mkdir(filepath.Join(directory, relative), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(directory, "media", "diagnostic.bin"), []byte("diagnostic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealMeetingReviewSourceTreeContext(context.Background(), directory); err != nil {
+		t.Fatalf("seal diagnostic source with empty context namespace: %v", err)
+	}
+	for _, relative := range []string{".", "contexts", "media"} {
+		info, err := os.Stat(filepath.Join(directory, relative))
+		if err != nil || info.Mode().Perm() != 0o500 {
+			t.Fatalf("sealed source directory %q mode=%v error=%v", relative, info, err)
+		}
+	}
+
+	unexpected := filepath.Join(t.TempDir(), "source")
+	if err := os.Mkdir(unexpected, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	makeMeetingReviewTreeRemovable(t, unexpected)
+	for _, relative := range []string{"contexts", "media", "unreviewed"} {
+		if err := os.Mkdir(filepath.Join(unexpected, relative), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(unexpected, "media", "diagnostic.bin"), []byte("diagnostic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealMeetingReviewSourceTreeContext(context.Background(), unexpected); err == nil {
+		t.Fatal("unexpected empty source namespace was promoted into the sealed tree")
 	}
 }
 
@@ -2471,6 +2619,25 @@ func TestMeetingReviewTimelineUsesExactMicrosecondBoundary(t *testing.T) {
 	}
 	if !meetingAssessmentBeyondMedia(assessment(&two), 1_999) {
 		t.Fatal("two-millisecond finding was admitted after a 1.999ms recording")
+	}
+	for _, test := range []struct {
+		endUS int64
+		want  int64
+	}{
+		{endUS: 1_000, want: 1},
+		{endUS: 1_999, want: 1},
+		{endUS: 2_000, want: 2},
+	} {
+		got, err := meetingFindingTimestampMaximumMS(test.endUS)
+		if err != nil || got != test.want {
+			t.Fatalf("finding timestamp maximum for %dus = %d, %v; want %d",
+				test.endUS, got, err, test.want)
+		}
+	}
+	for _, invalid := range []int64{-1, 0, 999} {
+		if _, err := meetingFindingTimestampMaximumMS(invalid); err == nil {
+			t.Fatalf("finding timestamp maximum admitted %dus", invalid)
+		}
 	}
 }
 

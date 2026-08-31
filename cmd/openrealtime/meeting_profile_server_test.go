@@ -7,10 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -138,38 +140,29 @@ func TestMeetingProductionProfileUsesTheSharedAuthenticatedRealtimeServer(t *tes
 				"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24_000}},
 			},
 			"openrealtime": map[string]any{
-				"version": openrealtime.Version,
-				"debug":   map[string]any{"enabled": true, "categories": []string{"session"}},
+				"version":  openrealtime.Version,
+				"supports": []string{string(openrealtime.FeatureVideoInput)},
+				"debug":    map[string]any{"enabled": true, "categories": []string{"session"}},
 			},
 		},
 	})
 	updated := client.awaitType(5*time.Second, "session.updated")
+	updatedSession, ok := updated["session"].(map[string]any)
+	if !ok {
+		t.Fatalf("Meeting session.updated = %+v", updated)
+	}
+	extension, ok := updatedSession["openrealtime"].(map[string]any)
+	if !ok {
+		t.Fatalf("Meeting OpenRealtime negotiation = %+v", updatedSession)
+	}
+	video, ok := extension["video"].(map[string]any)
+	fps, fpsOK := video["fps_cap"].(float64)
+	if !ok || !fpsOK || int(fps) != (frozen.Configuration.Foreground.FrameRateMilliHz+999)/1_000 {
+		t.Fatalf("Meeting negotiated video cadence = %+v, configured %d millihertz",
+			video, frozen.Configuration.Foreground.FrameRateMilliHz)
+	}
 	access := meetingInspectionAccess(t, updated)
-
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
-		server.URL+access.Path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Authorization", "Bearer "+deploymentToken)
-	request.Header.Set(gateway.InspectionTokenHeader, access.Token)
-	inspectionResponse, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer inspectionResponse.Body.Close()
-	payload, err := io.ReadAll(inspectionResponse.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if inspectionResponse.StatusCode != http.StatusOK {
-		t.Fatalf("Meeting authenticated inspection status=%d payload=%s",
-			inspectionResponse.StatusCode, payload)
-	}
-	var live inspect.Live
-	if err := json.Unmarshal(payload, &live); err != nil {
-		t.Fatal(err)
-	}
+	live := awaitMeetingExactLiveResolution(t, endpoint, deploymentToken, access, frozen)
 	graph := frozen.Plan.Graph()
 	if live.GraphID != graph.ID || live.GraphRevision != graph.Revision ||
 		live.Fingerprint != graph.Fingerprint || live.Adapter == nil ||
@@ -177,6 +170,43 @@ func TestMeetingProductionProfileUsesTheSharedAuthenticatedRealtimeServer(t *tes
 		live.Adapter.Runtime != frozen.Profile.Adapter.RuntimeArtifact ||
 		live.Adapter.ProfileFingerprint == "" || len(live.Nodes) != len(graph.Nodes) {
 		t.Fatalf("Meeting live graph evidence = %+v, graph=%+v", live, graph)
+	}
+}
+
+func awaitMeetingExactLiveResolution(
+	t testing.TB,
+	endpoint string,
+	deploymentToken string,
+	access openrealtime.InspectionAccess,
+	frozen frozenMeetingProfile,
+) inspect.Live {
+	t.Helper()
+	client := bench.LiveInspectionClient{
+		Endpoint: endpoint, DeploymentToken: deploymentToken,
+		HTTPClient: &http.Client{Timeout: 5 * time.Second},
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	var lastErr error
+	for {
+		snapshot, err := client.Snapshot(context.Background(), access)
+		if err != nil {
+			t.Fatalf("read authenticated Meeting inspection: %v", err)
+		}
+		resolution, err := bench.AuthorExpectedResolutionFromInspection(
+			frozen.Plan.Graph(), frozen.Execution.Graph.Configuration, snapshot,
+		)
+		if err == nil {
+			if !reflect.DeepEqual(resolution, frozen.Resolution) {
+				t.Fatalf("authenticated Meeting resolution drifted\nfrozen: %+v\n  live: %+v",
+					frozen.Resolution, resolution)
+			}
+			return snapshot
+		}
+		lastErr = err
+		if time.Now().After(deadline) {
+			t.Fatalf("Meeting inspection never reached exact live resolution: %v", lastErr)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

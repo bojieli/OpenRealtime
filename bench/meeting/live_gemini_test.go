@@ -161,12 +161,17 @@ func requireChromiumMeetingReview(
 		t.Fatal(err)
 	}
 	manifest, err := VerifyReviewBundle(receipt.Directory, receipt.ManifestSHA256)
-	if err != nil || !manifest.Complete || manifest.Reportable || manifest.CoreReportable ||
+	if err != nil || !manifest.Complete || manifest.Reportable ||
 		len(manifest.Attempts) != ExpectedTasks() || len(manifest.Missing) != 0 {
 		t.Fatalf("all-four Meeting review manifest = %+v, %v", manifest, err)
 	}
+	coreErr := result.Reportable()
+	if manifest.CoreReportable != (coreErr == nil) {
+		t.Fatalf("all-four Meeting core reportability = %t, deterministic result error = %v",
+			manifest.CoreReportable, coreErr)
+	}
 	for _, attempt := range manifest.Attempts {
-		if !attempt.Deterministic.Passed || attempt.ReviewStatus != "complete" ||
+		if attempt.Reportable || !attempt.Deterministic.Passed || attempt.ReviewStatus != "complete" ||
 			attempt.VideoStatus != "retained-playable-video" || len(attempt.Media) != 2 ||
 			attempt.Assessment == nil || !attempt.Assessment.MediaUsable ||
 			!attempt.Assessment.AgreesWithDeterministic ||

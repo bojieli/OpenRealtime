@@ -99,9 +99,9 @@ func TestMeetingProfileCommandPublishesExactCreateOnlyCampaign(t *testing.T) {
 	if err := runMeetingProfileFreezeWithDependencies(arguments, &output, dependencies); err != nil {
 		t.Fatal(err)
 	}
-	if verifier.resolve != 1 || verifier.verify < 2 {
+	if verifier.resolve.Load() != 1 || verifier.verify.Load() < 2 {
 		t.Fatalf("Meeting profile deployment proof calls resolve=%d verify=%d",
-			verifier.resolve, verifier.verify)
+			verifier.resolve.Load(), verifier.verify.Load())
 	}
 	entries, err := os.ReadDir(campaign)
 	if err != nil {

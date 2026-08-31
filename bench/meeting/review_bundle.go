@@ -1014,8 +1014,12 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 		return retryFinish(errors.New("meeting review source result identity or summary is invalid"))
 	}
 	if sourceReceipt == nil || sourceManifest == nil {
-		var sourceErr error
-		attempts, sourceValue, receiptValue, sourceErr := bundle.publishDeterministicMeetingSource(
+		var (
+			sourceValue  ReviewSourceManifest
+			receiptValue ReviewSourceReceipt
+			sourceErr    error
+		)
+		attempts, sourceValue, receiptValue, sourceErr = bundle.publishDeterministicMeetingSource(
 			ctx, root, result, resultPayload, finishInputSHA256,
 			attempts, pending, failures, resultTasks,
 		)
@@ -1028,6 +1032,7 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 		bundle.sourceReceipt = &receiptValue
 		bundle.sourceManifest = &sourceValue
 		bundle.sourceInputSHA256 = finishInputSHA256
+		bundle.attempts = make(map[string]ReviewAttempt, len(attempts))
 		for name, attempt := range attempts {
 			bundle.attempts[name] = cloneReviewAttempt(attempt)
 		}
@@ -1040,7 +1045,12 @@ func (bundle *ReviewBundle) FinishSuite(ctx context.Context, result bench.Result
 			!reflect.DeepEqual(opened.Manifest, *sourceManifest) {
 			return retryFinish(errors.New("sealed meeting review source failed retry verification"))
 		}
+		// A retry or fresh-process continuation must never recover advisory
+		// inputs from mutable, pre-publication state. Reconstruct them only from
+		// the independently verified source manifest.
+		attempts = meetingReviewAttemptsFromSource(opened.Manifest)
 	}
+	mergeMeetingSourceMissing(failures, sourceManifest.Missing)
 	externalSourceReceipt, externalSourceErr := ReadReviewSourceReceipt(ctx, bundle.sourceReceiptPath)
 	if externalSourceErr != nil || externalSourceReceipt.Directory != sourceReceipt.Directory ||
 		!samePortableMeetingSourceReceipt(externalSourceReceipt, *sourceReceipt) {
@@ -1519,10 +1529,12 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 	} else {
 		manifest.CoreReportable = true
 	}
+	// Advisory review input must be projected exclusively from the source
+	// population that this function actually seals. In particular, retaining a
+	// pre-publication attempt here would let a later PrepareContext refusal
+	// escape the source manifest and then reach the provider on an unsealed
+	// context path.
 	updated := make(map[string]ReviewAttempt, len(attempts))
-	for name, attempt := range attempts {
-		updated[name] = cloneReviewAttempt(attempt)
-	}
 	for _, task := range Suite() {
 		attempt, attemptOK := attempts[task.ID]
 		input, pendingOK := pending[task.ID]
@@ -1567,15 +1579,34 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 			return nil, ReviewSourceManifest{}, ReviewSourceReceipt{},
 				errors.New("exact meeting source media tree changed before publication")
 		}
+		findingTimestampMaximumMS, err := meetingFindingTimestampMaximumMS(
+			input.MediaReceipt.Manifest.AttemptEndUS,
+		)
+		if err != nil {
+			manifest.Missing = append(manifest.Missing, ReviewMissing{
+				Case: task.ID, Reason: "sealed media has no exact advisory timeline bound",
+			})
+			continue
+		}
 		preparedRequest, err := revieweval.PrepareContext(ctx, revieweval.Request{
 			AttemptID: meetingReviewAttemptID(task.ID, resultSHA256),
 			Suite:     SuiteName, Case: task.ID, Trial: attempt.Trial,
-			RootDirectory: input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
+			FindingTimestampMaximumMS: findingTimestampMaximumMS,
+			RootDirectory:             input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
 			Media: input.MediaReceipt.Manifest.ReviewMedia(), SensitiveValues: slices.Clone(bundle.sensitive),
 		})
 		if err != nil || !meetingReviewContextsEqual(preparedRequest.Context, contextPayload) {
+			code := meetingReviewPreparationFailureCode(err)
+			if err == nil {
+				code = "noncanonical_context"
+			}
+			reason := fmt.Sprintf(
+				"provider-neutral review request preparation failed before source publication [stage=prepare_context code=%s]",
+				code,
+			)
+			failures[task.ID] = reason
 			manifest.Missing = append(manifest.Missing, ReviewMissing{
-				Case: task.ID, Reason: "provider-neutral review request preparation failed before source publication",
+				Case: task.ID, Reason: reason,
 			})
 			continue
 		}
@@ -1618,6 +1649,51 @@ func (bundle *ReviewBundle) publishDeterministicMeetingSource(
 		return nil, ReviewSourceManifest{}, ReviewSourceReceipt{}, err
 	}
 	return updated, opened.Manifest, opened.Receipt, nil
+}
+
+func meetingReviewPreparationFailureCode(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline_exceeded"
+	}
+	// The retained code is deliberately from a closed vocabulary. It provides
+	// enough stage-level diagnosis for a partial source population without
+	// copying a provider-neutral error that may contain a credential or raw
+	// request material into the review bundle.
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "sensitive"), strings.Contains(message, "secret"):
+		return "sensitive_evidence"
+	case strings.Contains(message, "media"):
+		return "media_refused"
+	case strings.Contains(message, "context"):
+		return "context_refused"
+	case strings.Contains(message, "prompt"):
+		return "prompt_refused"
+	default:
+		return "request_refused"
+	}
+}
+
+func meetingReviewAttemptsFromSource(manifest ReviewSourceManifest) map[string]ReviewAttempt {
+	attempts := make(map[string]ReviewAttempt, len(manifest.Attempts))
+	for _, sourceAttempt := range manifest.Attempts {
+		attempts[sourceAttempt.Case] = prefixMeetingSourceAttempt(sourceAttempt)
+	}
+	return attempts
+}
+
+func mergeMeetingSourceMissing(failures map[string]string, missing []ReviewMissing) {
+	for _, item := range missing {
+		if failures[item.Case] == "" {
+			failures[item.Case] = item.Reason
+		}
+	}
 }
 
 func (bundle *ReviewBundle) recoverMeetingReviewSource(
@@ -1663,11 +1739,7 @@ func (bundle *ReviewBundle) recoverMeetingReviewSource(
 		return nil, ReviewSourceBundle{}, true,
 			errors.New("recover staged meeting source for the exact result")
 	}
-	attempts := make(map[string]ReviewAttempt, len(opened.Manifest.Attempts))
-	for _, sourceAttempt := range opened.Manifest.Attempts {
-		attempts[sourceAttempt.Case] = prefixMeetingSourceAttempt(sourceAttempt)
-	}
-	return attempts, opened, true, nil
+	return meetingReviewAttemptsFromSource(opened.Manifest), opened, true, nil
 }
 
 func (bundle *ReviewBundle) prepareMeetingReviews(
@@ -1739,10 +1811,21 @@ func (bundle *ReviewBundle) prepareMeetingReviews(
 			}
 			continue
 		}
+		findingTimestampMaximumMS, timelineErr := meetingFindingTimestampMaximumMS(
+			verified.AttemptEndUS,
+		)
+		if timelineErr != nil {
+			attempt = failedMeetingReviewAttempt(attempt, "sealed source media has no advisory timeline bound")
+			prepared[task.ID] = preparedMeetingReview{
+				Attempt: attempt, Pending: input.clone(), ContextPayload: contextPayload,
+			}
+			continue
+		}
 		request := revieweval.Request{
 			AttemptID: meetingReviewAttemptID(task.ID, resultSHA256),
 			Suite:     SuiteName, Case: task.ID, Trial: attempt.Trial,
-			RootDirectory: input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
+			FindingTimestampMaximumMS: findingTimestampMaximumMS,
+			RootDirectory:             input.MediaReceipt.Directory, Context: slices.Clone(contextPayload),
 			Media: verified.ReviewMedia(), SensitiveValues: slices.Clone(bundle.sensitive),
 		}
 		adopted, found, publication, adoptErr := bundle.beginMeetingReviewEvaluation(
@@ -1767,7 +1850,9 @@ func (bundle *ReviewBundle) prepareMeetingReviews(
 		if cause := context.Cause(ctx); cause != nil {
 			return prepared, errors.Join(cause, closeMeetingEvaluationPublication(publication))
 		}
-		inputErr := verifyMeetingEvaluationInputs(evaluation, contextPayload, verified.ReviewMedia())
+		inputErr := verifyMeetingEvaluationInputs(
+			evaluation, contextPayload, verified.ReviewMedia(), findingTimestampMaximumMS,
+		)
 		failureReason := ""
 		switch {
 		case reviewErr != nil:
@@ -1857,11 +1942,13 @@ func meetingReviewAttemptID(caseID, resultSHA256 string) string {
 
 func verifyMeetingEvaluationInputs(
 	evaluation revieweval.Evaluation, contextPayload []byte, media []revieweval.Media,
+	findingTimestampMaximumMS int64,
 ) error {
 	if !meetingReviewContextsEqual(evaluation.Context, contextPayload) ||
 		evaluation.Record.ContextSHA256 != reviewDigest(evaluation.Context) ||
+		evaluation.Record.FindingTimestampMaximumMS != findingTimestampMaximumMS ||
 		len(evaluation.Record.Media) != len(media) || len(evaluation.Media) != len(media) {
-		return errors.New("secondary review context or media count differs from its exact input")
+		return errors.New("secondary review context, timeline, or media count differs from its exact input")
 	}
 	for index, expected := range media {
 		item := evaluation.Media[index]
@@ -2033,6 +2120,7 @@ func (bundle *ReviewBundle) beginMeetingReviewEvaluation(
 	record := opened.Record
 	if record.Provider != bundle.reviewerID || record.AttemptID != request.AttemptID ||
 		record.Suite != request.Suite || record.Case != request.Case || record.Trial != request.Trial ||
+		record.FindingTimestampMaximumMS != request.FindingTimestampMaximumMS ||
 		record.ContextSHA256 != attempt.Context.SHA256 ||
 		meetingAssessmentBeyondMedia(record.Assessment, media.AttemptEndUS) ||
 		!meetingReviewRecordMediaMatches(record.Media, media.ReviewMedia(), pending.Media) {
@@ -2184,6 +2272,17 @@ func meetingAssessmentBeyondMedia(assessment revieweval.Assessment, attemptEndUS
 		}
 	}
 	return assessment.Limitations == nil
+}
+
+func meetingFindingTimestampMaximumMS(attemptEndUS int64) (int64, error) {
+	if attemptEndUS <= 0 {
+		return 0, errors.New("meeting review media has no positive terminal timestamp")
+	}
+	maximumMS := attemptEndUS / 1000
+	if maximumMS <= 0 {
+		return 0, errors.New("meeting review media is shorter than one advisory millisecond")
+	}
+	return maximumMS, nil
 }
 
 func meetingMillisecondBeyondUS(milliseconds, attemptEndUS int64) bool {
@@ -2840,11 +2939,19 @@ func VerifyReviewBundle(directory, expectedManifestSHA256 string) (ReviewManifes
 				return ReviewManifest{}, err
 			}
 		}
+		findingTimestampMaximumMS, err := meetingFindingTimestampMaximumMS(
+			verifiedMedia.AttemptEndUS,
+		)
+		if err != nil {
+			return ReviewManifest{}, errors.New("meeting review source has no exact advisory timeline bound")
+		}
 		record := opened.Record
 		if record.Provider != manifest.Reviewer ||
 			record.AttemptID != meetingReviewAttemptID(attempt.Case, manifest.Result.SHA256) ||
 			record.Suite != SuiteName || record.Case != attempt.Case ||
-			record.Trial != attempt.Trial || record.ContextSHA256 != attempt.Context.SHA256 ||
+			record.Trial != attempt.Trial ||
+			record.FindingTimestampMaximumMS != findingTimestampMaximumMS ||
+			record.ContextSHA256 != attempt.Context.SHA256 ||
 			record.RequestFingerprint != attempt.Assessment.RequestSHA256 ||
 			!reflect.DeepEqual(meetingReviewResponse(record), *attempt.Assessment) ||
 			meetingAssessmentBeyondMedia(record.Assessment, verifiedMedia.AttemptEndUS) ||
@@ -2861,7 +2968,7 @@ func VerifyReviewBundle(directory, expectedManifestSHA256 string) (ReviewManifes
 	if !bytes.Equal(reviewPayload, []byte(renderMeetingReview(manifest))) {
 		return ReviewManifest{}, errors.New("meeting human review document is not the canonical render")
 	}
-	if err := verifyMeetingReviewExactTree(verificationRoot, expectedFiles); err != nil {
+	if err := verifyMeetingReviewExactTree(verificationRoot, expectedFiles, nil); err != nil {
 		return ReviewManifest{}, err
 	}
 	manifestArtifact.SHA256 = expectedManifestSHA256
@@ -3004,7 +3111,9 @@ func readMeetingReviewFileContext(
 	return payload, info, nil
 }
 
-func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]ReviewArtifact) error {
+func verifyMeetingReviewExactTree(
+	root *os.Root, expectedFiles map[string]ReviewArtifact, requiredDirectories []string,
+) error {
 	if root == nil {
 		return errors.New("meeting review exact-tree verifier has no anchored root")
 	}
@@ -3019,7 +3128,16 @@ func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]Review
 			}
 		}
 	}
+	for _, directory := range requiredDirectories {
+		directory = filepath.ToSlash(directory)
+		if directory == "." || filepath.IsAbs(directory) || filepath.Clean(directory) != directory ||
+			strings.Contains(directory, "\\") {
+			return errors.New("meeting review exact-tree required directory is invalid")
+		}
+		expectedDirectories[directory] = struct{}{}
+	}
 	seenFiles := make(map[string]struct{}, len(expectedFiles))
+	seenDirectories := make(map[string]struct{}, len(expectedDirectories))
 	identities := make([]os.FileInfo, 0, len(expectedFiles))
 	err := fs.WalkDir(root.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -3034,10 +3152,12 @@ func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]Review
 			if !entry.IsDir() {
 				return errors.New("meeting review root is not a directory")
 			}
+			seenDirectories[relative] = struct{}{}
 			return nil
 		}
 		if entry.IsDir() {
 			if _, expected := expectedDirectories[relative]; expected {
+				seenDirectories[relative] = struct{}{}
 				return nil
 			}
 			return errors.New("meeting review tree contains an unexpected directory")
@@ -3060,7 +3180,8 @@ func verifyMeetingReviewExactTree(root *os.Root, expectedFiles map[string]Review
 		seenFiles[relative] = struct{}{}
 		return nil
 	})
-	if err != nil || len(seenFiles) != len(expectedFiles) {
+	if err != nil || len(seenFiles) != len(expectedFiles) ||
+		len(seenDirectories) != len(expectedDirectories) {
 		return errors.New("meeting review tree differs from its exact manifest")
 	}
 	return nil
@@ -3071,6 +3192,18 @@ func sealMeetingReviewTree(directory string) error {
 }
 
 func sealMeetingReviewTreeContext(ctx context.Context, directory string) (resultErr error) {
+	return sealMeetingReviewTreeWithDirectories(ctx, directory, nil)
+}
+
+func sealMeetingReviewSourceTreeContext(ctx context.Context, directory string) error {
+	return sealMeetingReviewTreeWithDirectories(
+		ctx, directory, []string{"contexts", "media"},
+	)
+}
+
+func sealMeetingReviewTreeWithDirectories(
+	ctx context.Context, directory string, requiredDirectories []string,
+) (resultErr error) {
 	if ctx == nil {
 		return errors.New("seal meeting review tree: nil context")
 	}
@@ -3186,7 +3319,7 @@ func sealMeetingReviewTreeContext(ctx context.Context, directory string) (result
 	if err := verifyMeetingSourceRootIdentity(absolute, root, rootInfo); err != nil {
 		return err
 	}
-	if err := verifyMeetingReviewExactTree(root, expectedFiles); err != nil {
+	if err := verifyMeetingReviewExactTree(root, expectedFiles, requiredDirectories); err != nil {
 		return errors.New("sealed meeting review tree differs from its exact pre-seal snapshot")
 	}
 	return verifyMeetingSourceRootIdentity(absolute, root, rootInfo)

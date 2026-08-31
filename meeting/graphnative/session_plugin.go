@@ -294,10 +294,12 @@ func validateSessionPluginConfig(config SessionPluginConfig) error {
 	if err := continuation.ValidateDescriptor(config.Foreground.Descriptor); err != nil {
 		return fmt.Errorf("meeting foreground descriptor: %w", err)
 	}
+	foregroundToolAuthority := config.Foreground.Descriptor.EffectiveToolAuthority()
 	if config.Foreground.Descriptor.Phase != trajectory.PhaseFast ||
-		config.Foreground.Descriptor.EffectiveToolAuthority() != continuation.ToolAuthorityPropose ||
+		(foregroundToolAuthority != continuation.ToolAuthorityPropose &&
+			foregroundToolAuthority != continuation.ToolAuthorityExecute) ||
 		config.Foreground.Descriptor.EffectiveSpeechAuthority() != continuation.SpeechAuthorityVoice {
-		return errors.New("meeting foreground descriptor must be a proposal-only, voiced fast provider")
+		return errors.New("meeting foreground descriptor must be a proposal-or-execution, voiced fast provider")
 	}
 	if config.Visual.Factory == nil {
 		return errors.New("meeting visual plugin requires a factory")

@@ -166,13 +166,15 @@ type meetingLocalForegroundConfig struct {
 	VisionModel   string `json:"vision_model"`
 	VisionURL     string `json:"vision_url"`
 
-	MaxOutputTokens   int   `json:"max_output_tokens"`
-	ASRCadenceMS      int64 `json:"asr_cadence_ms"`
-	FrameRateMilliHz  int   `json:"frame_rate_millihz"`
-	RequestTimeoutMS  int64 `json:"request_timeout_ms"`
-	SentenceMinRunes  int   `json:"sentence_min_runes"`
-	AttachKeyframes   bool  `json:"attach_keyframes"`
-	ExternalVideoGate bool  `json:"external_video_gate"`
+	MaxOutputTokens       int   `json:"max_output_tokens"`
+	VisualReflexMaxTokens int   `json:"visual_reflex_max_output_tokens"`
+	VisualReflexTimeoutMS int64 `json:"visual_reflex_timeout_ms"`
+	ASRCadenceMS          int64 `json:"asr_cadence_ms"`
+	FrameRateMilliHz      int   `json:"frame_rate_millihz"`
+	RequestTimeoutMS      int64 `json:"request_timeout_ms"`
+	SentenceMinRunes      int   `json:"sentence_min_runes"`
+	AttachKeyframes       bool  `json:"attach_keyframes"`
+	ExternalVideoGate     bool  `json:"external_video_gate"`
 
 	ModelDeployment  inspect.ArtifactIdentity `json:"model_deployment"`
 	ASRDeployment    inspect.ArtifactIdentity `json:"asr_deployment"`
@@ -194,7 +196,7 @@ func defaultMeetingLocalConfiguration(
 	executable inspect.ArtifactIdentity, deployments meetingDeploymentIdentities,
 ) meetingLocalConfiguration {
 	return meetingLocalConfiguration{
-		FormatVersion: 1,
+		FormatVersion: 2,
 		Executable:    executable,
 		Foreground: meetingLocalForegroundConfig{
 			ModelProvider: meetingLocalModelProvider, Model: meetingLocalModelName,
@@ -204,9 +206,10 @@ func defaultMeetingLocalConfiguration(
 			TTSProvider: meetingLocalTTSProvider, TTSModel: meetingLocalTTSModel,
 			TTSURL: meetingLocalTTSURL, TTSVoice: "default",
 			VisionModel: meetingLocalModelName, VisionURL: meetingLocalModelURL,
-			MaxOutputTokens: 512, ASRCadenceMS: 200, FrameRateMilliHz: 5_000,
+			MaxOutputTokens: 512, VisualReflexMaxTokens: 96, VisualReflexTimeoutMS: 2_000,
+			ASRCadenceMS: 200, FrameRateMilliHz: 5_000,
 			RequestTimeoutMS: 30_000, SentenceMinRunes: 12,
-			AttachKeyframes: false, ExternalVideoGate: true,
+			AttachKeyframes: true, ExternalVideoGate: true,
 			ModelDeployment: deployments.Model, ASRDeployment: deployments.ASR,
 			TTSDeployment: deployments.TTS, VisionDeployment: deployments.Vision,
 		},
@@ -455,10 +458,27 @@ func meetingForegroundLLMRequest(config meetingLocalForegroundConfig) providers.
 	return providers.LLMRequest{
 		Provider: config.ModelProvider, Model: config.Model, BaseURL: config.ModelURL,
 		APIKey: os.Getenv("OPENREALTIME_LOCAL_API_KEY"), Phase: trajectory.PhaseFast,
-		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityExecute,
 		SpeechAuthority: continuation.SpeechAuthorityVoice, Reason: providers.ReasonOff,
 		Vision: &vision, RetainReasoning: false, Temperature: &temperature,
 		RequestTimeout: time.Duration(config.RequestTimeoutMS) * time.Millisecond,
+	}
+}
+
+// meetingVisualReflexLLMRequest gives the existing local multimodal plug-in a
+// separate, tightly bounded action role. It is not a second voice and cannot
+// invent a server-side action surface: cascade exposes only caller-declared,
+// target-bound computer actions to this silent provider.
+func meetingVisualReflexLLMRequest(config meetingLocalForegroundConfig) providers.LLMRequest {
+	vision := true
+	temperature := 0.0
+	return providers.LLMRequest{
+		Provider: config.ModelProvider, Model: config.Model, BaseURL: config.ModelURL,
+		APIKey: os.Getenv("OPENREALTIME_LOCAL_API_KEY"), Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityExecute,
+		SpeechAuthority: continuation.SpeechAuthoritySilent, Reason: providers.ReasonOff,
+		Vision: &vision, RetainReasoning: false, Temperature: &temperature,
+		RequestTimeout: time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
 	}
 }
 
@@ -518,6 +538,38 @@ type meetingDormantProvider struct {
 	descriptor continuation.Descriptor
 }
 
+const meetingForegroundInstruction = "Assist with the live meeting. Ground every response in the shared transcript and screen observations, honor later corrections, and stay concise. " +
+	"Complete every explicitly requested client tool call and visible action before announcing completion; a claimed action without its successful tool result is not complete. " +
+	"For ordered visible actions, execute one action, use the next retained frame, and continue until the user's requested sequence is complete. " +
+	"When a requested visual condition appears, use its declared visible control silently; never substitute a verbal acknowledgment for the action. " +
+	"A screen observation or background result alone does not authorize a spoken response, and without a new user request or correction never repeat an answer already given."
+
+// meetingForegroundRollout is the profile's narrow local control policy. It
+// never schedules the private cascade slow slot (the graph owns background
+// cognition), but unlike the generic fast-only control condition it gives a
+// successful tool result one fast turn in which to continue an ordered action
+// chain or speak the grounded result.
+type meetingForegroundRollout struct{}
+
+func (meetingForegroundRollout) Name() string { return "meeting-fast-tool-continuations" }
+
+func (meetingForegroundRollout) Plan(input interaction.RolloutInput) []interaction.Step {
+	if input.Cause.ToolError {
+		return []interaction.Step{{Kind: interaction.StepFast, Reason: interaction.ReasonToolFailure}}
+	}
+	if input.Cause.Observation || input.Cause.CompositeResume || input.Cause.ToolResult {
+		reason := "answer now"
+		switch {
+		case input.Cause.CompositeResume:
+			reason = interaction.ReasonCompositeResume
+		case input.Cause.ToolResult:
+			reason = "continue after foreground tool result"
+		}
+		return []interaction.Step{{Kind: interaction.StepFast, Reason: reason}}
+	}
+	return nil
+}
+
 func meetingDormantDescriptor() continuation.Descriptor {
 	return continuation.Descriptor{
 		Provider: "openrealtime-graph", Model: "background-owned-by-meeting-graph",
@@ -555,22 +607,33 @@ func newMeetingForegroundBinding(
 	if err := profileProviderContext(ctx); err != nil {
 		return nil, err
 	}
+	if config.VisualReflexMaxTokens <= 0 || config.VisualReflexTimeoutMS <= 0 {
+		return nil, errors.New("Meeting visual reflex requires positive token and timeout bounds")
+	}
 	fast, err := providers.NewLLM(meetingForegroundLLMRequest(config))
 	if err != nil {
 		return nil, fmt.Errorf("create Meeting foreground model: %w", err)
 	}
+	visualReflex, err := providers.NewLLM(meetingVisualReflexLLMRequest(config))
+	if err != nil {
+		_ = closeReadinessResource(fast)
+		return nil, fmt.Errorf("create Meeting visual reflex model: %w", err)
+	}
 	asr, err := providers.NewASRFactory(meetingASRRequest(config))
 	if err != nil {
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground ASR: %w", err)
 	}
 	asrDescriptor, err := providers.DescribeASR(meetingASRRequest(config))
 	if err != nil {
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("describe Meeting foreground ASR: %w", err)
 	}
 	speech, err := providers.NewTTS(meetingTTSRequest(config))
 	if err != nil {
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground TTS: %w", err)
 	}
@@ -582,6 +645,7 @@ func newMeetingForegroundBinding(
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground vision: %w", err)
 	}
@@ -590,11 +654,12 @@ func newMeetingForegroundBinding(
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, err
 	}
 	policies := interaction.Defaults()
-	policies.Rollout = interaction.NewFastOnlyRollout()
+	policies.Rollout = meetingForegroundRollout{}
 	dormant := meetingDormantProvider{descriptor: meetingDormantDescriptor()}
 	inner, err := cascade.New(cascade.Config{
 		Profile: "voice+vision", Perception: asr,
@@ -604,18 +669,29 @@ func newMeetingForegroundBinding(
 		SlowMaxTokens: 1, Speech: bysentence.Provider{
 			Inner: speech, Minimum: config.SentenceMinRunes,
 		},
-		Voice:    config.TTSVoice,
-		Policies: policies, ObservationPolicy: cascade.ObservationEndpointOnly,
+		Voice: config.TTSVoice,
+		// The Meeting profile deliberately gives its local, attested foreground
+		// provider only the two bounded client-declared action lanes. Standard
+		// computer actions still require an exact target and confirm=never; other
+		// tools must explicitly opt into the background-safe contract. Keeping
+		// the allowlist in cascade preserves the caller-owned tool catalog rather
+		// than building a Meeting UI or action surface into the server.
+		FastComputerUse:     true,
+		FastBackgroundTools: true,
+		VisualReflex:        visualReflex, VisualReflexMaxTokens: config.VisualReflexMaxTokens,
+		VisualReflexTimeout: time.Duration(config.VisualReflexTimeoutMS) * time.Millisecond,
+		Policies:            policies, ObservationPolicy: cascade.ObservationEndpointOnly,
 		ASRCadence: time.Duration(config.ASRCadenceMS) * time.Millisecond,
 		Observers: []perception.Factory{perception.VideoFactory(perception.VideoConfig{
 			Name: "screen", Sources: []string{"screen"}, ExternalCadence: config.ExternalVideoGate,
 			ChangeThreshold: 0.02, Narrator: narrator, AttachKeyframes: config.AttachKeyframes,
 		})},
 		DefaultObservers: []string{"audio", "screen"},
-		AgentInstruction: "Assist with the live meeting. Ground answers in the shared transcript and screen observations, honor later corrections, and stay concise.",
+		AgentInstruction: meetingForegroundInstruction,
 	})
 	if err != nil {
 		_ = closeReadinessResource(speech)
+		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("compose Meeting foreground binding: %w", err)
 	}
@@ -724,7 +800,7 @@ func defaultMeetingProfileOptions() meetingProfileOptions {
 	return meetingProfileOptions{
 		name: "openrealtime.launch.meeting-assistant-local", revision: 1,
 		tokenEnv:      "OPENREALTIME_TOKEN",
-		inspectionTTL: 30_000, maxAudioBytes: 1 << 20,
+		inspectionTTL: 300_000, maxAudioBytes: 1 << 20,
 	}
 }
 
@@ -787,6 +863,12 @@ func freezeProductionMeetingProfile(
 		return frozenMeetingProfile{}, err
 	}
 	plan := prepared.Plan
+	videoLimits := openrealtime.DefaultLimits()
+	// The Meeting benchmark and foreground adapter both bind their cadence in
+	// millihertz, while the Realtime negotiation exposes an integer FPS cap.
+	// Round the cap up so the gateway never silently samples frames out of the
+	// exact configured condition before the graph can observe them.
+	videoLimits.FPSCap = (selected.Configuration.Foreground.FrameRateMilliHz + 999) / 1_000
 	profile, err := launchprofile.Freeze(launchprofile.Document{
 		FormatVersion: launchprofile.FormatVersion,
 		Name:          options.name, Revision: options.revision,
@@ -809,7 +891,7 @@ func freezeProductionMeetingProfile(
 			Model:            meetingLocalModelName, TranscriptionModel: meetingLocalASRModel,
 			ValidateWire: true, InspectionTokenTTLMS: options.inspectionTTL,
 			MaxAudioFrameBytes: options.maxAudioBytes,
-			VideoLimits:        openrealtime.DefaultLimits(),
+			VideoLimits:        videoLimits,
 		},
 	})
 	if err != nil {
@@ -823,7 +905,10 @@ func freezeProductionMeetingProfile(
 		return frozenMeetingProfile{},
 			errors.New("freeze Meeting Assistant values did not reproduce the exact bound graph")
 	}
-	resolution, err := meetingExpectedResolution(plan)
+	resolution, err := probeMeetingExpectedResolution(ctx, prepared.Binding, plan, bench.ArtifactIdentity{
+		ID: "values://" + plan.Graph().ID, Revision: graphvalues.APIVersion,
+		Digest: bound.Fingerprint,
+	})
 	if err != nil {
 		return frozenMeetingProfile{}, err
 	}
@@ -844,70 +929,6 @@ func selectedRegistration(selected serveMeetingRegistration) graphs.MeetingAssis
 	return graphs.MeetingAssistantRegistration{
 		Application: selected.Application, Adapter: selected.Adapter,
 	}
-}
-
-func meetingExpectedResolution(plan *graphconfig.Plan) (bench.LiveResolution, error) {
-	if plan == nil {
-		return bench.LiveResolution{}, errors.New("derive Meeting expected resolution: nil plan")
-	}
-	graph := plan.Graph()
-	byID := make(map[string]int, len(graph.Nodes))
-	for index, node := range graph.Nodes {
-		byID[node.ID] = index
-	}
-	result := bench.LiveResolution{Elements: make([]bench.ElementResolution, 0, len(graph.Nodes))}
-	for _, resolved := range plan.Resolution().Nodes {
-		index, found := byID[resolved.NodeID]
-		if !found {
-			return bench.LiveResolution{}, fmt.Errorf("Meeting resolution names unknown node %q", resolved.NodeID)
-		}
-		node := graph.Nodes[index]
-		if resolved.Implementation.Reference != node.Implementation ||
-			resolved.Implementation.Contract != node.Element {
-			return bench.LiveResolution{}, fmt.Errorf("Meeting resolution drifted for node %q", node.ID)
-		}
-		runtime, err := meetingBenchArtifact(resolved.Implementation.Artifact)
-		if err != nil {
-			return bench.LiveResolution{}, err
-		}
-		capabilities := make([]bench.CapabilityIdentity, len(resolved.Implementation.Capabilities))
-		for index, capability := range resolved.Implementation.Capabilities {
-			provider, err := meetingBenchArtifact(capability.Provider)
-			if err != nil {
-				return bench.LiveResolution{}, err
-			}
-			capabilities[index] = bench.CapabilityIdentity{
-				Name: capability.Name, Contract: capability.Contract, Provider: provider,
-			}
-			if capability.Adapter != nil {
-				adapter, err := meetingBenchArtifact(*capability.Adapter)
-				if err != nil {
-					return bench.LiveResolution{}, err
-				}
-				capabilities[index].Adapter = &adapter
-			}
-		}
-		result.Elements = append(result.Elements, bench.ElementResolution{
-			Node: node.ID, Element: node.Element, Implementation: node.Implementation,
-			Runtime: runtime, Capabilities: capabilities,
-		})
-	}
-	if len(result.Elements) != len(graph.Nodes) {
-		return bench.LiveResolution{}, errors.New("Meeting expected resolution omitted graph nodes")
-	}
-	if err := bench.ValidateExpectedResolution(result); err != nil {
-		return bench.LiveResolution{}, err
-	}
-	return result, nil
-}
-
-func meetingBenchArtifact(source inspect.ArtifactIdentity) (bench.ArtifactIdentity, error) {
-	if err := source.Validate(); err != nil {
-		return bench.ArtifactIdentity{}, err
-	}
-	return bench.ArtifactIdentity{
-		ID: source.ID, Revision: source.Revision, Digest: source.Digest,
-	}, nil
 }
 
 var (
