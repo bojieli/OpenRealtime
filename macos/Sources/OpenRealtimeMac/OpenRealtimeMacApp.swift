@@ -115,10 +115,20 @@ private func runHostedSmoke(
 ) async {
     hostedSmokeRecord("PROGRESS", "launch accepted")
     var lastFailure = "hosted management snapshot was not ready"
+    var lastReadiness = ""
     let deadline = ProcessInfo.processInfo.systemUptime + 60
     while ProcessInfo.processInfo.systemUptime < deadline {
-        if developer.connectionState == .connected, !developer.sessionID.isEmpty,
-           developer.updatedSessionID == developer.sessionID {
+        let hasSession = !developer.sessionID.isEmpty
+        let hasUpdatedSession = !developer.updatedSessionID.isEmpty
+        let sessionMatches = hasSession && hasUpdatedSession &&
+            developer.updatedSessionID == developer.sessionID
+        let readiness = "phase=\(developer.connectionState.rawValue) session=\(hasSession) updated=\(hasUpdatedSession) match=\(sessionMatches)"
+        if readiness != lastReadiness {
+            lastReadiness = readiness
+            lastFailure = "native client not proof-ready: \(readiness)"
+            hostedSmokeRecord("PROGRESS", readiness)
+        }
+        if developer.connectionState == .connected, sessionMatches {
             let management: (evidence: [String: Any], payload: Data)
             do {
                 let document = try await developer.hostedManagementSnapshot(

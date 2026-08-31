@@ -351,6 +351,7 @@ for _ in $(seq 1 1000); do
   if ! kill -0 "${application_pid}" 2>/dev/null; then
     printf '%s\n' "assembled native app exited before emitting its connection proof" >&2
     sed -n '1,240p' "${application_log}" >&2
+    curl -fsS "${server_url}/metrics" >&2 || true
     exit 1
   fi
   sleep 0.1
@@ -358,6 +359,7 @@ done
 if [[ -z "${native_proof}" ]]; then
   printf '%s\n' "timed out waiting for the assembled native app connection proof" >&2
   sed -n '1,240p' "${application_log}" >&2
+  curl -fsS "${server_url}/metrics" >&2 || true
   exit 1
 fi
 native_session_id="$(python3 -c 'import hashlib, json, os, re, stat, sys, urllib.parse
