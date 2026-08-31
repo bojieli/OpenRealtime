@@ -116,6 +116,19 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			t.Errorf("retired built-in native effect implementation remains at %s: %v", retired, err)
 		}
 	}
+	if _, err := os.Stat("verify-hosted-companion.sh"); err != nil {
+		t.Fatalf("hosted companion gate is missing: %v", err)
+	}
+	if output, err := exec.Command("bash", "-n", "verify-hosted-companion.sh").CombinedOutput(); err != nil {
+		t.Fatalf("hosted companion gate is not valid shell: %v\n%s", err, output)
+	}
+	if runtime.GOOS != "darwin" {
+		if output, err := exec.Command("bash", "./verify-hosted-companion.sh").CombinedOutput(); err == nil {
+			t.Fatalf("hosted companion gate unexpectedly passed off macOS: %s", output)
+		} else if !strings.Contains(string(output), "requires macOS") {
+			t.Fatalf("hosted companion gate did not fail at its platform boundary: %v\n%s", err, output)
+		}
+	}
 }
 
 func TestNativeNormalPathNeverInfersEndpointsOrPlacesCredentialsInURLs(t *testing.T) {

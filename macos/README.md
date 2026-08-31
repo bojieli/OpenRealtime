@@ -63,6 +63,18 @@ cd ..
 ./openrealtime companion -client macos
 ```
 
+The normal application waits for an explicit **Connect** action. Automated
+developer and hosted-CI launches may pass
+`--openrealtime-connect-on-launch` to the assembled executable; the flag only
+performs that initial action and does not replace the selected native provider
+graph, endpoint directory, or reducer.
+
+Hosted CI uses a separate nonce-bearing smoke argument. It is accepted only as
+one lowercase SHA-256 value and emits a single connection proof after the
+reducer has received the server session identity; the gate binds that proof to
+the exact assembled executable, observer manifest, generated endpoint
+directory, and unchanged companion process before shutting the app down.
+
 `companion` preflights the exact `.app` before starting anything, then
 supervises the clean server, separate WebRTC adapter, and descriptor-locked
 presentation host. Use `-client both` to open the browser and native observer
