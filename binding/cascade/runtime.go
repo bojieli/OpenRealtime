@@ -25,6 +25,11 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
+type compositeResumeSpeechCoverage struct {
+	clause           string
+	assistantItemIDs []string
+}
+
 // runtime is one live cascade session. It owns the four planes and the wiring
 // between them, and it is the only place in the binding where they meet.
 type runtime struct {
@@ -242,10 +247,11 @@ type runtime struct {
 	visualPolicy     map[string]interaction.VisualIntent
 	visualPolicyTask map[string]string
 	visualResumed    map[string]bool
-	// visualResumeSpoken records the exact immediate nonvisual clause that
-	// actually crossed the speech boundary. Its enclosing task may still change
-	// as provisional ASR settles without creating a second request to speak it.
-	visualResumeSpoken        map[string]string
+	// visualResumeSpoken records the exact immediate nonvisual clause committed
+	// to the action plane and the assistant items carrying it. Its enclosing task
+	// may still change as provisional ASR settles without creating a second
+	// request to speak it; canonical cancellation makes the coverage inactive.
+	visualResumeSpoken        map[string]compositeResumeSpeechCoverage
 	visualHandledRev          map[string]visualHandledRevisions
 	visualProvisionalTerminal map[string]bool
 	visualProvisionalRetry    map[string]uint64
@@ -297,7 +303,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		visualIntentByCall: make(map[string]string), visualArmed: make(map[string]bool),
 		visualEvaluated: make(map[string]bool),
 		visualPolicy:    make(map[string]interaction.VisualIntent), visualPolicyTask: make(map[string]string),
-		visualResumed: make(map[string]bool), visualResumeSpoken: make(map[string]string),
+		visualResumed: make(map[string]bool), visualResumeSpoken: make(map[string]compositeResumeSpeechCoverage),
 		visualHandledRev:          make(map[string]visualHandledRevisions),
 		visualProvisionalTerminal: make(map[string]bool),
 		visualProvisionalRetry:    make(map[string]uint64),

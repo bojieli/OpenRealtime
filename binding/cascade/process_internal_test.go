@@ -3,6 +3,7 @@ package cascade
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -403,13 +404,14 @@ func TestPureSuccessfulVisualResultBatchIsControllerMemory(t *testing.T) {
 	}
 }
 
-func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *testing.T) {
+func TestCompositeEndpointSuppressionRequiresCoveredClauseAndActiveSpeech(t *testing.T) {
 	runtime := &runtime{
 		visualIntentByCall: map[string]string{"visual-1": "utterance-1"},
 	}
 	runtime.markCompositeResumeSpoken(
 		"utterance-1",
 		"Present the overview. If an alert appears, acknowledge it without stopping your press.",
+		[]string{"assistant-1"},
 	)
 	if !runtime.compositeResumeAlreadySpokeFor(
 		"utterance-1",
@@ -449,8 +451,15 @@ func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *test
 			{Kind: trajectory.KindObservation},
 		},
 	}
-	if !runtime.batchOnlyCompositeEndpointArtifacts(batch) {
+	if !runtime.batchOnlyCompositeEndpointArtifacts(batch, []string{"assistant-1"}) {
 		t.Fatal("played composite speech plus its endpoint was not recognized")
+	}
+	userOnly := eventloop.Batch{
+		Items:  append([]trajectory.Item(nil), batch.Items[2]),
+		Events: append([]eventloop.Event(nil), batch.Events[2]),
+	}
+	if !runtime.batchOnlyCompositeEndpointArtifacts(userOnly, []string{"assistant-1"}) {
+		t.Fatal("an endpoint arriving while covered speech was already queued was not recognized")
 	}
 	cancelled := batch
 	cancelled.Items = append([]trajectory.Item(nil), batch.Items...)
@@ -460,7 +469,7 @@ func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *test
 	}
 	cancelled.Items[1].AssistantState = cancelledState
 	cancelled.Events[1].AssistantState = cancelledState
-	if runtime.batchOnlyCompositeEndpointArtifacts(cancelled) {
+	if runtime.batchOnlyCompositeEndpointArtifacts(cancelled, []string{"assistant-1"}) {
 		t.Fatal("cancelled composite speech suppressed the canonical endpoint")
 	}
 	unmatchedQueued := batch
@@ -470,7 +479,7 @@ func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *test
 		AssistantItemID: "assistant-other", Visibility: trajectory.VisibilityQueued,
 	}
 	unmatchedQueued.Events[0].AssistantState = unmatchedQueued.Items[0].AssistantState
-	if runtime.batchOnlyCompositeEndpointArtifacts(unmatchedQueued) {
+	if runtime.batchOnlyCompositeEndpointArtifacts(unmatchedQueued, []string{"assistant-1"}) {
 		t.Fatal("unmatched queued speech suppressed the canonical endpoint")
 	}
 	unrelated := batch
@@ -480,8 +489,47 @@ func TestCompositeEndpointSuppressionRequiresExactTaskAndPlayedArtifacts(t *test
 			CallID: "semantic-1", Name: "meeting.lookup", Output: json.RawMessage(`{"ok":true}`),
 		},
 	})
-	if runtime.batchOnlyCompositeEndpointArtifacts(unrelated) {
+	if runtime.batchOnlyCompositeEndpointArtifacts(unrelated, []string{"assistant-1"}) {
 		t.Fatal("unrelated semantic work was hidden with a composite endpoint")
+	}
+}
+
+func TestCompositeSpeechCoverageFollowsCanonicalAssistantVisibility(t *testing.T) {
+	runtime := &runtime{}
+	runtime.markCompositeResumeSpoken(
+		"utterance-1",
+		"Present the overview. If an alert appears, acknowledge it without stopping your presentation.",
+		[]string{"assistant-1"},
+	)
+	task := "Present the overview. If an alert appears, acknowledge it without stopping your presentation."
+	assistant := trajectory.Item{
+		ID: "assistant-1", Kind: trajectory.KindAssistant, Visibility: trajectory.VisibilityPrepared,
+		Content: "Here is the overview.", Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+	}
+	queued := trajectory.Item{
+		ID: "queued", Kind: trajectory.KindAssistantState,
+		AssistantState: &trajectory.AssistantState{
+			AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityQueued,
+		},
+	}
+	queuedSnapshot := trajectory.Snapshot{Items: []trajectory.Item{assistant, queued}}
+	if ids, active := runtime.activeCompositeResumeSpeechFor(
+		queuedSnapshot, "utterance-1", task,
+	); !active || !slices.Equal(ids, []string{"assistant-1"}) {
+		t.Fatalf("queued composite speech was not active coverage: %q, %t", ids, active)
+	}
+	cancelled := trajectory.Item{
+		ID: "cancelled", Kind: trajectory.KindAssistantState,
+		AssistantState: &trajectory.AssistantState{
+			AssistantItemID: "assistant-1", Visibility: trajectory.VisibilityCancelled,
+		},
+	}
+	cancelledSnapshot := queuedSnapshot
+	cancelledSnapshot.Items = append(append([]trajectory.Item(nil), queuedSnapshot.Items...), cancelled)
+	if _, active := runtime.activeCompositeResumeSpeechFor(
+		cancelledSnapshot, "utterance-1", task,
+	); active {
+		t.Fatal("cancelled composite speech still covered the canonical endpoint")
 	}
 }
 

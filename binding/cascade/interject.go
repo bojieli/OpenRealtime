@@ -1169,30 +1169,72 @@ func (runtime *runtime) signalCompositeResumeOnce(intentID, heard string) error 
 	return nil
 }
 
-func (runtime *runtime) markCompositeResumeSpoken(intentID, task string) {
+func (runtime *runtime) markCompositeResumeSpoken(intentID, task string, assistantItemIDs []string) {
 	intentID = strings.TrimSpace(intentID)
 	clause := strings.TrimSpace(interaction.ImmediateNonvisualClause(task))
-	if intentID == "" || clause == "" {
+	uniqueIDs := make([]string, 0, len(assistantItemIDs))
+	seen := make(map[string]struct{}, len(assistantItemIDs))
+	for _, assistantItemID := range assistantItemIDs {
+		assistantItemID = strings.TrimSpace(assistantItemID)
+		if assistantItemID == "" {
+			continue
+		}
+		if _, duplicate := seen[assistantItemID]; duplicate {
+			continue
+		}
+		seen[assistantItemID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, assistantItemID)
+	}
+	if intentID == "" || clause == "" || len(uniqueIDs) == 0 {
 		return
 	}
 	runtime.visualActionMu.Lock()
 	if runtime.visualResumeSpoken == nil {
-		runtime.visualResumeSpoken = make(map[string]string)
+		runtime.visualResumeSpoken = make(map[string]compositeResumeSpeechCoverage)
 	}
-	runtime.visualResumeSpoken[intentID] = clause
+	runtime.visualResumeSpoken[intentID] = compositeResumeSpeechCoverage{
+		clause: clause, assistantItemIDs: uniqueIDs,
+	}
 	runtime.visualActionMu.Unlock()
 }
 
-func (runtime *runtime) compositeResumeAlreadySpokeFor(intentID, task string) bool {
+func (runtime *runtime) compositeResumeSpeechFor(
+	intentID, task string,
+) (compositeResumeSpeechCoverage, bool) {
 	intentID = strings.TrimSpace(intentID)
 	clause := strings.TrimSpace(interaction.ImmediateNonvisualClause(task))
 	if intentID == "" || clause == "" {
-		return false
+		return compositeResumeSpeechCoverage{}, false
 	}
 	runtime.visualActionMu.Lock()
-	spoken := runtime.visualResumeSpoken[intentID]
+	coverage, found := runtime.visualResumeSpoken[intentID]
+	coverage.assistantItemIDs = slices.Clone(coverage.assistantItemIDs)
 	runtime.visualActionMu.Unlock()
-	return slices.Equal(trajectory.SpokenWords(spoken), trajectory.SpokenWords(clause))
+	return coverage, found && slices.Equal(
+		trajectory.SpokenWords(coverage.clause), trajectory.SpokenWords(clause),
+	)
+}
+
+func (runtime *runtime) compositeResumeAlreadySpokeFor(intentID, task string) bool {
+	_, covered := runtime.compositeResumeSpeechFor(intentID, task)
+	return covered
+}
+
+func (runtime *runtime) activeCompositeResumeSpeechFor(
+	snapshot trajectory.Snapshot, intentID, task string,
+) ([]string, bool) {
+	coverage, covered := runtime.compositeResumeSpeechFor(intentID, task)
+	if !covered {
+		return nil, false
+	}
+	visibility := trajectory.AssistantVisibility(snapshot)
+	for _, assistantItemID := range coverage.assistantItemIDs {
+		switch visibility[assistantItemID] {
+		case trajectory.VisibilityQueued, trajectory.VisibilityPlayed:
+			return coverage.assistantItemIDs, true
+		}
+	}
+	return nil, false
 }
 
 func (runtime *runtime) clearCompositeResumeHeard(heard string) {
