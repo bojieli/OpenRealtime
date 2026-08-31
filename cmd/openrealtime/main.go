@@ -34,10 +34,6 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runConformance(arguments[1:], stdout)
 	case "probe":
 		return runProbe(arguments[1:], stdout)
-	case "console":
-		return runConsole(arguments[1:], stdout)
-	case "surface":
-		return runSurface(arguments[1:], stdout)
 	case "present":
 		return runPresent(arguments[1:], stdout)
 	case "efficiency":
@@ -81,8 +77,6 @@ const usageText = `usage: openrealtime <command> [flags]
 commands:
   serve         run the OpenRealtime server
   probe         drive a running server through one turn and report it
-  console       serve the developer console on this machine
-  surface       serve the test surface: every channel, both directions, one page
   present       run a descriptor-locked browser presentation host
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small

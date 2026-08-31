@@ -62,20 +62,6 @@ check_module() {
   (cd "${module_directory}" && "${go_bin}" vet ./... && "${go_bin}" test -race -count=1 ./...)
 }
 
-check_examples() {
-  # The browser example is HTML and JavaScript, so what can be checked is that
-  # it is served by a real handler and refers to events the protocol defines.
-  # The Go tests themselves already ran under the root module, with -race.
-  local missing=()
-  for asset in examples/browser/index.html examples/browser/README.md; do
-    [[ -f "${asset}" ]] || missing+=("${asset}")
-  done
-  if (( ${#missing[@]} > 0 )); then
-    echo "missing example assets: ${missing[*]}" >&2
-    return 1
-  fi
-}
-
 # check_official_client is the compatibility claim, and it is the one claim in
 # this gate that can quietly go unmade.
 #
@@ -285,7 +271,6 @@ for module_directory in integrations/*/; do
 done
 stage "protocol and extension conformance" check_protocol_conformance
 stage "prompt-injection release gate" check_injection_gate
-stage "examples" check_examples
 stage "official Realtime client" check_official_client
 stage "portable JavaScript and Swift clients" check_portable_client_languages
 stage "Python sidecar conformance" check_python_sidecars
