@@ -28,7 +28,6 @@ const (
 	realtimeCULocalDeploymentEnvironment = "OPENREALTIME_CU_LOCAL_DEPLOYMENT"
 	realtimeCUDeploymentAttestationV1    = "openrealtime.local-procfs-filesystem-deployment.v1"
 	realtimeCUQwenArtifactID             = "hf://Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"
-	realtimeCUSenseVoiceArtifactID       = "modelscope://iic/SenseVoiceSmall"
 	realtimeCUWhisperArtifactID          = "hf://mobiuslabsgmbh/faster-whisper-large-v3-turbo"
 	realtimeCUWhisperServicePathEnv      = "OPENREALTIME_CU_WHISPER_SERVICE_PATH"
 	realtimeCUWhisperDependencyRootsEnv  = "OPENREALTIME_CU_WHISPER_DEPENDENCY_ROOTS"
@@ -981,8 +980,8 @@ func validateRealtimeCUQwenProcess(process realtimeCUProcessSnapshot) error {
 	return nil
 }
 
-func validateRealtimeCUSenseVoiceProcess(process realtimeCUProcessSnapshot) error {
-	if value := process.Environment["SENSEVOICE_MODEL"]; value != "" && value != realtimeCULocalASRModel {
+func validateMeetingSenseVoiceProcess(process realtimeCUProcessSnapshot) error {
+	if value := process.Environment["SENSEVOICE_MODEL"]; value != "" && value != meetingLocalASRModel {
 		return errors.New("SenseVoice listener selects a different model")
 	}
 	if _, err := canonicalRealtimeCUDeploymentPath(process.Environment["SENSEVOICE_MODEL_PATH"]); err != nil {
@@ -1221,7 +1220,7 @@ func realtimeCUQwenMaterial(
 	}, nil
 }
 
-func realtimeCUSenseVoiceMaterial(
+func meetingSenseVoiceMaterial(
 	ctx context.Context, process realtimeCUProcessSnapshot,
 ) (realtimeCUBackendMaterial, error) {
 	modelPath, err := canonicalRealtimeCUDeploymentPath(process.Environment["SENSEVOICE_MODEL_PATH"])
@@ -1268,7 +1267,7 @@ func realtimeCUSenseVoiceMaterial(
 	}
 	roots = append(roots, filteredPackages...)
 	return realtimeCUBackendMaterial{
-		ArtifactID: realtimeCUSenseVoiceArtifactID, Revision: revision,
+		ArtifactID: meetingSenseVoiceArtifactID, Revision: revision,
 		LoadedDigest: loadedDigest, ServicePath: servicePath, ServiceDigest: serviceDigest,
 		Roots: roots,
 	}, nil
@@ -1754,7 +1753,7 @@ func probeRealtimeCUQwen(
 	return nil
 }
 
-func probeRealtimeCUSenseVoice(
+func probeMeetingSenseVoice(
 	ctx context.Context, client *http.Client, material realtimeCUBackendMaterial,
 ) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:8002/health", nil)
@@ -1780,7 +1779,7 @@ func probeRealtimeCUSenseVoice(
 	var trailing any
 	trailingErr := decoder.Decode(&trailing)
 	if response.StatusCode != http.StatusOK || decodeErr != nil || !errors.Is(trailingErr, io.EOF) ||
-		payload.Status != "ok" || payload.Model != realtimeCULocalASRModel || payload.Device != "cuda:0" ||
+		payload.Status != "ok" || payload.Model != meetingLocalASRModel || payload.Device != "cuda:0" ||
 		payload.Revision != material.Revision || payload.Digest != material.LoadedDigest ||
 		payload.ServicePath != material.ServicePath || payload.ServiceDigest != material.ServiceDigest {
 		return errors.New("SenseVoice deployment probe differs from the strict local profile")

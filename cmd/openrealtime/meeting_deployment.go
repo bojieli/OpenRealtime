@@ -23,6 +23,7 @@ import (
 const (
 	meetingLocalDeploymentEnvironment = "OPENREALTIME_MEETING_LOCAL_DEPLOYMENT"
 	meetingFishArtifactID             = "model://fishaudio/fish-speech-1.5"
+	meetingSenseVoiceArtifactID       = "modelscope://iic/SenseVoiceSmall"
 	meetingBackgroundSelectionID      = "provider://google/gemini-3.7-flash/configuration"
 )
 
@@ -317,11 +318,11 @@ func newLocalMeetingDeploymentVerifier() (meetingDeploymentVerifier, error) {
 	}
 	asr, err := newLocalRealtimeCUBackendAttestor(realtimeCUBackendAttestorConfig{
 		Name: "meeting-sensevoice-asr", Port: 8002, ProcessSource: processes,
-		ValidateProcess: validateRealtimeCUSenseVoiceProcess,
+		ValidateProcess: validateMeetingSenseVoiceProcess,
 		Probe: func(ctx context.Context, _ realtimeCUProcessSnapshot, material realtimeCUBackendMaterial) error {
-			return probeRealtimeCUSenseVoice(ctx, client, material)
+			return probeMeetingSenseVoice(ctx, client, material)
 		},
-		Material: realtimeCUSenseVoiceMaterial,
+		Material: meetingSenseVoiceMaterial,
 	})
 	if err != nil {
 		return nil, err

@@ -389,19 +389,24 @@ func TestRealtimeCUQwenProcessRequiresOneImmutableLoadedRevision(t *testing.T) {
 	}
 }
 
-func TestRealtimeCUSenseVoiceProcessRejectsAlternateModuleLoading(t *testing.T) {
+func TestMeetingSenseVoiceProcessRequiresItsExactModelAndModuleLoading(t *testing.T) {
 	valid := realtimeCUProcessSnapshot{
 		Arguments: []string{
 			"/runtime/python", "-m", "uvicorn", "server:app",
 			"--host", "127.0.0.1", "--port", "8002", "--workers", "1",
 		},
 		Environment: map[string]string{
-			"SENSEVOICE_MODEL":      realtimeCULocalASRModel,
+			"SENSEVOICE_MODEL":      meetingLocalASRModel,
 			"SENSEVOICE_MODEL_PATH": "/models/sensevoice/immutable",
 		},
 	}
-	if err := validateRealtimeCUSenseVoiceProcess(valid); err != nil {
+	if err := validateMeetingSenseVoiceProcess(valid); err != nil {
 		t.Fatal(err)
+	}
+	differentModel := cloneRealtimeCUProcessSnapshot(valid)
+	differentModel.Environment["SENSEVOICE_MODEL"] = realtimeCULocalASRModel
+	if err := validateMeetingSenseVoiceProcess(differentModel); err == nil {
+		t.Fatalf("Meeting SenseVoice process accepted Realtime-CU model %q", realtimeCULocalASRModel)
 	}
 	for _, extra := range [][]string{
 		{"--app-dir", "/different/service"}, {"--app-dir=/different/service"},
@@ -409,7 +414,7 @@ func TestRealtimeCUSenseVoiceProcessRejectsAlternateModuleLoading(t *testing.T) 
 	} {
 		changed := cloneRealtimeCUProcessSnapshot(valid)
 		changed.Arguments = append(changed.Arguments, extra...)
-		if err := validateRealtimeCUSenseVoiceProcess(changed); err == nil {
+		if err := validateMeetingSenseVoiceProcess(changed); err == nil {
 			t.Fatalf("SenseVoice process accepted alternate module loading: %q", extra)
 		}
 	}
