@@ -55,9 +55,9 @@ type Options struct {
 	AnalysisDelay   time.Duration
 	Progress        func(string)
 	RuntimeAttestor bench.RuntimeAttestor
-	// Evidence is an optional caller-supplied attempt/suite plug-in. It receives
-	// exact audio/video callbacks from the same shared Realtime session used by
-	// the scorer and cannot alter the deterministic outcome.
+	// Evidence is the mandatory caller-supplied attempt/suite plug-in. It
+	// receives exact A/V from the scorer's shared session and cannot alter the
+	// deterministic outcome.
 	Evidence EvidencePlugin
 	// dependencies is package-private test plumbing. Production callers always
 	// use Chromium plus bench.PlaySamples over the shared Realtime API.
@@ -130,6 +130,9 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	if strings.TrimSpace(options.Endpoint) == "" {
 		return bench.Result{}, errors.New("meeting evaluation requires a Realtime endpoint")
 	}
+	if err := requireEvidencePlugin(options.Evidence); err != nil {
+		return bench.Result{}, err
+	}
 	if options.FrameRate <= 0 {
 		options.FrameRate = 5
 	}
@@ -191,19 +194,17 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	}
 	finish := func(runErr error) (bench.Result, error) {
 		result.Finish()
-		if options.Evidence != nil {
-			frozen, freezeErr := cloneMeetingResult(result)
-			if freezeErr != nil {
-				runErr = errors.Join(runErr, meetingEvidenceError("", "snapshot final result", freezeErr))
-			} else {
-				evidenceContext, cancelEvidence := context.WithTimeout(
-					context.WithoutCancel(ctx), meetingSuiteEvidenceTimeout,
-				)
-				evidenceErr := options.Evidence.FinishSuite(evidenceContext, frozen)
-				cancelEvidence()
-				if evidenceErr != nil {
-					runErr = errors.Join(runErr, meetingEvidenceError("", "finish suite", evidenceErr))
-				}
+		frozen, freezeErr := cloneMeetingResult(result)
+		if freezeErr != nil {
+			runErr = errors.Join(runErr, meetingEvidenceError("", "snapshot final result", freezeErr))
+		} else {
+			evidenceContext, cancelEvidence := context.WithTimeout(
+				context.WithoutCancel(ctx), meetingSuiteEvidenceTimeout,
+			)
+			evidenceErr := options.Evidence.FinishSuite(evidenceContext, frozen)
+			cancelEvidence()
+			if evidenceErr != nil {
+				runErr = errors.Join(runErr, meetingEvidenceError("", "finish suite", evidenceErr))
 			}
 		}
 		return result, runErr
@@ -297,8 +298,9 @@ func runTask(
 			if err != nil {
 				recordEvidenceFailure("begin attempt", err)
 				attempt = nil
-			} else if attempt == nil {
+			} else if nilEvidenceExtension(attempt) {
 				recordEvidenceFailure("begin attempt", errors.New("plug-in returned a nil attempt"))
+				attempt = nil
 			}
 		}
 		if attempt != nil {

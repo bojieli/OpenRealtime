@@ -378,6 +378,21 @@ func TestAttemptEvidencePreflightIsCreateOnlyAndRefusesVideoOptOut(t *testing.T)
 	}
 }
 
+func TestAttemptEvidencePreflightRequiresPluginBeforePathMutation(t *testing.T) {
+	parent := t.TempDir()
+	config := Config{
+		Output: filepath.Join(parent, "result.jsonl"), EvidenceDirectory: filepath.Join(parent, "raw"),
+	}
+	if err := config.validateAttemptEvidence(); err == nil || !strings.Contains(err.Error(), "evidence plug-in") {
+		t.Fatalf("missing DynaCU evidence error = %v", err)
+	}
+	for _, path := range []string{config.Output, config.EvidenceDirectory} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("missing evidence preflight mutated %s: %v", path, err)
+		}
+	}
+}
+
 func TestRecorderEvidenceSealsThroughCandidateSourcePipeline(t *testing.T) {
 	rawRoot := runDynaCURecorderSelfTest(t)
 	parent := t.TempDir()

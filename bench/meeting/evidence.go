@@ -169,3 +169,22 @@ type EvidencePlugin interface {
 	BeginAttempt(context.Context, EvidenceAttempt) (AttemptEvidence, error)
 	FinishSuite(context.Context, bench.Result) error
 }
+
+func requireEvidencePlugin(plugin EvidencePlugin) error {
+	if nilEvidenceExtension(plugin) {
+		return errors.New("Meeting benchmark attempts require an evidence plug-in")
+	}
+	return nil
+}
+
+func nilEvidenceExtension(value any) bool {
+	if value == nil {
+		return true
+	}
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflected.IsNil()
+	}
+	return false
+}

@@ -161,11 +161,11 @@ type Options struct {
 	Progress   func(string)
 	// RuntimeAttestor captures exact graph execution evidence for each sample.
 	RuntimeAttestor bench.RuntimeAttestor
-	// Evidence receives only new candidate attempts and exact audio captured
-	// from the same Realtime session used by the deterministic scorer.
+	// Evidence is mandatory and receives every new candidate attempt plus exact
+	// audio captured from the deterministic scorer's shared Realtime session.
 	Evidence candidate.Plugin
 	// EvidenceOrigin must explicitly identify a production or hermetic shared
-	// endpoint whenever Evidence is configured.
+	// endpoint for every attempt.
 	EvidenceOrigin candidate.RunOrigin
 }
 
@@ -174,10 +174,11 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	if ctx == nil {
 		return bench.Result{}, errors.New("FDB evaluation requires a context")
 	}
-	if options.Evidence != nil {
-		if err := options.EvidenceOrigin.Validate(); err != nil {
-			return bench.Result{}, fmt.Errorf("FDB candidate evidence origin: %w", err)
-		}
+	if err := candidate.RequirePlugin(options.Evidence); err != nil {
+		return bench.Result{}, fmt.Errorf("FDB candidate evidence: %w", err)
+	}
+	if err := options.EvidenceOrigin.Validate(); err != nil {
+		return bench.Result{}, fmt.Errorf("FDB candidate evidence origin: %w", err)
 	}
 	if options.YieldWindow <= 0 {
 		options.YieldWindow = time.Second
@@ -208,21 +209,15 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "fdb-v1.5", Cell: options.Cell, Provenance: bench.Capture(), Expected: expected,
 	}
-	var evidenceLifecycle *candidate.Lifecycle
-	if options.Evidence != nil {
-		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
-			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
-			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
-		})
-		if err != nil {
-			return bench.Result{}, fmt.Errorf("create FDB candidate evidence lifecycle: %w", err)
-		}
+	evidenceLifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
+		Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+	})
+	if err != nil {
+		return bench.Result{}, fmt.Errorf("create FDB candidate evidence lifecycle: %w", err)
 	}
 	finish := func(runErr error) (bench.Result, error) {
 		result.Finish()
-		if evidenceLifecycle == nil {
-			return result, runErr
-		}
 		return result, errors.Join(runErr, evidenceLifecycle.Finish(result))
 	}
 	var runErr error

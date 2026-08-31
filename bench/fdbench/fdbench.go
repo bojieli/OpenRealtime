@@ -154,8 +154,8 @@ type Options struct {
 	Progress      func(string)
 	// RuntimeAttestor captures exact graph execution evidence per conversation.
 	RuntimeAttestor bench.RuntimeAttestor
-	// Evidence receives every newly executed candidate conversation and exact
-	// audio from the deterministic scorer's shared Realtime session.
+	// Evidence is mandatory and receives every newly executed candidate
+	// conversation plus exact audio from the shared deterministic-scoring session.
 	Evidence       candidate.Plugin
 	EvidenceOrigin candidate.RunOrigin
 }
@@ -165,10 +165,11 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	if ctx == nil {
 		return bench.Result{}, errors.New("FD-Bench evaluation requires a context")
 	}
-	if options.Evidence != nil {
-		if err := options.EvidenceOrigin.Validate(); err != nil {
-			return bench.Result{}, fmt.Errorf("FD-Bench candidate evidence origin: %w", err)
-		}
+	if err := candidate.RequirePlugin(options.Evidence); err != nil {
+		return bench.Result{}, fmt.Errorf("FD-Bench candidate evidence: %w", err)
+	}
+	if err := options.EvidenceOrigin.Validate(); err != nil {
+		return bench.Result{}, fmt.Errorf("FD-Bench candidate evidence origin: %w", err)
 	}
 	if options.LatencyBudget <= 0 {
 		options.LatencyBudget = 2 * time.Second
@@ -191,21 +192,15 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "fd-bench", Cell: options.Cell, Provenance: bench.Capture(), Expected: expected,
 	}
-	var evidenceLifecycle *candidate.Lifecycle
-	if options.Evidence != nil {
-		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
-			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
-			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
-		})
-		if err != nil {
-			return bench.Result{}, fmt.Errorf("create FD-Bench candidate evidence lifecycle: %w", err)
-		}
+	evidenceLifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
+		Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+	})
+	if err != nil {
+		return bench.Result{}, fmt.Errorf("create FD-Bench candidate evidence lifecycle: %w", err)
 	}
 	finish := func(runErr error) (bench.Result, error) {
 		result.Finish()
-		if evidenceLifecycle == nil {
-			return result, runErr
-		}
 		return result, errors.Join(runErr, evidenceLifecycle.Finish(result))
 	}
 	var runErr error

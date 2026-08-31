@@ -15,6 +15,26 @@ type fixtureEvidencePlugin struct {
 	finish func(context.Context, bench.Result) error
 }
 
+func TestMeetingRunRefusesNilEvidenceBeforeEnvironment(t *testing.T) {
+	var typed *fixtureEvidencePlugin
+	for _, plugin := range []EvidencePlugin{nil, typed} {
+		called := false
+		_, err := Run(t.Context(), Options{
+			Endpoint: "ws://hermetic.invalid/v1/realtime", Evidence: plugin,
+			dependencies: &runDependencies{
+				newEnvironment: func(context.Context, EnvironmentConfig) (meetingRunEnvironment, error) {
+					called = true
+					return meetingRunEnvironment{}, nil
+				},
+				playSamples: bench.PlaySamples, now: time.Now,
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "evidence plug-in") || called {
+			t.Fatalf("missing evidence error=%v environment called=%t", err, called)
+		}
+	}
+}
+
 type fixtureAttemptEvidence struct {
 	captureAudio func(bench.SessionAudioCapture) error
 	captureVideo func(bench.SessionVideoCapture) error
@@ -140,6 +160,12 @@ func TestMeetingRunSurfacesEnvironmentCloseFailure(t *testing.T) {
 	}
 	result, err := Run(context.Background(), Options{
 		Endpoint: "ws://hermetic.invalid/v1/realtime", Limit: 1, dependencies: dependencies,
+		Evidence: fixtureEvidencePlugin{
+			begin: func(context.Context, EvidenceAttempt) (AttemptEvidence, error) {
+				return fixtureAttemptEvidence{}, nil
+			},
+			finish: func(context.Context, bench.Result) error { return nil },
+		},
 	})
 	if err == nil || err.Error() != "close meeting environment" || len(result.Tasks) != 1 ||
 		result.Tasks[0].Completed {

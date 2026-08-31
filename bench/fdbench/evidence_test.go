@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -15,6 +16,13 @@ type refusingEvidencePlugin struct {
 	attempt candidate.Attempt
 	result  bench.Result
 	cause   error
+}
+
+func TestRunRefusesMissingEvidenceBeforeDatasetAccess(t *testing.T) {
+	_, err := Run(t.Context(), Options{Root: filepath.Join(t.TempDir(), "missing")})
+	if err == nil || !strings.Contains(err.Error(), "evidence plug-in") {
+		t.Fatalf("missing evidence error = %v", err)
+	}
 }
 
 func (plugin *refusingEvidencePlugin) BeginAttempt(

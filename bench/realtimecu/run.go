@@ -16,6 +16,11 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
+const (
+	realtimeCUAttemptEvidenceTimeout = 2 * time.Minute
+	realtimeCUSuiteEvidenceTimeout   = 12 * time.Minute
+)
+
 //go:embed testdata/audio/*.wav
 var audioAssets embed.FS
 
@@ -57,7 +62,7 @@ type Options struct {
 	Timeout         time.Duration
 	Progress        func(string)
 	RuntimeAttestor bench.RuntimeAttestor
-	// Evidence is an optional caller-supplied attempt/suite plug-in. It sees
+	// Evidence is the mandatory caller-supplied attempt/suite plug-in. It sees
 	// exact media from the shared session and cannot alter deterministic scoring.
 	Evidence EvidencePlugin
 	// dependencies is package-private hermetic test plumbing. Production callers
@@ -138,8 +143,14 @@ type ActionRecord struct {
 
 // Run executes selected repository-owned cases against a running endpoint.
 func Run(ctx context.Context, options Options) (bench.Result, error) {
+	if ctx == nil {
+		return bench.Result{}, errors.New("realtime computer-use evaluation requires a context")
+	}
 	if strings.TrimSpace(options.Endpoint) == "" {
 		return bench.Result{}, errors.New("realtime computer-use evaluation requires an endpoint")
+	}
+	if err := requireEvidencePlugin(options.Evidence); err != nil {
+		return bench.Result{}, err
 	}
 	if options.FrameRate <= 0 {
 		options.FrameRate = 3
@@ -200,17 +211,22 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	}
 	finish := func(runErr error) (bench.Result, error) {
 		result.Finish()
-		if options.Evidence != nil {
-			frozen, freezeErr := cloneResult(result)
-			if freezeErr != nil {
-				runErr = errors.Join(runErr, freezeErr)
-			} else if evidenceErr := options.Evidence.FinishSuite(ctx, frozen); evidenceErr != nil {
+		frozen, freezeErr := cloneResult(result)
+		if freezeErr != nil {
+			runErr = errors.Join(runErr, freezeErr)
+		} else {
+			evidenceContext, cancelEvidence := context.WithTimeout(
+				context.WithoutCancel(ctx), realtimeCUSuiteEvidenceTimeout,
+			)
+			evidenceErr := options.Evidence.FinishSuite(evidenceContext, frozen)
+			cancelEvidence()
+			if evidenceErr != nil {
 				runErr = errors.Join(runErr, evidenceErr)
 			}
-			if closer, ok := options.Evidence.(interface{ Close() error }); ok {
-				if closeErr := closer.Close(); closeErr != nil {
-					runErr = errors.Join(runErr, closeErr)
-				}
+		}
+		if closer, ok := options.Evidence.(interface{ Close() error }); ok {
+			if closeErr := closer.Close(); closeErr != nil {
+				runErr = errors.Join(runErr, closeErr)
 			}
 		}
 		return result, runErr
@@ -294,8 +310,9 @@ func runCase(
 			incomplete.Error = err.Error()
 			return incomplete, evidenceErr
 		}
-		if attempt == nil {
+		if nilEvidenceExtension(attempt) {
 			incomplete.Error = "realtime computer-use evidence plug-in returned a nil attempt"
+			attempt = nil
 			return incomplete, evidenceErr
 		}
 		terminal := false
@@ -317,7 +334,12 @@ func runCase(
 				joinEvidenceError(err)
 				return
 			}
-			if err := attempt.Complete(ctx, completion); err != nil {
+			evidenceContext, cancelEvidence := context.WithTimeout(
+				context.WithoutCancel(ctx), realtimeCUAttemptEvidenceTimeout,
+			)
+			err = attempt.Complete(evidenceContext, completion)
+			cancelEvidence()
+			if err != nil {
 				joinEvidenceError(err)
 				return
 			}

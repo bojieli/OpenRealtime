@@ -189,7 +189,8 @@ type Config struct {
 	// Evidence adopts only artifacts emitted by this newly executed pinned
 	// tau2 run. The external harness owns its Realtime client, so the retained
 	// attempt explicitly says external-harness-artifacts rather than pretending
-	// OpenRealtime observed shared-session callbacks.
+	// OpenRealtime observed shared-session callbacks. It is mandatory for Run;
+	// Verify remains the non-attempting environment diagnostic.
 	Evidence       candidate.Plugin
 	EvidenceOrigin candidate.RunOrigin
 }
@@ -388,6 +389,12 @@ func (config *Config) Verify(ctx context.Context) error {
 // came from.
 func Run(ctx context.Context, config Config) (bench.Result, error) {
 	config.applyDefaults()
+	if err := candidate.RequirePlugin(config.Evidence); err != nil {
+		return bench.Result{}, fmt.Errorf("tau-Voice candidate evidence: %w", err)
+	}
+	if err := config.EvidenceOrigin.Validate(); err != nil {
+		return bench.Result{}, fmt.Errorf("tau-Voice candidate evidence origin: %w", err)
+	}
 	if config.ExecutionEvidence != nil {
 		copy := config.ExecutionEvidence.Clone()
 		config.ExecutionEvidence = &copy
@@ -404,16 +411,12 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 	result := bench.Result{
 		Suite: "tau-voice", Cell: config.Cell, Provenance: provenance, Expected: TaskCount * config.Trials,
 	}
-	var evidenceLifecycle *candidate.Lifecycle
-	if config.Evidence != nil {
-		created, err := candidate.NewLifecycle(candidate.LifecycleConfig{
-			Context: ctx, Plugin: config.Evidence, Suite: result.Suite,
-			Cell: result.Cell, Provenance: result.Provenance, Origin: config.EvidenceOrigin,
-		})
-		if err != nil {
-			return bench.Result{}, fmt.Errorf("create tau-Voice candidate evidence lifecycle: %w", err)
-		}
-		evidenceLifecycle = created
+	evidenceLifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: ctx, Plugin: config.Evidence, Suite: result.Suite,
+		Cell: result.Cell, Provenance: result.Provenance, Origin: config.EvidenceOrigin,
+	})
+	if err != nil {
+		return bench.Result{}, fmt.Errorf("create tau-Voice candidate evidence lifecycle: %w", err)
 	}
 	if config.Limit > 0 || len(config.TaskIDs) > 0 || strings.TrimSpace(config.Domain) != "" {
 		// A restricted run is not the declared cell, and the report must not be
@@ -450,12 +453,10 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 			}
 			outcomes[index].Notes["artifacts"] = config.simulationDir(runName)
 			config.attachExecution(ctx, &outcomes[index])
-			if evidenceLifecycle != nil {
-				if err := config.retainCandidateOutcome(
-					ctx, evidenceLifecycle, domain, runName, outcomes[index],
-				); err != nil {
-					runErr = errors.Join(runErr, err)
-				}
+			if err := config.retainCandidateOutcome(
+				ctx, evidenceLifecycle, domain, runName, outcomes[index],
+			); err != nil {
+				runErr = errors.Join(runErr, err)
 			}
 		}
 		result.Tasks = append(result.Tasks, outcomes...)
@@ -463,9 +464,7 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 
 	result.Provenance = result.Provenance.Complete()
 	result.Finish()
-	if evidenceLifecycle != nil {
-		runErr = errors.Join(runErr, evidenceLifecycle.Finish(result))
-	}
+	runErr = errors.Join(runErr, evidenceLifecycle.Finish(result))
 	return result, runErr
 }
 
@@ -518,12 +517,10 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		"--hallucination-retries", fmt.Sprint(max(0, config.HallucinationRetries)),
 		"--voice-synthesis-provider", config.SynthesisProvider,
 	}
-	if config.Evidence != nil {
-		// This is an upstream artifact switch, not an alternate benchmark path.
-		// It makes tau2 retain the exact stereo conversation and simulation trace
-		// that the candidate plug-in imports after the subprocess completes.
-		arguments = append(arguments, "--verbose-logs")
-	}
+	// This is an upstream artifact switch, not an alternate benchmark path. It
+	// makes tau2 retain the exact stereo conversation and simulation trace that
+	// the mandatory candidate plug-in imports after the subprocess completes.
+	arguments = append(arguments, "--verbose-logs")
 	if config.SynthesisProvider == "fish_audio" {
 		arguments = append(arguments,
 			"--fish-audio-endpoint", config.SynthesisEndpoint,

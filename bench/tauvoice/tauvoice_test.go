@@ -36,6 +36,13 @@ func TestConditionsCoverTheAblationsTau2Accepts(t *testing.T) {
 	}
 }
 
+func TestRunRequiresCandidateEvidenceBeforeEnvironmentVerification(t *testing.T) {
+	_, err := tauvoice.Run(context.Background(), tauvoice.Config{})
+	if err == nil || !strings.Contains(err.Error(), "evidence plug-in") {
+		t.Fatalf("missing evidence error = %v", err)
+	}
+}
+
 func TestAttestedTauVoiceCellRequiresIndependentEvidenceBeforeRunning(t *testing.T) {
 	requirement, evidence := fixtureTauGraphExecution(t)
 	cell := bench.Reference()

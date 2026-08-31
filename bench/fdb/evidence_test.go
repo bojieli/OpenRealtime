@@ -18,6 +18,13 @@ type rejectingEvidencePlugin struct {
 	beginErr     error
 }
 
+func TestRunRefusesMissingEvidenceBeforeDatasetAccess(t *testing.T) {
+	_, err := Run(t.Context(), Options{Root: filepath.Join(t.TempDir(), "missing")})
+	if err == nil || !strings.Contains(err.Error(), "evidence plug-in") {
+		t.Fatalf("missing evidence error = %v", err)
+	}
+}
+
 func (plugin *rejectingEvidencePlugin) BeginAttempt(
 	_ context.Context, attempt candidate.Attempt,
 ) (candidate.AttemptEvidence, error) {

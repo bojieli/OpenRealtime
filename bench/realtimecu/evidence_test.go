@@ -19,6 +19,26 @@ type fixtureEvidencePlugin struct {
 	close  func() error
 }
 
+func TestRealtimeCURunRefusesNilEvidenceBeforeEnvironment(t *testing.T) {
+	var typed *fixtureEvidencePlugin
+	for _, plugin := range []EvidencePlugin{nil, typed} {
+		called := false
+		_, err := Run(t.Context(), Options{
+			Endpoint: "ws://hermetic.invalid/v1/realtime", Evidence: plugin,
+			dependencies: &runDependencies{
+				newEnvironment: func(context.Context, EnvironmentConfig) (realtimeCURunEnvironment, error) {
+					called = true
+					return realtimeCURunEnvironment{}, nil
+				},
+				playSamples: bench.PlaySamples, now: time.Now,
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "evidence plug-in") || called {
+			t.Fatalf("missing evidence error=%v environment called=%t", err, called)
+		}
+	}
+}
+
 func (plugin fixtureEvidencePlugin) BeginAttempt(
 	ctx context.Context, attempt EvidenceAttempt,
 ) (AttemptEvidence, error) {
@@ -148,6 +168,10 @@ func TestRunnerRejectsCaptureRateThatDriftsFromCellIdentity(t *testing.T) {
 	_, err := Run(t.Context(), Options{
 		Endpoint: "ws://fixture.invalid/v1/realtime", Cell: ReferenceCell(), FrameRate: 10,
 		Observers: []string{"fixture.graph-native-observer"},
+		Evidence: fixtureEvidencePlugin{
+			begin:  func(context.Context, EvidenceAttempt) (AttemptEvidence, error) { return nil, nil },
+			finish: func(context.Context, bench.Result) error { return nil },
+		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "capture is 10fps") {
 		t.Fatalf("capture-rate drift error = %v", err)
@@ -216,6 +240,63 @@ func TestRunFinishesEvidenceOnEnvironmentFailure(t *testing.T) {
 	if !errors.Is(err, want) || finishCalls != 1 || closeCalls != 1 || result.Summary.Complete {
 		t.Fatalf("Run result=%+v error=%v finish calls=%d close calls=%d",
 			result, err, finishCalls, closeCalls)
+	}
+}
+
+func TestCanceledRunUsesBoundedEvidenceContexts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	completeCalled, finishCalled := false, false
+	plugin := fixtureEvidencePlugin{
+		begin: func(context.Context, EvidenceAttempt) (AttemptEvidence, error) {
+			return fixtureAttemptEvidence{
+				captureAudio: func(bench.SessionAudioCapture) error { return nil },
+				captureVideo: func(bench.SessionVideoCapture) error { return nil },
+				abort:        func() error { return nil },
+				complete: func(cleanup context.Context, completion EvidenceCompletion) error {
+					completeCalled = true
+					deadline, bounded := cleanup.Deadline()
+					if cleanup.Err() != nil || !bounded || time.Until(deadline) <= 0 ||
+						time.Until(deadline) > realtimeCUAttemptEvidenceTimeout {
+						t.Fatalf("attempt cleanup context: err=%v deadline=%v", cleanup.Err(), deadline)
+					}
+					if !strings.Contains(completion.Outcome.Error, "episode canceled") {
+						t.Fatalf("canceled completion = %+v", completion.Outcome)
+					}
+					return nil
+				},
+			}, nil
+		},
+		finish: func(cleanup context.Context, result bench.Result) error {
+			finishCalled = true
+			deadline, bounded := cleanup.Deadline()
+			if cleanup.Err() != nil || !bounded || time.Until(deadline) <= 0 ||
+				time.Until(deadline) > realtimeCUSuiteEvidenceTimeout {
+				t.Fatalf("suite cleanup context: err=%v deadline=%v", cleanup.Err(), deadline)
+			}
+			return nil
+		},
+	}
+	dependencies := &runDependencies{
+		newEnvironment: func(context.Context, EnvironmentConfig) (realtimeCURunEnvironment, error) {
+			return realtimeCURunEnvironment{
+				episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+					cancel()
+					return realtimeCURunEpisode{}, errors.New("episode canceled")
+				},
+				close: func() error { return nil },
+			}, nil
+		},
+		playSamples: bench.PlaySamples, now: time.Now,
+	}
+	result, err := Run(ctx, Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		Groundings: []Grounding{GroundingPixel}, Categories: []string{"control"}, Limit: 1,
+		FrameRate: 3, Evidence: plugin, dependencies: dependencies,
+	})
+	if err != nil || !completeCalled || !finishCalled || len(result.Tasks) != 1 ||
+		!strings.Contains(result.Tasks[0].Error, "episode canceled") {
+		t.Fatalf("canceled result=%+v error=%v complete=%t finish=%t",
+			result, err, completeCalled, finishCalled)
 	}
 }
 
