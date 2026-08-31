@@ -3096,3 +3096,234 @@ func assertNoEnvelope(t *testing.T, input element.InputPort) {
 		t.Fatalf("receive empty %s: %v", input.Name(), err)
 	}
 }
+
+// The refusals in the authority chain are the whole reason the chain exists,
+// and most of them were never exercised: ten guards across the target fence,
+// the ledger boundary, and the proposal validators could each be replaced with
+// `if false` while the suite stayed green. A guard nobody exercises can be
+// inverted or deleted by a refactor without anything going red, which is how
+// an authority surface decays into decoration while still looking careful.
+// These tests are deliberately about the refusals only; the accepting paths
+// are already covered by the element tests above.
+
+func testTargetFenceEntry() targetEntry {
+	return targetEntry{
+		reference: "target/browser", digest: "sha256:browser",
+		target: computeruse.Target{
+			Name: "browser", Sources: []string{"browser"}, Width: 1024, Height: 768,
+		},
+	}
+}
+
+func testConfirmedActionFor(name, target string, arguments string) ConfirmedAction {
+	return ConfirmedAction{Declared: DeclaredAction{
+		Target: target,
+		Admitted: AdmittedProposal{Proposal: cognitionelements.ToolProposal{
+			Call: trajectory.ToolCall{
+				CallID: "fence-call", Name: name, Arguments: json.RawMessage(arguments),
+			},
+			Declared: true, ProviderAuthority: continuation.ToolAuthorityPropose,
+		}},
+	}}
+}
+
+func TestTargetFenceRefusesUndeclaredNamespacedActionsAndForeignTargetsAndSources(t *testing.T) {
+	entry := testTargetFenceEntry()
+	for _, test := range []struct {
+		name      string
+		confirmed ConfirmedAction
+		want      string
+	}{
+		{
+			name:      "ordinary tool declares a target it did not resolve",
+			confirmed: testConfirmedActionFor("lookup.weather", "other-surface", `{}`),
+			want:      "does not match resolved target",
+		},
+		{
+			name: "name claims the computer-use namespace without being a declared action",
+			confirmed: testConfirmedActionFor("computer.exfiltrate", "browser",
+				`{"source":"browser"}`),
+			want: "is not a declared computer-use action",
+		},
+		{
+			name: "computer-use action declares a target it did not resolve",
+			confirmed: testConfirmedActionFor(computeruse.Click, "other-surface",
+				`{"source":"browser","x":1,"y":2}`),
+			want: "does not match resolved target",
+		},
+		{
+			name:      "computer-use action names no video source",
+			confirmed: testConfirmedActionFor(computeruse.Click, "browser", `{"x":1,"y":2}`),
+			want:      "does not name a video source",
+		},
+		{
+			name: "computer-use action names a source the target does not own",
+			confirmed: testConfirmedActionFor(computeruse.Click, "browser",
+				`{"source":"desktop","x":1,"y":2}`),
+			want: "does not own source",
+		},
+		{
+			name:      "arguments are not decodable",
+			confirmed: testConfirmedActionFor(computeruse.Click, "browser", `["not","an","object"]`),
+			want:      "decode target arguments",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateTargetAuthorization(entry, test.confirmed)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("authorization error = %v, want one containing %q", err, test.want)
+			}
+		})
+	}
+
+	// The two admissions the fence must still make: an ordinary tool that
+	// claims no target at all, and the one computer-use action that legitimately
+	// observes nothing.
+	if err := validateTargetAuthorization(entry,
+		testConfirmedActionFor("lookup.weather", "", `{}`)); err != nil {
+		t.Fatalf("ordinary tool without a declared target = %v, want admitted", err)
+	}
+	if err := validateTargetAuthorization(entry,
+		testConfirmedActionFor(computeruse.Wait, "browser", `{"seconds":1}`)); err != nil {
+		t.Fatalf("wait without a source = %v, want admitted", err)
+	}
+}
+
+func testAdmittedProposal() AdmittedProposal {
+	return AdmittedProposal{
+		Proposal: cognitionelements.ToolProposal{
+			Call: trajectory.ToolCall{CallID: "admitted-call", Name: computeruse.Click,
+				Arguments: json.RawMessage(`{"source":"browser","x":1,"y":2}`)},
+			Declared: true, ProviderAuthority: continuation.ToolAuthorityPropose,
+		},
+		ProposalItemID: "proposal-envelope", CandidateItemID: "candidate-envelope",
+		ResultItemID: "result-envelope", ModelRunID: "model-run", SessionID: "authority-session",
+		ActivationItemID: "activation-trigger", ActivationCauseItemID: "activation-cause",
+		Authority: trajectory.AuthorityUser, AuthorityItemID: "authority-observation",
+		ObservationTriggerItemID: "authority-trigger", SourceRevision: 7, ContextVersion: 1,
+		ContextEnvelopeItemID: "context-envelope", ContextTailItem: "authority-observation",
+		ProviderReference: "test", ModelResultDigest: testModelResultDigest,
+		ModelProducer: testModelProducer(),
+	}
+}
+
+func TestAdmittedProposalRefusesUndeclaredToolsAbsentRevisionsAndEffectAuthority(t *testing.T) {
+	if err := validateAdmittedProposal(testAdmittedProposal()); err != nil {
+		t.Fatalf("well-formed admitted proposal = %v, want admitted", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*AdmittedProposal)
+		want string
+	}{
+		{
+			name: "provider emitted a tool it never declared",
+			edit: func(value *AdmittedProposal) { value.Proposal.Declared = false },
+			want: "absent from its invocation declaration",
+		},
+		{
+			name: "provider authority cannot propose at all",
+			edit: func(value *AdmittedProposal) {
+				value.Proposal.ProviderAuthority = continuation.ToolAuthorityNone
+			},
+			want: "cannot emit a tool proposal",
+		},
+		{
+			name: "no source revision",
+			edit: func(value *AdmittedProposal) { value.SourceRevision = 0 },
+			want: "positive source and context revisions",
+		},
+		{
+			name: "no context version",
+			edit: func(value *AdmittedProposal) { value.ContextVersion = 0 },
+			want: "positive source and context revisions",
+		},
+		{
+			name: "authority cannot authorize an external effect",
+			edit: func(value *AdmittedProposal) { value.Authority = trajectory.AuthorityObserver },
+			want: "cannot authorize an external effect",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := testAdmittedProposal()
+			test.edit(&value)
+			err := validateAdmittedProposal(value)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("admission error = %v, want one containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestModelProducerEvidenceRefusesUnattributedRuns(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		edit func(*trajectory.Producer)
+		want string
+	}{
+		{
+			name: "phase is neither fast nor slow",
+			edit: func(producer *trajectory.Producer) { producer.Phase = trajectory.PhaseRuntime },
+			want: "phase must be fast or slow",
+		},
+		{
+			name: "no provider identity",
+			edit: func(producer *trajectory.Producer) { producer.Provider = "  " },
+			want: "provider and model identities",
+		},
+		{
+			name: "no model identity",
+			edit: func(producer *trajectory.Producer) { producer.Model = "" },
+			want: "provider and model identities",
+		},
+		{
+			name: "no effective speech authority",
+			edit: func(producer *trajectory.Producer) { producer.SpeechAuthority = "" },
+			want: "explicit effective speech authority",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			producer := testModelProducer()
+			test.edit(&producer)
+			err := validateModelProducerEvidence(producer)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("producer evidence error = %v, want one containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+// The ledger boundary re-checks the identity split that AuthorizedCallCommit
+// established, so that a canonical action reaching the ledger from anywhere
+// cannot name one item as both the model's proposal and the runtime's
+// authorized call. Collapsing the two would make the promotion invisible in
+// the trajectory and let a proposal stand in for its own authorization.
+func TestCanonicalActionRefusesACollapsedProposalAndToolCallIdentity(t *testing.T) {
+	_, canonical := canonicalAttestationFixture(t, trajectory.PhaseFast)
+	if err := validateCanonicalAction(canonical); err != nil {
+		t.Fatalf("well-formed canonical action = %v, want admitted", err)
+	}
+	collapsed := canonical
+	collapsed.TrajectoryItemID = collapsed.ProposalItemID
+	err := validateCanonicalAction(collapsed)
+	if err == nil || !strings.Contains(err.Error(), "must be distinct") {
+		t.Fatalf("collapsed identity error = %v, want one requiring distinct identities", err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*CanonicalAction)
+	}{
+		{"no proposal item", func(value *CanonicalAction) { value.ProposalItemID = " " }},
+		{"no trajectory item", func(value *CanonicalAction) { value.TrajectoryItemID = "" }},
+		{"no store version", func(value *CanonicalAction) { value.StoreVersion = 0 }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			value := canonical
+			test.edit(&value)
+			if err := validateCanonicalAction(value); err == nil ||
+				!strings.Contains(err.Error(), "incomplete trajectory promotion evidence") {
+				t.Fatalf("promotion evidence error = %v", err)
+			}
+		})
+	}
+}
