@@ -52,8 +52,6 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runReview(arguments[1:], stdout)
 	case "compare":
 		return runCompare(arguments[1:], stdout)
-	case "simulate":
-		return runSimulate(arguments[1:], stdout)
 	case "datasets":
 		return runDatasets(arguments[1:], stdout)
 	case "providers":
@@ -86,7 +84,6 @@ commands:
   bench         run a measurement suite against a running server
   review        run secondary offline reviews from sealed benchmark evidence
   profile       freeze strict executable-bound graph launch profiles
-  simulate      hold a conversation between two agents and check what happened
   compare       read two saved cells and report the pairing
   datasets      inventory a prepared benchmark dataset
   providers     list the model providers this build can be pointed at

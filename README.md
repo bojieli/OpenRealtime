@@ -166,7 +166,6 @@ as its release gate. See [the benchmark harness](docs/benchmarks.md).
 | [Deployment](deploy/README.md) | the container, the release binaries, colocated model serving |
 | [Measurement](docs/measurement.md) | what is measured, and what is claimed |
 | [The benchmark harness](docs/benchmarks.md) | running a suite, reading a cell, adding one |
-| [Two agents, talking](docs/simulation.md) | conversations between two agents, and what they check |
 | [Efficiency](docs/efficiency.md) | what each part of the loop costs |
 
 ## What this claims, and what it does not

@@ -32,11 +32,6 @@ openrealtime bench fdb --limit 4           # a suite against it
 | `bench meeting` | OpenRealtime Meeting Assistant v1 | concurrent listening, speaking, shared-screen action, correction, and slow document work |
 | `bench dynacu` | DynaCU-Bench | optional independent external validation of dynamic computer use |
 
-Every suite here plays a recording at the system. For conversations where both
-sides are live — a support call, an interview, an argument over a large
-document — see [simulation.md](simulation.md), which connects two agents ear to
-mouth and checks what happened between them.
-
 Architecture experiments need more identity than the generic factor table can
 carry. [Architecture experiments](architecture-experiments.md) defines the
 versioned manifest, live session evidence, unavailable-cell handling, and the
