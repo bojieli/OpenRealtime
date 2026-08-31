@@ -1958,16 +1958,41 @@ it has been reviewed, tested, and committed with its evidence):
     Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
     Darwin macOS client gate. Local synthetic, transport-only, Linux Swift, or
     manifest-derived probes do not close these live/native requirements.
-- [ ] Complete the sidecar/model protocol-v4 hardening checkpoint.
-  - [ ] Publish the deployment registry and codec with a genuinely atomic,
-    create-only service batch operation.
-  - [ ] Validate every frame's media metadata and byte lanes against the exact
-    negotiated per-port format profile.
-  - [ ] Add a standard protocol-v4 conformance CLI fixture rather than routing
-    version 4 through the version-1 audio-only `Hello` path.
-  - [ ] Prove locked mount/dial negotiation for the omni, duplex-native, and
+- [x] Complete the sidecar/model protocol-v4 hardening checkpoint.
+  - [x] Publish the deployment registry and codec with a genuinely atomic,
+    create-only service batch operation. `Bootstrap.Install` publishes both
+    services through `ServiceSet.InstallIfAbsent`, which canonicalizes the
+    whole batch and refuses every colliding name under one lock *before* it
+    writes any member. Making the batch install as it checks is caught by both
+    `TestServiceSetInstallIfAbsentCollisionIsAllOrNothing` and
+    `TestBootstrapInstallCollisionDoesNotPartiallyPublish`.
+  - [x] Validate every frame's media metadata and byte lanes against the exact
+    negotiated per-port format profile. `validatePortFrame` enforces the
+    negotiated payload mode, the per-port JSON and binary maxima, and
+    `MediaFrameMetadata.validateAgainst`, in both directions. It is wired into
+    the live send and receive paths of `sidecar/client.go`,
+    `elements/model/runtime.go`, and `meeting/graphnative/foreground_session.go`
+    rather than into tests alone. Dropping either the byte maxima or the media
+    profile comparison fails
+    `TestV4NegotiatesEveryMediaPortAndEnforcesPayloadPairings`,
+    `TestV4OpaqueBinaryPortsDoNotAcquireMediaOrAudioSemantics`, and
+    `TestV4MediaFramesMustConformToTheExactNegotiatedProfile`.
+  - [x] Add a standard protocol-v4 conformance CLI fixture rather than routing
+    version 4 through the version-1 audio-only `Hello` path. `RunConformance`
+    dispatches version 4 to `runElementConformance`, which offers the
+    descriptor-backed `StandardElementConformanceHello`. Running
+    `openrealtime conformance sidecar -protocol-version 4 -- python3
+    sidecars/v4_conformance_sidecar.py` passes all fifteen checks, including
+    descriptor attestation, applied-config digest, per-port negotiation, the
+    typed request and result, causal correlation, and typed cancellation.
+  - [x] Prove locked mount/dial negotiation for the omni, duplex-native, and
     upstream-native external-model references.
-  - [ ] Pass focused and repository-wide race, test, vet, and diff gates; then
+    `TestLockedExternalModelComponentsMountAndNegotiateExactV4Sessions` mounts
+    each locked graph, captures the dial it actually makes, and proves the
+    offered `Hello`, every negotiated port format, the live capability
+    resolution, and the data plane. Offering version 1, or dropping the
+    required capabilities from the offer, fails it.
+  - [x] Pass focused and repository-wide race, test, vet, and diff gates; then
     review and commit the slice with its tracker boxes.
 - [x] Complete the deployment and secret-artifact foundation checkpoint.
   - [x] Expand sparse per-node deployment bindings to deterministic effective
