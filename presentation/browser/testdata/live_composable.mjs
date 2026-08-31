@@ -147,6 +147,8 @@ try {
     `[...document.querySelectorAll("article[data-role=assistant]")].map((node) => node.textContent).find((text) => text.includes(${JSON.stringify(CHALLENGE)})) ?? ""`);
   check("real model returned the unpredictable tool result", assistant.includes(CHALLENGE),
     `assistant response bytes=${new TextEncoder().encode(assistant).length}`);
+  check("challenge tool was called exactly once through response completion", await evaluate(
+    `document.getElementById("openrealtime-root").dataset.challengeToolCalls`) === "1");
   check("client reports no protocol error", await evaluate(
     `document.getElementById("error").textContent`) === "");
   check("no runtime exception", exceptions.length === 0, exceptions.join("; "));

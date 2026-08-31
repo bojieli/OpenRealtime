@@ -346,16 +346,18 @@ nothing is wrong: the events are valid, correctly named, and correctly
 directed. They are simply not read, and the symptom is an absence.
 
 Making text-only sessions reachable on `upstream` did this three times in one
-day — to the mirror, to the console, and to the pre-GA rename table, which had
-no name to rename onto while nothing downstream handled text.
+day — to the former mirror, to the former standalone client, and to the pre-GA
+rename table, which had no name to rename onto while nothing downstream
+handled text.
 
-It is not a property of that capability. Letting a client take the floor did the
-same thing to the console independently: it could declare `turn_detection: null`
-from its session editor and had no way to end a turn, so audio flowed, the
-server correctly waited to be told, and nothing happened — with no error
-anywhere, because nothing was wrong. Two unrelated capabilities, the same
-absence. Expect this of any capability that makes new events reachable, and run
-the audit when adding one rather than when something is reported.
+It is not a property of that capability. Letting a client take the floor did
+the same thing to the former standalone client independently: it could declare
+`turn_detection: null` from its session editor and had no way to end a turn, so
+audio flowed, the server correctly waited to be told, and nothing happened —
+with no error anywhere, because nothing was wrong. Two unrelated capabilities,
+the same absence. Expect this of any capability that makes new events
+reachable, and run the audit when adding one rather than when something is
+reported.
 
 Not every ageing is a new event, and the subtraction below will not find the
 ones that are not. An incomplete turn added no event at all — it added a new
@@ -370,9 +372,9 @@ arrives and enumerates only which statuses deserve a warning cannot be blinded
 by a new one — it shows something unfamiliar rather than nothing, which is a
 question somebody asks rather than an absence nobody notices. A consumer that
 enumerates the rendering instead reintroduces the same silence one layer down.
-The console does this: every status reaches its stats panel, and only
-`incomplete` and `failed` raise a notice, because `cancelled` is the user
-interrupting on purpose.
+The descriptor-locked shared reducer does this now: every status reaches client
+state, and only `incomplete` and `failed` require warning treatment, because
+`cancelled` is the user interrupting on purpose.
 
 The audit is cheap. Enumerate the events the server can emit, subtract the ones
 a consumer handles, and go through the remainder:

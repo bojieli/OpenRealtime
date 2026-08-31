@@ -199,7 +199,7 @@ go run ./cmd/openrealtime-livekit \
 The current participant subscribes to room audio and publishes agent audio.
 It also forwards protocol events carried as LiveKit data packets, so a custom
 room client can send `openrealtime.input_video_frame.append` exactly as the
-repository browser surface does. It does **not** yet decode an ordinary
+descriptor-locked browser client does. It does **not** yet decode an ordinary
 LiveKit screen-share or camera video track. A stock meeting client that only
 publishes a video track is therefore audio-only to this agent; use a protocol
 frame publisher or add a codec-to-JPEG bridge before calling that deployment

@@ -28,7 +28,10 @@ import (
 	"github.com/coder/websocket"
 )
 
-const presentationLiveEndpointEnvironment = "OPENREALTIME_PRESENTATION_LIVE_ENDPOINT"
+const (
+	presentationLiveEndpointEnvironment = "OPENREALTIME_PRESENTATION_LIVE_ENDPOINT"
+	presentationLiveRequiredEnvironment = "OPENREALTIME_PRESENTATION_LIVE_REQUIRED"
+)
 
 // TestLiveComposablePresentationClientAgainstRealModelInChromium always runs
 // the exact public composition against a hermetic protocol peer. When the
@@ -38,7 +41,10 @@ const presentationLiveEndpointEnvironment = "OPENREALTIME_PRESENTATION_LIVE_ENDP
 // upstream credential and endpoint remain inside the host relay.
 func TestLiveComposablePresentationClientAgainstRealModelInChromium(t *testing.T) {
 	challenge := livePresentationChallenge(t)
-	endpoint := strings.TrimSpace(os.Getenv(presentationLiveEndpointEnvironment))
+	endpoint, err := livePresentationEndpointFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
 	live := endpoint != ""
 	token := os.Getenv("OPENREALTIME_TOKEN")
 	model := strings.TrimSpace(os.Getenv("OPENREALTIME_PRESENTATION_MODEL"))
@@ -218,6 +224,34 @@ func TestLiveComposablePresentationClientAgainstRealModelInChromium(t *testing.T
 	if live {
 		fmt.Fprintln(os.Stderr, "live composable presentation client completed")
 	}
+}
+
+func TestLivePresentationGateRequiresProvisionedEndpointWhenMarkedRequired(t *testing.T) {
+	t.Setenv(presentationLiveEndpointEnvironment, "")
+	t.Setenv(presentationLiveRequiredEnvironment, "1")
+	if _, err := livePresentationEndpointFromEnvironment(); err == nil ||
+		!strings.Contains(err.Error(), presentationLiveEndpointEnvironment) {
+		t.Fatalf("missing required live endpoint error = %v", err)
+	}
+
+	t.Setenv(presentationLiveRequiredEnvironment, "yes")
+	if _, err := livePresentationEndpointFromEnvironment(); err == nil ||
+		!strings.Contains(err.Error(), "must be empty or 1") {
+		t.Fatalf("invalid live-required sentinel error = %v", err)
+	}
+}
+
+func livePresentationEndpointFromEnvironment() (string, error) {
+	endpoint := strings.TrimSpace(os.Getenv(presentationLiveEndpointEnvironment))
+	required := strings.TrimSpace(os.Getenv(presentationLiveRequiredEnvironment))
+	if required != "" && required != "1" {
+		return "", fmt.Errorf("%s must be empty or 1", presentationLiveRequiredEnvironment)
+	}
+	if required == "1" && endpoint == "" {
+		return "", fmt.Errorf("%s requires %s", presentationLiveRequiredEnvironment,
+			presentationLiveEndpointEnvironment)
+	}
+	return endpoint, nil
 }
 
 func assertPresentationHostHidesUpstream(t *testing.T, base, endpoint, token string) {

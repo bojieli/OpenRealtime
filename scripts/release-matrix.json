@@ -331,6 +331,7 @@
       "command": ["{go}", "test", "-count=1", "-v", "./presentation/browser", "-run", "^TestLiveComposablePresentationClientAgainstRealModelInChromium$"],
       "environment": {
         "OPENREALTIME_PRESENTATION_LIVE_ENDPOINT": "{env:OPENREALTIME_PRESENTATION_LIVE_ENDPOINT}",
+        "OPENREALTIME_PRESENTATION_LIVE_REQUIRED": "1",
         "OPENREALTIME_RELEASE_GATE": "1"
       },
       "timeout": "30m",

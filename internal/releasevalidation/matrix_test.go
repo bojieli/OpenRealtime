@@ -287,6 +287,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"^TestLiveComposablePresentationClientAgainstRealModelInChromium$",
 	}) || livePresentation.Environment["OPENREALTIME_PRESENTATION_LIVE_ENDPOINT"] !=
 		"{env:OPENREALTIME_PRESENTATION_LIVE_ENDPOINT}" ||
+		livePresentation.Environment["OPENREALTIME_PRESENTATION_LIVE_REQUIRED"] != "1" ||
 		livePresentation.Environment["OPENREALTIME_RELEASE_GATE"] != "1" ||
 		livePresentation.SkipPolicy != SkipForbid {
 		t.Fatalf("live composable presentation gate was weakened: %+v", livePresentation)
