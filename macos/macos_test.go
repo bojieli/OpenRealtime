@@ -229,6 +229,8 @@ func TestNativeNormalPathNeverInfersEndpointsOrPlacesCredentialsInURLs(t *testin
 		"Sources/OpenRealtimeMac/HostEffects.swift",
 		"Sources/OpenRealtimeMac/HostedArtifacts.swift",
 		"Sources/OpenRealtimeMac/NativeClientAssembly.swift",
+		"Sources/OpenRealtimeMac/NativeDeployment.swift",
+		"Sources/OpenRealtimeMac/NativeClientHost.swift",
 	}
 	for _, name := range files {
 		content, err := os.ReadFile(name)
@@ -466,7 +468,7 @@ func TestNativeWindowSceneIdentityIsStableAcrossLaunches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(app), "WindowGroup(\"OpenRealtime Developer\") {\n            NativeRootView(model: model, launchFailure: launchFailure)\n        }") {
+	if !strings.Contains(string(app), "WindowGroup(\"OpenRealtime Developer\") {\n            NativeRootView(host: host)\n        }") {
 		t.Error("the window scene no longer has one named root view")
 	}
 	if !strings.Contains(string(app), "struct NativeRootView: View {") {
@@ -479,5 +481,57 @@ func TestNativeWindowSceneIdentityIsStableAcrossLaunches(t *testing.T) {
 		if strings.Contains(string(app), fragment) {
 			t.Errorf("%q is file-private and mangles the window autosave name", fragment)
 		}
+	}
+}
+
+// The operator can point the client at their own deployment, which a client
+// whose server lives on another host requires. What that must not become is a
+// mutable endpoint directory: a chosen deployment is still derived once, from
+// one value a person typed, then frozen and fingerprinted by the portable core
+// before any provider is constructed. No endpoint is ever derived from another
+// endpoint's URL, and a directory supplied by the environment stays policy the
+// view cannot edit.
+func TestNativeDeploymentIsChosenByTheOperatorAndStillFrozen(t *testing.T) {
+	deployment, err := os.ReadFile("Sources/OpenRealtimeMac/NativeDeployment.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := os.ReadFile("Sources/OpenRealtimeMac/NativeClientHost.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := os.ReadFile("Sources/OpenRealtimeMac/ContentView.swift")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every derived directory goes through the portable freeze, so the
+	// fingerprint always covers the contents the client will use.
+	if !strings.Contains(string(deployment), "return try NativeEndpointDirectory.freeze(endpoints)") {
+		t.Error("a chosen deployment no longer produces a frozen, fingerprinted directory")
+	}
+	// A base URL is deployment wiring, never a place for a credential.
+	if !strings.Contains(string(deployment), "the base URL must not carry credentials") {
+		t.Error("the deployment base no longer refuses embedded credentials")
+	}
+	// Changing wiring disposes the graph rather than mutating a live one.
+	if !strings.Contains(string(host), "dispose()") ||
+		!strings.Contains(string(host), "model?.shutdown()") {
+		t.Error("changing deployment no longer disposes the provider graph")
+	}
+	// An environment-supplied directory stays exact.
+	for _, fragment := range []string{
+		"guard !pinnedByEnvironment else { return }",
+		"pinnedByEnvironment = pinnedDirectoryData != nil",
+	} {
+		if !strings.Contains(string(host), fragment) {
+			t.Errorf("a pinned endpoint directory is no longer policy: %q", fragment)
+		}
+	}
+	if !strings.Contains(string(view), "host.pinnedByEnvironment") {
+		t.Error("the view no longer states that pinned wiring is not editable")
+	}
+	// The live directory itself is still not a bound, editable value.
+	if strings.Contains(string(view), "$model.endpoint") {
+		t.Error("native view can mutate immutable endpoint-directory wiring")
 	}
 }

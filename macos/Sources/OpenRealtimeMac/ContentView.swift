@@ -4,6 +4,7 @@ import WebKit
 
 struct ContentView: View {
     @ObservedObject var model: DeveloperModel
+    @ObservedObject var host: NativeClientHost
 
     var body: some View {
         NavigationSplitView {
@@ -36,6 +37,34 @@ struct ContentView: View {
 
     private var configuration: some View {
         Form {
+            Section("Deployment") {
+                if host.pinnedByEnvironment {
+                    Text("Wiring is pinned by OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    TextField("Server base URL", text: $host.draft.base)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(model.connectionState != .disconnected)
+                    Picker("Serves", selection: $host.draft.layout) {
+                        ForEach(NativeDeploymentLayout.allCases) { layout in
+                            Text("\(layout.title) · \(layout.detail)").tag(layout)
+                        }
+                    }
+                    .disabled(model.connectionState != .disconnected)
+                    HStack {
+                        Button("Apply and rebuild client") { host.applyDraft() }
+                            .disabled(model.connectionState != .disconnected)
+                        Button("Bundled") { host.resetToBundled() }
+                            .disabled(model.connectionState != .disconnected)
+                    }
+                    if !host.deploymentDiagnostic.isEmpty {
+                        Text(host.deploymentDiagnostic).font(.caption).foregroundStyle(.red)
+                    }
+                    Text("Applying disposes the provider graph and rebuilds it against a newly frozen directory. Disconnect first.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             Section("Connection") {
                 LabeledContent("WebSocket endpoint") {
                     Text(model.endpoint).font(.caption.monospaced()).textSelection(.enabled)

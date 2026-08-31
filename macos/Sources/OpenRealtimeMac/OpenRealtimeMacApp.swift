@@ -10,8 +10,7 @@ struct OpenRealtimeMacApp: App {
     private static let connectOnLaunchArgument = "--openrealtime-connect-on-launch"
     private static let hostedSmokePrefix = "--openrealtime-hosted-smoke="
 
-    private let model: DeveloperModel?
-    private let launchFailure: String
+    @ObservedObject private var host: NativeClientHost
 
     init() {
         let hostedSmokeRequested = CommandLine.arguments.contains {
@@ -30,12 +29,12 @@ struct OpenRealtimeMacApp: App {
             let endpoints = try nativeEndpointDirectoryData(
                 environment["OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY"]
             )
-            let developer = try DeveloperModel(
-                distribution: distribution, endpointDirectoryData: endpoints
+            let assembled = NativeClientHost(
+                distribution: distribution, pinnedDirectoryData: endpoints
             )
-            model = developer
-            launchFailure = ""
-            if automation.connectOnLaunch || automation.hostedSmokeNonce != nil {
+            host = assembled
+            if automation.connectOnLaunch || automation.hostedSmokeNonce != nil,
+               let developer = assembled.model {
                 Task { @MainActor in
                     developer.connect()
                     if let nonce = automation.hostedSmokeNonce {
@@ -48,8 +47,7 @@ struct OpenRealtimeMacApp: App {
                 }
             }
         } catch {
-            model = nil
-            launchFailure = error.localizedDescription
+            host = NativeClientHost(refusal: error.localizedDescription)
             if hostedSmokeRequested {
                 hostedSmokeRecord(
                     "FAILURE", "native client initialization failed: \(error.localizedDescription)"
@@ -61,16 +59,18 @@ struct OpenRealtimeMacApp: App {
 
     var body: some Scene {
         WindowGroup("OpenRealtime Developer") {
-            NativeRootView(model: model, launchFailure: launchFailure)
+            NativeRootView(host: host)
         }
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Connect") { model?.connect() }
+                Button("Connect") { host.model?.connect() }
                     .keyboardShortcut("k", modifiers: [.command])
-                    .disabled(model == nil || (model?.connectionState != .disconnected && model?.connectionState != .failed))
-                Button("Disconnect") { model?.disconnect() }
-                    .disabled(model == nil || model?.connectionState == .disconnected)
+                    .disabled(host.model == nil ||
+                              (host.model?.connectionState != .disconnected &&
+                               host.model?.connectionState != .failed))
+                Button("Disconnect") { host.model?.disconnect() }
+                    .disabled(host.model == nil || host.model?.connectionState == .disconnected)
             }
         }
     }
@@ -340,15 +340,14 @@ private struct NativeLaunchConfigurationError: LocalizedError {
 // orphan key pair in the preferences. One named, non-private root view keeps
 // that identity stable across launches.
 struct NativeRootView: View {
-    let model: DeveloperModel?
-    let launchFailure: String
+    @ObservedObject var host: NativeClientHost
 
     var body: some View {
-        if let model {
-            ContentView(model: model)
+        if let model = host.model {
+            ContentView(model: model, host: host)
                 .frame(minWidth: 1160, minHeight: 760)
         } else {
-            NativeLaunchFailureView(message: launchFailure)
+            NativeLaunchFailureView(message: host.launchFailure)
                 .frame(minWidth: 640, minHeight: 360)
         }
     }
