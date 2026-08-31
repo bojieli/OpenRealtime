@@ -165,6 +165,30 @@ func TestObservationPrioritiesKeepUsersOrderedAndObserversParallel(t *testing.T)
 	}
 }
 
+func TestVisualRevisionDedupeSeparatesAcousticAndGroundedCounters(t *testing.T) {
+	runtime := &runtime{visualHandledRev: make(map[string]visualHandledRevisions)}
+	const intentID = "monitor-deployment-alert"
+
+	// ASR and screen narration own independent revision counters. A completed
+	// acoustic prefix at revision 8 must not suppress the later alert frame just
+	// because that observer is only at its own revision 2.
+	runtime.markVisualRevisionHandled(intentID, 8, false)
+	if !runtime.visualRevisionHandled(intentID, 8, false) {
+		t.Fatal("the completed acoustic revision was not retained")
+	}
+	if runtime.visualRevisionHandled(intentID, 2, true) {
+		t.Fatal("an acoustic revision suppressed an unrelated grounded frame")
+	}
+
+	runtime.markVisualRevisionHandled(intentID, 2, true)
+	if !runtime.visualRevisionHandled(intentID, 2, true) {
+		t.Fatal("the completed grounded revision was not retained")
+	}
+	if runtime.visualRevisionHandled(intentID, 9, false) {
+		t.Fatal("a grounded revision advanced the independent acoustic counter")
+	}
+}
+
 func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t *testing.T) {
 	instruction := trajectory.Item{
 		ID: "first-instruction", Kind: trajectory.KindInstruction, InvocationID: "visual-1",

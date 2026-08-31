@@ -857,7 +857,7 @@ func (runtime *runtime) queueArmedVisualObservation(batch eventloop.Batch) bool 
 	intentID, task := runtime.visualTask(snapshot, false)
 	revision := runtime.latestRevision(batch)
 	if intentID == "" || task == "" || !runtime.visualIntentArmed(intentID) ||
-		!runtime.visualIntentEligible(intentID) || runtime.visualRevisionHandled(intentID, revision) {
+		!runtime.visualIntentEligible(intentID) || runtime.visualRevisionHandled(intentID, revision, true) {
 		return false
 	}
 	runtime.visualActionMu.Lock()

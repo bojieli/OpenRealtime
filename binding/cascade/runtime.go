@@ -242,7 +242,7 @@ type runtime struct {
 	visualPolicy              map[string]interaction.VisualIntent
 	visualPolicyTask          map[string]string
 	visualResumed             map[string]bool
-	visualHandledRev          map[string]uint64
+	visualHandledRev          map[string]visualHandledRevisions
 	visualProvisionalTerminal map[string]bool
 	visualProvisionalRetry    map[string]uint64
 	visualPending             *liveVisualDecision
@@ -293,7 +293,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		visualIntentByCall: make(map[string]string), visualArmed: make(map[string]bool),
 		visualEvaluated: make(map[string]bool),
 		visualPolicy:    make(map[string]interaction.VisualIntent), visualPolicyTask: make(map[string]string),
-		visualResumed: make(map[string]bool), visualHandledRev: make(map[string]uint64),
+		visualResumed: make(map[string]bool), visualHandledRev: make(map[string]visualHandledRevisions),
 		visualProvisionalTerminal: make(map[string]bool),
 		visualProvisionalRetry:    make(map[string]uint64),
 		window:                    &interaction.Window{},

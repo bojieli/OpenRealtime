@@ -565,7 +565,7 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 		runtime.noteInterject("acting silently, but something is already in flight")
 		return
 	}
-	if runtime.visualRevisionHandled(visualIntentID, decision.Revision.ID) {
+	if runtime.visualRevisionHandled(visualIntentID, decision.Revision.ID, false) {
 		runtime.releaseInterjection(claim)
 		runtime.noteInterject("acting silently, but this visual revision was already handled")
 		return
@@ -615,7 +615,7 @@ func (runtime *runtime) actSilently(decision interaction.Context) {
 }
 
 func (runtime *runtime) releaseSilentVisualLane(intentID string, revision uint64) {
-	runtime.markVisualRevisionHandled(intentID, revision)
+	runtime.markVisualRevisionHandled(intentID, revision, false)
 	runtime.visualActionMu.Lock()
 	if runtime.visualPending != nil && runtime.visualPending.intentID == intentID &&
 		runtime.visualPending.context.Revision.ID <= revision {
@@ -744,7 +744,7 @@ func (runtime *runtime) considerLiveVisual(decision interaction.Context) {
 	if strings.TrimSpace(intentID) == "" {
 		return
 	}
-	if runtime.visualRevisionHandled(intentID, decision.Revision.ID) {
+	if runtime.visualRevisionHandled(intentID, decision.Revision.ID, false) {
 		return
 	}
 	// Keep only the latest revision while the VLM is occupied. The next worker
@@ -830,7 +830,7 @@ func (runtime *runtime) absorbLiveVisualDecision(pending liveVisualDecision) {
 }
 
 func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
-	if runtime.visualRevisionHandled(pending.intentID, pending.context.Revision.ID) {
+	if runtime.visualRevisionHandled(pending.intentID, pending.context.Revision.ID, pending.groundVisual) {
 		return
 	}
 	runtime.visualActionMu.Lock()
@@ -842,7 +842,7 @@ func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
 		snapshot, pending.intentID, pending.context.Revision.Text(),
 		pending.context.Revision.ObservedNS,
 	)
-	defer runtime.markVisualRevisionHandled(intentID, pending.context.Revision.ID)
+	defer runtime.markVisualRevisionHandled(intentID, pending.context.Revision.ID, pending.groundVisual)
 	if intentID == "" || task == "" || !runtime.visualIntentEligible(intentID) {
 		return
 	}
@@ -992,25 +992,44 @@ func (runtime *runtime) armProvisionalVisualRetry(
 	})
 }
 
-func (runtime *runtime) visualRevisionHandled(intentID string, revision uint64) bool {
+// visualHandledRevisions keeps provider-local counters in separate domains.
+// Audio ASR and the screen observer both start their revisions at one; treating
+// those unrelated numbers as a single sequence can make a later screen change
+// look older than the user utterance that armed its monitor.
+type visualHandledRevisions struct {
+	acoustic uint64
+	grounded uint64
+}
+
+func (runtime *runtime) visualRevisionHandled(intentID string, revision uint64, grounded bool) bool {
 	intentID = strings.TrimSpace(intentID)
 	if intentID == "" || revision == 0 {
 		return false
 	}
 	runtime.visualActionMu.Lock()
 	defer runtime.visualActionMu.Unlock()
-	return runtime.visualHandledRev[intentID] >= revision
+	handled := runtime.visualHandledRev[intentID]
+	if grounded {
+		return handled.grounded >= revision
+	}
+	return handled.acoustic >= revision
 }
 
-func (runtime *runtime) markVisualRevisionHandled(intentID string, revision uint64) {
+func (runtime *runtime) markVisualRevisionHandled(intentID string, revision uint64, grounded bool) {
 	intentID = strings.TrimSpace(intentID)
 	if intentID == "" || revision == 0 {
 		return
 	}
 	runtime.visualActionMu.Lock()
-	if revision > runtime.visualHandledRev[intentID] {
-		runtime.visualHandledRev[intentID] = revision
+	handled := runtime.visualHandledRev[intentID]
+	if grounded {
+		if revision > handled.grounded {
+			handled.grounded = revision
+		}
+	} else if revision > handled.acoustic {
+		handled.acoustic = revision
 	}
+	runtime.visualHandledRev[intentID] = handled
 	runtime.visualActionMu.Unlock()
 }
 
