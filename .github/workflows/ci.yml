@@ -51,6 +51,11 @@ jobs:
           go-version: '1.25'
           check-latest: true
 
+      - name: Review media sandbox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
+
       - name: Verification gate
         env:
           OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
@@ -139,6 +144,7 @@ jobs:
       - name: Browser for the WebRTC transport
         run: |
           sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
           sudo apt-get install -y --no-install-recommends chromium-browser \
             || sudo apt-get install -y --no-install-recommends chromium
           # The test looks for chromium, chromium-browser, then google-chrome on
