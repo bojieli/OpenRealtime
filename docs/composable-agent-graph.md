@@ -2330,6 +2330,21 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   agent with no audio requirement.
 - [x] Preserve injection checks, confirmation, idempotency, target identity,
   and ledger release gates in decomposed action elements and adversarial tests.
+- [x] Adversarially cover the refusal surface of the authority, provider,
+  canonical-record, admission, and descriptor-lock validators. A mutation sweep
+  — replacing one guard at a time with `if false` and rerunning the suite —
+  found fifty-five guards across nineteen validators that no test reached. The
+  line above already claimed adversarial tests for target identity and ledger
+  release gates; that claim was only partly supported, because four of the six
+  guards in `validateTargetAuthorization` and the ledger's own check that a
+  proposal and its authorized call are distinct items were among them.
+  Also unreached: the candidate-result provenance join in full, the descriptor
+  lock's dependency and effect equality and its generic resolution, the
+  admission governor's interactive reservation, `ValidateDescriptor` in full,
+  the refusal to show a tool catalogue to a model with no tool authority, the
+  refusal of a receipt dated after the current instant, and the client-effect
+  JSON depth bound in both directions. Fifty-three now fail under mutation; the
+  two that do not are internal cipher-error paths no caller can reach.
 
 - [ ] **Exit gate:** the architecture catalog accepts graphs whose exported
   contracts contain no audio ports.
