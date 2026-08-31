@@ -645,6 +645,90 @@ func TestScenarioGraphMalformedResultFallsBackToSealableDiagnostic(t *testing.T)
 	}
 }
 
+func TestScenarioGraphCredentialBearingErrorIsAbsentFromSourceAndPresentation(t *testing.T) {
+	t.Chdir("../..")
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
+	const secret = "scenario-transport-credential-must-never-be-retained"
+	directory := filepath.Join(t.TempDir(), "credential-error-review")
+	bundle, err := newScenarioGraphReviewBundle(directory, 1, requirement, []string{secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	outcome, runErr := executeScenarioGraphChecklist(
+		ctx, context.Background(), selection, requirement, adapterFingerprint,
+		1, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{},
+		func(graphnative.LiveExecutorConfig) (graphnative.AttemptExecutor, error) {
+			return func(
+				_ context.Context, key graphnative.AttemptKey, _ scenario.Scenario,
+			) (graphnative.AttemptObservation, error) {
+				cancel()
+				return graphnative.AttemptObservation{
+					Result: scenario.Result{Scenario: key.CaseName},
+				}, fmt.Errorf("upstream authorization failed for %s", secret)
+			}, nil
+		},
+	)
+	if !errors.Is(runErr, context.Canceled) || len(outcome.Attempts) != 1 {
+		t.Fatalf("credential-error outcome=%+v error=%v", outcome, runErr)
+	}
+	architecture := archbench.Result{
+		Version: archbench.ResultVersion,
+		Measurement: bench.Result{
+			Suite: graphnative.SuiteName, Expected: outcome.Checklist.Expected,
+			Provenance: bench.Provenance{StartedAt: time.Now().UTC().Format(time.RFC3339)},
+		},
+	}
+	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
+		t.Fatal(err)
+	}
+	architecture.Finish()
+	payload, err := marshalScenarioArchitectureResult(architecture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var presentation bytes.Buffer
+	reportScenarioGraphOutcome(&presentation, outcome, 1)
+	if bytes.Contains(payload, []byte(secret)) || bytes.Contains(presentation.Bytes(), []byte(secret)) ||
+		!bytes.Contains(payload, []byte("inspect the create-only review bundle")) {
+		t.Fatalf("credential-bearing error escaped sanitation: architecture=%q output=%q",
+			payload, presentation.String())
+	}
+	receipt, err := bundle.Finalize(
+		context.Background(), outcome.Checklist, payload,
+		graphnative.SourceOrigin{
+			Kind: "hermetic_fixture", Transport: bench.TransportWebSocket,
+			EndpointSHA256: scenarioGraphTestDigest("credential-error-endpoint"),
+		},
+		directory+".receipt.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graphnative.VerifySourceBundle(
+		context.Background(), graphnative.SourceBundleOptions{
+			Directory: directory, SensitiveValues: []string{secret},
+		}, receipt,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := filepath.WalkDir(directory, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return walkErr
+		}
+		retained, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if bytes.Contains(retained, []byte(secret)) {
+			return fmt.Errorf("retained credential in %s", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestScenarioGraphExecutorFactoryFailureSealsZeroMediaDiagnosticSource(t *testing.T) {
 	t.Chdir("../..")
 	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)

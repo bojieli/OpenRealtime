@@ -885,8 +885,14 @@ func appendScenarioGraphArchitectureAttempts(
 		return nil
 	}
 	for _, attempt := range attempts {
+		var retainedErr error
+		if attempt.Err != nil {
+			retainedErr = errors.New(
+				"scenario attempt failed; inspect the create-only review bundle",
+			)
+		}
 		result.Measurement.Tasks = append(result.Measurement.Tasks,
-			scenarioTask(attempt.Key.TaskID, attempt.Result, attempt.Err))
+			scenarioTask(attempt.Key.TaskID, attempt.Result, retainedErr))
 		if attempt.Result.Transcript.Runtime != nil {
 			result.Observed = append(result.Observed, archbench.Observation{
 				TaskID: attempt.Key.TaskID, Status: *attempt.Result.Transcript.Runtime,
@@ -907,7 +913,8 @@ func reportScenarioGraphOutcome(
 	byCase := make(map[string][]scenario.Result, len(scenario.Suite()))
 	for _, attempt := range outcome.Attempts {
 		if attempt.Err != nil {
-			fmt.Fprintf(output, "  ERR  %-28s %v\n", attempt.Key.CaseName, attempt.Err)
+			fmt.Fprintf(output, "  ERR  %-28s scenario attempt failed; inspect the create-only review bundle\n",
+				attempt.Key.CaseName)
 		}
 		byCase[attempt.Key.CaseName] = append(byCase[attempt.Key.CaseName], attempt.Result)
 	}
