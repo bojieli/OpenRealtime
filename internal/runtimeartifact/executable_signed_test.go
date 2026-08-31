@@ -80,6 +80,24 @@ func TestSignedDarwinExecutableIdentityFailsClosed(t *testing.T) {
 	}
 }
 
+func TestDarwinCodeSignatureBlobCanonicalizesAllocationTail(t *testing.T) {
+	blob := append(darwinSigningBlobFixture(16), make([]byte, 24)...)
+	for index := 16; index < len(blob); index++ {
+		blob[index] = byte(index + 1)
+	}
+	canonical, err := canonicalDarwinCodeSignatureBlob(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical) != 16 {
+		t.Fatalf("canonical code-signature length = %d, want 16", len(canonical))
+	}
+	canonical[8] ^= 1
+	if blob[8] != canonical[8] {
+		t.Fatal("canonical code-signature payload is not the exact kernel buffer prefix")
+	}
+}
+
 func TestDarwinCodeSignatureBlobValidationRejectsForgery(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -87,14 +105,14 @@ func TestDarwinCodeSignatureBlobValidationRejectsForgery(t *testing.T) {
 		want string
 	}{
 		{name: "magic", blob: func() []byte { value := darwinSigningBlobFixture(16); value[0] = 0; return value }(), want: "magic"},
-		{name: "length", blob: func() []byte {
+		{name: "oversized length", blob: func() []byte {
 			value := darwinSigningBlobFixture(16)
-			binary.BigEndian.PutUint32(value[4:8], 15)
+			binary.BigEndian.PutUint32(value[4:8], 17)
 			return value
 		}(), want: "length"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := validateDarwinCodeSignatureBlob(test.blob); err == nil ||
+			if _, err := canonicalDarwinCodeSignatureBlob(test.blob); err == nil ||
 				!strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error = %v, want substring %q", err, test.want)
 			}

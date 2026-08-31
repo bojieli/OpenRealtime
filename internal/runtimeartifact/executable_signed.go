@@ -47,16 +47,17 @@ func signedDarwinExecutableIdentity(
 	if !equalBytes(cdhashBefore, cdhashAfter) {
 		return inspect.ArtifactIdentity{}, errors.New("running executable CodeDirectory changed while it was identified")
 	}
-	if err := validateDarwinCodeSignatureBlob(signingBlob); err != nil {
+	canonicalBlob, err := canonicalDarwinCodeSignatureBlob(signingBlob)
+	if err != nil {
 		return inspect.ArtifactIdentity{}, err
 	}
 
 	digest := sha256.New()
 	_, _ = digest.Write([]byte(darwinExecutableDigestDomain))
 	var length [8]byte
-	binary.BigEndian.PutUint64(length[:], uint64(len(signingBlob)))
+	binary.BigEndian.PutUint64(length[:], uint64(len(canonicalBlob)))
 	_, _ = digest.Write(length[:])
-	_, _ = digest.Write(signingBlob)
+	_, _ = digest.Write(canonicalBlob)
 	_, _ = digest.Write(cdhashBefore)
 	identity := inspect.ArtifactIdentity{
 		ID: id, Digest: "sha256:" + hex.EncodeToString(digest.Sum(nil)),
@@ -83,21 +84,26 @@ func validateDarwinCodeSigningStatus(status uint32) error {
 	return nil
 }
 
-func validateDarwinCodeSignatureBlob(blob []byte) error {
+func canonicalDarwinCodeSignatureBlob(blob []byte) ([]byte, error) {
 	if len(blob) < 12 || len(blob) > maximumDarwinCodeSignatureBytes {
-		return fmt.Errorf("kernel returned an invalid code-signature size %d", len(blob))
+		return nil, fmt.Errorf("kernel returned an invalid code-signature size %d", len(blob))
 	}
 	magic := binary.BigEndian.Uint32(blob[:4])
 	if magic != darwinCodeSignatureMagic && magic != darwinDetachedSignatureMagic {
-		return fmt.Errorf("kernel returned unsupported code-signature magic 0x%08x", magic)
+		return nil, fmt.Errorf("kernel returned unsupported code-signature magic 0x%08x", magic)
 	}
-	if encoded := binary.BigEndian.Uint32(blob[4:8]); uint64(encoded) != uint64(len(blob)) {
-		return fmt.Errorf(
-			"kernel returned inconsistent code-signature length %d for %d bytes",
+	encoded := uint64(binary.BigEndian.Uint32(blob[4:8]))
+	if encoded < 12 || encoded > uint64(len(blob)) {
+		return nil, fmt.Errorf(
+			"kernel returned invalid code-signature payload length %d for %d bytes",
 			encoded, len(blob),
 		)
 	}
-	return nil
+	// csops reports the vnode's allocated LC_CODE_SIGNATURE slot. codesign may
+	// leave alignment or superseded allocation bytes beyond the SuperBlob's
+	// declared length. The kernel ignores that tail, so artifact identity does
+	// too; only the validated declared payload is code-signing material.
+	return blob[:int(encoded)], nil
 }
 
 func allZeroBytes(value []byte) bool {
