@@ -867,6 +867,19 @@ func (runtime *runtime) fail(code string, err error) {
 		}
 		return
 	}
+	if errors.Is(err, eventloop.ErrInterrupted) || errors.Is(err, context.Canceled) {
+		// Being interrupted is the interaction plane doing its job: the user
+		// resumed, a newer observation superseded this one, or the floor
+		// changed hands. Nothing was committed and whatever caused it gets its
+		// own turn, exactly as with a stale prefix above.
+		//
+		// drive/drain already treat ErrInterrupted and context.Canceled as
+		// ordinary, but the turn boundary reached fail directly, so an
+		// interruption arrived at the client as a session error. A full-duplex
+		// caller talks over the agent constantly, so that fired on almost every
+		// turn and ended the call each time.
+		return
+	}
 	runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{Code: code, Message: err.Error()})
 }
 
