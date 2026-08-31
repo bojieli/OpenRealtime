@@ -60,13 +60,16 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 	if queuedFreshVisual && !batchHasUserObservation(batch) {
 		return nil
 	}
-	// A live visual action's result is controller memory, not a new request for
-	// arbitrary reasoning while the same user utterance is still in progress.
-	// Starting the slow lane here races the required fresh-frame replan and can
-	// make that bounded decision stale. The endpoint observation will carry the
-	// complete utterance into ordinary fast/slow cognition independently.
-	if runtime.duplex.Snapshot().UserSpeaking && runtime.batchOnlyVisualToolResults(batch) {
-		return nil
+	// A successful visual action's result is controller memory, not a new
+	// request for speech or arbitrary reasoning. Composite-resume and the next
+	// fresh frame already carry its independent semantic and visual successors;
+	// treating the result as progress creates an unsolicited voice turn. A
+	// failure is still reportable once the user yields, while an in-progress
+	// utterance keeps the pre-existing non-interruption behavior.
+	if runtime.batchOnlyVisualToolResults(batch) {
+		if runtime.duplex.Snapshot().UserSpeaking || batchToolResultsSucceeded(batch) {
+			return nil
+		}
 	}
 	if handled, err := runtime.processParallelVisual(ctx, batch); handled {
 		return err
@@ -276,7 +279,9 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 			runtime.profileVisualOutcome("batch", request, outcome, nil)
 			switch outcome.Kind {
 			case cognition.VisualReflexAct:
-				visualDispatchErr = runtime.dispatchVisual(ctx, outcome.Result, request.VisualIntentID)
+				visualDispatchErr = runtime.dispatchVisual(
+					ctx, outcome.Result, request.VisualIntentID, outcome.Target,
+				)
 				if !batchHasUserObservation(batch) {
 					return visualDispatchErr
 				}
@@ -286,11 +291,9 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 				// error: the independent voice/reasoning obligation still exists,
 				// and the tool-result path (where one was committed) is not a
 				// substitute for it.
-				runtime.rememberCompositeResumeHeard(request.Heard)
-				signalErr := runtime.signal(interaction.SignalCompositeResume)
-				if signalErr != nil {
-					runtime.clearCompositeResumeHeard(request.Heard)
-				}
+				signalErr := runtime.signalCompositeResumeOnce(
+					request.VisualIntentID, request.Heard,
+				)
 				return errors.Join(visualDispatchErr, signalErr)
 			case cognition.VisualReflexWait:
 				if !batchHasUserObservation(batch) {
@@ -608,7 +611,9 @@ func (runtime *runtime) processParallelVisual(ctx context.Context, batch eventlo
 	runtime.applyVisualOutcome(request.VisualIntentID, outcome)
 	switch outcome.Kind {
 	case cognition.VisualReflexAct:
-		return true, runtime.dispatchAutonomousVisual(ctx, outcome.Result, request.VisualIntentID)
+		return true, runtime.dispatchAutonomousVisual(
+			ctx, outcome.Result, request.VisualIntentID, outcome.Target,
+		)
 	case cognition.VisualReflexWait:
 		return true, nil
 	default:
@@ -656,17 +661,35 @@ func (runtime *runtime) batchOnlyVisualToolResults(batch eventloop.Batch) bool {
 	callIDs := make([]string, 0, len(batch.Items))
 	for _, item := range batch.Items {
 		if item.Kind != trajectory.KindToolResult || item.ToolResult == nil {
-			continue
+			return false
 		}
 		callIDs = append(callIDs, item.ToolResult.CallID)
 	}
 	if len(callIDs) == 0 {
 		return false
 	}
+	for _, event := range batch.Events {
+		if event.Kind != trajectory.KindToolResult {
+			return false
+		}
+	}
 	runtime.visualActionMu.Lock()
 	defer runtime.visualActionMu.Unlock()
 	for _, callID := range callIDs {
 		if strings.TrimSpace(runtime.visualIntentByCall[callID]) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func batchToolResultsSucceeded(batch eventloop.Batch) bool {
+	if len(batch.Items) == 0 {
+		return false
+	}
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindToolResult || item.ToolResult == nil ||
+			!successfulToolResult(*item.ToolResult) {
 			return false
 		}
 	}
@@ -1151,11 +1174,12 @@ func (runtime *runtime) runFast(
 		// covered the very sentence it was being asked to interrupt over, and
 		// each refusal made the next one likelier.
 		spokenFor := everythingSaid(runtime.store.Snapshot())
-		if request.Interjecting && strings.TrimSpace(request.Heard) != "" {
-			// The live utterance is intentionally not canonical while an
-			// interjection runs. Include the exact fragment this output covered;
-			// otherwise the mark ends at the prior committed turn and every later
-			// partial looks wholly new, producing the same correction repeatedly.
+		if strings.TrimSpace(request.Heard) != "" && (request.Interjecting ||
+			request.Because == interaction.ReasonCompositeResume) {
+			// Live interjections and composite resumes both speak before their
+			// triggering utterance is canonical. Include the exact fragment this
+			// output covered; otherwise the endpoint looks wholly new and repeats
+			// the same correction or nonvisual half of a composite request.
 			spokenFor = strings.TrimSpace(spokenFor + " " + request.Heard)
 		}
 		runtime.markSpoken(spokenFor)
@@ -1953,8 +1977,14 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 		for callID, intent := range runtime.visualIntentByCall {
 			intents[callID] = intent
 		}
+		targets := make(map[string]string, len(runtime.visualTargetByCall))
+		for callID, target := range runtime.visualTargetByCall {
+			targets[callID] = target
+		}
 		runtime.visualActionMu.Unlock()
-		if duplicate := earlierIdenticalCompletedVisualCall(snapshot, call, candidateIntent, intents); duplicate != "" {
+		if duplicate := earlierIdenticalCompletedVisualCall(
+			snapshot, call, candidateIntent, intents, targets,
+		); duplicate != "" {
 			// The provider has already committed this call to the canonical log,
 			// so refusal is represented as an ordinary result rather than by
 			// deleting history. This guard joins all visual entry paths: a partial,
@@ -2017,16 +2047,27 @@ func (runtime *runtime) dispatch(ctx context.Context, result continuation.RunRes
 }
 
 func (runtime *runtime) dispatchVisual(
-	ctx context.Context, result continuation.RunResult, intentID string,
+	ctx context.Context, result continuation.RunResult, intentID, target string,
 ) error {
-	intentID = strings.TrimSpace(intentID)
+	intentID, target = strings.TrimSpace(intentID), strings.TrimSpace(target)
 	runtime.visualActionMu.Lock()
+	if runtime.visualIntentByCall == nil {
+		runtime.visualIntentByCall = make(map[string]string)
+	}
+	if runtime.visualTargetByCall == nil {
+		runtime.visualTargetByCall = make(map[string]string)
+	}
 	for _, call := range result.ToolCalls {
 		runtime.visualIntentByCall[call.CallID] = intentID
+		runtime.visualTargetByCall[call.CallID] = target
 	}
 	intents := make(map[string]string, len(runtime.visualIntentByCall))
 	for callID, intent := range runtime.visualIntentByCall {
 		intents[callID] = intent
+	}
+	targets := make(map[string]string, len(runtime.visualTargetByCall))
+	for callID, declared := range runtime.visualTargetByCall {
+		targets[callID] = declared
 	}
 	runtime.visualActionMu.Unlock()
 	// A visual model may repeat the coordinate selected on the preceding frame.
@@ -2038,7 +2079,7 @@ func (runtime *runtime) dispatchVisual(
 	snapshot := runtime.store.Snapshot()
 	for _, call := range result.ToolCalls {
 		if earlierIdenticalPendingCall(snapshot, call) != "" ||
-			earlierIdenticalCompletedVisualCall(snapshot, call, intentID, intents) != "" {
+			earlierIdenticalCompletedVisualCall(snapshot, call, intentID, intents, targets) != "" {
 			noEffect = true
 			break
 		}
@@ -2063,12 +2104,12 @@ func (runtime *runtime) dispatchVisual(
 // or general rollout—and does not consume a manual response request because
 // the interaction gate admitted the observer batch independently.
 func (runtime *runtime) dispatchAutonomousVisual(
-	ctx context.Context, result continuation.RunResult, intentID string,
+	ctx context.Context, result continuation.RunResult, intentID, target string,
 ) error {
 	if err := runtime.sink.TurnBegin(ctx); err != nil {
 		return err
 	}
-	dispatchErr := runtime.dispatchVisual(ctx, result, intentID)
+	dispatchErr := runtime.dispatchVisual(ctx, result, intentID, target)
 	outcome := binding.TurnOutcome{}
 	if dispatchErr != nil {
 		outcome.Incomplete = true
@@ -2099,7 +2140,7 @@ func earlierIdenticalPendingCall(snapshot trajectory.Snapshot, call trajectory.T
 // already completed for this intent.
 func earlierIdenticalCompletedVisualCall(
 	snapshot trajectory.Snapshot, call trajectory.ToolCall,
-	candidateIntent string, intents map[string]string,
+	candidateIntent string, intents, targets map[string]string,
 ) string {
 	if !strings.HasPrefix(call.Name, "computer.") {
 		return ""
@@ -2108,6 +2149,7 @@ func earlierIdenticalCompletedVisualCall(
 		index  int
 		result trajectory.ToolResult
 	})
+	candidateTarget := strings.TrimSpace(targets[call.CallID])
 	for index, item := range snapshot.Items {
 		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
 			results[item.ToolResult.CallID] = struct {
@@ -2121,6 +2163,14 @@ func earlierIdenticalCompletedVisualCall(
 		if item.Kind != trajectory.KindToolCall || item.ToolCall == nil ||
 			item.ToolCall.CallID == call.CallID || item.ToolCall.Name != call.Name ||
 			!sameToolArguments(call.Name, item.ToolCall.Arguments, call.Arguments) {
+			continue
+		}
+		priorTarget := strings.TrimSpace(targets[item.ToolCall.CallID])
+		if candidateTarget != "" && priorTarget != "" &&
+			!sameVisualActionTarget(candidateTarget, priorTarget) {
+			// A page transition can replace one control with another at almost
+			// the same coordinates. Both labels came from direct pixels and passed
+			// the user-intent fence, so coordinate proximity cannot collapse them.
 			continue
 		}
 		resolved, ok := results[item.ToolCall.CallID]
@@ -2171,6 +2221,19 @@ func earlierIdenticalCompletedVisualCall(
 		return item.ToolCall.CallID
 	}
 	return ""
+}
+
+func sameVisualActionTarget(left, right string) bool {
+	leftWords, rightWords := visualLabelWords(left), visualLabelWords(right)
+	if len(leftWords) != len(rightWords) || len(leftWords) == 0 {
+		return false
+	}
+	for index := range leftWords {
+		if singularVisualWord(leftWords[index]) != singularVisualWord(rightWords[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func sameToolArguments(name string, left, right json.RawMessage) bool {

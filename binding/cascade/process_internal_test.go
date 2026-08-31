@@ -245,8 +245,20 @@ func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t 
 	candidate := trajectory.ToolCall{CallID: "click-2", Name: call.ToolCall.Name, Arguments: json.RawMessage(`{"x":517,"y":829}`)}
 	base := trajectory.Snapshot{Items: []trajectory.Item{instruction, call, result, postActionFrame}}
 	intent := map[string]string{"click-1": "utterance-1"}
-	if got := earlierIdenticalCompletedVisualCall(base, candidate, "utterance-1", intent); got != "click-1" {
+	if got := earlierIdenticalCompletedVisualCall(base, candidate, "utterance-1", intent, nil); got != "click-1" {
 		t.Fatalf("post-action frame re-executed completed click; duplicate = %q", got)
+	}
+	if got := earlierIdenticalCompletedVisualCall(base, candidate, "utterance-1", intent, map[string]string{
+		"click-1": "Open launch review",
+		"click-2": "Share screen",
+	}); got != "" {
+		t.Fatalf("different declared control at the same coordinates was collapsed into %q", got)
+	}
+	if got := earlierIdenticalCompletedVisualCall(base, candidate, "utterance-1", intent, map[string]string{
+		"click-1": "Share your screen",
+		"click-2": "Share screen",
+	}); got != "click-1" {
+		t.Fatalf("equivalent declared control labels escaped deduplication: %q", got)
 	}
 
 	// A final ASR revision replacing the partial which caused the click is the
@@ -259,7 +271,7 @@ func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t 
 	}
 	sameUtterance := base
 	sameUtterance.Items = append(append([]trajectory.Item(nil), base.Items...), finalRevision)
-	if got := earlierIdenticalCompletedVisualCall(sameUtterance, candidate, "utterance-1", intent); got != "click-1" {
+	if got := earlierIdenticalCompletedVisualCall(sameUtterance, candidate, "utterance-1", intent, nil); got != "click-1" {
 		t.Fatalf("final ASR revision incorrectly re-armed the same click: %q", got)
 	}
 	finalWithoutCanonicalPartial := finalRevision
@@ -267,7 +279,7 @@ func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t 
 	finalWithoutCanonicalPartial.Content = "go to the summary slide and begin presenting"
 	finalOnly := base
 	finalOnly.Items = append(append([]trajectory.Item(nil), base.Items...), finalWithoutCanonicalPartial)
-	if got := earlierIdenticalCompletedVisualCall(finalOnly, candidate, "utterance-1", intent); got != "click-1" {
+	if got := earlierIdenticalCompletedVisualCall(finalOnly, candidate, "utterance-1", intent, nil); got != "click-1" {
 		t.Fatalf("final extension of a live partial incorrectly re-armed the same click: %q", got)
 	}
 
@@ -278,7 +290,7 @@ func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t 
 	newRequest.Event = &trajectory.EventMetadata{EventID: "new", Type: "observation", Source: "audio", Channel: "audio"}
 	withNewRequest := base
 	withNewRequest.Items = append(append([]trajectory.Item(nil), base.Items...), newRequest)
-	if got := earlierIdenticalCompletedVisualCall(withNewRequest, candidate, "utterance-2", intent); got != "" {
+	if got := earlierIdenticalCompletedVisualCall(withNewRequest, candidate, "utterance-2", intent, nil); got != "" {
 		t.Fatalf("new user request did not re-arm the same coordinate: %q", got)
 	}
 
@@ -288,7 +300,7 @@ func TestEarlierIdenticalCompletedVisualCallRequiresFreshIntentOrAVisualCycle(t 
 	reappeared.Observation = &trajectory.ObservationMeta{Observer: "video", Authority: trajectory.AuthorityObserver, Media: []trajectory.MediaRef{{Handle: "frame-3", MIMEType: "image/jpeg", Source: "screen"}}}
 	withVisualCycle := base
 	withVisualCycle.Items = append(append([]trajectory.Item(nil), base.Items...), reappeared)
-	if got := earlierIdenticalCompletedVisualCall(withVisualCycle, candidate, "utterance-1", intent); got != "click-1" {
+	if got := earlierIdenticalCompletedVisualCall(withVisualCycle, candidate, "utterance-1", intent, nil); got != "click-1" {
 		t.Fatalf("visual feedback incorrectly created fresh user authority: %q", got)
 	}
 }
@@ -339,7 +351,9 @@ func TestEarlierIdenticalCompletedVisualCallDoesNotHideAFailedAction(t *testing.
 		{ID: "result", Kind: trajectory.KindToolResult, ToolResult: &trajectory.ToolResult{CallID: "click-1", Name: "computer.click_normalized", Output: json.RawMessage(`{"error":"target moved"}`)}},
 	}}
 	candidate := trajectory.ToolCall{CallID: "click-2", Name: "computer.click_normalized", Arguments: json.RawMessage(`{"x":10,"y":20}`)}
-	if got := earlierIdenticalCompletedVisualCall(snapshot, candidate, "utterance-1", map[string]string{"click-1": "utterance-1"}); got != "" {
+	if got := earlierIdenticalCompletedVisualCall(
+		snapshot, candidate, "utterance-1", map[string]string{"click-1": "utterance-1"}, nil,
+	); got != "" {
 		t.Fatalf("failed action was treated as completed by %q", got)
 	}
 }
@@ -369,6 +383,37 @@ func TestCompletedVisualActionsForIntentCountsOnlyRealSuccessfulEffects(t *testi
 	}
 	if got := runtime.completedVisualActionsForIntent(snapshot, "utterance-2"); got != 1 {
 		t.Fatalf("other intent action chunks = %d, want 1", got)
+	}
+}
+
+func TestPureSuccessfulVisualResultBatchIsControllerMemory(t *testing.T) {
+	runtime := &runtime{visualIntentByCall: map[string]string{"click-1": "utterance-1"}}
+	batch := eventloop.Batch{
+		Items: []trajectory.Item{{
+			Kind: trajectory.KindToolResult,
+			ToolResult: &trajectory.ToolResult{
+				CallID: "click-1", Name: "computer.click_normalized", Output: json.RawMessage(`"clicked"`),
+			},
+		}},
+		Events: []eventloop.Event{{Kind: trajectory.KindToolResult}},
+	}
+	if !runtime.batchOnlyVisualToolResults(batch) || !batchToolResultsSucceeded(batch) {
+		t.Fatal("successful visual-only result was not classified as controller memory")
+	}
+	mixed := batch
+	mixed.Events = append(mixed.Events, eventloop.Event{Kind: eventloop.KindSignal})
+	if runtime.batchOnlyVisualToolResults(mixed) {
+		t.Fatal("a merged signal was hidden as a pure visual-result batch")
+	}
+	failed := batch
+	failed.Items = []trajectory.Item{{
+		Kind: trajectory.KindToolResult,
+		ToolResult: &trajectory.ToolResult{
+			CallID: "click-1", Name: "computer.click_normalized", Error: "target moved",
+		},
+	}}
+	if batchToolResultsSucceeded(failed) {
+		t.Fatal("failed visual action was classified as successful controller memory")
 	}
 }
 

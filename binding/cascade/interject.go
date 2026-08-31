@@ -683,19 +683,16 @@ func (runtime *runtime) runSilentAct(ctx context.Context, request cognition.Requ
 		runtime.applyVisualOutcome(request.VisualIntentID, outcome)
 		switch outcome.Kind {
 		case cognition.VisualReflexAct:
-			return runtime.dispatchAutonomousVisual(ctx, outcome.Result, request.VisualIntentID)
+			return runtime.dispatchAutonomousVisual(
+				ctx, outcome.Result, request.VisualIntentID, outcome.Target,
+			)
 		case cognition.VisualReflexWait:
 			// The current frame needs no action. A later visual observation will
 			// ask the reflex again; meanwhile, preserve any independent work in
 			// this utterance (for example, present now while monitoring). The
 			// signal re-enters normal turn bracketing so this silent goroutine
 			// never becomes a second speech path.
-			runtime.rememberCompositeResumeHeard(request.Heard)
-			if err := runtime.signal(interaction.SignalCompositeResume); err != nil {
-				runtime.clearCompositeResumeHeard(request.Heard)
-				return err
-			}
-			return nil
+			return runtime.signalCompositeResumeOnce(request.VisualIntentID, request.Heard)
 		case cognition.VisualReflexAbstain:
 			// A typed direct-screen command stays on the direct-pixel lane. The
 			// next ASR revision or canonical endpoint may retry it; a visionless
@@ -922,7 +919,9 @@ func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
 	}
 	runtime.applyVisualOutcome(intentID, outcome)
 	if outcome.Kind == cognition.VisualReflexAct {
-		if err := runtime.dispatchAutonomousVisual(runtime.ctx, outcome.Result, intentID); err != nil {
+		if err := runtime.dispatchAutonomousVisual(
+			runtime.ctx, outcome.Result, intentID, outcome.Target,
+		); err != nil {
 			if runtime.config.ProfileTurns {
 				fmt.Fprintf(os.Stderr,
 					"visual-profile at=%s where=%s-dispatch intent=%q task=%q error=%q\n",
@@ -935,10 +934,9 @@ func (runtime *runtime) runLiveVisualMicroTurn(pending liveVisualDecision) {
 			}
 		}
 	} else if outcome.Kind == cognition.VisualReflexWait && !pending.groundVisual {
-		heard := pending.context.Revision.Text()
-		runtime.rememberCompositeResumeHeard(heard)
-		if err := runtime.signal(interaction.SignalCompositeResume); err != nil {
-			runtime.clearCompositeResumeHeard(heard)
+		if err := runtime.signalCompositeResumeOnce(
+			intentID, pending.context.Revision.Text(),
+		); err != nil {
 			runtime.fail("visual_composite_resume_error", err)
 		}
 	} else if outcome.Kind == cognition.VisualReflexAbstain && request.CompletedVisualActions > 0 {

@@ -217,6 +217,11 @@ type runtime struct {
 	// a model call; the user utterance identity is what makes them one intent.
 	visualActionMu     sync.Mutex
 	visualIntentByCall map[string]string
+	// visualTargetByCall retains the private grounded label stripped before a
+	// computer call reaches the canonical tool schema. Coordinates can overlap
+	// after a page transition, so effect identity needs both physical arguments
+	// and the actor's declared control label.
+	visualTargetByCall map[string]string
 	// visualArmed is receding-horizon control state. WAIT and an ACT whose
 	// private continuation bit is true keep an intent eligible for a fresh-frame
 	// replan. A terminal ACT or ABSTAIN removes it, so pixels are evidence but do
@@ -290,7 +295,8 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		ctx:      ctx, cancel: cancel,
 		settings:           binding.CloneSettings(options.Settings),
 		prepared:           newPreparations(),
-		visualIntentByCall: make(map[string]string), visualArmed: make(map[string]bool),
+		visualIntentByCall: make(map[string]string), visualTargetByCall: make(map[string]string),
+		visualArmed:     make(map[string]bool),
 		visualEvaluated: make(map[string]bool),
 		visualPolicy:    make(map[string]interaction.VisualIntent), visualPolicyTask: make(map[string]string),
 		visualResumed: make(map[string]bool), visualHandledRev: make(map[string]visualHandledRevisions),
