@@ -105,7 +105,11 @@ func runCompanion(arguments []string, output io.Writer) error {
 		launchBrowser: launchCompanionBrowser,
 		launchMacOS:   launchCompanionMacOS,
 	}
-	return runCompanionContext(ctx, arguments, output, runtime)
+	err = runCompanionContext(ctx, arguments, output, runtime)
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	return err
 }
 
 func runCompanionContext(
@@ -802,13 +806,18 @@ func launchCompanionMacOS(ctx context.Context, application, endpointFile string)
 	if runtime.GOOS != "darwin" {
 		return errors.New("macOS companion launch is unavailable on this host")
 	}
-	arguments := []string{"-n", application, "--env", "OPENREALTIME_NATIVE_PROFILE=observer-developer"}
-	if endpointFile != "" {
-		arguments = append(arguments, "--env", "OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY="+endpointFile)
-	}
+	arguments := companionMacOSLaunchArguments(application, endpointFile)
 	commandContext, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(commandContext, "open", arguments...)
 	command.Stdout, command.Stderr = io.Discard, io.Discard
 	return command.Run()
+}
+
+func companionMacOSLaunchArguments(application, endpointFile string) []string {
+	arguments := []string{"-n", application, "--env", "OPENREALTIME_NATIVE_PROFILE=observer-developer"}
+	if endpointFile != "" {
+		arguments = append(arguments, "--env", "OPENREALTIME_NATIVE_ENDPOINT_DIRECTORY="+endpointFile)
+	}
+	return arguments
 }

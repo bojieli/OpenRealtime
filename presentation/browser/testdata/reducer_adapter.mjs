@@ -55,7 +55,7 @@ if (events.length !== 1 || state.snapshot().conversation.length !== 0 || !state.
 const malformedAccess = JSON.stringify({
   type: "session.updated",
   session: { id: "session-adapter", openrealtime: { debug: { enabled: true, inspection: {
-    session_id: "session-adapter", path: "/v1/realtime/sessions/session-adapter/live",
+    session_id: "session-adapter", path: "/openrealtime/v1/sessions/session-adapter/live",
     token: "not-a-capability", expires_at_ms: Date.now() + 60_000,
   } } } },
 });
@@ -63,13 +63,24 @@ inbound(malformedAccess);
 if (events.length !== 1 || access.current() !== null) {
   throw new Error("malformed inspection authority escaped before canonical event admission");
 }
+const stalePathAccess = JSON.stringify({
+  type: "session.updated",
+  session: { id: "session-adapter", openrealtime: { debug: { enabled: true, inspection: {
+    session_id: "session-adapter", path: "/v1/realtime/sessions/session-adapter/live",
+    token: "mgmt_valid-capability", expires_at_ms: Date.now() + 60_000,
+  } } } },
+});
+inbound(stalePathAccess);
+if (events.length !== 1 || access.current() !== null) {
+  throw new Error("stale negotiated management path escaped before canonical event admission");
+}
 
 const validAccess = JSON.stringify({
   type: "session.updated",
   session: { id: "session-adapter", openrealtime: {
     version: 1, enabled: [], observers: [], available_observers: [],
     debug: { enabled: true, inspection: {
-      session_id: "session-adapter", path: "/v1/realtime/sessions/session-adapter/live",
+      session_id: "session-adapter", path: "/openrealtime/v1/sessions/session-adapter/live",
       token: "mgmt_valid-capability", expires_at_ms: Date.now() + 60_000,
     } },
   } },

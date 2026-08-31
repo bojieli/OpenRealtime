@@ -180,7 +180,7 @@ func TestCredentialHoldingRelaysUseOnlyPublicEndpoints(t *testing.T) {
 	websocketURL := "ws" + strings.TrimPrefix(backend.URL, "http") + "/v1/realtime"
 
 	routerFactory := NewRouterFactory()
-	targetFactory := NewTargetFactory()
+	targetFactory := NewEndpointDirectoryFactory()
 	credentialFactory, err := NewBearerCredentialFactory(token)
 	if err != nil {
 		t.Fatal(err)
@@ -198,9 +198,16 @@ func TestCredentialHoldingRelaysUseOnlyPublicEndpoints(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	values, _ := json.Marshal(targetConfig{
-		WebSocket: websocketURL, WebRTC: backend.URL + "/v1/realtime/calls", Model: "fixture-model",
-	})
+	values := testEndpointDirectoryValues(t, "fixture-model",
+		presentation.Endpoint{
+			Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
+			URL: websocketURL,
+		},
+		presentation.Endpoint{
+			Name: presentation.EndpointRealtimeWebRTC, Protocol: presentation.ProtocolRealtimeWebRTC,
+			URL: backend.URL + "/v1/realtime/calls",
+		},
+	)
 	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
 		Plan: plan, Registry: registry,
 		Values: map[string]json.RawMessage{"target": values},
@@ -291,7 +298,7 @@ func TestWebRTCRelayRefusesCredentialBearingRedirect(t *testing.T) {
 	factory := NewWebRTCRelayFactory(nil, nil)
 	request := httptest.NewRequest(http.MethodPost, "/client/v1/realtime/calls", strings.NewReader("offer-sdp"))
 	response := httptest.NewRecorder()
-	factory.relayWebRTC(RealtimeTarget{
+	factory.relayWebRTC(relayTarget{
 		WebRTC: backend.URL + "/offer", DialTimeout: time.Second,
 	}, staticCredential("Bearer must-not-cross-redirect"), response, request)
 	if response.Code != http.StatusTemporaryRedirect || captured.Load() {
@@ -301,7 +308,7 @@ func TestWebRTCRelayRefusesCredentialBearingRedirect(t *testing.T) {
 
 func TestRelaysFailClosedWithoutDeploymentPermission(t *testing.T) {
 	routerFactory := NewRouterFactory()
-	targetFactory := NewTargetFactory()
+	targetFactory := NewEndpointDirectoryFactory()
 	credentialFactory := NewAnonymousCredentialFactory()
 	relayFactory := NewWebSocketRelayFactory(nil)
 	plan := makeHostPlan(t, []pluginruntime.Factory{
@@ -315,7 +322,10 @@ func TestRelaysFailClosedWithoutDeploymentPermission(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	values := relayTargetValues("ws://127.0.0.1:1/v1/realtime", "", "")
+	values := testEndpointDirectoryValues(t, "", presentation.Endpoint{
+		Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
+		URL: "ws://127.0.0.1:1/v1/realtime",
+	})
 	if _, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
 		Plan: plan, Registry: registry, Values: map[string]json.RawMessage{"target": values},
 	}); err == nil || !strings.Contains(err.Error(), "network-connect grant") {
@@ -452,8 +462,6 @@ func makeHostPlan(t *testing.T, factories []pluginruntime.Factory) plugin.Plan {
 			id = "modules"
 		case "openrealtime.presentation.host.client-manifest":
 			id = "manifest"
-		case "openrealtime.presentation.host.realtime-target":
-			id = "target"
 		case "openrealtime.presentation.host.endpoint-directory":
 			id = "target"
 		case "openrealtime.presentation.host.secret-credential",

@@ -152,8 +152,7 @@ as its release gate. See [the benchmark harness](docs/benchmarks.md).
 | [Quickstart](docs/quickstart.md) | run it, check it, connect to it |
 | [Providers](docs/providers.md) | every model provider it runs on, and how to add one |
 | [OpenAI's own client](examples/sdk-client/README.md) | the compatibility claim, checked by the published SDK |
-| [The developer console](console/README.md) | both transports, video, and tools on your own machine |
-| [The test surface](surface/README.md) | every channel, both directions, on one page |
+| [Composable presentation](docs/composable-presentation.md) | descriptor-locked browser and native clients over the same public server APIs |
 | [The native macOS developer app](macos/README.md) | microphone, camera, screen, browser-use, desktop control, local tools, files, and millisecond traces |
 | [Architecture](docs/architecture.md) | the four subsystems and why they are separate |
 | [Composable agent graph proposal](docs/composable-agent-graph.md) | the typed element graph and refactoring plan for general multimodal realtime agents |

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 	"time"
 
@@ -47,10 +46,10 @@ func (target EndpointTarget) Endpoint(
 	return target.directory.Require(name, protocol)
 }
 
-// RealtimeTarget is the compatibility projection used by relay internals and
-// downstream embedders. Mounted relays populate WebSocket and WebRTC only from
-// the exact EndpointTarget service; they never reconstruct either URL.
-type RealtimeTarget struct {
+// relayTarget is the private view used by relay implementations. It is always
+// projected from the exact mounted EndpointTarget; it never reconstructs or
+// derives an endpoint and is not a second mounted contract.
+type relayTarget struct {
 	WebSocket   string
 	WebRTC      string
 	Model       string
@@ -59,8 +58,8 @@ type RealtimeTarget struct {
 }
 
 // EndpointDirectoryConfig is the strict deployment value accepted by
-// NewEndpointDirectoryFactory. Every endpoint is explicit; legacy websocket
-// or same-origin fields are rejected as unknown JSON.
+// NewEndpointDirectoryFactory. Every endpoint is explicit; websocket shortcut
+// and same-origin fields are rejected as unknown JSON.
 type EndpointDirectoryConfig struct {
 	Endpoints     []presentation.Endpoint `json:"endpoints"`
 	Model         string                  `json:"model,omitempty"`
@@ -68,35 +67,8 @@ type EndpointDirectoryConfig struct {
 	ReadLimit     int64                   `json:"read_limit_bytes,omitempty"`
 }
 
-type targetConfig struct {
-	WebSocket     string `json:"websocket"`
-	WebRTC        string `json:"webrtc,omitempty"`
-	Model         string `json:"model,omitempty"`
-	DialTimeoutMS int64  `json:"dial_timeout_ms,omitempty"`
-	ReadLimit     int64  `json:"read_limit_bytes,omitempty"`
-}
-
-// LegacyEndpointDefaults is the explicit compatibility policy used to
-// reconstruct old same-origin endpoints. Empty paths remain absent. In
-// particular, effects and resources are never invented unless a caller names
-// those legacy defaults deliberately.
-type LegacyEndpointDefaults struct {
-	ManagementPath string
-	EffectsPath    string
-	ArtifactsPath  string
-	DownloadsPath  string
-}
-
-// LegacyOpenRealtimeEndpointDefaults preserves only the management inference
-// performed by the old target/management-relay pair. It does not advertise an
-// effects or resource endpoint.
-func LegacyOpenRealtimeEndpointDefaults() LegacyEndpointDefaults {
-	return LegacyEndpointDefaults{ManagementPath: "/openrealtime/v1"}
-}
-
 type TargetFactory struct {
-	descriptor     plugin.Descriptor
-	legacyDefaults *LegacyEndpointDefaults
+	descriptor plugin.Descriptor
 }
 
 // NewEndpointDirectoryFactory constructs the strict production target. Its
@@ -111,40 +83,6 @@ func NewEndpointDirectoryFactory() *TargetFactory {
 	}}
 }
 
-// NewLegacySameOriginTargetFactory makes compatibility inference an explicit
-// deployment choice. New profiles should use NewEndpointDirectoryFactory.
-func NewLegacySameOriginTargetFactory(defaults LegacyEndpointDefaults) (*TargetFactory, error) {
-	if err := validateLegacyEndpointDefaults(defaults); err != nil {
-		return nil, err
-	}
-	return newLegacySameOriginTargetFactory(defaults), nil
-}
-
-func newLegacySameOriginTargetFactory(defaults LegacyEndpointDefaults) *TargetFactory {
-	copy := defaults
-	schema := presentation.RealtimeTargetConfigContract
-	return &TargetFactory{
-		descriptor: plugin.Descriptor{
-			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.realtime-target", Revision: 2,
-			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
-			Provides: []plugin.Contract{
-				presentation.EndpointDirectoryContract,
-				presentation.RealtimeTargetContract,
-			},
-			ConfigSchema: &schema,
-		},
-		legacyDefaults: &copy,
-	}
-}
-
-// NewTargetFactory is retained for source compatibility. It is deliberately a
-// named legacy adapter, not the constructor new profiles should select.
-// Deprecated: use NewEndpointDirectoryFactory with explicit endpoints.
-func NewTargetFactory() *TargetFactory {
-	return newLegacySameOriginTargetFactory(LegacyOpenRealtimeEndpointDefaults())
-}
-
 func (factory *TargetFactory) Descriptor() plugin.Descriptor { return factory.descriptor.Clone() }
 
 func (factory *TargetFactory) ValidateConfig(raw json.RawMessage) error {
@@ -157,25 +95,12 @@ func (factory *TargetFactory) Mount(_ context.Context, mount pluginruntime.Mount
 	if err != nil {
 		return err
 	}
-	if err := mount.Publisher.Provide(presentation.EndpointDirectoryContract, target); err != nil {
-		return err
-	}
-	if factory.legacyDefaults == nil {
-		return nil
-	}
-	legacy, err := projectRealtimeTarget(target)
-	if err != nil {
-		return err
-	}
-	return mount.Publisher.Provide(presentation.RealtimeTargetContract, legacy)
+	return mount.Publisher.Provide(presentation.EndpointDirectoryContract, target)
 }
 
 func (factory *TargetFactory) parse(raw []byte) (EndpointTarget, error) {
 	if factory == nil {
 		return EndpointTarget{}, errors.New("endpoint target factory is nil")
-	}
-	if factory.legacyDefaults != nil {
-		return parseLegacyTargetConfig(raw, *factory.legacyDefaults)
 	}
 	return parseEndpointDirectoryConfig(raw)
 }
@@ -188,41 +113,6 @@ func parseEndpointDirectoryConfig(raw []byte) (EndpointTarget, error) {
 	directory, err := presentation.FreezeEndpointDirectory(config.Endpoints)
 	if err != nil {
 		return EndpointTarget{}, fmt.Errorf("endpoint directory config: %w", err)
-	}
-	return newEndpointTarget(directory, config.Model, config.DialTimeoutMS, config.ReadLimit)
-}
-
-func parseLegacyTargetConfig(raw []byte, defaults LegacyEndpointDefaults) (EndpointTarget, error) {
-	var config targetConfig
-	if err := decodeTargetConfig(raw, &config, "legacy realtime target config"); err != nil {
-		return EndpointTarget{}, err
-	}
-	websocket, err := validateTargetURL(config.WebSocket, "ws", "wss")
-	if err != nil {
-		return EndpointTarget{}, fmt.Errorf("legacy realtime target WebSocket: %w", err)
-	}
-	endpoints := []presentation.Endpoint{{
-		Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
-		URL: websocket,
-	}}
-	if config.WebRTC != "" {
-		webrtc, validateErr := validateTargetURL(config.WebRTC, "http", "https")
-		if validateErr != nil {
-			return EndpointTarget{}, fmt.Errorf("legacy realtime target WebRTC: %w", validateErr)
-		}
-		endpoints = append(endpoints, presentation.Endpoint{
-			Name: presentation.EndpointRealtimeWebRTC, Protocol: presentation.ProtocolRealtimeWebRTC,
-			URL: webrtc,
-		})
-	}
-	derived, err := deriveLegacySameOriginEndpoints(websocket, defaults)
-	if err != nil {
-		return EndpointTarget{}, err
-	}
-	endpoints = append(endpoints, derived...)
-	directory, err := presentation.FreezeEndpointDirectory(endpoints)
-	if err != nil {
-		return EndpointTarget{}, fmt.Errorf("legacy realtime target endpoint directory: %w", err)
 	}
 	return newEndpointTarget(directory, config.Model, config.DialTimeoutMS, config.ReadLimit)
 }
@@ -277,117 +167,39 @@ func newEndpointTarget(
 	}, nil
 }
 
-func validateLegacyEndpointDefaults(defaults LegacyEndpointDefaults) error {
-	for name, path := range map[string]string{
-		"management": defaults.ManagementPath,
-		"effects":    defaults.EffectsPath,
-		"artifacts":  defaults.ArtifactsPath,
-		"downloads":  defaults.DownloadsPath,
-	} {
-		if path == "" {
-			continue
-		}
-		if path != strings.TrimSpace(path) || !strings.HasPrefix(path, "/") ||
-			(len(path) > 1 && strings.HasSuffix(path, "/")) || strings.ContainsAny(path, "\x00\r\n?#") {
-			return fmt.Errorf("legacy %s endpoint default %q is not a canonical absolute path", name, path)
-		}
-		for _, segment := range strings.Split(path, "/") {
-			if segment == "." || segment == ".." {
-				return fmt.Errorf("legacy %s endpoint default contains a relative segment", name)
-			}
-		}
-	}
-	return nil
-}
-
-func deriveLegacySameOriginEndpoints(
-	websocket string, defaults LegacyEndpointDefaults,
-) ([]presentation.Endpoint, error) {
-	parsed, err := url.Parse(websocket)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "ws" && parsed.Scheme != "wss") {
-		return nil, errors.New("legacy same-origin endpoint adapter has an invalid WebSocket target")
-	}
-	parsed.User, parsed.RawPath, parsed.RawQuery, parsed.Fragment = nil, "", "", ""
-	derived := make([]presentation.Endpoint, 0, 4)
-	add := func(name presentation.EndpointName, protocol, path, scheme string) {
-		if path == "" {
-			return
-		}
-		copy := *parsed
-		copy.Scheme = scheme
-		copy.Path = path
-		derived = append(derived, presentation.Endpoint{Name: name, Protocol: protocol, URL: copy.String()})
-	}
-	httpScheme := "http"
-	if parsed.Scheme == "wss" {
-		httpScheme = "https"
-	}
-	add(presentation.EndpointManagement, presentation.ProtocolManagement, defaults.ManagementPath, httpScheme)
-	add(presentation.EndpointEffects, presentation.ProtocolClientEffects, defaults.EffectsPath, parsed.Scheme)
-	add(presentation.EndpointArtifacts, presentation.ProtocolHostArtifacts, defaults.ArtifactsPath, httpScheme)
-	add(presentation.EndpointDownloads, presentation.ProtocolHostDownloads, defaults.DownloadsPath, httpScheme)
-	return derived, nil
-}
-
-func validateTargetURL(raw string, schemes ...string) (string, error) {
-	if raw == "" || raw != strings.TrimSpace(raw) {
-		return "", fmt.Errorf("invalid URL %q", raw)
-	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-		return "", fmt.Errorf("invalid credential-free URL %q", raw)
-	}
-	allowed := false
-	for _, scheme := range schemes {
-		allowed = allowed || parsed.Scheme == scheme
-	}
-	if !allowed {
-		return "", fmt.Errorf("URL %q uses unsupported scheme", raw)
-	}
-	return parsed.String(), nil
-}
-
-func lookupTarget(services pluginruntime.Services) (RealtimeTarget, error) {
-	target, err := lookupEndpointTarget(services)
-	if err != nil {
-		return RealtimeTarget{}, err
-	}
-	return projectRealtimeTarget(target)
-}
-
 func lookupTargetEndpoint(
 	services pluginruntime.Services,
 	name presentation.EndpointName,
 	protocol string,
-) (RealtimeTarget, presentation.Endpoint, error) {
+) (relayTarget, presentation.Endpoint, error) {
 	target, err := lookupEndpointTarget(services)
 	if err != nil {
-		return RealtimeTarget{}, presentation.Endpoint{}, err
+		return relayTarget{}, presentation.Endpoint{}, err
 	}
 	endpoint, err := target.Endpoint(name, protocol)
 	if err != nil {
-		return RealtimeTarget{}, presentation.Endpoint{}, err
+		return relayTarget{}, presentation.Endpoint{}, err
 	}
-	projection, err := projectRealtimeTarget(target)
+	projection, err := projectRelayTarget(target)
 	if err != nil {
-		return RealtimeTarget{}, presentation.Endpoint{}, err
+		return relayTarget{}, presentation.Endpoint{}, err
 	}
 	return projection, endpoint, nil
 }
 
-func projectRealtimeTarget(target EndpointTarget) (RealtimeTarget, error) {
-	result := RealtimeTarget{
+func projectRelayTarget(target EndpointTarget) (relayTarget, error) {
+	result := relayTarget{
 		Model: target.model, DialTimeout: target.dialTimeout, ReadLimit: target.readLimit,
 	}
 	if endpoint, found := target.directory.Lookup(presentation.EndpointRealtimeWebSocket); found {
 		if endpoint.Protocol != presentation.ProtocolRealtimeWebSocket {
-			return RealtimeTarget{}, errors.New("presentation WebSocket endpoint protocol changed")
+			return relayTarget{}, errors.New("presentation WebSocket endpoint protocol changed")
 		}
 		result.WebSocket = endpoint.URL
 	}
 	if endpoint, found := target.directory.Lookup(presentation.EndpointRealtimeWebRTC); found {
 		if endpoint.Protocol != presentation.ProtocolRealtimeWebRTC {
-			return RealtimeTarget{}, errors.New("presentation WebRTC endpoint protocol changed")
+			return relayTarget{}, errors.New("presentation WebRTC endpoint protocol changed")
 		}
 		result.WebRTC = endpoint.URL
 	}

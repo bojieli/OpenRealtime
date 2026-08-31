@@ -4,7 +4,7 @@
   "profile_fingerprint": "sha256:399204e184e30ffe1ba1094c17eb200372250a9109a6c29bd3ee547508902b49",
   "lock_fingerprint": "sha256:b2333953eb6c4786d7badb29a7d442c1d6e599850f5276ef12e565d8abec1e63",
   "plan_fingerprint": "sha256:f40b44d74a0e4f6be91a4a1fc92aa643cf4a195c9fcbbb3955c32266a48f97ed",
-  "manifest_fingerprint": "sha256:8d0a3798fee9905b2167d7a9f8f65cdb521d852dd2cafcb9b35cea9d2e6c3561",
+  "manifest_fingerprint": "sha256:4df761002c4f63efa7c8c9a8e1d9b84b1bb630ad5e13a9a3340364496fb01a09",
   "endpoints": [
     {
       "name": "effects.local",

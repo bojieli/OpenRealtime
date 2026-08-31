@@ -264,11 +264,12 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.benchmark.dynacu",
 		"external.benchmark.meeting.omni",
 		"external.macos.signed-e2e",
-		"external.model.live-surface",
+		"external.model.live-presentation",
 		"external.model.scenario-review",
 		"external.tau.upstream",
 		"local.client.swift-linux",
 		"local.presentation.chromium",
+		"local.presentation.companion",
 		"local.presentation.shared-server",
 		"local.scenario.profiled-websocket",
 		"local.sdk.official",
@@ -279,6 +280,37 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		if !exists || !gate.Required {
 			t.Errorf("required special gate is missing: %s", id)
 		}
+	}
+	livePresentation := byID["external.model.live-presentation"]
+	if !slices.Equal(livePresentation.Command, []string{
+		"{go}", "test", "-count=1", "-v", "./presentation/browser", "-run",
+		"^TestLiveComposablePresentationClientAgainstRealModelInChromium$",
+	}) || livePresentation.Environment["OPENREALTIME_PRESENTATION_LIVE_ENDPOINT"] !=
+		"{env:OPENREALTIME_PRESENTATION_LIVE_ENDPOINT}" ||
+		livePresentation.Environment["OPENREALTIME_PRESENTATION_LIVE_REQUIRED"] != "1" ||
+		livePresentation.Environment["OPENREALTIME_RELEASE_GATE"] != "1" ||
+		livePresentation.SkipPolicy != SkipForbid {
+		t.Fatalf("live composable presentation gate was weakened: %+v", livePresentation)
+	}
+	foundLiveCompletion := false
+	for _, assertion := range livePresentation.Assertions {
+		foundLiveCompletion = foundLiveCompletion ||
+			(assertion.Kind == "stdout_regex" &&
+				assertion.Value == `(?m)^live composable presentation client completed$`)
+	}
+	if !foundLiveCompletion {
+		t.Fatalf("live composable presentation gate has no exact completion assertion: %+v", livePresentation)
+	}
+	companion := byID["local.presentation.companion"]
+	if companion.Availability != AvailabilityLocal ||
+		companion.Selection != SelectionDefault ||
+		companion.SkipPolicy != SkipForbid ||
+		companion.Environment["OPENREALTIME_RELEASE_GATE"] != "1" ||
+		!slices.Equal(companion.Command, []string{
+			"{go}", "test", "-count=1", "-v", "./cmd/openrealtime", "-run",
+			"^TestPublicCompanionCommandRunsRealBrowserAndNativeClients$",
+		}) {
+		t.Fatalf("public companion release gate was weakened: %+v", companion)
 	}
 	scenarioWebSocket := byID["local.scenario.profiled-websocket"]
 	if scenarioWebSocket.Availability != AvailabilityLocal ||

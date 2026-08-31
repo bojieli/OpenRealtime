@@ -152,7 +152,8 @@ variables are:
 - `OPENREALTIME_TAU_USER_MODEL_ENDPOINT` and
   `OPENREALTIME_TAU_SYNTHESIS_ENDPOINT` for both complete 278-task tau2 speech
   conditions;
-- `OPENREALTIME_LIVE_ENDPOINT` for the real-model browser composition test;
+- `OPENREALTIME_PRESENTATION_LIVE_ENDPOINT` for the descriptor-locked,
+  real-Chromium browser composition test;
 - `OPENREALTIME_SIGNED_APP` and `OPENREALTIME_MACOS_E2E_RUNNER` on Darwin for
   the authority-signed native application gate.
 
