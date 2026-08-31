@@ -182,6 +182,117 @@ func TestCompanionSupervisesExactPublicProcessesWithNoClientLaunch(t *testing.T)
 	}
 }
 
+func TestCompanionClientLaunchFailureCleansChildrenListenersAndNativeFile(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name       string
+		client     companionClient
+		goos       string
+		wantPrefix string
+	}{
+		{name: "browser", client: companionClientBrowser, goos: "linux", wantPrefix: "launch browser companion"},
+		{name: "macos", client: companionClientMacOS, goos: "darwin", wantPrefix: "launch macOS companion"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			serverAddress := companionFreeAddress(t)
+			webRTCAddress := companionFreeAddress(t)
+			presentationAddress := companionFreeAddress(t)
+			logPath := filepath.Join(t.TempDir(), "children.jsonl")
+			application := filepath.Join(t.TempDir(), "OpenRealtime Developer.app")
+			if err := os.Mkdir(application, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			launchErr := errors.New("fixture client launch refused")
+			var browserLaunches, macOSLaunches atomic.Int64
+			var ready companionReady
+			runtime := companionRuntime{
+				executable: executable,
+				prefix:     []string{"-test.run=^TestCompanionHelperProcess$", "--"},
+				environment: append(os.Environ(),
+					"OPENREALTIME_COMPANION_HELPER=1",
+					"OPENREALTIME_COMPANION_HELPER_LOG="+logPath,
+				),
+				goos:        test.goos,
+				httpClient:  &http.Client{Timeout: time.Second},
+				childOutput: io.Discard,
+				launchBrowser: func(context.Context, string) error {
+					browserLaunches.Add(1)
+					return launchErr
+				},
+				launchMacOS: func(context.Context, string, string) error {
+					macOSLaunches.Add(1)
+					return launchErr
+				},
+				onReady: func(observed companionReady) { ready = observed },
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			arguments := []string{
+				"-server-listen", serverAddress,
+				"-webrtc-listen", webRTCAddress,
+				"-presentation-listen", presentationAddress,
+				"-client", string(test.client),
+				"-macos-app", application,
+				"-ready-timeout", "10s",
+				"-shutdown-timeout", "2s",
+			}
+			err := runCompanionContext(ctx, arguments, io.Discard, runtime)
+			if !errors.Is(err, launchErr) || !strings.Contains(err.Error(), test.wantPrefix) {
+				t.Fatalf("client launch error = %v, want wrapped %q", err, test.wantPrefix)
+			}
+			wantBrowser, wantMacOS := int64(0), int64(0)
+			if test.client == companionClientBrowser {
+				wantBrowser = 1
+			} else {
+				wantMacOS = 1
+			}
+			if browserLaunches.Load() != wantBrowser || macOSLaunches.Load() != wantMacOS {
+				t.Fatalf("client launches browser=%d macos=%d, want %d/%d",
+					browserLaunches.Load(), macOSLaunches.Load(), wantBrowser, wantMacOS)
+			}
+			if ready.NativeEndpointFile == "" {
+				t.Fatalf("post-readiness failure did not expose generated endpoint identity: %#v", ready)
+			}
+			if _, err := os.Stat(ready.NativeEndpointFile); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("native endpoint file remains after launch failure: %v", err)
+			}
+			for _, address := range []string{serverAddress, webRTCAddress, presentationAddress} {
+				listener, err := net.Listen("tcp", address)
+				if err != nil {
+					t.Fatalf("listener %s remains after launch failure: %v", address, err)
+				}
+				_ = listener.Close()
+			}
+			records := companionReadHelperRecords(t, logPath)
+			if len(records) != 4 || records[0].Event != "serve-start" ||
+				records[1].Event != "present-start" || records[2].Event != "present-stop" ||
+				records[3].Event != "serve-stop" {
+				t.Fatalf("post-launch-failure lifecycle = %#v", records)
+			}
+		})
+	}
+}
+
+func companionReadHelperRecords(t *testing.T, path string) []companionHelperRecord {
+	t.Helper()
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records []companionHelperRecord
+	for _, line := range bytes.Split(bytes.TrimSpace(payload), []byte{'\n'}) {
+		var record companionHelperRecord
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
 func TestCompanionParserRejectsOwnedServeFlagsAndUnsafeSelections(t *testing.T) {
 	tests := []struct {
 		name      string
