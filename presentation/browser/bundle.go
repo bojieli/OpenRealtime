@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -31,10 +32,26 @@ type Bundle struct {
 	Shell        *host.BrowserShellFactory
 }
 
+// ClientModule is one caller-supplied browser plugin in a composed text
+// client. Its exact source bytes become both the served asset identity and the
+// implementation artifact identity. Revision is fixed at 1; changed source
+// changes the immutable artifact and plan fingerprints.
+type ClientModule struct {
+	Entry       string
+	Entrypoint  string
+	PluginName  string
+	Source      []byte
+	Provides    []plugin.Contract
+	Requires    []plugin.Requirement
+	Permissions []plugin.Permission
+	Grants      []plugin.Permission
+}
+
 type moduleDefinition struct {
 	entry       string
 	file        string
 	pluginName  string
+	content     []byte
 	provides    []plugin.Contract
 	requires    []plugin.Requirement
 	permissions []plugin.Permission
@@ -84,6 +101,35 @@ func MinimalBundle() (*Bundle, error) {
 }
 
 func buildMinimalBundle() (*Bundle, error) {
+	return buildBundle("openrealtime.browser.minimal", minimalTextDefinitions(false),
+		[]presentation.ManifestEndpoint{{
+			Name: "realtime.websocket", Method: "GET", Path: "/client/v1/realtime",
+		}})
+}
+
+// ComposeTextBundle layers caller-supplied descriptor modules over the normal
+// slots, WebSocket transport, reducer, session-configuration, and text-view
+// providers. Extensions receive only services named by their requirements and
+// only grants declared here; this API adds no host effect or implicit authority.
+func ComposeTextBundle(profileName string, extensions []ClientModule) (*Bundle, error) {
+	definitions := minimalTextDefinitions(true)
+	for _, extension := range extensions {
+		if len(extension.Source) == 0 {
+			return nil, fmt.Errorf("browser client module %q has empty source", extension.Entry)
+		}
+		definitions = append(definitions, moduleDefinition{
+			entry: extension.Entry, file: extension.Entrypoint, pluginName: extension.PluginName,
+			content: slices.Clone(extension.Source), provides: slices.Clone(extension.Provides),
+			requires: slices.Clone(extension.Requires), permissions: slices.Clone(extension.Permissions),
+			grants: slices.Clone(extension.Grants),
+		})
+	}
+	return buildBundle(profileName, definitions, []presentation.ManifestEndpoint{{
+		Name: "realtime.websocket", Method: "GET", Path: "/client/v1/realtime",
+	}})
+}
+
+func minimalTextDefinitions(withSessionConfiguration bool) []moduleDefinition {
 	websocketPermission := plugin.Permission{
 		Kind: "network.connect", Resource: "host-realtime", Operations: []string{"websocket"},
 	}
@@ -107,16 +153,22 @@ func buildMinimalBundle() (*Bundle, error) {
 			},
 			requires: []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
 		},
-		{
-			entry: "view", file: "text-view.js", pluginName: "openrealtime.presentation.client.text-view",
-			requires: []plugin.Requirement{
-				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientStateContract},
-			},
-		},
 	}
-	return buildBundle("openrealtime.browser.minimal", definitions, []presentation.ManifestEndpoint{{
-		Name: "realtime.websocket", Method: "GET", Path: "/client/v1/realtime",
-	}})
+	if withSessionConfiguration {
+		definitions = append(definitions, moduleDefinition{
+			entry: "session-configuration", file: "session-configuration.js",
+			pluginName: "openrealtime.presentation.client.session-configuration",
+			provides:   []plugin.Contract{presentation.ClientSessionConfigurationContract},
+			requires:   []plugin.Requirement{{Contract: presentation.ClientStateContract}},
+		})
+	}
+	definitions = append(definitions, moduleDefinition{
+		entry: "view", file: "text-view.js", pluginName: "openrealtime.presentation.client.text-view",
+		requires: []plugin.Requirement{
+			{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientStateContract},
+		},
+	})
+	return definitions
 }
 
 // ObserverDeveloperBundle is the normal inspection and authoring composition.
@@ -759,9 +811,12 @@ func buildBundle(
 		Name: "bootstrap.js", MediaType: "text/javascript", Content: bootstrap,
 	})
 	for _, definition := range definitions {
-		content, err := browserModule(definition.file)
-		if err != nil {
-			return nil, err
+		content := slices.Clone(definition.content)
+		if len(content) == 0 {
+			content, err = browserModule(definition.file)
+			if err != nil {
+				return nil, err
+			}
 		}
 		sources = append(sources, host.ModuleSource{
 			Name: definition.file, MediaType: "text/javascript", Content: content,

@@ -99,8 +99,10 @@ try {
     `document.getElementById("openrealtime-root")?.dataset.state === "ready"`));
   check("descriptor-locked client booted", await evaluate(
     `document.getElementById("openrealtime-root").dataset.state`) === "ready");
-  check("exact minimal plugin population mounted", JSON.stringify(await evaluate(
-    `window.__openrealtime?.mounted`)) === JSON.stringify(["slots", "transport", "reducer", "view"]));
+  check("exact composed plugin population mounted", JSON.stringify(await evaluate(
+    `window.__openrealtime?.mounted`)) === JSON.stringify([
+      "slots", "transport", "reducer", "session-configuration", "view", "release-challenge",
+    ]));
   check("client plan identity is visible", (await evaluate(
     `document.getElementById("openrealtime-root").dataset.clientFingerprint`))?.startsWith("sha256:"));
   check("manifest declares only the public relative realtime endpoint", await evaluate(`(() => {
@@ -122,19 +124,28 @@ try {
     `document.getElementById("state").textContent === "connected"`), 120000);
   check("client connected through the public relay", await evaluate(
     `document.getElementById("state").textContent`) === "connected");
+  await waitFor("challenge tool negotiation", () => evaluate(
+    `document.getElementById("openrealtime-root").dataset.challengeToolNegotiated === "yes"`), 120000);
+  check("descriptor-supplied challenge tool was negotiated", await evaluate(
+    `document.getElementById("openrealtime-root").dataset.challengeToolNegotiated`) === "yes");
   await evaluate(`(() => {
     const input = document.getElementById("text");
-    input.value = "Reply with exactly this token and nothing else: " + ${JSON.stringify(CHALLENGE)};
+    input.value = "Use read_release_challenge exactly once, then reply with exactly the value it returned and nothing else.";
     input.form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   })()`);
+  await waitFor("real-model challenge tool call", () => evaluate(
+    `document.getElementById("openrealtime-root").dataset.challengeToolCalls === "1"`), 360000);
+  check("real model chose the unpredictable challenge tool", await evaluate(
+    `document.getElementById("openrealtime-root").dataset.challengeToolCalls`) === "1");
   await waitFor("real-model challenge response", () => evaluate(
     `[...document.querySelectorAll("article[data-role=assistant]")].some((node) => node.textContent.includes(${JSON.stringify(CHALLENGE)}))`),
     360000);
   check("typed live turn rendered", await evaluate(
-    `[...document.querySelectorAll("article[data-role=user]")].some((node) => node.textContent.includes(${JSON.stringify(CHALLENGE)}))`));
+    `[...document.querySelectorAll("article[data-role=user]")].some((node) =>
+      node.textContent.includes("read_release_challenge") && !node.textContent.includes(${JSON.stringify(CHALLENGE)}))`));
   const assistant = await evaluate(
     `[...document.querySelectorAll("article[data-role=assistant]")].map((node) => node.textContent).find((text) => text.includes(${JSON.stringify(CHALLENGE)})) ?? ""`);
-  check("real model returned the unpredictable challenge", assistant.includes(CHALLENGE),
+  check("real model returned the unpredictable tool result", assistant.includes(CHALLENGE),
     `assistant response bytes=${new TextEncoder().encode(assistant).length}`);
   check("client reports no protocol error", await evaluate(
     `document.getElementById("error").textContent`) === "");

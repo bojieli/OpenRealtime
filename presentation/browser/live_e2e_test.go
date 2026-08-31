@@ -42,7 +42,7 @@ func TestLiveComposablePresentationClientAgainstRealModelInChromium(t *testing.T
 	live := endpoint != ""
 	token := os.Getenv("OPENREALTIME_TOKEN")
 	model := strings.TrimSpace(os.Getenv("OPENREALTIME_PRESENTATION_MODEL"))
-	var fixtureSawChallenge atomic.Bool
+	var fixtureSawToolOutput atomic.Bool
 	if live {
 		parsed, err := url.Parse(endpoint)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "ws" && parsed.Scheme != "wss") ||
@@ -64,25 +64,51 @@ func TestLiveComposablePresentationClientAgainstRealModelInChromium(t *testing.T
 			_ = connection.Write(request.Context(), websocket.MessageText, []byte(
 				`{"type":"session.created","session":{"id":"fixture-live-presentation"}}`,
 			))
+			responseIndex := 0
 			for {
 				_, payload, err := connection.Read(request.Context())
 				if err != nil {
 					return
 				}
-				if bytes.Contains(payload, []byte(challenge)) {
-					fixtureSawChallenge.Store(true)
-				}
 				var event struct {
-					Type string `json:"type"`
+					Type    string          `json:"type"`
+					Session json.RawMessage `json:"session"`
 				}
-				if json.Unmarshal(payload, &event) != nil || event.Type != "response.create" {
+				if json.Unmarshal(payload, &event) != nil {
 					continue
 				}
-				for _, response := range []string{
-					`{"type":"response.created","response":{"id":"fixture-response","status":"in_progress"}}`,
-					fmt.Sprintf(`{"type":"response.output_text.delta","response_id":"fixture-response","item_id":"fixture-output","delta":%q}`, challenge),
-					`{"type":"response.done","response":{"id":"fixture-response","status":"completed","status_details":null}}`,
-				} {
+				if event.Type == "session.update" {
+					response := fmt.Sprintf(`{"type":"session.updated","session":%s}`, event.Session)
+					if err := connection.Write(request.Context(), websocket.MessageText, []byte(response)); err != nil {
+						return
+					}
+					continue
+				}
+				if event.Type == "conversation.item.create" && bytes.Contains(payload, []byte(challenge)) {
+					fixtureSawToolOutput.Store(true)
+				}
+				if event.Type != "response.create" {
+					continue
+				}
+				responseIndex++
+				responses := []string{
+					fmt.Sprintf(`{"type":"response.created","response":{"id":"fixture-response-%d","status":"in_progress"}}`, responseIndex),
+				}
+				if responseIndex == 1 {
+					responses = append(responses,
+						`{"type":"response.function_call_arguments.done","response_id":"fixture-response-1","item_id":"fixture-tool-item","call_id":"fixture-challenge-call","name":"read_release_challenge","arguments":"{}"}`,
+					)
+				} else {
+					responses = append(responses, fmt.Sprintf(
+						`{"type":"response.output_text.delta","response_id":"fixture-response-2","item_id":"fixture-output","delta":%q}`,
+						challenge,
+					))
+				}
+				responses = append(responses, fmt.Sprintf(
+					`{"type":"response.done","response":{"id":"fixture-response-%d","status":"completed","status_details":null}}`,
+					responseIndex,
+				))
+				for _, response := range responses {
 					if err := connection.Write(request.Context(), websocket.MessageText, []byte(response)); err != nil {
 						return
 					}
@@ -95,7 +121,11 @@ func TestLiveComposablePresentationClientAgainstRealModelInChromium(t *testing.T
 	}
 	node, chromium := requireBrowser(t)
 
-	bundle, err := presentationbrowser.MinimalBundle()
+	bundle, err := presentationbrowser.ComposeTextBundle(
+		"openrealtime.browser.live-tool-challenge", []presentationbrowser.ClientModule{
+			liveChallengeClientModule(challenge),
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,8 +212,8 @@ func TestLiveComposablePresentationClientAgainstRealModelInChromium(t *testing.T
 		}
 		t.Fatalf("live composable presentation failed: %v", err)
 	}
-	if !live && !fixtureSawChallenge.Load() {
-		t.Fatal("hermetic protocol peer did not receive the unpredictable challenge")
+	if !live && !fixtureSawToolOutput.Load() {
+		t.Fatal("hermetic protocol peer did not receive the unpredictable tool output")
 	}
 	if live {
 		fmt.Fprintln(os.Stderr, "live composable presentation client completed")
@@ -217,4 +247,61 @@ func livePresentationChallenge(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return "OPENREALTIME-LIVE-" + hex.EncodeToString(nonce[:])
+}
+
+func liveChallengeClientModule(challenge string) presentationbrowser.ClientModule {
+	source := fmt.Sprintf(`const challenge = %q;
+export default {
+  name: "openrealtime.presentation.client.release-challenge",
+  revision: 1,
+  async mount(context) {
+    const state = context.services.get("presentation.client.session_state");
+    const events = context.services.get("presentation.client.protocol_events");
+    const configuration = context.services.get("presentation.client.session_configuration");
+    if (!state || !events || !configuration) throw new Error("release challenge dependencies are unavailable");
+    context.root.dataset.challengeToolCalls = "0";
+    context.root.dataset.challengeToolNegotiated = "no";
+    const remove = configuration.contribute({tools: [{
+      type: "function",
+      name: "read_release_challenge",
+      description: "Read the opaque release-check value. Use this tool when asked for that value; it has no arguments.",
+      parameters: {type: "object", properties: {}, required: [], additionalProperties: false},
+    }]});
+    let pending = "";
+    let calls = 0;
+    const unsubscribe = events.subscribe((event) => {
+      if (event?.type === "session.updated") {
+        const tools = event.session?.tools;
+        context.root.dataset.challengeToolNegotiated = Array.isArray(tools) &&
+          tools.some((tool) => tool?.name === "read_release_challenge") ? "yes" : "no";
+        return;
+      }
+      if (event?.type === "response.function_call_arguments.done" &&
+          event.name === "read_release_challenge") {
+        if (pending) throw new Error("release challenge tool was called concurrently");
+        pending = event.call_id;
+        calls++;
+        context.root.dataset.challengeToolCalls = String(calls);
+        return;
+      }
+      if (event?.type === "response.done" && pending) {
+        const callID = pending;
+        pending = "";
+        state.toolResult(callID, "done", challenge, "");
+      }
+    });
+    context.lifecycle.defer("release-challenge-events", unsubscribe);
+    context.lifecycle.defer("release-challenge-configuration", remove);
+  },
+};
+`, challenge)
+	return presentationbrowser.ClientModule{
+		Entry: "release-challenge", Entrypoint: "release-challenge.js",
+		PluginName: "openrealtime.presentation.client.release-challenge", Source: []byte(source),
+		Requires: []plugin.Requirement{
+			{Contract: presentation.ClientStateContract},
+			{Contract: presentation.ClientProtocolEventsContract},
+			{Contract: presentation.ClientSessionConfigurationContract},
+		},
+	}
 }
