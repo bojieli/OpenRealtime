@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 )
 
 func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
@@ -17,6 +18,7 @@ func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
 	flow := flows["trace:feedback"]
 	if len(flow.Edges) != 3 || flow.Edges[0] != "feedback-edge" ||
 		flow.Edges[1] != "feedback-edge" || flow.Edges[2] != "exit-edge" ||
+		len(flow.EdgeNS) != 3 || flow.EdgeNS[0] != 1 || flow.EdgeNS[1] != 2 || flow.EdgeNS[2] != 3 ||
 		!flow.Truncated || dropped != 1 {
 		t.Fatalf("bounded feedback flow = %+v, dropped=%d", flow, dropped)
 	}
@@ -52,7 +54,31 @@ func TestFlowTrackerBoundsCorrelationBytesAndClampsRegressingClock(t *testing.T)
 	tracker.record("edge", TraceEnqueue, element.Envelope{ItemID: "item", TraceID: "ok"}, 15)
 	flows, dropped = tracker.snapshot()
 	flow := flows["trace:ok"]
-	if flow.FirstNS != 20 || flow.LastNS != 20 || len(flow.Edges) != 2 || dropped != 2 {
+	if flow.FirstNS != 20 || flow.LastNS != 20 || len(flow.Edges) != 2 ||
+		len(flow.EdgeNS) != 2 || flow.EdgeNS[0] != 20 || flow.EdgeNS[1] != 20 || dropped != 2 {
 		t.Fatalf("regressing clock flow = %+v, dropped=%d", flow, dropped)
+	}
+}
+
+func TestRecordedFlowMonotonicityRequiresAnImmutableTimingModeAndPrefix(t *testing.T) {
+	before := traceCorrelation{
+		edges: []string{"edge"}, edgeNS: []uint64{10}, firstNS: 10, lastNS: 10,
+	}
+	if !monotonicRawFlow(before, inspect.FlowLive{
+		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20}, FirstNS: 10, LastNS: 20,
+	}) {
+		t.Fatal("valid edge and timing append was not monotonic")
+	}
+	if monotonicRawFlow(before, inspect.FlowLive{
+		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{11, 20}, FirstNS: 10, LastNS: 20,
+	}) {
+		t.Fatal("rewritten edge timing prefix was accepted")
+	}
+	if monotonicRawFlow(traceCorrelation{
+		edges: []string{"edge"}, firstNS: 10, lastNS: 10,
+	}, inspect.FlowLive{
+		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20}, FirstNS: 10, LastNS: 20,
+	}) {
+		t.Fatal("legacy flow changed timing-presence mode without rotating identity")
 	}
 }

@@ -52,6 +52,7 @@ type TraceRecordingConfig struct {
 type traceCorrelation struct {
 	token     string
 	edges     []string
+	edgeNS    []uint64
 	firstNS   uint64
 	lastNS    uint64
 	truncated bool
@@ -408,12 +409,14 @@ func (recorder *traceRecorder) pseudonymizeFlowsLocked(
 			}
 		}
 		correlation.edges = slices.Clone(flow.Edges)
+		correlation.edgeNS = slices.Clone(flow.EdgeNS)
 		correlation.firstNS = flow.FirstNS
 		correlation.lastNS = flow.LastNS
 		correlation.truncated = flow.Truncated
 		nextActive[base] = correlation
 		result[correlation.token] = inspect.FlowLive{
 			Correlation: correlation.token, Edges: slices.Clone(flow.Edges),
+			EdgeNS:  slices.Clone(flow.EdgeNS),
 			FirstNS: flow.FirstNS, LastNS: flow.LastNS, Truncated: flow.Truncated,
 		}
 	}
@@ -425,6 +428,9 @@ func monotonicRawFlow(before traceCorrelation, after inspect.FlowLive) bool {
 	return before.firstNS == after.FirstNS && before.lastNS <= after.LastNS &&
 		len(before.edges) <= len(after.Edges) &&
 		slices.Equal(before.edges, after.Edges[:len(before.edges)]) &&
+		(len(before.edgeNS) == 0) == (len(after.EdgeNS) == 0) &&
+		len(before.edgeNS) <= len(after.EdgeNS) &&
+		slices.Equal(before.edgeNS, after.EdgeNS[:len(before.edgeNS)]) &&
 		(!before.truncated || after.Truncated)
 }
 

@@ -85,9 +85,13 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 		}
 	}
 	rawCorrelation := inspect.OpaqueTraceCorrelation("trace:" + message.TraceID)
-	for correlation := range final.Flows {
+	for correlation, flow := range final.Flows {
 		if correlation == rawCorrelation || !strings.HasPrefix(correlation, "sha256:") {
 			t.Fatalf("flow correlation was not session-key pseudonymized: %q", correlation)
+		}
+		if len(flow.EdgeNS) != len(flow.Edges) || len(flow.EdgeNS) == 0 ||
+			flow.EdgeNS[0] < flow.FirstNS || flow.EdgeNS[len(flow.EdgeNS)-1] > flow.LastNS {
+			t.Fatalf("flow stage timing was not recorded and replayed: %+v", flow)
 		}
 	}
 	if now.Load() == 0 {

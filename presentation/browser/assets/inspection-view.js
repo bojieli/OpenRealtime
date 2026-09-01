@@ -211,14 +211,26 @@ function flowProjection(value, id) {
   }
   const edges = sequence(source.edges, `live flow ${id} edges`);
   if (edges.length === 0) throw new Error(`live flow ${id} has no traversed edges`);
+  const edgeNS = rows(source.edge_ns ?? [], `live flow ${id} edge times`).map(
+    (entry, index) => integer(entry, `live flow ${id} edge time ${index}`));
+  if (edgeNS.length !== 0 && edgeNS.length !== edges.length) {
+    throw new Error(`live flow ${id} edge timestamps do not match its traversed edges`);
+  }
   const firstNS = integer(source.first_ns ?? 0, `live flow ${id} first time`);
   const lastNS = integer(source.last_ns ?? 0, `live flow ${id} last time`);
   if (lastNS < firstNS) {
     throw new Error(`live flow ${id} contains impossible traversal timing`);
   }
+  for (let index = 0; index < edgeNS.length; index++) {
+    if ((index > 0 && edgeNS[index] < edgeNS[index - 1]) ||
+        edgeNS[index] < firstNS || edgeNS[index] > lastNS) {
+      throw new Error(`live flow ${id} contains impossible edge timing`);
+    }
+  }
   return Object.freeze({
     correlation: id,
     edges: Object.freeze(edges),
+    edge_ns: Object.freeze(edgeNS),
     first_ns: firstNS,
     last_ns: lastNS,
     truncated: boolean(source.truncated, `live flow ${id} truncated`),
@@ -321,7 +333,12 @@ function joinedProjection(liveValue, modelValue) {
       if (!declared) {
         throw new Error(`live flow ${id} contains unknown internal edge ${edgeID}`);
       }
-      return Object.freeze({ index: index + 1, declared });
+      return Object.freeze({
+        index: index + 1, declared,
+        atNS: observed.edge_ns.length === 0 ? null : observed.edge_ns[index],
+        deltaNS: observed.edge_ns.length === 0 || index === 0
+          ? null : observed.edge_ns[index] - observed.edge_ns[index - 1],
+      });
     });
     return Object.freeze({ observed, stages: Object.freeze(stages) });
   });
@@ -452,8 +469,11 @@ function renderJoined(nodeContainer, edgeContainer, flowContainer, joined) {
     path.dataset.role = "flow-stages";
     for (const stage of stages) {
       const edge = stage.declared;
+      const timing = stage.atNS === null ? "time unavailable" :
+        `${stage.atNS} ns from mount clock; ${stage.deltaNS === null
+          ? "first retained stage" : `+${stage.deltaNS} ns`}`;
       path.append(node("li", `Stage ${stage.index}: ${endpointText(edge.from)} → ${endpointText(edge.to)} ` +
-        `via ${edge.id} (${edge.type}; ${edge.delivery})`));
+        `via ${edge.id} (${edge.type}; ${edge.delivery}); ${timing}`));
     }
     card.append(path);
     flowContainer.append(card);

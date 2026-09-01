@@ -484,6 +484,11 @@ func monotonicFlow(before, after TraceFlowLive) error {
 		!slices.Equal(before.Edges, after.Edges[:len(before.Edges)]) {
 		return fmt.Errorf("flow %s edge history was rewritten", before.Correlation)
 	}
+	if (len(before.EdgeNS) == 0) != (len(after.EdgeNS) == 0) ||
+		len(after.EdgeNS) < len(before.EdgeNS) ||
+		!slices.Equal(before.EdgeNS, after.EdgeNS[:len(before.EdgeNS)]) {
+		return fmt.Errorf("flow %s edge timing history was rewritten", before.Correlation)
+	}
 	if after.FirstNS != before.FirstNS || after.LastNS < before.LastNS || before.Truncated && !after.Truncated {
 		return fmt.Errorf("flow %s timing/truncation regressed", before.Correlation)
 	}
@@ -610,7 +615,8 @@ func traceSnapshotFromLive(
 		seenCorrelations[correlation] = struct{}{}
 		snapshot.Flows = append(snapshot.Flows, TraceFlowLive{
 			Correlation: correlation,
-			Edges:       slices.Clone(flow.Edges), FirstNS: flow.FirstNS, LastNS: flow.LastNS,
+			Edges:       slices.Clone(flow.Edges), EdgeNS: slices.Clone(flow.EdgeNS),
+			FirstNS: flow.FirstNS, LastNS: flow.LastNS,
 			Truncated: flow.Truncated,
 		})
 	}

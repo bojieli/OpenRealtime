@@ -66,11 +66,51 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 	if final.Sequence != 6 || final.Live.TraceDropped != 1 ||
 		final.Edges["stream"].Occupancy != 0 || final.Edges["stream"].Dequeued != 1 ||
 		len(final.Flows) != 1 || final.Flows[correlation].Edges[0] != "stream" ||
+		len(final.Flows[correlation].EdgeNS) != 1 || final.Flows[correlation].EdgeNS[0] != 120 ||
 		final.Adapter == nil || final.Adapter.Implementation != "go://test/session-adapter/v1" {
 		t.Fatalf("final overlay = %+v", final)
 	}
 	if _, err := replayer.At(0); err == nil || !strings.Contains(err.Error(), "outside") {
 		t.Fatalf("replay pretended to cover unrecorded time: %v", err)
+	}
+}
+
+func TestLiveTracePreservesAValidZeroOriginFlowClock(t *testing.T) {
+	graph, _, trace, _ := liveTraceFixture(t)
+	candidate := trace.Clone()
+	candidate.Fingerprint = ""
+	for snapshotIndex := range candidate.Snapshots {
+		for flowIndex := range candidate.Snapshots[snapshotIndex].Flows {
+			flow := &candidate.Snapshots[snapshotIndex].Flows[flowIndex]
+			flow.FirstNS = 0
+			flow.EdgeNS[0] = 0
+		}
+	}
+	for eventIndex := range candidate.Events {
+		if flow := candidate.Events[eventIndex].Flow; flow != nil {
+			flow.FirstNS = 0
+			flow.EdgeNS[0] = 0
+		}
+	}
+	frozen, err := inspect.FreezeLiveTrace(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayer, err := inspect.NewTraceReplayer(graph, frozen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	final, err := replayer.Final()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(final.Flows) != 1 {
+		t.Fatalf("zero-origin flow population = %+v", final.Flows)
+	}
+	for _, flow := range final.Flows {
+		if flow.FirstNS != 0 || len(flow.EdgeNS) != 1 || flow.EdgeNS[0] != 0 || flow.LastNS != 120 {
+			t.Fatalf("zero-origin flow timing = %+v", flow)
+		}
 	}
 }
 
@@ -349,6 +389,7 @@ func TestLiveTraceReplayRejectsSemanticForgeryDespiteValidArtifactFingerprint(t 
 		}},
 		{name: "flow history rewrite", want: "edge history was rewritten", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = []string{"stream", "stream"}
+			trace.Events[2].Flow.EdgeNS = []uint64{120, 120}
 		}},
 		{name: "unknown flow edge", want: "unknown internal graph edge", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = []string{"unknown-edge"}
@@ -438,6 +479,16 @@ func TestLiveTraceRejectsNonMonotonicTimeSequenceAndImpossibleCounters(t *testin
 		{name: "output before trigger", want: "first output precedes its first trigger", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[0].Node.FirstTriggerNS = trace.Events[0].Node.FirstOutputNS + 1
 		}},
+		{name: "incomplete flow edge times", want: "edge timestamps", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.Edges = append(trace.Events[2].Flow.Edges, "stream")
+		}},
+		{name: "regressing flow edge times", want: "edge timestamp 1 regresses", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.Edges = append(trace.Events[2].Flow.Edges, "stream")
+			trace.Events[2].Flow.EdgeNS = []uint64{120, 119}
+		}},
+		{name: "flow edge time outside span", want: "outside its first/last times", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.EdgeNS[0] = 121
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -462,9 +513,11 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	}
 	input.Snapshots[0].Nodes[0].Resolution.Runtime.ID = "mutated"
 	input.Snapshots[1].Flows[0].Edges[0] = "mutated"
+	input.Snapshots[1].Flows[0].EdgeNS[0] = 999
 	input.Adapter.Runtime.ID = "mutated"
 	if refrozen.Snapshots[0].Nodes[0].Resolution.Runtime.ID == "mutated" ||
 		refrozen.Snapshots[1].Flows[0].Edges[0] == "mutated" ||
+		refrozen.Snapshots[1].Flows[0].EdgeNS[0] == 999 ||
 		refrozen.Adapter.Runtime.ID == "mutated" {
 		t.Fatal("FreezeLiveTrace retained caller aliases")
 	}
@@ -480,6 +533,7 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	first.Edges["stream"] = inspect.TraceEdgeLive{}
 	for id, flow := range first.Flows {
 		flow.Edges[0] = "mutated"
+		flow.EdgeNS[0] = 999
 		first.Flows[id] = flow
 	}
 	first.Adapter.Runtime.ID = "mutated"
@@ -492,7 +546,7 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 		t.Fatal("replayer retained returned overlay aliases")
 	}
 	for _, flow := range again.Flows {
-		if flow.Edges[0] == "mutated" {
+		if flow.Edges[0] == "mutated" || flow.EdgeNS[0] == 999 {
 			t.Fatal("replayer retained returned flow aliases")
 		}
 	}
@@ -616,7 +670,8 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	stream.Enqueued, stream.Dequeued, stream.HighWater = 1, 1, 1
 	finalLive.Edges["stream"] = stream
 	finalLive.Flows["trace:"+secret] = inspect.FlowLive{
-		Correlation: "trace:" + secret, Edges: []string{"stream"}, FirstNS: 120, LastNS: 120,
+		Correlation: "trace:" + secret, Edges: []string{"stream"}, EdgeNS: []uint64{120},
+		FirstNS: 120, LastNS: 120,
 	}
 	finalSnapshot, err := inspect.TraceSnapshotFromLive(graph, configuration, finalLive, 130)
 	if err != nil {
@@ -630,7 +685,7 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	edge.Occupancy, edge.HighWater, edge.Enqueued = 1, 1, 1
 	flow := inspect.TraceFlowLive{
 		Correlation: inspect.OpaqueTraceCorrelation("trace:" + secret),
-		Edges:       []string{"stream"}, FirstNS: 120, LastNS: 120,
+		Edges:       []string{"stream"}, EdgeNS: []uint64{120}, FirstNS: 120, LastNS: 120,
 	}
 	candidate := inspect.LiveTrace{
 		FormatVersion: inspect.LiveTraceFormatVersion,

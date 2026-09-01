@@ -148,6 +148,7 @@ func (tracker *flowTracker) record(
 		return
 	}
 	tracked.flow.Edges = append(tracked.flow.Edges, channel)
+	tracked.flow.EdgeNS = append(tracked.flow.EdgeNS, atNS)
 }
 
 func (tracker *flowTracker) snapshot() (map[string]inspect.FlowLive, uint64) {

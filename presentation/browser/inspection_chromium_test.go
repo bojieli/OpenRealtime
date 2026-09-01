@@ -53,8 +53,10 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 		`data-flow-id="flow_000001"`, `data-stage-count="2"`, `data-truncated="false"`,
 		"First traversal: ", "110 ns from mount clock", "Last traversal: ",
 		"150 ns from mount clock", "Elapsed: ", "40 ns", "Retention: ", "complete",
-		"Stage 1: worker.out → worker.in via channel (Event(test.Value); lossy)",
-		"Stage 2: worker.out → worker.in via channel (Event(test.Value); lossy)",
+		"Stage 1: worker.out → worker.in via channel (Event(test.Value); lossy); " +
+			"110 ns from mount clock; first retained stage",
+		"Stage 2: worker.out → worker.in via channel (Event(test.Value); lossy); " +
+			"150 ns from mount clock; +40 ns",
 	} {
 		if !strings.Contains(document, expected) {
 			t.Fatalf("Chromium channel view omitted %q:\n%s", expected, document)
@@ -104,7 +106,7 @@ const live = {
   } },
   flows: { flow_000001: {
     correlation: "flow_000001", edges: ["channel", "channel"],
-    first_ns: 110, last_ns: 150, truncated: false,
+    edge_ns: [110, 150], first_ns: 110, last_ns: 150, truncated: false,
   } }, trace_dropped: 0,
 };
 const model = {

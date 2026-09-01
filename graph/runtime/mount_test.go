@@ -166,16 +166,22 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	}
 	flow, found := live.Flows["trace:task-7"]
 	if !found || len(flow.Edges) != 1 || flow.Edges[0] != "first-to-second" ||
+		len(flow.EdgeNS) != 1 || flow.EdgeNS[0] < flow.FirstNS || flow.EdgeNS[0] > flow.LastNS ||
 		flow.Correlation != "trace:task-7" || flow.Truncated {
 		t.Fatalf("correlated flow = %+v, found=%t", flow, found)
 	}
 	// Live snapshots are recursively independent management-plane values.
 	live.Nodes["first"].Resolution.Capabilities[0].Provider.ID = "mutated"
 	live.Configuration.ID = "mutated"
-	live.Flows["trace:task-7"] = inspect.FlowLive{Edges: []string{"mutated"}}
+	originalEdgeNS := flow.EdgeNS[0]
+	mutatedFlow := live.Flows["trace:task-7"]
+	mutatedFlow.Edges[0] = "mutated"
+	mutatedFlow.EdgeNS[0]++
+	live.Flows["trace:task-7"] = mutatedFlow
 	again := mounted.Live()
 	if again.Nodes["first"].Resolution.Capabilities[0].Provider.ID != "provider://echo" ||
 		again.Flows["trace:task-7"].Edges[0] != "first-to-second" ||
+		again.Flows["trace:task-7"].EdgeNS[0] != originalEdgeNS ||
 		again.Configuration.ID != "values://pass-chain" {
 		t.Fatal("live inspection snapshot retained caller aliases")
 	}

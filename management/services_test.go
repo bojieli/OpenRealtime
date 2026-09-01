@@ -408,6 +408,7 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	live.Edges[graph.Edges[0].ID] = edge
 	live.Flows["raw-correlation"] = inspect.FlowLive{
 		Correlation: "raw-correlation", Edges: []string{graph.Edges[0].ID},
+		EdgeNS: []uint64{30}, FirstNS: 30, LastNS: 30,
 	}
 	registry := NewSessionRegistry()
 	source := &recordedSession{graph: graph, live: live, trace: trace}
@@ -427,6 +428,9 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 		snapshot.Nodes["source"].FirstTriggerNS != 10 || snapshot.Nodes["source"].FirstOutputNS != 20 ||
 		snapshot.Edges[graph.Edges[0].ID].LastItemID != "" || snapshot.Flows["flow_000001"].Correlation != "flow_000001" {
 		t.Fatalf("snapshot was not payload-redacted: %+v", snapshot)
+	}
+	if timing := snapshot.Flows["flow_000001"].EdgeNS; len(timing) != 1 || timing[0] != 30 {
+		t.Fatalf("snapshot omitted redacted flow-stage timing: %+v", snapshot.Flows)
 	}
 	snapshot.Nodes["source"] = inspect.NodeLive{}
 	second, err := registry.Snapshot(context.Background(), "sess-one")

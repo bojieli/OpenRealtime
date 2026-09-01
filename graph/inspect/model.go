@@ -364,10 +364,13 @@ func (live NodeLive) Clone() NodeLive {
 
 // FlowLive is a bounded, payload-free view of internal graph edges traversed
 // by one envelope correlation. Repeated edges remain repeated so feedback
-// loops and retries are not flattened into a misleading set.
+// loops and retries are not flattened into a misleading set. EdgeNS is the
+// parallel monotonic timestamp sequence for retained traversals; it may be
+// absent only in an older inspection value.
 type FlowLive struct {
 	Correlation string   `json:"correlation"`
 	Edges       []string `json:"edges"`
+	EdgeNS      []uint64 `json:"edge_ns,omitempty"`
 	FirstNS     uint64   `json:"first_ns,omitempty"`
 	LastNS      uint64   `json:"last_ns,omitempty"`
 	Truncated   bool     `json:"truncated,omitempty"`
@@ -375,6 +378,7 @@ type FlowLive struct {
 
 func (flow FlowLive) Clone() FlowLive {
 	flow.Edges = slices.Clone(flow.Edges)
+	flow.EdgeNS = slices.Clone(flow.EdgeNS)
 	return flow
 }
 

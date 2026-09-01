@@ -80,7 +80,7 @@ const baseLive = {
   flows: {
     flow_000001: {
       correlation: "flow_000001", edges: [edgeID, edgeID],
-      first_ns: 110, last_ns: 150, truncated: false,
+      edge_ns: [110, 150], first_ns: 110, last_ns: 150, truncated: false,
     },
   },
   trace_dropped: 0,
@@ -174,8 +174,10 @@ for (const expected of [
   "Queue wait: 300 ns cumulative; 50 ns per dequeue",
   "First traversal: 110 ns from mount clock", "Last traversal: 150 ns from mount clock",
   "Elapsed: 40 ns", "Retention: complete",
-  `Stage 1: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy)`,
-  `Stage 2: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy)`,
+  `Stage 1: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy); ` +
+    "110 ns from mount clock; first retained stage",
+  `Stage 2: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy); ` +
+    "150 ns from mount clock; +40 ns",
 ]) {
   if (!section.textContent.includes(expected)) throw new Error(`joined view omitted ${expected}`);
 }
@@ -251,6 +253,7 @@ if (availability.textContent !== "unavailable" ||
 
 live = structuredClone(baseLive);
 live.flows.flow_000001.edges = ["invented"];
+live.flows.flow_000001.edge_ns = [110];
 await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
     !section.textContent.includes("contains unknown internal edge invented")) {
@@ -266,8 +269,25 @@ if (availability.textContent !== "unavailable" ||
 }
 
 live = structuredClone(baseLive);
+live.flows.flow_000001.edge_ns = [110];
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("edge timestamps do not match")) {
+  throw new Error("inspection view accepted an incomplete edge timestamp sequence");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.edge_ns = [150, 110];
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("impossible edge timing")) {
+  throw new Error("inspection view accepted regressing per-edge timing");
+}
+
+live = structuredClone(baseLive);
 live.flows.flow_000001.first_ns = 0;
 live.flows.flow_000001.last_ns = 0;
+live.flows.flow_000001.edge_ns = [0, 0];
 await refresh.dispatch("click");
 if (availability.textContent !== "live" ||
     !find(section, (entry) => entry.dataset.flowId === "flow_000001") ||

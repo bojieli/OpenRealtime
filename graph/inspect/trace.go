@@ -142,11 +142,13 @@ type TraceEdgeLive struct {
 }
 
 // TraceFlowLive uses a SHA-256 opaque correlation rather than an envelope ID.
-// Edge repetitions are retained because loops and retries are semantically
-// different from a set of visited channels.
+// Edge repetitions and their parallel monotonic timestamps are retained
+// because loops and retries are semantically different from a set of visited
+// channels. EdgeNS remains optional when reading an older trace artifact.
 type TraceFlowLive struct {
 	Correlation string   `json:"correlation"`
 	Edges       []string `json:"edges"`
+	EdgeNS      []uint64 `json:"edge_ns,omitempty"`
 	FirstNS     uint64   `json:"first_ns,omitempty"`
 	LastNS      uint64   `json:"last_ns,omitempty"`
 	Truncated   bool     `json:"truncated,omitempty"`
@@ -257,6 +259,7 @@ func (event TraceEvent) Clone() TraceEvent {
 
 func (flow TraceFlowLive) Clone() TraceFlowLive {
 	flow.Edges = slices.Clone(flow.Edges)
+	flow.EdgeNS = slices.Clone(flow.EdgeNS)
 	return flow
 }
 
@@ -736,7 +739,20 @@ func validateTraceFlow(flow TraceFlowLive, limits TraceLimits) error {
 			return fmt.Errorf("live trace flow %s contains invalid internal edge %q", flow.Correlation, edge)
 		}
 	}
-	if (flow.FirstNS == 0) != (flow.LastNS == 0) || flow.FirstNS > flow.LastNS {
+	if len(flow.EdgeNS) != 0 && len(flow.EdgeNS) != len(flow.Edges) {
+		return fmt.Errorf("live trace flow %s has %d edge timestamps for %d edges",
+			flow.Correlation, len(flow.EdgeNS), len(flow.Edges))
+	}
+	for index, atNS := range flow.EdgeNS {
+		if index > 0 && atNS < flow.EdgeNS[index-1] {
+			return fmt.Errorf("live trace flow %s edge timestamp %d regresses", flow.Correlation, index)
+		}
+		if atNS < flow.FirstNS || atNS > flow.LastNS {
+			return fmt.Errorf("live trace flow %s edge timestamp %d is outside its first/last times",
+				flow.Correlation, index)
+		}
+	}
+	if flow.FirstNS > flow.LastNS {
 		return fmt.Errorf("live trace flow %s last time precedes first time", flow.Correlation)
 	}
 	return nil
