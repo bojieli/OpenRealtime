@@ -1819,7 +1819,7 @@ reference graphs, or conformance evidence.
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
-| 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
+| 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with exact receipts, refusal, and rollback | Candidate pre-mount, graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
 Current checkpoint notes:
@@ -2866,13 +2866,38 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
 ### Phase 7: dynamic reconciliation
 
-- [ ] Implement scoped dependencies and reversible lifecycle effects. Initial
-  mount-scoped services, dependency lookup, disposal, and reversible-effect
-  declarations exist; reconciliation-scoped ownership is incomplete.
+- [ ] Implement scoped dependencies and reversible lifecycle effects across
+  graph/session reconciliation; that wider ownership is incomplete.
+  - [x] Compile exact required and optional service dependencies through nested
+    visibility/isolation scopes, expose only descriptor-bound services and
+    deployment grants, and own every publication, supervised worker, and
+    disposer through one mount lifecycle. Required-provider loss and worker
+    failure remove services and quiesce the transitive consumer closure;
+    activation remounts desired consumers, failed mounts unwind, close is
+    idempotent and dependency-ordered, and unresponsive workers are named while
+    registered effects are still disposed. Normal, ten shuffled, race, and
+    adversarial permission/config/typed-nil coverage is green.
 - [ ] Add candidate validation, pre-mount, safe-point swap, state migration,
   rollback/refusal, and leak detection.
+  - [x] Validate immutable-plan implementation, canonical config, and narrowed
+    permission candidates completely before teardown; bind them to the exact
+    plan fingerprint and observed lifecycle sequence; refuse stale, no-op,
+    inactive, unknown, duplicate, over-ceiling, invalid-config, canceled, and
+    stateful-without-migrator requests; quiesce the affected dependency closure;
+    and either return a deterministic transition receipt or clean the failed
+    candidate and restore the complete prior composition under the realm-owned
+    lifecycle. Multi-entry success, mount failure, cancellation before/during
+    transition, request-context detachment, canceled-realm refusal, rollback
+    disposal counts, ten shuffled runs, race, and the 64-entry leaf benchmark
+    at approximately 8.4–8.6 microseconds are green. Candidate pre-mount,
+    graph-routing safe-point publication, actual state migration, and the full
+    leak gate remain open.
 - [ ] Begin with leaf config/implementation swaps, then expand to bounded topology
   changes.
+  - [x] Apply leaf and bounded multi-entry implementation, config, and
+    permission replacements within one immutable plan, including exact runtime
+    artifact identities and dependency rebinding. Descriptor/topology-plan
+    replacement remains deliberately unavailable through this API.
 
 - [ ] **Exit gate:** supported updates have deterministic lifecycle behavior
   and leave no workers, subscriptions, queues, or authority registrations behind.
