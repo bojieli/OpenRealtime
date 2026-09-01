@@ -2154,8 +2154,18 @@ Reference-agent tracker:
 - [x] Adaptive-observation video/YouTube watcher with explicit external ticks,
   fixed/adaptive/manual cadence, bounded change detection, latest-frame state,
   raw/reference separation, and typed visual-observer lifecycle controls.
-- [ ] Vision-language and silent computer-use agent with typed authority,
-  target fencing, confirmation, execution, and visual feedback.
+- [x] Vision-language and silent computer-use agent with typed authority,
+  target fencing, confirmation, execution, and visual feedback. The locked
+  production Realtime-CU graph routes retained screen observations through
+  observation commit and vision-language cognition, then requires provenance
+  join, proposal admission, declared-tool lookup, confirmation, target fence,
+  canonical-call commit, idempotent ledger commit, and dispatch before a client
+  effect can occur. The exact tool result and subsequent visual observation
+  re-enter the canonical trajectory before another effect is admitted. Its
+  stable Realtime endpoint regression exercises that complete two-effect loop,
+  and the clean reviewed Chromium-backed candidate campaign passed all sixteen
+  pixel and set-of-mark cases with synchronized A/V and exact live graph
+  attestation.
 - [ ] Independent voice and computer-use policies composed in one graph.
 - [x] Audio-free typed text, image, file, and multimodal-attachment ingress,
   retention, and resolution component. A complete cognition/action agent over
