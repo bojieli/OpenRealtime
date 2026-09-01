@@ -400,6 +400,8 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	node.LastTriggerID = "item-private"
 	node.LastOutcome = "model text"
 	node.Error = "private failure"
+	node.FirstTriggerNS = 10
+	node.FirstOutputNS = 20
 	live.Nodes["source"] = node
 	edge := live.Edges[graph.Edges[0].ID]
 	edge.LastItemID = "item-private"
@@ -422,6 +424,7 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	}
 	if snapshot.Error != "redacted" || snapshot.Nodes["source"].LastTriggerID != "" ||
 		snapshot.Nodes["source"].LastOutcome != "" || snapshot.Nodes["source"].Error != "redacted" ||
+		snapshot.Nodes["source"].FirstTriggerNS != 10 || snapshot.Nodes["source"].FirstOutputNS != 20 ||
 		snapshot.Edges[graph.Edges[0].ID].LastItemID != "" || snapshot.Flows["flow_000001"].Correlation != "flow_000001" {
 		t.Fatalf("snapshot was not payload-redacted: %+v", snapshot)
 	}
@@ -577,6 +580,19 @@ func TestValidateSessionSnapshotRejectsMalformedDeploymentEvidence(t *testing.T)
 	}}
 	if err := ValidateSessionSnapshot(live); err != nil {
 		t.Fatalf("valid compatibility deployment evidence: %v", err)
+	}
+}
+
+func TestValidateSessionSnapshotRejectsImpossibleTriggerRelativeTiming(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	live, _ := managedLiveTrace(t, graph)
+	node := live.Nodes["source"]
+	node.FirstTriggerNS = 20
+	node.FirstOutputNS = 19
+	live.Nodes["source"] = node
+	if err := ValidateSessionSnapshot(live); err == nil ||
+		!strings.Contains(err.Error(), "impossible reaction timing") {
+		t.Fatalf("impossible trigger-relative timing error = %v", err)
 	}
 }
 

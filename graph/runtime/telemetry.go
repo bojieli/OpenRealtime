@@ -82,7 +82,7 @@ func (telemetry *nodeTelemetry) observeInput(
 		return
 	}
 	now := uint64(0)
-	if interrupt {
+	if trigger || interrupt {
 		now = telemetry.mounted.now()
 	}
 	telemetry.mounted.liveMu.Lock()
@@ -95,6 +95,9 @@ func (telemetry *nodeTelemetry) observeInput(
 	if trigger {
 		telemetry.triggerSeen.Store(true)
 		live.LastTriggerID = envelope.ItemID
+		if live.FirstTriggerNS == 0 && now != 0 {
+			live.FirstTriggerNS = now
+		}
 		if envelope.RunID != "" {
 			run := sha256.Sum256([]byte(envelope.RunID))
 			if _, active := telemetry.active[run]; !active && len(telemetry.active) < maximumObservedActiveRuns {

@@ -78,7 +78,8 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 	}
 	for _, nodeID := range []string{"first", "second"} {
 		node := final.Nodes[nodeID]
-		if node.ActiveRuns != 0 || node.FirstOutputNS == 0 || node.CompletionNS < node.FirstOutputNS ||
+		if node.ActiveRuns != 0 || node.FirstTriggerNS == 0 ||
+			node.FirstOutputNS < node.FirstTriggerNS || node.CompletionNS < node.FirstOutputNS ||
 			node.CancellationNS != 0 {
 			t.Fatalf("node %s reaction timing was not recorded and replayed: %+v", nodeID, node)
 		}
@@ -139,7 +140,8 @@ func TestRecordedTraceClampsAndAttestsRegressingMonotonicClock(t *testing.T) {
 	live := mounted.Live()
 	minimumAtNS := uint64(0)
 	for _, node := range live.Nodes {
-		minimumAtNS = max(minimumAtNS, node.FirstOutputNS, node.CompletionNS, node.CancellationNS)
+		minimumAtNS = max(minimumAtNS, node.FirstTriggerNS, node.FirstOutputNS,
+			node.CompletionNS, node.CancellationNS)
 	}
 	for _, flow := range live.Flows {
 		minimumAtNS = max(minimumAtNS, flow.FirstNS, flow.LastNS)

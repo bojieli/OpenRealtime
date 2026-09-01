@@ -254,7 +254,8 @@ func (recorder *traceRecorder) capture(mounted *Mounted) error {
 	atNS := mounted.now()
 	minimumAtNS := recorder.lastAtNS
 	for _, node := range live.Nodes {
-		minimumAtNS = max(minimumAtNS, node.FirstOutputNS, node.CompletionNS, node.CancellationNS)
+		minimumAtNS = max(minimumAtNS, node.FirstTriggerNS, node.FirstOutputNS,
+			node.CompletionNS, node.CancellationNS)
 	}
 	for _, flow := range live.Flows {
 		minimumAtNS = max(minimumAtNS, flow.FirstNS, flow.LastNS)

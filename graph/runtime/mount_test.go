@@ -137,7 +137,8 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 		for _, node := range []string{"first", "second"} {
 			telemetry := live.Nodes[node]
 			ready = ready && telemetry.ActiveRuns == 0 && telemetry.LastTriggerID == message.ItemID &&
-				telemetry.LastOutcome == message.ItemID && telemetry.FirstOutputNS != 0 &&
+				telemetry.LastOutcome == message.ItemID && telemetry.FirstTriggerNS != 0 &&
+				telemetry.FirstOutputNS >= telemetry.FirstTriggerNS &&
 				telemetry.CompletionNS >= telemetry.FirstOutputNS
 		}
 		if ready {
@@ -148,7 +149,8 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	for _, node := range []string{"first", "second"} {
 		telemetry := live.Nodes[node]
 		if telemetry.ActiveRuns != 0 || telemetry.LastTriggerID != message.ItemID ||
-			telemetry.LastOutcome != message.ItemID || telemetry.FirstOutputNS == 0 ||
+			telemetry.LastOutcome != message.ItemID || telemetry.FirstTriggerNS == 0 ||
+			telemetry.FirstOutputNS < telemetry.FirstTriggerNS ||
 			telemetry.CompletionNS < telemetry.FirstOutputNS || telemetry.CancellationNS != 0 {
 			t.Fatalf("node %s reaction telemetry = %+v", node, telemetry)
 		}
@@ -187,7 +189,8 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	for _, node := range []string{"first", "second"} {
 		before, after := live.Nodes[node], closed.Nodes[node]
 		if after.State != "stopped" || after.LastTriggerID != before.LastTriggerID ||
-			after.LastOutcome != before.LastOutcome || after.FirstOutputNS != before.FirstOutputNS ||
+			after.LastOutcome != before.LastOutcome || after.FirstTriggerNS != before.FirstTriggerNS ||
+			after.FirstOutputNS != before.FirstOutputNS ||
 			after.CompletionNS != before.CompletionNS {
 			t.Fatalf("node %s shutdown discarded reaction telemetry: before=%+v after=%+v", node, before, after)
 		}
@@ -221,15 +224,17 @@ func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
 		t.Fatalf("trigger ingress = %+v, %v", result, sendErr)
 	}
 	waitForNodeTelemetry(t, mounted, func(node inspect.NodeLive) bool {
-		return node.ActiveRuns == 1 && node.LastTriggerID == message.ItemID
+		return node.ActiveRuns == 1 && node.LastTriggerID == message.ItemID && node.FirstTriggerNS != 0
 	})
+	firstTrigger := mounted.Live().Nodes["telemetry"].FirstTriggerNS
 	repeated := message
 	repeated.ItemID = "telemetry-trigger-repeat"
 	if result, sendErr := ingress.Broadcast(context.Background(), repeated); sendErr != nil || result.Delivered != 1 {
 		t.Fatalf("repeated trigger ingress = %+v, %v", result, sendErr)
 	}
 	waitForNodeTelemetry(t, mounted, func(node inspect.NodeLive) bool {
-		return node.ActiveRuns == 1 && node.LastTriggerID == repeated.ItemID
+		return node.ActiveRuns == 1 && node.LastTriggerID == repeated.ItemID &&
+			node.FirstTriggerNS == firstTrigger
 	})
 	cancelEnvelope := element.Envelope{
 		Type: element.Interrupt(element.Named("flow.RunID")), ItemID: "telemetry-cancel",
@@ -242,7 +247,8 @@ func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
 		t.Fatal(receiveErr)
 	}
 	waitForNodeTelemetry(t, mounted, func(node inspect.NodeLive) bool {
-		return node.ActiveRuns == 0 && node.CancellationNS != 0 && node.FirstOutputNS != 0 &&
+		return node.ActiveRuns == 0 && node.FirstTriggerNS == firstTrigger &&
+			node.CancellationNS >= firstTrigger && node.FirstOutputNS >= firstTrigger &&
 			node.CompletionNS >= node.FirstOutputNS && node.LastOutcome == message.ItemID
 	})
 	before := mounted.Live().Nodes["telemetry"]
@@ -258,7 +264,8 @@ func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
 	}
 	after := mounted.Live().Nodes["telemetry"]
 	if after.State != "stopped" || after.ActiveRuns != 0 || after.LastTriggerID != before.LastTriggerID ||
-		after.LastOutcome != before.LastOutcome || after.FirstOutputNS != before.FirstOutputNS ||
+		after.LastOutcome != before.LastOutcome || after.FirstTriggerNS != before.FirstTriggerNS ||
+		after.FirstOutputNS != before.FirstOutputNS ||
 		after.CompletionNS != before.CompletionNS || after.CancellationNS != before.CancellationNS {
 		t.Fatalf("shutdown discarded cancellation telemetry: before=%+v after=%+v", before, after)
 	}

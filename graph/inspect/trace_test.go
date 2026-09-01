@@ -337,6 +337,13 @@ func TestLiveTraceReplayRejectsSemanticForgeryDespiteValidArtifactFingerprint(t 
 				}
 			}
 		}},
+		{name: "trigger timestamp rewrite", want: "immutable first-trigger time changed", mutate: func(trace *inspect.LiveTrace) {
+			for index := range trace.Snapshots[1].Nodes {
+				if trace.Snapshots[1].Nodes[index].Node == "source" {
+					trace.Snapshots[1].Nodes[index].FirstTriggerNS++
+				}
+			}
+		}},
 		{name: "lifecycle regression", want: "graph state regressed", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[3].Graph.State = inspect.TraceGraphMounted
 		}},
@@ -423,6 +430,13 @@ func TestLiveTraceRejectsNonMonotonicTimeSequenceAndImpossibleCounters(t *testin
 		}},
 		{name: "future node timestamp", want: "exceeds record time", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[0].Node.FirstOutputNS = trace.Events[0].AtNS + 1
+		}},
+		{name: "future trigger timestamp", want: "exceeds record time", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[0].Node.FirstTriggerNS = trace.Events[0].AtNS + 1
+			trace.Events[0].Node.FirstOutputNS = 0
+		}},
+		{name: "output before trigger", want: "first output precedes its first trigger", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[0].Node.FirstTriggerNS = trace.Events[0].Node.FirstOutputNS + 1
 		}},
 	}
 	for _, test := range tests {
@@ -610,6 +624,7 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	}
 	source := traceNode(initial.Nodes, "source")
 	source.State = inspect.TraceNodeRunning
+	source.FirstTriggerNS = 102
 	source.FirstOutputNS = 105
 	edge := *traceEdge(initial.Edges, "stream")
 	edge.Occupancy, edge.HighWater, edge.Enqueued = 1, 1, 1
@@ -694,6 +709,9 @@ func traceLiveView(
 }
 
 func withNodeTiming(node inspect.NodeLive, firstOutput uint64) inspect.NodeLive {
+	if firstOutput > 3 {
+		node.FirstTriggerNS = firstOutput - 3
+	}
 	node.FirstOutputNS = firstOutput
 	return node
 }

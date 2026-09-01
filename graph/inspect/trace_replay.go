@@ -425,6 +425,7 @@ func monotonicNode(before, after TraceNodeLive) error {
 		name          string
 		before, after uint64
 	}{
+		{"first-trigger time", before.FirstTriggerNS, after.FirstTriggerNS},
 		{"first-output time", before.FirstOutputNS, after.FirstOutputNS},
 		{"completion time", before.CompletionNS, after.CompletionNS},
 		{"cancellation time", before.CancellationNS, after.CancellationNS},
@@ -574,7 +575,8 @@ func traceSnapshotFromLive(
 		}
 		snapshot.Nodes = append(snapshot.Nodes, TraceNodeLive{
 			Node: graphNode.ID, State: state, ActiveRuns: uint32(node.ActiveRuns),
-			FirstOutputNS: node.FirstOutputNS, CompletionNS: node.CompletionNS,
+			FirstTriggerNS: node.FirstTriggerNS, FirstOutputNS: node.FirstOutputNS,
+			CompletionNS:   node.CompletionNS,
 			CancellationNS: node.CancellationNS, Resolution: node.Resolution.Clone(),
 		})
 	}
@@ -717,7 +719,9 @@ func cloneDiffNode(node ir.Node) ir.Node {
 
 func validateTraceTimes(recordAt uint64, node *TraceNodeLive, flow *TraceFlowLive) error {
 	if node != nil {
-		for _, value := range []uint64{node.FirstOutputNS, node.CompletionNS, node.CancellationNS} {
+		for _, value := range []uint64{
+			node.FirstTriggerNS, node.FirstOutputNS, node.CompletionNS, node.CancellationNS,
+		} {
 			if value > recordAt {
 				return fmt.Errorf("node %s timestamp %d exceeds record time %d", node.Node, value, recordAt)
 			}

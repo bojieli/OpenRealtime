@@ -60,6 +60,14 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 		if !canonicalEvidenceName(id) || node.Resolution == nil {
 			return fmt.Errorf("%w: session source returned an unresolved node", ErrConflict)
 		}
+		if node.ActiveRuns < 0 || node.ActiveRuns > 65_536 {
+			return fmt.Errorf("%w: session source returned invalid active-run telemetry", ErrConflict)
+		}
+		if node.FirstTriggerNS != 0 &&
+			((node.FirstOutputNS != 0 && node.FirstOutputNS < node.FirstTriggerNS) ||
+				(node.CompletionNS != 0 && node.CompletionNS < node.FirstTriggerNS)) {
+			return fmt.Errorf("%w: session source returned impossible reaction timing", ErrConflict)
+		}
 		if err := element.ValidateIdentity(node.Resolution.Element); err != nil ||
 			node.Resolution.Runtime.Validate() != nil {
 			return fmt.Errorf("%w: session source returned invalid node resolution", ErrConflict)

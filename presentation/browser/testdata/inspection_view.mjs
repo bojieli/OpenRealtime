@@ -61,6 +61,7 @@ const baseLive = {
     [nodeID]: {
       state: "running",
       active_runs: 2,
+      first_trigger_ns: 100,
       first_output_ns: 120,
       completion_ns: 180,
       cancellation_ns: 160,
@@ -137,8 +138,10 @@ if (availability?.textContent !== "live" || contract?.dataset.state !== "joined"
 }
 for (const expected of [
   "Triggers: trigger", "Sampled state: context", "Interrupts: cancel", "Outcomes: done",
-  "Max concurrency: 4", "Causal break: declared", "First output: 120 ns from mount clock",
-  "Completion: 180 ns from mount clock", "Cancellation: 160 ns from mount clock",
+  "Max concurrency: 4", "Causal break: declared", "First trigger: 100 ns from mount clock",
+  "First output: 120 ns from mount clock", "Trigger to first output: 20 ns after first trigger",
+  "Completion: 180 ns from mount clock", "Trigger to completion: 80 ns after first trigger",
+  "Cancellation: 160 ns from mount clock", "Trigger to cancellation: 60 ns after first trigger",
   `computer.click: external; authority ${malicious}; not reversible`,
 ]) {
   if (!section.textContent.includes(expected)) throw new Error(`joined view omitted ${expected}`);
@@ -168,6 +171,15 @@ await refresh.dispatch("click");
 if (availability.textContent !== "live" || contract.dataset.state !== "unavailable" ||
     find(section, (entry) => entry.dataset.nodeId === nodeID)) {
   throw new Error("inspection view confused live-only evidence with a joined contract view");
+}
+
+modelUnavailable = false;
+live = structuredClone(baseLive);
+live.nodes[nodeID].first_output_ns = 99;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("impossible trigger-relative timing")) {
+  throw new Error("inspection view accepted impossible trigger-relative timing");
 }
 
 accessListener(null);

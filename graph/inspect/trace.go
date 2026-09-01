@@ -120,6 +120,7 @@ type TraceNodeLive struct {
 	Node           string         `json:"node"`
 	State          TraceNodeState `json:"state"`
 	ActiveRuns     uint32         `json:"active_runs"`
+	FirstTriggerNS uint64         `json:"first_trigger_ns,omitempty"`
 	FirstOutputNS  uint64         `json:"first_output_ns,omitempty"`
 	CompletionNS   uint64         `json:"completion_ns,omitempty"`
 	CancellationNS uint64         `json:"cancellation_ns,omitempty"`
@@ -644,6 +645,16 @@ func validateTraceNode(node TraceNodeLive, limits TraceLimits) error {
 	}
 	if err := validateTraceResolution(node.Resolution, limits); err != nil {
 		return fmt.Errorf("live trace node %s resolution: %w", node.Node, err)
+	}
+	for _, observed := range []struct {
+		label string
+		value uint64
+	}{
+		{"first output", node.FirstOutputNS}, {"completion", node.CompletionNS},
+	} {
+		if node.FirstTriggerNS != 0 && observed.value != 0 && observed.value < node.FirstTriggerNS {
+			return fmt.Errorf("live trace node %s %s precedes its first trigger", node.Node, observed.label)
+		}
 	}
 	return nil
 }

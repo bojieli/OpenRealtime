@@ -112,12 +112,21 @@ function liveNode(value, id) {
     throw new Error(`live node ${id} contains an unredacted error`);
   }
   const resolution = object(source.resolution, `live node ${id} resolution`);
+  const firstTriggerNS = integer(source.first_trigger_ns ?? 0, `live node ${id} first trigger`);
+  const firstOutputNS = integer(source.first_output_ns ?? 0, `live node ${id} first output`);
+  const completionNS = integer(source.completion_ns ?? 0, `live node ${id} completion`);
+  if (firstTriggerNS !== 0 &&
+      ((firstOutputNS !== 0 && firstOutputNS < firstTriggerNS) ||
+       (completionNS !== 0 && completionNS < firstTriggerNS))) {
+    throw new Error(`live node ${id} contains impossible trigger-relative timing`);
+  }
   return Object.freeze({
     id,
     state: text(source.state, `live node ${id} state`),
     activeRuns: integer(source.active_runs, `live node ${id} active runs`),
-    firstOutputNS: integer(source.first_output_ns ?? 0, `live node ${id} first output`),
-    completionNS: integer(source.completion_ns ?? 0, `live node ${id} completion`),
+    firstTriggerNS,
+    firstOutputNS,
+    completionNS,
     cancellationNS: integer(source.cancellation_ns ?? 0, `live node ${id} cancellation`),
     element: identity(resolution.element, `live node ${id} element`),
   });
@@ -189,6 +198,7 @@ function liveProjection(value) {
     safeNodes[id] = Object.freeze({
       state: observed.state,
       active_runs: observed.activeRuns,
+      first_trigger_ns: observed.firstTriggerNS,
       first_output_ns: observed.firstOutputNS,
       completion_ns: observed.completionNS,
       cancellation_ns: observed.cancellationNS,
@@ -243,6 +253,13 @@ function timestamp(value) {
   return value === 0 ? "not observed" : `${value} ns from mount clock`;
 }
 
+function triggerLatency(trigger, value) {
+  if (value === 0) return "not observed";
+  if (trigger === 0) return "first trigger unavailable";
+  if (value < trigger) return "observed before first trigger";
+  return `${value - trigger} ns after first trigger`;
+}
+
 function renderJoined(container, joined) {
   container.replaceChildren();
   for (const { declared, observed } of joined.nodes) {
@@ -267,9 +284,16 @@ function renderJoined(container, joined) {
     const timing = node("div");
     timing.dataset.role = "reaction-timing";
     timing.append(node("h4", "Observed timing"));
+    line(timing, "First trigger", timestamp(observed.firstTriggerNS));
     line(timing, "First output", timestamp(observed.firstOutputNS));
+    line(timing, "Trigger to first output",
+      triggerLatency(observed.firstTriggerNS, observed.firstOutputNS));
     line(timing, "Completion", timestamp(observed.completionNS));
+    line(timing, "Trigger to completion",
+      triggerLatency(observed.firstTriggerNS, observed.completionNS));
     line(timing, "Cancellation", timestamp(observed.cancellationNS));
+    line(timing, "Trigger to cancellation",
+      triggerLatency(observed.firstTriggerNS, observed.cancellationNS));
     card.append(timing);
     const authority = node("div");
     authority.dataset.role = "effect-authority";

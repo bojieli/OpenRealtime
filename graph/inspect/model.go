@@ -201,6 +201,7 @@ type NodeLive struct {
 	ActiveRuns     int             `json:"active_runs"`
 	LastTriggerID  string          `json:"last_trigger_id,omitempty"`
 	LastOutcome    string          `json:"last_outcome,omitempty"`
+	FirstTriggerNS uint64          `json:"first_trigger_ns,omitempty"`
 	FirstOutputNS  uint64          `json:"first_output_ns,omitempty"`
 	CompletionNS   uint64          `json:"completion_ns,omitempty"`
 	CancellationNS uint64          `json:"cancellation_ns,omitempty"`
