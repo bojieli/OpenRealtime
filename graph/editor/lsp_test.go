@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/graph/schema"
@@ -163,12 +165,220 @@ func TestLSPPositionsUseUTF16AndMalformedMetadataFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLSPDiagnosticsUseExactUTF16RangesAndFailClosedOnPartialEvidence(t *testing.T) {
+	source := []byte("// 😀\nnode\n")
+	positions := newSourcePositions(source)
+	emoji, err := sourceSpan(positions, 3, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wordStart := strings.Index(string(source), "node")
+	word, err := sourceSpan(positions, wordStart, wordStart+len("node"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := &Document{
+		path: "fixture.ortg", source: source, digest: sourceDigest(source),
+		limits: DefaultLimits(), positions: positions,
+		diagnostics: []Diagnostic{
+			{
+				Code: "E_EMOJI", Severity: SeverityError, Path: "fixture.ortg",
+				Span: emoji, Message: "emoji-shaped fixture", Notes: []string{"first note"},
+			},
+			{
+				Code: "W_NODE", Severity: SeverityWarning, Path: "fixture.ortg",
+				Span: word, Message: "node-shaped fixture",
+			},
+		},
+	}
+	report, err := document.LSPDiagnostics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Kind != "full" || len(report.Items) != 2 ||
+		report.Items[0].Range != (LSPRange{
+			Start: LSPPosition{Line: 0, Character: 3},
+			End:   LSPPosition{Line: 0, Character: 5},
+		}) || report.Items[1].Range != (LSPRange{
+		Start: LSPPosition{Line: 1, Character: 0},
+		End:   LSPPosition{Line: 1, Character: 4},
+	}) || report.Items[0].Severity != LSPDiagnosticError ||
+		report.Items[1].Severity != LSPDiagnosticWarning ||
+		report.Items[0].Source != "openrealtime" ||
+		report.Items[0].Data.SourceDigest != document.SourceDigest() ||
+		!reflect.DeepEqual(report.Items[0].Data.Notes, []string{"first note"}) {
+		t.Fatalf("LSP diagnostic projection = %+v", report)
+	}
+	report.Items[0].Data.Notes[0] = "mutated"
+	again, err := document.LSPDiagnostics()
+	if err != nil || again.Items[0].Data.Notes[0] != "first note" {
+		t.Fatalf("LSP diagnostics retained caller aliases: %+v, %v", again, err)
+	}
+	encoded, err := json.Marshal(again)
+	if err != nil || !strings.Contains(string(encoded), `"kind":"full"`) ||
+		!strings.Contains(string(encoded), `"severity":1`) ||
+		!strings.Contains(string(encoded), `"source_digest":"sha256:`) {
+		t.Fatalf("LSP diagnostic wire projection = %s, %v", encoded, err)
+	}
+
+	truncated := *document
+	truncated.limits.MaxResultItems = 1
+	if _, err := truncated.LSPDiagnostics(); !errors.Is(err, ErrPresentationLimit) {
+		t.Fatalf("partial diagnostics were labeled full: %v", err)
+	}
+	unknownSeverity := *document
+	unknownSeverity.diagnostics = []Diagnostic{document.diagnostics[0]}
+	unknownSeverity.diagnostics[0].Severity = Severity("information")
+	if _, err := unknownSeverity.LSPDiagnostics(); !errors.Is(err, ErrPresentationLimit) {
+		t.Fatalf("unknown LSP diagnostic severity = %v", err)
+	}
+	stale := *document
+	stale.diagnostics = []Diagnostic{document.diagnostics[0]}
+	stale.diagnostics[0].Span.Start.Line++
+	if _, err := stale.LSPDiagnostics(); !errors.Is(err, ErrInvalidPosition) {
+		t.Fatalf("stale LSP diagnostic span = %v", err)
+	}
+
+	invalid, err := Analyze("invalid.ortg", []byte("graph bad {"), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidReport, err := invalid.LSPDiagnostics()
+	if err != nil || len(invalidReport.Items) == 0 || invalidReport.Items[0].Code != "E_SYNTAX" {
+		t.Fatalf("recovered LSP diagnostics = %+v, %v", invalidReport, err)
+	}
+	unknownSource := strings.Replace(validSource, "graph demo", "// 😀\ngraph demo", 1)
+	unknownSource = strings.Replace(unknownSource, "test.Source", "missing.Source", 1)
+	unknown, err := Analyze("unknown.ortg", []byte(unknownSource), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknownReport, err := unknown.LSPDiagnostics()
+	if err != nil || len(unknownReport.Items) == 0 || unknownReport.Items[0].Range.Start.Line < 1 {
+		t.Fatalf("compiler-backed UTF-16 LSP diagnostics = %+v, %v", unknownReport, err)
+	}
+}
+
+func TestLSPCompletionsAreCanonicalBoundedAndSourceDigestBound(t *testing.T) {
+	document := analyzeValid(t, Limits{})
+	result, err := document.LSPCompletions(LSPPosition{Line: 1, Character: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsIncomplete || len(result.Items) != 2 ||
+		result.Items[0].Label != "test.Sink" || result.Items[1].Label != "test.Source" {
+		t.Fatalf("LSP completion list = %+v", result)
+	}
+	wantRange := LSPRange{
+		Start: LSPPosition{Line: 1, Character: 4},
+		End:   LSPPosition{Line: 1, Character: 15},
+	}
+	for _, item := range result.Items {
+		if item.Kind != LSPCompletionClass || item.SortText != item.Label ||
+			item.FilterText != item.Label || item.InsertTextFormat != 1 ||
+			item.TextEdit.Range != wantRange || item.TextEdit.NewText != item.Label ||
+			item.Data.SourceDigest != document.SourceDigest() ||
+			item.Data.Kind != CompletionElement || item.Data.Element != item.Label ||
+			item.Data.ElementRevision == 0 || !strings.HasPrefix(item.Data.ElementDigest, "sha256:") {
+			t.Fatalf("LSP completion item = %+v", item)
+		}
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil || !strings.Contains(string(encoded), `"isIncomplete":false`) ||
+		!strings.Contains(string(encoded), `"newText":"test.Sink"`) ||
+		!strings.Contains(string(encoded), `"insertTextFormat":1`) {
+		t.Fatalf("LSP completion wire projection = %s, %v", encoded, err)
+	}
+	again, err := document.LSPCompletions(LSPPosition{Line: 1, Character: 10})
+	if err != nil || !reflect.DeepEqual(again, result) {
+		t.Fatalf("LSP completions changed = %+v, %v", again, err)
+	}
+	nodes, err := document.LSPCompletions(LSPPosition{Line: 3, Character: 7})
+	if err != nil || len(nodes.Items) != 1 || nodes.Items[0].Label != "producer" ||
+		nodes.Items[0].Kind != LSPCompletionVariable || nodes.Items[0].Data.Node != "producer" ||
+		nodes.Items[0].Data.Port != "out" || nodes.Items[0].Data.Type == "" {
+		t.Fatalf("LSP node completion = %+v, %v", nodes, err)
+	}
+	ports, err := document.LSPCompletions(LSPPosition{Line: 3, Character: 14})
+	if err != nil || len(ports.Items) != 1 || ports.Items[0].Label != "out" ||
+		ports.Items[0].Kind != LSPCompletionField || ports.Items[0].Data.Node != "producer" ||
+		ports.Items[0].Data.Port != "out" || ports.Items[0].Data.Type == "" {
+		t.Fatalf("LSP port completion = %+v, %v", ports, err)
+	}
+
+	bounded := analyzeValid(t, Limits{MaxResultItems: 1})
+	partial, err := bounded.LSPCompletions(LSPPosition{Line: 1, Character: 10})
+	if err != nil || !partial.IsIncomplete || len(partial.Items) != 1 ||
+		partial.Items[0].Label != "test.Sink" {
+		t.Fatalf("bounded LSP completion list = %+v, %v", partial, err)
+	}
+	commented := strings.Replace(validSource, "graph demo", "// 😀\ngraph demo", 1)
+	unicodeDocument := lspMetadataDocument(t, commented)
+	if _, err := unicodeDocument.LSPCompletions(LSPPosition{Line: 0, Character: 4}); !errors.Is(err, ErrInvalidPosition) {
+		t.Fatalf("split-surrogate LSP completion = %v", err)
+	}
+	if _, err := unicodeDocument.LSPCompletions(LSPPosition{Line: 0, Character: 5}); !errors.Is(err, ErrNoCompletionContext) {
+		t.Fatalf("comment LSP completion context = %v", err)
+	}
+}
+
+func TestLSPWireProjectionsAreDeterministicForConcurrentReaders(t *testing.T) {
+	document := lspMetadataDocument(t, validSource)
+	wantDiagnostics, err := document.LSPDiagnostics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCompletions, err := document.LSPCompletions(LSPPosition{Line: 1, Character: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wait sync.WaitGroup
+	failures := make(chan string, 16)
+	for range 16 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for range 25 {
+				diagnostics, diagnosticErr := document.LSPDiagnostics()
+				completions, completionErr := document.LSPCompletions(
+					LSPPosition{Line: 1, Character: 10},
+				)
+				if diagnosticErr != nil || completionErr != nil ||
+					!reflect.DeepEqual(diagnostics, wantDiagnostics) ||
+					!reflect.DeepEqual(completions, wantCompletions) {
+					select {
+					case failures <- "concurrent LSP projection changed":
+					default:
+					}
+					return
+				}
+			}
+		}()
+	}
+	wait.Wait()
+	close(failures)
+	for failure := range failures {
+		t.Fatal(failure)
+	}
+}
+
 func BenchmarkLSPConfigurationHoverResolvedMetadata(b *testing.B) {
 	document := lspMetadataDocument(b, validSource)
 	position := LSPPosition{Line: 1, Character: 5}
 	b.ReportAllocs()
 	for range b.N {
 		if _, err := document.LSPConfigurationHover(position); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLSPCompletionProjection(b *testing.B) {
+	document := lspMetadataDocument(b, validSource)
+	position := LSPPosition{Line: 1, Character: 10}
+	b.ReportAllocs()
+	for range b.N {
+		if _, err := document.LSPCompletions(position); err != nil {
 			b.Fatal(err)
 		}
 	}

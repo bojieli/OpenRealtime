@@ -1815,7 +1815,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics and completions, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -1844,9 +1844,11 @@ Current checkpoint notes:
   family are committed. Bounded recovery, formatter edits, and resolved schema
   metadata now have a UI-independent Authoring API checkpoint; strictly
   revalidated browser, bounded UTF-16 LSP plaintext, and native SwiftUI views
-  render the complete values contract. Broader LSP/UI rendering, multi-file
-  navigation, mediated writes, and the remaining phase gates stay unchecked
-  until their independent slices are complete.
+  render the complete values contract. The same LSP boundary now projects full
+  diagnostics and exact-symbol completions into deterministic protocol wire
+  types. Definition/rename/formatting wire projection, document synchronization,
+  multi-file navigation, mediated writes, and the remaining phase gates stay
+  unchecked until their independent slices are complete.
 - No item in the project-level definition of done is yet proven end to end.
   Several have foundation-level support, but direct benchmark execution,
   production inspection, reconciliation, and obsolete-path deletion are still
@@ -2678,6 +2680,24 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   Authoring API, while keeping recovery outside compile/reconcile paths.
 - [ ] Add LSP/UI rendering, multi-file/subgraph navigation, and strict
   file-write mediation.
+  - [x] Project immutable single-document diagnostics, exact-symbol
+    completions, and the complete values-contract hover into deterministic,
+    bounded LSP wire types. All ranges use zero-based UTF-16 coordinates;
+    completions retain the source digest plus exact descriptor revision/digest,
+    and truncated diagnostics fail instead of being mislabeled as a protocol
+    `full` report. Split-surrogate, stale-span, unknown-severity, truncation,
+    recovered syntax, compiler-backed Unicode, deterministic JSON, concurrent
+    reader race, shuffled, vet, and performance gates are covered without
+    adding file or process authority.
+  - [ ] Project go-to-definition, node rename, and formatter edits into exact
+    LSP location and workspace-edit forms without inventing descriptor spans or
+    losing immutable snapshot identity.
+  - [ ] Add bounded, versioned document synchronization and a transport-neutral
+    JSON-RPC/LSP adapter without granting it filesystem authority.
+  - [ ] Add an explicit workspace/index boundary for digest-bound multi-file and
+    subgraph navigation.
+  - [ ] Mediate authorized creates and updates with rooted path containment,
+    stale-content checks, atomic/no-replace publication, and audit receipts.
 - [ ] Implement the composable presentation and observability design before
   treating any current UI as the production inspector.
   - [x] Inventory the former standalone presentation clients, the macOS client,

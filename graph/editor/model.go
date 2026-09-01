@@ -249,6 +249,84 @@ type LSPHover struct {
 	Range    LSPRange         `json:"range"`
 }
 
+// LSPDiagnosticSeverity uses the numeric values fixed by the Language Server
+// Protocol. The editor currently emits only mechanical errors and warnings.
+type LSPDiagnosticSeverity int
+
+const (
+	LSPDiagnosticError   LSPDiagnosticSeverity = 1
+	LSPDiagnosticWarning LSPDiagnosticSeverity = 2
+)
+
+// LSPDiagnosticData preserves immutable editor evidence in the protocol's
+// opaque data field. It is never interpreted as markup or filesystem
+// authority by this package.
+type LSPDiagnosticData struct {
+	SourceDigest string   `json:"source_digest"`
+	Path         string   `json:"path,omitempty"`
+	Notes        []string `json:"notes,omitempty"`
+}
+
+type LSPDiagnostic struct {
+	Range    LSPRange              `json:"range"`
+	Severity LSPDiagnosticSeverity `json:"severity"`
+	Code     string                `json:"code"`
+	Source   string                `json:"source"`
+	Message  string                `json:"message"`
+	Data     LSPDiagnosticData     `json:"data"`
+}
+
+// LSPFullDocumentDiagnosticReport is the standards-defined full document
+// report. A bounded editor report that was truncated is rejected instead of
+// being mislabeled as a complete LSP result.
+type LSPFullDocumentDiagnosticReport struct {
+	Kind  string          `json:"kind"`
+	Items []LSPDiagnostic `json:"items"`
+}
+
+// LSPCompletionItemKind uses the numeric values fixed by the Language Server
+// Protocol: graph ports are fields, nodes are variables, and descriptor-backed
+// elements are classes.
+type LSPCompletionItemKind int
+
+const (
+	LSPCompletionField    LSPCompletionItemKind = 5
+	LSPCompletionVariable LSPCompletionItemKind = 6
+	LSPCompletionClass    LSPCompletionItemKind = 7
+)
+
+type LSPTextEdit struct {
+	Range   LSPRange `json:"range"`
+	NewText string   `json:"newText"`
+}
+
+type LSPCompletionData struct {
+	SourceDigest    string         `json:"source_digest"`
+	Kind            CompletionKind `json:"kind"`
+	Element         string         `json:"element,omitempty"`
+	ElementRevision uint64         `json:"element_revision,omitempty"`
+	ElementDigest   string         `json:"element_digest,omitempty"`
+	Node            string         `json:"node,omitempty"`
+	Port            string         `json:"port,omitempty"`
+	Type            string         `json:"type,omitempty"`
+}
+
+type LSPCompletionItem struct {
+	Label            string                `json:"label"`
+	Kind             LSPCompletionItemKind `json:"kind"`
+	Detail           string                `json:"detail,omitempty"`
+	SortText         string                `json:"sortText"`
+	FilterText       string                `json:"filterText"`
+	InsertTextFormat int                   `json:"insertTextFormat"`
+	TextEdit         LSPTextEdit           `json:"textEdit"`
+	Data             LSPCompletionData     `json:"data"`
+}
+
+type LSPCompletionList struct {
+	IsIncomplete bool                `json:"isIncomplete"`
+	Items        []LSPCompletionItem `json:"items"`
+}
+
 type Definition struct {
 	Kind    SymbolKind   `json:"kind"`
 	URI     string       `json:"uri"`

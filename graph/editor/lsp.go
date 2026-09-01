@@ -8,10 +8,15 @@ import (
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/bojieli/OpenRealtime/graph/syntax"
 )
 
 const (
 	lspPlaintext            = "plaintext"
+	lspFullReport           = "full"
+	lspSource               = "openrealtime"
+	lspPlainTextFormat      = 1
 	maxLSPPresentationBytes = 64 << 20
 )
 
@@ -41,18 +46,176 @@ func (document *Document) LSPConfigurationHover(position LSPPosition) (LSPHover,
 	if err != nil {
 		return LSPHover{}, err
 	}
-	start, err := document.lspPositionAtOffset(hover.Range.Start.Offset)
+	rangeValue, err := document.lspRange(hover.Range)
 	if err != nil {
 		return LSPHover{}, err
 	}
-	end, err := document.lspPositionAtOffset(hover.Range.End.Offset)
-	if err != nil {
-		return LSPHover{}, err
-	}
-	return LSPHover{
+	result := LSPHover{
 		Contents: LSPMarkupContent{Kind: lspPlaintext, Value: value},
-		Range:    LSPRange{Start: start, End: end},
-	}, nil
+		Range:    rangeValue,
+	}
+	if err := boundedLSPProjection(result); err != nil {
+		return LSPHover{}, err
+	}
+	return result, nil
+}
+
+// LSPDiagnostics projects the complete immutable diagnostic snapshot into the
+// standards-defined full document report. This single-document boundary fails
+// closed if a result names another path, carries a stale span, has an unknown
+// severity, was truncated by the editor limit, or exceeds the independent wire
+// presentation bound.
+func (document *Document) LSPDiagnostics() (LSPFullDocumentDiagnosticReport, error) {
+	if document == nil {
+		return LSPFullDocumentDiagnosticReport{}, ErrSyntaxUnavailable
+	}
+	report := document.Diagnostics()
+	if report.Incomplete || report.Total != len(report.Items) {
+		return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
+			"%w: LSP diagnostics cannot label %d of %d items as a full report",
+			ErrPresentationLimit, len(report.Items), report.Total,
+		)
+	}
+	items := make([]LSPDiagnostic, len(report.Items))
+	for index, diagnostic := range report.Items {
+		if diagnostic.Path != "" && diagnostic.Path != document.path {
+			return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
+				"%w: diagnostic %d names another document %q",
+				ErrInvalidPosition, index, diagnostic.Path,
+			)
+		}
+		if diagnostic.Code == "" || len(diagnostic.Code) > 256 ||
+			diagnostic.Message == "" || strings.ContainsRune(diagnostic.Message, '\x00') {
+			return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
+				"%w: diagnostic %d has invalid text", ErrPresentationLimit, index,
+			)
+		}
+		severity := LSPDiagnosticSeverity(0)
+		switch diagnostic.Severity {
+		case SeverityError:
+			severity = LSPDiagnosticError
+		case SeverityWarning:
+			severity = LSPDiagnosticWarning
+		default:
+			return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
+				"%w: diagnostic %d has unsupported severity %q",
+				ErrPresentationLimit, index, diagnostic.Severity,
+			)
+		}
+		rangeValue, err := document.lspRange(diagnostic.Span)
+		if err != nil {
+			return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
+				"project diagnostic %d range: %w", index, err,
+			)
+		}
+		notes := append([]string(nil), diagnostic.Notes...)
+		for noteIndex, note := range notes {
+			if note == "" || strings.ContainsRune(note, '\x00') {
+				return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
+					"%w: diagnostic %d note %d has invalid text",
+					ErrPresentationLimit, index, noteIndex,
+				)
+			}
+		}
+		items[index] = LSPDiagnostic{
+			Range: rangeValue, Severity: severity, Code: diagnostic.Code,
+			Source: lspSource, Message: diagnostic.Message,
+			Data: LSPDiagnosticData{
+				SourceDigest: document.digest, Path: diagnostic.Path, Notes: notes,
+			},
+		}
+	}
+	result := LSPFullDocumentDiagnosticReport{Kind: lspFullReport, Items: items}
+	if err := boundedLSPProjection(result); err != nil {
+		return LSPFullDocumentDiagnosticReport{}, err
+	}
+	return result, nil
+}
+
+// LSPCompletions converts one standards-defined position and the exact symbol
+// completion result into a deterministic CompletionList. Replacement ranges
+// are verified against the immutable source and expressed in UTF-16 units;
+// opaque data retains the source digest so an adapter can reject stale resolve
+// or apply operations.
+func (document *Document) LSPCompletions(position LSPPosition) (LSPCompletionList, error) {
+	if document == nil {
+		return LSPCompletionList{}, ErrSyntaxUnavailable
+	}
+	offset, err := document.offsetAtLSPPosition(position)
+	if err != nil {
+		return LSPCompletionList{}, err
+	}
+	cursor, err := document.Cursor(offset)
+	if err != nil {
+		return LSPCompletionList{}, err
+	}
+	completions, err := document.Complete(cursor)
+	if err != nil {
+		return LSPCompletionList{}, err
+	}
+	if completions.Total < len(completions.Items) ||
+		completions.Incomplete != (len(completions.Items) < completions.Total) {
+		return LSPCompletionList{}, fmt.Errorf(
+			"%w: completion bounds are inconsistent", ErrPresentationLimit,
+		)
+	}
+	items := make([]LSPCompletionItem, len(completions.Items))
+	previous := ""
+	for index, completion := range completions.Items {
+		if completion.Label == "" || completion.InsertText == "" ||
+			strings.ContainsAny(completion.Label+completion.InsertText, "\x00\r\n") ||
+			(index > 0 && completion.Label <= previous) {
+			return LSPCompletionList{}, fmt.Errorf(
+				"%w: completion item %d is not canonical", ErrPresentationLimit, index,
+			)
+		}
+		previous = completion.Label
+		kind := LSPCompletionItemKind(0)
+		switch completion.Kind {
+		case CompletionElement:
+			kind = LSPCompletionClass
+		case CompletionNode:
+			kind = LSPCompletionVariable
+		case CompletionPort:
+			kind = LSPCompletionField
+		default:
+			return LSPCompletionList{}, fmt.Errorf(
+				"%w: completion item %d has unknown kind %q",
+				ErrPresentationLimit, index, completion.Kind,
+			)
+		}
+		rangeValue, err := document.lspRange(completion.Replacement)
+		if err != nil {
+			return LSPCompletionList{}, fmt.Errorf(
+				"project completion item %d range: %w", index, err,
+			)
+		}
+		entry, found := document.catalog[completion.Element]
+		if completion.Element == "" || !found {
+			return LSPCompletionList{}, fmt.Errorf(
+				"%w: completion item %d lacks an exact descriptor identity",
+				ErrPresentationLimit, index,
+			)
+		}
+		identity := entry.metadata.Identity
+		items[index] = LSPCompletionItem{
+			Label: completion.Label, Kind: kind, Detail: completion.Detail,
+			SortText: completion.Label, FilterText: completion.Label,
+			InsertTextFormat: lspPlainTextFormat,
+			TextEdit:         LSPTextEdit{Range: rangeValue, NewText: completion.InsertText},
+			Data: LSPCompletionData{
+				SourceDigest: document.digest, Kind: completion.Kind,
+				Element: completion.Element, ElementRevision: identity.Revision,
+				ElementDigest: identity.Digest, Node: completion.Node,
+				Port: completion.Port, Type: completion.Type,
+			},
+		}
+	}
+	result := LSPCompletionList{IsIncomplete: completions.Incomplete, Items: items}
+	if err := boundedLSPProjection(result); err != nil {
+		return LSPCompletionList{}, err
+	}
+	return result, nil
 }
 
 func (document *Document) offsetAtLSPPosition(position LSPPosition) (int, error) {
@@ -111,6 +274,38 @@ func (document *Document) lspPositionAtOffset(offset int) (LSPPosition, error) {
 		cursor += size
 	}
 	return LSPPosition{Line: line, Character: units}, nil
+}
+
+func (document *Document) lspRange(span syntax.Span) (LSPRange, error) {
+	start, err := document.positions.at(span.Start.Offset)
+	if err != nil || start != span.Start {
+		return LSPRange{}, fmt.Errorf("%w: LSP range has a stale start position", ErrInvalidPosition)
+	}
+	end, err := document.positions.at(span.End.Offset)
+	if err != nil || end != span.End || span.End.Offset < span.Start.Offset {
+		return LSPRange{}, fmt.Errorf("%w: LSP range has a stale end position", ErrInvalidPosition)
+	}
+	left, err := document.lspPositionAtOffset(span.Start.Offset)
+	if err != nil {
+		return LSPRange{}, err
+	}
+	right, err := document.lspPositionAtOffset(span.End.Offset)
+	if err != nil {
+		return LSPRange{}, err
+	}
+	return LSPRange{Start: left, End: right}, nil
+}
+
+func boundedLSPProjection(value any) error {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("marshal LSP projection: %w", err)
+	}
+	if len(encoded) > maxLSPPresentationBytes {
+		return fmt.Errorf("%w: LSP projection has %d bytes; maximum is %d",
+			ErrPresentationLimit, len(encoded), maxLSPPresentationBytes)
+	}
+	return nil
 }
 
 func renderLSPConfiguration(hover Hover) (string, error) {
