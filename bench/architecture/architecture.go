@@ -555,9 +555,6 @@ func effectivePolicyReport(report interaction.Report) interaction.Report {
 func (cell Cell) ValidateObserved(status binding.Status) error {
 	expected := cell.Architecture
 	var differences []string
-	if status.Architecture != expected.Definition.Identity() {
-		differences = append(differences, "architecture definition identity differs")
-	}
 	if err := cell.Execution.MatchStatus(status); err != nil {
 		differences = append(differences, "execution: "+err.Error())
 	}
@@ -566,6 +563,19 @@ func (cell Cell) ValidateObserved(status binding.Status) error {
 	}
 	if status.Profile != expected.Profile {
 		differences = append(differences, fmt.Sprintf("profile=%q want %q", status.Profile, expected.Profile))
+	}
+	// A graph-native result is identified by exact Graph IR plus separately
+	// attested configuration, deployment, element, capability, and route facts.
+	// Requiring the legacy architecture/role vectors as well would make an
+	// adapter's lossy projection compete with that evidence.
+	if cell.Execution.Kind == bench.ExecutionGraphNative {
+		if len(differences) > 0 {
+			return fmt.Errorf("live graph did not match cell %q: %s", cell.Name, strings.Join(differences, "; "))
+		}
+		return nil
+	}
+	if status.Architecture != expected.Definition.Identity() {
+		differences = append(differences, "architecture definition identity differs")
 	}
 	if status.Ownership.Effective() != expected.Ownership.Effective() {
 		differences = append(differences, "ownership vector differs")

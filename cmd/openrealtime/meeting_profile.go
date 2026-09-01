@@ -396,13 +396,6 @@ func newServeMeetingRegistration(
 				AdapterArtifact: adapterArtifact,
 				Adapter: meetinggraph.SessionAdapterConfig{
 					FrameRateMilliHz: configuration.Foreground.FrameRateMilliHz,
-					Status: legacy.Status{
-						Fast:           foregroundDescriptor.Provider + "/" + foregroundDescriptor.Model,
-						Slow:           backgroundDescriptor.Provider + "/" + backgroundDescriptor.Model,
-						Perception:     meetingLocalASRProvider + "/" + meetingLocalASRModel,
-						VisualNarrator: meetingVisualProviderName,
-						Speech:         meetingLocalTTSProvider + "/" + meetingLocalTTSModel,
-					},
 				},
 				Foreground: meetinggraph.ForegroundPlugin{
 					Artifact: foregroundArtifact, ProviderArtifact: foregroundArtifact,

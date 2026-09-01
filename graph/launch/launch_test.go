@@ -611,7 +611,6 @@ func (*launchAdapter) Truncate(context.Context, legacy.Truncation) error {
 	return legacy.ErrUnsupported
 }
 func (*launchAdapter) Trajectory() trajectory.Snapshot    { return trajectory.Snapshot{} }
-func (*launchAdapter) Status() legacy.Status              { return legacy.Status{} }
 func (*launchAdapter) Close(context.Context, error) error { return nil }
 
 type launchSink struct{}

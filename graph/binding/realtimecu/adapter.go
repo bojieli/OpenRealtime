@@ -842,18 +842,6 @@ func (session *session) Trajectory() trajectory.Snapshot {
 	return session.bundle.store.Snapshot()
 }
 
-func (session *session) Status() legacy.Status {
-	return legacy.Status{
-		Fast:               session.config.Model.Descriptor.Provider + ":" + session.config.Model.Descriptor.Model,
-		Perception:         session.config.Observer.Reference,
-		PerceptionRevision: session.config.Observer.Artifact.Revision,
-		Tools: legacy.ToolStatus{
-			Fast: "propose", Slow: "propose", Authorization: "graph-native",
-			Execution: session.bundle.bridge.Name(),
-		},
-	}
-}
-
 func (session *session) Close(_ context.Context, cause error) error {
 	session.closeOnce.Do(func() {
 		session.mediaLifecycleMu.Lock()

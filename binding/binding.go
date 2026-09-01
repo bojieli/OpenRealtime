@@ -318,24 +318,28 @@ const TurnIncompleteTokens = "max_output_tokens"
 var ErrUnsupported = errors.New("capability not supported by this binding")
 
 // Status is what a session is running, for the health endpoint and evidence.
+// Graph-native runtimes populate Graph, Binding, and Profile only; exact
+// topology, capabilities, deployment, providers, and selected paths are
+// authenticated through graph inspection. The remaining fields describe
+// legacy binding sessions and must not be treated as graph execution evidence.
 type Status struct {
 	// Architecture is the immutable project-level composition selected for
 	// this session. Binding remains the concrete adapter that realised it. The
 	// distinction lets several evolving architectures use the same sidecar
 	// runtime without losing which definition was actually launched.
-	Architecture ArchitectureIdentity `json:"architecture,omitempty"`
+	Architecture ArchitectureIdentity `json:"architecture,omitzero"`
 	// Graph is the immutable executable composition mounted for this session.
-	// Architecture remains the historical experiment/catalog identity during
-	// migration; new evidence keys execution and inspection on Graph.
-	Graph              ArchitectureIdentity `json:"graph,omitempty"`
+	// Architecture remains the historical experiment/catalog identity; new
+	// evidence keys execution and inspection on Graph.
+	Graph              ArchitectureIdentity `json:"graph,omitzero"`
 	Binding            string               `json:"binding"`
 	Profile            string               `json:"profile,omitempty"`
-	Ownership          Ownership            `json:"ownership"`
-	Stack              StackCapabilities    `json:"stack"`
-	Policies           interaction.Report   `json:"policies"`
-	Interaction        InteractionStatus    `json:"interaction"`
-	Tools              ToolStatus           `json:"tools"`
-	Observers          []string             `json:"observers"`
+	Ownership          Ownership            `json:"ownership,omitzero"`
+	Stack              StackCapabilities    `json:"stack,omitzero"`
+	Policies           interaction.Report   `json:"policies,omitzero"`
+	Interaction        InteractionStatus    `json:"interaction,omitzero"`
+	Tools              ToolStatus           `json:"tools,omitzero"`
+	Observers          []string             `json:"observers,omitempty"`
 	Fast               string               `json:"fast,omitempty"`
 	Reflex             string               `json:"reflex,omitempty"`
 	Slow               string               `json:"slow,omitempty"`

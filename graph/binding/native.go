@@ -33,13 +33,24 @@ type MountDependencyFactory func(
 // protocol-to-boundary translation only; conversation policy belongs in graph
 // elements. Run drains graph outputs until its context is cancelled.
 //
-// The embedded legacy.Runtime keeps the gateway compatibility surface stable
-// during migration. NativeBinding owns graph mounting, supervision,
-// inspection, trace recording, and shutdown; an adapter must not mount or run
-// a second graph.
+// NativeRuntime keeps the gateway's legacy.Runtime surface stable. The adapter
+// deliberately excludes Status: graph identity comes from the immutable plan,
+// while live node, capability, deployment, and adapter evidence comes from the
+// mounted graph's authenticated inspection snapshot. An adapter must not
+// manufacture a competing topology/role projection or mount a second graph.
 type SessionAdapter interface {
-	legacy.Runtime
 	Run(context.Context) error
+	Update(context.Context, legacy.Settings) error
+	Audio(context.Context, perception.Frame) error
+	Video(context.Context, perception.Frame) error
+	Text(context.Context, legacy.TextInput) error
+	ToolResult(context.Context, trajectory.ToolResult) error
+	CommitAudio(context.Context) error
+	CreateResponse(context.Context) error
+	Cancel(context.Context, string) error
+	Truncate(context.Context, legacy.Truncation) error
+	Trajectory() trajectory.Snapshot
+	Close(context.Context, error) error
 }
 
 // AdapterFactory binds one mounted graph to one client session. It must acquire
@@ -455,17 +466,14 @@ func (runtime *NativeRuntime) Trajectory() trajectory.Snapshot {
 }
 
 func (runtime *NativeRuntime) Status() legacy.Status {
-	status := runtime.adapter.Status()
 	graph := runtime.binding.plan.Graph()
-	status.Binding = runtime.binding.name
-	status.Profile = runtime.binding.adapterProfile.Fingerprint
-	status.Ownership = runtime.binding.ownership
-	status.Stack = runtime.binding.capabilities.Stack
-	status.Observers = slices.Clone(runtime.binding.capabilities.Observers)
-	status.Graph = legacy.ArchitectureIdentity{
-		ID: graph.ID, Revision: int(graph.Revision), Fingerprint: graph.Fingerprint,
+	return legacy.Status{
+		Binding: runtime.binding.name,
+		Profile: runtime.binding.adapterProfile.Fingerprint,
+		Graph: legacy.ArchitectureIdentity{
+			ID: graph.ID, Revision: int(graph.Revision), Fingerprint: graph.Fingerprint,
+		},
 	}
-	return status
 }
 
 func (runtime *NativeRuntime) Graph() ir.Graph { return runtime.binding.plan.Graph() }

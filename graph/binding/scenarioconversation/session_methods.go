@@ -20,7 +20,6 @@ import (
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
-	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -487,52 +486,6 @@ func (session *session) cancelGeneration(ctx context.Context, generationID, reas
 func (*session) Truncate(context.Context, legacy.Truncation) error { return legacy.ErrUnsupported }
 
 func (session *session) Trajectory() trajectory.Snapshot { return session.bundle.store.Snapshot() }
-
-func (session *session) Status() legacy.Status {
-	definition := session.config.Architecture
-	selected := definition.Interaction
-	evidence := legacy.InteractionEvidenceCapabilities{}
-	if selected.EvidenceCapabilities != nil {
-		evidence = *selected.EvidenceCapabilities
-	}
-	control := legacy.InteractionControl{}
-	if selected.Control != nil {
-		control = *selected.Control
-	}
-	policies := interaction.Policies{}.Report()
-	// The graph's semantic gate is the external interaction policy selected by
-	// this profile. It is not represented by interaction.Policies because that
-	// legacy assembly is deliberately bypassed by the typed graph element, but
-	// omitting it here would make the live architecture report claim that a
-	// composed-policy session had no policy at all. Keep the established report
-	// spelling used by InteractionModel and bind its provider/model identity in
-	// the separately reviewed architecture pins.
-	policies.Interaction = "model:" + session.config.Policy.Descriptor.Model
-	model := session.config.Model.Descriptor.Provider + ":" + session.config.Model.Descriptor.Model
-	return legacy.Status{
-		Architecture:       definition.Identity(),
-		Fast:               model,
-		Slow:               model,
-		Perception:         session.config.ASR.Reference,
-		PerceptionRevision: session.config.ASR.Descriptor.Version,
-		Speech:             session.config.TTS.Reference, SpeechRevision: session.config.TTS.Descriptor.Version,
-		Policies: policies,
-		Interaction: legacy.InteractionStatus{
-			Evidence: string(selected.Evidence), EvidenceCapabilities: evidence,
-			Recognizer:         session.config.ASR.Descriptor.Name,
-			RecognizerRevision: session.config.ASR.Descriptor.Version,
-			Transport:          selected.Transport, ProtocolVersion: selected.ProtocolVersion,
-			ActHandoff:        string(selected.Handoff),
-			DecisionTimeoutMS: int(session.config.Policy.Descriptor.DecisionTimeoutMS),
-			NativeSuppression: selected.NativeSuppression,
-			Control:           control,
-		},
-		Tools: legacy.ToolStatus{
-			Fast: "propose", Slow: "propose", Authorization: "graph-native",
-			Execution: session.bundle.bridge.Name(),
-		},
-	}
-}
 
 func (session *session) Close(_ context.Context, cause error) error {
 	session.closeOnce.Do(func() {

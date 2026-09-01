@@ -122,19 +122,7 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 			asrOpened.Load(), policyOpened.Load(), modelOpened.Load(), ttsOpened.Load())
 	}
 
-	status := (&session{config: config, bundle: &sessionBundle{bridge: newClientBridge()}}).Status()
-	if status.Policies.Interaction != "model:test-policy" {
-		t.Fatalf("live semantic policy report = %q", status.Policies.Interaction)
-	}
-	if status.Interaction.Recognizer != "test-asr" || status.Interaction.RecognizerRevision != "1" ||
-		status.Interaction.DecisionTimeoutMS != 1000 {
-		t.Fatalf("live semantic policy evidence = %+v", status.Interaction)
-	}
-	if status.Interaction.Control != *architecture.Interaction.Control {
-		t.Fatalf("live semantic controller composition = %+v, want %+v",
-			status.Interaction.Control, *architecture.Interaction.Control)
-	}
 	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 || ttsOpened.Load() != 0 {
-		t.Fatal("reading live semantic policy evidence opened a provider")
+		t.Fatal("reading resource-free graph inventory opened a provider")
 	}
 }

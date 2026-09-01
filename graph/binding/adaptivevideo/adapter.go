@@ -576,7 +576,6 @@ func (*session) Truncate(context.Context, legacy.Truncation) error {
 	return legacy.ErrUnsupported
 }
 func (*session) Trajectory() trajectory.Snapshot    { return trajectory.Snapshot{} }
-func (*session) Status() legacy.Status              { return legacy.Status{} }
 func (*session) Close(context.Context, error) error { return nil }
 
 var _ graphbinding.SessionAdapter = (*session)(nil)

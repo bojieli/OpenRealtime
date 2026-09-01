@@ -360,7 +360,6 @@ func validateForegroundCapabilities(capabilities legacy.Capabilities) error {
 
 func cloneSessionPluginConfig(source SessionPluginConfig) SessionPluginConfig {
 	result := source
-	result.Adapter.Status.Observers = slices.Clone(source.Adapter.Status.Observers)
 	result.Foreground.Capabilities.Observers = slices.Clone(source.Foreground.Capabilities.Observers)
 	return result
 }

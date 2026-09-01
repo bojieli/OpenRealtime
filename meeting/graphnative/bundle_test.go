@@ -1156,7 +1156,6 @@ func (adapter *fixtureSessionAdapter) Truncate(
 	return adapter.send(ctx, "truncate", 0, truncation, "client.playback", truncation.ItemID)
 }
 func (*fixtureSessionAdapter) Trajectory() trajectory.Snapshot    { return trajectory.Snapshot{} }
-func (*fixtureSessionAdapter) Status() legacy.Status              { return legacy.Status{} }
 func (*fixtureSessionAdapter) Close(context.Context, error) error { return nil }
 
 func (adapter *fixtureSessionAdapter) send(

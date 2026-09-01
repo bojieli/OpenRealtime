@@ -2955,6 +2955,17 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   audio-free definition validation, the retained turn-generation contract, and
   arrangement-specific slow speech.
 - [ ] Reduce the architecture catalog and status model to graph-derived facts.
+  - [x] Remove legacy topology and role projection from graph-native session
+    adapters. `NativeRuntime.Status` now exposes only the exact mounted Graph
+    IR identity and its graph-bound adapter name/profile fingerprint; exact
+    deployment, node, capability, provider, and route facts remain in
+    authenticated live inspection and execution evidence. Graph-native
+    benchmark reportability consequently matches that exact evidence instead
+    of also requiring lossy ownership, stack, policy, tool, observer, and
+    fast/slow role labels. Legacy bindings retain their status fields until
+    their separate launch paths and catalog projections are deleted. Normal,
+    three shuffled, race, vet, Windows/amd64 and Darwin/arm64 production
+    builds, and the low-parallelism full repository gate are green.
 - [x] Amend or supersede ADRs whose statements became reference-graph choices.
   ADR-0015 separates retained safety/reproducibility invariants from historical
   topology mandates, and the status blocks of ADR-0004 through ADR-0014 now

@@ -12,6 +12,8 @@ import (
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/architecture"
 	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/interaction"
 )
 
@@ -360,6 +362,76 @@ func TestObservedToolAuthorityMustMatchTheManifest(t *testing.T) {
 	status.Tools.Fast = "execute"
 	if err := cell.ValidateObserved(status); err == nil || !strings.Contains(err.Error(), "tool authority") {
 		t.Fatalf("an authority change was accepted as the same architecture: %v", err)
+	}
+}
+
+func TestGraphNativeObservationUsesExactGraphInsteadOfLegacyRoleProjection(t *testing.T) {
+	const digest = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	graph := bench.GraphEvidence{
+		Graph: bench.GraphIdentity{
+			FormatVersion: ir.FormatVersion, ID: "architecture_status", Revision: 1,
+			Fingerprint: digest,
+		},
+		Configuration: bench.ArtifactIdentity{
+			ID: "config://architecture-status", Digest: digest,
+		},
+		Nodes: []bench.GraphNodeEvidence{{
+			Node: "agent",
+			Element: element.Identity{
+				Name: "architecture.StatusFixture", Revision: 1, Digest: digest,
+			},
+			Implementation: "fixture.architecture.status.v1",
+			Config: bench.ArtifactIdentity{
+				ID: "config://architecture-status/agent", Digest: digest,
+			},
+			Runtime: bench.ArtifactIdentity{
+				ID: "runtime://architecture-status/agent", Revision: "1",
+			},
+		}},
+	}
+	cell := architectureCell("graph-native", architecture.LevelTextPolicy)
+	cell.Execution = bench.ExecutionRequirement{
+		FormatVersion: bench.AttestationFormatVersion,
+		Kind:          bench.ExecutionGraphNative,
+		Graph:         &graph,
+	}
+	if err := cell.Execution.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	status := binding.Status{
+		Graph: binding.ArchitectureIdentity{
+			ID: graph.Graph.ID, Revision: int(graph.Graph.Revision),
+			Fingerprint: graph.Graph.Fingerprint,
+		},
+		Binding: cell.Architecture.RuntimeBinding,
+		Profile: cell.Architecture.Profile,
+	}
+	if err := cell.ValidateObserved(status); err != nil {
+		t.Fatalf("minimal graph-native status was rejected: %v", err)
+	}
+
+	// These legacy projections deliberately disagree with the catalog cell.
+	// Exact graph evidence remains the authority for graph-native execution.
+	status.Architecture = binding.ArchitectureIdentity{ID: "legacy-projection", Revision: 99}
+	status.Ownership = binding.Ownership{
+		Perception: binding.OwnerRemote, FastCognition: binding.OwnerRemote,
+		SlowCognition: binding.OwnerRemote, Action: binding.OwnerRemote,
+		Interaction: binding.OwnerRemote, Floor: binding.OwnerRemote,
+	}
+	status.Fast, status.Slow, status.Perception, status.Speech = "wrong", "wrong", "wrong", "wrong"
+	if err := cell.ValidateObserved(status); err != nil {
+		t.Fatalf("legacy role projection competed with exact graph evidence: %v", err)
+	}
+
+	wrong := status
+	wrong.Graph.Fingerprint = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if err := cell.ValidateObserved(wrong); err == nil || !strings.Contains(err.Error(), "execution: live graph") {
+		t.Fatalf("wrong graph-native status was accepted: %v", err)
+	}
+	wrong = status
+	wrong.Profile = "different-adapter-profile"
+	if err := cell.ValidateObserved(wrong); err == nil || !strings.Contains(err.Error(), "profile") {
+		t.Fatalf("wrong graph adapter profile was accepted: %v", err)
 	}
 }
 

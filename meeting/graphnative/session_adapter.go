@@ -42,14 +42,12 @@ const (
 // protocol translation and the exact video cadence declared on model.External.
 type SessionAdapterConfig struct {
 	FrameRateMilliHz int
-	Status           legacy.Status
 }
 
 // SessionAdapterFactory constructs the concrete Meeting Assistant adapter.
 // It is suitable for AdapterPluginConfig.Factory and acquires no provider or
 // listener resource until NativeBinding starts a session.
 func SessionAdapterFactory(config SessionAdapterConfig) graphbinding.AdapterFactory {
-	config.Status.Observers = slices.Clone(config.Status.Observers)
 	if config.FrameRateMilliHz == 0 {
 		config.FrameRateMilliHz = defaultMeetingVideoRateMilliHz
 	}
@@ -63,7 +61,6 @@ func SessionAdapterFactory(config SessionAdapterConfig) graphbinding.AdapterFact
 
 func (plugin *SessionPlugin) sessionAdapterFactory() graphbinding.AdapterFactory {
 	config := plugin.config.Adapter
-	config.Status.Observers = slices.Clone(plugin.config.Adapter.Status.Observers)
 	if config.FrameRateMilliHz == 0 {
 		config.FrameRateMilliHz = defaultMeetingVideoRateMilliHz
 	}
@@ -123,7 +120,6 @@ type meetingSessionAdapter struct {
 	sink      legacy.Sink
 	profile   graphbinding.SessionAdapterProfile
 	ports     meetingAdapterPorts
-	status    legacy.Status
 	frameRate int
 	store     *trajectory.Store
 	sequence  atomic.Uint64
@@ -164,11 +160,9 @@ func newMeetingSessionAdapter(
 	if sessionID == "" {
 		return nil, errors.New("create meeting session adapter: canonical session ID is required")
 	}
-	status := config.Status
-	status.Observers = slices.Clone(config.Status.Observers)
 	return &meetingSessionAdapter{
 		ctx: ctx, sessionID: sessionID, sink: options.Sink, profile: profile.Clone(), ports: ports,
-		status: status, frameRate: config.FrameRateMilliHz, store: store,
+		frameRate: config.FrameRateMilliHz, store: store,
 		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]*meetingAdapterSpeech),
 		completedRuns: make(map[string]struct{}),
 	}, nil
@@ -356,12 +350,6 @@ func (session *meetingSessionAdapter) Trajectory() trajectory.Snapshot {
 		return trajectory.Snapshot{}
 	}
 	return session.store.Snapshot()
-}
-
-func (session *meetingSessionAdapter) Status() legacy.Status {
-	status := session.status
-	status.Observers = slices.Clone(session.status.Observers)
-	return status
 }
 
 func (session *meetingSessionAdapter) Close(context.Context, error) error {

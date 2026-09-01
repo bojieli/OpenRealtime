@@ -2,8 +2,10 @@ package binding_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -76,10 +78,27 @@ func TestNativeBindingRunsAnExactPlanThroughTypedSessionBoundaries(t *testing.T)
 	}
 
 	status := live.Status()
-	if status.Binding != profile.Name || status.Profile != profile.Fingerprint ||
-		status.Ownership != profile.Ownership || status.Graph.ID != plan.Graph().ID ||
-		status.Graph.Fingerprint != plan.Graph().Fingerprint {
+	wantStatus := legacy.Status{
+		Binding: profile.Name, Profile: profile.Fingerprint,
+		Graph: legacy.ArchitectureIdentity{
+			ID: plan.Graph().ID, Revision: int(plan.Graph().Revision),
+			Fingerprint: plan.Graph().Fingerprint,
+		},
+	}
+	if !reflect.DeepEqual(status, wantStatus) {
 		t.Fatalf("native status = %+v", status)
+	}
+	encodedStatus, err := json.Marshal(status)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var statusFields map[string]json.RawMessage
+	if err := json.Unmarshal(encodedStatus, &statusFields); err != nil {
+		t.Fatal(err)
+	}
+	if len(statusFields) != 3 || statusFields["binding"] == nil ||
+		statusFields["profile"] == nil || statusFields["graph"] == nil {
+		t.Fatalf("graph-native JSON status has legacy projections: %s", encodedStatus)
 	}
 	native := live.(*graphbinding.NativeRuntime)
 	inspection := native.Live()
@@ -376,7 +395,6 @@ func (*nativeVideoAdapter) Truncate(context.Context, legacy.Truncation) error {
 	return legacy.ErrUnsupported
 }
 func (*nativeVideoAdapter) Trajectory() trajectory.Snapshot    { return trajectory.Snapshot{} }
-func (*nativeVideoAdapter) Status() legacy.Status              { return legacy.Status{} }
 func (*nativeVideoAdapter) Close(context.Context, error) error { return nil }
 
 func nativeBoundaryType(graph ir.Graph, name string, direction ir.BoundaryDirection) (element.Type, error) {
