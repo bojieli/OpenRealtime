@@ -130,7 +130,28 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	if live.State != "running" {
 		t.Fatalf("running snapshot state = %q", live.State)
 	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		live = mounted.Live()
+		ready := true
+		for _, node := range []string{"first", "second"} {
+			telemetry := live.Nodes[node]
+			ready = ready && telemetry.ActiveRuns == 0 && telemetry.LastTriggerID == message.ItemID &&
+				telemetry.LastOutcome == message.ItemID && telemetry.FirstOutputNS != 0 &&
+				telemetry.CompletionNS >= telemetry.FirstOutputNS
+		}
+		if ready {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
 	for _, node := range []string{"first", "second"} {
+		telemetry := live.Nodes[node]
+		if telemetry.ActiveRuns != 0 || telemetry.LastTriggerID != message.ItemID ||
+			telemetry.LastOutcome != message.ItemID || telemetry.FirstOutputNS == 0 ||
+			telemetry.CompletionNS < telemetry.FirstOutputNS || telemetry.CancellationNS != 0 {
+			t.Fatalf("node %s reaction telemetry = %+v", node, telemetry)
+		}
 		resolution := live.Nodes[node].Resolution
 		if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 			resolution.Runtime.ID != "worker://pass" || resolution.Runtime.Revision != "build:7" ||
@@ -162,6 +183,97 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	case <-time.After(time.Second):
 		t.Fatal("graph did not stop")
 	}
+	closed := mounted.Live()
+	for _, node := range []string{"first", "second"} {
+		before, after := live.Nodes[node], closed.Nodes[node]
+		if after.State != "stopped" || after.LastTriggerID != before.LastTriggerID ||
+			after.LastOutcome != before.LastOutcome || after.FirstOutputNS != before.FirstOutputNS ||
+			after.CompletionNS != before.CompletionNS {
+			t.Fatalf("node %s shutdown discarded reaction telemetry: before=%+v after=%+v", node, before, after)
+		}
+	}
+}
+
+func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
+	descriptor := telemetryDescriptor()
+	registry := graphruntime.NewRegistry()
+	if err := registry.Register("", telemetryFactory{descriptor: descriptor}); err != nil {
+		t.Fatal(err)
+	}
+	graph := telemetryGraph(t, descriptor)
+	var now atomic.Uint64
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: graph, Registry: registry, Now: func() uint64 { return now.Add(10) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- mounted.Run(context.Background()) }()
+	ingress, _ := mounted.Ingress("input")
+	cancellation, _ := mounted.Ingress("cancel")
+	egress, _ := mounted.Egress("output")
+	message := element.Envelope{
+		Type: element.Event(element.Named("test.Value")), ItemID: "telemetry-trigger",
+		RunID: "run-telemetry", TraceID: "trace-telemetry", Payload: "value",
+	}
+	if result, sendErr := ingress.Broadcast(context.Background(), message); sendErr != nil || result.Delivered != 1 {
+		t.Fatalf("trigger ingress = %+v, %v", result, sendErr)
+	}
+	waitForNodeTelemetry(t, mounted, func(node inspect.NodeLive) bool {
+		return node.ActiveRuns == 1 && node.LastTriggerID == message.ItemID
+	})
+	repeated := message
+	repeated.ItemID = "telemetry-trigger-repeat"
+	if result, sendErr := ingress.Broadcast(context.Background(), repeated); sendErr != nil || result.Delivered != 1 {
+		t.Fatalf("repeated trigger ingress = %+v, %v", result, sendErr)
+	}
+	waitForNodeTelemetry(t, mounted, func(node inspect.NodeLive) bool {
+		return node.ActiveRuns == 1 && node.LastTriggerID == repeated.ItemID
+	})
+	cancelEnvelope := element.Envelope{
+		Type: element.Interrupt(element.Named("flow.RunID")), ItemID: "telemetry-cancel",
+		RunID: message.RunID, TraceID: message.TraceID, Payload: message.RunID,
+	}
+	if result, sendErr := cancellation.Broadcast(context.Background(), cancelEnvelope); sendErr != nil || result.Delivered != 1 {
+		t.Fatalf("cancel ingress = %+v, %v", result, sendErr)
+	}
+	if _, receiveErr := egress.Receive(context.Background()); receiveErr != nil {
+		t.Fatal(receiveErr)
+	}
+	waitForNodeTelemetry(t, mounted, func(node inspect.NodeLive) bool {
+		return node.ActiveRuns == 0 && node.CancellationNS != 0 && node.FirstOutputNS != 0 &&
+			node.CompletionNS >= node.FirstOutputNS && node.LastOutcome == message.ItemID
+	})
+	before := mounted.Live().Nodes["telemetry"]
+	closeContext, closeCancel := context.WithTimeout(context.Background(), time.Second)
+	defer closeCancel()
+	if err := mounted.Close(closeContext); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-runDone:
+	case <-time.After(time.Second):
+		t.Fatal("telemetry graph did not stop")
+	}
+	after := mounted.Live().Nodes["telemetry"]
+	if after.State != "stopped" || after.ActiveRuns != 0 || after.LastTriggerID != before.LastTriggerID ||
+		after.LastOutcome != before.LastOutcome || after.FirstOutputNS != before.FirstOutputNS ||
+		after.CompletionNS != before.CompletionNS || after.CancellationNS != before.CancellationNS {
+		t.Fatalf("shutdown discarded cancellation telemetry: before=%+v after=%+v", before, after)
+	}
+}
+
+func waitForNodeTelemetry(t *testing.T, mounted *graphruntime.Mounted, accept func(inspect.NodeLive) bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if node := mounted.Live().Nodes["telemetry"]; accept(node) {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("node telemetry did not reach expected state: %+v", mounted.Live().Nodes["telemetry"])
 }
 
 func TestMountRejectsFactoryContractMutationAndMissingDependency(t *testing.T) {
@@ -268,6 +380,8 @@ type permissivePassFactory struct{ passFactory }
 
 type resolvingPassFactory struct{ passFactory }
 
+type telemetryFactory struct{ descriptor element.Descriptor }
+
 func (permissivePassFactory) ValidateConfig(json.RawMessage) error { return nil }
 
 func (factory resolvingPassFactory) Mount(
@@ -296,6 +410,42 @@ func (factory resolvingPassFactory) Mount(
 }
 
 func (factory passFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
+
+func (factory telemetryFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
+
+func (factory telemetryFactory) Mount(
+	_ context.Context, mount element.MountContext,
+) (element.Runnable, error) {
+	input, err := mount.Ports.Input("in")
+	if err != nil {
+		return nil, err
+	}
+	cancel, err := mount.Ports.Input("cancel")
+	if err != nil {
+		return nil, err
+	}
+	output, err := mount.Ports.Output("out")
+	if err != nil {
+		return nil, err
+	}
+	return element.RunnableFunc(func(ctx context.Context) error {
+		message, receiveErr := input.Receive(ctx)
+		if receiveErr != nil {
+			return receiveErr
+		}
+		if _, receiveErr = input.Receive(ctx); receiveErr != nil {
+			return receiveErr
+		}
+		if _, receiveErr = cancel.Receive(ctx); receiveErr != nil {
+			return receiveErr
+		}
+		if _, sendErr := output.Broadcast(ctx, message); sendErr != nil {
+			return sendErr
+		}
+		<-ctx.Done()
+		return nil
+	}), nil
+}
 
 func (factory passFactory) Mount(_ context.Context, mount element.MountContext) (element.Runnable, error) {
 	input, err := mount.Ports.Input("in")
@@ -361,6 +511,23 @@ func passDescriptor(dependencies []element.Dependency) element.Descriptor {
 	}
 }
 
+func telemetryDescriptor() element.Descriptor {
+	valueType := element.Event(element.Named("test.Value"))
+	cancelType := element.Interrupt(element.Named("flow.RunID"))
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion, Name: "test.Telemetry", Revision: 1,
+		Ports: []element.Port{
+			{Name: "in", Direction: element.Input, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+			{Name: "cancel", Direction: element.Input, Type: cancelType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+			{Name: "out", Direction: element.Output, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+		},
+		Reaction: element.Reaction{
+			Triggers: []string{"in"}, Interrupts: []string{"cancel"},
+			Outcomes: []string{"out"}, MaxConcurrency: 1,
+		},
+	}
+}
+
 func passGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
 	t.Helper()
 	identity, err := descriptor.Identity()
@@ -381,6 +548,37 @@ func passGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
 		Boundaries: []ir.Boundary{
 			{Name: "input", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "pass", Port: "in"}, Type: valueType},
 			{Name: "output", Direction: ir.OutputBoundary, Endpoint: ir.Endpoint{Node: "pass", Port: "out"}, Type: valueType},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return graph
+}
+
+func telemetryGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
+	t.Helper()
+	identity, err := descriptor.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	valueType := element.Event(element.Named("test.Value"))
+	cancelType := element.Interrupt(element.Named("flow.RunID"))
+	graph, err := ir.Freeze(ir.Graph{
+		FormatVersion: ir.FormatVersion, ID: "telemetry", Revision: 1,
+		Nodes: []ir.Node{{
+			ID: "telemetry", Element: identity,
+			Ports: []ir.Port{
+				{Name: "in", Direction: element.Input, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+				{Name: "cancel", Direction: element.Input, Type: cancelType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+				{Name: "out", Direction: element.Output, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
+			},
+			Reaction: descriptor.Reaction,
+		}},
+		Boundaries: []ir.Boundary{
+			{Name: "input", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "telemetry", Port: "in"}, Type: valueType},
+			{Name: "cancel", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "telemetry", Port: "cancel"}, Type: cancelType},
+			{Name: "output", Direction: ir.OutputBoundary, Endpoint: ir.Endpoint{Node: "telemetry", Port: "out"}, Type: valueType},
 		},
 	})
 	if err != nil {

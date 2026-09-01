@@ -252,8 +252,15 @@ func (recorder *traceRecorder) capture(mounted *Mounted) error {
 
 	live := mounted.Live()
 	atNS := mounted.now()
-	if atNS < recorder.lastAtNS {
-		atNS = recorder.lastAtNS
+	minimumAtNS := recorder.lastAtNS
+	for _, node := range live.Nodes {
+		minimumAtNS = max(minimumAtNS, node.FirstOutputNS, node.CompletionNS, node.CancellationNS)
+	}
+	for _, flow := range live.Flows {
+		minimumAtNS = max(minimumAtNS, flow.FirstNS, flow.LastNS)
+	}
+	if atNS < minimumAtNS {
+		atNS = minimumAtNS
 		recorder.dropped = saturatingAdd(recorder.dropped, 1)
 	}
 	live.Sequence = 1 // Trace record sequencing is private to this recorder.

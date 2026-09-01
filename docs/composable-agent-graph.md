@@ -1542,6 +1542,16 @@ For a selected session or run, the UI overlays:
 - element health, resource placement, and dependency activation;
 - configuration and graph changes over time.
 
+The runtime now derives a first live reaction-evidence layer from the frozen
+reaction contract rather than guessing from payloads. Successful consumption
+on declared trigger and interrupt ports and successful emission on declared
+output and outcome ports populate the node overlay. Repeated trigger envelopes
+with the same non-empty run ID count as one active run, while the first
+nonzero first-output, completion, and cancellation times remain stable for the
+life of the mount and through shutdown. Raw trigger and outcome item IDs stay
+inside the in-process view: management snapshots redact them and payload-free
+recordings omit them while retaining the counters and timing evidence.
+
 Trace replay animates the same graph and permits inspection of historical
 runs. A developer should be able to select an audible word or computer click
 and trace backward to the observation, policy decision, model run, state
@@ -1787,7 +1797,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Joined live/static authority and per-stage operator rendering, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -2586,6 +2596,10 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   facts from the same immutable Graph IR; the projection is mutation-isolated.
 - [ ] Add complete live trigger, cancellation, authority, and per-stage latency
   operator views over those contracts.
+  - [x] Populate reaction-declared trigger, unique active-run, interrupt,
+    first-output, completion, and outcome evidence at the port boundary;
+    preserve it through shutdown and payload-free trace replay without
+    exporting raw item/run IDs.
 - [x] Add deterministic semantic graph diff plus bounded, fingerprinted,
   payload-free trace artifacts and exact Graph IR replay validation.
 - [x] Integrate opt-in runtime recording with nonblocking coalesced capture,

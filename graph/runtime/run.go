@@ -200,7 +200,10 @@ func (mounted *Mounted) shutdownResources() error {
 func (mounted *Mounted) setNodeState(node string, state inspect.NodeLive) {
 	mounted.liveMu.Lock()
 	if current, found := mounted.nodeLive[node]; found {
-		state.Resolution = current.Resolution
+		next := current.Clone()
+		next.State = state.State
+		next.Error = state.Error
+		state = next
 	}
 	mounted.nodeLive[node] = state
 	mounted.liveMu.Unlock()

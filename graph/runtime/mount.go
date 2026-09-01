@@ -376,7 +376,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	}
 
 	for _, node := range config.Graph.Nodes {
-		ports, err := buildPortSet(node, builders[node.ID], mounted.changed)
+		ports, err := buildPortSet(node, builders[node.ID], mounted.changed, newNodeTelemetry(mounted, node))
 		if err != nil {
 			abortMount()
 			return nil, fmt.Errorf("mount graph node %s ports: %w", node.ID, err)
@@ -514,7 +514,9 @@ func bindQueue(groups map[string]map[string]*queue, port, lane string, channel *
 	lanes[lane] = channel
 }
 
-func buildPortSet(node ir.Node, builder *bindingBuilder, changed *condition) (*portSet, error) {
+func buildPortSet(
+	node ir.Node, builder *bindingBuilder, changed *condition, telemetry *nodeTelemetry,
+) (*portSet, error) {
 	result := &portSet{inputs: make(map[string]*inputPort), outputs: make(map[string]*outputPort)}
 	for _, port := range node.Ports {
 		groups := builder.inputs
@@ -537,9 +539,15 @@ func buildPortSet(node ir.Node, builder *bindingBuilder, changed *condition) (*p
 			}
 		}
 		if port.Direction == element.Input {
-			result.inputs[port.Name] = &inputPort{name: port.Name, typ: port.Type, queues: queues, changed: changed}
+			result.inputs[port.Name] = &inputPort{
+				name: port.Name, typ: port.Type, queues: queues, changed: changed,
+				observe: telemetry.inputObserver(port.Name),
+			}
 		} else {
-			result.outputs[port.Name] = &outputPort{name: port.Name, typ: port.Type, queues: queues, changed: changed}
+			result.outputs[port.Name] = &outputPort{
+				name: port.Name, typ: port.Type, queues: queues, changed: changed,
+				observe: telemetry.outputObserver(port.Name),
+			}
 		}
 	}
 	return result, nil

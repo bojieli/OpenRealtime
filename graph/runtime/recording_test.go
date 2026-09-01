@@ -76,6 +76,13 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 		final.Edges["first-to-second"].QueueWaitNS == 0 {
 		t.Fatalf("actual queue metrics were not recorded: %+v", final.Edges["first-to-second"])
 	}
+	for _, nodeID := range []string{"first", "second"} {
+		node := final.Nodes[nodeID]
+		if node.ActiveRuns != 0 || node.FirstOutputNS == 0 || node.CompletionNS < node.FirstOutputNS ||
+			node.CancellationNS != 0 {
+			t.Fatalf("node %s reaction timing was not recorded and replayed: %+v", nodeID, node)
+		}
+	}
 	rawCorrelation := inspect.OpaqueTraceCorrelation("trace:" + message.TraceID)
 	for correlation := range final.Flows {
 		if correlation == rawCorrelation || !strings.HasPrefix(correlation, "sha256:") {
@@ -124,6 +131,22 @@ func TestRecordedTraceClampsAndAttestsRegressingMonotonicClock(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now.Store(1_000)
+	sendRecordedMessage(t, mounted, element.Envelope{
+		Type: element.Event(element.Named("test.Value")), ItemID: "clock-regression",
+		RunID: "clock-regression", TraceID: "clock-regression", Payload: "value",
+	})
+	live := mounted.Live()
+	minimumAtNS := uint64(0)
+	for _, node := range live.Nodes {
+		minimumAtNS = max(minimumAtNS, node.FirstOutputNS, node.CompletionNS, node.CancellationNS)
+	}
+	for _, flow := range live.Flows {
+		minimumAtNS = max(minimumAtNS, flow.FirstNS, flow.LastNS)
+	}
+	if minimumAtNS <= before.AtNS {
+		t.Fatalf("new live evidence did not advance past the prior checkpoint: live=%+v before=%+v", live, before)
+	}
 	now.Store(0)
 	if err := mounted.CheckpointTrace(); err != nil {
 		t.Fatal(err)
@@ -140,7 +163,7 @@ func TestRecordedTraceClampsAndAttestsRegressingMonotonicClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.AtNS < before.AtNS || after.Live.TraceDropped <= before.Live.TraceDropped {
+	if after.AtNS < minimumAtNS || after.Live.TraceDropped <= before.Live.TraceDropped {
 		t.Fatalf("clock regression was not clamped and attested: before=%+v after=%+v",
 			before, after)
 	}

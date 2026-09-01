@@ -117,7 +117,11 @@ func TestBroadcastWaitsForEveryLosslessBranchBeforeAnyAdmission(t *testing.T) {
 	if _, err := left.send(context.Background(), envelope(valueType, "occupy")); err != nil {
 		t.Fatal(err)
 	}
-	port := &outputPort{name: "out", typ: valueType, queues: []*queue{left, right}, changed: changed}
+	observed := make(chan string, 2)
+	port := &outputPort{
+		name: "out", typ: valueType, queues: []*queue{left, right}, changed: changed,
+		observe: func(envelope element.Envelope) { observed <- envelope.ItemID },
+	}
 	done := make(chan error, 1)
 	go func() {
 		_, sendErr := port.Broadcast(context.Background(), envelope(valueType, "broadcast"))
@@ -127,6 +131,11 @@ func TestBroadcastWaitsForEveryLosslessBranchBeforeAnyAdmission(t *testing.T) {
 	case err := <-done:
 		t.Fatalf("broadcast did not wait: %v", err)
 	case <-time.After(20 * time.Millisecond):
+	}
+	select {
+	case item := <-observed:
+		t.Fatalf("blocked broadcast was observed before atomic admission: %s", item)
+	default:
 	}
 	right.mu.Lock()
 	rightSize := right.size
@@ -145,10 +154,59 @@ func TestBroadcastWaitsForEveryLosslessBranchBeforeAnyAdmission(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("broadcast did not resume")
 	}
+	select {
+	case item := <-observed:
+		if item != "broadcast" {
+			t.Fatalf("observed broadcast = %q", item)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("successful broadcast was not observed")
+	}
+	select {
+	case item := <-observed:
+		t.Fatalf("multi-lane broadcast was observed more than once: %s", item)
+	default:
+	}
 	for _, queue := range []*queue{left, right} {
 		got, err := queue.receive(context.Background())
 		if err != nil || got.ItemID != "broadcast" {
 			t.Fatalf("branch %s receive = %+v, %v", queue.id, got, err)
+		}
+	}
+}
+
+func TestLaneAccessPreservesPortObservationBoundary(t *testing.T) {
+	changed := newCondition()
+	valueType := element.Event(element.Named("test.Value"))
+	laneQueue, err := newQueue("lane", valueType, ir.Lossless, 2, changed, func() uint64 { return 1 }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputObserved := make(chan string, 1)
+	inputObserved := make(chan string, 1)
+	output := &outputPort{
+		name: "out", typ: valueType, queues: []*queue{laneQueue}, changed: changed,
+		observe: func(envelope element.Envelope) { outputObserved <- envelope.ItemID },
+	}
+	input := &inputPort{
+		name: "in", typ: valueType, queues: []*queue{laneQueue}, changed: changed,
+		observe: func(envelope element.Envelope) { inputObserved <- envelope.ItemID },
+	}
+	message := envelope(valueType, "lane-message")
+	if result, sendErr := output.Lanes()[0].Send(context.Background(), message); sendErr != nil || result != element.Delivered {
+		t.Fatalf("lane send = %s, %v", result, sendErr)
+	}
+	if got, receiveErr := input.Lanes()[0].Receive(context.Background()); receiveErr != nil || got.ItemID != message.ItemID {
+		t.Fatalf("lane receive = %+v, %v", got, receiveErr)
+	}
+	for name, channel := range map[string]<-chan string{"output": outputObserved, "input": inputObserved} {
+		select {
+		case item := <-channel:
+			if item != message.ItemID {
+				t.Fatalf("%s lane observation = %q", name, item)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s lane access bypassed observation", name)
 		}
 	}
 }

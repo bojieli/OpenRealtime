@@ -215,20 +215,36 @@ func (queue *queue) emit(kind TraceKind, envelope element.Envelope, occupancy in
 	}
 }
 
-type sender struct{ queue *queue }
+type envelopeObserver func(element.Envelope)
+
+type sender struct {
+	queue   *queue
+	observe envelopeObserver
+}
 
 func (sender *sender) ID() string         { return sender.queue.id }
 func (sender *sender) Type() element.Type { return sender.queue.valueType.Clone() }
 func (sender *sender) Send(ctx context.Context, envelope element.Envelope) (element.DeliveryResult, error) {
-	return sender.queue.send(ctx, envelope)
+	result, err := sender.queue.send(ctx, envelope)
+	if err == nil && sender.observe != nil {
+		sender.observe(envelope)
+	}
+	return result, err
 }
 
-type receiver struct{ queue *queue }
+type receiver struct {
+	queue   *queue
+	observe envelopeObserver
+}
 
 func (receiver *receiver) ID() string         { return receiver.queue.id }
 func (receiver *receiver) Type() element.Type { return receiver.queue.valueType.Clone() }
 func (receiver *receiver) Receive(ctx context.Context) (element.Envelope, error) {
-	return receiver.queue.receive(ctx)
+	envelope, err := receiver.queue.receive(ctx)
+	if err == nil && receiver.observe != nil {
+		receiver.observe(envelope)
+	}
+	return envelope, err
 }
 
 type outputPort struct {
@@ -236,6 +252,7 @@ type outputPort struct {
 	typ     element.Type
 	queues  []*queue
 	changed *condition
+	observe envelopeObserver
 }
 
 func (port *outputPort) Name() string       { return port.name }
@@ -243,7 +260,7 @@ func (port *outputPort) Type() element.Type { return port.typ.Clone() }
 func (port *outputPort) Lanes() []element.Sender {
 	result := make([]element.Sender, len(port.queues))
 	for index, queue := range port.queues {
-		result[index] = &sender{queue: queue}
+		result[index] = &sender{queue: queue, observe: port.observe}
 	}
 	return result
 }
@@ -256,6 +273,9 @@ func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope
 		return element.SendResult{}, err
 	}
 	if len(port.queues) == 0 {
+		if port.observe != nil {
+			port.observe(envelope)
+		}
 		return element.SendResult{}, nil
 	}
 	queues := append([]*queue(nil), port.queues...)
@@ -323,6 +343,9 @@ func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope
 		for _, event := range emittedEvents {
 			event.queue.emit(event.kind, envelope, event.occupancy)
 		}
+		if port.observe != nil {
+			port.observe(envelope)
+		}
 		return result, nil
 	}
 }
@@ -338,6 +361,7 @@ type inputPort struct {
 	typ     element.Type
 	queues  []*queue
 	changed *condition
+	observe envelopeObserver
 
 	mu     sync.Mutex
 	cursor int
@@ -348,7 +372,7 @@ func (port *inputPort) Type() element.Type { return port.typ.Clone() }
 func (port *inputPort) Lanes() []element.Receiver {
 	result := make([]element.Receiver, len(port.queues))
 	for index, queue := range port.queues {
-		result[index] = &receiver{queue: queue}
+		result[index] = &receiver{queue: queue, observe: port.observe}
 	}
 	return result
 }
@@ -360,7 +384,11 @@ func (port *inputPort) Receive(ctx context.Context) (element.Envelope, error) {
 	if len(port.queues) != 1 {
 		return element.Envelope{}, fmt.Errorf("input %s has %d lanes: %w", port.name, len(port.queues), ErrPortCardinality)
 	}
-	return port.queues[0].receive(ctx)
+	envelope, err := port.queues[0].receive(ctx)
+	if err == nil && port.observe != nil {
+		port.observe(envelope)
+	}
+	return envelope, err
 }
 
 func (port *inputPort) ReceiveAny(ctx context.Context) (element.Envelope, string, error) {
@@ -385,6 +413,9 @@ func (port *inputPort) ReceiveAny(ctx context.Context) (element.Envelope, string
 				port.cursor = (index + 1) % len(port.queues)
 				lane := port.queues[index].id
 				port.mu.Unlock()
+				if port.observe != nil {
+					port.observe(envelope)
+				}
 				return envelope, lane, nil
 			}
 		}
