@@ -53,7 +53,7 @@ func meetingApplicationFixture(t testing.TB) (graphs.MeetingAssistantRegistratio
 	background.SpeechAuthority = continuation.SpeechAuthoritySilent
 	return graphs.MeetingAssistantRegistrationConfig{
 		ApplicationArtifact: meetingArtifact("go://openrealtime/graphs/meeting-assistant/application/v1"),
-		ProviderArtifact:    meetingArtifact("go://openrealtime/meeting/session-provider/v1"),
+		ProviderArtifact:    meetingArtifact("go://openrealtime/meeting/session-provider/v2"),
 		Session: meetinggraph.SessionPluginConfig{
 			AdapterArtifact: meetingArtifact("go://openrealtime/meeting/session-adapter/v1"),
 			Foreground: meetinggraph.ForegroundPlugin{
@@ -133,7 +133,7 @@ func TestMeetingAssistantRegistrationResolvesExactGraphWithoutAcquiringProviders
 		prepared.Plan.Graph().Fingerprint == "" || launchConfig.Adapter != registration.Adapter {
 		t.Fatalf("prepared Meeting application = %+v", prepared.Plan)
 	}
-	if got := prepared.Binding.Capabilities().Observers; !slices.Equal(got, []string{"audio", "screen"}) {
+	if got := prepared.Binding.SessionAdapterProfile().Capabilities.Observers; !slices.Equal(got, []string{"audio", "screen"}) {
 		t.Fatalf("Meeting observer selectors = %v, want exact foreground audio plus built-in screen", got)
 	}
 	if readinessCalls.Load() != 0 || len(prepared.Readiness) != 1 ||

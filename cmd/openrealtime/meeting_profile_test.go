@@ -134,10 +134,11 @@ func TestMeetingRegistrationIsResourceFreeAndRetainsExactLazyReadiness(t *testin
 		t.Fatalf("prepared Meeting profile graph=%q readiness=%+v",
 			prepared.Plan.Graph().ID, prepared.Readiness)
 	}
-	if got := prepared.Binding.Capabilities().Observers; !slices.Equal(got, []string{"audio", "screen"}) {
+	profile := prepared.Binding.SessionAdapterProfile()
+	if got := profile.Capabilities.Observers; !slices.Equal(got, []string{"audio", "screen"}) {
 		t.Fatalf("Meeting binding observers = %v", got)
 	}
-	if got := prepared.Binding.Capabilities(); !got.Stack.VisualInput || !got.Stack.TextInjection || !got.FastSlow {
+	if got := profile.Capabilities; !got.Stack.VisualInput || !got.Stack.TextInjection || !got.FastSlow {
 		t.Fatalf("Meeting foreground capabilities = %+v", got)
 	}
 	if err := prepared.Readiness[0].Check(context.Background()); err != nil {

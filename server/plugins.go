@@ -37,14 +37,14 @@ func NewSessionProviderFactory(provider SessionProvider) (*SessionProviderFactor
 	if strings.TrimSpace(provider.Name()) == "" {
 		return nil, errors.New("server session-provider plugin requires a canonical provider name")
 	}
-	if err := provider.Ownership().Validate(); err != nil {
-		return nil, fmt.Errorf("server session-provider plugin ownership: %w", err)
+	if err := gateway.ValidateSessionBinding(provider); err != nil {
+		return nil, fmt.Errorf("server session-provider plugin contract: %w", err)
 	}
 	return &SessionProviderFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
 			Name:          sessionProviderPluginName,
-			Revision:      1,
+			Revision:      2,
 			Realm:         plugin.ServerRealm,
 			Platforms:     []string{"go"},
 			Provides:      []plugin.Contract{SessionProviderContract()},
@@ -158,7 +158,7 @@ func NewGatewayFactory(config GatewayFactoryConfig) (*GatewayFactory, error) {
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
 			Name:          realtimeGatewayPluginName,
-			Revision:      2,
+			Revision:      3,
 			Realm:         plugin.ServerRealm,
 			Platforms:     []string{"go"},
 			Provides: []plugin.Contract{

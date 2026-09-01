@@ -156,19 +156,13 @@ func NewNative(config NativeConfig) (*NativeBinding, error) {
 
 func (binding *NativeBinding) Name() string { return binding.name }
 
-// Ownership and Capabilities preserve the legacy gateway interface while
-// deriving its projection from the one frozen adapter profile. NativeBinding
-// deliberately stores no second mutable copy that can drift from that graph
-// contract.
-func (binding *NativeBinding) Ownership() legacy.Ownership {
-	return binding.adapterProfile.Ownership
+// SessionAdapterProfile is the graph-native protocol contract consumed by the
+// gateway. Returning a defensive clone keeps the binding's mounted boundary
+// selection immutable without recreating legacy Ownership/Capabilities methods.
+func (binding *NativeBinding) SessionAdapterProfile() SessionAdapterProfile {
+	return binding.adapterProfile.Clone()
 }
 
-func (binding *NativeBinding) Capabilities() legacy.Capabilities {
-	result := binding.adapterProfile.Capabilities
-	result.Observers = slices.Clone(binding.adapterProfile.Capabilities.Observers)
-	return result
-}
 func (binding *NativeBinding) Graph() ir.Graph { return binding.plan.Graph() }
 
 func (binding *NativeBinding) Start(
@@ -267,8 +261,6 @@ func eraseNativeBytes(value []byte) {
 		value[index] = 0
 	}
 }
-
-var _ legacy.Binding = (*NativeBinding)(nil)
 
 type nativeComponentResult struct {
 	name string

@@ -15,6 +15,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/gateway"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -198,7 +199,7 @@ func TestProbeRealtimeCUExpectedResolutionClosesEveryFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			fixture := &realtimeCUProfileProbeBindingFixture{
-				Binding: binding, withoutInspection: test.withoutInspection,
+				SessionBinding: binding, withoutInspection: test.withoutInspection,
 				forceNotReady: test.forceNotReady, closeErr: test.closeErr,
 				started: make(chan realtimeCUProfileProbeClosedRuntime, 1),
 			}
@@ -222,7 +223,7 @@ func TestProbeRealtimeCUExpectedResolutionClosesEveryFailurePath(t *testing.T) {
 	}
 }
 
-func realtimeCUProfileProbeFixture(t *testing.T) (legacy.Binding, *graphconfig.Plan) {
+func realtimeCUProfileProbeFixture(t *testing.T) (gateway.SessionBinding, *graphconfig.Plan) {
 	t.Helper()
 	deployments := realtimeCUProfileTestDeployments()
 	verifier := &fixtureRealtimeCUDeploymentVerifier{identity: deployments}
@@ -265,7 +266,7 @@ type realtimeCUProfileProbeClosedRuntime interface {
 }
 
 type realtimeCUProfileProbeBindingFixture struct {
-	legacy.Binding
+	gateway.SessionBinding
 	withoutInspection bool
 	forceNotReady     bool
 	closeErr          error
@@ -275,7 +276,7 @@ type realtimeCUProfileProbeBindingFixture struct {
 func (fixture *realtimeCUProfileProbeBindingFixture) Start(
 	_ context.Context, options legacy.Options,
 ) (legacy.Runtime, error) {
-	runtime, err := fixture.Binding.Start(context.Background(), options)
+	runtime, err := fixture.SessionBinding.Start(context.Background(), options)
 	if err != nil {
 		return nil, err
 	}

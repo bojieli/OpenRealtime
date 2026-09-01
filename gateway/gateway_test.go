@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -56,6 +57,31 @@ func (bind legacyOwnershipBinding) Ownership() binding.Ownership {
 	ownership := bind.Binding.Ownership()
 	ownership.Interaction = ""
 	return ownership
+}
+
+type projectionlessBinding struct{}
+
+func (projectionlessBinding) Name() string { return "projectionless" }
+func (projectionlessBinding) Start(
+	context.Context, binding.Options,
+) (binding.Runtime, error) {
+	return nil, errors.New("projectionless binding must be rejected before start")
+}
+
+type countedLegacyBinding struct {
+	binding.Binding
+	ownershipCalls    atomic.Int32
+	capabilitiesCalls atomic.Int32
+}
+
+func (bind *countedLegacyBinding) Ownership() binding.Ownership {
+	bind.ownershipCalls.Add(1)
+	return bind.Binding.Ownership()
+}
+
+func (bind *countedLegacyBinding) Capabilities() binding.Capabilities {
+	bind.capabilitiesCalls.Add(1)
+	return bind.Binding.Capabilities()
 }
 
 func (staticASR) Descriptor() v1.Descriptor {
@@ -705,6 +731,36 @@ func TestHealthExpandsLegacyInteractionOwnership(t *testing.T) {
 	ownership := health["ownership"].(map[string]any)
 	if ownership["interaction"] != ownership["floor"] || ownership["interaction"] != "engine" {
 		t.Fatalf("legacy ownership was not expanded at the public seam: %v", ownership)
+	}
+}
+
+func TestGatewayRejectsSessionBindingWithoutGraphContractOrLegacyProjection(t *testing.T) {
+	_, err := gateway.New(gateway.Config{Binding: projectionlessBinding{}})
+	if err == nil || !strings.Contains(err.Error(), "neither an exact graph adapter profile nor the retained legacy contract") {
+		t.Fatalf("projectionless binding error = %v", err)
+	}
+}
+
+func TestGatewaySnapshotsRetainedLegacyContractOnce(t *testing.T) {
+	inner, err := cascade.New(cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "hi"}, nil },
+		Fast:       fast(), Slow: slow(), Speech: toneSpeech{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bind := &countedLegacyBinding{Binding: inner}
+	server, err := gateway.New(gateway.Config{Binding: bind})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listening := httptest.NewServer(testGatewayHandler(server))
+	defer listening.Close()
+	_ = getHealth(t, listening.URL)
+	_ = getHealth(t, listening.URL)
+	if bind.ownershipCalls.Load() != 1 || bind.capabilitiesCalls.Load() != 1 {
+		t.Fatalf("legacy contract resolved ownership=%d capabilities=%d times, want one each",
+			bind.ownershipCalls.Load(), bind.capabilitiesCalls.Load())
 	}
 }
 

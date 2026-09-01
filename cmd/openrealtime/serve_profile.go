@@ -39,7 +39,7 @@ const (
 	profileHostProcessArtifactID              = "go://openrealtime/openrealtime-process"
 	profileHostScenarioSuiteArtifactID        = "go://github.com/bojieli/OpenRealtime/bench/scenario/graphnative/application/v1"
 	profileHostScenarioConversationArtifactID = "go://github.com/bojieli/OpenRealtime/graphs/scenario-conversation/application/v1"
-	profileHostScenarioProviderArtifactID     = "go://github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation/session-provider/v1"
+	profileHostScenarioProviderArtifactID     = "go://github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation/session-provider/v2"
 	profileHostScenarioDependencyArtifactID   = "go://github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation/session-dependencies/v1"
 )
 

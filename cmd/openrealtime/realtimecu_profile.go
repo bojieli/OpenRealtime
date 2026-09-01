@@ -21,6 +21,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/gateway"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -50,7 +51,7 @@ const (
 	realtimeCULocalObserverName      = "openrealtime.realtime-cu.local-audiovisual-observer"
 
 	realtimeCUApplicationArtifactID = "go://github.com/bojieli/OpenRealtime/graphs/realtime-computer-use/application/v1"
-	realtimeCUProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-provider/v1"
+	realtimeCUProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-provider/v2"
 	realtimeCUInspectionTokenTTLMS  = uint64((5 * time.Minute) / time.Millisecond)
 	realtimeCUAttachedKeyframeMode  = "attached-keyframe-v1"
 	realtimeCUVisualChangeThreshold = 0.01
@@ -532,7 +533,7 @@ type realtimeCUProfileProbeRuntime interface {
 // cannot invent task-specific selected paths.
 func probeRealtimeCUExpectedResolution(
 	ctx context.Context,
-	binding legacy.Binding,
+	binding gateway.SessionBinding,
 	plan *graphconfig.Plan,
 ) (resolution bench.LiveResolution, resultErr error) {
 	if ctx == nil {

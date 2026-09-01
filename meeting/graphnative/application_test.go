@@ -157,7 +157,7 @@ func TestMeetingApplicationRegistrationResolvesExactProfileWithoutResources(t *t
 		t.Fatalf("resolved meeting profile plan=%+v binding=%q",
 			resolved.Plan.Identity(), resolved.Binding.Name())
 	}
-	if observers := resolved.Binding.Capabilities().Observers; !slices.Equal(observers, []string{"meeting-notes", "screen"}) {
+	if observers := resolved.Binding.SessionAdapterProfile().Capabilities.Observers; !slices.Equal(observers, []string{"meeting-notes", "screen"}) {
 		t.Fatalf("snapshotted meeting observers = %v", observers)
 	}
 	if fixture.mountFactories.Load() != 0 || fixture.adapterFactories.Load() != 0 {

@@ -172,7 +172,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		// name a voice from a hosted catalogue on a deployment synthesising
 		// with something else entirely, which is a client told what it is
 		// hearing and told wrong.
-		voice: config.Binding.Capabilities().Voice.InForce, modalities: []string{"audio"},
+		voice: config.bindingContract.capabilities.Voice.InForce, modalities: []string{"audio"},
 		gate:   perception.DefaultGateConfig(),
 		limits: config.VideoLimits,
 	}
@@ -529,7 +529,7 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 		current.outputFormat = update.Audio.Output.Format.audioFormat
 	}
 	if update.Audio.Output.Voice != "" {
-		if voice := session.config.Binding.Capabilities().Voice; voice.Selectable {
+		if voice := session.config.bindingContract.capabilities.Voice; voice.Selectable {
 			current.voice = update.Audio.Output.Voice
 		} else if voice.InForce != "" && update.Audio.Output.Voice == voice.InForce {
 			// A client generated from the base Realtime API normally repeats a
@@ -563,7 +563,7 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 			// the floor cannot hand over what it does not hold, and accepting
 			// the declaration anyway would leave the client waiting to be
 			// asked while the model answered on its own schedule.
-			if !session.config.Binding.Capabilities().ManualTurns {
+			if !session.config.bindingContract.capabilities.ManualTurns {
 				refused = append(refused, clientError{
 					code:  "unsupported_value",
 					param: "session.audio.input.turn_detection",
@@ -615,7 +615,7 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 	if update.OpenRealtime != nil {
 		response, err := openrealtime.NegotiateSession(
 			*update.OpenRealtime, session.supportedFeatures(), session.config.VideoLimits,
-			session.config.Binding.Capabilities().Observers)
+			session.config.bindingContract.capabilities.Observers)
 		if err != nil {
 			return err
 		}
@@ -692,10 +692,11 @@ func (session *session) update(update sessionUpdateBody, causedBy string) error 
 }
 
 // supportedFeatures is what this deployment can actually offer, which is the
-// binding's capability set rather than a static list. Negotiating a feature
-// the binding cannot provide would be promising and then failing.
+// validated session contract's capability set rather than a static list.
+// Negotiating a feature the mounted graph cannot provide would be promising
+// and then failing.
 func (session *session) supportedFeatures() []openrealtime.Feature {
-	capabilities := session.config.Binding.Capabilities()
+	capabilities := session.config.bindingContract.capabilities
 	var supported []openrealtime.Feature
 	if capabilities.Video {
 		supported = append(supported, openrealtime.FeatureVideoInput)
@@ -979,7 +980,7 @@ func (session *session) sessionEvent(eventType string) map[string]any {
 		"type": "realtime", "id": session.id, "object": "realtime.session", "model": session.model,
 		"output_modalities": current.modalities, "instructions": current.instruction,
 		"tools": tools, "tool_choice": "auto",
-		"max_output_tokens": maxOutputTokens(session.config.Binding.Capabilities().MaxOutputTokens),
+		"max_output_tokens": maxOutputTokens(session.config.bindingContract.capabilities.MaxOutputTokens),
 		"audio": map[string]any{
 			"input": map[string]any{
 				"format":         current.inputFormat,

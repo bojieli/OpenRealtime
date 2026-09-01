@@ -27,7 +27,6 @@ import (
 	"time"
 
 	effectauthority "github.com/bojieli/OpenRealtime/authority"
-	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
@@ -48,9 +47,10 @@ func (config Config) nextSessionID() string {
 }
 
 type Config struct {
-	// Binding provides session runtimes. It is the only thing the gateway
-	// needs to know about how conversation actually happens.
-	Binding binding.Binding
+	// Binding provides session runtimes. Its minimal start seam deliberately
+	// carries no topology or capability projection; New resolves those protocol
+	// facts from an exact graph adapter profile or the retained legacy fallback.
+	Binding SessionBinding
 	// Token, when set, is the bearer token required on the upgrade request.
 	Token string
 	// Model is the compatibility model identifier reported to clients.
@@ -120,7 +120,8 @@ type Config struct {
 	// profile instead of reporting only caller-asserted binding labels.
 	ServerProfile func() pluginruntime.Live
 
-	management *gatewayManagement
+	management      *gatewayManagement
+	bindingContract sessionBindingContract
 }
 
 // Server serves /v1/realtime and /healthz.
@@ -131,9 +132,14 @@ type Server struct {
 
 // New validates the configuration and creates a server.
 func New(config Config) (*Server, error) {
-	if config.Binding == nil {
+	if nilInterface(config.Binding) {
 		return nil, errors.New("the gateway requires a binding")
 	}
+	bindingContract, err := resolveSessionBindingContract(config.Binding)
+	if err != nil {
+		return nil, fmt.Errorf("gateway binding contract: %w", err)
+	}
+	config.bindingContract = bindingContract.clone()
 	config.Model = strings.TrimSpace(config.Model)
 	if config.Model == "" {
 		config.Model = "openrealtime"
@@ -171,10 +177,10 @@ func New(config Config) (*Server, error) {
 	managementHandlerSupplied := !nilInterface(config.ManagementHandler)
 	switch {
 	case !inspectionSupplied && !managementHandlerSupplied:
-		var err error
-		managementPlane, err = newGatewayManagement(config.InspectionTokenTTL)
-		if err != nil {
-			return nil, err
+		var managementErr error
+		managementPlane, managementErr = newGatewayManagement(config.InspectionTokenTTL)
+		if managementErr != nil {
+			return nil, managementErr
 		}
 	case !inspectionSupplied || !managementHandlerSupplied:
 		return nil, errors.New("gateway session inspection and management handler must be supplied together")
@@ -280,7 +286,7 @@ const frameReadHeadroom = 5
 
 func (server *Server) readLimit() int64 {
 	limit := int64(server.config.MaxAudioFrameBytes) * 2
-	if server.config.Binding.Capabilities().Video {
+	if server.config.bindingContract.capabilities.Video {
 		legal := int64(server.config.VideoLimits.MaxTransportBytes())
 		limit = max(limit, legal*frameReadHeadroom/4)
 	}
@@ -307,8 +313,8 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 	payload := map[string]any{
 		"status": status, "model": server.config.Model,
 		"binding":      server.config.Binding.Name(),
-		"ownership":    server.config.Binding.Ownership().Effective(),
-		"capabilities": server.config.Binding.Capabilities(),
+		"ownership":    server.config.bindingContract.ownership,
+		"capabilities": cloneBindingCapabilities(server.config.bindingContract.capabilities),
 		"protocol": map[string]any{
 			"openai_realtime": "pinned",
 			"openrealtime":    map[string]any{"version": openrealtime.Version, "features": openrealtime.Features()},

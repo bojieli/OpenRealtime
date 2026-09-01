@@ -65,7 +65,7 @@ func TestMeetingBundleSealsExactProviderWithoutAcquiringPlugins(t *testing.T) {
 		t.Fatalf("provider construction acquired mount=%d adapter=%d",
 			fixture.mountFactories.Load(), fixture.adapterFactories.Load())
 	}
-	capabilities := result.Binding.Capabilities()
+	capabilities := result.Binding.SessionAdapterProfile().Capabilities
 	if !capabilities.Video || !capabilities.ComputerUse || !capabilities.Observations ||
 		!capabilities.FastSlow || !capabilities.ManualTurns ||
 		len(capabilities.Observers) != 1 || capabilities.Observers[0] != "screen" {

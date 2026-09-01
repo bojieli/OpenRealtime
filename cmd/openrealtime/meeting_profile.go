@@ -54,7 +54,7 @@ const (
 	meetingVisualProviderName    = "openrealtime.meeting-assistant.local-vision"
 
 	meetingApplicationArtifactID = "go://github.com/bojieli/OpenRealtime/graphs/meeting-assistant/application/v1"
-	meetingProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/session-provider/v1"
+	meetingProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/session-provider/v2"
 	meetingAdapterArtifactID     = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/session-adapter/v1"
 	meetingRuntimeArtifactID     = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/foreground-runtime/v1"
 	meetingWireArtifactID        = "go://github.com/bojieli/OpenRealtime/meeting/graphnative/foreground-wire/v1"

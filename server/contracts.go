@@ -22,8 +22,8 @@ const (
 
 var (
 	sessionProviderContract = serverContract(
-		"openrealtime.server.session_provider", 1,
-		"Start(ctx, session options) -> session runtime; immutable profile projection v1",
+		"openrealtime.server.session_provider", 2,
+		"Name plus Start(ctx, session options) -> session runtime; exact graph adapter contract or validated legacy fallback v2",
 	)
 	httpRoutesContract = serverContract(
 		"openrealtime.server.http_routes", 1,
@@ -49,13 +49,13 @@ var (
 
 // SessionProvider is the exported server-plugin boundary that creates one
 // independent realtime session. It deliberately does not expose a concrete
-// graph, legacy preset, model client, or UI implementation. The current
-// binding vocabulary remains the protocol compatibility projection while
-// graph-native providers migrate behind this interface.
+// graph, legacy preset, model client, UI implementation, or lossy ownership and
+// capability projection. Gateway validation obtains graph-native protocol facts
+// from the provider's exact frozen adapter profile; retained legacy providers
+// are handled by a separate compatibility check until their launch path is
+// deleted.
 type SessionProvider interface {
 	Name() string
-	Ownership() binding.Ownership
-	Capabilities() binding.Capabilities
 	Start(context.Context, binding.Options) (binding.Runtime, error)
 }
 

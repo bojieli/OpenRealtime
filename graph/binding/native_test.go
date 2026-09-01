@@ -15,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/elements"
 	videograph "github.com/bojieli/OpenRealtime/elements/video"
+	"github.com/bojieli/OpenRealtime/gateway"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
@@ -52,16 +53,19 @@ func TestNativeBindingRunsAnExactPlanThroughTypedSessionBoundaries(t *testing.T)
 	if bind.Graph().Fingerprint != plan.Graph().Fingerprint {
 		t.Fatal("native binding did not retain the immutable plan graph")
 	}
-	if got := bind.Ownership(); got != profile.Ownership {
-		t.Fatalf("native ownership projection = %+v, want frozen profile %+v", got, profile.Ownership)
+	selectedProfile := bind.SessionAdapterProfile()
+	if !reflect.DeepEqual(selectedProfile, profile) {
+		t.Fatalf("native adapter profile = %+v, want frozen profile %+v", selectedProfile, profile)
 	}
-	capabilities := bind.Capabilities()
-	if !reflect.DeepEqual(capabilities, profile.Capabilities) {
-		t.Fatalf("native capability projection = %+v, want frozen profile %+v", capabilities, profile.Capabilities)
+	selectedProfile.Capabilities.Observers[0] = "mutated"
+	if got := bind.SessionAdapterProfile(); !reflect.DeepEqual(got, profile) {
+		t.Fatalf("caller mutated native adapter profile: %+v", got)
 	}
-	capabilities.Observers[0] = "mutated"
-	if got := bind.Capabilities(); !reflect.DeepEqual(got, profile.Capabilities) {
-		t.Fatalf("caller mutated native capability projection: %+v", got)
+	if _, legacyProjection := any(bind).(legacy.Binding); legacyProjection {
+		t.Fatal("graph-native binding still exposes legacy ownership/capability projection")
+	}
+	if err := gateway.ValidateSessionBinding(bind); err != nil {
+		t.Fatalf("gateway refused exact graph-native adapter contract: %v", err)
 	}
 
 	live, err := bind.Start(context.Background(), legacy.Options{

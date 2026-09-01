@@ -2632,26 +2632,35 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   Normal, effect-free regression, exact-production-profile, race, and vet
   coverage exercise construction, round-trip, mutation isolation, and drift
   refusal.
-- [ ] Replace topology-derived ownership validation with graph contract and live
+- [x] Replace topology-derived ownership validation with graph contract and live
   capability validation.
   - [x] Eliminate the duplicated ownership/capability state from the
-    graph-native binding. Its temporary legacy gateway projection is now
-    defensively derived only from the one frozen, fingerprinted session-adapter
-    profile, so construction cannot leave a second shadow copy that later
-    drifts from the graph contract.
-  - [x] Remove shared topology-combination restrictions and bind the remaining
-    gateway adapter projection to one exact graph contract. Generic
+    graph-native binding. `NativeBinding` no longer implements the legacy
+    `Binding` interface or exposes `Ownership`/`Capabilities`; it returns a
+    defensive copy of the one frozen, fingerprinted session-adapter profile,
+    so construction cannot leave a second shadow copy that later drifts from
+    the graph contract.
+  - [x] Remove shared topology-combination restrictions and replace the
+    graph-native gateway projection with one exact graph contract. Generic
     `Ownership.Validate` now checks only the owner vocabulary; the frozen
     `SessionAdapterProfile` fingerprints its graph, boundary map, ownership,
     and advertised capabilities. It refuses video, computer-use, observation,
     manual-turn, selectable-voice, audio-input/output, transcription,
     text-injection, or visual-input claims without their required typed
     operations; named observers additionally require observation support. It
-    also refuses absent or drifted mounted boundaries. Authenticated inspection
-    and benchmark evidence separately retain each live node capability. The
-    parent remains open until the gateway consumes graph/live capabilities
-    directly and the legacy
-    `Binding.Ownership`/`Capabilities` projection is deleted.
+    also refuses absent or drifted mounted boundaries. The gateway's session
+    seam now contains only `Name` and `Start`; graph-native providers supply
+    their exact Graph IR plus frozen adapter profile, which the gateway
+    revalidates before using its operation-backed protocol capabilities.
+    Authenticated inspection and benchmark evidence separately retain each
+    live node capability. The version-2 server-provider contract carries the
+    same projection-free seam. Retained legacy launches use a separately
+    validated, construction-time snapshot until their independent Phase 8
+    deletion gate; they cannot make `NativeBinding` regain the old interface.
+    Normal affected suites, fifty shuffled graph/legacy contract runs, ten
+    shuffled server-profile E2E runs, targeted race, vet, Windows/amd64 and
+    Darwin/arm64 production builds, and the low-parallelism full repository
+    gate are green.
 - [x] Load separate `.ortg` or normalized graph artifacts, typed element values,
   deployment bindings, secret references, and evidence profiles.
   - [x] Topology, lock, strict values, deployment-binding, and secret-reference

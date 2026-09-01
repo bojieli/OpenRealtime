@@ -30,6 +30,7 @@ import (
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	graphsecret "github.com/bojieli/OpenRealtime/graph/secret"
@@ -573,12 +574,10 @@ type capturingNativeProvider struct {
 	sessions chan *graphbinding.NativeRuntime
 }
 
-func (provider *capturingNativeProvider) Name() string { return provider.binding.Name() }
-func (provider *capturingNativeProvider) Ownership() legacy.Ownership {
-	return provider.binding.Ownership()
-}
-func (provider *capturingNativeProvider) Capabilities() legacy.Capabilities {
-	return provider.binding.Capabilities()
+func (provider *capturingNativeProvider) Name() string    { return provider.binding.Name() }
+func (provider *capturingNativeProvider) Graph() ir.Graph { return provider.binding.Graph() }
+func (provider *capturingNativeProvider) SessionAdapterProfile() graphbinding.SessionAdapterProfile {
+	return provider.binding.SessionAdapterProfile()
 }
 func (provider *capturingNativeProvider) Start(
 	ctx context.Context, options legacy.Options,

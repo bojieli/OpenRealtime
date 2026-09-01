@@ -9,6 +9,7 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/gateway"
 	"github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -26,7 +27,7 @@ type scenarioProfileProbeRuntime interface {
 // reviewed benchmark contract.
 func probeScenarioExpectedResolution(
 	ctx context.Context,
-	binding legacy.Binding,
+	binding gateway.SessionBinding,
 	plan *config.Plan,
 	configuration bench.ArtifactIdentity,
 	settings legacy.Settings,
