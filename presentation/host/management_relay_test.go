@@ -23,6 +23,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/schema"
+	"github.com/bojieli/OpenRealtime/graph/syntax"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
@@ -260,6 +261,17 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 		Document: renameInput.Document, Edge: "source.out->source.in",
 	}
 	removeResult := managementRelayEdgeRemovalResult(t, removeInput)
+	createInput := management.CreateDocumentEdgeRequest{
+		Document: management.AuthoringDocument{
+			Path:     "relay.ortg",
+			Source:   "graph relay {\n    test.Managed :: source;\n    test.Managed :: sink;\n}\n",
+			Revision: 4,
+		},
+		ExpectedFingerprint: "sha256:" + strings.Repeat("a", 64), Edge: "restored",
+		From: management.AuthoringEdgeEndpoint{Node: "source", Port: "out"},
+		To:   management.AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
+	}
+	createResult := managementRelayEdgeCreationResult(t, createInput)
 
 	type observation struct{ method, path, capability, authorization string }
 	seen := make(chan observation, 12)
@@ -303,6 +315,12 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 				t.Errorf("decode edge-removal request: %v", err)
 			}
 			_ = json.NewEncoder(writer).Encode(removeResult)
+		case management.APIPrefix + "/authoring/create-edge":
+			var input management.CreateDocumentEdgeRequest
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Errorf("decode edge-creation request: %v", err)
+			}
+			_ = json.NewEncoder(writer).Encode(createResult)
 		case management.APIPrefix + "/authoring/read":
 			var input management.SourceReadRequest
 			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
@@ -457,6 +475,30 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			removeResponse.Header.Get(ManagementIdentityHeader), removePayload)
 	}
 
+	createBody, err := json.Marshal(createInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createRequest, _ := http.NewRequest(http.MethodPost,
+		hostServer.URL+"/client/v1/management/authoring/create-edge", bytes.NewReader(createBody))
+	createRequest.Header.Set("Content-Type", "application/json")
+	createRequest.Header.Set(management.CapabilityHeader, operatorCapability)
+	createRequest.Header.Set("Authorization", "Bearer must-not-cross")
+	createResponse, err := http.DefaultClient.Do(createRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createPayload, _ := io.ReadAll(createResponse.Body)
+	createResponse.Body.Close()
+	wantCreateIdentity := "authoring:edge.create:" + createResult.PreviousFingerprint + ":" +
+		createResult.CandidateFingerprint + ":" + createResult.Edits.SourceDigest
+	if createResponse.StatusCode != http.StatusOK ||
+		createResponse.Header.Get(ManagementIdentityHeader) != wantCreateIdentity ||
+		strings.Contains(string(createPayload), operatorCapability) {
+		t.Fatalf("edge-creation relay status=%d identity=%q body=%s", createResponse.StatusCode,
+			createResponse.Header.Get(ManagementIdentityHeader), createPayload)
+	}
+
 	readInput := management.SourceReadRequest{
 		FormatVersion: management.SourceReadFormatVersion,
 		RootIdentity:  "sha256:" + strings.Repeat("e", 64),
@@ -521,7 +563,7 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			writeResponse.Header.Get(ManagementIdentityHeader), writePayload)
 	}
 
-	for range len(checks) + 5 {
+	for range len(checks) + 6 {
 		observation := <-seen
 		if observation.capability != operatorCapability || observation.authorization != "" {
 			t.Fatalf("management relay crossed credential planes: %+v", observation)
@@ -710,6 +752,46 @@ func TestManagementRelayRejectsEdgeRemovalThatMutatesAnotherSourceByte(t *testin
 	}
 }
 
+func TestManagementRelayRejectsEdgeCreationThatMutatesAnotherSourceByte(t *testing.T) {
+	input := management.CreateDocumentEdgeRequest{
+		Document: management.AuthoringDocument{
+			Path:   "relay.ortg",
+			Source: "graph relay {\n    test.Managed :: source;\n    test.Managed :: sink;\n}\n",
+		},
+		ExpectedFingerprint: "sha256:" + strings.Repeat("a", 64), Edge: "restored",
+		From: management.AuthoringEdgeEndpoint{Node: "source", Port: "out"},
+		To:   management.AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
+	}
+	forged := managementRelayEdgeCreationResult(t, input)
+	forged.Edits.Edits[0].NewText += "\n"
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(forged)
+	}))
+	defer backend.Close()
+	base, err := url.Parse(backend.URL + management.APIPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/authoring/create-edge", bytes.NewReader(payload))
+	request.SetPathValue("action", "create-edge")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(management.CapabilityHeader, "operator_edge_secret")
+	response := httptest.NewRecorder()
+	NewManagementRelayFactory(nil, nil).relayAuthoring(
+		base, relayTarget{DialTimeout: 15 * time.Second}, response, request,
+	)
+	if response.Code != http.StatusBadGateway || response.Header().Get(ManagementIdentityHeader) != "" {
+		t.Fatalf("forged edge creation status=%d identity=%q body=%s", response.Code,
+			response.Header().Get(ManagementIdentityHeader), response.Body.String())
+	}
+}
+
 func managementRelayRenameResult(
 	t testing.TB, input management.RenameDocumentRequest,
 ) management.RenameDocumentResult {
@@ -747,6 +829,32 @@ func managementRelayEdgeRemovalResult(
 	}
 	result := management.RemoveDocumentEdgeResult{Edge: input.Edge, Edits: edits}
 	if err := management.ValidateRemoveDocumentEdgeResult(input, result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func managementRelayEdgeCreationResult(
+	t testing.TB, input management.CreateDocumentEdgeRequest,
+) management.CreateDocumentEdgeResult {
+	t.Helper()
+	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+		resolve.NewCatalog(), editor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := document.CreateEdgeID(input.Edge,
+		syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
+		syntax.Endpoint{Node: input.To.Node, Port: input.To.Port}, syntax.Delivery(input.Delivery))
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := sha256.Sum256([]byte(input.ExpectedFingerprint + "\x00" + input.Edge))
+	result := management.CreateDocumentEdgeResult{
+		Edge: input.Edge, PreviousFingerprint: input.ExpectedFingerprint,
+		CandidateFingerprint: fmt.Sprintf("sha256:%x", candidate), Edits: edits,
+	}
+	if err := management.ValidateCreateDocumentEdgeResult(input, result); err != nil {
 		t.Fatal(err)
 	}
 	return result

@@ -2,7 +2,8 @@ const MAX_CAPABILITY_BYTES = 512;
 const encoder = new TextEncoder();
 const OPERATIONS = new Set([
   "graph.read", "descriptor.read", "schema.read",
-  "authoring.analyze", "authoring.rename", "authoring.edge.remove", "authoring.compile", "authoring.render",
+  "authoring.analyze", "authoring.rename", "authoring.edge.remove", "authoring.edge.create",
+  "authoring.compile", "authoring.render",
   "authoring.source.read", "authoring.source.create", "authoring.source.update",
 ]);
 

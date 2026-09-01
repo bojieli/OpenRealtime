@@ -320,6 +320,21 @@ func (client *Client) RemoveEdge(
 	return result, err
 }
 
+func (client *Client) CreateEdge(
+	ctx context.Context, input management.CreateDocumentEdgeRequest,
+) (management.CreateDocumentEdgeResult, error) {
+	if err := management.ValidateCreateDocumentEdgeRequest(input); err != nil {
+		return management.CreateDocumentEdgeResult{}, err
+	}
+	var result management.CreateDocumentEdgeResult
+	err := client.post(ctx, []string{"authoring", "create-edge"}, management.CreateDocumentEdge,
+		"authoring", input, maxAuthoringRequest, maxJSONBytes, &result)
+	if err == nil {
+		err = management.ValidateCreateDocumentEdgeResult(input, result)
+	}
+	return result, err
+}
+
 func (client *Client) Compile(
 	ctx context.Context, document management.AuthoringDocument,
 ) (management.CompileResult, error) {

@@ -135,6 +135,65 @@ func (engine *AuthoringEngine) RemoveEdge(
 	return result, nil
 }
 
+func (engine *AuthoringEngine) CreateEdge(
+	ctx context.Context, input CreateDocumentEdgeRequest,
+) (CreateDocumentEdgeResult, error) {
+	if err := checkAuthoringContext(ctx); err != nil {
+		return CreateDocumentEdgeResult{}, err
+	}
+	if err := ValidateCreateDocumentEdgeRequest(input); err != nil {
+		return CreateDocumentEdgeResult{}, err
+	}
+	current, err := engine.Compile(ctx, input.Document)
+	if err != nil {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: compile edge-creation predecessor: %v", ErrInvalid, err)
+	}
+	if current.Graph.Fingerprint != input.ExpectedFingerprint {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: edge-creation predecessor fingerprint changed", ErrConflict)
+	}
+	document, err := editor.AnalyzeWithOptions(
+		ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
+			Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
+		},
+	)
+	if err != nil {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: analyze topology for edge creation: %v", ErrInvalid, err)
+	}
+	edits, err := document.CreateEdgeID(
+		input.Edge,
+		syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
+		syntax.Endpoint{Node: input.To.Node, Port: input.To.Port},
+		syntax.Delivery(input.Delivery),
+	)
+	if err != nil {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: create topology edge: %v", ErrInvalid, err)
+	}
+	created, err := editor.ApplyEdits([]byte(input.Document.Source), edits)
+	if err != nil {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("edge creation produced unappliable edits: %w", err)
+	}
+	revision, err := nextAuthoringRevision(input.Document.Revision)
+	if err != nil {
+		return CreateDocumentEdgeResult{}, err
+	}
+	candidate := input.Document
+	candidate.Source = string(created)
+	candidate.Revision = revision
+	candidate.Lock = &current.Lock
+	compiled, err := engine.Compile(ctx, candidate)
+	if err != nil {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: compile edge-creation candidate: %v", ErrInvalid, err)
+	}
+	result := CreateDocumentEdgeResult{
+		Edge: input.Edge, PreviousFingerprint: input.ExpectedFingerprint,
+		CandidateFingerprint: compiled.Graph.Fingerprint, Edits: edits,
+	}
+	if err := ValidateCreateDocumentEdgeResult(input, result); err != nil {
+		return CreateDocumentEdgeResult{}, fmt.Errorf("authoring edge creation produced invalid edits: %w", err)
+	}
+	return result, nil
+}
+
 func (engine *AuthoringEngine) Compile(
 	ctx context.Context, input AuthoringDocument,
 ) (CompileResult, error) {

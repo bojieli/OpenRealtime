@@ -298,6 +298,69 @@ func TestRemoveEdgeIDIsCanonicalExactAndStaleSafe(t *testing.T) {
 	}
 }
 
+func TestCreateEdgeIDIsCanonicalExactAndStaleSafe(t *testing.T) {
+	source := `graph create {
+    test.Source :: producer;
+    test.Sink :: consumer;
+    // retained trailing graph comment
+}
+`
+	document, err := Analyze("create.ortg", []byte(source), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := document.CreateEdgeID("restored",
+		syntax.Endpoint{Node: "producer", Port: "out"},
+		syntax.Endpoint{Node: "consumer", Port: "in"}, syntax.Lossless)
+	if err != nil || edits.Path != "create.ortg" || edits.SourceDigest != document.SourceDigest() ||
+		len(edits.Edits) != 1 {
+		t.Fatalf("edge-creation edits = %+v, %v", edits, err)
+	}
+	created, err := ApplyEdits(document.Source(), edits)
+	want := `graph create {
+    test.Source :: producer;
+    test.Sink :: consumer;
+    edge restored = producer.out -> consumer.in;
+    // retained trailing graph comment
+}
+`
+	if err != nil || string(created) != want {
+		t.Fatalf("edge-created source:\n%s\nwant:\n%s\nerror: %v", created, want, err)
+	}
+	parsed, err := syntax.Parse("create.ortg", created)
+	if err != nil || syntax.Format(parsed) != string(created) {
+		t.Fatalf("edge-created source is not canonical: %v", err)
+	}
+	if _, err := ApplyEdits(append(document.Source(), ' '), edits); !errors.Is(err, ErrStalePosition) {
+		t.Fatalf("stale edge-creation apply = %v", err)
+	}
+	for _, invalid := range []struct {
+		edge     string
+		from, to syntax.Endpoint
+		delivery syntax.Delivery
+	}{
+		{edge: "bad.name", from: syntax.Endpoint{Node: "producer", Port: "out"},
+			to: syntax.Endpoint{Node: "consumer", Port: "in"}, delivery: syntax.Lossless},
+		{edge: "new", from: syntax.Endpoint{Node: "missing", Port: "out"},
+			to: syntax.Endpoint{Node: "consumer", Port: "in"}, delivery: syntax.Lossless},
+		{edge: "new", from: syntax.Endpoint{Node: "producer", Port: "out"},
+			to: syntax.Endpoint{Node: "consumer", Port: "in"}, delivery: "unknown"},
+	} {
+		if _, err := document.CreateEdgeID(invalid.edge, invalid.from, invalid.to, invalid.delivery); !errors.Is(err, ErrInvalidEdgeMutation) {
+			t.Fatalf("invalid edge creation %+v = %v", invalid, err)
+		}
+	}
+	updated, err := Analyze("created.ortg", created, testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := updated.CreateEdgeID("restored",
+		syntax.Endpoint{Node: "producer", Port: "out"},
+		syntax.Endpoint{Node: "consumer", Port: "in"}, syntax.Lossy); !errors.Is(err, ErrInvalidEdgeMutation) {
+		t.Fatalf("duplicate edge creation = %v", err)
+	}
+}
+
 func TestDiagnosticsPositionsCanonicalityAndUnknownContracts(t *testing.T) {
 	catalog := testCatalog(t)
 	broken := []byte(`graph broken {

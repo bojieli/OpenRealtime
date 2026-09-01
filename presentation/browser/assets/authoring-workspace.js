@@ -1,6 +1,7 @@
 const encoder = new TextEncoder();
 const MAX_SOURCE_BYTES = 1 << 20;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
+const NODE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 
 function frozen(value) {
   const copy = structuredClone(value);
@@ -188,6 +189,39 @@ export default {
           const document = checkedDocument(input.path, removed.source, input.revision + 1);
           epoch++;
           return { document, phase: "edge-removed", error: "", sourceRead: null, analysis: null,
+            compiled: null, rendering: null, publication: null };
+        });
+      },
+      createEdge(expectedFingerprint, selected, from, to, delivery = "lossless") {
+        ready();
+        const input = state.document;
+        const graph = state.compiled?.graph;
+        const endpoint = (value, direction) => value && typeof value.node === "string" &&
+          typeof value.port === "string" && graph?.nodes?.some((node) => node.id === value.node &&
+            node.ports?.some((port) => port.name === value.port && port.direction === direction));
+        if (typeof expectedFingerprint !== "string" || !DIGEST.test(expectedFingerprint) ||
+            !graph || graph.fingerprint !== expectedFingerprint || graph.revision !== input.revision ||
+            typeof selected !== "string" || !NODE.test(selected) || selected.length > 256 ||
+            graph.edges?.some((edge) => edge.id === selected) ||
+            !endpoint(from, "output") || !endpoint(to, "input") ||
+            !new Set(["lossless", "lossy"]).has(delivery)) {
+          throw new Error("authoring workspace edge creation is stale or invalid");
+        }
+        if (input.revision >= Number.MAX_SAFE_INTEGER) {
+          throw new Error("authoring workspace document revision is exhausted");
+        }
+        return invoke("creating-edge", async () => {
+          const result = await editing.createEdge(input, expectedFingerprint, selected, from, to, delivery);
+          const source = await editing.applyEdits(input, result.edits);
+          return Object.freeze({ result, source });
+        }, (current, created) => {
+          if (current.compiled?.graph?.fingerprint !== expectedFingerprint ||
+              current.compiled.graph.edges?.some((edge) => edge.id === selected)) {
+            throw new Error("authoring workspace edge selection changed during creation");
+          }
+          const document = checkedDocument(input.path, created.source, input.revision + 1);
+          epoch++;
+          return { document, phase: "edge-created", error: "", sourceRead: null, analysis: null,
             compiled: null, rendering: null, publication: null };
         });
       },

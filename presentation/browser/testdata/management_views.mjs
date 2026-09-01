@@ -49,6 +49,7 @@ const readCalls = [];
 const publicationCalls = [];
 const renameCalls = [];
 const edgeRemovalCalls = [];
+const edgeCreationCalls = [];
 let formatCalls = 0;
 const workspace = Object.freeze({
   snapshot: () => structuredClone(workspaceSnapshot),
@@ -91,6 +92,26 @@ const workspace = Object.freeze({
           .filter((line) => !line.includes("edge optional =")).join("\n"),
         revision: workspaceSnapshot.document.revision + 1 },
       phase: "edge-removed", sourceRead: null, analysis: null, compiled: null, rendering: null,
+      publication: null };
+    for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+    return structuredClone(workspaceSnapshot);
+  },
+  async createEdge(expectedFingerprint, selected, from, to, delivery) {
+    const graph = workspaceSnapshot.compiled?.graph;
+    const endpoint = (value, direction) => graph?.nodes?.some((node) => node.id === value?.node &&
+      node.ports?.some((port) => port.name === value?.port && port.direction === direction));
+    if (!graph || graph.fingerprint !== expectedFingerprint ||
+        graph.edges?.some((edge) => edge.id === selected) ||
+        !endpoint(from, "output") || !endpoint(to, "input") || delivery !== "lossless") {
+      throw new Error("fake workspace received invalid edge-creation selection");
+    }
+    edgeCreationCalls.push({ expectedFingerprint, selected, from, to, delivery });
+    const statement = `    edge ${selected} = ${from.node}.${from.port} -> ${to.node}.${to.port};\n`;
+    workspaceSnapshot = { ...workspaceSnapshot, epoch: workspaceSnapshot.epoch + 1,
+      document: { ...workspaceSnapshot.document,
+        source: workspaceSnapshot.document.source.replace("}\n", `${statement}}\n`),
+        revision: workspaceSnapshot.document.revision + 1 },
+      phase: "edge-created", sourceRead: null, analysis: null, compiled: null, rendering: null,
       publication: null };
     for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
     return structuredClone(workspaceSnapshot);
@@ -268,8 +289,10 @@ workspaceSnapshot = {
   }] } },
   compiled: { graph: { id: "fixture", revision: 1, fingerprint: `sha256:${"c".repeat(64)}`,
     nodes: [
-      { id: "zeta", element: { name: "test.Element" } },
-      { id: "alpha", element: { name: "test.Element" } },
+      { id: "zeta", element: { name: "test.Element" },
+        ports: [{ name: "in", direction: "input" }] },
+      { id: "alpha", element: { name: "test.Element" },
+        ports: [{ name: "out", direction: "output" }] },
     ], edges: [{ id: "optional", from: { node: "alpha", port: "out" },
       to: { node: "zeta", port: "in" } }] } },
   rendering: { fingerprint: `sha256:${"c".repeat(64)}`, format: "mermaid", text: `<svg onload=alert(1)>` },
@@ -319,8 +342,10 @@ if (renameCalls.length !== 1 || renameCalls[0].expectedFingerprint !== `sha256:$
 workspaceSnapshot = { ...workspaceSnapshot, phase: "compiled",
   compiled: { graph: { id: "fixture", revision: 2, fingerprint: `sha256:${"d".repeat(64)}`,
     nodes: [
-      { id: "zeta", element: { name: "test.Element" } },
-      { id: "beta", element: { name: "test.Element" } },
+      { id: "zeta", element: { name: "test.Element" },
+        ports: [{ name: "in", direction: "input" }] },
+      { id: "beta", element: { name: "test.Element" },
+        ports: [{ name: "out", direction: "output" }] },
     ], edges: [{ id: "optional", from: { node: "beta", port: "out" },
       to: { node: "zeta", port: "in" } }] } } };
 for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
@@ -334,6 +359,40 @@ if (edgeRemovalCalls.length !== 1 ||
     workspaceSnapshot.document.revision !== 3 || workspaceSnapshot.document.source.includes("edge optional") ||
     workspaceSnapshot.compiled !== null || !canvas.textContent.includes("Removed optional")) {
   throw new Error("authoring canvas did not initiate a fingerprint-bound edge removal");
+}
+
+workspaceSnapshot = { ...workspaceSnapshot, phase: "compiled",
+  compiled: { graph: { id: "fixture", revision: 3, fingerprint: `sha256:${"e".repeat(64)}`,
+    nodes: [
+      { id: "zeta", element: { name: "test.Element" },
+        ports: [{ name: "in", direction: "input" }] },
+      { id: "beta", element: { name: "test.Element" },
+        ports: [{ name: "out", direction: "output" }] },
+    ], edges: [] } } };
+for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+const outputPort = find(canvas, (entry) => entry.dataset.action === "select-edge-from");
+const inputPort = find(canvas, (entry) => entry.dataset.action === "select-edge-to");
+const edgeName = find(canvas, (entry) => entry.name === "authoring-edge-name");
+const createEdge = find(canvas, (entry) => entry.dataset.action === "create-edge");
+if (!outputPort || !inputPort || !edgeName || !createEdge ||
+    outputPort.dataset.endpoint !== "beta.out" || inputPort.dataset.endpoint !== "zeta.in") {
+  throw new Error("authoring canvas did not derive deterministic directional edge endpoints");
+}
+await outputPort.dispatch("click");
+await inputPort.dispatch("click");
+edgeName.value = "restored";
+await edgeName.dispatch("input");
+await createEdge.dispatch("click");
+if (edgeCreationCalls.length !== 1 ||
+    edgeCreationCalls[0].expectedFingerprint !== `sha256:${"e".repeat(64)}` ||
+    edgeCreationCalls[0].selected !== "restored" ||
+    edgeCreationCalls[0].from.node !== "beta" || edgeCreationCalls[0].from.port !== "out" ||
+    edgeCreationCalls[0].to.node !== "zeta" || edgeCreationCalls[0].to.port !== "in" ||
+    edgeCreationCalls[0].delivery !== "lossless" || workspaceSnapshot.phase !== "edge-created" ||
+    workspaceSnapshot.document.revision !== 4 ||
+    !workspaceSnapshot.document.source.includes("edge restored = beta.out -> zeta.in;") ||
+    workspaceSnapshot.compiled !== null || !canvas.textContent.includes("Created restored")) {
+  throw new Error("authoring canvas did not initiate a fingerprint-bound edge creation");
 }
 
 for (const dispose of disposers.reverse()) await dispose();

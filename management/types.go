@@ -34,6 +34,7 @@ const (
 	AnalyzeDocument    Operation = "authoring.analyze"
 	RenameDocument     Operation = "authoring.rename"
 	RemoveDocumentEdge Operation = "authoring.edge.remove"
+	CreateDocumentEdge Operation = "authoring.edge.create"
 	CompileDocument    Operation = "authoring.compile"
 	RenderGraph        Operation = "authoring.render"
 	ReadSource         Operation = "authoring.source.read"
@@ -141,6 +142,30 @@ type RemoveDocumentEdgeResult struct {
 	Edits editor.EditSet `json:"edits"`
 }
 
+type AuthoringEdgeEndpoint struct {
+	Node string `json:"node"`
+	Port string `json:"port"`
+}
+
+// CreateDocumentEdgeRequest appends one named edge to exact canonical .ortg
+// source currently compiled under ExpectedFingerprint. The engine recompiles
+// the candidate at the next revision before returning its edit set.
+type CreateDocumentEdgeRequest struct {
+	Document            AuthoringDocument     `json:"document"`
+	ExpectedFingerprint string                `json:"expected_fingerprint"`
+	Edge                string                `json:"edge"`
+	From                AuthoringEdgeEndpoint `json:"from"`
+	To                  AuthoringEdgeEndpoint `json:"to"`
+	Delivery            string                `json:"delivery"`
+}
+
+type CreateDocumentEdgeResult struct {
+	Edge                 string         `json:"edge"`
+	PreviousFingerprint  string         `json:"previous_fingerprint"`
+	CandidateFingerprint string         `json:"candidate_fingerprint"`
+	Edits                editor.EditSet `json:"edits"`
+}
+
 type RenderFormat string
 
 const (
@@ -165,6 +190,7 @@ type Authoring interface {
 	Analyze(context.Context, AuthoringDocument) (AnalysisResult, error)
 	Rename(context.Context, RenameDocumentRequest) (RenameDocumentResult, error)
 	RemoveEdge(context.Context, RemoveDocumentEdgeRequest) (RemoveDocumentEdgeResult, error)
+	CreateEdge(context.Context, CreateDocumentEdgeRequest) (CreateDocumentEdgeResult, error)
 	Compile(context.Context, AuthoringDocument) (CompileResult, error)
 	Render(context.Context, RenderRequest) (RenderResult, error)
 }

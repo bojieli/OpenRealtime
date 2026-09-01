@@ -80,6 +80,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		{Operation: management.AnalyzeDocument, Resource: "authoring"},
 		{Operation: management.RenameDocument, Resource: "authoring"},
 		{Operation: management.RemoveDocumentEdge, Resource: "authoring"},
+		{Operation: management.CreateDocumentEdge, Resource: "authoring"},
 		{Operation: management.CompileDocument, Resource: "authoring"},
 		{Operation: management.RenderGraph, Resource: "authoring"},
 		{Operation: management.ReadSource, Resource: sourceRootIdentity},
@@ -231,6 +232,7 @@ func TestObserverDeveloperProfilesExerciseManagementWithoutEffectsInChromium(t *
 				{Operation: management.AnalyzeDocument, Resource: "authoring"},
 				{Operation: management.RenameDocument, Resource: "authoring"},
 				{Operation: management.RemoveDocumentEdge, Resource: "authoring"},
+				{Operation: management.CreateDocumentEdge, Resource: "authoring"},
 				{Operation: management.CompileDocument, Resource: "authoring"},
 				{Operation: management.RenderGraph, Resource: "authoring"},
 			}

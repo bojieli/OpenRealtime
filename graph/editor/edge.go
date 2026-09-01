@@ -46,3 +46,50 @@ func (document *Document) RemoveEdgeID(edgeID string) (EditSet, error) {
 		}},
 	}, nil
 }
+
+// CreateEdgeID returns one atomic full-document replacement that appends a
+// named canonical edge. Semantic connection checks remain the compiler's job;
+// this syntax operation only admits unambiguous declared nodes and bounded
+// identifiers from an immutable canonical snapshot.
+func (document *Document) CreateEdgeID(
+	edgeID string, from, to syntax.Endpoint, delivery syntax.Delivery,
+) (EditSet, error) {
+	if document == nil || !document.parsed || !document.canonical {
+		return EditSet{}, ErrSyntaxUnavailable
+	}
+	validIdentifier := func(value string) bool {
+		return nodeNamePattern.MatchString(value) && len(value) <= document.limits.MaxIdentifierBytes
+	}
+	if !validIdentifier(edgeID) || !validIdentifier(from.Node) || !validIdentifier(from.Port) ||
+		!validIdentifier(to.Node) || !validIdentifier(to.Port) ||
+		(delivery != syntax.Lossless && delivery != syntax.Lossy) {
+		return EditSet{}, fmt.Errorf("%w: edge declaration is not canonical", ErrInvalidEdgeMutation)
+	}
+	for _, endpoint := range []syntax.Endpoint{from, to} {
+		record, found := document.nodes[endpoint.Node]
+		if !found || record.ambiguous {
+			return EditSet{}, fmt.Errorf("%w: endpoint node %q is missing or ambiguous",
+				ErrInvalidEdgeMutation, endpoint.Node)
+		}
+	}
+	for _, existing := range document.file.Graph.Edges() {
+		if existing.Identity() == edgeID {
+			return EditSet{}, fmt.Errorf("%w: edge %q already exists", ErrInvalidEdgeMutation, edgeID)
+		}
+	}
+
+	file := document.file
+	file.Graph.Statements = append(slices.Clone(document.file.Graph.Statements), syntax.Statement{
+		Edge: &syntax.Edge{Name: edgeID, From: from, To: to, Delivery: delivery},
+	})
+	span, err := sourceSpan(document.positions, 0, len(document.source))
+	if err != nil {
+		return EditSet{}, err
+	}
+	return EditSet{
+		Path: document.path, SourceDigest: document.digest,
+		Edits: []TextEdit{{
+			Span: span, OldText: string(document.source), NewText: syntax.Format(file),
+		}},
+	}, nil
+}

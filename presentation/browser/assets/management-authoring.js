@@ -230,6 +230,37 @@ function edgeRemovalSource(source, selected) {
   return lines.join("\n");
 }
 
+function edgeEndpoint(value, label) {
+  only(value, ["node", "port"], label);
+  return Object.freeze({
+    node: nodeName(value.node, `${label} node`),
+    port: nodeName(value.port, `${label} port`),
+  });
+}
+
+function edgeCreationSource(source, edge, from, to, delivery) {
+  const tokens = topologyTokens(source);
+  const declarations = tokens.filter((token, index) => token.identifier && tokens[index - 1]?.text === "::");
+  for (const endpoint of [from, to]) {
+    if (declarations.filter((token) => token.text === endpoint.node).length !== 1) {
+      throw new Error("authoring edge creation endpoint is missing or ambiguous");
+    }
+  }
+  const identifier = "[A-Za-z_][A-Za-z0-9_-]*";
+  const named = new RegExp(`^    edge (${identifier}) = `);
+  const lines = source.split("\n");
+  if (lines.at(-1) !== "" || lines.at(-2) !== "}" ||
+      lines.some((line) => line.match(named)?.[1] === edge)) {
+    throw new Error("authoring edge creation requires canonical source and a fresh identity");
+  }
+  let insertion = lines.length - 2;
+  while (insertion > 0 && lines[insertion - 1].startsWith("    //")) insertion--;
+  const arrow = delivery === "lossy" ? "=>" : "->";
+  lines.splice(insertion, 0,
+    `    edge ${edge} = ${from.node}.${from.port} ${arrow} ${to.node}.${to.port};`);
+  return lines.join("\n");
+}
+
 // Tokenize only the syntax needed to prove node-reference coverage. Canonical
 // .ortg identifiers and punctuation are ASCII; comments and import strings are
 // skipped while byte offsets continue to count the original UTF-8 source.
@@ -434,6 +465,24 @@ function validateEdgeRemoval(value, input, selected, requestedDigest, evidence) 
   const applied = checkedEditSet(value.edits, input, requestedDigest);
   if (applied.editSet.edits.length !== 1 || applied.source !== expected) {
     throw new Error("authoring edge-removal result changes more or less than the selected edge");
+  }
+  return frozen(value);
+}
+
+function validateEdgeCreation(value, input, expectedFingerprint, edge, from, to, delivery,
+  requestedDigest, evidence) {
+  only(value, ["edge", "previous_fingerprint", "candidate_fingerprint", "edits"],
+    "authoring edge-creation result");
+  const candidate = digest(value.candidate_fingerprint, "authoring edge-creation candidate fingerprint");
+  if (edgeName(value.edge, "authoring edge-creation result edge") !== edge ||
+      value.previous_fingerprint !== expectedFingerprint || candidate === expectedFingerprint ||
+      evidence !== `authoring:edge.create:${expectedFingerprint}:${candidate}:${requestedDigest}`) {
+    throw new Error("authoring edge-creation result changed request identity");
+  }
+  const expected = edgeCreationSource(input.source, edge, from, to, delivery);
+  const applied = checkedEditSet(value.edits, input, requestedDigest);
+  if (applied.editSet.edits.length !== 1 || applied.source !== expected) {
+    throw new Error("authoring edge-creation result changes more or less than the requested edge");
   }
   return frozen(value);
 }
@@ -691,6 +740,30 @@ export default {
         const response = await transport.authoring("remove-edge", { document: exact, edge });
         ready();
         return validateEdgeRemoval(response.value, exact, edge, fingerprint, response.identity);
+      },
+      async createEdge(input, expectedFingerprint, selected, fromValue, toValue, deliveryValue = "lossless") {
+        ready();
+        const exact = document(input, true);
+        if ((exact.lock !== undefined && exact.lock !== null) ||
+            (exact.channel_depth !== undefined && Object.keys(exact.channel_depth).length !== 0)) {
+          throw new Error("authoring edge creation does not accept resolution or channel-depth planes");
+        }
+        const predecessor = digest(expectedFingerprint, "authoring edge-creation predecessor fingerprint");
+        const edge = nodeName(selected, "authoring edge-creation edge");
+        const from = edgeEndpoint(fromValue, "authoring edge-creation source");
+        const to = edgeEndpoint(toValue, "authoring edge-creation target");
+        if (!new Set(["lossless", "lossy"]).has(deliveryValue)) {
+          throw new Error("authoring edge-creation delivery is invalid");
+        }
+        edgeCreationSource(exact.source, edge, from, to, deliveryValue);
+        const fingerprint = await sourceDigest(exact.source);
+        const response = await transport.authoring("create-edge", {
+          document: exact, expected_fingerprint: predecessor,
+          edge, from, to, delivery: deliveryValue,
+        });
+        ready();
+        return validateEdgeCreation(response.value, exact, predecessor, edge, from, to, deliveryValue,
+          fingerprint, response.identity);
       },
       async applyEdits(input, editSet) {
         ready();

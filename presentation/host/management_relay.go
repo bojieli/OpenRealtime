@@ -63,7 +63,7 @@ func NewManagementRelayFactory(client *http.Client, logger *slog.Logger) *Manage
 	return &ManagementRelayFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.management-relay", Revision: 8,
+			Name:          "openrealtime.presentation.host.management-relay", Revision: 9,
 			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 			Requires: []plugin.Requirement{
 				{Contract: presentation.HTTPRoutesContract},
@@ -276,7 +276,8 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	action := request.PathValue("action")
-	if action != "analyze" && action != "rename" && action != "remove-edge" && action != "compile" && action != "render" &&
+	if action != "analyze" && action != "rename" && action != "remove-edge" && action != "create-edge" &&
+		action != "compile" && action != "render" &&
 		action != "read" && action != "write" {
 		http.NotFound(writer, request)
 		return
@@ -353,6 +354,24 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 				return "", err
 			}
 			return "authoring:edge.remove:" + result.Edits.SourceDigest, nil
+		}
+	case "create-edge":
+		var input management.CreateDocumentEdgeRequest
+		if err := decodeRelayJSON(payload, &input); err != nil ||
+			management.ValidateCreateDocumentEdgeRequest(input) != nil {
+			http.Error(writer, "invalid authoring edge-creation request", http.StatusBadRequest)
+			return
+		}
+		spec.validate = func(response []byte) (string, error) {
+			var result management.CreateDocumentEdgeResult
+			if err := decodeRelayJSON(response, &result); err != nil {
+				return "", err
+			}
+			if err := management.ValidateCreateDocumentEdgeResult(input, result); err != nil {
+				return "", err
+			}
+			return "authoring:edge.create:" + result.PreviousFingerprint + ":" +
+				result.CandidateFingerprint + ":" + result.Edits.SourceDigest, nil
 		}
 	case "compile":
 		var document management.AuthoringDocument

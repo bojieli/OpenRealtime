@@ -461,14 +461,26 @@ const edgeSource = `graph fixture_edge {
     test.Element :: source;
     test.Element :: sink;
     // removable café edge
-    edge optional = source.out -> sink.out;
+    edge optional = source.out -> sink.in;
+    // retained graph comment
 }
 `;
 const edgeRemovedSource = `graph fixture_edge {
     test.Element :: source;
     test.Element :: sink;
+    // retained graph comment
 }
 `;
+const edgeCreatedSource = `graph fixture_edge {
+    test.Element :: source;
+    test.Element :: sink;
+    edge restored = source.out -> sink.in;
+    // retained graph comment
+}
+`;
+const edgeGraphDigest = `sha256:${"7".repeat(64)}`;
+const edgeRemovedGraphDigest = `sha256:${"6".repeat(64)}`;
+const edgeCreatedGraphDigest = `sha256:${"5".repeat(64)}`;
 const edgeDigest = await sha256(bytes(edgeSource));
 const edgeResult = {
   edge: "optional",
@@ -535,6 +547,104 @@ for (const invalid of [
 }
 if (requests.length !== beforeInvalidEdge) {
   throw new Error("invalid edge removal reached the network");
+}
+
+const edgeRemovedDigest = await sha256(bytes(edgeRemovedSource));
+const edgeCreationResult = {
+  edge: "restored", previous_fingerprint: edgeRemovedGraphDigest,
+  candidate_fingerprint: edgeCreatedGraphDigest,
+  edits: { path: "edge.ortg", source_digest: edgeRemovedDigest, edits: [{
+    span: { start: { offset: 0, line: 1, column: 1 }, end: endPosition(edgeRemovedSource) },
+    old_text: edgeRemovedSource, new_text: edgeCreatedSource,
+  }] },
+};
+const edgeCreationEvidence = `authoring:edge.create:${edgeRemovedGraphDigest}:` +
+  `${edgeCreatedGraphDigest}:${edgeRemovedDigest}`;
+handlers.push(() => response(edgeCreationResult, edgeCreationEvidence));
+const exactEdgeCreation = await editing.createEdge(
+  { path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, edgeRemovedGraphDigest, "restored",
+  { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless",
+);
+const edgeCreationFetch = requests.at(-1);
+const edgeCreationWire = JSON.parse(edgeCreationFetch.options.body);
+if (!edgeCreationFetch.url.endsWith("/authoring/create-edge") ||
+    edgeCreationFetch.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
+    edgeCreationWire.expected_fingerprint !== edgeRemovedGraphDigest ||
+    edgeCreationWire.edge !== "restored" || edgeCreationWire.document.source !== edgeRemovedSource ||
+    edgeCreationWire.document.revision !== 5 || edgeCreationWire.from.node !== "source" ||
+    edgeCreationWire.from.port !== "out" || edgeCreationWire.to.node !== "sink" ||
+    edgeCreationWire.to.port !== "in" || edgeCreationWire.delivery !== "lossless" ||
+    exactEdgeCreation.candidate_fingerprint !== edgeCreatedGraphDigest) {
+  throw new Error("edge creation did not preserve its graph, source, endpoints, and authority boundary");
+}
+const locallyCreatedEdge = await editing.applyEdits(
+  { path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, exactEdgeCreation.edits,
+);
+if (locallyCreatedEdge !== edgeCreatedSource) {
+  throw new Error("edge creation did not apply the exact canonical source mutation locally");
+}
+
+const forgedEdgeCreations = [];
+const wrongCreatedIdentity = structuredClone(edgeCreationResult);
+wrongCreatedIdentity.edge = "other";
+forgedEdgeCreations.push([wrongCreatedIdentity, edgeCreationEvidence]);
+const wrongCreatedPredecessor = structuredClone(edgeCreationResult);
+wrongCreatedPredecessor.previous_fingerprint = otherDigest;
+forgedEdgeCreations.push([wrongCreatedPredecessor, edgeCreationEvidence]);
+const unchangedCreatedFingerprint = structuredClone(edgeCreationResult);
+unchangedCreatedFingerprint.candidate_fingerprint = edgeRemovedGraphDigest;
+forgedEdgeCreations.push([unchangedCreatedFingerprint,
+  `authoring:edge.create:${edgeRemovedGraphDigest}:${edgeRemovedGraphDigest}:${edgeRemovedDigest}`]);
+const wrongCreatedSource = structuredClone(edgeCreationResult);
+wrongCreatedSource.edits.edits[0].new_text += "\n";
+forgedEdgeCreations.push([wrongCreatedSource, edgeCreationEvidence]);
+const missingCreationEdit = structuredClone(edgeCreationResult);
+missingCreationEdit.edits.edits = [];
+forgedEdgeCreations.push([missingCreationEdit, edgeCreationEvidence]);
+const forgedCreationPosition = structuredClone(edgeCreationResult);
+forgedCreationPosition.edits.edits[0].span.end.column++;
+forgedEdgeCreations.push([forgedCreationPosition, edgeCreationEvidence]);
+forgedEdgeCreations.push([edgeCreationResult,
+  `authoring:edge.create:${edgeRemovedGraphDigest}:${edgeCreatedGraphDigest}:${otherDigest}`]);
+for (const [forged, evidence] of forgedEdgeCreations) {
+  handlers.push(() => response(forged, evidence));
+  await editing.createEdge(
+    { path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, edgeRemovedGraphDigest, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless",
+  ).then(
+    () => { throw new Error("forged edge creation was accepted"); },
+    () => {},
+  );
+}
+const duplicateCreatedSource = edgeCreatedSource;
+const beforeInvalidCreation = requests.length;
+for (const invalid of [
+  [{ path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, "invalid", "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+  [{ path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, edgeRemovedGraphDigest, "bad.name",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+  [{ path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, edgeRemovedGraphDigest, "restored",
+    { node: "missing", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+  [{ path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, edgeRemovedGraphDigest, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "unknown"],
+  [{ path: "edge.ortg", source: `${edgeRemovedSource}\n`, revision: 5 }, edgeRemovedGraphDigest, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+  [{ path: "edge.ortg", source: duplicateCreatedSource, revision: 5 }, edgeRemovedGraphDigest, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+  [{ path: "edge.ortg", source: edgeRemovedSource, revision: 5,
+    lock: { format_version: 1, elements: [] } }, edgeRemovedGraphDigest, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+  [{ path: "edge.ortg", source: edgeRemovedSource, revision: 5,
+    channel_depth: { restored: 1 } }, edgeRemovedGraphDigest, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless"],
+]) {
+  await editing.createEdge(...invalid).then(
+    () => { throw new Error("invalid edge creation was accepted"); },
+    () => {},
+  );
+}
+if (requests.length !== beforeInvalidCreation) {
+  throw new Error("invalid edge creation reached the network");
 }
 
 const renameGraphDigest = `sha256:${"9".repeat(64)}`;
@@ -605,16 +715,15 @@ if (!String(staleRename).includes("changed during request") ||
   throw new Error("workspace CAS did not preserve a newer document against a late rename");
 }
 
-const edgeGraphDigest = `sha256:${"7".repeat(64)}`;
-const edgeRemovedGraphDigest = `sha256:${"6".repeat(64)}`;
 const edgeGraph = structuredClone(graph);
 edgeGraph.id = "fixture_edge";
 edgeGraph.revision = 4;
 edgeGraph.fingerprint = edgeGraphDigest;
 edgeGraph.nodes[0].id = "source";
-edgeGraph.nodes.push({ ...structuredClone(edgeGraph.nodes[0]), id: "sink" });
+edgeGraph.nodes.push({ ...structuredClone(edgeGraph.nodes[0]), id: "sink",
+  ports: [{ ...structuredClone(edgeGraph.nodes[0].ports[0]), name: "in", direction: "input" }] });
 edgeGraph.edges = [{ id: "optional", from: { node: "source", port: "out" },
-  to: { node: "sink", port: "out" } }];
+  to: { node: "sink", port: "in" } }];
 const edgeCompiled = { graph: edgeGraph, lock: { format_version: 1, elements: [{
   reference: "test.Element", identity: { name: "test.Element", revision: 1, digest: elementDigest },
 }] } };
@@ -651,6 +760,74 @@ await Promise.resolve().then(() => workspace.removeEdge(edgeRemovedGraphDigest, 
 );
 if (requests.length !== beforeStaleEdgeSelection) {
   throw new Error("stale edge selection reached the network");
+}
+
+const edgeCreationEpoch = workspace.snapshot().epoch;
+handlers.push(() => response(edgeCreationResult, edgeCreationEvidence));
+await workspace.createEdge(edgeRemovedGraphDigest, "restored",
+  { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless");
+const edgeCreatedSnapshot = workspace.snapshot();
+if (edgeCreatedSnapshot.phase !== "edge-created" ||
+    edgeCreatedSnapshot.document.source !== edgeCreatedSource ||
+    edgeCreatedSnapshot.document.revision !== 6 || edgeCreatedSnapshot.epoch !== edgeCreationEpoch + 1 ||
+    edgeCreatedSnapshot.sourceRead !== null || edgeCreatedSnapshot.analysis !== null ||
+    edgeCreatedSnapshot.compiled !== null || edgeCreatedSnapshot.rendering !== null ||
+    edgeCreatedSnapshot.publication !== null) {
+  throw new Error("authoring workspace did not atomically install and invalidate an edge creation");
+}
+const edgeCreatedGraph = structuredClone(edgeRemovedGraph);
+edgeCreatedGraph.revision = 6;
+edgeCreatedGraph.fingerprint = edgeCreatedGraphDigest;
+edgeCreatedGraph.edges = [{ id: "restored", from: { node: "source", port: "out" },
+  to: { node: "sink", port: "in" } }];
+handlers.push(() => response({ ...edgeCompiled, graph: edgeCreatedGraph },
+  `authoring:compile:${edgeCreatedGraphDigest}`));
+await workspace.compile();
+if (workspace.snapshot().compiled.graph.edges[0]?.id !== "restored" ||
+    workspace.snapshot().compiled.graph.fingerprint !== edgeCreatedGraphDigest) {
+  throw new Error("edge-created workspace source did not compile under its incremented revision");
+}
+const beforeStaleCreation = requests.length;
+await Promise.resolve().then(() => workspace.createEdge(edgeCreatedGraphDigest, "restored",
+  { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless")).then(
+  () => { throw new Error("duplicate compiled edge identity was accepted for creation"); },
+  () => {},
+);
+await Promise.resolve().then(() => workspace.createEdge(edgeCreatedGraphDigest, "backward",
+  { node: "sink", port: "in" }, { node: "source", port: "out" }, "lossless")).then(
+  () => { throw new Error("backward compiled edge endpoints were accepted for creation"); },
+  () => {},
+);
+if (requests.length !== beforeStaleCreation) {
+  throw new Error("invalid compiled edge creation reached the network");
+}
+
+workspace.setDocument("edge.ortg", edgeRemovedSource, 5);
+handlers.push(() => response({ ...edgeCompiled, graph: edgeRemovedGraph },
+  `authoring:compile:${edgeRemovedGraphDigest}`));
+await workspace.compile();
+let releaseEdgeCreation;
+handlers.push(() => new Promise((resolve) => {
+  releaseEdgeCreation = () => resolve(response(edgeCreationResult, edgeCreationEvidence));
+}));
+const pendingEdgeCreation = workspace.createEdge(edgeRemovedGraphDigest, "restored",
+  { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless").then(
+  () => { throw new Error("edge creation completed after the workspace document changed"); },
+  (error) => error,
+);
+for (let attempt = 0; attempt < 20 && !releaseEdgeCreation; attempt++) {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+if (!releaseEdgeCreation) throw new Error("deferred edge creation never reached transport");
+workspace.setDocument("replacement.ortg", "graph replacement {\n}\n", 1);
+releaseEdgeCreation();
+const staleEdgeCreation = await pendingEdgeCreation;
+const replacementAfterCreation = workspace.snapshot();
+if (!String(staleEdgeCreation).includes("changed during request") ||
+    replacementAfterCreation.document.path !== "replacement.ortg" ||
+    replacementAfterCreation.document.source !== "graph replacement {\n}\n" ||
+    replacementAfterCreation.phase !== "idle") {
+  throw new Error("workspace CAS did not preserve a newer document against a late edge creation");
 }
 
 workspace.setDocument("edge.ortg", edgeSource, 4);
@@ -878,8 +1055,20 @@ await editing.removeEdge(
   () => { throw new Error("disposed authoring edge remover remained usable"); },
   () => {},
 );
+await editing.createEdge(
+  { path: "edge.ortg", source: edgeRemovedSource, revision: 5 }, edgeRemovedGraphDigest, "restored",
+  { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless",
+).then(
+  () => { throw new Error("disposed authoring edge creator remained usable"); },
+  () => {},
+);
 await Promise.resolve().then(() => workspace.format()).then(
   () => { throw new Error("disposed authoring workspace formatter remained usable"); },
+  () => {},
+);
+await Promise.resolve().then(() => workspace.createEdge(edgeRemovedGraphDigest, "restored",
+  { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless")).then(
+  () => { throw new Error("disposed authoring workspace edge creator remained usable"); },
   () => {},
 );
 const serialized = JSON.stringify({ manifest, workspace: workspace.snapshot?.(), status: control.status() });

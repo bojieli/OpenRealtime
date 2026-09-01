@@ -135,7 +135,7 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	operations := []management.Operation{
 		management.ReadGraph, management.ReadDescriptor, management.ReadSchema,
 		management.ReadSession, management.ReadTrace, management.AnalyzeDocument,
-		management.RenameDocument, management.RemoveDocumentEdge,
+		management.RenameDocument, management.RemoveDocumentEdge, management.CreateDocumentEdge,
 		management.CompileDocument, management.RenderGraph,
 		management.ReadSource, management.CreateSource, management.UpdateSource, management.ApplyCandidate,
 	}
@@ -260,6 +260,43 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	if err != nil || management.ValidateRemoveDocumentEdgeResult(removeRequest, removeResult) != nil ||
 		len(removeResult.Edits.Edits) != 1 {
 		t.Fatalf("remote edge removal = %+v, %v", removeResult, err)
+	}
+	edgeRemovedSource, err := editor.ApplyEdits([]byte(renameDocument.Source), removeResult.Edits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeDocument := management.AuthoringDocument{
+		Path: renameDocument.Path, Source: string(edgeRemovedSource), Revision: renameDocument.Revision + 1,
+	}
+	edgePredecessor, err := remote.Compile(context.Background(), edgeDocument)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createEdgeRequest := management.CreateDocumentEdgeRequest{
+		Document: edgeDocument, ExpectedFingerprint: edgePredecessor.Graph.Fingerprint, Edge: "restored",
+		From: management.AuthoringEdgeEndpoint{Node: "source", Port: "out"},
+		To:   management.AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
+	}
+	if err := management.ValidateCreateDocumentEdgeRequest(createEdgeRequest); err != nil {
+		t.Fatalf("local edge-creation request = %v", err)
+	}
+	createEdgeResult, err := remote.CreateEdge(context.Background(), createEdgeRequest)
+	if err != nil || management.ValidateCreateDocumentEdgeResult(createEdgeRequest, createEdgeResult) != nil ||
+		createEdgeResult.PreviousFingerprint != edgePredecessor.Graph.Fingerprint ||
+		len(createEdgeResult.Edits.Edits) != 1 {
+		t.Fatalf("remote edge creation = %+v, %v", createEdgeResult, err)
+	}
+	createdEdgeSource, err := editor.ApplyEdits([]byte(edgeDocument.Source), createEdgeResult.Edits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	createdEdgeCompile, err := remote.Compile(context.Background(), management.AuthoringDocument{
+		Path: edgeDocument.Path, Source: string(createdEdgeSource), Revision: edgeDocument.Revision + 1,
+	})
+	if err != nil || createdEdgeCompile.Graph.Revision != 9 ||
+		createdEdgeCompile.Graph.Fingerprint != createEdgeResult.CandidateFingerprint ||
+		len(createdEdgeCompile.Graph.Edges) != 1 || createdEdgeCompile.Graph.Edges[0].ID != "restored" {
+		t.Fatalf("remote edge-created compile = %+v, %v", createdEdgeCompile, err)
 	}
 	renamedCompile, err := remote.Compile(context.Background(), management.AuthoringDocument{
 		Path: renameDocument.Path, Source: string(renamedSource), Revision: renameDocument.Revision + 1,
@@ -403,7 +440,7 @@ func compileFixture(t *testing.T) (*resolve.Catalog, ir.Graph, resolve.Lock) {
 		},
 		{
 			FormatVersion: element.DescriptorFormatVersion, Name: "test.ClientSink", Revision: 1,
-			Ports: []element.Port{{Name: "in", Direction: element.Input, Type: value, Cardinality: element.One, Required: true}},
+			Ports: []element.Port{{Name: "in", Direction: element.Input, Type: value, Cardinality: element.One}},
 		},
 	} {
 		if err := catalog.Register(descriptor); err != nil {

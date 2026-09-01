@@ -138,8 +138,8 @@ var (
 	)
 	ClientManagementTransportContract = semanticContractRevision(
 		"presentation.client.management_transport",
-		2,
-		"openrealtime/presentation/client/management-transport/v2:whitelisted-static-authoring-edge-removal-header-capability-strict-bounded-no-redirect",
+		3,
+		"openrealtime/presentation/client/management-transport/v3:whitelisted-static-authoring-edge-removal-creation-header-capability-strict-bounded-no-redirect",
 	)
 	ClientManagementStaticContract = semanticContract(
 		"presentation.client.management_static",
@@ -151,8 +151,8 @@ var (
 	)
 	ClientManagementEditingContract = semanticContractRevision(
 		"presentation.client.management_editing",
-		2,
-		"openrealtime/presentation/client/management-editing/v2:exact-node-rename-edge-removal-validated-local-edit-application",
+		3,
+		"openrealtime/presentation/client/management-editing/v3:exact-node-rename-edge-removal-creation-validated-local-edit-application",
 	)
 	ClientSourceReadingContract = semanticContract(
 		"presentation.client.source_reading",
@@ -164,8 +164,8 @@ var (
 	)
 	ClientAuthoringWorkspaceContract = semanticContractRevision(
 		"presentation.client.authoring_workspace",
-		2,
-		"openrealtime/presentation/client/authoring-workspace/v2:bounded-document-optional-rooted-read-analysis-compile-render-graph-node-rename-edge-removal-cas-optional-publication-immutable-snapshot-subscribe",
+		3,
+		"openrealtime/presentation/client/authoring-workspace/v3:bounded-document-optional-rooted-read-analysis-compile-render-graph-node-rename-edge-removal-creation-cas-optional-publication-immutable-snapshot-subscribe",
 	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",

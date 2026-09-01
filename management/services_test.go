@@ -244,6 +244,132 @@ func TestAuthoringEdgeRemovalIsExactAndIndependentlyValidated(t *testing.T) {
 	}
 }
 
+func TestAuthoringEdgeCreationIsCompilerBoundExactAndIndependentlyValidated(t *testing.T) {
+	base := managedElementCatalog(t)
+	catalog := resolve.NewCatalog()
+	for _, name := range base.Names() {
+		descriptor, found := base.Latest(name)
+		if !found {
+			t.Fatalf("missing managed descriptor %q", name)
+		}
+		descriptor.Ports = slices.Clone(descriptor.Ports)
+		if name == "test.ManagedSink" {
+			descriptor.Ports[0].Required = false
+		}
+		if err := catalog.Register(descriptor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	engine, err := NewAuthoringEngine(AuthoringOptions{Catalog: catalog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `graph managed {
+    test.ManagedSource :: source;
+    test.ManagedSink :: sink;
+}
+`
+	document := AuthoringDocument{Path: "agent.ortg", Source: source, Revision: 7}
+	predecessor, err := engine.Compile(context.Background(), document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := CreateDocumentEdgeRequest{
+		Document: document, ExpectedFingerprint: predecessor.Graph.Fingerprint, Edge: "restored",
+		From: AuthoringEdgeEndpoint{Node: "source", Port: "out"},
+		To:   AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
+	}
+	result, err := engine.CreateEdge(context.Background(), request)
+	if err != nil || result.Edge != "restored" ||
+		result.PreviousFingerprint != predecessor.Graph.Fingerprint || len(result.Edits.Edits) != 1 {
+		t.Fatalf("edge creation result = %+v, %v", result, err)
+	}
+	if err := ValidateCreateDocumentEdgeResult(request, result); err != nil {
+		t.Fatal(err)
+	}
+	created, err := editor.ApplyEdits([]byte(source), result.Edits)
+	want := `graph managed {
+    test.ManagedSource :: source;
+    test.ManagedSink :: sink;
+    edge restored = source.out -> sink.in;
+}
+`
+	if err != nil || string(created) != want {
+		t.Fatalf("edge-created source = %q, %v; want %q", created, err, want)
+	}
+	candidate, err := engine.Compile(context.Background(), AuthoringDocument{
+		Path: document.Path, Source: string(created), Revision: document.Revision + 1,
+	})
+	if err != nil || candidate.Graph.Revision != 8 ||
+		candidate.Graph.Fingerprint != result.CandidateFingerprint || len(candidate.Graph.Edges) != 1 ||
+		candidate.Graph.Edges[0].ID != "restored" {
+		t.Fatalf("edge-created compile = %+v, %v", candidate, err)
+	}
+
+	stale := request
+	stale.ExpectedFingerprint = "sha256:" + strings.Repeat("0", 64)
+	if _, err := engine.CreateEdge(context.Background(), stale); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale edge creation = %v", err)
+	}
+	backward := request
+	backward.Edge = "backward"
+	backward.From = AuthoringEdgeEndpoint{Node: "sink", Port: "in"}
+	backward.To = AuthoringEdgeEndpoint{Node: "source", Port: "out"}
+	if _, err := engine.CreateEdge(context.Background(), backward); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("compiler-invalid edge creation = %v", err)
+	}
+	for _, invalid := range []CreateDocumentEdgeRequest{
+		{Document: document, ExpectedFingerprint: request.ExpectedFingerprint, Edge: "bad.name",
+			From: request.From, To: request.To, Delivery: request.Delivery},
+		{Document: document, ExpectedFingerprint: request.ExpectedFingerprint, Edge: "restored",
+			From: AuthoringEdgeEndpoint{Node: "missing", Port: "out"}, To: request.To, Delivery: request.Delivery},
+		{Document: document, ExpectedFingerprint: request.ExpectedFingerprint, Edge: "restored",
+			From: request.From, To: request.To, Delivery: "unknown"},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source + "\n", Revision: 7},
+			ExpectedFingerprint: request.ExpectedFingerprint, Edge: "restored", From: request.From,
+			To: request.To, Delivery: request.Delivery},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source, Revision: 7,
+			Lock: &resolve.Lock{}}, ExpectedFingerprint: request.ExpectedFingerprint, Edge: "restored",
+			From: request.From, To: request.To, Delivery: request.Delivery},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source, Revision: ^uint64(0)},
+			ExpectedFingerprint: request.ExpectedFingerprint, Edge: "restored", From: request.From,
+			To: request.To, Delivery: request.Delivery},
+	} {
+		if _, err := engine.CreateEdge(context.Background(), invalid); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid edge creation %+v = %v", invalid, err)
+		}
+	}
+
+	clone := func(source CreateDocumentEdgeResult) CreateDocumentEdgeResult {
+		encoded, err := json.Marshal(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var copied CreateDocumentEdgeResult
+		if err := json.Unmarshal(encoded, &copied); err != nil {
+			t.Fatal(err)
+		}
+		return copied
+	}
+	forged := []CreateDocumentEdgeResult{clone(result), clone(result), clone(result), clone(result), clone(result)}
+	forged[0].Edge = "other"
+	forged[1].PreviousFingerprint = result.CandidateFingerprint
+	forged[2].CandidateFingerprint = result.PreviousFingerprint
+	forged[3].Edits.Edits[0].NewText += "\n"
+	forged[4].Edits.Edits[0].Span.End.Column++
+	for _, value := range forged {
+		if err := ValidateCreateDocumentEdgeResult(request, value); !errors.Is(err, ErrConflict) {
+			t.Fatalf("forged edge creation %+v = %v", value, err)
+		}
+	}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := engine.CreateEdge(canceled, request); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("canceled edge creation = %v", err)
+	}
+}
+
 func TestAuthoringRecoveryFormattingAndResolvedPropertiesNeverCrossCompileBoundary(t *testing.T) {
 	base := managedElementCatalog(t)
 	configured := resolve.NewCatalog()

@@ -22,6 +22,7 @@ func (authorizer operatorPlaneAuthorizer) Authorize(
 	allowed := request.Resource == "authoring" &&
 		(request.Operation == management.AnalyzeDocument ||
 			request.Operation == management.RenameDocument || request.Operation == management.RemoveDocumentEdge ||
+			request.Operation == management.CreateDocumentEdge ||
 			request.Operation == management.CompileDocument ||
 			request.Operation == management.RenderGraph)
 	allowed = allowed || (request.Operation == management.ReadGraph && request.Resource == authorizer.graph)

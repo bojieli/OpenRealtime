@@ -42,8 +42,8 @@ var (
 	)
 	AuthoringContract = semanticContractRevision(
 		"openrealtime.management.authoring",
-		3,
-		"openrealtime/management/authoring/v3:analyze-rename-remove-edge-compile-render-bounded-documents",
+		4,
+		"openrealtime/management/authoring/v4:analyze-rename-remove-create-edge-compile-render-bounded-documents",
 	)
 	SourceReadingContract = semanticContract(
 		"openrealtime.management.source_reading",

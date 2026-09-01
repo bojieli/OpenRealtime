@@ -114,6 +114,7 @@ function authoringRequest(action, input) {
     case "analyze": return { operation: "authoring.analyze", resource: "authoring" };
     case "rename": return { operation: "authoring.rename", resource: "authoring" };
     case "remove-edge": return { operation: "authoring.edge.remove", resource: "authoring" };
+    case "create-edge": return { operation: "authoring.edge.create", resource: "authoring" };
     case "compile": return { operation: "authoring.compile", resource: "authoring" };
     case "render": return { operation: "authoring.render", resource: "authoring" };
     case "read": {

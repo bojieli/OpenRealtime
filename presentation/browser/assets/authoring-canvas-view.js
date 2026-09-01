@@ -5,7 +5,8 @@ function node(name, text = "") {
 }
 
 const busyPhases = new Set([
-  "reading", "analyzing", "formatting", "renaming", "removing-edge", "compiling", "rendering", "publishing",
+  "reading", "analyzing", "formatting", "renaming", "removing-edge", "creating-edge",
+  "compiling", "rendering", "publishing",
 ]);
 
 export default {
@@ -53,17 +54,43 @@ export default {
     const edgeStatus = node("p", "Select a compiled edge to remove it.");
     edgeStatus.dataset.role = "edge-status";
     edgeControls.append(removeEdge, edgeStatus);
+    const endpointControls = node("div");
+    endpointControls.dataset.role = "edge-endpoints";
+    const outputs = node("div");
+    outputs.dataset.role = "edge-outputs";
+    const inputs = node("div");
+    inputs.dataset.role = "edge-inputs";
+    endpointControls.append(outputs, inputs);
+    const createControls = node("div");
+    createControls.dataset.role = "edge-creation";
+    const edgeNameLabel = node("label", "New edge name ");
+    const edgeName = node("input");
+    edgeName.name = "authoring-edge-name";
+    edgeName.maxLength = 256;
+    edgeName.placeholder = "new_edge";
+    edgeNameLabel.append(edgeName);
+    const createEdge = node("button", "Create selected edge");
+    createEdge.type = "button";
+    createEdge.dataset.action = "create-edge";
+    const createStatus = node("p", "Select one output and one input port.");
+    createStatus.dataset.role = "edge-creation-status";
+    createControls.append(edgeNameLabel, createEdge, createStatus);
     const rendering = node("pre");
     rendering.dataset.role = "rendering";
-    section.append(controls, identity, nodes, renameControls, edges, edgeControls, rendering);
+    section.append(controls, identity, nodes, renameControls, edges, edgeControls,
+      endpointControls, createControls, rendering);
 
     let selectedFingerprint = "";
     let selectedNode = "";
     let selectedEdgeFingerprint = "";
     let selectedEdge = "";
+    let creationFingerprint = "";
+    let selectedFrom = "";
+    let selectedTo = "";
     let canvasBusy = false;
     let nodeEvents = [];
     let edgeEvents = [];
+    let endpointEvents = [];
     const clearNodeEvents = () => {
       for (const [button, listener] of nodeEvents) button.removeEventListener("click", listener);
       nodeEvents = [];
@@ -71,6 +98,10 @@ export default {
     const clearEdgeEvents = () => {
       for (const [button, listener] of edgeEvents) button.removeEventListener("click", listener);
       edgeEvents = [];
+    };
+    const clearEndpointEvents = () => {
+      for (const [button, listener] of endpointEvents) button.removeEventListener("click", listener);
+      endpointEvents = [];
     };
     const markSelection = () => {
       for (const [button] of nodeEvents) {
@@ -86,6 +117,16 @@ export default {
           button.dataset.fingerprint === selectedEdgeFingerprint);
       }
       removeEdge.disabled = !selectedEdge || canvasBusy;
+    };
+    const markCreationSelection = () => {
+      for (const [button] of endpointEvents) {
+        const selected = button.dataset.direction === "output"
+          ? button.dataset.endpoint === selectedFrom
+          : button.dataset.endpoint === selectedTo;
+        button.dataset.selected = String(selected && button.dataset.fingerprint === creationFingerprint);
+      }
+      createEdge.disabled = !selectedFrom || !selectedTo || !edgeName.value || canvasBusy;
+      edgeName.disabled = !creationFingerprint || canvasBusy;
     };
     const changed = workspace.subscribe((snapshot) => {
       const graph = snapshot.compiled?.graph;
@@ -107,6 +148,12 @@ export default {
           !(graph.edges ?? []).some((entry) => entry.id === selectedEdge)) {
         selectedEdgeFingerprint = "";
         selectedEdge = "";
+      }
+      if (!graph || graph.fingerprint !== creationFingerprint) {
+        creationFingerprint = "";
+        selectedFrom = "";
+        selectedTo = "";
+        edgeName.value = "";
       }
       clearNodeEvents();
       nodes.replaceChildren();
@@ -147,8 +194,40 @@ export default {
         edgeEvents.push([button, select]);
         edges.append(button);
       }
+      clearEndpointEvents();
+      outputs.replaceChildren();
+      inputs.replaceChildren();
+      const ports = [];
+      for (const graphNode of graph?.nodes ?? []) {
+        for (const port of graphNode.ports ?? []) {
+          if (port.direction === "output" || port.direction === "input") {
+            ports.push({ endpoint: `${graphNode.id}.${port.name}`, direction: port.direction });
+          }
+        }
+      }
+      ports.sort((left, right) => left.endpoint.localeCompare(right.endpoint) ||
+        left.direction.localeCompare(right.direction));
+      for (const port of ports) {
+        const button = node("button", `${port.direction} · ${port.endpoint}`);
+        button.type = "button";
+        button.dataset.action = port.direction === "output" ? "select-edge-from" : "select-edge-to";
+        button.dataset.endpoint = port.endpoint;
+        button.dataset.direction = port.direction;
+        button.dataset.fingerprint = graph.fingerprint;
+        const select = () => {
+          creationFingerprint = graph.fingerprint;
+          if (port.direction === "output") selectedFrom = port.endpoint;
+          else selectedTo = port.endpoint;
+          createStatus.textContent = `Selected ${selectedFrom || "an output"} → ${selectedTo || "an input"}.`;
+          markCreationSelection();
+        };
+        button.addEventListener("click", select);
+        endpointEvents.push([button, select]);
+        (port.direction === "output" ? outputs : inputs).append(button);
+      }
       markSelection();
       markEdgeSelection();
+      markCreationSelection();
       if (!graph && snapshot.phase === "renamed") {
         renameStatus.textContent = "Node renamed. Compile the updated graph to continue.";
       } else if (!graph && snapshot.phase !== "error") {
@@ -158,6 +237,11 @@ export default {
         edgeStatus.textContent = "Edge removed. Compile the updated graph to continue.";
       } else if (!graph && snapshot.phase !== "error") {
         edgeStatus.textContent = "Select a compiled edge to remove it.";
+      }
+      if (!graph && snapshot.phase === "edge-created") {
+        createStatus.textContent = "Edge created. Compile the updated graph to continue.";
+      } else if (!graph && snapshot.phase !== "error") {
+        createStatus.textContent = "Select one output and one input port.";
       }
     });
     const run = (format) => async () => {
@@ -189,11 +273,31 @@ export default {
         edgeStatus.textContent = error?.message ?? String(error);
       }
     };
+    const endpoint = (value) => {
+      const separator = value.indexOf(".");
+      return { node: value.slice(0, separator), port: value.slice(separator + 1) };
+    };
+    const createEdgeClick = async () => {
+      const fingerprint = creationFingerprint;
+      const from = selectedFrom;
+      const to = selectedTo;
+      const name = edgeName.value;
+      try {
+        createStatus.textContent = `Creating ${name}…`;
+        await workspace.createEdge(fingerprint, name, endpoint(from), endpoint(to), "lossless");
+        createStatus.textContent = `Created ${name}. Compile the updated graph to continue.`;
+      } catch (error) {
+        createStatus.textContent = error?.message ?? String(error);
+      }
+    };
+    const edgeNameInput = () => markCreationSelection();
     model.addEventListener("click", modelClick);
     mermaid.addEventListener("click", mermaidClick);
     dot.addEventListener("click", dotClick);
     rename.addEventListener("click", renameClick);
     removeEdge.addEventListener("click", removeEdgeClick);
+    createEdge.addEventListener("click", createEdgeClick);
+    edgeName.addEventListener("input", edgeNameInput);
     const unregister = slots.register("authoring.canvas", section, 40);
     context.lifecycle.defer("authoring-canvas-events", () => {
       model.removeEventListener("click", modelClick);
@@ -201,9 +305,13 @@ export default {
       dot.removeEventListener("click", dotClick);
       rename.removeEventListener("click", renameClick);
       removeEdge.removeEventListener("click", removeEdgeClick);
+      createEdge.removeEventListener("click", createEdgeClick);
+      edgeName.removeEventListener("input", edgeNameInput);
       clearNodeEvents();
       clearEdgeEvents();
+      clearEndpointEvents();
       replacement.value = "";
+      edgeName.value = "";
       rendering.textContent = "";
     });
     context.lifecycle.defer("authoring-canvas-state", changed);
