@@ -1810,8 +1810,8 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 196 of 249 explicit tracker boxes are checked (78.7%)
-and 53 remain open. The percentage records completed reviewable slices; it does
+At this reconciliation, 197 of 249 explicit tracker boxes are checked (79.1%)
+and 52 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -1821,7 +1821,7 @@ of-done requirement.
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
 | 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
-| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
+| 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and complete cross-node/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact receipts, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
@@ -2458,7 +2458,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 686/6,147 at 2026-09-01 19:11 UTC. This dated progress checkpoint is
+  attempt 707/6,147 at 2026-09-01 19:43 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -2624,14 +2624,24 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   detection/latest-frame state, and visual-observer lifecycle composition.
 - [x] Extract action proposal admission, confirmation, target fencing, tool
   lookup, idempotent ledger commit, dispatch, and release/audit outcomes.
-- [ ] Compose visual reflex, slow planner, action arbitration, authority,
+- [x] Compose visual reflex, slow planner, action arbitration, authority,
   execution, and visual feedback into complete computer-use reference graphs.
+  The locked audio-free `visual-reflex-planner` graph independently activates
+  fast and slow cognition from the same committed observation, binds each
+  admitted proposal to exact candidate/result provenance, and lets the bounded
+  `authority.ActionArbiter` expose only the first complete action to the shared
+  confirmation, target, canonical commit, ledger, dispatch, and result-commit
+  path. It cancels known and late losing runs, closes all-no-action observation
+  groups, and fails closed on replay, identity drift, excess lanes, and bounded
+  capacity. Its executed race regression proves exactly one dispatch and then
+  proves that both lanes consume the canonical result plus changed-screen
+  feedback without opening a second effect; focused normal, ten shuffled, race,
+  broader elements/graphs test, and vet gates are green.
   - [x] Compose and execute the durable single-planner Realtime-CU reference
     from typed audiovisual observation commit through visual reactivation,
     one-effect-at-a-time admission, provenance, confirmation, target fencing,
     canonical/ledger commit, client dispatch, result commit, and changed-screen
-    feedback. A separate visual-reflex lane, slow planner, and explicit action
-    arbiter remain to close the broader multi-planner parent.
+    feedback.
 - [x] Add an audio-free text/image/file/attachment component graph with typed
   exported contracts.
 - [x] Add the complete text-and-files cognition agent and silent computer-use

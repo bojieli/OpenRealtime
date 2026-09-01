@@ -236,6 +236,10 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 			"schema://openrealtime/authority/proposal-admission-config/v1",
 			schemaObject{"max_pending": boundedState, "allow_system": schemaObject{"type": "boolean"}},
 		),
+		"schema://openrealtime/authority/action-arbiter-config/v1": standardObject(
+			"schema://openrealtime/authority/action-arbiter-config/v1",
+			schemaObject{"max_pending": boundedState, "terminal_memory": boundedState},
+		),
 		"schema://openrealtime/authority/provenance-join-config/v1": standardObject(
 			"schema://openrealtime/authority/provenance-join-config/v1",
 			schemaObject{"max_pending": boundedState, "terminal_memory": boundedState},

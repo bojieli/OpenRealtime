@@ -80,6 +80,7 @@ func TestEveryShippedComponentHasSeparateTruthfulDeploymentSecretAndEvidenceArti
 		"silent-computer-use",
 		"text-file-cognition",
 		"upstream-native-interaction",
+		"visual-reflex-planner",
 	}
 	if !slices.Equal(components, want) {
 		t.Fatalf("validated shipped component directories %v, want %v", components, want)

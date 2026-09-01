@@ -324,6 +324,15 @@ type ProposalAdmissionConfig struct {
 	AllowSystem bool `json:"allow_system,omitempty"`
 }
 
+// ActionArbiterConfig bounds the observation-scoped race between independently
+// admitted action lanes. MaxPending counts observation groups that have not yet
+// produced a complete admitted action; TerminalMemory retains completed group
+// identities so delayed loser output cannot reopen an effect path.
+type ActionArbiterConfig struct {
+	MaxPending     int `json:"max_pending,omitempty"`
+	TerminalMemory int `json:"terminal_memory,omitempty"`
+}
+
 type ToolLookupConfig struct {
 	Registry string `json:"registry"`
 }
@@ -377,6 +386,12 @@ func decodeBoundedConfig[T any](source json.RawMessage, destination *T, bounds .
 func decodeProposalAdmissionConfig(source json.RawMessage) (ProposalAdmissionConfig, error) {
 	var config ProposalAdmissionConfig
 	err := decodeBoundedConfig(source, &config, &config.MaxPending)
+	return config, err
+}
+
+func decodeActionArbiterConfig(source json.RawMessage) (ActionArbiterConfig, error) {
+	var config ActionArbiterConfig
+	err := decodeBoundedConfig(source, &config, &config.MaxPending, &config.TerminalMemory)
 	return config, err
 }
 
@@ -485,6 +500,38 @@ func ProposalAdmissionDescriptor() element.Descriptor {
 		ConfigSchema: "schema://openrealtime/authority/proposal-admission-config/v1",
 		Dependencies: []element.Dependency{{Name: TrajectoryStoreService}, {Name: graphruntime.ClockServiceName},
 			{Name: graphruntime.SequenceServiceName}},
+	}
+}
+
+// ActionArbiterDescriptor selects the first completely admitted action for one
+// canonical observation across two or more independently activated cognition
+// lanes. Candidate evidence lets it cancel a slower lane even before that lane
+// emits a proposal; only the selected admitted action can reach tool lookup.
+func ActionArbiterDescriptor() element.Descriptor {
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.ActionArbiter", Revision: 1,
+		Ports: []element.Port{
+			{Name: "candidate", Direction: element.Input, Type: candidateType,
+				Cardinality: element.Variadic, Required: true, MinConnections: 2, DefaultDepth: 16},
+			{Name: "proposal", Direction: element.Input, Type: admittedType,
+				Cardinality: element.Variadic, Required: true, MinConnections: 2, DefaultDepth: 16},
+			{Name: "result", Direction: element.Input, Type: cognitionelements.ResultType(),
+				Cardinality: element.Variadic, Required: true, MinConnections: 2, DefaultDepth: 16},
+			port("selected", element.Output, admittedType, 32),
+			port("cancel_upstream", element.Output, cognitionelements.CancelType(), 16),
+			port("outcome", element.Output, outcomeType, 32),
+			statePort("resolved", element.Output, resolutionType),
+		},
+		Reaction: element.Reaction{
+			Triggers:       []string{"candidate", "proposal", "result"},
+			Outcomes:       []string{"selected", "cancel_upstream", "outcome", "resolved"},
+			MaxConcurrency: 1, BreaksCycles: true,
+		},
+		StateSchema:  "schema://openrealtime/authority/action-arbiter-state/v1",
+		ConfigSchema: "schema://openrealtime/authority/action-arbiter-config/v1",
+		Dependencies: []element.Dependency{{Name: graphruntime.ClockServiceName},
+			{Name: graphruntime.SequenceServiceName}},
+		Effects: []element.Effect{{Name: "authority.action-arbitration.memory", Reversible: true}},
 	}
 }
 
@@ -637,7 +684,7 @@ func DispatchDescriptor() element.Descriptor {
 
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
-		ProvenanceJoinDescriptor(), ProposalAdmissionDescriptor(), ToolLookupDescriptor(), ConfirmationDescriptor(),
+		ProvenanceJoinDescriptor(), ProposalAdmissionDescriptor(), ActionArbiterDescriptor(), ToolLookupDescriptor(), ConfirmationDescriptor(),
 		TargetFenceDescriptor(), AuthorizedCallCommitDescriptor(), ClientToolResultDescriptor(), ClientToolResultJoinDescriptor(),
 		LedgerCommitDescriptor(), DispatchDescriptor(),
 		ToolResultCommitDescriptor(),
@@ -675,7 +722,7 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
 	for _, factory := range []element.Factory{
-		provenanceJoinFactory{}, proposalAdmissionFactory{}, toolLookupFactory{}, confirmationFactory{},
+		provenanceJoinFactory{}, proposalAdmissionFactory{}, actionArbiterFactory{}, toolLookupFactory{}, confirmationFactory{},
 		targetFenceFactory{}, authorizedCallCommitFactory{}, clientToolResultFactory{}, clientToolResultJoinFactory{},
 		ledgerCommitFactory{}, dispatchFactory{},
 		toolResultCommitFactory{},

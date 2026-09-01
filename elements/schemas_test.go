@@ -42,8 +42,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 30 {
-		t.Fatalf("standard config schema count = %d, want 30", len(references))
+	if len(references) != 31 {
+		t.Fatalf("standard config schema count = %d, want 31", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -286,6 +286,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/action/ledger-commit-config/v1":              `{"ledger":"actions"}`,
 		"schema://openrealtime/action/tool-lookup-config/v1":                `{"registry":"tools"}`,
 		"schema://openrealtime/action/tool-result-commit-config/v1":         `{}`,
+		"schema://openrealtime/authority/action-arbiter-config/v1":          `{}`,
 		"schema://openrealtime/authority/confirmation-config/v1":            `{"provider":"confirm"}`,
 		"schema://openrealtime/authority/proposal-admission-config/v1":      `{}`,
 		"schema://openrealtime/authority/provenance-join-config/v1":         `{}`,
@@ -321,6 +322,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/action/ledger-commit-config/v1":              `{}`,
 		"schema://openrealtime/action/tool-lookup-config/v1":                `{}`,
 		"schema://openrealtime/action/tool-result-commit-config/v1":         `{"terminal_memory":5000}`,
+		"schema://openrealtime/authority/action-arbiter-config/v1":          `{"terminal_memory":5000}`,
 		"schema://openrealtime/authority/confirmation-config/v1":            `{}`,
 		"schema://openrealtime/authority/proposal-admission-config/v1":      `{"max_pending":5000}`,
 		"schema://openrealtime/authority/provenance-join-config/v1":         `{"terminal_memory":5000}`,

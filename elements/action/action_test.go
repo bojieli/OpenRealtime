@@ -1710,13 +1710,14 @@ func provenanceJoinEvidence(runID, callID, sessionID string) (element.Envelope, 
 	return candidate, proposal, result
 }
 
-func TestDescriptorsExposeElevenDistinctBoundariesAndOnlyDispatchIsExternal(t *testing.T) {
+func TestDescriptorsExposeTwelveDistinctBoundariesAndOnlyDispatchIsExternal(t *testing.T) {
 	descriptors := Descriptors()
-	if len(descriptors) != 11 {
-		t.Fatalf("descriptor count = %d, want 11", len(descriptors))
+	if len(descriptors) != 12 {
+		t.Fatalf("descriptor count = %d, want 12", len(descriptors))
 	}
 	existingRevisions := map[string]uint64{
 		"authority.ProposalAdmission":    2,
+		"authority.ActionArbiter":        1,
 		"action.ToolLookup":              2,
 		"authority.Confirmation":         2,
 		"authority.TargetFence":          2,
@@ -1773,6 +1774,7 @@ func TestStrictConfigAndGraphTypeCheckingRejectRedundantOrBypassedAuthoring(t *t
 	}{
 		{"admission unknown", proposalAdmissionFactory{}, `{"unknown":true}`},
 		{"admission duplicate", proposalAdmissionFactory{}, `{"max_pending":1,"max_pending":2}`},
+		{"arbiter unbounded", actionArbiterFactory{}, `{"terminal_memory":4097}`},
 		{"lookup missing", toolLookupFactory{}, `{}`},
 		{"confirmation missing", confirmationFactory{}, `{}`},
 		{"fence missing", targetFenceFactory{}, `{}`},

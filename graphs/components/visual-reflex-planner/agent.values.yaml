@@ -1,0 +1,70 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: visual_reflex_planner
+nodes:
+  observation_commit: {}
+  trajectory: {}
+  reflex_activation:
+    role: visual-reflex
+    invocation:
+      instruction: Select at most one immediate action grounded in the latest committed visual observation.
+      max_output_tokens: 128
+      tools:
+        - name: computer.click
+          description: Click a point on the declared browser surface.
+          parameters:
+            type: object
+            additionalProperties: false
+            required: [source, x, y]
+            properties:
+              source: {type: string}
+              x: {type: integer}
+              y: {type: integer}
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  planner_activation:
+    role: visual-planner
+    invocation:
+      instruction: Plan at most one safe action from the complete committed trajectory and latest visual observation.
+      max_output_tokens: 512
+      tools:
+        - name: computer.click
+          description: Click a point on the declared browser surface.
+          parameters:
+            type: object
+            additionalProperties: false
+            required: [source, x, y]
+            properties:
+              source: {type: string}
+              x: {type: integer}
+              y: {type: integer}
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  reflex_model:
+    provider: deployment.visual-reflex
+    retain_reasoning: false
+    max_tool_proposals: 1
+  planner_model:
+    provider: deployment.visual-planner
+    retain_reasoning: true
+    max_tool_proposals: 1
+  model_result_commit: {}
+  reflex_provenance: {}
+  planner_provenance: {}
+  reflex_admission: {}
+  planner_admission: {}
+  action_arbiter: {}
+  tool_lookup:
+    registry: deployment.tools
+  confirmation:
+    provider: deployment.confirmation
+  target_fence:
+    target: deployment.browser
+  canonical_call_commit: {}
+  ledger_commit:
+    ledger: deployment.ledger
+  dispatch:
+    registry: deployment.tools
+    ledger: deployment.ledger
+  tool_result_commit: {}
