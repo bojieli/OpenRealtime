@@ -3,14 +3,17 @@ package browser
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
 	"github.com/bojieli/OpenRealtime/presentation"
 	"github.com/bojieli/OpenRealtime/presentation/host"
@@ -175,6 +178,7 @@ func TestEmbeddedBrowserModulesParseAsJavaScript(t *testing.T) {
 		"transport-diagnostics-view.js", "effects-client.js", "artifact-references.js",
 		"confirmation-view.js", "artifact-view.js", "management-operator-capability.js",
 		"management-transport.js", "management-static.js", "management-authoring.js",
+		"management-source-publication.js",
 		"authoring-workspace.js", "management-operator-view.js", "authoring-editor-view.js",
 		"authoring-configuration-view.js", "authoring-canvas-view.js",
 	} {
@@ -318,7 +322,7 @@ func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScri
 	temporary := t.TempDir()
 	names := []string{
 		"management-operator-capability.js", "management-transport.js", "management-static.js",
-		"management-authoring.js", "authoring-workspace.js", "reducer.js",
+		"management-authoring.js", "management-source-publication.js", "authoring-workspace.js", "reducer.js",
 	}
 	paths := make([]string, 0, len(names))
 	for _, name := range names {
@@ -336,7 +340,28 @@ func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScri
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, append([]string{runner}, paths...)...).CombinedOutput(); err != nil {
+	goRequest := management.SourceWriteRequest{
+		FormatVersion:        management.SourceWriteFormatVersion,
+		RootIdentity:         "sha256:" + strings.Repeat("6", 64),
+		Mode:                 management.SourceUpdate,
+		Path:                 "unicode/agent-β.ortg",
+		Source:               "graph browser_go_β {\n}\n",
+		ExpectedSourceDigest: "sha256:" + strings.Repeat("5", 64),
+	}
+	goReceipt, err := management.NewSourceWriteReceipt(goRequest, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := json.Marshal(struct {
+		Request  management.SourceWriteRequest `json:"request"`
+		Receipt  management.SourceWriteReceipt `json:"receipt"`
+		Evidence string                        `json:"evidence"`
+	}{Request: goRequest, Receipt: goReceipt, Evidence: "authoring:write:" + goReceipt.ReceiptDigest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	arguments := append(append([]string{runner}, paths...), string(fixture))
+	if output, err := exec.Command(node, arguments...).CombinedOutput(); err != nil {
 		t.Fatalf("management client conformance: %v\n%s", err, output)
 	}
 }
@@ -411,7 +436,7 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 		"effects", "artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
 		"video-controls", "transport-diagnostics", "inspection-view", "trace-view",
 		"management-operator", "management-transport", "management-static", "management-authoring",
-		"authoring-workspace", "management-operator-view", "authoring-editor-view",
+		"management-source-publication", "authoring-workspace", "management-operator-view", "authoring-editor-view",
 		"authoring-configuration-view", "authoring-canvas-view",
 	}
 	if !reflect.DeepEqual(order, want) {
@@ -428,7 +453,7 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 		!reflect.DeepEqual(grants["inspection"], []string{"http"}) ||
 		!reflect.DeepEqual(grants["effects"], []string{"websocket"}) ||
 		!reflect.DeepEqual(grants["management-operator"], []string{"header"}) ||
-		!reflect.DeepEqual(grants["management-transport"], []string{"authoring", "static"}) {
+		!reflect.DeepEqual(grants["management-transport"], []string{"authoring", "publication", "static"}) {
 		t.Fatalf("WebRTC developer client grants = %#v", grants)
 	}
 	var endpoints []string
@@ -471,7 +496,7 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		"artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
 		"inspection-view", "trace-view",
 		"management-operator", "management-transport", "management-static", "management-authoring",
-		"authoring-workspace", "management-operator-view", "authoring-editor-view",
+		"management-source-publication", "authoring-workspace", "management-operator-view", "authoring-editor-view",
 		"authoring-configuration-view", "authoring-canvas-view",
 	}
 	if !reflect.DeepEqual(order, want) {
@@ -547,7 +572,9 @@ func TestObserverDeveloperBundleHasManagementWithoutImplicitEffects(t *testing.T
 			t.Fatalf("observer developer bundle omitted %s", required)
 		}
 	}
-	for _, forbidden := range []string{"effects", "artifact-references", "confirmation-view", "artifact-view"} {
+	for _, forbidden := range []string{
+		"effects", "artifact-references", "confirmation-view", "artifact-view", "management-source-publication",
+	} {
 		if _, found := entries[forbidden]; found {
 			t.Fatalf("observer developer bundle retained implicit effect plugin %s", forbidden)
 		}
@@ -558,6 +585,16 @@ func TestObserverDeveloperBundleHasManagementWithoutImplicitEffects(t *testing.T
 		}
 		if strings.HasPrefix(endpoint.Name, "management.") && endpoint.Protocol != managementProtocol {
 			t.Fatalf("management endpoint is not protocol-locked: %#v", endpoint)
+		}
+	}
+	for _, grant := range bundle.Manifest.Grants {
+		if grant.Entry != "management-transport" {
+			continue
+		}
+		for _, permission := range grant.Permissions {
+			if slices.Contains(permission.Operations, "publication") {
+				t.Fatalf("observer developer bundle granted source publication: %#v", grant)
+			}
 		}
 	}
 	encoded, err := presentation.MarshalManifest(bundle.Manifest)
@@ -589,7 +626,9 @@ func TestObserverDeveloperWebRTCBundleHasMediaManagementWithoutImplicitEffects(t
 			t.Fatalf("observer WebRTC bundle omitted %s", required)
 		}
 	}
-	for _, forbidden := range []string{"effects", "artifact-references", "confirmation-view", "artifact-view"} {
+	for _, forbidden := range []string{
+		"effects", "artifact-references", "confirmation-view", "artifact-view", "management-source-publication",
+	} {
 		if _, found := entries[forbidden]; found {
 			t.Fatalf("observer WebRTC bundle retained implicit effect plugin %s", forbidden)
 		}
@@ -601,6 +640,16 @@ func TestObserverDeveloperWebRTCBundleHasMediaManagementWithoutImplicitEffects(t
 		}
 		foundWebRTC = foundWebRTC || endpoint.Name == "realtime.webrtc" &&
 			endpoint.Method == "POST" && endpoint.Path == "/client/v1/realtime/calls"
+	}
+	for _, grant := range bundle.Manifest.Grants {
+		if grant.Entry != "management-transport" {
+			continue
+		}
+		for _, permission := range grant.Permissions {
+			if slices.Contains(permission.Operations, "publication") {
+				t.Fatalf("observer WebRTC bundle granted source publication: %#v", grant)
+			}
+		}
 	}
 	if !foundWebRTC {
 		t.Fatalf("observer WebRTC manifest endpoints = %#v", bundle.Manifest.Endpoints)

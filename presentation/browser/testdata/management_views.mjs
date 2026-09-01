@@ -44,8 +44,10 @@ let workspaceSnapshot = {
   phase: "idle", error: "", analysis: null, compiled: null, rendering: null,
 };
 const workspaceListeners = new Set();
+const publicationCalls = [];
 const workspace = Object.freeze({
   snapshot: () => structuredClone(workspaceSnapshot),
+  canPublish: () => true,
   subscribe(listener) { workspaceListeners.add(listener); listener(structuredClone(workspaceSnapshot));
     return () => workspaceListeners.delete(listener); },
   setDocument(path, source, revision) {
@@ -54,6 +56,17 @@ const workspace = Object.freeze({
     for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
   },
   async analyze() {}, async compile() {}, async render() {},
+  async publish(mode, rootIdentity, expectedSourceDigest = "") {
+    publicationCalls.push({ mode, rootIdentity, expectedSourceDigest,
+      path: workspaceSnapshot.document.path, source: workspaceSnapshot.document.source });
+    const receipt = { format_version: 1, root_identity: rootIdentity, mode,
+      path: workspaceSnapshot.document.path, previous_source_digest: expectedSourceDigest,
+      source_digest: `sha256:${"d".repeat(64)}`, source_bytes: workspaceSnapshot.document.source.length,
+      cleanup_pending: false, receipt_digest: `sha256:${"e".repeat(64)}` };
+    workspaceSnapshot = { ...workspaceSnapshot, phase: "published", publication: receipt };
+    for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+    return structuredClone(workspaceSnapshot);
+  },
 });
 let operatorSecret = "";
 const operatorListeners = new Set();
@@ -118,11 +131,31 @@ if (operatorSecret !== "operator_dom_secret" || password.value !== "" ||
   throw new Error("operator configuration renderer retained or displayed a bearer value");
 }
 
+const editor = slots.get("authoring.editor");
+const sourcePath = find(editor, (entry) => entry.name === "authoring-path");
+const sourceText = find(editor, (entry) => entry.name === "authoring-source");
+const sourceRoot = find(editor, (entry) => entry.name === "authoring-root-identity");
+const createSource = find(editor, (entry) => entry.dataset.action === "publish-create");
+sourcePath.value = "ui-created.ortg";
+sourceText.value = "graph ui_created {\n}\n";
+sourceRoot.value = `sha256:${"c".repeat(64)}`;
+await createSource.dispatch("click");
+if (publicationCalls.length !== 1 || publicationCalls[0].mode !== "create" ||
+    publicationCalls[0].rootIdentity !== sourceRoot.value ||
+    publicationCalls[0].path !== sourcePath.value || publicationCalls[0].source !== sourceText.value ||
+    !editor.textContent.includes(`sha256:${"e".repeat(64)}`)) {
+  throw new Error("authoring editor did not keep mediated publication explicit and receipt-bound");
+}
+
 const malicious = '<img src=x onerror="globalThis.compromised=true">';
 const propertyName = "mode/tilde~";
 workspaceSnapshot = {
   ...workspaceSnapshot, phase: "analyzed",
-  analysis: { catalog: { total: 1, elements: [{
+  analysis: { diagnostics: { total: 1, items: [{
+    code: "E_MARKUP", severity: "error", path: "ui-created.ortg",
+    span: { start: { offset: 0, line: 1, column: 1 }, end: { offset: 5, line: 1, column: 6 } },
+    message: malicious, notes: [malicious],
+  }] }, catalog: { total: 1, elements: [{
     identity: { name: "test.Element", revision: 1, digest: `sha256:${"a".repeat(64)}` },
     config: { schema_status: "resolved", artifact: "agent.values.yaml", resolved: true,
       inline_topology_values: false, empty_object_only: false, properties_complete: true,
@@ -140,6 +173,8 @@ for (const listener of workspaceListeners) listener(structuredClone(workspaceSna
 const configuration = slots.get("authoring.configuration");
 const canvas = slots.get("authoring.canvas");
 if (!configuration.textContent.includes(malicious) || tags(configuration).includes("IMG") ||
+    !editor.textContent.includes(`[E_MARKUP] error`) || !editor.textContent.includes(malicious) ||
+    tags(editor).includes("IMG") ||
     !canvas.textContent.includes("<svg onload=alert(1)>") || tags(canvas).includes("SVG") ||
     globalThis.compromised) {
   throw new Error("authoring metadata or render output crossed the text-only view boundary");

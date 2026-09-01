@@ -3,6 +3,8 @@ const SYMBOL = /^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)+$/;
 const MAX_SOURCE_BYTES = 1 << 20;
 const MAX_ITEMS = 65_536;
 const MAX_TEXT_BYTES = 64 << 20;
+const MAX_DIAGNOSTIC_BYTES = 64 << 10;
+const MAX_DIAGNOSTIC_NOTES = 256;
 const encoder = new TextEncoder();
 const SCHEMA_TYPES = new Set(["array", "boolean", "integer", "null", "number", "object", "string"]);
 
@@ -109,13 +111,90 @@ async function sourceDigest(source) {
 }
 
 function validateReport(report, collection, label) {
-  object(report, label);
+  only(report, [collection, "total", "incomplete"], label);
   const values = rows(report[collection], `${label} items`);
   if (!Number.isSafeInteger(report.total) || report.total < values.length || report.total > MAX_ITEMS ||
       Boolean(report.incomplete) !== (values.length < report.total)) {
     throw new Error(`${label} bounds are invalid`);
   }
   return values;
+}
+
+function sourcePositions(source, offsets) {
+  const requested = new Set(offsets);
+  const result = new Map();
+  let offset = 0;
+  let line = 1;
+  let column = 1;
+  if (requested.has(0)) result.set(0, Object.freeze({ line, column }));
+  for (const character of source) {
+    offset += encoder.encode(character).byteLength;
+    if (character === "\n") {
+      line++;
+      column = 1;
+    } else {
+      column++;
+    }
+    if (requested.has(offset)) result.set(offset, Object.freeze({ line, column }));
+    if (result.size === requested.size) break;
+  }
+  return result;
+}
+
+function sourcePosition(value, positions, label) {
+  only(value, ["offset", "line", "column"], label);
+  if (!Number.isSafeInteger(value.offset) || value.offset < 0 ||
+      !Number.isSafeInteger(value.line) || value.line < 1 ||
+      !Number.isSafeInteger(value.column) || value.column < 1) {
+    throw new Error(`${label} is invalid`);
+  }
+  const actual = positions?.get(value.offset);
+  if (positions && (!actual || actual.line !== value.line || actual.column !== value.column)) {
+    throw new Error(`${label} does not name a source boundary`);
+  }
+  return value.offset;
+}
+
+function sourceSpan(value, positions, label) {
+  only(value, ["start", "end"], label);
+  const start = sourcePosition(value.start, positions, `${label} start`);
+  const end = sourcePosition(value.end, positions, `${label} end`);
+  if (end < start) throw new Error(`${label} is reversed`);
+  return start;
+}
+
+function validateDiagnostics(report, source) {
+  const diagnostics = validateReport(report, "items", "diagnostic report");
+  const offsets = [];
+  let previous = -1;
+  for (const diagnostic of diagnostics) {
+    only(diagnostic, ["code", "severity", "path", "span", "message", "notes"], "diagnostic");
+    if (typeof diagnostic.code !== "string" || diagnostic.code.length === 0 ||
+        diagnostic.code.trim() !== diagnostic.code ||
+        encoder.encode(diagnostic.code).byteLength > 256 ||
+        !new Set(["error", "warning"]).has(diagnostic.severity) ||
+        typeof diagnostic.message !== "string" || diagnostic.message.length === 0 ||
+        encoder.encode(diagnostic.message).byteLength > MAX_DIAGNOSTIC_BYTES) {
+      throw new Error("analysis diagnostic is invalid");
+    }
+    const diagnosticPath = diagnostic.path ?? "";
+    if (typeof diagnosticPath !== "string" || /[\0\r\n]/.test(diagnosticPath) ||
+        encoder.encode(diagnosticPath).byteLength > MAX_DIAGNOSTIC_BYTES) {
+      throw new Error("analysis diagnostic path is invalid");
+    }
+    const start = sourceSpan(diagnostic.span, null, "diagnostic span");
+    if (start < previous) throw new Error("analysis diagnostics are not in source order");
+    previous = start;
+    offsets.push(diagnostic.span.start.offset, diagnostic.span.end.offset);
+    const notes = rows(diagnostic.notes ?? [], "diagnostic notes");
+    if (notes.length > MAX_DIAGNOSTIC_NOTES || notes.some((note) =>
+      typeof note !== "string" || encoder.encode(note).byteLength > MAX_DIAGNOSTIC_BYTES)) {
+      throw new Error("analysis diagnostic notes are invalid");
+    }
+  }
+  const positions = sourcePositions(source, offsets);
+  for (const diagnostic of diagnostics) sourceSpan(diagnostic.span, positions, "diagnostic span");
+  return diagnostics;
 }
 
 function boundedString(value, label, required = false) {
@@ -209,7 +288,7 @@ function validateConfigMetadata(config) {
   }
 }
 
-function validateAnalysis(value, requestedDigest, evidence) {
+function validateAnalysis(value, input, requestedDigest, evidence) {
   only(value, ["source_digest", "parsed", "recovered", "canonical", "diagnostics", "catalog", "formatting"],
     "analysis result");
   if (value.source_digest !== requestedDigest || evidence !== `authoring:analyze:${requestedDigest}` ||
@@ -218,15 +297,7 @@ function validateAnalysis(value, requestedDigest, evidence) {
       (value.canonical && !value.parsed)) {
     throw new Error("analysis result changed source identity");
   }
-  const diagnostics = validateReport(value.diagnostics, "items", "diagnostic report");
-  for (const diagnostic of diagnostics) {
-    object(diagnostic, "diagnostic");
-    if (typeof diagnostic.code !== "string" || diagnostic.code.length === 0 || diagnostic.code.length > 256 ||
-        typeof diagnostic.message !== "string" || diagnostic.message.length === 0 ||
-        encoder.encode(diagnostic.message).byteLength > (64 << 10)) {
-      throw new Error("analysis diagnostic is invalid");
-    }
-  }
+  validateDiagnostics(value.diagnostics, input.source);
   const metadata = validateReport(value.catalog, "elements", "metadata report");
   let previous = "";
   for (const element of metadata) {
@@ -282,7 +353,7 @@ export default {
         const fingerprint = await sourceDigest(exact.source);
         const response = await transport.authoring("analyze", exact);
         ready();
-        return validateAnalysis(response.value, fingerprint, response.identity);
+        return validateAnalysis(response.value, exact, fingerprint, response.identity);
       },
       async compile(input) {
         ready();

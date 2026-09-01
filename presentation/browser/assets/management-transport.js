@@ -109,11 +109,24 @@ function staticRequest(action, input) {
   }
 }
 
-function authoringRequest(action) {
+function authoringRequest(action, input) {
   switch (action) {
-    case "analyze": return { operation: "authoring.analyze" };
-    case "compile": return { operation: "authoring.compile" };
-    case "render": return { operation: "authoring.render" };
+    case "analyze": return { operation: "authoring.analyze", resource: "authoring" };
+    case "compile": return { operation: "authoring.compile", resource: "authoring" };
+    case "render": return { operation: "authoring.render", resource: "authoring" };
+    case "write": {
+      if (!input || typeof input !== "object" || Array.isArray(input) ||
+          typeof input.root_identity !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.root_identity)) {
+        throw new Error("source publication has an invalid root identity");
+      }
+      if (input.mode === "create") {
+        return { operation: "authoring.source.create", resource: input.root_identity };
+      }
+      if (input.mode === "update") {
+        return { operation: "authoring.source.update", resource: input.root_identity };
+      }
+      throw new Error("source publication has an invalid mode");
+    }
     default: throw new Error("unsupported authoring operation");
   }
 }
@@ -190,9 +203,13 @@ export default {
           operation: spec.operation, resource: spec.resource, maximum: spec.maximum });
       },
       authoring(action, body) {
-        const spec = authoringRequest(action);
+        const spec = authoringRequest(action, body);
+        if (action === "write" &&
+            !context.permissions.allows("network.connect", "host-management", "publication")) {
+          throw new Error("management transport lacks its source-publication deployment grant");
+        }
         return execute({ method: "POST", base: authoringBase, segments: [action],
-          operation: spec.operation, resource: "authoring", body, maximum: MAX_JSON_BYTES });
+          operation: spec.operation, resource: spec.resource, body, maximum: MAX_JSON_BYTES });
       },
     }));
     context.lifecycle.defer("management-transport", () => {

@@ -9,6 +9,8 @@ const PORT = Number(process.env.CDP_PORT ?? 19311);
 const OPERATOR_CAPABILITY = process.env.OPERATOR_CAPABILITY ?? "";
 const OPERATOR_CAPABILITY_ROTATED = process.env.OPERATOR_CAPABILITY_ROTATED ?? "";
 const AUTHORING_SOURCE = process.env.AUTHORING_SOURCE ?? "";
+const AUTHORING_UPDATED_SOURCE = process.env.AUTHORING_UPDATED_SOURCE ?? "";
+const SOURCE_ROOT_IDENTITY = process.env.SOURCE_ROOT_IDENTITY ?? "";
 const STATIC_GRAPH_FINGERPRINT = process.env.STATIC_GRAPH_FINGERPRINT ?? "";
 const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
 const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
@@ -16,7 +18,9 @@ if (!new Set(["websocket", "webrtc"]).has(CLIENT_TRANSPORT)) {
   throw new Error("developer client transport fixture is invalid");
 }
 if (!OPERATOR_CAPABILITY || !OPERATOR_CAPABILITY_ROTATED || !AUTHORING_SOURCE ||
-    !/^sha256:[0-9a-f]{64}$/.test(STATIC_GRAPH_FINGERPRINT)) {
+    !/^sha256:[0-9a-f]{64}$/.test(STATIC_GRAPH_FINGERPRINT) ||
+    (EFFECTS_ENABLED && (!AUTHORING_UPDATED_SOURCE ||
+      !/^sha256:[0-9a-f]{64}$/.test(SOURCE_ROOT_IDENTITY)))) {
   throw new Error("developer management E2E fixture is incomplete");
 }
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-developer-client-"));
@@ -152,6 +156,7 @@ try {
     ];
   expectedMounted.push(
       "management-operator", "management-transport", "management-static", "management-authoring",
+      ...(EFFECTS_ENABLED ? ["management-source-publication"] : []),
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view",
   );
@@ -162,7 +167,8 @@ try {
       await evaluate(`(() => {
         const live = window.__openrealtime.live();
         const manifest = window.__openrealtime.manifest;
-        const forbidden = ["effects", "artifact-references", "confirmation-view", "artifact-view"];
+        const forbidden = ["effects", "artifact-references", "confirmation-view", "artifact-view",
+          "management-source-publication"];
         const services = Object.values(live.entries).flatMap((entry) => entry.services ?? []);
         return !forbidden.some((name) =>
           Object.hasOwn(live.entries, name) || window.__openrealtime.mounted.includes(name)) &&
@@ -266,6 +272,11 @@ try {
     `document.querySelector('[data-view=authoring-configuration]')?.textContent ?? ""`);
   check("configuration renderer projects server-validated descriptor metadata",
     configurationMetadata.includes("compat.BindingRuntime") && configurationMetadata.includes("schema://"));
+  check("browser editor renders the exact bounded diagnostic report as text", await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    return view?.querySelector('[data-role=diagnostic-status]')?.textContent === "0 of 0 diagnostics" &&
+      view.querySelector('[data-role=diagnostics]')?.children.length === 0;
+  })()`));
 
   const compileStarted = performance.now();
   await evaluate(
@@ -289,6 +300,41 @@ try {
       view?.querySelector('[data-role=rendering]')?.textContent.includes('"nodes"') &&
       view?.querySelector('[data-role=rendering]')?.textContent.includes('"reaction"');
   })()`));
+
+  if (EFFECTS_ENABLED) {
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      view.querySelector('input[name=authoring-root-identity]').value = ${JSON.stringify(SOURCE_ROOT_IDENTITY)};
+      view.querySelector('button[data-action=publish-create]').click();
+    })()`);
+    await waitFor("mediated browser source create", () => evaluate(`(() => {
+      const receipt = document.querySelector(
+        '[data-view=authoring-editor] [data-role=publication-receipt]')?.textContent;
+      try { return JSON.parse(receipt).mode === "create"; } catch { return false; }
+    })()`));
+    const createdSource = await evaluate(`JSON.parse(document.querySelector(
+      '[data-view=authoring-editor] [data-role=publication-receipt]').textContent)`);
+    check("browser create crosses only the rooted mediated publication boundary",
+      createdSource.root_identity === SOURCE_ROOT_IDENTITY && createdSource.path === "browser-authoring.ortg" &&
+      createdSource.mode === "create" && /^sha256:[0-9a-f]{64}$/.test(createdSource.receipt_digest));
+
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      view.querySelector('textarea[name=authoring-source]').value = ${JSON.stringify(AUTHORING_UPDATED_SOURCE)};
+      view.querySelector('button[data-action=publish-update]').click();
+    })()`);
+    await waitFor("stale-digest-bound browser source update", () => evaluate(`(() => {
+      const receipt = document.querySelector(
+        '[data-view=authoring-editor] [data-role=publication-receipt]')?.textContent;
+      try { return JSON.parse(receipt).mode === "update"; } catch { return false; }
+    })()`));
+    const updatedSource = await evaluate(`JSON.parse(document.querySelector(
+      '[data-view=authoring-editor] [data-role=publication-receipt]').textContent)`);
+    check("browser update binds the exact predecessor and advances the visible receipt",
+      updatedSource.previous_source_digest === createdSource.source_digest &&
+      updatedSource.source_digest !== createdSource.source_digest && updatedSource.path === createdSource.path &&
+      updatedSource.root_identity === createdSource.root_identity);
+  }
 
   const rotated = await configureOperator(OPERATOR_CAPABILITY_ROTATED);
   await loadStatic();
@@ -329,7 +375,8 @@ try {
   const authorityLossMS = performance.now() - authorityLossStarted;
   check("operator provider loss disposes the complete authoring subtree",
     authorityLoss.entries["management-operator"].state === "inactive" &&
-    ["management-transport", "management-static", "management-authoring", "authoring-workspace",
+    ["management-transport", "management-static", "management-authoring",
+      ...(EFFECTS_ENABLED ? ["management-source-publication"] : []), "authoring-workspace",
       "management-operator-view", "authoring-editor-view", "authoring-configuration-view",
       "authoring-canvas-view"].every((entry) => authorityLoss.entries[entry].state === "pending") &&
     !(await evaluate(`document.querySelector('[data-view^=authoring]') !== null`)));
@@ -342,6 +389,7 @@ try {
   await configureOperator(OPERATOR_CAPABILITY_ROTATED);
   check("operator provider recovery remounts every desired renderer",
     ["management-operator", "management-transport", "management-static", "management-authoring",
+      ...(EFFECTS_ENABLED ? ["management-source-publication"] : []),
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view"]
       .every((entry) => authorityRestore.entries[entry].state === "active"));

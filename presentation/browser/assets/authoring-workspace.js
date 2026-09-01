@@ -27,13 +27,14 @@ export default {
   revision: 1,
   async mount(context) {
     const authoring = context.services.get("presentation.client.management_authoring");
+    const sourcePublication = context.services.get("presentation.client.source_publication");
     if (!authoring) throw new Error("authoring workspace service is unavailable");
     let disposed = false;
     let epoch = 0;
     let request = 0;
     let state = {
       document: checkedDocument("agent.ortg", "graph agent {\n}\n"),
-      phase: "idle", error: "", analysis: null, compiled: null, rendering: null,
+      phase: "idle", error: "", analysis: null, compiled: null, rendering: null, publication: null,
     };
     const listeners = new Set();
     const snapshot = () => frozen({ ...state, epoch });
@@ -73,6 +74,7 @@ export default {
 
     context.publish("presentation.client.authoring_workspace", Object.freeze({
       snapshot,
+      canPublish: () => !disposed && Boolean(sourcePublication),
       subscribe(listener) {
         ready();
         if (typeof listener !== "function") throw new Error("workspace listener is invalid");
@@ -85,7 +87,7 @@ export default {
         epoch++;
         request++;
         return replace({ document: checkedDocument(path, source, revision), phase: "idle", error: "",
-          analysis: null, compiled: null, rendering: null });
+          analysis: null, compiled: null, rendering: null, publication: null });
       },
       analyze() {
         const input = state.document;
@@ -107,6 +109,22 @@ export default {
           ...current, phase: "rendered", error: "", rendering,
         }));
       },
+      publish(mode, rootIdentity, expectedSourceDigest = "") {
+        ready();
+        if (!sourcePublication || typeof sourcePublication.publish !== "function") {
+          throw new Error("source publication is unavailable in this client profile");
+        }
+        const input = state.document;
+        const publicationRequest = {
+          format_version: 1, root_identity: rootIdentity, mode,
+          path: input.path, source: input.source,
+        };
+        if (mode === "update") publicationRequest.expected_source_digest = expectedSourceDigest;
+        return invoke("publishing", () => sourcePublication.publish(publicationRequest),
+          (current, publication) => ({
+            ...current, phase: "published", error: "", publication,
+          }));
+      },
     }));
     context.lifecycle.defer("authoring-workspace", () => {
       disposed = true;
@@ -114,7 +132,7 @@ export default {
       request++;
       listeners.clear();
       state = { document: Object.freeze({ path: "", source: "", revision: 0 }), phase: "disposed",
-        error: "", analysis: null, compiled: null, rendering: null };
+        error: "", analysis: null, compiled: null, rendering: null, publication: null };
     });
   },
 };

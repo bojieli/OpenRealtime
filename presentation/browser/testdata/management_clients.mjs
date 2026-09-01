@@ -1,9 +1,12 @@
 import { pathToFileURL } from "node:url";
 
-const [operatorPath, transportPath, staticPath, authoringPath, workspacePath, reducerPath] = process.argv.slice(2);
-if (![operatorPath, transportPath, staticPath, authoringPath, workspacePath, reducerPath].every(Boolean)) {
+const [operatorPath, transportPath, staticPath, authoringPath, publicationPath,
+  workspacePath, reducerPath, goFixtureJSON] = process.argv.slice(2);
+if (![operatorPath, transportPath, staticPath, authoringPath, publicationPath,
+  workspacePath, reducerPath, goFixtureJSON].every(Boolean)) {
   throw new Error("management client module paths are required");
 }
+const goFixture = JSON.parse(goFixtureJSON);
 
 Object.defineProperty(globalThis, "location", {
   value: Object.freeze({ origin: "http://127.0.0.1:17777" }), configurable: true,
@@ -50,17 +53,21 @@ const operatorMount = await mount(operatorPath, [{
   kind: "credential.use", resource: "management-operator", operations: ["header"],
 }]);
 await mount(transportPath, [{
-  kind: "network.connect", resource: "host-management", operations: ["static", "authoring"],
+  kind: "network.connect", resource: "host-management", operations: ["static", "authoring", "publication"],
 }]);
 await mount(staticPath);
 await mount(authoringPath);
+await mount(publicationPath);
 await mount(workspacePath);
 
 const control = services.get("presentation.client.management_operator_control");
 const catalog = services.get("presentation.client.management_static");
 const authoring = services.get("presentation.client.management_authoring");
+const publication = services.get("presentation.client.source_publication");
 const workspace = services.get("presentation.client.authoring_workspace");
-if (!control || !catalog || !authoring || !workspace) throw new Error("management services were not published");
+if (!control || !catalog || !authoring || !publication || !workspace || !workspace.canPublish()) {
+  throw new Error("management services were not published");
+}
 
 const operatorOne = "operator_secret_one";
 const operatorTwo = "operator_secret_two";
@@ -84,6 +91,42 @@ function response(payload, identity, headers = {}) {
     "Content-Type": "application/json", "Content-Length": String(new TextEncoder().encode(body).byteLength),
     "OpenRealtime-Management-Identity": identity, ...headers,
   } });
+}
+
+const bytes = (value) => new TextEncoder().encode(value);
+const uint64 = (value) => {
+  const result = new Uint8Array(8);
+  new DataView(result.buffer).setBigUint64(0, BigInt(value), false);
+  return result;
+};
+const joined = (parts) => {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+  let offset = 0;
+  for (const part of parts) { result.set(part, offset); offset += part.byteLength; }
+  return result;
+};
+const sha256 = async (value) => {
+  const sum = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
+  return `sha256:${[...sum].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+};
+async function publicationReceipt(request, cleanup = false) {
+  const sourceBytes = bytes(request.source);
+  const sourceDigest = await sha256(sourceBytes);
+  const previous = request.mode === "update" ? request.expected_source_digest : "";
+  const receipt = {
+    format_version: 1, root_identity: request.root_identity, mode: request.mode, path: request.path,
+    source_digest: sourceDigest, source_bytes: sourceBytes.byteLength,
+  };
+  if (previous) receipt.previous_source_digest = previous;
+  if (cleanup) receipt.cleanup_pending = true;
+  const parts = [bytes("openrealtime.management.source-write-receipt/v1\0")];
+  for (const field of [request.root_identity, request.mode, request.path, previous, sourceDigest]) {
+    const fieldBytes = bytes(field);
+    parts.push(uint64(fieldBytes.byteLength), fieldBytes);
+  }
+  parts.push(uint64(sourceBytes.byteLength), Uint8Array.of(cleanup ? 1 : 0));
+  receipt.receipt_digest = await sha256(joined(parts));
+  return receipt;
 }
 
 const graphDigest = `sha256:${"a".repeat(64)}`;
@@ -158,7 +201,9 @@ const sourceHash = new Uint8Array(await crypto.subtle.digest("SHA-256", new Text
 const sourceDigest = `sha256:${[...sourceHash].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 const analysis = {
   source_digest: sourceDigest, parsed: true, recovered: false, canonical: true,
-  diagnostics: { items: [], total: 0 },
+  diagnostics: { items: [{ code: "W_FIXTURE", severity: "warning", path: "fixture.ortg",
+    span: { start: { offset: 0, line: 1, column: 1 }, end: { offset: 5, line: 1, column: 6 } },
+    message: "<img src=x onerror=globalThis.compromised=true>", notes: ["text-only note"] }], total: 1 },
   catalog: { elements: [{
     identity: { name: "test.Element", revision: 1, digest: elementDigest }, topology_declaration: "test.Element",
     ports: [], reaction: {}, config: { artifact: "schema://test.Element", resolved: true,
@@ -190,6 +235,14 @@ await authoring.analyze({ path: "fixture.ortg", source, revision: 1 }).then(
   (error) => { if (!String(error).includes("identity")) throw error; },
 );
 
+const malformedDiagnostic = structuredClone(analysis);
+malformedDiagnostic.diagnostics.items[0].span.start.line = 2;
+handlers.push(() => response(malformedDiagnostic, `authoring:analyze:${sourceDigest}`));
+await authoring.analyze({ path: "fixture.ortg", source, revision: 1 }).then(
+  () => { throw new Error("diagnostic with a forged source position was accepted"); },
+  (error) => { if (!String(error).includes("source boundary")) throw error; },
+);
+
 const malformedAnalysis = structuredClone(analysis);
 malformedAnalysis.catalog.elements[0].config.properties[0].pointer = "#/properties/other";
 handlers.push(() => response(malformedAnalysis, `authoring:analyze:${sourceDigest}`));
@@ -214,6 +267,74 @@ await authoring.render(graph, "model").then(
   () => { throw new Error("rendering with mismatched host evidence was accepted"); },
   (error) => { if (!String(error).includes("identity")) throw error; },
 );
+
+const rootIdentity = `sha256:${"e".repeat(64)}`;
+const createRequest = {
+  format_version: 1, root_identity: rootIdentity, mode: "create", path: "browser/created.ortg",
+  source: "graph browser_created {\n}\n",
+};
+const createReceipt = await publicationReceipt(createRequest);
+handlers.push(() => response(createReceipt, `authoring:write:${createReceipt.receipt_digest}`));
+const created = await publication.publish(createRequest);
+const createFetch = requests.at(-1);
+if (created.source_digest !== createReceipt.source_digest || created.previous_source_digest !== "" ||
+    !createFetch.url.endsWith("/authoring/write") ||
+    createFetch.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
+    createFetch.options.body.includes(operatorOne) || createFetch.url.includes(rootIdentity)) {
+  throw new Error("source create did not preserve its resource-scoped authority and receipt identity");
+}
+
+const forgedReceipt = { ...createReceipt, receipt_digest: otherDigest };
+handlers.push(() => response(forgedReceipt, `authoring:write:${otherDigest}`));
+await publication.publish(createRequest).then(
+  () => { throw new Error("forged source publication receipt was accepted"); },
+  (error) => { if (!String(error).includes("receipt")) throw error; },
+);
+
+const updatedSource = "graph browser_updated {\n}\n";
+const updateRequest = { ...createRequest, mode: "update", source: updatedSource,
+  expected_source_digest: created.source_digest };
+const updateReceipt = await publicationReceipt(updateRequest, true);
+handlers.push(() => response(updateReceipt, `authoring:write:${updateReceipt.receipt_digest}`));
+workspace.setDocument(updateRequest.path, updatedSource, 1);
+await workspace.publish("update", rootIdentity, created.source_digest);
+const publishedSnapshot = workspace.snapshot();
+if (publishedSnapshot.phase !== "published" ||
+    publishedSnapshot.publication?.receipt_digest !== updateReceipt.receipt_digest ||
+    !publishedSnapshot.publication.cleanup_pending) {
+  throw new Error("authoring workspace did not retain the exact payload-free publication receipt");
+}
+handlers.push(() => response(goFixture.receipt, goFixture.evidence));
+const crossLanguageReceipt = await publication.publish(goFixture.request);
+if (crossLanguageReceipt.receipt_digest !== goFixture.receipt.receipt_digest ||
+    crossLanguageReceipt.source_bytes !== bytes(goFixture.request.source).byteLength ||
+    crossLanguageReceipt.cleanup_pending !== true) {
+  throw new Error("browser publication validation diverged from the canonical Go receipt format");
+}
+const beforeInvalidPublish = requests.length;
+await publication.publish({ ...updateRequest, expected_source_digest: updateReceipt.source_digest }).then(
+  () => { throw new Error("unchanged stale-bound source update was accepted"); },
+  () => {},
+);
+if (requests.length !== beforeInvalidPublish) {
+  throw new Error("invalid source update reached the network");
+}
+for (const invalid of [
+  { ...createRequest, path: "../escape.ortg" },
+  { ...createRequest, root_identity: `sha256:${"E".repeat(64)}` },
+  { ...createRequest, source: "graph \ud800 {\n}\n" },
+  { ...createRequest, expected_source_digest: graphDigest },
+  { ...updateRequest, expected_source_digest: undefined },
+  { ...createRequest, unexpected: true },
+]) {
+  await publication.publish(invalid).then(
+    () => { throw new Error("invalid source publication request was accepted"); },
+    () => {},
+  );
+}
+if (requests.length !== beforeInvalidPublish) {
+  throw new Error("invalid source publication request reached the network");
+}
 
 const operatorExpiring = "operator_secret_expiring";
 control.replace(operatorExpiring, Date.now() + 5);

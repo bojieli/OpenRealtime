@@ -148,9 +148,13 @@ var (
 		"presentation.client.management_authoring",
 		"openrealtime/presentation/client/management-authoring/v1:analyze-compile-render-exact-document-graph-identity",
 	)
+	ClientSourcePublicationContract = semanticContract(
+		"presentation.client.source_publication",
+		"openrealtime/presentation/client/source-publication/v1:explicit-root-create-stale-update-receipt-revalidation",
+	)
 	ClientAuthoringWorkspaceContract = semanticContract(
 		"presentation.client.authoring_workspace",
-		"openrealtime/presentation/client/authoring-workspace/v1:bounded-document-analysis-compile-render-immutable-snapshot-subscribe",
+		"openrealtime/presentation/client/authoring-workspace/v1:bounded-document-analysis-compile-render-optional-publication-immutable-snapshot-subscribe",
 	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",

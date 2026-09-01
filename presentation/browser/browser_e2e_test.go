@@ -31,6 +31,19 @@ import (
 func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.T) {
 	node, chromium := requireBrowser(t)
 	operatorAuthority := management.NewCapabilityRegistry()
+	const sourceRootIdentity = "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+	sourceRoot := t.TempDir()
+	sourcePublisher, err := management.NewRootedSourcePublisher(management.RootedSourcePublisherOptions{
+		Root: sourceRoot, RootIdentity: sourceRootIdentity,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := sourcePublisher.Close(); err != nil {
+			t.Errorf("close browser source publisher: %v", err)
+		}
+	})
 	effects, err := host.NewEffectsFactory(host.EffectsOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +69,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 			`document.body.dataset.executed='yes'</script></body></html>"}`,
 		ClientEffectIssuer:   receipts,
 		ManagementAuthorizer: operatorAuthority,
+		SourcePublication:    sourcePublisher,
 	})
 	operatorGrants := []management.Grant{
 		{Operation: management.ReadGraph, Resource: stack.Graph.Fingerprint},
@@ -65,6 +79,8 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		{Operation: management.AnalyzeDocument, Resource: "authoring"},
 		{Operation: management.CompileDocument, Resource: "authoring"},
 		{Operation: management.RenderGraph, Resource: "authoring"},
+		{Operation: management.CreateSource, Resource: sourceRootIdentity},
+		{Operation: management.UpdateSource, Resource: sourceRootIdentity},
 	}
 	operatorOne, revokeOne, err := operatorAuthority.IssueScoped(2*time.Minute, operatorGrants)
 	if err != nil {
@@ -162,12 +178,18 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		"OPERATOR_CAPABILITY="+operatorOne.Token,
 		"OPERATOR_CAPABILITY_ROTATED="+operatorTwo.Token,
 		"AUTHORING_SOURCE="+stack.AuthoringSource,
+		"AUTHORING_UPDATED_SOURCE="+stack.AuthoringSource+"\n",
+		"SOURCE_ROOT_IDENTITY="+sourceRootIdentity,
 		"STATIC_GRAPH_FINGERPRINT="+stack.Graph.Fingerprint,
 	)
 	output, err := command.CombinedOutput()
 	t.Log("\n" + string(output))
 	if err != nil {
 		t.Fatalf("developer browser profile failed: %v", err)
+	}
+	published, err := os.ReadFile(filepath.Join(sourceRoot, "browser-authoring.ortg"))
+	if err != nil || string(published) != stack.AuthoringSource+"\n" {
+		t.Fatalf("browser source publication = %q, %v", published, err)
 	}
 }
 

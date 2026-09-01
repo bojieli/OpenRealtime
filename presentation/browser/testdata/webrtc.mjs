@@ -117,12 +117,13 @@ try {
   const bootMS = performance.now() - navigationStarted;
   check("locked WebRTC developer client booted", await evaluate(
     `document.getElementById("openrealtime-root").dataset.state`) === "ready");
-  check("twenty-six replaceable plugins mounted", JSON.stringify(await evaluate(
+  check("twenty-seven replaceable plugins mounted", JSON.stringify(await evaluate(
     `window.__openrealtime?.mounted`)) === JSON.stringify([
       "slots", "media", "transport", "reducer", "session-configuration", "video", "debug-session",
       "effects", "artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
       "video-controls", "transport-diagnostics", "inspection-view", "trace-view",
       "management-operator", "management-transport", "management-static", "management-authoring",
+      "management-source-publication",
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view",
     ]));
@@ -247,7 +248,7 @@ try {
   const afterMediaRestore = await evaluate(`window.__openrealtime.activate("media")`);
   const restoreMS = performance.now() - restoreStarted;
   check("media recovery remounts the full desired composition", Object.values(afterMediaRestore.entries).every(
-    (entry) => entry.state === "active") && (await evaluate(`window.__openrealtime.mounted.length`)) === 26);
+    (entry) => entry.state === "active") && (await evaluate(`window.__openrealtime.mounted.length`)) === 27);
   await evaluate(`document.getElementById("connect").click()`);
   await waitFor("WebRTC reconnection after provider recovery", () => evaluate(
     `document.getElementById("state")?.textContent === "connected"`));

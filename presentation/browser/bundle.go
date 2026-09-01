@@ -247,21 +247,26 @@ func buildObserverDeveloperBundle() (*Bundle, error) {
 			},
 		},
 	}
-	definitions = append(definitions, developerManagementDefinitions()...)
+	definitions = append(definitions, developerManagementDefinitions(false)...)
 	return buildBundle("openrealtime.browser.developer-observer", definitions, developerManagementEndpoints())
 }
 
 // developerManagementDefinitions is a self-contained descriptor-locked
-// subtree. Effects-enabled and observer-only profiles can layer it without
-// changing its authority, transport, state, or renderer boundaries.
-func developerManagementDefinitions() []moduleDefinition {
+// subtree. Source publication is selected only by effects-enabled profiles;
+// observer profiles retain analysis and rendering without a write grant.
+func developerManagementDefinitions(sourcePublication bool) []moduleDefinition {
 	operatorPermission := plugin.Permission{
 		Kind: "credential.use", Resource: "management-operator", Operations: []string{"header"},
 	}
 	transportPermission := plugin.Permission{
-		Kind: "network.connect", Resource: "host-management", Operations: []string{"static", "authoring"},
+		Kind: "network.connect", Resource: "host-management",
+		Operations: []string{"static", "authoring", "publication"},
 	}
-	return []moduleDefinition{
+	transportGrant := transportPermission
+	if !sourcePublication {
+		transportGrant.Operations = []string{"static", "authoring"}
+	}
+	definitions := []moduleDefinition{
 		{
 			entry: "management-operator", file: "management-operator-capability.js",
 			pluginName: "openrealtime.presentation.client.management-operator-capability",
@@ -279,7 +284,7 @@ func developerManagementDefinitions() []moduleDefinition {
 				{Contract: presentation.ClientManagementOperatorAccessContract},
 				{Contract: presentation.ClientCodecContract},
 			},
-			permissions: []plugin.Permission{transportPermission}, grants: []plugin.Permission{transportPermission},
+			permissions: []plugin.Permission{transportPermission}, grants: []plugin.Permission{transportGrant},
 		},
 		{
 			entry: "management-static", file: "management-static.js",
@@ -293,11 +298,24 @@ func developerManagementDefinitions() []moduleDefinition {
 			provides:   []plugin.Contract{presentation.ClientManagementAuthoringContract},
 			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
 		},
+	}
+	if sourcePublication {
+		definitions = append(definitions, moduleDefinition{
+			entry: "management-source-publication", file: "management-source-publication.js",
+			pluginName: "openrealtime.presentation.client.management-source-publication",
+			provides:   []plugin.Contract{presentation.ClientSourcePublicationContract},
+			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
+		})
+	}
+	definitions = append(definitions, []moduleDefinition{
 		{
 			entry: "authoring-workspace", file: "authoring-workspace.js",
 			pluginName: "openrealtime.presentation.client.authoring-workspace",
 			provides:   []plugin.Contract{presentation.ClientAuthoringWorkspaceContract},
-			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementAuthoringContract}},
+			requires: []plugin.Requirement{
+				{Contract: presentation.ClientManagementAuthoringContract},
+				{Contract: presentation.ClientSourcePublicationContract, Optional: true},
+			},
 		},
 		{
 			entry: "management-operator-view", file: "management-operator-view.js",
@@ -329,7 +347,8 @@ func developerManagementDefinitions() []moduleDefinition {
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientAuthoringWorkspaceContract},
 			},
 		},
-	}
+	}...)
+	return definitions
 }
 
 func developerManagementEndpoints() []presentation.ManifestEndpoint {
@@ -472,7 +491,7 @@ func buildDeveloperBundle(catalogDigest string) (*Bundle, error) {
 			},
 		},
 	}
-	definitions = append(definitions, developerManagementDefinitions()...)
+	definitions = append(definitions, developerManagementDefinitions(true)...)
 	return buildBundle("openrealtime.browser.developer", definitions, []presentation.ManifestEndpoint{
 		{Name: "effects.local", Method: "GET", Path: "/client/v1/effects",
 			Protocol: clientEffectsProtocol, CatalogDigest: catalogDigest},
@@ -604,7 +623,7 @@ func buildObserverDeveloperWebRTCBundle() (*Bundle, error) {
 			},
 		},
 	}
-	definitions = append(definitions, developerManagementDefinitions()...)
+	definitions = append(definitions, developerManagementDefinitions(false)...)
 	return buildBundle("openrealtime.browser.developer-observer-webrtc", definitions, []presentation.ManifestEndpoint{
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
 			Protocol: managementProtocol},
@@ -783,7 +802,7 @@ func buildDeveloperWebRTCBundle(catalogDigest string) (*Bundle, error) {
 			},
 		},
 	}
-	definitions = append(definitions, developerManagementDefinitions()...)
+	definitions = append(definitions, developerManagementDefinitions(true)...)
 	return buildBundle("openrealtime.browser.developer-webrtc", definitions, []presentation.ManifestEndpoint{
 		{Name: "effects.local", Method: "GET", Path: "/client/v1/effects",
 			Protocol: clientEffectsProtocol, CatalogDigest: catalogDigest},
