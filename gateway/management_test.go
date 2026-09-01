@@ -226,22 +226,34 @@ func TestLiveInspectionRedactsPayloadDerivedIdentifiersButPreservesConfiguration
 	}
 	var source inspect.Live
 	server := startInspectionServer(t, time.Minute, "", func(graph ir.Graph) inspect.Live {
-		node := graph.Nodes[0]
-		source = inspect.Live{
-			FormatVersion: inspect.LiveFormatVersion,
-			GraphID:       graph.ID, GraphRevision: graph.Revision, Fingerprint: graph.Fingerprint,
-			Configuration: &configuration, Sequence: 9, State: "closed", Error: secret,
-			Nodes: map[string]inspect.NodeLive{node.ID: {
+		nodes := make(map[string]inspect.NodeLive, len(graph.Nodes))
+		for _, node := range graph.Nodes {
+			nodes[node.ID] = inspect.NodeLive{
 				State: "failed", LastTriggerID: secret, LastOutcome: secret, Error: secret,
 				Resolution: &inspect.NodeResolution{
 					Element: node.Element, Implementation: node.Implementation,
 					Runtime: inspect.ArtifactIdentity{
-						ID: "runtime://compat", Digest: node.Element.Digest,
+						ID: "runtime://compat/" + node.ID, Revision: "test-build-1",
 					},
 					RuntimeEvidence: inspect.EvidenceDeclared,
 				},
-			}},
-			Edges: map[string]inspect.EdgeLive{"boundary:text": {LastItemID: secret}},
+			}
+		}
+		edges := make(map[string]inspect.EdgeLive, len(graph.Edges)+len(graph.Boundaries))
+		for _, edge := range graph.Edges {
+			edges[edge.ID] = inspect.EdgeLive{}
+		}
+		for _, boundary := range graph.Boundaries {
+			edges[ir.BoundaryQueuePrefix+boundary.Name] = inspect.EdgeLive{}
+		}
+		boundary := edges[ir.BoundaryQueuePrefix+"text"]
+		boundary.LastItemID = secret
+		edges[ir.BoundaryQueuePrefix+"text"] = boundary
+		source = inspect.Live{
+			FormatVersion: inspect.LiveFormatVersion,
+			GraphID:       graph.ID, GraphRevision: graph.Revision, Fingerprint: graph.Fingerprint,
+			Configuration: &configuration, Sequence: 9, State: "closed", Error: secret,
+			Nodes: nodes, Edges: edges,
 			Flows: map[string]inspect.FlowLive{secret: {
 				Correlation: secret, Edges: []string{"edge-safe"},
 			}},
