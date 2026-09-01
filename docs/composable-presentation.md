@@ -575,8 +575,16 @@ tau2/τ-Voice matrix defined by the parent plan.
   plugins, and the separate operator overlay supplies the other local API
   families. Deployment-provided operator authority, full delta/reconciliation
   E2E, and replacement of every presentation consumer remain open.
-- [ ] View plugins have no implicit effect authority; the authority host still
-  proves admission, target, confirmation, ledger, dispatch, and audit.
+- [x] View plugins have no implicit effect authority; the authority host still
+  proves admission, target, confirmation, ledger, dispatch, and audit. The
+  descriptor-locked observer WebSocket and WebRTC profiles omit the effects,
+  artifact-reference, confirmation, and artifact view plugins and advertise no
+  effects endpoint. Effects-enabled profiles must separately mount the typed
+  authority service and exact permission grants; the host retains declaration
+  admission, confirmation, target fencing, idempotent execution, and audit,
+  while the server-sealed receipt bridge binds each accepted call to the exact
+  session, declaration, arguments, and target. Focused browser-profile and
+  effects-host authority tests pass without a provider or browser credential.
 - [ ] Cross-client realtime/media/tool/inspection/reconnect/reconciliation E2E
   tests and presentation performance gates pass without regression. Focused
   real-Chromium WebSocket/WebRTC media, tool, inspection, authoring, artifact,
