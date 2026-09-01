@@ -79,6 +79,34 @@ func TestAnAnswerRunningIntoTheNextTurnIsAnOverrunAndNotAFailure(t *testing.T) {
 	}
 }
 
+// Audio from an old answer can continue beyond the end of a later user turn.
+// Its next wire chunk is not a new answer to that turn.
+func TestAnOverrunTailDoesNotCountAsAFreshAnswer(t *testing.T) {
+	var outcome bench.TaskOutcome
+	score(&outcome, bench.Transcript{Moments: []bench.Moment{
+		agentAudio(1100, 800), // answer one begins
+		agentAudio(1900, 400), // the same segment crosses turn two's start
+		agentAudio(2300, 400),
+		agentAudio(2700, 400), // and continues beyond turn two's end
+	}}, []Turn{
+		{StartMS: 0, EndMS: 1000},
+		{StartMS: 2000, EndMS: 3000},
+	}, 800)
+
+	if outcome.Metrics["answered"] != 1 || outcome.Metrics["missed_turns"] != 1 {
+		t.Fatalf("one continuous answer must not satisfy a later turn: %+v", outcome.Metrics)
+	}
+	if outcome.Metrics["overrun_turns"] != 1 || outcome.Metrics["premature_turns"] != 0 {
+		t.Fatalf("the continuous old answer is an overrun: %+v", outcome.Metrics)
+	}
+	if outcome.Passed {
+		t.Fatal("a later turn with no fresh answer must fail the conversation")
+	}
+	if outcome.Metrics["response_latency_ms"] != 100 {
+		t.Fatalf("latency must describe the one real onset, got %+v", outcome.Metrics)
+	}
+}
+
 // The window for a reply closes when the next turn begins. After that the
 // person has moved on, and a reply is an interruption rather than a late
 // answer to the previous thing.

@@ -311,7 +311,11 @@ func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn
 		if index+1 < len(turns) {
 			windowEnd = min(windowEnd, turns[index+1].StartMS)
 		}
-		latency, found := transcript.FirstAudioAfter(turn.EndMS)
+		// A reply begins at a new audio segment. A chunk from an answer that
+		// was already playing across this user turn is an overrun, not a fresh
+		// answer with near-zero latency. Counting its first post-turn chunk here
+		// would let one uninterrupted monologue satisfy every later turn.
+		latency, found := firstAudioOnsetAfter(transcript, turn.EndMS)
 		if found && turn.EndMS+latency <= windowEnd {
 			answered++
 			latencies = append(latencies, latency)
@@ -343,6 +347,33 @@ func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn
 	// counted against it: an answer that runs into the next turn and is then
 	// cut short is what barge-in is for, and it is measured separately.
 	outcome.Passed = missed == 0 && premature == 0
+}
+
+// firstAudioOnsetAfter returns the wait to the next distinct agent-audio
+// segment. Session output is retained as a sequence of playout chunks, so
+// adjacent chunks belong to the same audible segment even when a user turn
+// ends between them. The recorder can leave sub-frame scheduling jitter
+// between otherwise continuous chunks; only a gap of at least one 20 ms PCM
+// packet establishes a new onset.
+func firstAudioOnsetAfter(transcript bench.Transcript, fromMS float64) (float64, bool) {
+	const minimumSegmentGapMS = 20.0
+	previousEndMS := 0.0
+	haveAudio := false
+	for _, moment := range transcript.Moments {
+		if moment.Kind != bench.MomentAgentAudio || moment.AudioMS <= 0 {
+			continue
+		}
+		isOnset := !haveAudio || moment.AtMS-previousEndMS >= minimumSegmentGapMS
+		if isOnset && moment.AtMS >= fromMS {
+			return moment.AtMS - fromMS, true
+		}
+		endMS := moment.AtMS + moment.AudioMS
+		if !haveAudio || endMS > previousEndMS {
+			previousEndMS = endMS
+		}
+		haveAudio = true
+	}
+	return 0, false
 }
 
 // Conditions lists what a dataset root contains, so a run can name its
