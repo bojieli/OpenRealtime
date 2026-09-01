@@ -4,6 +4,18 @@ function node(name, text = "") {
   return value;
 }
 
+function fact(list, name, value) {
+  const item = node("li");
+  item.dataset.field = name;
+  item.append(node("strong", `${name}: `), node("code", String(value)));
+  list.append(item);
+}
+
+function json(value) {
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? "absent" : encoded;
+}
+
 export default {
   name: "openrealtime.presentation.client.authoring-configuration-view",
   revision: 1,
@@ -75,15 +87,37 @@ export default {
         article.dataset.element = metadata.identity.name;
         article.append(node("h3", `${metadata.identity.name} · r${metadata.identity.revision}`));
         const config = metadata.config;
-        article.append(node("p", `${config.schema_status} · ${config.artifact}`));
-        if (config.schema_reference) article.append(node("code", config.schema_reference));
-        if (config.schema_id) article.append(node("code", config.schema_id));
-        if (config.schema_digest) article.append(node("code", config.schema_digest));
+        const contract = node("ul");
+        contract.dataset.role = "contract";
+        fact(contract, "artifact", config.artifact);
+        fact(contract, "schema status", config.schema_status);
+        fact(contract, "descriptor resolved", config.resolved);
+        fact(contract, "inline topology values", config.inline_topology_values);
+        fact(contract, "empty object only", config.empty_object_only);
+        fact(contract, "properties complete", config.properties_complete);
+        if (config.schema_reference) fact(contract, "schema reference", config.schema_reference);
+        if (config.schema_id) fact(contract, "schema identity", config.schema_id);
+        if (config.schema_digest) fact(contract, "schema digest", config.schema_digest);
+        if (Object.hasOwn(config, "additional_properties")) {
+          fact(contract, "additional properties", json(config.additional_properties));
+        }
+        article.append(contract);
         const properties = node("ul");
+        properties.dataset.role = "properties";
         for (const property of config.properties) {
           const types = Array.isArray(property.types) ? property.types.join(" | ") : "unknown";
-          const item = node("li", `${property.name} · ${types}${property.required ? " · required" : ""}`);
+          const item = node("li");
+          item.dataset.property = property.name;
+          item.append(node("h4", `${property.name} · ${types || "untyped"}${property.required ? " · required" : ""}`));
+          const details = node("ul");
+          fact(details, "pointer", property.pointer);
+          if (property.title) fact(details, "title", property.title);
           if (property.description) item.append(node("p", property.description));
+          if (property.format) fact(details, "format", property.format);
+          if (Object.hasOwn(property, "default")) fact(details, "default", json(property.default));
+          if (Object.hasOwn(property, "enum")) fact(details, "enum", json(property.enum));
+          fact(details, "schema", json(property.schema));
+          item.append(details);
           properties.append(item);
         }
         article.append(properties);

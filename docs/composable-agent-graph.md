@@ -2090,8 +2090,16 @@ it has been reviewed, tested, and committed with its evidence):
   - [x] Integrate resolved property metadata, schema identities, completeness,
     and diagnostics into immutable recovery/analysis snapshots and the
     UI-independent management Authoring API.
-  - [ ] Render the Authoring API metadata in the configuration-value editor and
-    LSP/browser/native clients before completing authoring support.
+  - [x] Render every Authoring API configuration field in the browser
+    configuration-value editor. The client now revalidates the exact contract
+    status, JSON Pointer, schema identity/digest, completeness,
+    `additionalProperties`, title/description/format, default, enum, and
+    canonical property schema before the text-only view admits it; malformed
+    metadata and markup-bearing values have focused client/view and real-browser
+    coverage.
+  - [ ] Render the same metadata in LSP and native-client configuration editors
+    before completing authoring support; a browser projection is not evidence
+    for either client family.
 - [x] Complete the sound computer-use authority and trajectory feedback chain.
   - [x] Join tool proposals to exact cognition-result provenance by run and
     call identity without trusting externally asserted causal metadata.
@@ -2178,8 +2186,8 @@ Reference-agent tracker:
   `computer.click` turn, proving that the computer-use action reaches the
   client while the silent branch emits no synthesized audio.
 - [x] Audio-free typed text, image, file, and multimodal-attachment ingress,
-  retention, and resolution component. A complete cognition/action agent over
-  that component remains open.
+  retention, and resolution component plus the locked text/file cognition and
+  silent action agents described above.
 - [x] Locked sidecar omni, duplex, and upstream topology graphs built over the
   shared `model.External` element rather than separate binding species.
 
@@ -2594,8 +2602,10 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     reports without inferring fields from opaque descriptor references.
   - [x] Expose bounded resolved property metadata, completeness, identities,
     and diagnostics through immutable management Authoring API snapshots.
-  - [ ] Render that metadata in the configuration editor and its LSP/UI
-    clients.
+  - [x] Render all of that metadata in the browser configuration editor through
+    a strictly revalidated, text-only client projection with exact absent/null
+    handling and adversarial markup coverage.
+  - [ ] Render the same metadata in LSP and native-client configuration editors.
 - [x] Add bounded graph-aware node rename, hover, port completion, and
   go-to-definition for fully parsed canonical `.ortg`.
 - [x] Add independently bounded recovery parsing for incomplete `.ortg` and

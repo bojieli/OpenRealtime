@@ -165,13 +165,19 @@ const analysis = {
       inline_topology_values: false, empty_object_only: false, schema_status: "resolved",
       schema_reference: "schema://test.Element", schema_id: "test.Element", schema_digest: schemaDigest,
       properties_complete: true, properties: [{ name: "safe", pointer: "#/properties/safe",
-        types: ["string"], schema: { type: "string" } }] },
+        types: ["string"], title: "Safe value", description: "Exact metadata", format: "uri-reference",
+        default: null, enum: [null, "safe"], schema: { type: "string" } }],
+      additional_properties: false },
   }], total: 1 },
   formatting: { path: "fixture.ortg", source_digest: sourceDigest, edits: [] },
 };
 handlers.push(() => response(analysis, `authoring:analyze:${sourceDigest}`));
 const analyzed = await authoring.analyze({ path: "fixture.ortg", source, revision: 1 });
 if (analyzed.source_digest !== sourceDigest) throw new Error("analysis was not rebound to source identity");
+if (analyzed.catalog.elements[0].config.properties[0].default !== null ||
+    analyzed.catalog.elements[0].config.additional_properties !== false) {
+  throw new Error("complete configuration metadata did not survive the client boundary");
+}
 const analyzeRequest = requests.at(-1);
 if (analyzeRequest.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
     analyzeRequest.options.body.includes(operatorOne) || analyzeRequest.url.includes(operatorOne) ||
@@ -182,6 +188,14 @@ handlers.push(() => response(analysis, `authoring:analyze:${otherDigest}`));
 await authoring.analyze({ path: "fixture.ortg", source, revision: 1 }).then(
   () => { throw new Error("analysis with mismatched host evidence was accepted"); },
   (error) => { if (!String(error).includes("identity")) throw error; },
+);
+
+const malformedAnalysis = structuredClone(analysis);
+malformedAnalysis.catalog.elements[0].config.properties[0].pointer = "#/properties/other";
+handlers.push(() => response(malformedAnalysis, `authoring:analyze:${sourceDigest}`));
+await authoring.analyze({ path: "fixture.ortg", source, revision: 1 }).then(
+  () => { throw new Error("forged configuration property metadata was accepted"); },
+  (error) => { if (!String(error).includes("canonical")) throw error; },
 );
 
 const compiled = { graph, lock: { format_version: 1, elements: [{ reference: "test.Element",

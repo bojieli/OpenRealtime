@@ -4,6 +4,7 @@ const MAX_SOURCE_BYTES = 1 << 20;
 const MAX_ITEMS = 65_536;
 const MAX_TEXT_BYTES = 64 << 20;
 const encoder = new TextEncoder();
+const SCHEMA_TYPES = new Set(["array", "boolean", "integer", "null", "number", "object", "string"]);
 
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is not an object`);
@@ -117,6 +118,97 @@ function validateReport(report, collection, label) {
   return values;
 }
 
+function boundedString(value, label, required = false) {
+  if (typeof value !== "string" || (required && value.length === 0) ||
+      encoder.encode(value).byteLength > MAX_TEXT_BYTES) {
+    throw new Error(`${label} is invalid`);
+  }
+  return value;
+}
+
+function jsonPointerProperty(name) {
+  return `#/properties/${name.replaceAll("~", "~0").replaceAll("/", "~1")}`;
+}
+
+function validatePropertyMetadata(property, previous) {
+  only(property, ["name", "pointer", "required", "types", "title", "description", "format",
+    "default", "enum", "schema"], "configuration property metadata");
+  boundedString(property.name, "configuration property name", true);
+  if (property.name <= previous || property.pointer !== jsonPointerProperty(property.name) ||
+      (property.required !== undefined && typeof property.required !== "boolean") ||
+      !Object.hasOwn(property, "schema")) {
+    throw new Error("configuration property metadata is not canonical");
+  }
+  const types = property.types ?? [];
+  if (!Array.isArray(types) || types.length > SCHEMA_TYPES.size) {
+    throw new Error("configuration property types are invalid");
+  }
+  let previousType = "";
+  for (const type of types) {
+    if (!SCHEMA_TYPES.has(type) || type <= previousType) {
+      throw new Error("configuration property types are not canonical");
+    }
+    previousType = type;
+  }
+  for (const field of ["title", "description", "format"]) {
+    if (property[field] !== undefined) boundedString(property[field], `configuration property ${field}`);
+  }
+  if (property.enum !== undefined && (!Array.isArray(property.enum) || property.enum.length > MAX_ITEMS)) {
+    throw new Error("configuration property enum is invalid");
+  }
+  for (const value of [property.schema, ...(property.enum ?? []),
+    ...(Object.hasOwn(property, "default") ? [property.default] : [])]) {
+    if (encoder.encode(JSON.stringify(value)).byteLength > MAX_TEXT_BYTES) {
+      throw new Error("configuration property JSON exceeds its bound");
+    }
+  }
+  return property.name;
+}
+
+function validateConfigMetadata(config) {
+  only(config, ["artifact", "resolved", "schema_reference", "inline_topology_values",
+    "empty_object_only", "schema_status", "schema_id", "schema_digest", "properties_complete",
+    "properties", "additional_properties"], "element configuration metadata");
+  boundedString(config.artifact, "configuration artifact", true);
+  if (config.resolved !== true || config.inline_topology_values !== false ||
+      typeof config.empty_object_only !== "boolean" || typeof config.properties_complete !== "boolean" ||
+      !Array.isArray(config.properties) || config.properties.length > MAX_ITEMS) {
+    throw new Error("configuration metadata changed the topology/value boundary");
+  }
+  let previous = "";
+  for (const property of config.properties) previous = validatePropertyMetadata(property, previous);
+  switch (config.schema_status) {
+    case "empty-object-only":
+      if (!config.empty_object_only || !config.properties_complete || config.properties.length !== 0 ||
+          config.schema_reference !== undefined || config.schema_id !== undefined ||
+          config.schema_digest !== undefined || config.additional_properties !== undefined) {
+        throw new Error("empty-object configuration metadata is inconsistent");
+      }
+      break;
+    case "unresolved":
+    case "invalid":
+      boundedString(config.schema_reference, "configuration schema reference", true);
+      if (config.empty_object_only || config.properties_complete || config.properties.length !== 0 ||
+          config.schema_id !== undefined || config.schema_digest !== undefined ||
+          config.additional_properties !== undefined) {
+        throw new Error("unresolved configuration metadata invented fields");
+      }
+      break;
+    case "resolved":
+      boundedString(config.schema_reference, "configuration schema reference", true);
+      boundedString(config.schema_id, "configuration schema identity", true);
+      digest(config.schema_digest, "configuration schema digest");
+      if (config.empty_object_only) throw new Error("resolved configuration metadata is inconsistent");
+      if (config.additional_properties !== undefined &&
+          encoder.encode(JSON.stringify(config.additional_properties)).byteLength > MAX_TEXT_BYTES) {
+        throw new Error("configuration additional-properties metadata exceeds its bound");
+      }
+      break;
+    default:
+      throw new Error("configuration schema status is invalid");
+  }
+}
+
 function validateAnalysis(value, requestedDigest, evidence) {
   only(value, ["source_digest", "parsed", "recovered", "canonical", "diagnostics", "catalog", "formatting"],
     "analysis result");
@@ -142,10 +234,7 @@ function validateAnalysis(value, requestedDigest, evidence) {
     identity(element.identity, "metadata element identity");
     if (previous && element.identity.name <= previous) throw new Error("element metadata is not canonical");
     previous = element.identity.name;
-    object(element.config, "element configuration metadata");
-    if (!Array.isArray(element.config.properties) || element.config.properties.length > MAX_ITEMS) {
-      throw new Error("configuration property metadata is invalid");
-    }
+    validateConfigMetadata(element.config);
   }
   return frozen(value);
 }

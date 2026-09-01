@@ -119,13 +119,18 @@ if (operatorSecret !== "operator_dom_secret" || password.value !== "" ||
 }
 
 const malicious = '<img src=x onerror="globalThis.compromised=true">';
+const propertyName = "mode/tilde~";
 workspaceSnapshot = {
   ...workspaceSnapshot, phase: "analyzed",
   analysis: { catalog: { total: 1, elements: [{
     identity: { name: "test.Element", revision: 1, digest: `sha256:${"a".repeat(64)}` },
-    config: { schema_status: "resolved", artifact: "schema://test", schema_digest: `sha256:${"b".repeat(64)}`,
-      schema_reference: malicious, schema_id: malicious,
-      properties: [{ name: malicious, types: ["string"], required: true, description: malicious }] },
+    config: { schema_status: "resolved", artifact: "agent.values.yaml", resolved: true,
+      inline_topology_values: false, empty_object_only: false, properties_complete: true,
+      schema_digest: `sha256:${"b".repeat(64)}`, schema_reference: malicious, schema_id: malicious,
+      additional_properties: { type: malicious },
+      properties: [{ name: propertyName, pointer: "#/properties/mode~1tilde~0", types: ["string"],
+        required: true, title: malicious, description: malicious, format: "uri-reference",
+        default: null, enum: [malicious, "safe"], schema: { type: "string", title: malicious } }] },
   }] } },
   compiled: { graph: { id: "fixture", revision: 1, fingerprint: `sha256:${"c".repeat(64)}` } },
   rendering: { fingerprint: `sha256:${"c".repeat(64)}`, format: "mermaid", text: `<svg onload=alert(1)>` },
@@ -138,6 +143,13 @@ if (!configuration.textContent.includes(malicious) || tags(configuration).includ
     !canvas.textContent.includes("<svg onload=alert(1)>") || tags(canvas).includes("SVG") ||
     globalThis.compromised) {
   throw new Error("authoring metadata or render output crossed the text-only view boundary");
+}
+for (const expected of ["properties complete: true", "additional properties:",
+  "pointer: #/properties/mode~1tilde~0", "title:", "format: uri-reference", "default: null",
+  `enum: [${JSON.stringify(malicious)},\"safe\"]`, "schema:"]) {
+  if (!configuration.textContent.includes(expected)) {
+    throw new Error(`configuration renderer omitted exact Authoring metadata ${expected}`);
+  }
 }
 
 for (const dispose of disposers.reverse()) await dispose();
