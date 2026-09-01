@@ -2621,6 +2621,16 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   refusal.
 - [ ] Replace topology-derived ownership validation with graph contract and live
   capability validation.
+  - [x] Remove shared topology-combination restrictions and bind the remaining
+    gateway adapter projection to one exact graph contract. Generic
+    `Ownership.Validate` now checks only the owner vocabulary; the frozen
+    `SessionAdapterProfile` fingerprints its graph, boundary map, ownership,
+    and advertised capabilities, requires gateway-visible features to have
+    their typed boundary operations, and refuses absent or drifted mounted
+    boundaries. Authenticated inspection and benchmark evidence separately
+    retain each live node capability. The parent remains open until the gateway
+    consumes graph/live capabilities directly and the legacy
+    `Binding.Ownership`/`Capabilities` projection is deleted.
 - [x] Load separate `.ortg` or normalized graph artifacts, typed element values,
   deployment bindings, secret references, and evidence profiles.
   - [x] Topology, lock, strict values, deployment-binding, and secret-reference
@@ -2646,6 +2656,13 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     element, or implementation drift fail without resource acquisition.
 - [ ] Delete topology flags and flattened configuration paths after their
   profile equivalents land; do not translate them into a compatibility graph.
+  - [x] Make the strict graph-native `serve -launch-profile` path reject every
+    explicitly supplied legacy binding, provider, model, voice, timing, and
+    behavior selector before profile, credential, provider, or listener work.
+    Its ordinary production composition consumes only the separately frozen
+    graph/config/deployment/secret/evidence/application profile planes. The
+    legacy flag-only serve path remains reachable when no launch profile is
+    supplied, so its parser and constructors still keep the parent open.
 - [x] Update benchmark architecture cells and gateway inspection to attest exact
   graph/config fingerprints, reviewed selected edges, live runtime identities,
   and capability evidence before credential access.
