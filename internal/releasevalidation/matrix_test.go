@@ -404,6 +404,104 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 			t.Errorf("graph-native candidate gate %s has no authenticated inspection input", id)
 		}
 	}
+	meetingCascade := byID["external.benchmark.meeting.cascade"]
+	if argumentAfter(meetingCascade.Command, "-review-dir") !=
+		"{artifacts}/candidate-meeting-cascade-review" ||
+		argumentAfter(meetingCascade.Command, "-review-provider") !=
+			"google.gemini-3.7-flash" ||
+		argumentAfter(meetingCascade.Command, "-review-key-env") != "GEMINI_API_KEY" {
+		t.Fatalf("Meeting candidate review wiring was weakened: %+v", meetingCascade.Command)
+	}
+	for kind, value := range map[string]string{
+		"command": "bwrap", "env": "GEMINI_API_KEY",
+	} {
+		if !gateHasPrerequisite(meetingCascade, kind, value) {
+			t.Errorf("Meeting candidate gate omits %s prerequisite %s", kind, value)
+		}
+	}
+	for _, command := range []string{"ffmpeg", "ffprobe"} {
+		if !gateHasPrerequisite(meetingCascade, "command", command) {
+			t.Errorf("Meeting candidate gate omits media prerequisite %s", command)
+		}
+	}
+	for _, artifact := range []string{
+		"{artifacts}/candidate-meeting-cascade-review/manifest.json",
+		"{artifacts}/candidate-meeting-cascade-review/REVIEW.md",
+		"{artifacts}/candidate-meeting-cascade-review/source/manifest.json",
+		"{artifacts}/candidate-meeting-cascade-review/source/media/01-open-share-present-trial-01/audio.stereo.wav",
+		"{artifacts}/candidate-meeting-cascade-review/source/media/01-open-share-present-trial-01/screen.review.mp4",
+		"{artifacts}/candidate-meeting-cascade-review/source/media/04-spoken-navigation-correction-trial-01/audio.stereo.wav",
+		"{artifacts}/candidate-meeting-cascade-review/source/media/04-spoken-navigation-correction-trial-01/screen.review.mp4",
+		"{artifacts}/candidate-meeting-cascade-review/evaluations/01-open-share-present-trial-01/media-001.wav",
+		"{artifacts}/candidate-meeting-cascade-review/evaluations/01-open-share-present-trial-01/media-002.mp4",
+		"{artifacts}/candidate-meeting-cascade-review/evaluations/04-spoken-navigation-correction-trial-01/media-001.wav",
+		"{artifacts}/candidate-meeting-cascade-review/evaluations/04-spoken-navigation-correction-trial-01/media-002.mp4",
+		"{artifacts}/candidate-meeting-cascade-review.source-receipt.json",
+		"{artifacts}/candidate-meeting-cascade-review.evaluation-receipts/01-open-share-present-trial-01.receipt.json",
+		"{artifacts}/candidate-meeting-cascade-review.evaluation-receipts/04-spoken-navigation-correction-trial-01.receipt.json",
+	} {
+		if !gateHasAssertion(meetingCascade, "file_nonempty", artifact) {
+			t.Errorf("Meeting candidate gate omits retained review artifact %q", artifact)
+		}
+	}
+	for _, output := range []string{
+		`(?m)^meeting source receipt retained at .+$`,
+		`(?m)^meeting review bundle sealed at .+ \(sha256:[a-f0-9]{64}\)$`,
+	} {
+		if !gateHasAssertion(meetingCascade, "stdout_regex", output) {
+			t.Errorf("Meeting candidate gate omits review completion assertion %q", output)
+		}
+	}
+	realtimeCU := byID["external.benchmark.realtime-cu"]
+	if argumentAfter(realtimeCU.Command, "-review-dir") !=
+		"{artifacts}/candidate-realtime-cu-review" ||
+		argumentAfter(realtimeCU.Command, "-review-provider") !=
+			"google.gemini-3.7-flash" ||
+		argumentAfter(realtimeCU.Command, "-review-key-env") != "GEMINI_API_KEY" ||
+		argumentAfter(realtimeCU.Command, "-review-concurrency") != "16" {
+		t.Fatalf("Realtime-CU candidate review wiring was weakened: %+v", realtimeCU.Command)
+	}
+	for kind, value := range map[string]string{
+		"command": "bwrap", "env": "GEMINI_API_KEY",
+	} {
+		if !gateHasPrerequisite(realtimeCU, kind, value) {
+			t.Errorf("Realtime-CU candidate gate omits %s prerequisite %s", kind, value)
+		}
+	}
+	for _, command := range []string{"ffmpeg", "ffprobe"} {
+		if !gateHasPrerequisite(realtimeCU, "command", command) {
+			t.Errorf("Realtime-CU candidate gate omits media prerequisite %s", command)
+		}
+	}
+	for _, artifact := range []string{
+		"{artifacts}/candidate-realtime-cu-review/manifest.json",
+		"{artifacts}/candidate-realtime-cu-review/REVIEW.md",
+		"{artifacts}/candidate-realtime-cu-review/SOURCE_REVIEW.md",
+		"{artifacts}/candidate-realtime-cu-review/media/01-static-control-pixel-trial-01/audio.stereo.wav",
+		"{artifacts}/candidate-realtime-cu-review/media/01-static-control-pixel-trial-01/screen.review.mp4",
+		"{artifacts}/candidate-realtime-cu-review/media/16-typed-incident-code-set-of-mark-trial-01/audio.stereo.wav",
+		"{artifacts}/candidate-realtime-cu-review/media/16-typed-incident-code-set-of-mark-trial-01/screen.review.mp4",
+		"{artifacts}/candidate-realtime-cu-review/reviews/01-static-control-pixel-trial-01/media-001.wav",
+		"{artifacts}/candidate-realtime-cu-review/reviews/01-static-control-pixel-trial-01/media-002.mp4",
+		"{artifacts}/candidate-realtime-cu-review/reviews/16-typed-incident-code-set-of-mark-trial-01/media-001.wav",
+		"{artifacts}/candidate-realtime-cu-review/reviews/16-typed-incident-code-set-of-mark-trial-01/media-002.mp4",
+		"{artifacts}/candidate-realtime-cu-review.source-receipt.json",
+		"{artifacts}/candidate-realtime-cu-review.evaluation-receipts/01-static-control-pixel-trial-01.receipt.json",
+		"{artifacts}/candidate-realtime-cu-review.evaluation-receipts/16-typed-incident-code-set-of-mark-trial-01.receipt.json",
+	} {
+		if !gateHasAssertion(realtimeCU, "file_nonempty", artifact) {
+			t.Errorf("Realtime-CU candidate gate omits retained review artifact %q", artifact)
+		}
+	}
+	for _, output := range []string{
+		`(?m)^Realtime-CU source receipt retained at .+$`,
+		`(?m)^Realtime-CU review bundle sealed at .+ \(sha256:[a-f0-9]{64}\)$`,
+		`(?m)^evidence-complete reportable \(deterministic score \+ exact16 synchronized A/V \+ Gemini 3\.7 Flash\)$`,
+	} {
+		if !gateHasAssertion(realtimeCU, "stdout_regex", output) {
+			t.Errorf("Realtime-CU candidate gate omits review completion assertion %q", output)
+		}
+	}
 	for _, gate := range matrix.Gates {
 		if strings.HasPrefix(gate.ID, "external.benchmark.baseline.") {
 			t.Errorf("release matrix still executes legacy baseline gate %s", gate.ID)
@@ -606,5 +704,11 @@ func argumentAfter(arguments []string, flag string) string {
 func gateHasAssertion(gate Gate, kind, value string) bool {
 	return slices.ContainsFunc(gate.Assertions, func(assertion Assertion) bool {
 		return assertion.Kind == kind && assertion.Value == value
+	})
+}
+
+func gateHasPrerequisite(gate Gate, kind, value string) bool {
+	return slices.ContainsFunc(gate.Prerequisites, func(prerequisite Prerequisite) bool {
+		return prerequisite.Kind == kind && prerequisite.Value == value
 	})
 }

@@ -1955,17 +1955,22 @@ it has been reviewed, tested, and committed with its evidence):
     (`sha256:1f61f502203c6e259cccc0eda67b7435fd8201660d54d3a436fe6f3020cf3d30`),
     sealed by review manifest
     `sha256:dfa568a061dabc9323f74d195bccc891056d423e76f9360df6f0cc690ad93bcb`.
-  - [ ] Wire scenario, Meeting Assistant, Realtime-CU, and every applicable
+  - [x] Wire scenario, Meeting Assistant, Realtime-CU, and every applicable
     FDB/FDB3/FD-Bench/tau2 benchmark recording and advisory-review bundle into
     the release matrix with retained source/evaluation receipts, audio/video
     decode assertions, exact population counts, redacted summaries, and
-    credential-free offline verification. Candidate lifecycle hooks and the
-    suite-neutral fresh-prefix source/campaign/aggregate CLI composition are
-    now implemented for FDB, FDB v3, FD-Bench, and tau-Voice. Interrupted
-    current-run campaigns have an offline recovery command, and completed
-    aggregates have a credential-free verifier. These commands accept no
-    historical bundle, migration input, or baseline registry. The complete
-    live populations and their release-matrix publication remain open.
+    credential-free offline verification. The Meeting and Realtime-CU gates
+    now require the exact Gemini plug-in, sandboxed FFmpeg/FFprobe media path,
+    fresh create-only review roots, first/last synchronized source and review
+    media, external source receipts, per-evaluation receipts, and sealed-bundle
+    completion output. The scenario source and separate 165-evaluation gate
+    retain the corresponding first/last population evidence and external
+    receipts. FDB, FDB v3, FD-Bench, and both tau-Voice conditions use the
+    suite-neutral fresh-prefix source/campaign/aggregate composition; their
+    interrupted-run recovery and completed-aggregate verifier accept no
+    historical bundle, migration input, or baseline registry. The live
+    populations remain separately tracked below and are not claimed by this
+    wiring checkpoint.
   - [ ] Run the provisioned live 165-attempt scenario candidate comparison
     against the accepted historical trail, live four-case
     Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
