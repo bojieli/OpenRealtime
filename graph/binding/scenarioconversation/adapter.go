@@ -12,12 +12,14 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/action"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	mediaelements "github.com/bojieli/OpenRealtime/elements/media"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
@@ -67,6 +69,7 @@ const (
 	dispatchCommitBoundary              = "dispatch_commit"
 	canonicalResultBoundary             = "canonical_result"
 	modelOutcomeBoundary                = "model_outcome"
+	segmentationOutcomeBoundary         = "segmentation_outcome"
 	trajectorySnapshotBoundary          = "trajectory_snapshot"
 	provenanceOutcomeBoundary           = "provenance_outcome"
 	actionAdmissionBoundary             = "admission_action_outcome"
@@ -249,6 +252,7 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		dispatchCommitBoundary:              {ir.OutputBoundary, actionelements.CommittedType()},
 		canonicalResultBoundary:             {ir.OutputBoundary, actionelements.CanonicalResultType()},
 		modelOutcomeBoundary:                {ir.OutputBoundary, cognitionelements.OutcomeType()},
+		segmentationOutcomeBoundary:         {ir.OutputBoundary, interactionelements.SegmentationOutcomeType()},
 		trajectorySnapshotBoundary:          {ir.OutputBoundary, stateelements.SnapshotType()},
 		provenanceOutcomeBoundary:           {ir.OutputBoundary, actionelements.OutcomeType()},
 		actionAdmissionBoundary:             {ir.OutputBoundary, actionelements.OutcomeType()},
@@ -516,6 +520,15 @@ type pendingAudio struct {
 	completed  bool
 }
 
+type playbackReceiptState struct {
+	runID     string
+	utterance action.Utterance
+	sequence  uint64
+	kind      speechelements.PlaybackReceiptKind
+	active    bool
+	terminal  bool
+}
+
 type session struct {
 	ports     adapterBoundaries
 	sink      legacy.Sink
@@ -559,6 +572,10 @@ type session struct {
 	terminalCalls   map[string]struct{}
 	terminalCallIDs []string
 	utterances      map[string]struct{}
+	playback        map[string]playbackReceiptState
+	playbackOrder   []string
+	speechRuns      map[string]int
+	speechRunOrder  []string
 	failures        map[string]struct{}
 	failureIDs      []string
 	terminalRuns    map[string]struct{}
@@ -627,7 +644,8 @@ func newSession(
 		closedAudio: make(map[string]struct{}),
 		active:      make(map[string]struct{}), calls: make(map[string]activeClientCall),
 		terminalCalls: make(map[string]struct{}),
-		utterances:    make(map[string]struct{}), failures: make(map[string]struct{}),
+		utterances:    make(map[string]struct{}), playback: make(map[string]playbackReceiptState),
+		speechRuns: make(map[string]int), failures: make(map[string]struct{}),
 		terminalRuns: make(map[string]struct{}),
 	}, nil
 }
@@ -733,6 +751,11 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.acceptCanonicalResult(envelope)
 		case modelOutcomeBoundary:
 			err = session.acceptModelOutcome(ctx, envelope)
+		case segmentationOutcomeBoundary:
+			err = session.acceptSegmentationOutcome(envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case trajectorySnapshotBoundary:
 			err = session.acceptTrajectorySnapshot(envelope)
 		case provenanceOutcomeBoundary, actionAdmissionBoundary, lookupOutcomeBoundary,
@@ -742,6 +765,13 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.acceptActionOutcome(ctx, name, envelope)
 		case clientToolResultOutcomeBoundary:
 			err = session.acceptClientToolResultOutcome(envelope)
+		case gatewayTurnBeginBoundary, gatewayTurnEndBoundary,
+			gatewaySpeechBeginBoundary, gatewaySpeechTextBoundary,
+			gatewaySpeechAudioBoundary, gatewaySpeechEndBoundary:
+			err = session.acceptPlaybackReceipt(name, envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		default:
 			err = session.publishDebug(ctx, name, envelope)
 		}

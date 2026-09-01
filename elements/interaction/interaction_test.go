@@ -198,6 +198,67 @@ func TestSegmentPreparedTextReleasesSafeUnitsAndTranslatesCancellation(t *testin
 	assertNoEnvelope(t, segments)
 }
 
+func TestSegmentPreparedTextLateCancelRevokesCompletedStreamExactlyOnce(t *testing.T) {
+	mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
+		map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":2}`)}, nil)
+	defer stopInteractionGraph(t, done, cancel)
+
+	text := ingress(t, mounted, "text")
+	segments := egress(t, mounted, "segments")
+	outcomes := egress(t, mounted, "outcome")
+	speechCancels := egress(t, mounted, "speech_cancel")
+	modelCancels := egress(t, mounted, "model_cancel")
+	const runID = "completed-before-cancel"
+	send(t, text, preparedEnvelope("late-begin", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextBegin, Index: 0,
+	}))
+	send(t, text, preparedEnvelope("late-delta", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextChunk, Index: 1,
+		Text: "First sentence. Second sentence.",
+	}))
+	first := receive(t, segments).Payload.(speech.TextSegment)
+	send(t, text, preparedEnvelope("late-end", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextEnd, Index: 2,
+	}))
+	second := receive(t, segments).Payload.(speech.TextSegment)
+	completed := receiveSegmentationOutcome(t, outcomes, OutcomeCompleted)
+	if first.ID == "" || second.ID == "" || first.ID == second.ID || completed.Segments != 2 {
+		t.Fatalf("completed segmented stream = first=%+v second=%+v outcome=%+v",
+			first, second, completed)
+	}
+
+	send(t, ingress(t, mounted, "cancel"), element.Envelope{
+		Type: ModelCancelType(), ItemID: "late-cancel", RunID: runID,
+		Payload: cognitionelements.Cancel{RunID: runID, Reason: "user interrupted playback"},
+	})
+	for index, utteranceID := range []string{first.ID, second.ID} {
+		envelope := receive(t, speechCancels)
+		request, ok := envelope.Payload.(speech.Cancel)
+		if !ok || request.UtteranceID != utteranceID ||
+			request.Reason != "user interrupted playback" || envelope.RunID != runID ||
+			envelope.CancellationScope != utteranceID || envelope.Sequence != uint64(index+1) {
+			t.Fatalf("late speech cancellation %d = %+v / %#v", index, envelope, envelope.Payload)
+		}
+	}
+	late := receiveSegmentationOutcome(t, outcomes, OutcomeCanceled)
+	if late.RunID != runID || late.Segments != 2 || late.Code != "canceled_after_stream" {
+		t.Fatalf("late cancellation outcome = %+v", late)
+	}
+	assertNoEnvelope(t, modelCancels)
+
+	// The retained utterance identities are consumed by the first late cancel,
+	// so a replay cannot issue a second cancellation for the same speech.
+	send(t, ingress(t, mounted, "cancel"), element.Envelope{
+		Type: ModelCancelType(), ItemID: "late-cancel-replay", RunID: runID,
+		Payload: cognitionelements.Cancel{RunID: runID, Reason: "replayed interruption"},
+	})
+	replayed := receiveSegmentationOutcome(t, outcomes, OutcomeIgnored)
+	if replayed.Code != "already_terminal" {
+		t.Fatalf("replayed late cancellation outcome = %+v", replayed)
+	}
+	assertNoEnvelope(t, speechCancels)
+}
+
 func TestSegmentPreparedTextRejectsMalformedAndUnboundedStreams(t *testing.T) {
 	mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
 		map[string]json.RawMessage{"segment": json.RawMessage(

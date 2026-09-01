@@ -83,6 +83,7 @@ func (segmentPreparedTextFactory) Mount(
 		speechCancelOutput: speechCancelOutput,
 		outcomeOutput:      outcomeOutput,
 		terminalRuns:       make(map[string]struct{}, config.TerminalMemory),
+		terminalSegments:   make(map[string][]string, config.TerminalMemory),
 		resolution:         mount.Resolution,
 	}, nil
 }
@@ -124,10 +125,11 @@ type segmentPreparedTextRunner struct {
 	speechCancelOutput element.OutputPort
 	outcomeOutput      element.OutputPort
 
-	active        *preparedRun
-	terminalRuns  map[string]struct{}
-	terminalOrder []string
-	resolution    element.ResolutionReporter
+	active           *preparedRun
+	terminalRuns     map[string]struct{}
+	terminalSegments map[string][]string
+	terminalOrder    []string
+	resolution       element.ResolutionReporter
 }
 
 func (runner *segmentPreparedTextRunner) Run(parent context.Context) error {
@@ -331,7 +333,7 @@ func (runner *segmentPreparedTextRunner) completeActive(
 ) error {
 	run := runner.active
 	runner.active = nil
-	runner.rememberTerminal(run.id)
+	runner.rememberTerminalSegments(run.id, run.segments)
 	return runner.publishSegmentationOutcome(ctx, cause, SegmentationOutcome{
 		Kind: OutcomeCompleted, RunID: run.id, Segments: len(run.segments),
 		BufferedBytes: run.totalBytes,
@@ -350,7 +352,7 @@ func (runner *segmentPreparedTextRunner) failActive(
 	runner.rememberTerminal(run.id)
 	// Revoke already-issued utterances first. A blocked model-control edge must
 	// never delay the more urgent request to stop audio that may reach a user.
-	if err := runner.publishSpeechCancels(ctx, cause, run, message); err != nil {
+	if err := runner.publishSpeechCancels(ctx, cause, run.id, run.segments, message); err != nil {
 		return err
 	}
 	if cancelModel {
@@ -400,6 +402,17 @@ func (runner *segmentPreparedTextRunner) acceptCancel(
 			firstNonemptyString(strings.TrimSpace(request.Reason), "canceled"), true)
 	}
 	if runner.isTerminal(target) {
+		segments := runner.takeTerminalSegments(target)
+		if len(segments) != 0 {
+			reason := firstNonemptyString(strings.TrimSpace(request.Reason), "canceled")
+			if err := runner.publishSpeechCancels(ctx, envelope, target, segments, reason); err != nil {
+				return err
+			}
+			return runner.publishSegmentationOutcome(ctx, envelope, SegmentationOutcome{
+				Kind: OutcomeCanceled, RunID: target, Segments: len(segments),
+				Code: "canceled_after_stream", Message: reason,
+			})
+		}
 		return runner.publishSegmentationOutcome(ctx, envelope, SegmentationOutcome{
 			Kind: OutcomeIgnored, RunID: target, Code: "already_terminal",
 		})
@@ -507,13 +520,13 @@ func (runner *segmentPreparedTextRunner) publishModelCancel(
 }
 
 func (runner *segmentPreparedTextRunner) publishSpeechCancels(
-	ctx context.Context, cause element.Envelope, run *preparedRun, reason string,
+	ctx context.Context, cause element.Envelope, runID string, utteranceIDs []string, reason string,
 ) error {
-	for index, utteranceID := range run.segments {
+	for index, utteranceID := range utteranceIDs {
 		envelope := cause.Clone()
 		envelope.Type = speechCancelType
 		envelope.ItemID = cause.ItemID + ":speech-cancel:" + strconv.Itoa(index+1)
-		envelope.RunID = run.id
+		envelope.RunID = runID
 		envelope.Sequence = uint64(index + 1)
 		envelope.CancellationScope = utteranceID
 		envelope.CausalParents = appendUniqueString(envelope.CausalParents, cause.ItemID)
@@ -547,11 +560,28 @@ func (runner *segmentPreparedTextRunner) rememberTerminal(runID string) {
 	if len(runner.terminalOrder) == runner.config.TerminalMemory {
 		oldest := runner.terminalOrder[0]
 		delete(runner.terminalRuns, oldest)
+		delete(runner.terminalSegments, oldest)
 		copy(runner.terminalOrder, runner.terminalOrder[1:])
 		runner.terminalOrder = runner.terminalOrder[:len(runner.terminalOrder)-1]
 	}
 	runner.terminalRuns[runID] = struct{}{}
 	runner.terminalOrder = append(runner.terminalOrder, runID)
+}
+
+func (runner *segmentPreparedTextRunner) rememberTerminalSegments(
+	runID string, utteranceIDs []string,
+) {
+	runner.rememberTerminal(runID)
+	if runID == "" || len(utteranceIDs) == 0 {
+		return
+	}
+	runner.terminalSegments[runID] = append([]string(nil), utteranceIDs...)
+}
+
+func (runner *segmentPreparedTextRunner) takeTerminalSegments(runID string) []string {
+	utteranceIDs := runner.terminalSegments[runID]
+	delete(runner.terminalSegments, runID)
+	return utteranceIDs
 }
 
 func (runner *segmentPreparedTextRunner) isTerminal(runID string) bool {

@@ -8,13 +8,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bojieli/OpenRealtime/action"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -78,6 +81,230 @@ func (session *session) publishActivity(ctx context.Context, envelope element.En
 		return fmt.Errorf("publish scenario conversation acoustic activity: %w", err)
 	}
 	return nil
+}
+
+func (session *session) acceptSegmentationOutcome(envelope element.Envelope) error {
+	outcome, ok := segmentationOutcomePayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("scenario conversation segmentation outcome has payload %T", envelope.Payload)
+	}
+	if envelope.SessionID != session.sessionID || !canonicalIdentity(outcome.RunID) ||
+		envelope.RunID != outcome.RunID || outcome.Segments < 0 ||
+		outcome.Segments > maximumAdapterMemory {
+		return errors.New("scenario conversation segmentation outcome drifted from its exact session, run, or bound")
+	}
+	session.activityMu.Lock()
+	defer session.activityMu.Unlock()
+	switch outcome.Kind {
+	case interactionelements.OutcomeCompleted:
+		if _, duplicate := session.speechRuns[outcome.RunID]; duplicate {
+			return fmt.Errorf("scenario conversation run %q completed segmentation twice", outcome.RunID)
+		}
+		terminal := 0
+		for _, state := range session.playback {
+			if state.runID == outcome.RunID && state.terminal {
+				terminal++
+			}
+		}
+		if terminal > outcome.Segments {
+			return fmt.Errorf("scenario conversation run %q has %d terminal utterances for %d segments",
+				outcome.RunID, terminal, outcome.Segments)
+		}
+		remaining := outcome.Segments - terminal
+		if remaining == 0 {
+			session.removeSpeechRunLocked(outcome.RunID)
+			return nil
+		}
+		return session.rememberSpeechRunLocked(outcome.RunID, remaining)
+	case interactionelements.OutcomeCanceled, interactionelements.OutcomeFailed,
+		interactionelements.OutcomeRefused:
+		session.removeSpeechRunLocked(outcome.RunID)
+		return nil
+	case interactionelements.OutcomeIgnored:
+		return nil
+	default:
+		return fmt.Errorf("scenario conversation segmentation outcome has unsupported kind %q", outcome.Kind)
+	}
+}
+
+func (session *session) acceptPlaybackReceipt(
+	boundary string, envelope element.Envelope,
+) error {
+	receipt, ok := playbackReceiptPayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("scenario conversation playback receipt %s has payload %T", boundary, envelope.Payload)
+	}
+	expected, ok := playbackReceiptKindForBoundary(boundary)
+	if !ok || receipt.Kind != expected {
+		return fmt.Errorf("scenario conversation playback boundary %s carried kind %q", boundary, receipt.Kind)
+	}
+	if err := validatePlaybackReceipt(session.sessionID, envelope, receipt); err != nil {
+		return fmt.Errorf("scenario conversation playback receipt %s: %w", boundary, err)
+	}
+	active := activePlaybackReceiptKind(receipt.Kind)
+	terminal := terminalPlaybackReceiptKind(receipt.Kind)
+	utterance := receipt.Utterance
+	utterance.AssistantItemIDs = slices.Clone(receipt.Utterance.AssistantItemIDs)
+
+	session.activityMu.Lock()
+	defer session.activityMu.Unlock()
+	if session.playback == nil {
+		session.playback = make(map[string]playbackReceiptState)
+	}
+	previous, found := session.playback[utterance.ID]
+	if found {
+		if previous.runID != envelope.RunID || !samePlaybackUtterance(previous.utterance, utterance) {
+			return fmt.Errorf("utterance %q changed its exact run or presentation contract", utterance.ID)
+		}
+		if receipt.Sequence < previous.sequence {
+			// The six receipt boundaries drain concurrently. A later effect can be
+			// observed first; its higher sequence is authoritative.
+			return nil
+		}
+		if receipt.Sequence == previous.sequence {
+			return fmt.Errorf("utterance %q repeated playback receipt sequence %d",
+				utterance.ID, receipt.Sequence)
+		}
+		if previous.terminal && active {
+			return fmt.Errorf("utterance %q became active after terminal playback", utterance.ID)
+		}
+	} else if err := session.reservePlaybackStateLocked(); err != nil {
+		return err
+	} else {
+		session.playbackOrder = append(session.playbackOrder, utterance.ID)
+	}
+	state := playbackReceiptState{
+		runID: envelope.RunID, utterance: utterance, sequence: receipt.Sequence,
+		kind: receipt.Kind, active: active, terminal: terminal || found && previous.terminal,
+	}
+	becameTerminal := state.terminal && (!found || !previous.terminal)
+	session.playback[utterance.ID] = state
+	if becameTerminal {
+		session.completeSpeechRunUtteranceLocked(envelope.RunID)
+	}
+	return nil
+}
+
+func validatePlaybackReceipt(
+	sessionID string, envelope element.Envelope, receipt speechelements.PlaybackReceipt,
+) error {
+	utterance := receipt.Utterance
+	if envelope.SessionID != sessionID || !canonicalIdentity(envelope.RunID) ||
+		!canonicalIdentity(utterance.ID) || receipt.Sequence == 0 ||
+		envelope.SourceID != utterance.ID || envelope.CancellationScope != utterance.ID {
+		return errors.New("receipt drifted from its exact session, run, sequence, or utterance")
+	}
+	if strings.TrimSpace(utterance.Text) == "" || utterance.Text != strings.TrimSpace(utterance.Text) ||
+		len(utterance.Text) > maximumAdapterTextBytes {
+		return errors.New("receipt utterance has invalid or unbounded text")
+	}
+	if len(utterance.AssistantItemIDs) > maximumAdapterMemory {
+		return errors.New("receipt utterance exceeds the assistant-item bound")
+	}
+	for _, itemID := range utterance.AssistantItemIDs {
+		if !canonicalIdentity(itemID) {
+			return errors.New("receipt utterance has a noncanonical assistant item")
+		}
+	}
+	if receipt.Kind == speechelements.PlaybackAudioEmitted {
+		if len(receipt.Frame.PCM16LE) == 0 || len(receipt.Frame.PCM16LE)%2 != 0 ||
+			receipt.Frame.SampleRateHz == 0 || receipt.Frame.Duration <= 0 {
+			return errors.New("audio receipt has invalid PCM framing")
+		}
+	}
+	return nil
+}
+
+func samePlaybackUtterance(left, right action.Utterance) bool {
+	return left.ID == right.ID && left.Text == right.Text && left.Phase == right.Phase &&
+		left.SourceRevision == right.SourceRevision && left.Continuer == right.Continuer &&
+		left.SpokeOver == right.SpokeOver && slices.Equal(left.AssistantItemIDs, right.AssistantItemIDs)
+}
+
+func playbackReceiptKindForBoundary(boundary string) (speechelements.PlaybackReceiptKind, bool) {
+	switch boundary {
+	case gatewayTurnBeginBoundary:
+		return speechelements.PlaybackReserved, true
+	case gatewaySpeechBeginBoundary:
+		return speechelements.PlaybackBegun, true
+	case gatewaySpeechTextBoundary:
+		return speechelements.PlaybackTextCommitted, true
+	case gatewaySpeechAudioBoundary:
+		return speechelements.PlaybackAudioEmitted, true
+	case gatewaySpeechEndBoundary:
+		return speechelements.PlaybackEnded, true
+	case gatewayTurnEndBoundary:
+		return speechelements.PlaybackReleased, true
+	default:
+		return "", false
+	}
+}
+
+func activePlaybackReceiptKind(kind speechelements.PlaybackReceiptKind) bool {
+	switch kind {
+	case speechelements.PlaybackReserved, speechelements.PlaybackBegun,
+		speechelements.PlaybackTextCommitted, speechelements.PlaybackAudioEmitted:
+		return true
+	default:
+		return false
+	}
+}
+
+func terminalPlaybackReceiptKind(kind speechelements.PlaybackReceiptKind) bool {
+	return kind == speechelements.PlaybackEnded || kind == speechelements.PlaybackReleased
+}
+
+func (session *session) reservePlaybackStateLocked() error {
+	if len(session.playback) < maximumAdapterMemory {
+		return nil
+	}
+	for index, utteranceID := range session.playbackOrder {
+		state, found := session.playback[utteranceID]
+		if found && !state.terminal {
+			continue
+		}
+		delete(session.playback, utteranceID)
+		session.playbackOrder = append(session.playbackOrder[:index], session.playbackOrder[index+1:]...)
+		return nil
+	}
+	return errors.New("scenario conversation active playback receipt bound reached")
+}
+
+func (session *session) rememberSpeechRunLocked(runID string, remaining int) error {
+	if session.speechRuns == nil {
+		session.speechRuns = make(map[string]int)
+	}
+	if len(session.speechRuns) >= maximumAdapterMemory {
+		return errors.New("scenario conversation pending speech-run bound reached")
+	}
+	session.speechRuns[runID] = remaining
+	session.speechRunOrder = append(session.speechRunOrder, runID)
+	return nil
+}
+
+func (session *session) completeSpeechRunUtteranceLocked(runID string) {
+	remaining, found := session.speechRuns[runID]
+	if !found {
+		return
+	}
+	if remaining <= 1 {
+		session.removeSpeechRunLocked(runID)
+		return
+	}
+	session.speechRuns[runID] = remaining - 1
+}
+
+func (session *session) removeSpeechRunLocked(runID string) {
+	if _, found := session.speechRuns[runID]; !found {
+		return
+	}
+	delete(session.speechRuns, runID)
+	for index, candidate := range session.speechRunOrder {
+		if candidate == runID {
+			session.speechRunOrder = append(session.speechRunOrder[:index], session.speechRunOrder[index+1:]...)
+			break
+		}
+	}
 }
 
 func (session *session) acceptAdmissionState(envelope element.Envelope) error {
@@ -1266,6 +1493,30 @@ func cognitionOutcomePayload(payload any) (cognitionelements.Outcome, bool) {
 		}
 	}
 	return cognitionelements.Outcome{}, false
+}
+
+func segmentationOutcomePayload(payload any) (interactionelements.SegmentationOutcome, bool) {
+	switch typed := payload.(type) {
+	case interactionelements.SegmentationOutcome:
+		return typed, true
+	case *interactionelements.SegmentationOutcome:
+		if typed != nil {
+			return *typed, true
+		}
+	}
+	return interactionelements.SegmentationOutcome{}, false
+}
+
+func playbackReceiptPayload(payload any) (speechelements.PlaybackReceipt, bool) {
+	switch typed := payload.(type) {
+	case speechelements.PlaybackReceipt:
+		return typed, true
+	case *speechelements.PlaybackReceipt:
+		if typed != nil {
+			return *typed, true
+		}
+	}
+	return speechelements.PlaybackReceipt{}, false
 }
 
 func actionOutcomePayload(payload any) (actionelements.Outcome, bool) {

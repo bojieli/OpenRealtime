@@ -2441,7 +2441,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 642/6,147 at 2026-09-01 15:03 UTC. This dated progress checkpoint is
+  attempt 668/6,147 at 2026-09-01 18:41 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -2477,6 +2477,21 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   changed outcome through exact graph/config/runtime evidence, fix the cause,
   rerun the affected cases, and then rerun the complete suite. Repeat until the
   full candidate—not only a patched subset—passes.
+  - [x] Trace and repair the first retained FDB v1.5 interruption-latency
+    defect without rewriting its failed candidate-04 result. Exact transcript
+    evidence showed model generation becoming terminal while already-segmented
+    TTS/playback remained active for seconds. The Scenario Conversation adapter
+    now consumes bounded segmentation and post-effect playback receipts,
+    tolerates cross-boundary receipt reordering, revokes the complete pending
+    run before waiting for policy acknowledgement, and directly addresses each
+    active playback/TTS utterance. Segmentation retains completed-stream
+    utterance IDs only within its existing terminal bound and consumes them on
+    the first late cancellation, so replay cannot duplicate speech interrupts.
+    Focused normal, ten shuffled, race, affected integration, repository-wide
+    test, and repository-wide vet gates are green. The affected interruption
+    slice and then all 498 tasks still require immutable reruns after the active
+    FD-Bench campaign releases the shared model deployments; this subgate does
+    not close the parent quality gate.
 
 ### Phase 0: accept contracts and terminology
 

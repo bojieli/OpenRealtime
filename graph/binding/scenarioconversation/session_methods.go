@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -19,6 +20,7 @@ import (
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	ingresselements "github.com/bojieli/OpenRealtime/elements/ingress"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -421,35 +423,106 @@ func (session *session) Cancel(ctx context.Context, reason string) error {
 	reason = boundedAdapterReason(reason)
 	session.activityMu.Lock()
 	generations := make([]string, 0, len(session.active))
+	runs := make(map[string]struct{}, len(session.active)+len(session.speechRuns)+len(session.calls))
 	for generationID := range session.active {
 		generations = append(generations, generationID)
+		runs[generationID] = struct{}{}
 	}
 	calls := make([]activeClientCall, 0, len(session.calls))
 	for _, call := range session.calls {
 		calls = append(calls, call)
+		runs[call.runID] = struct{}{}
+	}
+	playback := make([]playbackReceiptState, 0, len(session.playback))
+	for _, state := range session.playback {
+		if state.active && !state.terminal {
+			playback = append(playback, state)
+			runs[state.runID] = struct{}{}
+		}
+	}
+	for runID, remaining := range session.speechRuns {
+		if remaining > 0 {
+			runs[runID] = struct{}{}
+		}
 	}
 	session.activityMu.Unlock()
-	if len(generations) == 0 && len(calls) == 0 {
+	if len(runs) == 0 && len(generations) == 0 && len(calls) == 0 && len(playback) == 0 {
 		return nil
 	}
-	for _, generationID := range generations {
-		if err := session.cancelGeneration(ctx, generationID, reason); err != nil {
-			return err
+	sort.Strings(generations)
+	sort.Slice(calls, func(left, right int) bool {
+		if calls[left].runID != calls[right].runID {
+			return calls[left].runID < calls[right].runID
 		}
+		return calls[left].call.CallID < calls[right].call.CallID
+	})
+	sort.Slice(playback, func(left, right int) bool {
+		return playback[left].utterance.ID < playback[right].utterance.ID
+	})
+	runIDs := make([]string, 0, len(runs))
+	for runID := range runs {
+		runIDs = append(runIDs, runID)
+	}
+	sort.Strings(runIDs)
+
+	// Revoke the graph's complete queued speech horizon before waiting for a
+	// policy acknowledgement. Segmentation retains exact utterance IDs after
+	// TextEnd; direct playback/TTS interrupts cover an utterance whose receipt
+	// has already crossed the presentation boundary.
+	var cancelErr error
+	segmentationParents := make(map[string]string, len(runIDs))
+	for _, runID := range runIDs {
+		itemID, sequence := session.nextEnvelopeIdentity("segmentation_cancel")
+		err := sendExact(ctx, session.ports.segmentationCancel, element.Envelope{
+			Type: session.ports.segmentationCancel.Type(), ItemID: itemID,
+			SessionID: session.sessionID, RunID: runID, Sequence: sequence,
+			TraceID: itemID, CancellationScope: runID,
+			Payload: cognitionelements.Cancel{RunID: runID, Reason: reason},
+		}, "send scenario conversation segmentation cancellation")
+		if err == nil {
+			segmentationParents[runID] = itemID
+		}
+		cancelErr = errors.Join(cancelErr, err)
+	}
+	for _, state := range playback {
+		for _, target := range []struct {
+			kind string
+			port element.OutputPort
+		}{
+			{kind: "playback_cancel", port: session.ports.playbackCancel},
+			{kind: "tts_cancel", port: session.ports.ttsCancel},
+		} {
+			itemID, sequence := session.nextEnvelopeIdentity(target.kind)
+			envelope := element.Envelope{
+				Type: target.port.Type(), ItemID: itemID, SessionID: session.sessionID,
+				RunID: state.runID, OpportunityID: state.utterance.ID,
+				Sequence: sequence, TraceID: itemID,
+				CancellationScope: state.utterance.ID,
+				Payload: speechelements.Cancel{
+					UtteranceID: state.utterance.ID, Reason: reason,
+				},
+			}
+			if parent := segmentationParents[state.runID]; parent != "" {
+				envelope.CausalParents = []string{parent}
+			}
+			cancelErr = errors.Join(cancelErr, sendExact(ctx, target.port, envelope,
+				"send scenario conversation "+strings.ReplaceAll(target.kind, "_", " ")))
+		}
+	}
+	for _, generationID := range generations {
+		cancelErr = errors.Join(cancelErr, session.cancelGeneration(ctx, generationID, reason))
 	}
 	for _, active := range calls {
 		itemID, sequence := session.nextEnvelopeIdentity("action_cancel")
-		if err := sendExact(ctx, session.ports.actionCancel, element.Envelope{
+		cancelErr = errors.Join(cancelErr, sendExact(ctx, session.ports.actionCancel, element.Envelope{
 			Type: session.ports.actionCancel.Type(), ItemID: itemID, SessionID: session.sessionID,
 			RunID: active.runID, OpportunityID: active.call.CallID,
 			Sequence: sequence, TraceID: itemID,
 			CancellationScope: active.runID,
 			Payload:           actionelements.Interrupt{CallID: active.call.CallID, Reason: reason},
-		}, "send scenario conversation action cancellation"); err != nil {
-			return err
-		}
+		}, "send scenario conversation action cancellation"))
 	}
-	return nil
+	return cancelErr
 }
 
 func (session *session) cancelGeneration(ctx context.Context, generationID, reason string) error {
