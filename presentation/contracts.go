@@ -154,7 +154,7 @@ var (
 	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",
-		"openrealtime/presentation/client/view/v1:native-slots-state-media-effects-inspection",
+		"openrealtime/presentation/client/view/v1:native-slots-state-media-effects-inspection-authoring",
 	)
 )
 

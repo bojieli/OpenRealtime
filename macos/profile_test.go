@@ -43,7 +43,7 @@ func TestNativeBundlePinsProfileLockPlanAndImplementations(t *testing.T) {
 	}
 	if want := []string{
 		"slots", "strict-json", "transport", "transport-diagnostics", "reducer",
-		"protocol-events", "inspection-access", "session-configuration", "media",
+		"protocol-events", "inspection-access", "session-configuration", "authoring", "media",
 		"video", "effects", "artifacts", "inspection", "view",
 	}; !reflect.DeepEqual(order, want) {
 		t.Fatalf("native mount order = %v, want %v", order, want)
@@ -129,6 +129,9 @@ func TestNativeDistributionSelectionIsExplicitAndObserverHasNoEffectsAuthority(t
 			var dependencies []string
 			for _, dependency := range entry.Dependencies {
 				dependencies = append(dependencies, dependency.Service.Name)
+			}
+			if !slicesContains(dependencies, presentation.ClientManagementAuthoringContract.Name) {
+				t.Fatalf("observer view does not depend on native authoring")
 			}
 			for _, forbidden := range []string{
 				presentation.ClientEffectsContract.Name,
@@ -560,6 +563,7 @@ func TestNativePermissionsAreIsolatedToNativeAdapters(t *testing.T) {
 		"effects":    {"network.connect\x00host-effects"},
 		"artifacts":  {"network.connect\x00host-resources"},
 		"inspection": {"network.connect\x00management-endpoint"},
+		"authoring":  {"network.connect\x00management-endpoint"},
 	}
 	if len(bundle.Manifest.Grants) != len(want) {
 		t.Fatalf("native grants = %#v", bundle.Manifest.Grants)

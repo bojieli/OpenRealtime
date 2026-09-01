@@ -22,6 +22,7 @@ struct ContentView: View {
                     }
                     timelineInspector.tabItem { Label("Timeline", systemImage: "clock.arrow.2.circlepath") }
                     managementInspector.tabItem { Label("Graph", systemImage: "point.3.connected.trianglepath.dotted") }
+                    authoringInspector.tabItem { Label("Authoring", systemImage: "slider.horizontal.3") }
                     protocolInspector.tabItem { Label("Protocol", systemImage: "chevron.left.forwardslash.chevron.right") }
                 }
                 .padding(10)
@@ -397,6 +398,60 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 280)
+    }
+
+    private var authoringInspector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Canonical .ortg path", text: $model.authoringPath)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 280)
+                SecureField("Management operator capability", text: $model.authoringCapability)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 360)
+                Button("Analyze contracts") { model.analyzeConfigurationContracts() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.authoringRunning)
+                Button("Clear capability") { model.clearAuthoringCapability() }
+                if model.authoringRunning { ProgressView().controlSize(.small) }
+                Spacer()
+                Text(model.authoringStatus).font(.caption).foregroundStyle(.secondary)
+            }
+            HSplitView {
+                GroupBox("In-memory graph source") {
+                    TextEditor(text: $model.authoringSource)
+                        .font(.body.monospaced())
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(minWidth: 360)
+                GroupBox("Configuration contracts · plaintext") {
+                    if let presentation = model.authoringPresentation {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("source \(presentation.sourceDigest) · \(presentation.contracts.count) of \(presentation.total)")
+                                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            ScrollView([.horizontal, .vertical]) {
+                                Text(presentation.plaintext)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                            }
+                        }
+                    } else {
+                        ContentUnavailableView(
+                            "No analyzed contract",
+                            systemImage: "slider.horizontal.3",
+                            description: Text(
+                                "Analysis uses a separate operator capability and cannot compile or write files."
+                            )
+                        )
+                    }
+                }
+                .frame(minWidth: 420)
+            }
+        }
+        .onChange(of: model.authoringPath) { _ in model.authoringDocumentChanged() }
+        .onChange(of: model.authoringSource) { _ in model.authoringDocumentChanged() }
     }
 
     private var protocolInspector: some View {

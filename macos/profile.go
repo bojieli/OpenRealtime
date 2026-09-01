@@ -101,6 +101,13 @@ var nativeDefinitions = []nativeDefinition{
 		requires: []plugin.Contract{presentation.ClientStateContract},
 	},
 	{
+		id: "authoring", pluginName: "openrealtime.presentation.macos.authoring",
+		implementation: "portable.swift-management-authoring.v1", provides: presentation.ClientManagementAuthoringContract,
+		permissions: []plugin.Permission{{
+			Kind: "network.connect", Resource: "management-endpoint", Operations: []string{"http"},
+		}},
+	},
+	{
 		id: "media", pluginName: "openrealtime.presentation.macos.media",
 		implementation: "macos.av-media.v2", provides: presentation.ClientMediaContract,
 		requires: []plugin.Contract{
@@ -160,7 +167,7 @@ var nativeDefinitions = []nativeDefinition{
 			presentation.ClientSlotsContract, presentation.ClientTransportDiagnosticsContract,
 			presentation.ClientStateContract, presentation.ClientMediaContract, presentation.ClientVideoContract,
 			presentation.ClientEffectsContract, presentation.ClientArtifactsContract,
-			presentation.ClientInspectionContract,
+			presentation.ClientInspectionContract, presentation.ClientManagementAuthoringContract,
 		},
 	},
 }
@@ -418,7 +425,8 @@ func validateNativeEndpointDirectory(
 		name     presentation.EndpointName
 		protocol string
 	}{realtime}
-	if nativeDefinitionsProvide(definitions, presentation.ClientInspectionContract) {
+	if nativeDefinitionsProvide(definitions, presentation.ClientInspectionContract) ||
+		nativeDefinitionsProvide(definitions, presentation.ClientManagementAuthoringContract) {
 		want = append(want, struct {
 			name     presentation.EndpointName
 			protocol string
@@ -531,6 +539,7 @@ func nativeDistributionDefinitions(distribution NativeDistribution) ([]nativeDef
 					presentation.ClientMediaContract,
 					presentation.ClientVideoContract,
 					presentation.ClientInspectionContract,
+					presentation.ClientManagementAuthoringContract,
 				}
 			}
 			definitions = append(definitions, definition)

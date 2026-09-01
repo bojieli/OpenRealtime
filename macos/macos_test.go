@@ -35,7 +35,7 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			"NativeEndpointDirectory.decodeStrict", "validate(selectedBy:",
 			"NativeClientProviderRegistry", "NativeClientProviderFactoryRegistration",
 			"NativeProviderFactoryContext", "SessionInspectionClient",
-			"SessionConfigurationService", "NativeViewBoundary", "NativeViewServices",
+			"SessionConfigurationService", "NativeAuthoringBoundary", "NativeViewBoundary", "NativeViewServices",
 			"macos.swiftui-observer-view.v1", "inspection.mount", "inspection.dispose",
 			"client.deactivate", "configuration.contribute", "onDispose",
 		},
@@ -49,6 +49,8 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			"ProtocolEventPresentation", "redacted secret",
 			"openrealtime.client-effects.v1", "/client/v1/effects",
 			"NativeEffectEndpointResolver", "NativeEndpointDirectory", "declaration.catalogDigest",
+			"NativeAuthoringClient", "NativeConfigurationPresentation",
+			"OpenRealtime-Management-Identity", "/authoring/analyze",
 			"providerLost", "remount",
 		},
 		"Sources/OpenRealtimeMac/NativePresentationProviders.swift": {
@@ -82,6 +84,7 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 			"let endpoint: String", "assembly.endpointDirectory.endpoint",
 			"assembly.view.services.transportDiagnostics.subscribe", "inspection.subscribe",
 			"inspection.deltas(after: 0, limit: 256)",
+			"analyzeConfigurationContracts", "authoring.analyze(path: path, source: source)",
 		},
 		"Sources/OpenRealtimeMac/Models.swift": {
 			"ProtocolEventPresentation.redacted", "safeProtocolPayload",
@@ -96,6 +99,7 @@ func TestNativeDeveloperClientDeclaresEveryCapabilityBoundary(t *testing.T) {
 		"Sources/OpenRealtimeMac/ContentView.swift": {
 			"Server debug timeline", "Raw protocol log", "Generated files",
 			"Canonical session inspection", "Bounded deltas", "Causal trace",
+			"Configuration contracts · plaintext", "Management operator capability", "Analyze contracts",
 		},
 		"Info.plist": {
 			"NSCameraUsageDescription", "NSMicrophoneUsageDescription",

@@ -340,7 +340,7 @@ func assertCommonClientContracts(
 			nativeEndpoint.URL, browserEndpoint.Path)
 	}
 	implementation := manifestImplementation(t, nativeBundle.Manifest, "transport")
-	if implementation.Implementation != "macos.urlsession-websocket.v1" ||
+	if implementation.Implementation != "macos.realtime-transport.v2" ||
 		!strings.HasPrefix(implementation.Artifact.ID, "native://") ||
 		implementation.Artifact.Digest == "" {
 		t.Fatalf("native transport implementation is not exact Swift artifact evidence: %+v", implementation)

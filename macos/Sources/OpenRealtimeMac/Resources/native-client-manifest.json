@@ -1,10 +1,10 @@
 {
   "format_version": 1,
   "platform": "macos",
-  "profile_fingerprint": "sha256:a433eae84b17cb683ac7b49b42b5f8c8ecbaf65d311141e236e6c8421a136155",
-  "lock_fingerprint": "sha256:59363861877c85d5cea0f8fda542fcec9b942700d14fb6d7bc94a31199c7b42d",
-  "plan_fingerprint": "sha256:38debe86f369fe850e4de50f996a0df7efb5542539a2c07cc8ac646212601a9a",
-  "manifest_fingerprint": "sha256:f338987248723c8293d7a8cd764e46ed0bae75f147cea37e99406102f5dec89c",
+  "profile_fingerprint": "sha256:c8813e448cb7591daa49e6cd3d8f5b7471976af82d11861cfa24ad4d1ffa8e8d",
+  "lock_fingerprint": "sha256:e0e58dcc2b58e19fc1e7e6dabe7a3a394a873b89c142fd1f86a410a30ad2abba",
+  "plan_fingerprint": "sha256:67da05a5fd8a6791a1ff29ddb802241f754b703653bbdbf35d2ee8855a2a4071",
+  "manifest_fingerprint": "sha256:f7b577fc9fee87d6ca450d135e834ef448e5f5e6efdb52be422bbbf29872e4a8",
   "endpoints": [
     {
       "name": "effects.local",
@@ -74,6 +74,15 @@
       "permissions": []
     },
     {
+      "id": "authoring",
+      "service": "presentation.client.management_authoring",
+      "implementation": "portable.swift-management-authoring.v1",
+      "requires": [],
+      "permissions": [
+        {"kind": "network.connect", "resource": "management-endpoint", "operations": ["http"]}
+      ]
+    },
+    {
       "id": "media",
       "service": "presentation.client.media",
       "implementation": "macos.av-media.v2",
@@ -141,6 +150,7 @@
       "implementation": "macos.swiftui-view.v1",
       "requires": [
         "presentation.client.artifacts",
+        "presentation.client.management_authoring",
         "presentation.client.inspection",
         "presentation.client.media",
         "presentation.client.session_state",

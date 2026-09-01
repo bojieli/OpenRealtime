@@ -220,6 +220,23 @@ private enum NativeMacProviderRegistry {
             )
         }
         try register(registry, selection(
+            "authoring", .authoring, "portable.swift-management-authoring.v1",
+            permissions: nativePermissionCeiling(.authoring)
+        )) { context in
+            let endpoint = try endpointDirectory.endpoint(
+                named: .management, protocol: NativeEndpoint.managementProtocol
+            )
+            let authoring = NativeAuthoringBoundary(
+                client: NativeAuthoringClient(), managementEndpoint: endpoint.url
+            )
+            return adapter(
+                context,
+                instance: authoring,
+                onStart: { try authoring.mount() },
+                onStop: { authoring.suspend() }, onDispose: { authoring.dispose() }
+            )
+        }
+        try register(registry, selection(
             "media", .media, "macos.av-media.v2",
             requires: [.connection, .reducer, .protocolEvents],
             permissions: nativePermissionCeiling(.media)
@@ -338,7 +355,7 @@ private enum NativeMacProviderRegistry {
             .slots, .transportDiagnostics, .reducer, .media, .video,
         ]
         if effectsEnabled { requires += [.effects, .artifacts] }
-        requires.append(.inspection)
+        requires += [.inspection, .authoring]
         let row = selection("view", .view, implementation, requires: requires)
         try register(registry, row) { context in
             _ = try context.service(.slots)
@@ -357,6 +374,9 @@ private enum NativeMacProviderRegistry {
                 ) : nil,
                 inspection: try context.service(
                     .inspection, as: NativeInspectionBoundary.self
+                ),
+                authoring: try context.service(
+                    .authoring, as: NativeAuthoringBoundary.self
                 )
             )
             let view = NativeViewBoundary(services: services)
@@ -455,6 +475,48 @@ final class NativeInspectionBoundary {
     }
 }
 
+@MainActor
+final class NativeAuthoringBoundary {
+    let client: NativeAuthoringClient
+    private let managementEndpoint: String
+    private var mounted = false
+
+    init(client: NativeAuthoringClient, managementEndpoint: String) {
+        self.client = client
+        self.managementEndpoint = managementEndpoint
+    }
+
+    func mount() throws {
+        guard !mounted else {
+            throw NativeAssemblyError("native authoring provider mounted twice")
+        }
+        try client.configure(managementEndpoint: managementEndpoint)
+        mounted = true
+    }
+
+    var capabilityStatus: NativeAuthoringCapabilityStatus { client.capabilityStatus() }
+    @discardableResult
+    func replaceCapability(_ token: String) throws -> NativeAuthoringCapabilityStatus {
+        guard mounted else { throw NativeAssemblyError("native authoring provider is unavailable") }
+        return try client.replaceCapability(token)
+    }
+    @discardableResult
+    func clearCapability() -> NativeAuthoringCapabilityStatus { client.clearCapability() }
+    func analyze(path: String, source: String) async throws -> NativeConfigurationPresentation {
+        guard mounted else { throw NativeAssemblyError("native authoring provider is unavailable") }
+        return try await client.analyze(path: path, source: source)
+    }
+    func suspend() {
+        guard mounted else { return }
+        mounted = false
+        client.suspend()
+    }
+    func dispose() {
+        mounted = false
+        client.dispose()
+    }
+}
+
 private final class NativeBoundary: NSObject {}
 
 @MainActor
@@ -466,6 +528,7 @@ struct NativeViewServices {
     let effects: NativeEffectsBoundary?
     let artifacts: NativeArtifactsBoundary?
     let inspection: NativeInspectionBoundary
+    let authoring: NativeAuthoringBoundary
 }
 
 @MainActor

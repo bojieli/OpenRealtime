@@ -52,6 +52,12 @@ final class DeveloperModel: ObservableObject {
     @Published var inspectionDeltas = ""
     @Published var inspectionTrace = ""
     @Published var inspectionRefreshing = false
+    @Published var authoringCapability = ""
+    @Published var authoringPath = "agent.ortg"
+    @Published var authoringSource = "graph agent {\n}\n"
+    @Published var authoringStatus = "not analyzed"
+    @Published var authoringPresentation: NativeConfigurationPresentation?
+    @Published var authoringRunning = false
     @Published var artifacts: [ClientArtifactReference] = []
     @Published var selectedArtifact: ClientArtifactReference?
     @Published var selectedArtifactHTML = ""
@@ -66,10 +72,12 @@ final class DeveloperModel: ObservableObject {
     private let effects: NativeEffectsBoundary?
     private let artifactService: NativeArtifactsBoundary?
     private let inspection: NativeInspectionBoundary
+    private let authoring: NativeAuthoringBoundary
     private var auxiliaryRecords: [ChannelRecord] = []
     private var effectRecords: [ChannelRecord] = []
     private var subscriptions: [() -> Void] = []
     private var inspectionEpoch = 0
+    private var authoringEpoch = 0
     private var artifactEpoch = 0
 
     var microphonePermission: String { media.microphonePermission }
@@ -134,6 +142,7 @@ final class DeveloperModel: ObservableObject {
         effects = services.effects
         artifactService = services.artifacts
         inspection = services.inspection
+        authoring = services.authoring
         clientIdentity = "\(assembly.manifest.manifestFingerprint) · endpoints \(assembly.endpointDirectory.fingerprint)"
         if effects == nil {
             effectsStatusText = "host effects not installed in this profile"
@@ -356,6 +365,53 @@ final class DeveloperModel: ObservableObject {
                 ? "canonical management snapshot loaded"
                 : failures.joined(separator: " · ")
         }
+    }
+
+    func authoringDocumentChanged() {
+        authoringEpoch += 1
+        authoringRunning = false
+        authoringPresentation = nil
+        authoringStatus = "document changed; analyze again"
+    }
+
+    func analyzeConfigurationContracts() {
+        guard !authoringRunning else { return }
+        authoringRunning = true
+        authoringEpoch += 1
+        let epoch = authoringEpoch
+        let path = authoringPath
+        let source = authoringSource
+        authoringStatus = "analyzing exact in-memory source"
+        do {
+            _ = try authoring.replaceCapability(authoringCapability)
+        } catch {
+            authoringRunning = false
+            authoringPresentation = nil
+            authoringStatus = error.localizedDescription
+            return
+        }
+        Task {
+            do {
+                let presentation = try await authoring.analyze(path: path, source: source)
+                guard authoringEpoch == epoch else { return }
+                authoringPresentation = presentation
+                authoringStatus = "\(presentation.contracts.count) of \(presentation.total) exact contracts"
+            } catch {
+                guard authoringEpoch == epoch else { return }
+                authoringPresentation = nil
+                authoringStatus = error.localizedDescription
+            }
+            if authoringEpoch == epoch { authoringRunning = false }
+        }
+    }
+
+    func clearAuthoringCapability() {
+        authoringEpoch += 1
+        _ = authoring.clearCapability()
+        authoringCapability = ""
+        authoringPresentation = nil
+        authoringRunning = false
+        authoringStatus = "operator capability cleared"
     }
 
     /// Hosted release-gate access to the UI-independent management client.

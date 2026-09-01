@@ -1188,21 +1188,21 @@ public struct SessionInspectionDocument: Equatable, Sendable {
     }
 }
 
-private struct SessionInspectionHTTPResult {
+private struct BoundedManagementHTTPResult {
     let response: HTTPURLResponse
     let data: Data
 }
 
-private final class BoundedSessionInspectionTransport:
+private final class BoundedManagementTransport:
     NSObject, URLSessionDataDelegate, URLSessionTaskDelegate, @unchecked Sendable
 {
     private final class Pending {
-        let continuation: CheckedContinuation<SessionInspectionHTTPResult, Error>
+        let continuation: CheckedContinuation<BoundedManagementHTTPResult, Error>
         var response: HTTPURLResponse?
         var data = Data()
         var failure: Error?
 
-        init(_ continuation: CheckedContinuation<SessionInspectionHTTPResult, Error>) {
+        init(_ continuation: CheckedContinuation<BoundedManagementHTTPResult, Error>) {
             self.continuation = continuation
         }
     }
@@ -1223,20 +1223,20 @@ private final class BoundedSessionInspectionTransport:
         configuration.urlCredentialStorage = nil
         configuration.httpAdditionalHeaders = [:]
         let queue = OperationQueue()
-        queue.name = "openrealtime.native.inspection"
+        queue.name = "openrealtime.native.management"
         queue.maxConcurrentOperationCount = 1
         urlSession = URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
     }
 
-    func get(_ request: URLRequest) async throws -> SessionInspectionHTTPResult {
+    func execute(_ request: URLRequest) async throws -> BoundedManagementHTTPResult {
         try Task.checkCancellation()
         return try await withCheckedThrowingContinuation {
-            (continuation: CheckedContinuation<SessionInspectionHTTPResult, Error>) in
+            (continuation: CheckedContinuation<BoundedManagementHTTPResult, Error>) in
             let task = urlSession.dataTask(with: request)
             lock.lock()
             guard !disposed else {
                 lock.unlock()
-                continuation.resume(throwing: SessionInspectionFailure("session inspection client is disposed"))
+                continuation.resume(throwing: SessionInspectionFailure("management client is disposed"))
                 return
             }
             pending[task.taskIdentifier] = Pending(continuation)
@@ -1258,7 +1258,7 @@ private final class BoundedSessionInspectionTransport:
         urlSession.invalidateAndCancel()
         for request in abandoned {
             request.continuation.resume(
-                throwing: SessionInspectionFailure("session inspection client is disposed")
+                throwing: SessionInspectionFailure("management client is disposed")
             )
         }
     }
@@ -1276,26 +1276,26 @@ private final class BoundedSessionInspectionTransport:
             return
         }
         guard let http = response as? HTTPURLResponse else {
-            request.failure = SessionInspectionFailure("session inspection returned a non-HTTP response")
+            request.failure = SessionInspectionFailure("management endpoint returned a non-HTTP response")
             lock.unlock()
             completionHandler(.cancel)
             return
         }
         if http.expectedContentLength > Int64(maximumBytes) {
-            request.failure = SessionInspectionFailure("session inspection response exceeds the byte limit")
+            request.failure = SessionInspectionFailure("management response exceeds the byte limit")
             lock.unlock()
             completionHandler(.cancel)
             return
         }
         if let header = http.value(forHTTPHeaderField: "Content-Length") {
             guard let declared = Int64(header), declared >= 0 else {
-                request.failure = SessionInspectionFailure("session inspection returned an invalid content length")
+                request.failure = SessionInspectionFailure("management response has an invalid content length")
                 lock.unlock()
                 completionHandler(.cancel)
                 return
             }
             guard declared <= Int64(maximumBytes) else {
-                request.failure = SessionInspectionFailure("session inspection response exceeds the byte limit")
+                request.failure = SessionInspectionFailure("management response exceeds the byte limit")
                 lock.unlock()
                 completionHandler(.cancel)
                 return
@@ -1311,7 +1311,7 @@ private final class BoundedSessionInspectionTransport:
         lock.lock()
         if let request = pending[dataTask.taskIdentifier], request.failure == nil {
             if data.count > maximumBytes - request.data.count {
-                request.failure = SessionInspectionFailure("session inspection response exceeds the byte limit")
+                request.failure = SessionInspectionFailure("management response exceeds the byte limit")
                 cancel = true
             } else {
                 request.data.append(data)
@@ -1330,7 +1330,7 @@ private final class BoundedSessionInspectionTransport:
     ) {
         lock.lock()
         pending[task.taskIdentifier]?.failure = SessionInspectionFailure(
-            "session inspection redirects are forbidden"
+            "management redirects are forbidden"
         )
         lock.unlock()
         completionHandler(nil)
@@ -1350,12 +1350,12 @@ private final class BoundedSessionInspectionTransport:
         } else if let error {
             request.continuation.resume(throwing: error)
         } else if let response = request.response {
-            request.continuation.resume(returning: SessionInspectionHTTPResult(
+            request.continuation.resume(returning: BoundedManagementHTTPResult(
                 response: response, data: request.data
             ))
         } else {
             request.continuation.resume(
-                throwing: SessionInspectionFailure("session inspection response is incomplete")
+                throwing: SessionInspectionFailure("management response is incomplete")
             )
         }
     }
@@ -1370,7 +1370,7 @@ public final class SessionInspectionClient: @unchecked Sendable {
 
     private let lock = NSLock()
     private let accessSource: SessionInspectionAccessService
-    private let transport: BoundedSessionInspectionTransport
+    private let transport: BoundedManagementTransport
     private var managementBase: URL?
     private var listeners: [UUID: (SessionInspectionAccessProjection?) -> Void] = [:]
     private var unsubscribeAccess: (() -> Void)?
@@ -1381,7 +1381,7 @@ public final class SessionInspectionClient: @unchecked Sendable {
         configuration: URLSessionConfiguration = .ephemeral
     ) {
         self.accessSource = accessSource
-        transport = BoundedSessionInspectionTransport(
+        transport = BoundedManagementTransport(
             configuration: configuration, maximumBytes: Self.maximumResponseBytes
         )
         unsubscribeAccess = accessSource.subscribe { [weak self] _ in self?.notify() }
@@ -1390,7 +1390,7 @@ public final class SessionInspectionClient: @unchecked Sendable {
     /// Pins management calls to one exact, credential-free HTTP(S) base URL.
     /// Changing endpoints first drops any capability minted by the old server.
     public func configure(managementEndpoint: String) throws {
-        let base = try Self.validManagementBase(managementEndpoint)
+        let base = try validNativeManagementBase(managementEndpoint)
         lock.lock()
         guard !disposed else {
             lock.unlock()
@@ -1510,7 +1510,7 @@ public final class SessionInspectionClient: @unchecked Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
         request.setValue(credential.token, forHTTPHeaderField: Self.capabilityHeader)
-        let result = try await transport.get(request)
+        let result = try await transport.execute(request)
         guard result.response.url == url else {
             throw SessionInspectionFailure("session inspection response changed origin or path")
         }
@@ -1555,33 +1555,603 @@ public final class SessionInspectionClient: @unchecked Sendable {
         callbacks.forEach { $0(projection) }
     }
 
-    private static func validManagementBase(_ endpoint: String) throws -> URL {
-        guard endpoint == endpoint.trimmingCharacters(in: .whitespacesAndNewlines),
-              endpoint.utf8.count <= 64 << 10,
-              let components = URLComponents(string: endpoint),
-              let scheme = components.scheme, ["http", "https"].contains(scheme),
-              let host = components.host, !host.isEmpty,
-              components.user == nil, components.password == nil,
-              components.query == nil, components.fragment == nil,
-              !components.percentEncodedPath.hasSuffix("/") || components.percentEncodedPath == "/",
-              components.url?.absoluteString == endpoint else {
-            throw SessionInspectionFailure("the declared management endpoint is invalid")
-        }
-        for segment in components.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: false) {
-            let decoded = String(segment).removingPercentEncoding
-            guard decoded != ".", decoded != ".." else {
-                throw SessionInspectionFailure("the declared management endpoint is invalid")
-            }
-        }
-        guard let result = components.url else {
-            throw SessionInspectionFailure("the declared management endpoint is invalid")
-        }
-        return result
-    }
-
     private static var pathSegmentCharacters: CharacterSet {
         CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
     }
+}
+
+private func validNativeManagementBase(_ endpoint: String) throws -> URL {
+    guard endpoint == endpoint.trimmingCharacters(in: .whitespacesAndNewlines),
+          endpoint.utf8.count <= 64 << 10,
+          let components = URLComponents(string: endpoint),
+          let scheme = components.scheme, ["http", "https"].contains(scheme),
+          let host = components.host, !host.isEmpty,
+          components.user == nil, components.password == nil,
+          components.query == nil, components.fragment == nil,
+          !components.percentEncodedPath.hasSuffix("/") || components.percentEncodedPath == "/",
+          components.url?.absoluteString == endpoint else {
+        throw SessionInspectionFailure("the declared management endpoint is invalid")
+    }
+    for segment in components.percentEncodedPath.split(separator: "/", omittingEmptySubsequences: false) {
+        let decoded = String(segment).removingPercentEncoding
+        guard decoded != ".", decoded != ".." else {
+            throw SessionInspectionFailure("the declared management endpoint is invalid")
+        }
+    }
+    guard let result = components.url else {
+        throw SessionInspectionFailure("the declared management endpoint is invalid")
+    }
+    return result
+}
+
+public struct NativeConfigurationProperty: Equatable, Sendable, Identifiable {
+    public var id: String { name }
+    public let name: String
+    public let pointer: String
+    public let required: Bool
+    public let types: [String]
+    public let title: String?
+    public let description: String?
+    public let format: String?
+    public let defaultJSON: String?
+    public let enumJSON: [String]?
+    public let schemaJSON: String
+}
+
+public struct NativeConfigurationContract: Equatable, Sendable, Identifiable {
+    public var id: String { elementName }
+    public let elementName: String
+    public let elementRevision: Int
+    public let elementDigest: String
+    public let artifact: String
+    public let resolved: Bool
+    public let inlineTopologyValues: Bool
+    public let emptyObjectOnly: Bool
+    public let schemaStatus: String
+    public let schemaReference: String?
+    public let schemaID: String?
+    public let schemaDigest: String?
+    public let propertiesComplete: Bool
+    public let additionalPropertiesJSON: String?
+    public let properties: [NativeConfigurationProperty]
+}
+
+/// Immutable output for a native configuration editor. Text is a complete,
+/// deterministic plaintext rendering; the typed contracts let a SwiftUI view
+/// choose richer layout without reparsing untrusted management JSON.
+public struct NativeConfigurationPresentation: Equatable, Sendable {
+    public let sourceDigest: String
+    public let total: Int
+    public let incomplete: Bool
+    public let contracts: [NativeConfigurationContract]
+    public let plaintext: String
+}
+
+public struct NativeAuthoringCapabilityStatus: Equatable, Sendable {
+    public let available: Bool
+    public let expiresAtMS: Int64
+    public let generation: UInt64
+}
+
+private struct NativeAuthoringCapabilityLease: Equatable {
+    let token: String
+    let generation: UInt64
+}
+
+/// Narrow native client for authoring analysis. It deliberately has no
+/// compile, render, reconciliation, or file-write operation. The operator
+/// bearer is private mutable service state and can never be passed to analyze,
+/// serialized into the document, or confused with session-inspection access.
+public final class NativeAuthoringClient: @unchecked Sendable {
+    public static let maximumSourceBytes = 1 << 20
+    public static let maximumResponseBytes = 64 << 20
+    public static let capabilityHeader = "OpenRealtime-Management-Token"
+    public static let identityHeader = "OpenRealtime-Management-Identity"
+
+    private let lock = NSLock()
+    private let clock: @Sendable () -> Int64
+    private let transport: BoundedManagementTransport
+    private var managementBase: URL?
+    private var capability: String?
+    private var expiresAtMS: Int64 = 0
+    private var generation: UInt64 = 0
+    private var disposed = false
+
+    public init(
+        configuration: URLSessionConfiguration = .ephemeral,
+        clock: @escaping @Sendable () -> Int64 = {
+            Int64((Date().timeIntervalSince1970 * 1_000).rounded(.down))
+        }
+    ) {
+        self.clock = clock
+        transport = BoundedManagementTransport(
+            configuration: configuration, maximumBytes: Self.maximumResponseBytes
+        )
+    }
+
+    public func configure(managementEndpoint: String) throws {
+        let base = try validNativeManagementBase(managementEndpoint)
+        lock.lock()
+        guard !disposed else {
+            lock.unlock()
+            throw SessionInspectionFailure("native authoring client is disposed")
+        }
+        let changed = managementBase != nil && managementBase != base
+        managementBase = base
+        if changed { rotateCapabilityLocked(nil, expiresAtMS: 0) }
+        lock.unlock()
+    }
+
+    @discardableResult
+    public func replaceCapability(
+        _ token: String, expiresAtMS: Int64 = 0
+    ) throws -> NativeAuthoringCapabilityStatus {
+        guard validNativeOperatorCapability(token) else {
+            throw SessionInspectionFailure("native authoring capability is not canonical")
+        }
+        let now = clock()
+        guard expiresAtMS == 0 || expiresAtMS > now else {
+            throw SessionInspectionFailure("native authoring capability expiry is invalid")
+        }
+        lock.lock()
+        defer { lock.unlock() }
+        guard !disposed else {
+            throw SessionInspectionFailure("native authoring client is disposed")
+        }
+        rotateCapabilityLocked(token, expiresAtMS: expiresAtMS)
+        return statusLocked(now: now)
+    }
+
+    @discardableResult
+    public func clearCapability() -> NativeAuthoringCapabilityStatus {
+        lock.lock()
+        defer { lock.unlock() }
+        if !disposed { rotateCapabilityLocked(nil, expiresAtMS: 0) }
+        return statusLocked(now: clock())
+    }
+
+    public func capabilityStatus() -> NativeAuthoringCapabilityStatus {
+        let now = clock()
+        lock.lock()
+        defer { lock.unlock() }
+        expireLocked(now: now)
+        return statusLocked(now: now)
+    }
+
+    public func analyze(
+        path: String, source: String, revision: Int = 1
+    ) async throws -> NativeConfigurationPresentation {
+        let sourceBytes = Data(source.utf8)
+        guard validNativeAuthoringPath(path),
+              !sourceBytes.isEmpty, sourceBytes.count <= Self.maximumSourceBytes,
+              revision > 0 else {
+            throw SessionInspectionFailure("native authoring document is invalid")
+        }
+        let expectedDigest = "sha256:" + PortableNativeSHA256.hexDigest(sourceBytes)
+        let body: [String: Any] = ["path": path, "source": source, "revision": revision]
+        let encoded = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        guard encoded.count <= 16 << 20 else {
+            throw SessionInspectionFailure("native authoring request exceeds its byte limit")
+        }
+        let (base, lease) = try requestState()
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        let prefix = components?.percentEncodedPath == "/"
+            ? "" : (components?.percentEncodedPath ?? "")
+        components?.percentEncodedPath = "\(prefix)/authoring/analyze"
+        components?.query = nil
+        guard let url = components?.url else {
+            throw SessionInspectionFailure("native authoring endpoint is invalid")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = encoded
+        request.timeoutInterval = 15
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        request.setValue(lease.token, forHTTPHeaderField: Self.capabilityHeader)
+        let result = try await transport.execute(request)
+        guard result.response.url == url else {
+            throw SessionInspectionFailure("native authoring response changed origin or path")
+        }
+        guard (200...299).contains(result.response.statusCode) else {
+            throw SessionInspectionFailure(
+                "native authoring endpoint returned \(result.response.statusCode)"
+            )
+        }
+        let mediaType = (result.response.value(forHTTPHeaderField: "Content-Type") ?? "")
+            .split(separator: ";", maxSplits: 1).first?.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard mediaType == "application/json" else {
+            throw SessionInspectionFailure("native authoring response is not JSON")
+        }
+        guard current(lease) else {
+            throw SessionInspectionFailure("native authoring capability changed during request")
+        }
+        let identity = result.response.value(forHTTPHeaderField: Self.identityHeader)
+        guard identity == "authoring:analyze:\(expectedDigest)" else {
+            throw SessionInspectionFailure("native authoring response lacks exact source identity")
+        }
+        let object = try StrictRealtimeJSON.object(
+            from: result.data, maximumBytes: Self.maximumResponseBytes
+        )
+        guard current(lease) else {
+            throw SessionInspectionFailure("native authoring capability changed during response")
+        }
+        return try nativeConfigurationPresentation(
+            analysis: object, expectedSourceDigest: expectedDigest
+        )
+    }
+
+    public func suspend() {
+        lock.lock()
+        if !disposed {
+            managementBase = nil
+            rotateCapabilityLocked(nil, expiresAtMS: 0)
+        }
+        lock.unlock()
+    }
+
+    public func dispose() {
+        lock.lock()
+        guard !disposed else {
+            lock.unlock()
+            return
+        }
+        disposed = true
+        managementBase = nil
+        rotateCapabilityLocked(nil, expiresAtMS: 0)
+        lock.unlock()
+        transport.dispose()
+    }
+
+    private func requestState() throws -> (URL, NativeAuthoringCapabilityLease) {
+        let now = clock()
+        lock.lock()
+        defer { lock.unlock() }
+        expireLocked(now: now)
+        guard !disposed, let base = managementBase, let token = capability else {
+            throw SessionInspectionFailure("native authoring capability is unavailable")
+        }
+        return (base, NativeAuthoringCapabilityLease(token: token, generation: generation))
+    }
+
+    private func current(_ lease: NativeAuthoringCapabilityLease) -> Bool {
+        let now = clock()
+        lock.lock()
+        defer { lock.unlock() }
+        expireLocked(now: now)
+        return !disposed && capability == lease.token && generation == lease.generation
+    }
+
+    private func expireLocked(now: Int64) {
+        if capability != nil && expiresAtMS != 0 && now >= expiresAtMS {
+            rotateCapabilityLocked(nil, expiresAtMS: 0)
+        }
+    }
+
+    private func rotateCapabilityLocked(_ token: String?, expiresAtMS: Int64) {
+        generation &+= 1
+        capability = token
+        self.expiresAtMS = expiresAtMS
+    }
+
+    private func statusLocked(now: Int64) -> NativeAuthoringCapabilityStatus {
+        NativeAuthoringCapabilityStatus(
+            available: !disposed && capability != nil &&
+                (expiresAtMS == 0 || now < expiresAtMS),
+            expiresAtMS: expiresAtMS, generation: generation
+        )
+    }
+}
+
+private func nativeConfigurationPresentation(
+    analysis: [String: Any], expectedSourceDigest: String
+) throws -> NativeConfigurationPresentation {
+    try onlyNativeKeys(
+        analysis,
+        ["source_digest", "parsed", "recovered", "canonical", "diagnostics", "catalog", "formatting"],
+        "native authoring analysis"
+    )
+    guard analysis["source_digest"] as? String == expectedSourceDigest,
+          let parsed = analysis["parsed"] as? Bool,
+          let recovered = analysis["recovered"] as? Bool,
+          let canonical = analysis["canonical"] as? Bool,
+          parsed != recovered, !canonical || parsed else {
+        throw SessionInspectionFailure("native authoring analysis changed source identity")
+    }
+    let report = try objectValue(analysis["catalog"], "native configuration metadata report")
+    try onlyNativeKeys(report, ["elements", "total", "incomplete"], "native configuration metadata report")
+    guard let rows = report["elements"] as? [Any], rows.count <= 65_536,
+          let totalValue = try? integerValue(
+            report["total"], "native configuration metadata total", minimum: 0
+          ), totalValue >= Int64(rows.count), totalValue <= 65_536 else {
+        throw SessionInspectionFailure("native configuration metadata report exceeds its bounds")
+    }
+    let total = Int(totalValue)
+    let incomplete: Bool
+    if let value = report["incomplete"] {
+        guard let exact = value as? Bool else {
+            throw SessionInspectionFailure("native configuration metadata completeness is invalid")
+        }
+        incomplete = exact
+    } else {
+        incomplete = false
+    }
+    guard incomplete == (rows.count < total) else {
+        throw SessionInspectionFailure("native configuration metadata completeness is inconsistent")
+    }
+    var contracts: [NativeConfigurationContract] = []
+    contracts.reserveCapacity(rows.count)
+    var previousElement = ""
+    for (index, value) in rows.enumerated() {
+        let row = try objectValue(value, "native configuration element[\(index)]")
+        try onlyNativeKeys(
+            row,
+            ["identity", "topology_declaration", "generics", "ports", "reaction", "state_schema",
+             "config", "dependencies", "effects", "composite_fingerprint"],
+            "native configuration element[\(index)]"
+        )
+        let identity = try objectValue(row["identity"], "native configuration element identity")
+        try onlyNativeKeys(identity, ["name", "revision", "digest"], "native configuration element identity")
+        guard let name = identity["name"] as? String, validNativeSymbol(name), name > previousElement,
+              let revisionValue = try? integerValue(
+                identity["revision"], "native configuration element revision", minimum: 1
+              ), revisionValue <= Int64(Int.max),
+              let digest = identity["digest"] as? String, validDigest(digest) else {
+            throw SessionInspectionFailure("native configuration element identity is invalid")
+        }
+        let revision = Int(revisionValue)
+        previousElement = name
+        let config = try objectValue(row["config"], "native configuration contract")
+        contracts.append(try nativeConfigurationContract(
+            elementName: name, revision: revision, digest: digest, config: config
+        ))
+    }
+    let plaintext = nativeConfigurationPlaintext(contracts)
+    guard plaintext.utf8.count <= NativeConfigurationLimits.maximumPresentationBytes else {
+        throw SessionInspectionFailure("native configuration presentation exceeds its byte limit")
+    }
+    return NativeConfigurationPresentation(
+        sourceDigest: expectedSourceDigest, total: total, incomplete: incomplete,
+        contracts: contracts, plaintext: plaintext
+    )
+}
+
+private func nativeConfigurationContract(
+    elementName: String, revision: Int, digest: String, config: [String: Any]
+) throws -> NativeConfigurationContract {
+    try onlyNativeKeys(
+        config,
+        ["artifact", "resolved", "schema_reference", "inline_topology_values", "empty_object_only",
+         "schema_status", "schema_id", "schema_digest", "properties_complete", "properties",
+         "additional_properties"],
+        "native configuration contract"
+    )
+    guard let artifact = config["artifact"] as? String, validNativeMetadataText(artifact, required: true),
+          config["resolved"] as? Bool == true,
+          config["inline_topology_values"] as? Bool == false,
+          let emptyObjectOnly = config["empty_object_only"] as? Bool,
+          let status = config["schema_status"] as? String,
+          let propertiesComplete = config["properties_complete"] as? Bool,
+          let rawProperties = config["properties"] as? [Any], rawProperties.count <= 65_536 else {
+        throw SessionInspectionFailure("native configuration contract changed the topology/value boundary")
+    }
+    let schemaReference = try optionalNativeMetadataText(config, "schema_reference")
+    let schemaID = try optionalNativeMetadataText(config, "schema_id")
+    let schemaDigest = try optionalNativeMetadataText(config, "schema_digest")
+    var properties: [NativeConfigurationProperty] = []
+    properties.reserveCapacity(rawProperties.count)
+    var previousProperty = ""
+    for (index, value) in rawProperties.enumerated() {
+        let property = try objectValue(value, "native configuration property[\(index)]")
+        let rendered = try nativeConfigurationProperty(property, previous: previousProperty)
+        previousProperty = rendered.name
+        properties.append(rendered)
+    }
+    let additional = try optionalNativeJSON(config, "additional_properties")
+    switch status {
+    case "empty-object-only":
+        guard emptyObjectOnly, propertiesComplete, properties.isEmpty,
+              schemaReference == nil, schemaID == nil, schemaDigest == nil, additional == nil else {
+            throw SessionInspectionFailure("native empty-object configuration contract is inconsistent")
+        }
+    case "unresolved", "invalid":
+        guard !emptyObjectOnly, !propertiesComplete, properties.isEmpty,
+              schemaReference != nil, schemaID == nil, schemaDigest == nil, additional == nil else {
+            throw SessionInspectionFailure("native unresolved configuration contract invented fields")
+        }
+    case "resolved":
+        guard !emptyObjectOnly, schemaReference != nil, schemaID != nil,
+              let exactDigest = schemaDigest, validDigest(exactDigest) else {
+            throw SessionInspectionFailure("native resolved configuration contract is incomplete")
+        }
+    default:
+        throw SessionInspectionFailure("native configuration schema status is invalid")
+    }
+    return NativeConfigurationContract(
+        elementName: elementName, elementRevision: revision, elementDigest: digest,
+        artifact: artifact, resolved: true, inlineTopologyValues: false,
+        emptyObjectOnly: emptyObjectOnly, schemaStatus: status,
+        schemaReference: schemaReference, schemaID: schemaID, schemaDigest: schemaDigest,
+        propertiesComplete: propertiesComplete, additionalPropertiesJSON: additional,
+        properties: properties
+    )
+}
+
+private func nativeConfigurationProperty(
+    _ property: [String: Any], previous: String
+) throws -> NativeConfigurationProperty {
+    try onlyNativeKeys(
+        property,
+        ["name", "pointer", "required", "types", "title", "description", "format", "default", "enum", "schema"],
+        "native configuration property"
+    )
+    guard let name = property["name"] as? String, validNativeMetadataText(name, required: true),
+          name > previous,
+          property["pointer"] as? String == "#/properties/\(escapeNativeJSONPointer(name))",
+          property.keys.contains("schema") else {
+        throw SessionInspectionFailure("native configuration property identity is invalid")
+    }
+    let required: Bool
+    if let value = property["required"] {
+        guard let exact = value as? Bool else {
+            throw SessionInspectionFailure("native configuration property requiredness is invalid")
+        }
+        required = exact
+    } else {
+        required = false
+    }
+    let types: [String]
+    if let value = property["types"] {
+        guard let exact = value as? [String], exact.count <= 7 else {
+            throw SessionInspectionFailure("native configuration property types are invalid")
+        }
+        let allowed = Set(["array", "boolean", "integer", "null", "number", "object", "string"])
+        var prior = ""
+        for type in exact {
+            guard allowed.contains(type), prior.isEmpty || type > prior else {
+                throw SessionInspectionFailure("native configuration property types are not canonical")
+            }
+            prior = type
+        }
+        types = exact
+    } else {
+        types = []
+    }
+    let title = try optionalNativeMetadataText(property, "title", allowEmpty: true)
+    let description = try optionalNativeMetadataText(property, "description", allowEmpty: true)
+    let format = try optionalNativeMetadataText(property, "format", allowEmpty: true)
+    let defaultJSON = try optionalNativeJSON(property, "default")
+    let enumeration: [String]?
+    if let value = property["enum"] {
+        guard let exact = value as? [Any], exact.count <= 65_536 else {
+            throw SessionInspectionFailure("native configuration property enum exceeds its bound")
+        }
+        enumeration = try exact.map(nativeCanonicalJSON)
+    } else {
+        enumeration = nil
+    }
+    guard let schemaValue = property["schema"] else {
+        throw SessionInspectionFailure("native configuration property schema is absent")
+    }
+    return NativeConfigurationProperty(
+        name: name, pointer: "#/properties/\(escapeNativeJSONPointer(name))",
+        required: required, types: types, title: title, description: description,
+        format: format, defaultJSON: defaultJSON, enumJSON: enumeration,
+        schemaJSON: try nativeCanonicalJSON(schemaValue)
+    )
+}
+
+private enum NativeConfigurationLimits {
+    static let maximumPresentationBytes = 64 << 20
+}
+
+private func nativeConfigurationPlaintext(_ contracts: [NativeConfigurationContract]) -> String {
+    var lines: [String] = []
+    for contract in contracts {
+        lines.append("element: \(nativeQuoted(contract.elementName))")
+        lines.append("element revision: \(contract.elementRevision)")
+        lines.append("element digest: \(nativeQuoted(contract.elementDigest))")
+        lines.append("artifact: \(nativeQuoted(contract.artifact))")
+        lines.append("descriptor resolved: \(contract.resolved)")
+        lines.append("inline topology values: \(contract.inlineTopologyValues)")
+        lines.append("empty object only: \(contract.emptyObjectOnly)")
+        lines.append("schema status: \(nativeQuoted(contract.schemaStatus))")
+        lines.append("schema reference: \(contract.schemaReference.map(nativeQuoted) ?? "absent")")
+        lines.append("schema identity: \(contract.schemaID.map(nativeQuoted) ?? "absent")")
+        lines.append("schema digest: \(contract.schemaDigest.map(nativeQuoted) ?? "absent")")
+        lines.append("properties complete: \(contract.propertiesComplete)")
+        lines.append("additional properties: \(contract.additionalPropertiesJSON ?? "absent")")
+        lines.append("property count: \(contract.properties.count)")
+        for (index, property) in contract.properties.enumerated() {
+            let prefix = "property[\(index)]."
+            lines.append("\(prefix)name: \(nativeQuoted(property.name))")
+            lines.append("\(prefix)pointer: \(nativeQuoted(property.pointer))")
+            lines.append("\(prefix)required: \(property.required)")
+            lines.append("\(prefix)types: \(property.types.isEmpty ? "absent" : nativeStringArray(property.types))")
+            lines.append("\(prefix)title: \(property.title.map(nativeQuoted) ?? "absent")")
+            lines.append("\(prefix)description: \(property.description.map(nativeQuoted) ?? "absent")")
+            lines.append("\(prefix)format: \(property.format.map(nativeQuoted) ?? "absent")")
+            lines.append("\(prefix)default: \(property.defaultJSON ?? "absent")")
+            lines.append("\(prefix)enum: \(property.enumJSON.map { "[" + $0.joined(separator: ",") + "]" } ?? "absent")")
+            lines.append("\(prefix)schema: \(property.schemaJSON)")
+        }
+    }
+    return lines.joined(separator: "\n")
+}
+
+private func nativeStringArray(_ values: [String]) -> String {
+    "[" + values.map(nativeQuoted).joined(separator: ",") + "]"
+}
+
+private func nativeQuoted(_ value: String) -> String {
+    guard let encoded = try? JSONSerialization.data(
+        withJSONObject: value, options: [.fragmentsAllowed, .withoutEscapingSlashes]
+    ), let result = String(data: encoded, encoding: .utf8) else { return value }
+    return result
+}
+
+private func optionalNativeMetadataText(
+    _ object: [String: Any], _ key: String, allowEmpty: Bool = false
+) throws -> String? {
+    guard let value = object[key] else { return nil }
+    guard let text = value as? String,
+          validNativeMetadataText(text, required: !allowEmpty) else {
+        throw SessionInspectionFailure("native configuration metadata field \(quoted(key)) is invalid")
+    }
+    return text
+}
+
+private func optionalNativeJSON(_ object: [String: Any], _ key: String) throws -> String? {
+    guard object.keys.contains(key), let value = object[key] else { return nil }
+    return try nativeCanonicalJSON(value)
+}
+
+private func nativeCanonicalJSON(_ value: Any) throws -> String {
+    let encoded = try JSONSerialization.data(
+        withJSONObject: value,
+        options: [.fragmentsAllowed, .sortedKeys, .withoutEscapingSlashes]
+    )
+    guard encoded.count <= 64 << 20, let result = String(data: encoded, encoding: .utf8) else {
+        throw SessionInspectionFailure("native configuration JSON exceeds its bound")
+    }
+    return result
+}
+
+private func validNativeMetadataText(_ value: String, required: Bool) -> Bool {
+    (!required || !value.isEmpty) && value.utf8.count <= 64 << 20
+}
+
+private func validNativeAuthoringPath(_ value: String) -> Bool {
+    !value.isEmpty && value == value.trimmingCharacters(in: .whitespacesAndNewlines) &&
+        value.utf8.count <= 4_096 && !value.contains("\0") &&
+        !value.contains("\r") && !value.contains("\n") && value.lowercased().hasSuffix(".ortg")
+}
+
+private func validNativeOperatorCapability(_ value: String) -> Bool {
+    !value.isEmpty && value == value.trimmingCharacters(in: .whitespacesAndNewlines) &&
+        value.utf8.count <= 512 && !value.contains("\0") &&
+        !value.contains("\r") && !value.contains("\n")
+}
+
+private func validNativeSymbol(_ value: String) -> Bool {
+    let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count > 1 else { return false }
+    return parts.allSatisfy { part in
+        let bytes = Array(part.utf8)
+        guard let first = bytes.first,
+              (0x41...0x5a).contains(first) || (0x61...0x7a).contains(first) else { return false }
+        return bytes.dropFirst().allSatisfy {
+            (0x41...0x5a).contains($0) || (0x61...0x7a).contains($0) ||
+                (0x30...0x39).contains($0) || $0 == 0x5f || $0 == 0x2d
+        }
+    }
+}
+
+private func escapeNativeJSONPointer(_ value: String) -> String {
+    value.replacingOccurrences(of: "~", with: "~0").replacingOccurrences(of: "/", with: "~1")
 }
 
 private func validSessionIdentity(_ value: String) -> Bool {
@@ -1615,6 +2185,7 @@ public enum NativeClientService: String, CaseIterable, Codable, Sendable {
     case protocolEvents = "presentation.client.protocol_events"
     case inspectionAccess = "presentation.client.inspection_access"
     case sessionConfiguration = "presentation.client.session_configuration"
+    case authoring = "presentation.client.management_authoring"
     case media = "presentation.client.media"
     case video = "presentation.client.video"
     case effects = "presentation.client.tools_effects"
@@ -1870,7 +2441,7 @@ public struct NativeEndpointDirectory: Codable, Equatable, Sendable {
             throw ReducerFailure("native endpoint directory declares no realtime transport")
         }
         var selected: [(NativeEndpointName, String)] = [realtime]
-        if services.contains(.inspection) {
+        if services.contains(.inspection) || services.contains(.authoring) {
             selected.append((.management, NativeEndpoint.managementProtocol))
         }
         if services.contains(.effects) {
@@ -2541,7 +3112,7 @@ public func nativePermissionCeiling(_ service: NativeClientService) -> [NativeCl
         return [NativeClientPermission(
             kind: "network.connect", resource: "host-resources", operations: ["http"]
         )]
-    case .inspection:
+    case .inspection, .authoring:
         return [NativeClientPermission(kind: "network.connect", resource: "management-endpoint", operations: ["http"])]
     case .slots, .strictJSON, .transportDiagnostics, .reducer, .protocolEvents,
          .inspectionAccess, .sessionConfiguration, .view:

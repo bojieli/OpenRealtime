@@ -913,6 +913,163 @@ final class NativeClientCoreTests: XCTestCase {
         ))
     }
 
+    func testNativeAuthoringClientRendersExactMetadataThroughHeaderOnlyCapability() async throws {
+        AuthoringURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthoringURLProtocol.self]
+        let clock = TestClock(1_000)
+        let client = NativeAuthoringClient(configuration: configuration, clock: { clock.value })
+        try client.configure(managementEndpoint: "https://management.example:9443/custom/management/v7")
+        let initial = try client.replaceCapability("operator_header-only", expiresAtMS: 10_000)
+        XCTAssertTrue(initial.available)
+        AuthoringURLProtocol.setResponse(
+            try testCanonicalJSON(authoringAnalysisFixture()),
+            identity: "authoring:analyze:\(authoringSourceDigest)"
+        )
+
+        let presentation = try await client.analyze(
+            path: "agent.ortg", source: authoringSource, revision: 7
+        )
+        XCTAssertEqual(presentation.sourceDigest, authoringSourceDigest)
+        XCTAssertEqual(presentation.total, 2)
+        XCTAssertFalse(presentation.incomplete)
+        XCTAssertEqual(presentation.contracts.map(\.elementName), ["test.Empty", "test.Source"])
+        let empty = presentation.contracts[0]
+        XCTAssertEqual(empty.schemaStatus, "empty-object-only")
+        XCTAssertTrue(empty.emptyObjectOnly)
+        XCTAssertTrue(empty.propertiesComplete)
+        XCTAssertNil(empty.schemaReference)
+        let source = presentation.contracts[1]
+        XCTAssertEqual(source.elementRevision, 2)
+        XCTAssertEqual(source.schemaReference, "schema://test/source-config/v1")
+        XCTAssertEqual(source.schemaID, "https://schemas.example.test/source-config-v1.json")
+        XCTAssertEqual(source.additionalPropertiesJSON, "false")
+        XCTAssertEqual(source.properties.map(\.name), ["model", "temperature"])
+        XCTAssertEqual(source.properties[0].types, ["null", "string"])
+        XCTAssertTrue(source.properties[0].required)
+        XCTAssertEqual(source.properties[0].title, "<b>Model</b>")
+        XCTAssertEqual(source.properties[0].description, "first line\nsecond line")
+        XCTAssertEqual(source.properties[0].format, "model-name")
+        XCTAssertEqual(source.properties[0].defaultJSON, "null")
+        XCTAssertEqual(source.properties[0].enumJSON ?? [], ["null", #""large""#])
+        XCTAssertTrue(source.properties[0].schemaJSON.contains(#""title":"<b>Model</b>""#))
+        XCTAssertNil(source.properties[1].title)
+        XCTAssertNil(source.properties[1].defaultJSON)
+        XCTAssertNil(source.properties[1].enumJSON)
+        for fragment in [
+            #"element: "test.Source""#, "element revision: 2",
+            #"schema status: "resolved""#, #"schema reference: "schema://test/source-config/v1""#,
+            "additional properties: false", #"property[0].title: "<b>Model</b>""#,
+            #"property[0].description: "first line\nsecond line""#,
+            "property[0].default: null", #"property[0].enum: [null,"large"]"#,
+            "property[1].title: absent", "property[1].default: absent",
+        ] {
+            XCTAssertTrue(presentation.plaintext.contains(fragment), "missing \(fragment)")
+        }
+
+        let requests = AuthoringURLProtocol.requests()
+        XCTAssertEqual(requests.count, 1)
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(
+            URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.percentEncodedPath,
+            "/custom/management/v7/authoring/analyze"
+        )
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: NativeAuthoringClient.capabilityHeader),
+            "operator_header-only"
+        )
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertFalse(request.url!.absoluteString.contains("operator_header-only"))
+        let requestBody = try StrictRealtimeJSON.object(from: try XCTUnwrap(request.httpBody), maximumBytes: 16 << 20)
+        XCTAssertEqual(requestBody["path"] as? String, "agent.ortg")
+        XCTAssertEqual(requestBody["source"] as? String, authoringSource)
+        XCTAssertEqual(try integerValue(requestBody["revision"], "revision", minimum: 1), 7)
+        XCTAssertFalse(String(data: request.httpBody!, encoding: .utf8)!.contains("operator_header-only"))
+
+        AuthoringURLProtocol.setOnRequest {
+            _ = try? client.replaceCapability("operator_rotated", expiresAtMS: 11_000)
+        }
+        do {
+            _ = try await client.analyze(path: "agent.ortg", source: authoringSource)
+            XCTFail("native authoring admitted a response after capability rotation")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("changed during request"))
+        }
+        AuthoringURLProtocol.setOnRequest(nil)
+        clock.value = 11_000
+        XCTAssertFalse(client.capabilityStatus().available)
+        XCTAssertThrowsError(try client.replaceCapability(" bad "))
+        XCTAssertThrowsError(try client.replaceCapability("line\nbreak"))
+        XCTAssertThrowsError(try client.replaceCapability("expired", expiresAtMS: 10_999))
+        XCTAssertThrowsError(try client.configure(
+            managementEndpoint: "https://operator:secret@management.example/custom/v7"
+        ))
+        client.dispose()
+        client.dispose()
+        XCTAssertThrowsError(try client.replaceCapability("after-disposal"))
+    }
+
+    func testNativeAuthoringMetadataAndTransportAdversariesFailClosed() async throws {
+        AuthoringURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [AuthoringURLProtocol.self]
+        let client = NativeAuthoringClient(configuration: configuration, clock: { 1_000 })
+        try client.configure(managementEndpoint: "https://management.example/client/v1/management")
+        _ = try client.replaceCapability("operator_adversarial", expiresAtMS: 10_000)
+
+        func rejected(_ analysis: [String: Any], identity: String = "authoring:analyze:\(authoringSourceDigest)") async throws {
+            AuthoringURLProtocol.setResponse(try testCanonicalJSON(analysis), identity: identity)
+            do {
+                _ = try await client.analyze(path: "agent.ortg", source: authoringSource)
+                XCTFail("native authoring admitted malformed metadata")
+            } catch {}
+        }
+
+        var unknown = authoringAnalysisFixture()
+        unknown = mutateFirstResolvedConfig(unknown) { $0["invented"] = true }
+        try await rejected(unknown)
+
+        var wrongPointer = authoringAnalysisFixture()
+        wrongPointer = mutateFirstResolvedProperty(wrongPointer) { $0["pointer"] = "#/properties/other" }
+        try await rejected(wrongPointer)
+
+        var unorderedTypes = authoringAnalysisFixture()
+        unorderedTypes = mutateFirstResolvedProperty(unorderedTypes) { $0["types"] = ["string", "null"] }
+        try await rejected(unorderedTypes)
+
+        var invented = authoringAnalysisFixture()
+        invented = mutateFirstResolvedConfig(invented) { $0["schema_status"] = "unresolved" }
+        try await rejected(invented)
+
+        try await rejected(
+            authoringAnalysisFixture(),
+            identity: "authoring:analyze:sha256:\(String(repeating: "0", count: 64))"
+        )
+
+        AuthoringURLProtocol.setRawResponse(
+            Data(#"{"source_digest":"first","source_digest":"second"}"#.utf8),
+            identity: "authoring:analyze:\(authoringSourceDigest)"
+        )
+        do {
+            _ = try await client.analyze(path: "agent.ortg", source: authoringSource)
+            XCTFail("native authoring admitted duplicate JSON keys")
+        } catch {}
+
+        AuthoringURLProtocol.setOversized(true)
+        do {
+            _ = try await client.analyze(path: "agent.ortg", source: authoringSource)
+            XCTFail("native authoring admitted an oversized response")
+        } catch {}
+        AuthoringURLProtocol.setOversized(false)
+        XCTAssertFalse(client.clearCapability().available)
+        do {
+            _ = try await client.analyze(path: "agent.ortg", source: authoringSource)
+            XCTFail("native authoring ran without an operator capability")
+        } catch {}
+        client.dispose()
+    }
+
 }
 
 private final class FixtureProvider: NativeClientProvider {
@@ -1123,6 +1280,115 @@ private func inspectionEvent(
     ]
 }
 
+private let authoringSource = "graph agent {\n}\n"
+private let authoringSourceDigest = "sha256:1a5b83dbd051bb38c8fb4eef0abd26236884eb84f6839aedd2ce1b7db71c7afb"
+private let authoringElementDigest = "sha256:" + String(repeating: "a", count: 64)
+private let authoringSchemaDigest = "sha256:" + String(repeating: "b", count: 64)
+
+private func authoringAnalysisFixture() -> [String: Any] {
+    [
+        "source_digest": authoringSourceDigest,
+        "parsed": true,
+        "recovered": false,
+        "canonical": true,
+        "diagnostics": ["items": [], "total": 0],
+        "catalog": [
+            "elements": [
+                [
+                    "identity": [
+                        "name": "test.Empty", "revision": 1,
+                        "digest": "sha256:" + String(repeating: "0", count: 64),
+                    ],
+                    "config": [
+                        "artifact": "openrealtime.ai/config/v1alpha1",
+                        "resolved": true,
+                        "inline_topology_values": false,
+                        "empty_object_only": true,
+                        "schema_status": "empty-object-only",
+                        "properties_complete": true,
+                        "properties": [],
+                    ],
+                ],
+                [
+                    "identity": [
+                        "name": "test.Source", "revision": 2,
+                        "digest": authoringElementDigest,
+                    ],
+                    "config": [
+                        "artifact": "openrealtime.ai/config/v1alpha1",
+                        "resolved": true,
+                        "schema_reference": "schema://test/source-config/v1",
+                        "inline_topology_values": false,
+                        "empty_object_only": false,
+                        "schema_status": "resolved",
+                        "schema_id": "https://schemas.example.test/source-config-v1.json",
+                        "schema_digest": authoringSchemaDigest,
+                        "properties_complete": true,
+                        "additional_properties": false,
+                        "properties": [
+                            [
+                                "name": "model",
+                                "pointer": "#/properties/model",
+                                "required": true,
+                                "types": ["null", "string"],
+                                "title": "<b>Model</b>",
+                                "description": "first line\nsecond line",
+                                "format": "model-name",
+                                "default": NSNull(),
+                                "enum": [NSNull(), "large"],
+                                "schema": [
+                                    "type": ["null", "string"],
+                                    "title": "<b>Model</b>",
+                                    "description": "first line\nsecond line",
+                                    "format": "model-name",
+                                    "default": NSNull(),
+                                    "enum": [NSNull(), "large"],
+                                ],
+                            ],
+                            [
+                                "name": "temperature",
+                                "pointer": "#/properties/temperature",
+                                "types": ["number"],
+                                "schema": ["type": "number"],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            "total": 2,
+        ],
+        "formatting": [
+            "path": "agent.ortg", "source_digest": authoringSourceDigest, "edits": [],
+        ],
+    ]
+}
+
+private func mutateFirstResolvedConfig(
+    _ source: [String: Any], _ mutation: (inout [String: Any]) -> Void
+) -> [String: Any] {
+    var result = source
+    var catalog = result["catalog"] as! [String: Any]
+    var elements = catalog["elements"] as! [[String: Any]]
+    var row = elements[1]
+    var config = row["config"] as! [String: Any]
+    mutation(&config)
+    row["config"] = config
+    elements[1] = row
+    catalog["elements"] = elements
+    result["catalog"] = catalog
+    return result
+}
+
+private func mutateFirstResolvedProperty(
+    _ source: [String: Any], _ mutation: (inout [String: Any]) -> Void
+) -> [String: Any] {
+    mutateFirstResolvedConfig(source) { config in
+        var properties = config["properties"] as! [[String: Any]]
+        mutation(&properties[0])
+        config["properties"] = properties
+    }
+}
+
 private final class InspectionURLProtocol: URLProtocol {
     private static let state = InspectionURLProtocolState()
 
@@ -1162,6 +1428,105 @@ private final class InspectionURLProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+}
+
+private final class AuthoringURLProtocol: URLProtocol {
+    private static let state = AuthoringURLProtocolState()
+
+    static func reset() { state.reset() }
+    static func requests() -> [URLRequest] { state.requests() }
+    static func setResponse(_ value: Data, identity: String) {
+        state.setResponse(value, identity: identity)
+    }
+    static func setRawResponse(_ value: Data, identity: String) {
+        state.setResponse(value, identity: identity)
+    }
+    static func setOversized(_ value: Bool) { state.setOversized(value) }
+    static func setOnRequest(_ value: (@Sendable () -> Void)?) { state.setOnRequest(value) }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let snapshot = Self.state.record(request)
+        snapshot.onRequest?()
+        var headers = ["Content-Type": "application/json", "Cache-Control": "no-store"]
+        headers[NativeAuthoringClient.identityHeader] = snapshot.identity
+        if snapshot.oversized {
+            headers["Content-Length"] = String(NativeAuthoringClient.maximumResponseBytes + 1)
+        }
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        if !snapshot.oversized { client?.urlProtocol(self, didLoad: snapshot.response) }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class AuthoringURLProtocolState: @unchecked Sendable {
+    struct Snapshot {
+        let response: Data
+        let identity: String
+        let oversized: Bool
+        let onRequest: (@Sendable () -> Void)?
+    }
+
+    private let lock = NSLock()
+    private var captured: [URLRequest] = []
+    private var response = Data("{}".utf8)
+    private var identity = ""
+    private var oversized = false
+    private var onRequest: (@Sendable () -> Void)?
+
+    func reset() {
+        lock.lock()
+        captured.removeAll()
+        response = Data("{}".utf8)
+        identity = ""
+        oversized = false
+        onRequest = nil
+        lock.unlock()
+    }
+
+    func requests() -> [URLRequest] {
+        lock.lock()
+        let result = captured
+        lock.unlock()
+        return result
+    }
+
+    func setResponse(_ value: Data, identity: String) {
+        lock.lock()
+        response = value
+        self.identity = identity
+        lock.unlock()
+    }
+
+    func setOversized(_ value: Bool) {
+        lock.lock()
+        oversized = value
+        lock.unlock()
+    }
+
+    func setOnRequest(_ value: (@Sendable () -> Void)?) {
+        lock.lock()
+        onRequest = value
+        lock.unlock()
+    }
+
+    func record(_ request: URLRequest) -> Snapshot {
+        lock.lock()
+        captured.append(request)
+        let result = Snapshot(
+            response: response, identity: identity,
+            oversized: oversized, onRequest: onRequest
+        )
+        lock.unlock()
+        return result
+    }
 }
 
 private final class InspectionURLProtocolState: @unchecked Sendable {
