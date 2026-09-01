@@ -2504,6 +2504,12 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [ ] **Exit gate:** every production reference architecture runs directly
   through Graph IR with protocol conformance and complete new-candidate
   benchmark evidence; no coarse reference element is reachable.
+  - [x] Scenario Conversation, Meeting Assistant, Realtime-CU, and the adaptive
+    video reference construct fine-grained plans and start as `NativeBinding`/
+    `NativeRuntime` sessions with exact adapter profiles, authenticated live
+    inspection, and no compatibility-node identity. Remaining legacy voice,
+    sidecar, and upstream launch paths plus their incomplete candidate evidence
+    keep the universal parent gate open.
 
 ### Phase 2: decompose the component/cascade path
 
@@ -2514,6 +2520,13 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [ ] Extract the remaining gateway/session adapters and any pacing/timing
   adapters required by the complete reference without falling back to a
   binding-owned event loop.
+  - [x] Extract one policy-free `SessionAdapter` seam and the direct Scenario
+    Conversation, Meeting Assistant, Realtime-CU, and adaptive-video protocol
+    translators. `NativeRuntime` owns graph mount/run supervision, inspection,
+    recording, shutdown, and graph-derived status; adapters only translate the
+    stable session operations to typed graph boundaries and drain typed
+    outputs. Adapters for the retained legacy launch families and remaining
+    pacing/timing control flow keep the parent open.
 - [x] Preserve trajectory compare-and-append and event-loop wake invariants in
   the graph-native store/commit feedback loop and direct behavior-contract tests.
 - [x] Check in exact-lock conversational fast-only, slow-only, and
