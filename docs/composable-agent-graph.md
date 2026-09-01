@@ -2266,8 +2266,24 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   its complete create-only source/evaluation receipt bundle is sealed by review
   manifest
   `sha256:99b822af255d90b1f12696e66b0f467d76977fef261f1626d2e8ab7b8965bd60`.
-- [ ] Run all 100 released FDB v3 examples through the new graph-native
-  endpoint and retain per-attempt review media.
+- [x] Run all 100 released FDB v3 examples through the new graph-native
+  endpoint and retain per-attempt review media. Candidate-02 at clean commit
+  `f30ad89` completed 100/100 with zero infrastructure failures and
+  graph-native execution evidence on every task. This closes the complete-run
+  requirement, not the later quality/non-regression gate: only 9/100 tasks
+  called every expected tool with the accepted arguments, 10/100 called every
+  expected tool with a wrong identifier value, and 81/100 made no complete
+  matching call. The exact-success split was ecommerce 2/29, finance 5/25,
+  housing 2/26, and travel 0/20. Exact `google/gemini-3.7-flash` review retained
+  usable WAV media and agreed with the deterministic outcome for all 100
+  attempts; 95 attempts retained at least one significant finding (145 total).
+  Credential-free reopening verified all 100 evaluations and zero quarantine.
+  The retained result is
+  `fdbv3-candidate-full100-20260901-02-full-reviewed.json`
+  (`sha256:9b98c5a9cb6373f8e7846923dca3708f6141e6773139c489c383f9f74668c518`);
+  its complete create-only source/evaluation receipt bundle is sealed by review
+  manifest
+  `sha256:73ba92f8d3cb2327127f23e35682f3719af840187d62806b5e6c9a2f5931720a`.
 - [ ] Run all 6,147 FD-Bench conversations across all 21 released
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
