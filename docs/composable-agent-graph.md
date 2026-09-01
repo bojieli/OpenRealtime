@@ -3260,17 +3260,46 @@ checked from foundation work alone; each requires end-to-end release evidence.
     the predeclared aggregate and per-case non-regression gates, and every
     discovered regression has been fixed and followed by a complete-suite
     rerun.
+  - [x] Complete, independently reopened graph-native candidate populations now
+    exist for Meeting Assistant (4/4), Realtime-CU (16/16), and FDB v3
+    (100/100), with exact live graph evidence, retained media, deterministic
+    outcomes, exact-model advisory review, and create-only source/evaluation
+    receipts. The scenario 11×15, FD-Bench, both tau-Voice conditions, and the
+    resulting full non-regression cycle keep the universal parent gate open.
 - [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
+  - [x] Leaf and bounded multi-entry implementation, configuration, and
+    permission replacements within one immutable plan quiesce their exact
+    dependency closure, return deterministic receipts, and either commit under
+    realm ownership or dispose the candidate and restore the previous
+    composition. Candidate pre-mount, state migration, routing-safe topology
+    publication, and the end-to-end leak gate remain requirements of the
+    parent.
 - [ ] Operators can trace an externally visible action back through its policy,
     trigger, observation, state revision, model run, queues, and authority
     decision.
+  - [x] The joined browser operator view already binds the immutable static
+    graph to redacted live nodes and channels, renders trigger-relative node
+    timing and exact queue depth/counters/wait, and can export and replay a
+    fingerprinted payload-free trace. Live authority-decision evidence and
+    complete cross-node output-to-cause attribution keep the parent open.
 - [ ] The browser presentation host/client and macOS app are composable plugin
     profiles over the same clean realtime and observability APIs; the gateway
     contains no privileged UI, and real cross-client end-to-end tests pass.
+  - [x] The standalone browser host/client is manifest-composed over the clean
+    public APIs, the gateway-owned UI and duplicate standalone forks are
+    deleted, and real Chromium plus the unchanged-server macOS-profile probe
+    pass. Native manifests and shared Swift services exist; the signed Darwin
+    application run and complete cross-client lifecycle/leak matrix keep the
+    parent open.
 - [ ] Every server, host, and client presentation capability can be replaced or
     removed through a descriptor-locked plugin composition with scoped cleanup,
     explicit permissions, and no implicit effect authority.
+  - [x] Descriptor-locked minimal, observer, developer-WebSocket, and
+    developer-WebRTC browser profiles independently compose or omit media,
+    effects, artifacts, inspection, trace, and authoring providers under exact
+    permission ceilings and scoped disposal. Complete server-realm assembly,
+    replacement/rollback, and full host/native leak evidence remain open.
 
 ## References
 
