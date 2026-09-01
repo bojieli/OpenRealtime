@@ -1932,16 +1932,29 @@ it has been reviewed, tested, and committed with its evidence):
     exact-sixteen publication/reopen benchmarks are green; no historical
     loader, baseline registry, migration path, server dependency, or UI is in
     this API.
-  - [ ] Finish the four-case Meeting Assistant bundle with synchronized WAV and
+  - [x] Finish the four-case Meeting Assistant bundle with synchronized WAV and
     MP4 per case, deterministic pass/fail plus advisory model review, durable
     source-before-model and per-evaluation receipts, case-by-case `REVIEW.md`,
     credential-safe exact `gemini-3.7-flash` integration, real FFmpeg full
-    decoding, retry/recovery, and independent root audit.
-  - [ ] Finish the exact sixteen-case Realtime-CU bundle with real Chromium
+    decoding, retry/recovery, and independent root audit. Clean candidate-21
+    sealed 4/4 reportable graph-native attempts, four exact-model evaluations,
+    zero quarantine, and credential-free reopening. Its result is
+    `meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json`
+    (`sha256:e7e56ea603b884b082f87315ed42e200b0fe3a4493375d2e9706b2538e486355`),
+    sealed by review manifest
+    `sha256:e899491212b6426114661d0898d9797823207b660f59a85671f50cb93257d020`.
+  - [x] Finish the exact sixteen-case Realtime-CU bundle with real Chromium
     capture rather than generated-frame substitution, synchronized WAV and MP4
     per case, pixel and set-of-mark coverage, deterministic pass/fail plus
     advisory model review, durable receipts, case-by-case review, real FFmpeg
-    full decoding, retry/recovery, and independent root audit.
+    full decoding, retry/recovery, and independent root audit. Clean
+    candidate-05 sealed 16/16 reportable graph-native attempts, all pixel and
+    set-of-mark variants, sixteen exact-model evaluations, zero quarantine,
+    and credential-free reopening. Its result is
+    `realtime-cu-candidate-exact16-20260831-05-full-reviewed.json`
+    (`sha256:1f61f502203c6e259cccc0eda67b7435fd8201660d54d3a436fe6f3020cf3d30`),
+    sealed by review manifest
+    `sha256:dfa568a061dabc9323f74d195bccc891056d423e76f9360df6f0cc690ad93bcb`.
   - [ ] Wire scenario, Meeting Assistant, Realtime-CU, and every applicable
     FDB/FDB3/FD-Bench/tau2 benchmark recording and advisory-review bundle into
     the release matrix with retained source/evaluation receipts, audio/video
@@ -2115,8 +2128,12 @@ Reference-agent tracker:
   interaction ports.
 - [x] Locked external-interaction topology over the same `model.External`
   contract; executed native/external parity remains open.
-- [ ] Live meeting assistant combining speech, screen control, concurrent slow
-  document work, corrections, and output arbitration.
+- [x] Live meeting assistant combining speech, screen control, concurrent slow
+  document work, corrections, and output arbitration. The four-case production
+  Meeting Assistant campaign exercises open/share/present, a follow-up during
+  analysis, a visual alert during presentation, and spoken navigation
+  correction through the graph-native profile; candidate-21 passed 4/4 with
+  synchronized reviewed A/V and zero invalid actions or deadline misses.
 - [x] Adaptive-observation video/YouTube watcher with explicit external ticks,
   fixed/adaptive/manual cadence, bounded change detection, latest-frame state,
   raw/reference separation, and typed visual-observer lifecycle controls.
@@ -2292,7 +2309,13 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   validates the exact 50 airline / 114 retail / 114 telecom partition.
 - [ ] Run the complete 278-task tau2-bench/τ-Voice task set in
   both control and regular conditions with task and interaction metrics.
-- [ ] Preserve the DynaCU-Bench runner as independent optional validation.
+- [x] Preserve the DynaCU-Bench runner as independent optional validation. The
+  standalone `bench dynacu` command pins the unmodified AOI environment at
+  `3c9f452aca697ee61de87a4907f0937d6c486a99`, requires the complete 100
+  dynamic plus 50 static task inventory for a complete report, and remains an
+  opt-in provisioned release-matrix entry with its own preparation script,
+  driver, report boundary, tests, and documentation. It is not substituted for
+  the repository-owned Realtime-CU release gate.
 - [ ] Produce clean-worktree new-architecture artifacts for every required suite and
   compare them with the benchmark owner's accepted original numbers;
   investigate differences instead of accepting a merely runnable graph.
