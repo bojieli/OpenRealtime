@@ -2033,9 +2033,12 @@ it has been reviewed, tested, and committed with its evidence):
   exact bound Graph IR before reading credentials or starting protocol work.
 - [x] All eleven scenario paths bind authenticated live graph evidence to the
   exact `scenario-name#run` attempt scope without retaining inspection tokens.
-- [ ] Delete omitted and reference-only scenario execution modes; production
-  scenario runs must require exact graph evidence and `-inspection-graph` must
-  fail closed for every unattested mode.
+- [x] Delete omitted and reference-only scenario execution modes. The
+  `scenario` command now accepts only a runnable architecture cell carrying an
+  exact graph-native execution requirement, requires the complete eleven-case
+  suite and retained review bundle, and reconciles the launch profile plus
+  `-inspection-graph` before credential access. The former implicit diagnostic
+  branch, partial `-only` flag, and unattested raw-record output are removed.
 - [ ] Execute and compare the eleven interaction scenarios; scenario names
   remain individually tracked below. A local diagnostic baseline now exists and
   is *not* the reviewed comparison this box requires: fifty-five attempts, five

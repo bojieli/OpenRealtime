@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	archbench "github.com/bojieli/OpenRealtime/bench/architecture"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -128,22 +129,22 @@ func TestScenarioGraphAttestorCoversAllElevenExactSessionScopes(t *testing.T) {
 	}
 }
 
-func TestScenarioReviewDirectoryRequiresTheCompleteSuite(t *testing.T) {
+func TestScenarioRejectsRemovedPartialSuiteFlag(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "must-not-be-created")
 	var output bytes.Buffer
 	err := runScenario([]string{
 		"-review-dir", directory,
 		"-only", scenario.Suite()[0].Name,
 	}, &output)
-	if err == nil || !strings.Contains(err.Error(), "requires the complete scenario suite") {
-		t.Fatalf("partial review error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -only") {
+		t.Fatalf("removed partial-suite flag error = %v", err)
 	}
 	if _, statErr := os.Stat(directory); !os.IsNotExist(statErr) {
 		t.Fatalf("partial review created a directory: %v", statErr)
 	}
 }
 
-func TestScenarioReviewDirectoryIsCreateOnlyBeforeSpeechOrSessionWork(t *testing.T) {
+func TestScenarioRejectsOmittedArchitectureBeforeReviewSpeechOrSessionWork(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "existing-review")
 	if err := os.Mkdir(directory, 0o700); err != nil {
 		t.Fatal(err)
@@ -158,8 +159,8 @@ func TestScenarioReviewDirectoryIsCreateOnlyBeforeSpeechOrSessionWork(t *testing
 		"-url", "ws://127.0.0.1:1/v1/realtime",
 		"-speech-url", "http://127.0.0.1:1/v1/audio/speech",
 	}, &output)
-	if err == nil || !strings.Contains(err.Error(), "exclusively") {
-		t.Fatalf("existing review error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "requires -architecture-manifest") {
+		t.Fatalf("omitted architecture error = %v", err)
 	}
 	if got, readErr := os.ReadFile(marker); readErr != nil || string(got) != "preserve" {
 		t.Fatalf("existing review contents were changed: %q, %v", got, readErr)
@@ -379,7 +380,7 @@ func TestScenarioInspectionGraphCannotAttestUnattestedExecution(t *testing.T) {
 	}
 }
 
-func TestScenarioUnattestedModeRemainsDiagnosticOnly(t *testing.T) {
+func TestScenarioRejectsUnattestedModeBeforeCredentialWork(t *testing.T) {
 	var environmentReads atomic.Int32
 	config, err := configureScenarioSession(bench.SessionConfig{
 		Endpoint: "ws://127.0.0.1:8765/v1/realtime",
@@ -388,16 +389,27 @@ func TestScenarioUnattestedModeRemainsDiagnosticOnly(t *testing.T) {
 		environmentReads.Add(1)
 		return "diagnostic-bearer"
 	})
-	if err != nil {
-		t.Fatalf("configure scenario diagnostic: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "requires a graph-native -execution requirement") ||
+		environmentReads.Load() != 0 || config.Token != "" || config.Model != "" ||
+		config.RuntimeAttestor != nil || config.CaptureRuntimeEvidence {
+		t.Fatalf("unattested scenario = %+v, %v, reads=%d", config, err, environmentReads.Load())
 	}
-	if config.Token != "diagnostic-bearer" || config.Model != "diagnostic-model" ||
-		environmentReads.Load() != 1 || config.CaptureRuntimeEvidence || config.RuntimeAttestor != nil {
-		t.Fatalf("scenario diagnostic config = %+v, reads=%d", config, environmentReads.Load())
+}
+
+func TestScenarioRejectsReferenceOnlyArchitectureCell(t *testing.T) {
+	if _, err := scenarioGraphExecutionRequirement(archbench.Cell{
+		Name: "reference-only",
+	}); err == nil || !strings.Contains(err.Error(), "exact graph-native execution requirement") {
+		t.Fatalf("reference-only scenario cell error = %v", err)
 	}
-	taskConfig := scenarioSessionForTask(config, "an ordinary question#1")
-	if taskConfig.AttestationScope != "" {
-		t.Fatalf("unattested scenario gained scope %q", taskConfig.AttestationScope)
+
+	fixture := writeGraphExecutionFixture(t)
+	want := requirementForGraphFixture(t, fixture)
+	got, err := scenarioGraphExecutionRequirement(archbench.Cell{
+		Name: "graph-native", Execution: want,
+	})
+	if err != nil || got.Graph == nil || got.Graph.Graph != want.Graph.Graph {
+		t.Fatalf("graph-native scenario cell = %+v, %v", got, err)
 	}
 }
 
