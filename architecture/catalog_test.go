@@ -73,6 +73,27 @@ func TestRuntimeValidationAllowsUnselectedCapabilitiesButNotMissingOnes(t *testi
 	}
 }
 
+func TestDefinitionValidationDoesNotRequireAudioOrEngineOwnedSlowCognition(t *testing.T) {
+	definition, err := architecture.Default().Resolve("cascade.text-policy@1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition.ID = "text-only.remote-slow"
+	definition.Revision = 1
+	definition.DerivedFrom = nil
+	definition.Ownership.SlowCognition = binding.OwnerRemote
+	definition.Requires.AudioInput = false
+	definition.Requires.AudioOutput = false
+	if err := definition.Validate(); err != nil {
+		t.Fatalf("audio-free definition with remote slow cognition hit a generic restriction: %v", err)
+	}
+	withoutGeneration := definition
+	withoutGeneration.Requires.TurnGeneration = false
+	if err := withoutGeneration.Validate(); err == nil || !strings.Contains(err.Error(), "turn generation") {
+		t.Fatalf("removing the retained conversational capability was accepted: %v", err)
+	}
+}
+
 func TestEvidenceCapabilitiesComposeWithoutBecomingModelSpecies(t *testing.T) {
 	base := binding.InteractionEvidenceCapabilities{
 		Transcript: true, AcousticActivity: true, SilenceClock: true,

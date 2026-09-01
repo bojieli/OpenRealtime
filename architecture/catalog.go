@@ -216,8 +216,8 @@ func (definition Definition) Validate() error {
 	if _, err := definition.Topology(); err != nil {
 		return err
 	}
-	if !definition.Requires.AudioInput || !definition.Requires.AudioOutput || !definition.Requires.TurnGeneration {
-		return fmt.Errorf("architecture %s must require audio input, audio output, and turn generation", definition.Ref())
+	if !definition.Requires.TurnGeneration {
+		return fmt.Errorf("architecture %s must require turn generation", definition.Ref())
 	}
 	owners := definition.Ownership.Effective()
 	if owners.Floor == binding.OwnerModel && !definition.Requires.NativeFloor {

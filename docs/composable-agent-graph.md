@@ -1820,7 +1820,7 @@ reference graphs, or conformance evidence.
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and complete cross-node/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with exact receipts, refusal, and rollback | Candidate pre-mount, graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
-| 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
+| 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
 Current checkpoint notes:
 
@@ -2942,7 +2942,18 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
 - [ ] Delete old binding-only launch paths once the corresponding explicit
   profiles are live; no production compatibility window is required.
-- [ ] Remove kernel assumptions about slow ownership/speech and mandatory audio.
+- [x] Remove kernel assumptions about slow ownership/speech and mandatory audio.
+  Generic ownership validation now accepts engine, model, or remote slow
+  cognition and leaves realizable combinations to each adapter contract; the
+  legacy architecture definition boundary no longer requires either audio
+  direction. Speech authority is validated independently of fast/slow phase,
+  the paired cognition seam makes silent slow an explicit opt-in, and locked
+  slow-only/both-speaking Graph IR references execute direct deliberative
+  speech. Adapter-specific voice profiles may still require audio or a silent
+  background provider without turning that reference choice back into a shared
+  invariant. Focused acceptance tests cover remote/model slow ownership,
+  audio-free definition validation, the retained turn-generation contract, and
+  arrangement-specific slow speech.
 - [ ] Reduce the architecture catalog and status model to graph-derived facts.
 - [x] Amend or supersede ADRs whose statements became reference-graph choices.
   ADR-0015 separates retained safety/reproducibility invariants from historical

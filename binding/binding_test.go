@@ -92,18 +92,12 @@ func TestInteractionControllersComposeWithoutImplicitArbitration(t *testing.T) {
 	}
 }
 
-// The slow column never varies. It is the whole differentiator, and a binding
-// that delegated it would be a binding this project adds nothing to.
-func TestSlowCognitionIsAlwaysTheEngines(t *testing.T) {
+func TestSlowCognitionOwnershipIsAComposableAdapterChoice(t *testing.T) {
 	for _, owner := range []binding.Owner{binding.OwnerModel, binding.OwnerRemote} {
 		ownership := engineOwned()
 		ownership.SlowCognition = owner
-		err := ownership.Validate()
-		if err == nil {
-			t.Fatalf("slow cognition owned by %q must be refused", owner)
-		}
-		if !strings.Contains(err.Error(), "slow cognition") {
-			t.Fatalf("the refusal must say what it is about: %v", err)
+		if err := ownership.Validate(); err != nil {
+			t.Fatalf("slow cognition owned by %q was treated as a kernel error: %v", owner, err)
 		}
 	}
 }
@@ -130,9 +124,9 @@ func TestRegistryRefusesWhatCannotBeNamedOrRun(t *testing.T) {
 		t.Fatal("a binding with no name must be refused")
 	}
 	broken := engineOwned()
-	broken.SlowCognition = binding.OwnerModel
+	broken.SlowCognition = "somebody"
 	if err := registry.Register(stubBinding{name: "broken", ownership: broken}); err == nil {
-		t.Fatal("a binding whose declaration contradicts the architecture must be refused at registration")
+		t.Fatal("a binding with an unknown owner must be refused at registration")
 	}
 
 	if err := registry.Register(stubBinding{name: "cascade", ownership: engineOwned()}); err != nil {

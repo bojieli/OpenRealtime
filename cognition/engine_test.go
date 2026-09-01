@@ -92,7 +92,7 @@ func seed(t *testing.T, store *trajectory.Store) {
 	}
 }
 
-func TestSlowMustBeSilentWhenTheArrangementPairsThem(t *testing.T) {
+func TestSlowSpeechAuthorityIsArrangementSpecific(t *testing.T) {
 	store := trajectory.NewStore()
 	loud := slowProvider()
 	loud.descriptor.SpeechAuthority = continuation.SpeechAuthorityVoice

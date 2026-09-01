@@ -1,13 +1,9 @@
-// Package binding is the seam between the runtime and a voice stack.
+// Package binding is the legacy seam between the runtime and an adapter stack.
 //
 // A binding is not a pipeline. It is a declaration of which subsystems the
 // model owns, which capabilities are available, and the runtime supplies the
 // rest. Named cascade, Omni, and duplex bindings are presets over those two
 // declarations rather than mutually exclusive model species.
-//
-// One column never varies. Slow cognition is always the engine's, because no
-// foreground model provides it - which is exactly the thing this project adds
-// to whatever stack it is given.
 package binding
 
 import (
@@ -69,7 +65,8 @@ func (ownership Ownership) Effective() Ownership {
 	return ownership
 }
 
-// Validate rejects a declaration that contradicts the architecture.
+// Validate rejects unknown owners. Which owner combinations a concrete adapter
+// can realise is an adapter contract, not a restriction of this shared seam.
 func (ownership Ownership) Validate() error {
 	ownership = ownership.Effective()
 	for name, owner := range map[string]Owner{
@@ -82,9 +79,6 @@ func (ownership Ownership) Validate() error {
 		default:
 			return fmt.Errorf("%s ownership must be engine, model, or remote, got %q", name, owner)
 		}
-	}
-	if ownership.SlowCognition != OwnerEngine {
-		return errors.New("slow cognition is always the engine's: no foreground model provides it")
 	}
 	return nil
 }
@@ -597,9 +591,9 @@ type Capabilities struct {
 	ComputerUse bool `json:"computer_use"`
 	// Observations reports whether observation events are emitted.
 	Observations bool `json:"observations"`
-	// FastSlow reports whether a background reasoner is available. Every
-	// binding must support it - it is the differentiator - but a degraded
-	// deployment may have it configured off.
+	// FastSlow reports whether a separately addressable fast/slow arrangement is
+	// available. False is valid for a single-provider or differently composed
+	// deployment.
 	FastSlow bool `json:"fast_slow"`
 	// Observers names the perception a session may select from. A client
 	// cannot choose an observer set without knowing what the names are, and a

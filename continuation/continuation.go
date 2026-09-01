@@ -389,15 +389,11 @@ const (
 
 // SpeechAuthority separates producing an answer from being heard saying it.
 //
-// The fast/slow arrangement rests on two rules, and this is the second of
-// them: the slow provider cannot speak. Its output appends to the trajectory
-// and a fast continuation voices it, which removes the race where slow
-// contradicts something fast has already said, and lets fast condense a long
-// written answer into something worth listening to.
-//
-// It is a property of the provider descriptor rather than a routing decision,
-// and it is enforced where output commits: the runner records it on every
-// item's producer, and the action plane refuses to voice silent content.
+// It is a property of the provider descriptor rather than an inference from
+// its fast/slow phase. A paired reference may keep slow output silent while a
+// slow-only graph grants it voice. The runner records the exact choice on every
+// item's producer, and the action plane refuses to voice only content that was
+// explicitly marked silent.
 type SpeechAuthority string
 
 const (

@@ -251,6 +251,54 @@ func sidecarReceived(t *testing.T, path string) []map[string]any {
 	return messages
 }
 
+func TestSidecarAdapterRetainsItsLocalVoiceAndBackgroundContract(t *testing.T) {
+	base := sidecarbinding.Spec{
+		Name: "adapter-contract",
+		Ownership: binding.Ownership{
+			Perception: binding.OwnerModel, FastCognition: binding.OwnerModel,
+			SlowCognition: binding.OwnerEngine, Action: binding.OwnerModel,
+			Interaction: binding.OwnerEngine, Floor: binding.OwnerEngine,
+		},
+		Capabilities: binding.StackCapabilities{
+			AudioInput: true, AudioOutput: true, TurnGeneration: true,
+		},
+	}
+	config := sidecarbinding.Config{
+		Sidecar: sidecar.Config{Address: "adapter-contract.invalid:1"},
+		Slow:    &scriptedSlow{},
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*sidecarbinding.Spec)
+		want string
+	}{
+		{
+			name: "model-owned slow cognition",
+			edit: func(spec *sidecarbinding.Spec) { spec.Ownership.SlowCognition = binding.OwnerModel },
+			want: "engine slow cognition",
+		},
+		{
+			name: "no audio input",
+			edit: func(spec *sidecarbinding.Spec) { spec.Capabilities.AudioInput = false },
+			want: "audio input and output",
+		},
+		{
+			name: "no audio output",
+			edit: func(spec *sidecarbinding.Spec) { spec.Capabilities.AudioOutput = false },
+			want: "audio input and output",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			spec := base
+			test.edit(&spec)
+			if _, err := sidecarbinding.New(spec, config); err == nil ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("adapter contract error = %v, want one containing %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestOmniKeepsTheFloorInTheEngine(t *testing.T) {
 	binary, received := buildFakeSidecar(t)
 	modelAudio := make(chan struct{})
