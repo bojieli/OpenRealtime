@@ -63,7 +63,7 @@ func NewManagementRelayFactory(client *http.Client, logger *slog.Logger) *Manage
 	return &ManagementRelayFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.management-relay", Revision: 6,
+			Name:          "openrealtime.presentation.host.management-relay", Revision: 7,
 			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 			Requires: []plugin.Requirement{
 				{Contract: presentation.HTTPRoutesContract},
@@ -276,7 +276,7 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	action := request.PathValue("action")
-	if action != "analyze" && action != "compile" && action != "render" &&
+	if action != "analyze" && action != "rename" && action != "compile" && action != "render" &&
 		action != "read" && action != "write" {
 		http.NotFound(writer, request)
 		return
@@ -319,6 +319,23 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 				return "", err
 			}
 			return "authoring:analyze:" + result.SourceDigest, nil
+		}
+	case "rename":
+		var input management.RenameDocumentRequest
+		if err := decodeRelayJSON(payload, &input); err != nil ||
+			management.ValidateRenameDocumentRequest(input) != nil {
+			http.Error(writer, "invalid authoring rename request", http.StatusBadRequest)
+			return
+		}
+		spec.validate = func(response []byte) (string, error) {
+			var result management.RenameDocumentResult
+			if err := decodeRelayJSON(response, &result); err != nil {
+				return "", err
+			}
+			if err := management.ValidateRenameDocumentResult(input, result); err != nil {
+				return "", err
+			}
+			return "authoring:rename:" + result.Edits.SourceDigest, nil
 		}
 	case "compile":
 		var document management.AuthoringDocument

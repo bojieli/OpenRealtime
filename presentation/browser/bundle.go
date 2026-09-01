@@ -296,7 +296,10 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 		{
 			entry: "management-authoring", file: "management-authoring.js",
 			pluginName: "openrealtime.presentation.client.management-authoring",
-			provides:   []plugin.Contract{presentation.ClientManagementAuthoringContract},
+			provides: []plugin.Contract{
+				presentation.ClientManagementAuthoringContract,
+				presentation.ClientManagementEditingContract,
+			},
 			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
 		},
 	}
@@ -323,6 +326,7 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 			provides:   []plugin.Contract{presentation.ClientAuthoringWorkspaceContract},
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientManagementAuthoringContract},
+				{Contract: presentation.ClientManagementEditingContract},
 				{Contract: presentation.ClientSourceReadingContract, Optional: true},
 				{Contract: presentation.ClientSourcePublicationContract, Optional: true},
 			},

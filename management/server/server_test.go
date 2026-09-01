@@ -17,6 +17,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/editor"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
 	"github.com/bojieli/OpenRealtime/management"
@@ -35,7 +36,8 @@ func (authorizer testAuthorizer) Authorize(_ context.Context, request management
 			request.Resource == "sess-test"
 	case "author-token":
 		allowed = request.Resource == "authoring" && (request.Operation == management.AnalyzeDocument ||
-			request.Operation == management.CompileDocument || request.Operation == management.RenderGraph)
+			request.Operation == management.RenameDocument || request.Operation == management.CompileDocument ||
+			request.Operation == management.RenderGraph)
 	case "operator-token":
 		allowed = request.Operation == management.ApplyCandidate && request.Resource == "sess-test"
 	}
@@ -113,6 +115,18 @@ func (authorizer *revocableAuthorizer) Authorize(
 	return management.ErrUnauthorized
 }
 
+type revocableRenameAuthorizer struct{ allowed atomic.Bool }
+
+func (authorizer *revocableRenameAuthorizer) Authorize(
+	_ context.Context, request management.AuthorizationRequest,
+) error {
+	if authorizer.allowed.Load() && request.Capability == "scoped-token" &&
+		request.Operation == management.RenameDocument && request.Resource == "authoring" {
+		return nil
+	}
+	return management.ErrUnauthorized
+}
+
 type blockingSessions struct {
 	testSessions
 	entered chan struct{}
@@ -152,8 +166,44 @@ func (sessions *blockingSessions) Snapshot(ctx context.Context, session string) 
 }
 
 type testAuthoring struct {
-	analyzeCalls atomic.Int64
-	forgeResult  bool
+	analyzeCalls      atomic.Int64
+	renameCalls       atomic.Int64
+	forgeResult       bool
+	forgeRenameResult bool
+	renameEntered     chan struct{}
+	renameRelease     chan struct{}
+}
+
+func (authoring *testAuthoring) Rename(
+	ctx context.Context, input management.RenameDocumentRequest,
+) (management.RenameDocumentResult, error) {
+	authoring.renameCalls.Add(1)
+	if authoring.renameEntered != nil {
+		select {
+		case authoring.renameEntered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-authoring.renameRelease:
+		case <-ctx.Done():
+			return management.RenameDocumentResult{}, ctx.Err()
+		}
+	}
+	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+		resolve.NewCatalog(), editor.DefaultLimits())
+	if err != nil {
+		return management.RenameDocumentResult{}, err
+	}
+	edits, err := document.RenameNodeID(input.Node, input.NewName)
+	if err != nil {
+		return management.RenameDocumentResult{}, err
+	}
+	if authoring.forgeRenameResult && len(edits.Edits) > 0 {
+		edits.Edits = edits.Edits[:len(edits.Edits)-1]
+	}
+	return management.RenameDocumentResult{
+		Node: input.Node, NewName: input.NewName, Edits: edits,
+	}, nil
 }
 
 func (authoring *testAuthoring) Analyze(_ context.Context, document management.AuthoringDocument) (management.AnalysisResult, error) {
@@ -304,6 +354,39 @@ func TestManagementBundleRoutesAreScopedAuthorizedAndStrict(t *testing.T) {
 	if response.Code != http.StatusOK || authoring.analyzeCalls.Load() != 1 {
 		t.Fatalf("valid authoring request = %d calls=%d body=%s",
 			response.Code, authoring.analyzeCalls.Load(), response.Body.String())
+	}
+
+	renameInput := management.RenameDocumentRequest{
+		Document: management.AuthoringDocument{
+			Path: "agent.ortg", Source: "graph x {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Node: "source", NewName: "camera",
+	}
+	renameBody, err := json.Marshal(renameInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/rename", "author-token", renameBody)
+	if response.Code != http.StatusOK || authoring.renameCalls.Load() != 1 ||
+		!strings.Contains(response.Body.String(), `"new_name":"camera"`) ||
+		strings.Count(response.Body.String(), `"old_text":"source"`) != 3 {
+		t.Fatalf("valid graph-wide rename = %d calls=%d body=%s",
+			response.Code, authoring.renameCalls.Load(), response.Body.String())
+	}
+	duplicateRename := []byte(`{"document":{"path":"agent.ortg","source":"graph x {\n}\n"},` +
+		`"node":"source","node":"other","new_name":"camera"}`)
+	response = request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/rename", "author-token", duplicateRename)
+	if response.Code != http.StatusBadRequest || authoring.renameCalls.Load() != 1 {
+		t.Fatalf("duplicate-key rename = %d calls=%d body=%s",
+			response.Code, authoring.renameCalls.Load(), response.Body.String())
+	}
+	response = request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/rename", "session-token", renameBody)
+	if response.Code != http.StatusNotFound || authoring.renameCalls.Load() != 1 {
+		t.Fatalf("wrong-scope rename = %d calls=%d body=%s",
+			response.Code, authoring.renameCalls.Load(), response.Body.String())
 	}
 
 	reconcileBody, err := json.Marshal(management.ReconciliationRequest{
@@ -485,6 +568,108 @@ func TestAuthoringRouteRejectsProviderSnapshotNotBoundToSource(t *testing.T) {
 	if response.Code != http.StatusConflict || authoring.analyzeCalls.Load() != 1 {
 		t.Fatalf("forged authoring snapshot = %d calls=%d body=%s",
 			response.Code, authoring.analyzeCalls.Load(), response.Body.String())
+	}
+}
+
+func TestAuthoringRenameRouteRejectsProviderEditsNotBoundToEveryReference(t *testing.T) {
+	authoring := &testAuthoring{forgeRenameResult: true}
+	bundle, err := NewBundle(BundleConfig{
+		Authorizer: testAuthorizer{}, Authoring: authoring,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := bundle.Mount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mounted.Close(ctx); err != nil {
+			t.Errorf("close management bundle: %v", err)
+		}
+	})
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(management.RenameDocumentRequest{
+		Document: management.AuthoringDocument{
+			Path: "agent.ortg", Source: "graph x {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Node: "source", NewName: "camera",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/rename", "author-token", body)
+	if response.Code != http.StatusConflict || authoring.renameCalls.Load() != 1 {
+		t.Fatalf("forged graph-wide rename = %d calls=%d body=%s",
+			response.Code, authoring.renameCalls.Load(), response.Body.String())
+	}
+}
+
+func TestAuthoringRenameResponseRechecksCapabilityAfterProviderCompletes(t *testing.T) {
+	authorizer := &revocableRenameAuthorizer{}
+	authorizer.allowed.Store(true)
+	authoring := &testAuthoring{
+		renameEntered: make(chan struct{}, 1), renameRelease: make(chan struct{}),
+	}
+	bundle, err := NewBundle(BundleConfig{Authorizer: authorizer, Authoring: authoring})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := bundle.Mount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mounted.Close(ctx); err != nil {
+			t.Errorf("close management bundle: %v", err)
+		}
+	})
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(management.RenameDocumentRequest{
+		Document: management.AuthoringDocument{
+			Path: "agent.ortg", Source: "graph x {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Node: "source", NewName: "camera",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest := httptest.NewRequest(http.MethodPost,
+		management.APIPrefix+"/authoring/rename", bytes.NewReader(body))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set(management.CapabilityHeader, "scoped-token")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, httpRequest)
+		close(done)
+	}()
+	select {
+	case <-authoring.renameEntered:
+	case <-time.After(time.Second):
+		t.Fatal("rename provider did not begin after initial authorization")
+	}
+	authorizer.allowed.Store(false)
+	close(authoring.renameRelease)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("revoked rename request did not finish")
+	}
+	if response.Code != http.StatusNotFound || authoring.renameCalls.Load() != 1 {
+		t.Fatalf("revoked rename disclosed a completed edit set: %d calls=%d body=%s",
+			response.Code, authoring.renameCalls.Load(), response.Body.String())
 	}
 }
 

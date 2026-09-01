@@ -157,6 +157,10 @@ func TestRenameIsGraphAwareAtomicAndStaleSafe(t *testing.T) {
 	if edits.SourceDigest != document.SourceDigest() || len(edits.Edits) != 3 {
 		t.Fatalf("rename edits = %+v", edits)
 	}
+	byID, err := document.RenameNodeID("producer", "camera")
+	if err != nil || !reflect.DeepEqual(byID, edits) {
+		t.Fatalf("visual node-ID rename = %+v, %v; want %+v", byID, err, edits)
+	}
 	for index, edit := range edits.Edits {
 		if edit.OldText != "producer" || edit.NewText != "camera" ||
 			(index > 0 && edits.Edits[index-1].Span.Start.Offset >= edit.Span.Start.Offset) {
@@ -184,6 +188,9 @@ func TestRenameIsGraphAwareAtomicAndStaleSafe(t *testing.T) {
 	}
 	if _, err := document.RenameNode(cursor, "bad.name"); !errors.Is(err, ErrInvalidRename) {
 		t.Fatalf("invalid rename = %v", err)
+	}
+	if _, err := document.RenameNodeID("missing", "camera"); !errors.Is(err, ErrInvalidRename) {
+		t.Fatalf("missing node-ID rename = %v", err)
 	}
 	portCursor := cursorAt(t, document, validSource, "producer.out ->", len("producer.")+1)
 	if _, err := document.RenameNode(portCursor, "renamed"); !errors.Is(err, ErrInvalidRename) {

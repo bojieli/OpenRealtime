@@ -40,9 +40,10 @@ var (
 		"openrealtime.management.session_inspection",
 		"openrealtime/management/session-inspection/v1:live-static-model-deltas-trace-by-session-cursor",
 	)
-	AuthoringContract = semanticContract(
+	AuthoringContract = semanticContractRevision(
 		"openrealtime.management.authoring",
-		"openrealtime/management/authoring/v1:analyze-compile-render-bounded-documents",
+		2,
+		"openrealtime/management/authoring/v2:analyze-rename-compile-render-bounded-documents",
 	)
 	SourceReadingContract = semanticContract(
 		"openrealtime.management.source_reading",
@@ -59,8 +60,12 @@ var (
 )
 
 func semanticContract(name, definition string) plugin.Contract {
+	return semanticContractRevision(name, 1, definition)
+}
+
+func semanticContractRevision(name string, revision uint64, definition string) plugin.Contract {
 	digest := sha256.Sum256([]byte(definition))
 	return plugin.Contract{
-		Name: name, Revision: 1, Digest: "sha256:" + hex.EncodeToString(digest[:]),
+		Name: name, Revision: revision, Digest: "sha256:" + hex.EncodeToString(digest[:]),
 	}
 }

@@ -65,10 +65,11 @@ await mount(workspacePath);
 const control = services.get("presentation.client.management_operator_control");
 const catalog = services.get("presentation.client.management_static");
 const authoring = services.get("presentation.client.management_authoring");
+const editing = services.get("presentation.client.management_editing");
 const reading = services.get("presentation.client.source_reading");
 const publication = services.get("presentation.client.source_publication");
 const workspace = services.get("presentation.client.authoring_workspace");
-if (!control || !catalog || !authoring || !reading || !publication || !workspace ||
+if (!control || !catalog || !authoring || !editing || !reading || !publication || !workspace ||
     !workspace.canRead() || !workspace.canPublish()) {
   throw new Error("management services were not published");
 }
@@ -123,6 +124,25 @@ const endPosition = (source) => {
     else column++;
   }
   return { offset, line, column };
+};
+const identifierEdits = (source, selected, replacement) => {
+  const edits = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const index = source.indexOf(selected, cursor);
+    if (index < 0) break;
+    const before = source[index - 1] ?? "";
+    const after = source[index + selected.length] ?? "";
+    if (!/[A-Za-z0-9_-]/.test(before) && !/[A-Za-z0-9_-]/.test(after)) {
+      edits.push({
+        span: { start: endPosition(source.slice(0, index)),
+          end: endPosition(source.slice(0, index + selected.length)) },
+        old_text: selected, new_text: replacement,
+      });
+    }
+    cursor = index + selected.length;
+  }
+  return edits;
 };
 async function publicationReceipt(request, cleanup = false) {
   const sourceBytes = bytes(request.source);
@@ -255,7 +275,7 @@ if (analyzed.catalog.elements[0].config.properties[0].default !== null ||
     analyzed.catalog.elements[0].config.additional_properties !== false) {
   throw new Error("complete configuration metadata did not survive the client boundary");
 }
-if (await authoring.applyEdits({ path: "fixture.ortg", source, revision: 1 }, analyzed.formatting) !== source) {
+if (await editing.applyEdits({ path: "fixture.ortg", source, revision: 1 }, analyzed.formatting) !== source) {
   throw new Error("canonical no-op formatter changed source bytes");
 }
 const analyzeRequest = requests.at(-1);
@@ -303,7 +323,7 @@ const formatterAnalysis = await authoring.analyze({
   path: "fixture.ortg", source: noncanonicalSource, revision: 1,
 });
 const requestsBeforeLocalFormat = requests.length;
-const formatted = await authoring.applyEdits(
+const formatted = await editing.applyEdits(
   { path: "fixture.ortg", source: noncanonicalSource, revision: 1 }, formatterAnalysis.formatting,
 );
 if (formatted !== canonicalSource || requests.length !== requestsBeforeLocalFormat) {
@@ -344,7 +364,7 @@ for (const invalid of invalidFormatterAnalyses) {
   );
 }
 const beforeStaleLocalFormat = requests.length;
-await authoring.applyEdits(
+await editing.applyEdits(
   { path: "fixture.ortg", source: canonicalSource, revision: 1 }, formatterAnalysis.formatting,
 ).then(
   () => { throw new Error("stale formatter edit set was accepted"); },
@@ -352,6 +372,157 @@ await authoring.applyEdits(
 );
 if (requests.length !== beforeStaleLocalFormat) {
   throw new Error("invalid local formatter edit reached the network");
+}
+
+const renameSource = `graph fixture_rename {
+    test.Element :: source;
+    input inbound = source.out;
+    edge loop = source.out -> source.out;
+    output outbound = source.out;
+}
+`;
+const renameDigest = await sha256(bytes(renameSource));
+const renameResult = {
+  node: "source", new_name: "camera",
+  edits: { path: "rename.ortg", source_digest: renameDigest,
+    edits: identifierEdits(renameSource, "source", "camera") },
+};
+if (renameResult.edits.edits.length !== 5) throw new Error("rename fixture lost a graph reference");
+handlers.push(() => response(renameResult, `authoring:rename:${renameDigest}`));
+const exactRename = await editing.rename(
+  { path: "rename.ortg", source: renameSource, revision: 4 }, "source", "camera",
+);
+const renameFetch = requests.at(-1);
+const renameWire = JSON.parse(renameFetch.options.body);
+if (!renameFetch.url.endsWith("/authoring/rename") ||
+    renameFetch.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
+    renameWire.node !== "source" || renameWire.new_name !== "camera" ||
+    renameWire.document.source !== renameSource || renameWire.document.revision !== 4 ||
+    exactRename.edits.edits.length !== 5) {
+  throw new Error("node rename did not preserve its exact source and authority boundary");
+}
+const renamedSource = await editing.applyEdits(
+  { path: "rename.ortg", source: renameSource, revision: 4 }, exactRename.edits,
+);
+if (renamedSource !== renameSource.replaceAll("source", "camera")) {
+  throw new Error("graph-wide node rename did not apply every exact reference locally");
+}
+
+const forgedRenameResults = [];
+const wrongRenameName = structuredClone(renameResult);
+wrongRenameName.new_name = "other";
+forgedRenameResults.push([wrongRenameName, `authoring:rename:${renameDigest}`]);
+const wrongRenameText = structuredClone(renameResult);
+wrongRenameText.edits.edits[0].new_text = "other";
+forgedRenameResults.push([wrongRenameText, `authoring:rename:${renameDigest}`]);
+const omittedRenameReference = structuredClone(renameResult);
+omittedRenameReference.edits.edits.pop();
+forgedRenameResults.push([omittedRenameReference, `authoring:rename:${renameDigest}`]);
+const forgedRenamePosition = structuredClone(renameResult);
+forgedRenamePosition.edits.edits[0].span.end.column++;
+forgedRenameResults.push([forgedRenamePosition, `authoring:rename:${renameDigest}`]);
+const overlappingRename = structuredClone(renameResult);
+overlappingRename.edits.edits.push(structuredClone(overlappingRename.edits.edits[0]));
+forgedRenameResults.push([overlappingRename, `authoring:rename:${renameDigest}`]);
+forgedRenameResults.push([renameResult, `authoring:rename:${otherDigest}`]);
+for (const [forged, evidence] of forgedRenameResults) {
+  handlers.push(() => response(forged, evidence));
+  await editing.rename(
+    { path: "rename.ortg", source: renameSource, revision: 4 }, "source", "camera",
+  ).then(
+    () => { throw new Error("forged graph-wide rename was accepted"); },
+    () => {},
+  );
+}
+
+const collisionSource = renameSource.replace(
+  "    input inbound", "    test.Element :: camera;\n    input inbound",
+);
+const beforeInvalidRename = requests.length;
+for (const invalid of [
+  [{ path: "rename.ortg", source: renameSource, revision: 4 }, "missing", "camera"],
+  [{ path: "rename.ortg", source: renameSource, revision: 4 }, "source", "bad.name"],
+  [{ path: "rename.ortg", source: collisionSource, revision: 4 }, "source", "camera"],
+  [{ path: "rename.ortg", source: renameSource, revision: 4,
+    lock: { format_version: 1, elements: [] } }, "source", "camera"],
+  [{ path: "rename.ortg", source: renameSource, revision: 4,
+    channel_depth: { loop: 1 } }, "source", "camera"],
+]) {
+  await editing.rename(...invalid).then(
+    () => { throw new Error("invalid graph-wide rename was accepted"); },
+    () => {},
+  );
+}
+if (requests.length !== beforeInvalidRename) {
+  throw new Error("invalid graph-wide rename reached the network");
+}
+
+const renameGraphDigest = `sha256:${"9".repeat(64)}`;
+const renamedGraphDigest = `sha256:${"8".repeat(64)}`;
+const renameGraph = structuredClone(graph);
+renameGraph.id = "fixture_rename";
+renameGraph.revision = 4;
+renameGraph.fingerprint = renameGraphDigest;
+renameGraph.nodes[0].id = "source";
+const renameCompiled = { graph: renameGraph, lock: { format_version: 1, elements: [{
+  reference: "test.Element", identity: { name: "test.Element", revision: 1, digest: elementDigest },
+}] } };
+workspace.setDocument("rename.ortg", renameSource, 4);
+handlers.push(() => response(renameCompiled, `authoring:compile:${renameGraphDigest}`));
+await workspace.compile();
+const renameEpoch = workspace.snapshot().epoch;
+handlers.push(() => response(renameResult, `authoring:rename:${renameDigest}`));
+await workspace.renameNode(renameGraphDigest, "source", "camera");
+const renamedSnapshot = workspace.snapshot();
+if (renamedSnapshot.phase !== "renamed" || renamedSnapshot.document.source !== renamedSource ||
+    renamedSnapshot.document.revision !== 5 || renamedSnapshot.epoch !== renameEpoch + 1 ||
+    renamedSnapshot.sourceRead !== null || renamedSnapshot.analysis !== null ||
+    renamedSnapshot.compiled !== null || renamedSnapshot.rendering !== null ||
+    renamedSnapshot.publication !== null) {
+  throw new Error("authoring workspace did not atomically install and invalidate a node rename");
+}
+const renamedGraph = structuredClone(renameGraph);
+renamedGraph.revision = 5;
+renamedGraph.fingerprint = renamedGraphDigest;
+renamedGraph.nodes[0].id = "camera";
+handlers.push(() => response({ ...renameCompiled, graph: renamedGraph },
+  `authoring:compile:${renamedGraphDigest}`));
+await workspace.compile();
+if (workspace.snapshot().compiled.graph.nodes[0].id !== "camera" ||
+    workspace.snapshot().compiled.graph.fingerprint !== renamedGraphDigest) {
+  throw new Error("renamed workspace source did not compile under its incremented revision");
+}
+const beforeStaleSelection = requests.length;
+await Promise.resolve().then(() => workspace.renameNode(renameGraphDigest, "source", "other")).then(
+  () => { throw new Error("stale canvas selection was accepted"); },
+  () => {},
+);
+if (requests.length !== beforeStaleSelection) throw new Error("stale canvas selection reached the network");
+
+workspace.setDocument("rename.ortg", renameSource, 4);
+handlers.push(() => response(renameCompiled, `authoring:compile:${renameGraphDigest}`));
+await workspace.compile();
+let releaseRename;
+handlers.push(() => new Promise((resolve) => {
+  releaseRename = () => resolve(response(renameResult, `authoring:rename:${renameDigest}`));
+}));
+const pendingRename = workspace.renameNode(renameGraphDigest, "source", "camera").then(
+  () => { throw new Error("rename completed after the workspace document changed"); },
+  (error) => error,
+);
+for (let attempt = 0; attempt < 20 && !releaseRename; attempt++) {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+if (!releaseRename) throw new Error("deferred rename never reached transport");
+workspace.setDocument("replacement.ortg", "graph replacement {\n}\n", 1);
+releaseRename();
+const staleRename = await pendingRename;
+const replacementSnapshot = workspace.snapshot();
+if (!String(staleRename).includes("changed during request") ||
+    replacementSnapshot.document.path !== "replacement.ortg" ||
+    replacementSnapshot.document.source !== "graph replacement {\n}\n" ||
+    replacementSnapshot.phase !== "idle") {
+  throw new Error("workspace CAS did not preserve a newer document against a late rename");
 }
 
 const compiled = { graph, lock: { format_version: 1, elements: [{ reference: "test.Element",
@@ -541,7 +712,7 @@ await catalog.graph(graphDigest).then(
   () => { throw new Error("disposed static management service remained usable"); },
   () => {},
 );
-await authoring.applyEdits(
+await editing.applyEdits(
   { path: "fixture.ortg", source: noncanonicalSource, revision: 1 }, formatterAnalysis.formatting,
 ).then(
   () => { throw new Error("disposed authoring formatter remained usable"); },

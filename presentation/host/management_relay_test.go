@@ -18,8 +18,10 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/editor"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
@@ -247,6 +249,13 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	renameInput := management.RenameDocumentRequest{
+		Document: management.AuthoringDocument{
+			Path: "relay.ortg", Source: "graph relay {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Node: "source", NewName: "camera",
+	}
+	renameResult := managementRelayRenameResult(t, renameInput)
 
 	type observation struct{ method, path, capability, authorization string }
 	seen := make(chan observation, 8)
@@ -278,6 +287,12 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			_ = json.NewEncoder(writer).Encode(management.RenderResult{
 				Fingerprint: input.Graph.Fingerprint, Format: input.Format, Text: text,
 			})
+		case management.APIPrefix + "/authoring/rename":
+			var input management.RenameDocumentRequest
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Errorf("decode rename request: %v", err)
+			}
+			_ = json.NewEncoder(writer).Encode(renameResult)
 		case management.APIPrefix + "/authoring/read":
 			var input management.SourceReadRequest
 			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
@@ -386,6 +401,29 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			renderResponse.Header.Get(ManagementIdentityHeader), renderPayload)
 	}
 
+	renameBody, err := json.Marshal(renameInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renameRequest, _ := http.NewRequest(http.MethodPost,
+		hostServer.URL+"/client/v1/management/authoring/rename", bytes.NewReader(renameBody))
+	renameRequest.Header.Set("Content-Type", "application/json")
+	renameRequest.Header.Set(management.CapabilityHeader, operatorCapability)
+	renameRequest.Header.Set("Authorization", "Bearer must-not-cross")
+	renameResponse, err := http.DefaultClient.Do(renameRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamePayload, _ := io.ReadAll(renameResponse.Body)
+	renameResponse.Body.Close()
+	if renameResponse.StatusCode != http.StatusOK ||
+		renameResponse.Header.Get(ManagementIdentityHeader) !=
+			"authoring:rename:"+renameResult.Edits.SourceDigest ||
+		strings.Contains(string(renamePayload), operatorCapability) {
+		t.Fatalf("rename relay status=%d identity=%q body=%s", renameResponse.StatusCode,
+			renameResponse.Header.Get(ManagementIdentityHeader), renamePayload)
+	}
+
 	readInput := management.SourceReadRequest{
 		FormatVersion: management.SourceReadFormatVersion,
 		RootIdentity:  "sha256:" + strings.Repeat("e", 64),
@@ -450,7 +488,7 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			writeResponse.Header.Get(ManagementIdentityHeader), writePayload)
 	}
 
-	for range len(checks) + 3 {
+	for range len(checks) + 4 {
 		observation := <-seen
 		if observation.capability != operatorCapability || observation.authorization != "" {
 			t.Fatalf("management relay crossed credential planes: %+v", observation)
@@ -564,6 +602,64 @@ func TestManagementRelayRejectsRenderContentThatOnlyClaimsTheRequestedIdentity(t
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("forged render status=%d body=%s", response.Code, response.Body.String())
 	}
+}
+
+func TestManagementRelayRejectsRenameThatOmitsOneGraphReference(t *testing.T) {
+	input := management.RenameDocumentRequest{
+		Document: management.AuthoringDocument{
+			Path: "relay.ortg", Source: "graph relay {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Node: "source", NewName: "camera",
+	}
+	forged := managementRelayRenameResult(t, input)
+	forged.Edits.Edits = forged.Edits.Edits[:len(forged.Edits.Edits)-1]
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(forged)
+	}))
+	defer backend.Close()
+	base, err := url.Parse(backend.URL + management.APIPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/authoring/rename", bytes.NewReader(payload))
+	request.SetPathValue("action", "rename")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(management.CapabilityHeader, "operator_rename_secret")
+	response := httptest.NewRecorder()
+	NewManagementRelayFactory(nil, nil).relayAuthoring(
+		base, relayTarget{DialTimeout: 15 * time.Second}, response, request,
+	)
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("forged rename status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func managementRelayRenameResult(
+	t testing.TB, input management.RenameDocumentRequest,
+) management.RenameDocumentResult {
+	t.Helper()
+	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+		resolve.NewCatalog(), editor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := document.RenameNodeID(input.Node, input.NewName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := management.RenameDocumentResult{
+		Node: input.Node, NewName: input.NewName, Edits: edits,
+	}
+	if err := management.ValidateRenameDocumentResult(input, result); err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func TestManagementRelayRejectsForgedSourcePublicationReceipt(t *testing.T) {

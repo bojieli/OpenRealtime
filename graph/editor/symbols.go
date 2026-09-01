@@ -591,6 +591,23 @@ func (document *Document) RenameNode(cursor Cursor, newName string) (EditSet, er
 	if value.kind != SymbolNodeDeclaration && value.kind != SymbolNodeReference {
 		return EditSet{}, ErrInvalidRename
 	}
+	return document.renameNode(value.node, newName)
+}
+
+// RenameNodeID produces the same exact atomic edit set as RenameNode without
+// requiring a source cursor. It exists for visual frontends whose selected
+// node is bound to a compiled graph identity rather than a text position.
+func (document *Document) RenameNodeID(node, newName string) (EditSet, error) {
+	if document == nil || !document.parsed || !document.canonical {
+		return EditSet{}, ErrSyntaxUnavailable
+	}
+	if !nodeNamePattern.MatchString(node) || len(node) > document.limits.MaxIdentifierBytes {
+		return EditSet{}, fmt.Errorf("%w: %q is not an .ortg node identifier", ErrInvalidRename, node)
+	}
+	return document.renameNode(node, newName)
+}
+
+func (document *Document) renameNode(node, newName string) (EditSet, error) {
 	if !nodeNamePattern.MatchString(newName) {
 		return EditSet{}, fmt.Errorf("%w: %q is not an .ortg node identifier", ErrInvalidRename, newName)
 	}
@@ -598,11 +615,11 @@ func (document *Document) RenameNode(cursor Cursor, newName string) (EditSet, er
 		return EditSet{}, fmt.Errorf("%w: node identifier has %d bytes; maximum is %d",
 			ErrInvalidRename, len(newName), document.limits.MaxIdentifierBytes)
 	}
-	record, found := document.nodes[value.node]
+	record, found := document.nodes[node]
 	if !found || record.ambiguous {
-		return EditSet{}, fmt.Errorf("%w: node %q is ambiguous", ErrInvalidRename, value.node)
+		return EditSet{}, fmt.Errorf("%w: node %q is missing or ambiguous", ErrInvalidRename, node)
 	}
-	if newName == value.node {
+	if newName == node {
 		return EditSet{Path: document.path, SourceDigest: document.digest}, nil
 	}
 	if _, collision := document.nodes[newName]; collision {
@@ -610,14 +627,14 @@ func (document *Document) RenameNode(cursor Cursor, newName string) (EditSet, er
 	}
 	if len(record.references) > document.limits.MaxRenameEdits {
 		return EditSet{}, fmt.Errorf("%w: node %q has %d references; maximum is %d",
-			ErrEditLimit, value.node, len(record.references), document.limits.MaxRenameEdits)
+			ErrEditLimit, node, len(record.references), document.limits.MaxRenameEdits)
 	}
 	edits := make([]TextEdit, 0, len(record.references))
 	for _, span := range record.references {
-		if string(document.source[span.Start.Offset:span.End.Offset]) != value.node {
-			return EditSet{}, fmt.Errorf("%w: source no longer matches node %q", ErrStalePosition, value.node)
+		if string(document.source[span.Start.Offset:span.End.Offset]) != node {
+			return EditSet{}, fmt.Errorf("%w: source no longer matches node %q", ErrStalePosition, node)
 		}
-		edits = append(edits, TextEdit{Span: span, OldText: value.node, NewText: newName})
+		edits = append(edits, TextEdit{Span: span, OldText: node, NewText: newName})
 	}
 	return EditSet{Path: document.path, SourceDigest: document.digest, Edits: edits}, nil
 }

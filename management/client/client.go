@@ -290,6 +290,21 @@ func (client *Client) Analyze(
 	return result, err
 }
 
+func (client *Client) Rename(
+	ctx context.Context, input management.RenameDocumentRequest,
+) (management.RenameDocumentResult, error) {
+	if err := management.ValidateRenameDocumentRequest(input); err != nil {
+		return management.RenameDocumentResult{}, err
+	}
+	var result management.RenameDocumentResult
+	err := client.post(ctx, []string{"authoring", "rename"}, management.RenameDocument,
+		"authoring", input, maxAuthoringRequest, maxJSONBytes, &result)
+	if err == nil {
+		err = management.ValidateRenameDocumentResult(input, result)
+	}
+	return result, err
+}
+
 func (client *Client) Compile(
 	ctx context.Context, document management.AuthoringDocument,
 ) (management.CompileResult, error) {

@@ -43,6 +43,7 @@ func TestCompanionHostServesBrowserWebRTCAndNativeWebSocketOnOneServer(t *testin
 		)},
 		{Operation: management.ReadSchema, Resource: stack.Graph.Fingerprint},
 		{Operation: management.AnalyzeDocument, Resource: "authoring"},
+		{Operation: management.RenameDocument, Resource: "authoring"},
 		{Operation: management.CompileDocument, Resource: "authoring"},
 		{Operation: management.RenderGraph, Resource: "authoring"},
 	}

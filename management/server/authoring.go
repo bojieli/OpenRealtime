@@ -15,7 +15,7 @@ type AuthoringAPIFactory struct{ descriptor plugin.Descriptor }
 func NewAuthoringAPIFactory() *AuthoringAPIFactory {
 	return &AuthoringAPIFactory{descriptor: plugin.Descriptor{
 		FormatVersion: plugin.DescriptorFormatVersion,
-		Name:          "openrealtime.management.server.authoring-api", Revision: 2,
+		Name:          "openrealtime.management.server.authoring-api", Revision: 3,
 		Realm: plugin.ServerRealm, Platforms: []string{"go"},
 		Requires: []plugin.Requirement{
 			{Contract: management.HTTPRoutesContract},
@@ -46,6 +46,9 @@ func (factory *AuthoringAPIFactory) Mount(_ context.Context, mount pluginruntime
 				}
 				return result, err
 			},
+		)},
+		{Pattern: "POST " + management.APIPrefix + "/authoring/rename", Handler: authoringRenameHandler(
+			authorizer, authoring,
 		)},
 		{Pattern: "POST " + management.APIPrefix + "/authoring/compile", Handler: authoringDocumentHandler(
 			authorizer, management.CompileDocument,
@@ -84,6 +87,41 @@ func (factory *AuthoringAPIFactory) Mount(_ context.Context, mount pluginruntime
 				writeJSON(writer, http.StatusOK, result)
 			},
 		)},
+	})
+}
+
+func authoringRenameHandler(authorizer management.Authorizer, authoring management.Authoring) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := validateQuery(request); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		if err := authorize(request, authorizer, management.RenameDocument, "authoring"); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		var input management.RenameDocumentRequest
+		if err := decodeStrictJSON(request, maxAuthoringBody, &input); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		if err := management.ValidateRenameDocumentRequest(input); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		result, err := authoring.Rename(request.Context(), input)
+		if err == nil {
+			err = management.ValidateRenameDocumentResult(input, result)
+		}
+		if err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		if err := authorize(request, authorizer, management.RenameDocument, "authoring"); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, result)
 	})
 }
 

@@ -322,6 +322,48 @@ try {
   await waitFor("authoring compile", () => evaluate(
     `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "compiled"`));
   const compileMS = performance.now() - compileStarted;
+  const originalAuthoringFingerprint = await evaluate(`document.querySelector(
+    '[data-view=authoring-canvas] button[data-action=select-node][data-node=runtime]')?.dataset.fingerprint ?? ""`);
+  check("compiled canvas exposes the exact selectable node", /^sha256:[0-9a-f]{64}$/.test(
+    originalAuthoringFingerprint));
+
+  const renameStarted = performance.now();
+  await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-canvas]');
+    const selected = view.querySelector('button[data-action=select-node][data-node=runtime]');
+    const replacement = view.querySelector('input[name=authoring-node-name]');
+    if (!selected || !replacement) throw new Error("compiled runtime node is not selectable");
+    selected.click();
+    replacement.value = "renamed_runtime";
+    view.querySelector('button[data-action=rename-node]').click();
+  })()`);
+  await waitFor("authoring canvas node rename", () => evaluate(
+    `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "renamed"`));
+  const renameMS = performance.now() - renameStarted;
+  check("canvas rename installs exact graph-wide source and invalidates the old compile", await evaluate(`(() => {
+    const editor = document.querySelector('[data-view=authoring-editor]');
+    const canvas = document.querySelector('[data-view=authoring-canvas]');
+    const source = editor?.querySelector('textarea[name=authoring-source]')?.value ?? "";
+    return source.includes(":: renamed_runtime;") && source.includes("= renamed_runtime.") &&
+      !/\\bruntime\\b/.test(source) &&
+      canvas?.querySelectorAll('button[data-action=select-node]').length === 0;
+  })()`));
+
+  const renamedCompileStarted = performance.now();
+  await evaluate(
+    `document.querySelector('[data-view=authoring-editor] button[data-action=compile]').click()`);
+  await waitFor("renamed authoring compile", () => evaluate(
+    `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "compiled"`));
+  const renamedCompileMS = performance.now() - renamedCompileStarted;
+  check("renamed source recompiles at the next revision and changes fingerprint", await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-canvas]');
+    const renamed = view?.querySelector(
+      'button[data-action=select-node][data-node=renamed_runtime]');
+    return renamed?.dataset.fingerprint && renamed.dataset.fingerprint !==
+      ${JSON.stringify(originalAuthoringFingerprint)} && view.textContent.includes("· r2 ·") &&
+      !view.querySelector('button[data-action=select-node][data-node=runtime]');
+  })()`));
+
   const renderStarted = performance.now();
   await evaluate(
     `document.querySelector('[data-view=authoring-canvas] button[data-action=render-model]').click()`);
@@ -336,7 +378,8 @@ try {
     const view = document.querySelector('[data-view=authoring-canvas]');
     return view?.textContent.includes("browser_authoring") &&
       view?.querySelector('[data-role=rendering]')?.textContent.includes('"nodes"') &&
-      view?.querySelector('[data-role=rendering]')?.textContent.includes('"reaction"');
+      view?.querySelector('[data-role=rendering]')?.textContent.includes('"reaction"') &&
+      view?.querySelector('[data-role=rendering]')?.textContent.includes('"renamed_runtime"');
   })()`));
 
   if (EFFECTS_ENABLED) {
@@ -461,10 +504,12 @@ try {
       "authoring-configuration-view", "authoring-canvas-view"]
       .every((entry) => authorityRestore.entries[entry].state === "active"));
   check("authoring and static management stay inside bounded UI latency",
-    staticMS < 5000 && analyzeMS < 10000 && formatMS < 5000 && compileMS < 10000 && renderMS < 5000 &&
+    staticMS < 5000 && analyzeMS < 10000 && formatMS < 5000 && compileMS < 10000 &&
+    renameMS < 10000 && renamedCompileMS < 10000 && renderMS < 5000 &&
     authorityLossMS < 2000 && authorityRestoreMS < 2000,
     `static=${staticMS.toFixed(1)}ms analyze=${analyzeMS.toFixed(1)}ms format=${formatMS.toFixed(1)}ms ` +
-      `compile=${compileMS.toFixed(1)}ms ` +
+      `compile=${compileMS.toFixed(1)}ms rename=${renameMS.toFixed(1)}ms ` +
+      `renamed-compile=${renamedCompileMS.toFixed(1)}ms ` +
       `render=${renderMS.toFixed(1)}ms loss=${authorityLossMS.toFixed(1)}ms ` +
       `restore=${authorityRestoreMS.toFixed(1)}ms`);
 

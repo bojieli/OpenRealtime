@@ -1,13 +1,18 @@
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const SYMBOL = /^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)+$/;
+const NODE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const MAX_SOURCE_BYTES = 1 << 20;
 const MAX_ITEMS = 65_536;
+const MAX_RENAME_EDITS = 8_192;
+const MAX_IDENTIFIER_BYTES = 256;
 const MAX_TEXT_BYTES = 64 << 20;
 const MAX_DIAGNOSTIC_BYTES = 64 << 10;
 const MAX_DIAGNOSTIC_NOTES = 256;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const SCHEMA_TYPES = new Set(["array", "boolean", "integer", "null", "number", "object", "string"]);
+const TOPOLOGY_WHITESPACE = new Set([" ", "\t", "\r", "\n"]);
+const ENDPOINT_TAIL = new Set(["->", "=>", ";"]);
 
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is not an object`);
@@ -173,6 +178,116 @@ function sameBytes(left, right) {
   return true;
 }
 
+function nodeName(value, label) {
+  if (typeof value !== "string" || !NODE.test(value) ||
+      encoder.encode(value).byteLength > MAX_IDENTIFIER_BYTES) {
+    throw new Error(`${label} is not a canonical node identifier`);
+  }
+  return value;
+}
+
+// Tokenize only the syntax needed to prove node-reference coverage. Canonical
+// .ortg identifiers and punctuation are ASCII; comments and import strings are
+// skipped while byte offsets continue to count the original UTF-8 source.
+function topologyTokens(source) {
+  const tokens = [];
+  let index = 0;
+  let offset = 0;
+  const advance = () => {
+    const point = source.codePointAt(index);
+    const character = String.fromCodePoint(point);
+    index += character.length;
+    offset += encoder.encode(character).byteLength;
+    return character;
+  };
+  const advanceASCII = (count) => {
+    index += count;
+    offset += count;
+  };
+  const identifierStart = (character) => /[A-Za-z_]/.test(character);
+  const identifierContinue = (character) => /[A-Za-z0-9_-]/.test(character);
+  while (index < source.length) {
+    const character = source[index];
+    if (TOPOLOGY_WHITESPACE.has(character)) {
+      advance();
+      continue;
+    }
+    if (source.startsWith("//", index) || character === "#") {
+      advanceASCII(character === "#" ? 1 : 2);
+      while (index < source.length && source[index] !== "\r" && source[index] !== "\n") advance();
+      continue;
+    }
+    if (source.startsWith("/*", index)) {
+      advanceASCII(2);
+      while (index < source.length && !source.startsWith("*/", index)) advance();
+      if (!source.startsWith("*/", index)) throw new Error("authoring source has an unterminated comment");
+      advanceASCII(2);
+      continue;
+    }
+    if (character === '"') {
+      advanceASCII(1);
+      let escaped = false;
+      let closed = false;
+      while (index < source.length) {
+        const current = advance();
+        if (escaped) {
+          escaped = false;
+        } else if (current === "\\") {
+          escaped = true;
+        } else if (current === '"') {
+          closed = true;
+          break;
+        } else if (current === "\r" || current === "\n") {
+          throw new Error("authoring source has a multiline string");
+        }
+      }
+      if (!closed) throw new Error("authoring source has an unterminated string");
+      continue;
+    }
+    const compound = ["::", "->", "=>"].find((value) => source.startsWith(value, index));
+    if (compound) {
+      tokens.push(Object.freeze({ text: compound, start: offset, end: offset + 2 }));
+      advanceASCII(2);
+      continue;
+    }
+    if ("{};.=".includes(character)) {
+      tokens.push(Object.freeze({ text: character, start: offset, end: offset + 1 }));
+      advanceASCII(1);
+      continue;
+    }
+    if (identifierStart(character)) {
+      const start = offset;
+      let text = advance();
+      while (index < source.length && identifierContinue(source[index]) &&
+          !(source[index] === "-" && source.startsWith("->", index))) {
+        text += advance();
+      }
+      tokens.push(Object.freeze({ text, start, end: offset, identifier: true }));
+      continue;
+    }
+    throw new Error("authoring source is not lexical .ortg");
+  }
+  return tokens;
+}
+
+function renameReferenceSpans(source, selected, replacement) {
+  const tokens = topologyTokens(source);
+  const declarations = tokens.filter((token, index) => token.identifier && tokens[index - 1]?.text === "::");
+  if (declarations.filter((token) => token.text === selected).length !== 1) {
+    throw new Error("authoring rename source does not declare the selected node exactly once");
+  }
+  if (replacement !== selected && declarations.some((token) => token.text === replacement)) {
+    throw new Error("authoring rename target already exists");
+  }
+  const references = tokens.filter((token, index) => token.identifier && token.text === selected &&
+    (tokens[index - 1]?.text === "::" || (tokens[index + 1]?.text === "." &&
+      tokens[index + 2]?.identifier && ENDPOINT_TAIL.has(tokens[index + 3]?.text))));
+  if (references.length === 0 || references.length > MAX_RENAME_EDITS) {
+    throw new Error("authoring rename reference count is invalid");
+  }
+  return references.map(({ start, end }) => Object.freeze({ start, end }));
+}
+
 function checkedEditSet(value, input, expectedDigest) {
   only(value, ["path", "source_digest", "edits"], "authoring edit set");
   if (value.path !== input.path || value.source_digest !== expectedDigest) {
@@ -228,6 +343,41 @@ function checkedEditSet(value, input, expectedDigest) {
   }
   output.set(sourceBytes.subarray(sourceOffset), outputOffset);
   return Object.freeze({ editSet: frozen(value), source: decoder.decode(output) });
+}
+
+function validateRename(value, input, selected, replacement, requestedDigest, evidence) {
+  only(value, ["node", "new_name", "edits"], "authoring rename result");
+  if (nodeName(value.node, "authoring rename result node") !== selected ||
+      nodeName(value.new_name, "authoring rename result replacement") !== replacement ||
+      evidence !== `authoring:rename:${requestedDigest}`) {
+    throw new Error("authoring rename result changed request identity");
+  }
+  const references = renameReferenceSpans(input.source, selected, replacement);
+  const applied = checkedEditSet(value.edits, input, requestedDigest);
+  if (applied.editSet.edits.length > MAX_RENAME_EDITS) {
+    throw new Error("authoring rename edit set exceeds its bound");
+  }
+  for (const edit of applied.editSet.edits) {
+    if (edit.old_text !== selected || edit.new_text !== replacement) {
+      throw new Error("authoring rename result contains another text mutation");
+    }
+  }
+  if (selected === replacement) {
+    if (applied.editSet.edits.length !== 0 || applied.source !== input.source) {
+      throw new Error("authoring no-op rename returned edits");
+    }
+  } else {
+    if (applied.editSet.edits.length !== references.length || applied.source === input.source) {
+      throw new Error("authoring rename result omitted a node reference");
+    }
+    const expected = new Set(references.map(({ start, end }) => `${start}:${end}`));
+    for (const edit of applied.editSet.edits) {
+      const key = `${edit.span.start.offset}:${edit.span.end.offset}`;
+      if (!expected.delete(key)) throw new Error("authoring rename result edits another source span");
+    }
+    if (expected.size !== 0) throw new Error("authoring rename result omitted a node reference");
+  }
+  return frozen(value);
 }
 
 function validateDiagnostics(report, source) {
@@ -443,13 +593,6 @@ export default {
         ready();
         return validateCompile(response.value, exact, response.identity);
       },
-      async applyEdits(input, editSet) {
-        ready();
-        const exact = document(input, true);
-        const fingerprint = await sourceDigest(exact.source);
-        ready();
-        return checkedEditSet(editSet, exact, fingerprint).source;
-      },
       async render(graph, format = "model") {
         ready();
         validateGraph(graph);
@@ -457,6 +600,32 @@ export default {
         const response = await transport.authoring("render", { graph, format });
         ready();
         return validateRender(response.value, graph, format, response.identity);
+      },
+    }));
+    context.publish("presentation.client.management_editing", Object.freeze({
+      async rename(input, selected, replacement) {
+        ready();
+        const exact = document(input, true);
+        if ((exact.lock !== undefined && exact.lock !== null) ||
+            (exact.channel_depth !== undefined && Object.keys(exact.channel_depth).length !== 0)) {
+          throw new Error("authoring rename does not accept resolution or channel-depth planes");
+        }
+        const node = nodeName(selected, "authoring rename node");
+        const newName = nodeName(replacement, "authoring rename replacement");
+        renameReferenceSpans(exact.source, node, newName);
+        const fingerprint = await sourceDigest(exact.source);
+        const response = await transport.authoring("rename", {
+          document: exact, node, new_name: newName,
+        });
+        ready();
+        return validateRename(response.value, exact, node, newName, fingerprint, response.identity);
+      },
+      async applyEdits(input, editSet) {
+        ready();
+        const exact = document(input, true);
+        const fingerprint = await sourceDigest(exact.source);
+        ready();
+        return checkedEditSet(editSet, exact, fingerprint).source;
       },
     }));
     context.lifecycle.defer("management-authoring", () => { disposed = true; });

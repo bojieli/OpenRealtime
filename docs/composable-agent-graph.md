@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 207 of 256 explicit tracker boxes are checked (80.9%)
+At this reconciliation, 208 of 257 explicit tracker boxes are checked (80.9%)
 and 49 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -1823,7 +1823,7 @@ of-done requirement.
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Broader graphical editing and complete server/native presentation lifecycle gates |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canvas node rename, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Graphical edge mutation and complete server/native presentation lifecycle gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
@@ -1864,8 +1864,13 @@ Current checkpoint notes:
   nested graph declarations, and subgraph boundary ports to exact cross-file
   ranges. Standard LSP definition requests rebuild and lease that closed index;
   unrelated descriptor and same-document definitions retain their existing
-  behavior. Mediated writes and the remaining phase gates stay unchecked until
-  their independent slices are complete.
+  behavior. The rendered browser canvas now selects nodes from one compiled
+  fingerprint and invokes a separately contracted, capability-scoped rename;
+  the compiler produces the graph-wide edit set while the API, relay, browser,
+  and workspace independently rebind source identity, spans, and compare-and-
+  swap state before advancing the source revision. Graphical edge mutation and
+  the remaining phase gates stay unchecked until their independent slices are
+  complete.
 - Seven of the fifteen project-level definition-of-done outcomes are proven end
   to end. The remaining eight have named completed subgates, but direct
   benchmark execution, production inspection, reconciliation, native-client
@@ -1908,7 +1913,9 @@ Integrated checkpoint ledger:
   catalogs bind into Graph IR and the CLI without mixing topology, values,
   placement, resource selection, or credential material.
 - [x] Bounded graph-aware rename and strict in-memory edit application reject
-  stale cursors, overlapping edits, and ambiguous node references.
+  stale cursors, overlapping edits, and ambiguous node references; the same
+  compiler-backed operation is exposed through a separately authorized
+  management/browser editing contract and a fingerprint-bound canvas control.
 - [x] Bounded `.ortg` recovery retains only complete synchronized statements,
   supports explicit descriptor-backed partial completion, and remains outside
   strict compilation, locking, reconciliation, formatting, and runtime paths.
@@ -2458,7 +2465,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 814/6,147 at 2026-09-01 22:15 UTC. This dated progress checkpoint is
+  attempt 837/6,147 at 2026-09-01 22:46 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -2892,7 +2899,29 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     effects-enabled and both WebSocket/WebRTC observer real-Chromium profiles
     render the exact noncanonical diagnostic, install canonical bytes, compile,
     and render afterward. Three shuffled complete browser runs, repository-wide
-    tests, and vet are green. Graphical node/edge mutation remains open.
+    tests, and vet are green. This formatter checkpoint does not itself claim
+    graphical mutation.
+  - [x] Initiate canonical `.ortg` node mutation from the rendered browser
+    canvas without granting direct filesystem, effects, or hidden source
+    authority. Deterministically sorted node controls retain the exact compiled
+    fingerprint; the workspace rejects stale selection, collision, no-op, and
+    exhausted-revision requests before mutation, then applies the compiler's
+    source-digest-bound declaration/edge/boundary edit set under epoch/request
+    compare-and-swap, advances the document revision exactly once, and clears
+    stale analysis, compile, rendering, source-read, and publication state. A
+    distinct editing contract keeps the existing cross-platform analysis/
+    compile/render contract stable. The management engine, capability registry,
+    strict HTTP API, headless client, host relay, and browser transport each
+    authorize or independently validate the operation; the browser additionally
+    lexes canonical topology syntax and requires the edits to cover the exact
+    selected-node span set. Missing, extra, overlapping, stale-position, wrong-
+    name, wrong-evidence, invalid-input, collision, late-response, provider-loss,
+    and disposal cases fail closed. Go/JavaScript conformance, targeted race,
+    effects Chromium, both observer transports, and the shared browser/native
+    companion gate compile the original `runtime`, rename it graph-wide to
+    `renamed_runtime`, recompile revision 2 under a changed fingerprint, and
+    render the renamed node. Graphical edge creation/removal and normalized
+    YAML/JSON canvas mutation remain open under the parent.
 - [x] Add an immutable, pure language-service snapshot with compiler-backed,
   source-mapped diagnostics, stable source-digest cursors, bounded results, and
   recursively independent metadata for concurrent readers.
@@ -3447,9 +3476,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     through the same compiler and produce fingerprint-equivalent Graph IR;
     native and descriptor-attested protocol-v4 sidecar elements mount through
     the common factory registry. The browser workspace also applies exact
-    compiler-produced canonical formatter edits without file authority.
-    Graphical topology editing and complete arbitrary-remote release evidence
-    remain requirements of the parent gate.
+    compiler-produced canonical formatter edits and compiler-backed,
+    fingerprint-CAS canvas node renames without file authority. Graphical edge
+    creation/removal, normalized YAML/JSON canvas mutation, and complete
+    arbitrary-remote release evidence remain requirements of the parent gate.
 - [x] The graph can expose any supported combination of text, audio, video,
   images, files, tools, computer use, and control ports; audio is optional. The
   common descriptor and typed-port model admits those capabilities

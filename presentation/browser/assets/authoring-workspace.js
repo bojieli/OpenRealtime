@@ -1,5 +1,6 @@
 const encoder = new TextEncoder();
 const MAX_SOURCE_BYTES = 1 << 20;
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 function frozen(value) {
   const copy = structuredClone(value);
@@ -27,9 +28,10 @@ export default {
   revision: 1,
   async mount(context) {
     const authoring = context.services.get("presentation.client.management_authoring");
+    const editing = context.services.get("presentation.client.management_editing");
     const sourceReading = context.services.get("presentation.client.source_reading");
     const sourcePublication = context.services.get("presentation.client.source_publication");
-    if (!authoring) throw new Error("authoring workspace service is unavailable");
+    if (!authoring || !editing) throw new Error("authoring workspace services are unavailable");
     let disposed = false;
     let epoch = 0;
     let request = 0;
@@ -119,16 +121,48 @@ export default {
         const input = state.document;
         const analysis = state.analysis;
         if (!analysis?.parsed || analysis.recovered || analysis.canonical || !analysis.formatting ||
-            typeof authoring.applyEdits !== "function") {
+            typeof editing.applyEdits !== "function") {
           throw new Error("authoring workspace has no applicable formatter edit");
         }
-        return invoke("formatting", () => authoring.applyEdits(input, analysis.formatting),
+        return invoke("formatting", () => editing.applyEdits(input, analysis.formatting),
           (_current, source) => {
             const document = checkedDocument(input.path, source, input.revision);
             epoch++;
             return { document, phase: "formatted", error: "", sourceRead: null, analysis: null,
               compiled: null, rendering: null, publication: null };
           });
+      },
+      renameNode(expectedFingerprint, selected, replacement) {
+        ready();
+        const input = state.document;
+        const graph = state.compiled?.graph;
+        if (typeof expectedFingerprint !== "string" || !DIGEST.test(expectedFingerprint) ||
+            !graph || graph.fingerprint !== expectedFingerprint || graph.revision !== input.revision ||
+            typeof selected !== "string" || !graph.nodes?.some((node) => node.id === selected)) {
+          throw new Error("authoring workspace node selection is stale");
+        }
+        if (typeof replacement !== "string" || replacement === selected) {
+          throw new Error("authoring workspace node rename is not a mutation");
+        }
+        if (graph.nodes.some((node) => node.id === replacement)) {
+          throw new Error("authoring workspace node rename target already exists");
+        }
+        if (input.revision >= Number.MAX_SAFE_INTEGER) {
+          throw new Error("authoring workspace document revision is exhausted");
+        }
+        return invoke("renaming", async () => {
+          const result = await editing.rename(input, selected, replacement);
+          const source = await editing.applyEdits(input, result.edits);
+          return Object.freeze({ result, source });
+        }, (current, renamed) => {
+          if (current.compiled?.graph?.fingerprint !== expectedFingerprint) {
+            throw new Error("authoring workspace node selection changed during rename");
+          }
+          const document = checkedDocument(input.path, renamed.source, input.revision + 1);
+          epoch++;
+          return { document, phase: "renamed", error: "", sourceRead: null, analysis: null,
+            compiled: null, rendering: null, publication: null };
+        });
       },
       compile() {
         const input = state.document;

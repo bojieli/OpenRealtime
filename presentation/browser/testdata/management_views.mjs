@@ -47,6 +47,7 @@ let workspaceSnapshot = {
 const workspaceListeners = new Set();
 const readCalls = [];
 const publicationCalls = [];
+const renameCalls = [];
 let formatCalls = 0;
 const workspace = Object.freeze({
   snapshot: () => structuredClone(workspaceSnapshot),
@@ -60,6 +61,22 @@ const workspace = Object.freeze({
     for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
   },
   async analyze() {}, async compile() {}, async render() {},
+  async renameNode(expectedFingerprint, selected, replacement) {
+    const graph = workspaceSnapshot.compiled?.graph;
+    if (!graph || graph.fingerprint !== expectedFingerprint ||
+        !graph.nodes?.some((node) => node.id === selected)) {
+      throw new Error("fake workspace received a stale node selection");
+    }
+    renameCalls.push({ expectedFingerprint, selected, replacement });
+    workspaceSnapshot = { ...workspaceSnapshot, epoch: workspaceSnapshot.epoch + 1,
+      document: { ...workspaceSnapshot.document,
+        source: workspaceSnapshot.document.source.replaceAll(selected, replacement),
+        revision: workspaceSnapshot.document.revision + 1 },
+      phase: "renamed", sourceRead: null, analysis: null, compiled: null, rendering: null,
+      publication: null };
+    for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+    return structuredClone(workspaceSnapshot);
+  },
   async format() {
     const edit = workspaceSnapshot.analysis?.formatting?.edits?.[0];
     if (!edit) throw new Error("fake workspace has no formatter edit");
@@ -211,6 +228,11 @@ const malicious = '<img src=x onerror="globalThis.compromised=true">';
 const propertyName = "mode/tilde~";
 workspaceSnapshot = {
   ...workspaceSnapshot, phase: "analyzed",
+  document: { path: "ui-created.ortg", source: `graph fixture {
+    test.Element :: zeta;
+    test.Element :: alpha;
+}
+`, revision: 1 },
   analysis: { diagnostics: { total: 1, items: [{
     code: "E_MARKUP", severity: "error", path: "ui-created.ortg",
     span: { start: { offset: 0, line: 1, column: 1 }, end: { offset: 5, line: 1, column: 6 } },
@@ -225,7 +247,11 @@ workspaceSnapshot = {
         required: true, title: malicious, description: malicious, format: "uri-reference",
         default: null, enum: [malicious, "safe"], schema: { type: "string", title: malicious } }] },
   }] } },
-  compiled: { graph: { id: "fixture", revision: 1, fingerprint: `sha256:${"c".repeat(64)}` } },
+  compiled: { graph: { id: "fixture", revision: 1, fingerprint: `sha256:${"c".repeat(64)}`,
+    nodes: [
+      { id: "zeta", element: { name: "test.Element" } },
+      { id: "alpha", element: { name: "test.Element" } },
+    ] } },
   rendering: { fingerprint: `sha256:${"c".repeat(64)}`, format: "mermaid", text: `<svg onload=alert(1)>` },
 };
 for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
@@ -245,6 +271,25 @@ for (const expected of ["properties complete: true", "additional properties:",
   if (!configuration.textContent.includes(expected)) {
     throw new Error(`configuration renderer omitted exact Authoring metadata ${expected}`);
   }
+}
+
+const canvasNodes = find(canvas, (entry) => entry.dataset.role === "nodes");
+const nodeIDs = canvasNodes.children.map((entry) => entry.dataset.node);
+if (JSON.stringify(nodeIDs) !== JSON.stringify(["alpha", "zeta"])) {
+  throw new Error(`authoring canvas node controls are not deterministic: ${JSON.stringify(nodeIDs)}`);
+}
+const alpha = canvasNodes.children[0];
+const renameInput = find(canvas, (entry) => entry.name === "authoring-node-name");
+const renameNode = find(canvas, (entry) => entry.dataset.action === "rename-node");
+await alpha.dispatch("click");
+renameInput.value = "beta";
+await renameNode.dispatch("click");
+if (renameCalls.length !== 1 || renameCalls[0].expectedFingerprint !== `sha256:${"c".repeat(64)}` ||
+    renameCalls[0].selected !== "alpha" || renameCalls[0].replacement !== "beta" ||
+    workspaceSnapshot.phase !== "renamed" || workspaceSnapshot.document.revision !== 2 ||
+    !workspaceSnapshot.document.source.includes(":: beta;") || workspaceSnapshot.compiled !== null ||
+    !canvas.textContent.includes("Renamed alpha")) {
+  throw new Error("authoring canvas did not initiate a fingerprint-bound graph node rename");
 }
 
 for (const dispose of disposers.reverse()) await dispose();

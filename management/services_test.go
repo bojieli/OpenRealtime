@@ -94,6 +94,80 @@ func TestAuthoringEngineCompilesLocksAnalyzesAndRendersOneSemanticGraph(t *testi
 	}
 }
 
+func TestAuthoringNodeRenameIsExactGraphWideAndIndependentlyValidated(t *testing.T) {
+	engine, err := NewAuthoringEngine(AuthoringOptions{Catalog: managedElementCatalog(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := AuthoringDocument{Path: "agent.ortg", Source: managedSource, Revision: 7}
+	request := RenameDocumentRequest{Document: document, Node: "source", NewName: "camera"}
+	result, err := engine.Rename(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Node != "source" || result.NewName != "camera" || len(result.Edits.Edits) != 2 {
+		t.Fatalf("rename result = %+v", result)
+	}
+	if err := ValidateRenameDocumentResult(request, result); err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := editor.ApplyEdits([]byte(document.Source), result.Edits)
+	if err != nil || string(renamed) != strings.ReplaceAll(managedSource, "source", "camera") {
+		t.Fatalf("renamed source = %q, %v", renamed, err)
+	}
+	compiled, err := engine.Compile(context.Background(), AuthoringDocument{
+		Path: document.Path, Source: string(renamed), Revision: document.Revision + 1,
+	})
+	if err != nil || compiled.Graph.Revision != 8 || compiled.Graph.Nodes[0].ID != "camera" {
+		t.Fatalf("renamed compile = %+v, %v", compiled, err)
+	}
+
+	noOpRequest := request
+	noOpRequest.NewName = noOpRequest.Node
+	noOp, err := engine.Rename(context.Background(), noOpRequest)
+	if err != nil || len(noOp.Edits.Edits) != 0 || ValidateRenameDocumentResult(noOpRequest, noOp) != nil {
+		t.Fatalf("no-op rename = %+v, %v", noOp, err)
+	}
+	for _, invalid := range []RenameDocumentRequest{
+		{Document: document, Node: "missing", NewName: "camera"},
+		{Document: document, Node: "source", NewName: "sink"},
+		{Document: document, Node: "source", NewName: "bad.name"},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source + "\n"}, Node: "source", NewName: "camera"},
+	} {
+		if _, err := engine.Rename(context.Background(), invalid); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid rename %+v = %v", invalid, err)
+		}
+	}
+
+	clone := func(source RenameDocumentResult) RenameDocumentResult {
+		encoded, err := json.Marshal(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var copied RenameDocumentResult
+		if err := json.Unmarshal(encoded, &copied); err != nil {
+			t.Fatal(err)
+		}
+		return copied
+	}
+	forged := []RenameDocumentResult{clone(result), clone(result), clone(result), clone(result)}
+	forged[0].NewName = "other"
+	forged[1].Edits.Edits[0].NewText = "other"
+	forged[2].Edits.Edits = forged[2].Edits.Edits[:1]
+	forged[3].Edits.Edits[1].Span = forged[3].Edits.Edits[0].Span
+	for _, value := range forged {
+		if err := ValidateRenameDocumentResult(request, value); !errors.Is(err, ErrConflict) {
+			t.Fatalf("forged rename result %+v = %v", value, err)
+		}
+	}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := engine.Rename(canceled, request); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("canceled rename = %v", err)
+	}
+}
+
 func TestAuthoringRecoveryFormattingAndResolvedPropertiesNeverCrossCompileBoundary(t *testing.T) {
 	base := managedElementCatalog(t)
 	configured := resolve.NewCatalog()

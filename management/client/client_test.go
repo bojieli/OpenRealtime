@@ -15,6 +15,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
+	"github.com/bojieli/OpenRealtime/graph/editor"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -134,8 +135,8 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	operations := []management.Operation{
 		management.ReadGraph, management.ReadDescriptor, management.ReadSchema,
 		management.ReadSession, management.ReadTrace, management.AnalyzeDocument,
-		management.CompileDocument, management.RenderGraph, management.ReadSource, management.CreateSource,
-		management.UpdateSource, management.ApplyCandidate,
+		management.RenameDocument, management.CompileDocument, management.RenderGraph,
+		management.ReadSource, management.CreateSource, management.UpdateSource, management.ApplyCandidate,
 	}
 	grants := make([]management.Grant, len(operations))
 	for index, operation := range operations {
@@ -235,6 +236,28 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	}
 	if resolvedProperties != 1 {
 		t.Fatalf("resolved property metadata did not survive the API: %+v", analysis.Catalog)
+	}
+	renameDocument := document
+	renameDocument.Lock = nil
+	renameDocument.Revision = 7
+	renameRequest := management.RenameDocumentRequest{
+		Document: renameDocument, Node: "source", NewName: "camera",
+	}
+	renameResult, err := remote.Rename(context.Background(), renameRequest)
+	if err != nil || management.ValidateRenameDocumentResult(renameRequest, renameResult) != nil ||
+		len(renameResult.Edits.Edits) != 2 {
+		t.Fatalf("remote graph-wide rename = %+v, %v", renameResult, err)
+	}
+	renamedSource, err := editor.ApplyEdits([]byte(renameDocument.Source), renameResult.Edits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renamedCompile, err := remote.Compile(context.Background(), management.AuthoringDocument{
+		Path: renameDocument.Path, Source: string(renamedSource), Revision: renameDocument.Revision + 1,
+	})
+	if err != nil || renamedCompile.Graph.Revision != 8 ||
+		!graphHasNode(renamedCompile.Graph, "camera") || graphHasNode(renamedCompile.Graph, "source") {
+		t.Fatalf("remote renamed compile = %+v, %v", renamedCompile, err)
 	}
 	partial := management.AuthoringDocument{
 		Path: "partial.ortg",
@@ -398,6 +421,15 @@ func resolvedConfigProperties(result management.AnalysisResult, name string) int
 		}
 	}
 	return 0
+}
+
+func graphHasNode(graph ir.Graph, id string) bool {
+	for _, node := range graph.Nodes {
+		if node.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func liveFixture(t *testing.T, graph ir.Graph) (inspect.Live, inspect.LiveTrace) {

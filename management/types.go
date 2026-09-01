@@ -32,6 +32,7 @@ const (
 	ReadSession     Operation = "session.read"
 	ReadTrace       Operation = "trace.read"
 	AnalyzeDocument Operation = "authoring.analyze"
+	RenameDocument  Operation = "authoring.rename"
 	CompileDocument Operation = "authoring.compile"
 	RenderGraph     Operation = "authoring.render"
 	ReadSource      Operation = "authoring.source.read"
@@ -111,6 +112,21 @@ type CompileResult struct {
 	Lock  resolve.Lock `json:"lock"`
 }
 
+// RenameDocumentRequest identifies one node in an exact canonical .ortg
+// document. Node is the currently compiled identifier; NewName is its desired
+// replacement. The operation returns edits only and performs no I/O.
+type RenameDocumentRequest struct {
+	Document AuthoringDocument `json:"document"`
+	Node     string            `json:"node"`
+	NewName  string            `json:"new_name"`
+}
+
+type RenameDocumentResult struct {
+	Node    string         `json:"node"`
+	NewName string         `json:"new_name"`
+	Edits   editor.EditSet `json:"edits"`
+}
+
 type RenderFormat string
 
 const (
@@ -133,6 +149,7 @@ type RenderResult struct {
 
 type Authoring interface {
 	Analyze(context.Context, AuthoringDocument) (AnalysisResult, error)
+	Rename(context.Context, RenameDocumentRequest) (RenameDocumentResult, error)
 	Compile(context.Context, AuthoringDocument) (CompileResult, error)
 	Render(context.Context, RenderRequest) (RenderResult, error)
 }

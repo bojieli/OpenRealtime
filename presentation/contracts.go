@@ -148,6 +148,10 @@ var (
 		"presentation.client.management_authoring",
 		"openrealtime/presentation/client/management-authoring/v1:analyze-compile-render-exact-document-graph-identity",
 	)
+	ClientManagementEditingContract = semanticContract(
+		"presentation.client.management_editing",
+		"openrealtime/presentation/client/management-editing/v1:exact-node-rename-validated-local-edit-application",
+	)
 	ClientSourceReadingContract = semanticContract(
 		"presentation.client.source_reading",
 		"openrealtime/presentation/client/source-reading/v1:explicit-root-path-exact-utf8-source-result-revalidation",
@@ -158,7 +162,7 @@ var (
 	)
 	ClientAuthoringWorkspaceContract = semanticContract(
 		"presentation.client.authoring_workspace",
-		"openrealtime/presentation/client/authoring-workspace/v1:bounded-document-optional-rooted-read-analysis-compile-render-optional-publication-immutable-snapshot-subscribe",
+		"openrealtime/presentation/client/authoring-workspace/v1:bounded-document-optional-rooted-read-analysis-compile-render-graph-node-rename-cas-optional-publication-immutable-snapshot-subscribe",
 	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",

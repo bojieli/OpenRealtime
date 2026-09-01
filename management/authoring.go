@@ -79,6 +79,34 @@ func (engine *AuthoringEngine) Analyze(
 	return result, nil
 }
 
+func (engine *AuthoringEngine) Rename(
+	ctx context.Context, input RenameDocumentRequest,
+) (RenameDocumentResult, error) {
+	if err := checkAuthoringContext(ctx); err != nil {
+		return RenameDocumentResult{}, err
+	}
+	if err := ValidateRenameDocumentRequest(input); err != nil {
+		return RenameDocumentResult{}, err
+	}
+	document, err := editor.AnalyzeWithOptions(
+		ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
+			Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
+		},
+	)
+	if err != nil {
+		return RenameDocumentResult{}, fmt.Errorf("%w: analyze topology for rename: %v", ErrInvalid, err)
+	}
+	edits, err := document.RenameNodeID(input.Node, input.NewName)
+	if err != nil {
+		return RenameDocumentResult{}, fmt.Errorf("%w: rename topology node: %v", ErrInvalid, err)
+	}
+	result := RenameDocumentResult{Node: input.Node, NewName: input.NewName, Edits: edits}
+	if err := ValidateRenameDocumentResult(input, result); err != nil {
+		return RenameDocumentResult{}, fmt.Errorf("authoring rename produced invalid edits: %w", err)
+	}
+	return result, nil
+}
+
 func (engine *AuthoringEngine) Compile(
 	ctx context.Context, input AuthoringDocument,
 ) (CompileResult, error) {
