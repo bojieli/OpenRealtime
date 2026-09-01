@@ -2211,11 +2211,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   outcome on 10/11, and disagreed on `ordering-from-a-waiter`. A later distinct
   advisory attempt correctly remained nonreportable when the new validator
   rejected a finding timestamp beyond the sealed WAV duration; no aggregate
-  receipt was published. The provider-neutral per-request media-time bound and
-  provider schema specialization must pass their adversarial gates before the
-  next immutable diagnostic. The 165-attempt run has not started. This box and
-  every case below remain open until the full candidate meets or improves on
-  140/165 without a significant case, safety, or latency regression.
+  receipt was published. The provider-neutral per-request media-time bound now
+  passes its boundary and pre-publication adversarial gates, and the Gemini
+  adapter derives the exact per-request bound, removes only its redundant
+  optional timestamp fields, and fails closed on schema drift. The next
+  immutable diagnostic is technically gate-ready; the 165-attempt run has not
+  started. This box and every case below remain open until the full candidate
+  meets or improves on 140/165 without a significant case, safety, or latency
+  regression.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
