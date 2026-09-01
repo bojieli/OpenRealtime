@@ -288,6 +288,28 @@ func TestInspectionClientTreatsOnlyCapabilityRotationAsLifecycleInJavaScript(t *
 	}
 }
 
+func TestInspectionViewJoinsExactStaticAndLiveEvidenceAsTextInJavaScript(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	content, err := browserModule("inspection-view.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := filepath.Join(t.TempDir(), "inspection-view.mjs")
+	if err := os.WriteFile(module, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := filepath.Abs(filepath.Join("testdata", "inspection_view.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, runner, module).CombinedOutput(); err != nil {
+		t.Fatalf("inspection view join conformance: %v\n%s", err, output)
+	}
+}
+
 func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

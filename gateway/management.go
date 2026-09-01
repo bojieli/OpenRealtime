@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 	"github.com/bojieli/OpenRealtime/management"
 	managementserver "github.com/bojieli/OpenRealtime/management/server"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
@@ -29,12 +30,17 @@ type recordedTraceSource interface {
 	RecordedTrace() (inspect.LiveTrace, error)
 }
 
+type graphInspectionSource interface {
+	Graph() ir.Graph
+}
+
 // managedSessionRuntime adapts the deliberately optional recording surface to
 // the complete management contract. Live inspection remains available when
 // recording is disabled, while trace and delta reads fail closed.
 type managedSessionRuntime struct {
 	live  liveInspectionSource
 	trace recordedTraceSource
+	graph graphInspectionSource
 }
 
 func (runtime managedSessionRuntime) Live() inspect.Live { return runtime.live.Live() }
@@ -44,6 +50,13 @@ func (runtime managedSessionRuntime) RecordedTrace() (inspect.LiveTrace, error) 
 		return inspect.LiveTrace{}, errInspectionTraceUnavailable
 	}
 	return runtime.trace.RecordedTrace()
+}
+
+func (runtime managedSessionRuntime) InspectionModel() (inspect.Model, error) {
+	if runtime.graph == nil {
+		return inspect.Model{}, management.ErrUnavailable
+	}
+	return inspect.Build(runtime.graph.Graph())
 }
 
 // SessionInspectionPlane is the payload-free session authority shared by
@@ -147,7 +160,8 @@ func (plane *SessionInspectionPlane) register(session string, runtime any) (func
 	if !ok {
 		return nil, false, nil
 	}
-	if err := management.ValidateSessionSnapshot(live.Live()); err != nil {
+	snapshot := live.Live()
+	if err := management.ValidateSessionSnapshot(snapshot); err != nil {
 		// Inspection is optional. Incomplete legacy evidence must make the
 		// capability absent rather than failing the conversational session.
 		return nil, false, nil
@@ -155,6 +169,13 @@ func (plane *SessionInspectionPlane) register(session string, runtime any) (func
 	managed := managedSessionRuntime{live: live}
 	if trace, ok := runtime.(recordedTraceSource); ok {
 		managed.trace = trace
+	}
+	if graph, ok := runtime.(graphInspectionSource); ok {
+		model, modelErr := inspect.Build(graph.Graph())
+		if modelErr != nil || management.ValidateSessionModel(snapshot, model) != nil {
+			return nil, false, nil
+		}
+		managed.graph = graph
 	}
 	dispose, err := plane.sessions.Register(session, managed)
 	if err != nil {

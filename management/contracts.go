@@ -38,7 +38,7 @@ var (
 	)
 	SessionInspectionContract = semanticContract(
 		"openrealtime.management.session_inspection",
-		"openrealtime/management/session-inspection/v1:live-deltas-trace-by-session-cursor",
+		"openrealtime/management/session-inspection/v1:live-static-model-deltas-trace-by-session-cursor",
 	)
 	AuthoringContract = semanticContract(
 		"openrealtime.management.authoring",

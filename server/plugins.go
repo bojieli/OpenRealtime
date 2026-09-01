@@ -71,7 +71,7 @@ func (factory *SessionProviderFactory) Mount(
 }
 
 // SessionInspectionPlaneFactory publishes one resource-free session
-// inspection authority under the three exact projections consumed by the
+// inspection authority under the exact projections consumed by the
 // gateway and canonical management API. Routes remain separate plugins.
 type SessionInspectionPlaneFactory struct {
 	descriptor plugin.Descriptor

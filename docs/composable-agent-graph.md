@@ -1552,6 +1552,19 @@ life of the mount and through shutdown. Raw trigger and outcome item IDs stay
 inside the in-process view: management snapshots redact them and payload-free
 recordings omit them while retaining the counters and timing evidence.
 
+The session-scoped inspection API also exposes the exact source-free static
+model at `/openrealtime/v1/sessions/{session}/model` under the same narrow
+capability as the live snapshot. The server revalidates graph fingerprint,
+revision, node set, and element identities before returning it. The browser
+operator panel then joins that model to the redacted live view and renders one
+text-only node card with declared triggers, sampled state, interrupts,
+outcomes, concurrency, causal breaks, effects, reversibility, and authority
+beside observed active-run and timing evidence. It labels declared effect
+authority separately from observed timing; it does not invent a live
+authorization decision or a trigger-relative latency that the current schema
+does not contain. A missing legacy static model leaves a visibly live-only
+view, while identity drift or unredacted identifiers fail the join closed.
+
 Trace replay animates the same graph and permits inspection of historical
 runs. A developer should be able to select an audible word or computer click
 and trace backward to the observation, policy decision, model run, state
@@ -1797,7 +1810,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Joined live/static authority and per-stage operator rendering, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, native/LSP rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -2216,7 +2229,8 @@ tracker by itself:
 - [x] Delete the historical session-live route/header plug-in and fixed gateway
   HTTP facade. Negotiated inspection capabilities now name the canonical
   `/openrealtime/v1/sessions/{session}/live` resource and use only the
-  management capability header; compiled server profiles own all route mounts.
+  management capability header; its source-free static-model sibling uses the
+  same session authority, and compiled server profiles own all route mounts.
 - [ ] Freeze every direct candidate contract before its full run.
   - [x] Treat the benchmark owner's recorded original numbers as the trusted
     historical comparison targets. Do not reconstruct historical attempts or
@@ -2600,6 +2614,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     first-output, completion, and outcome evidence at the port boundary;
     preserve it through shutdown and payload-free trace replay without
     exporting raw item/run IDs.
+  - [x] Serve the exact source-free static inspection model under the same
+    narrow session capability and join it to redacted live node evidence in a
+    text-only browser operator view. Identity drift, unredacted identifiers,
+    and markup-shaped metadata fail closed; legacy live-only sessions are
+    labeled rather than promoted to a fabricated contract view.
 - [x] Add deterministic semantic graph diff plus bounded, fingerprinted,
   payload-free trace artifacts and exact Graph IR replay validation.
 - [x] Integrate opt-in runtime recording with nonblocking coalesced capture,

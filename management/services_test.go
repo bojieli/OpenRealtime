@@ -378,11 +378,14 @@ func TestValuesSchemaResourcePreservesExactArtifactBytesAcrossJSON(t *testing.T)
 }
 
 type recordedSession struct {
+	graph ir.Graph
 	live  inspect.Live
 	trace inspect.LiveTrace
 }
 
 func (session *recordedSession) Live() inspect.Live { return session.live.Clone() }
+
+func (session *recordedSession) Graph() ir.Graph { return session.graph }
 
 func (session *recordedSession) RecordedTrace() (inspect.LiveTrace, error) {
 	return session.trace.Clone(), nil
@@ -405,7 +408,7 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 		Correlation: "raw-correlation", Edges: []string{graph.Edges[0].ID},
 	}
 	registry := NewSessionRegistry()
-	source := &recordedSession{live: live, trace: trace}
+	source := &recordedSession{graph: graph, live: live, trace: trace}
 	dispose, err := registry.Register("sess-one", source)
 	if err != nil {
 		t.Fatal(err)
@@ -426,6 +429,11 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	second, err := registry.Snapshot(context.Background(), "sess-one")
 	if err != nil || second.Nodes["source"].Resolution == nil {
 		t.Fatalf("snapshot aliased source: err=%v snapshot=%+v", err, second)
+	}
+	model, err := registry.Model(context.Background(), "sess-one")
+	if err != nil || model.Fingerprint != graph.Fingerprint || len(model.Nodes) != len(live.Nodes) ||
+		model.Nodes[0].Element != live.Nodes[model.Nodes[0].ID].Resolution.Element {
+		t.Fatalf("session model = %+v, %v", model, err)
 	}
 	initial, err := registry.Deltas(context.Background(), "sess-one", 0, 1)
 	if err != nil {
@@ -449,7 +457,7 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	if _, err := registry.Snapshot(context.Background(), "sess-one"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("disposed session error = %v", err)
 	}
-	replacement := &recordedSession{live: live, trace: trace}
+	replacement := &recordedSession{graph: graph, live: live, trace: trace}
 	disposeReplacement, err := registry.Register("sess-one", replacement)
 	if err != nil {
 		t.Fatal(err)
@@ -461,6 +469,58 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 		t.Fatalf("stale owner disposer removed replacement session: %v", err)
 	}
 	disposeReplacement()
+}
+
+func TestSessionModelRefusesStaticLiveIdentityDriftAndOmitsSource(t *testing.T) {
+	elements := managedElementCatalog(t)
+	graph := compileManagedGraph(t, elements)
+	live, _ := managedLiveTrace(t, graph)
+	model, err := inspect.Build(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateSessionModel(live, model); err != nil {
+		t.Fatalf("exact session model = %v", err)
+	}
+	payload, err := json.Marshal(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte(`"source":`)) {
+		t.Fatalf("session model retained authoring source: %s", payload)
+	}
+	mutations := map[string]func(*inspect.Live, *inspect.Model){
+		"graph fingerprint": func(_ *inspect.Live, model *inspect.Model) {
+			model.Fingerprint = "sha256:" + strings.Repeat("f", 64)
+		},
+		"missing static node": func(_ *inspect.Live, model *inspect.Model) {
+			model.Nodes = model.Nodes[:len(model.Nodes)-1]
+		},
+		"static element": func(_ *inspect.Live, model *inspect.Model) {
+			model.Nodes[0].Element.Digest = "sha256:" + strings.Repeat("e", 64)
+		},
+		"missing live node": func(live *inspect.Live, _ *inspect.Model) {
+			delete(live.Nodes, model.Nodes[0].ID)
+		},
+		"live element": func(live *inspect.Live, _ *inspect.Model) {
+			node := live.Nodes[model.Nodes[0].ID]
+			node.Resolution.Element.Digest = "sha256:" + strings.Repeat("d", 64)
+			live.Nodes[model.Nodes[0].ID] = node
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			candidateLive := live.Clone()
+			candidateModel, buildErr := inspect.Build(graph)
+			if buildErr != nil {
+				t.Fatal(buildErr)
+			}
+			mutate(&candidateLive, &candidateModel)
+			if err := ValidateSessionModel(candidateLive, candidateModel); !errors.Is(err, ErrConflict) {
+				t.Fatalf("identity drift error = %v", err)
+			}
+		})
+	}
 }
 
 func managedElementCatalog(t testing.TB) *resolve.Catalog {

@@ -70,6 +70,41 @@ func (factory *SessionAPIFactory) Mount(_ context.Context, mount pluginruntime.M
 				writeJSON(writer, http.StatusOK, management.RedactLive(snapshot))
 			},
 		)},
+		{Pattern: "GET " + management.APIPrefix + "/sessions/{session}/model", Handler: http.HandlerFunc(
+			func(writer http.ResponseWriter, request *http.Request) {
+				if err := validateQuery(request); err != nil {
+					writeServiceError(writer, err)
+					return
+				}
+				session := request.PathValue("session")
+				if !management.CanonicalSessionID(session) {
+					writeServiceError(writer, management.ErrNotFound)
+					return
+				}
+				if err := authorize(request, authorizer, management.ReadSession, session); err != nil {
+					writeServiceError(writer, err)
+					return
+				}
+				snapshot, err := source.Snapshot(request.Context(), session)
+				if err != nil {
+					writeServiceError(writer, err)
+					return
+				}
+				model, err := source.Model(request.Context(), session)
+				if err == nil {
+					err = management.ValidateSessionModel(snapshot, model)
+				}
+				if err != nil {
+					writeServiceError(writer, err)
+					return
+				}
+				if err := authorize(request, authorizer, management.ReadSession, session); err != nil {
+					writeServiceError(writer, err)
+					return
+				}
+				writeJSON(writer, http.StatusOK, model)
+			},
+		)},
 		{Pattern: "GET " + management.APIPrefix + "/sessions/{session}/deltas", Handler: http.HandlerFunc(
 			func(writer http.ResponseWriter, request *http.Request) {
 				if err := validateQuery(request, "after", "limit"); err != nil {

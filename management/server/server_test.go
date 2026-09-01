@@ -67,7 +67,8 @@ func (testStaticCatalog) ValuesSchema(context.Context, string) (schema.Bundle, e
 }
 
 type testSessions struct {
-	live inspect.Live
+	live  inspect.Live
+	model inspect.Model
 }
 
 func (sessions testSessions) Snapshot(_ context.Context, session string) (inspect.Live, error) {
@@ -75,6 +76,16 @@ func (sessions testSessions) Snapshot(_ context.Context, session string) (inspec
 		return inspect.Live{}, management.ErrNotFound
 	}
 	return sessions.live.Clone(), nil
+}
+
+func (sessions testSessions) Model(_ context.Context, session string) (inspect.Model, error) {
+	if session != "sess-test" {
+		return inspect.Model{}, management.ErrNotFound
+	}
+	if sessions.model.Fingerprint == "" {
+		return inspect.Model{}, management.ErrUnavailable
+	}
+	return sessions.model, nil
 }
 
 func (testSessions) Deltas(_ context.Context, session string, after uint64, _ uint32) (management.DeltaPage, error) {
@@ -106,6 +117,25 @@ type blockingSessions struct {
 	testSessions
 	entered chan struct{}
 	release chan struct{}
+}
+
+type blockingModelSessions struct {
+	testSessions
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (sessions *blockingModelSessions) Model(ctx context.Context, session string) (inspect.Model, error) {
+	select {
+	case sessions.entered <- struct{}{}:
+	default:
+	}
+	select {
+	case <-sessions.release:
+		return sessions.testSessions.Model(ctx, session)
+	case <-ctx.Done():
+		return inspect.Model{}, ctx.Err()
+	}
 }
 
 func (sessions *blockingSessions) Snapshot(ctx context.Context, session string) (inspect.Live, error) {
@@ -186,10 +216,14 @@ func (testReconciler) Apply(_ context.Context, request management.Reconciliation
 
 func TestManagementBundleRoutesAreScopedAuthorizedAndStrict(t *testing.T) {
 	graph := testGraph(t)
+	model, err := inspect.Build(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authoring := &testAuthoring{}
 	bundle, err := NewBundle(BundleConfig{
 		Authorizer: testAuthorizer{graph: graph.Fingerprint}, StaticCatalog: testStaticCatalog{graph: graph},
-		Sessions: testSessions{live: testLive(graph)}, Authoring: authoring,
+		Sessions: testSessions{live: testLive(graph), model: model}, Authoring: authoring,
 		Reconciliation: testReconciler{},
 	})
 	if err != nil {
@@ -249,6 +283,12 @@ func TestManagementBundleRoutesAreScopedAuthorizedAndStrict(t *testing.T) {
 		management.APIPrefix+"/sessions/sess-test/live", "session-token", nil)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), graph.Fingerprint) {
 		t.Fatalf("live response = %d %s", response.Code, response.Body.String())
+	}
+	response = request(t, handler, http.MethodGet,
+		management.APIPrefix+"/sessions/sess-test/model", "session-token", nil)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reaction"`) ||
+		!strings.Contains(response.Body.String(), graph.Fingerprint) {
+		t.Fatalf("session model response = %d %s", response.Code, response.Body.String())
 	}
 
 	duplicate := []byte(`{"path":"agent.ortg","path":"forged.ortg","source":"graph x {}"}`)
@@ -355,6 +395,67 @@ func TestSessionResponseRechecksCapabilityAfterSlowSnapshot(t *testing.T) {
 	}
 }
 
+func TestSessionModelRechecksCapabilityAfterSlowStaticProjection(t *testing.T) {
+	graph := testGraph(t)
+	model, err := inspect.Build(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := &revocableAuthorizer{}
+	authorizer.allowed.Store(true)
+	sessions := &blockingModelSessions{
+		testSessions: testSessions{live: testLive(graph), model: model},
+		entered:      make(chan struct{}, 1),
+		release:      make(chan struct{}),
+	}
+	bundle, err := NewBundle(BundleConfig{Authorizer: authorizer, Sessions: sessions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := bundle.Mount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mounted.Close(ctx); err != nil {
+			t.Errorf("close management bundle: %v", err)
+		}
+	})
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodGet, management.APIPrefix+"/sessions/sess-test/model", nil,
+	)
+	request.Header.Set(management.CapabilityHeader, "scoped-token")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-sessions.entered:
+	case <-time.After(time.Second):
+		t.Fatal("static model projection did not begin after initial authorization")
+	}
+	authorizer.allowed.Store(false)
+	close(sessions.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("revoked static model request did not finish")
+	}
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("revoked capability disclosed a completed static model: %d %s",
+			response.Code, response.Body.String())
+	}
+}
+
 func TestAuthoringRouteRejectsProviderSnapshotNotBoundToSource(t *testing.T) {
 	authoring := &testAuthoring{forgeResult: true}
 	bundle, err := NewBundle(BundleConfig{
@@ -432,10 +533,23 @@ func testGraph(t testing.TB) ir.Graph {
 }
 
 func BenchmarkCanonicalSessionLive(b *testing.B) {
+	benchmarkCanonicalSessionResource(b, "live")
+}
+
+func BenchmarkCanonicalSessionModel(b *testing.B) {
+	benchmarkCanonicalSessionResource(b, "model")
+}
+
+func benchmarkCanonicalSessionResource(b *testing.B, resource string) {
+	b.Helper()
 	graph := testGraph(b)
+	model, err := inspect.Build(graph)
+	if err != nil {
+		b.Fatal(err)
+	}
 	bundle, err := NewBundle(BundleConfig{
 		Authorizer: testAuthorizer{graph: graph.Fingerprint},
-		Sessions:   testSessions{live: testLive(graph)},
+		Sessions:   testSessions{live: testLive(graph), model: model},
 	})
 	if err != nil {
 		b.Fatal(err)
@@ -455,7 +569,7 @@ func BenchmarkCanonicalSessionLive(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	path := management.APIPrefix + "/sessions/sess-test/live"
+	path := management.APIPrefix + "/sessions/sess-test/" + resource
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
@@ -464,7 +578,7 @@ func BenchmarkCanonicalSessionLive(b *testing.B) {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
-			b.Fatalf("canonical live status = %d", response.Code)
+			b.Fatalf("canonical %s status = %d", resource, response.Code)
 		}
 	}
 }

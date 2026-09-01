@@ -87,6 +87,23 @@ func TestLiveInspectionIsAuthenticatedUnguessableAndBoundToOneSession(t *testing
 		live.Configuration == nil || live.Configuration.Digest == "" || len(live.Nodes) == 0 {
 		t.Fatalf("management response fabricated or dropped exact mount evidence: %+v", live)
 	}
+	modelPath := management.APIPrefix + "/sessions/" + firstAccess.SessionID + "/model"
+	status, payload, _ = getManagement(t, server, modelPath, firstAccess.Token)
+	if status != http.StatusOK {
+		t.Fatalf("authorized static session model: status %d: %s", status, payload)
+	}
+	var model inspect.Model
+	if err := json.Unmarshal(payload, &model); err != nil {
+		t.Fatal(err)
+	}
+	if err := management.ValidateSessionModel(live, model); err != nil ||
+		bytes.Contains(payload, []byte(`"source"`)) {
+		t.Fatalf("session model is not the exact source-free live graph: model=%+v err=%v", model, err)
+	}
+	status, _, _ = getManagement(t, server, modelPath, secondAccess.Token)
+	if status != http.StatusNotFound {
+		t.Fatalf("another session capability read the static model: status %d", status)
+	}
 
 	rotated := negotiateInspection(t, first)
 	if rotated.Token == firstAccess.Token {
@@ -356,6 +373,14 @@ type inspectionSnapshotRuntime struct {
 // Return the snapshot exactly as supplied so the management boundary itself,
 // rather than this test double, must preserve runtime-owned maps while redacting.
 func (runtime *inspectionSnapshotRuntime) Live() inspect.Live { return runtime.snapshot }
+
+func (runtime *inspectionSnapshotRuntime) Graph() ir.Graph {
+	graph, _ := runtime.Runtime.(interface{ Graph() ir.Graph })
+	if graph == nil {
+		return ir.Graph{}
+	}
+	return graph.Graph()
+}
 
 func startInspectionServer(
 	t *testing.T, ttl time.Duration, token string, snapshot func(ir.Graph) inspect.Live,

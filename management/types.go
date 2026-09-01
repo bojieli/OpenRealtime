@@ -78,6 +78,7 @@ type DeltaPage struct {
 // an explicit caller hint and implementations still enforce their own ceiling.
 type SessionInspection interface {
 	Snapshot(context.Context, string) (inspect.Live, error)
+	Model(context.Context, string) (inspect.Model, error)
 	Deltas(context.Context, string, uint64, uint32) (DeltaPage, error)
 	Trace(context.Context, string) (inspect.LiveTrace, error)
 }

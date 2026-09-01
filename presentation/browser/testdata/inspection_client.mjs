@@ -83,6 +83,12 @@ if (live.state !== "running" || requests.length !== 1 ||
 if (JSON.stringify(inspection.access()).includes("mgmt_secret_one")) {
   throw new Error("inspection projection exposed its bearer capability");
 }
+const model = await inspection.model();
+if (model.state !== "running" || requests.length !== 2 ||
+    requests[1].url !== "http://127.0.0.1:17777/client/v1/management/sessions/sess_one/model" ||
+    requests[1].options.headers["OpenRealtime-Management-Token"] !== "mgmt_secret_one") {
+  throw new Error("inspection model did not use the same session-scoped capability");
+}
 
 nextResponse = new Response("{}", { status: 200, headers: {
   "Content-Type": "text/plain", "Content-Length": "2",
@@ -105,6 +111,12 @@ await inspection.live().then(
   () => { throw new Error("oversized inspection response was accepted"); },
   () => {},
 );
+nextResponse = new Response(JSON.stringify({ state: "model" }), { status: 200, headers: {
+  "Content-Type": "application/json", "Content-Length": String((32 << 20) + 1),
+} });
+if ((await inspection.model()).state !== "model") {
+  throw new Error("static session model was incorrectly limited to the live-snapshot ceiling");
+}
 const canonicalAccess = access;
 access = Object.freeze({
   ...canonicalAccess, path: "/v1/realtime/sessions/sess_one/live",

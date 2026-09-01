@@ -194,6 +194,16 @@ try {
   check("management snapshot rendered resolved nodes", await waitFor(
     "resolved management snapshot", () => evaluate(
       `document.querySelector('[data-view=inspection] #snapshot')?.textContent.includes('resolution')`)));
+  check("exact static reaction and effect contracts joined live node evidence", await waitFor(
+    "joined inspection model", () => evaluate(`(() => {
+      const view = document.querySelector('[data-view=inspection]');
+      const cards = view?.querySelectorAll('[data-role=inspection-nodes] article') ?? [];
+      return view?.querySelector('#contract-availability')?.dataset.state === "joined" &&
+        cards.length > 0 && [...cards].every((card) =>
+          card.querySelector('[data-role=reaction-contract]') &&
+          card.querySelector('[data-role=reaction-timing]') &&
+          card.querySelector('[data-role=effect-authority]'));
+    })()`)));
   const traceIdentity = await waitForValue("causal trace", () => evaluate(`(() => {
     const view = document.querySelector('[data-view=trace]');
     const exact = view?.querySelector('#trace-identity')?.textContent ?? "";

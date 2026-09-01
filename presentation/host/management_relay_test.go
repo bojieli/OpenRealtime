@@ -103,6 +103,20 @@ func TestManagementRelayForwardsOnlyNarrowSessionCapability(t *testing.T) {
 		response.Header.Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("relay response headers = %v", response.Header)
 	}
+	modelRequest, _ := http.NewRequest(http.MethodGet,
+		hostServer.URL+"/client/v1/management/sessions/sess-1/model", nil)
+	modelRequest.Header.Set(management.CapabilityHeader, "mgmt_scoped")
+	modelResponse, err := http.DefaultClient.Do(modelRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelResponse.Body.Close()
+	modelForward := <-seen
+	if modelResponse.StatusCode != http.StatusOK ||
+		modelForward.path != management.APIPrefix+"/sessions/sess-1/model" ||
+		modelForward.capability != "mgmt_scoped" || modelForward.authorization != "" {
+		t.Fatalf("forwarded session model = status %d request %+v", modelResponse.StatusCode, modelForward)
+	}
 
 	badQuery, _ := http.NewRequest(http.MethodGet,
 		hostServer.URL+"/client/v1/management/sessions/sess-1/live?token=leak", nil)

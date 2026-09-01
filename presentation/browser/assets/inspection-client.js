@@ -1,4 +1,5 @@
 const MAX_MANAGEMENT_BYTES = 32 << 20;
+const MAX_MODEL_BYTES = 64 << 20;
 const MAX_STREAM_CHUNKS = 32_768;
 
 function endpoint(context) {
@@ -24,20 +25,20 @@ function canonicalNegotiatedPath(session) {
   return `/openrealtime/v1/sessions/${session}/live`;
 }
 
-async function readBounded(response) {
+async function readBounded(response, maximum) {
   const declared = response.headers.get("Content-Length");
   if (declared !== null) {
     if (!/^(0|[1-9][0-9]*)$/.test(declared)) {
       throw new Error("inspection response has invalid length");
     }
     const length = Number(declared);
-    if (!Number.isSafeInteger(length) || length > MAX_MANAGEMENT_BYTES) {
+    if (!Number.isSafeInteger(length) || length > maximum) {
       throw new Error("inspection response exceeds limit");
     }
   }
   if (!response.body?.getReader) {
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > MAX_MANAGEMENT_BYTES) throw new Error("inspection response exceeds limit");
+    if (bytes.byteLength > maximum) throw new Error("inspection response exceeds limit");
     return bytes;
   }
   const reader = response.body.getReader();
@@ -50,7 +51,7 @@ async function readBounded(response) {
       if (!(value instanceof Uint8Array)) throw new Error("inspection response stream is invalid");
       chunks.push(value);
       total += value.byteLength;
-      if (total > MAX_MANAGEMENT_BYTES || chunks.length > MAX_STREAM_CHUNKS) {
+      if (total > maximum || chunks.length > MAX_STREAM_CHUNKS) {
         throw new Error("inspection response exceeds limit");
       }
     }
@@ -109,7 +110,7 @@ export default {
       const current = access;
       if (!current) throw new Error("session inspection is unavailable");
       if (Date.now() >= current.expires_at_ms) throw new Error("session inspection capability expired");
-      if (!new Set(["live", "deltas", "trace"]).has(resource)) {
+      if (!new Set(["live", "model", "deltas", "trace"]).has(resource)) {
         throw new Error("unsupported inspection resource");
       }
       const session = canonicalSession(current.session_id);
@@ -148,7 +149,7 @@ export default {
           try { await response.body?.cancel(); } catch {}
           throw new Error("inspection response is not JSON");
         }
-        const bytes = await readBounded(response);
+        const bytes = await readBounded(response, resource === "model" ? MAX_MODEL_BYTES : MAX_MANAGEMENT_BYTES);
         if (access !== current) throw new Error("session inspection capability changed during request");
         const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
         return codec.parse(text);
@@ -170,6 +171,7 @@ export default {
         return () => listeners.delete(listener);
       },
       live: () => read("live"),
+      model: () => read("model"),
       deltas: (after = 0, limit = 256) => read("deltas", { after, limit }),
       trace: () => read("trace"),
     }));

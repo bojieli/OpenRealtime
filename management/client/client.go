@@ -228,6 +228,19 @@ func (client *Client) Snapshot(ctx context.Context, session string) (inspect.Liv
 	return management.RedactLive(snapshot), nil
 }
 
+func (client *Client) Model(ctx context.Context, session string) (inspect.Model, error) {
+	if !management.CanonicalSessionID(session) {
+		return inspect.Model{}, management.ErrInvalid
+	}
+	var model inspect.Model
+	err := client.get(ctx, []string{"sessions", session, "model"}, nil,
+		management.ReadSession, session, maxJSONBytes, &model)
+	if err == nil {
+		err = management.ValidateInspectionModel(model)
+	}
+	return model, err
+}
+
 func (client *Client) Deltas(
 	ctx context.Context, session string, after uint64, limit uint32,
 ) (management.DeltaPage, error) {

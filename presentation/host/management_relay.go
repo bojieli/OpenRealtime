@@ -63,7 +63,7 @@ func NewManagementRelayFactory(client *http.Client, logger *slog.Logger) *Manage
 	return &ManagementRelayFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.management-relay", Revision: 3,
+			Name:          "openrealtime.presentation.host.management-relay", Revision: 4,
 			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 			Requires: []plugin.Requirement{
 				{Contract: presentation.HTTPRoutesContract},
@@ -140,7 +140,7 @@ func (factory *ManagementRelayFactory) relaySession(
 	session := request.PathValue("session")
 	resource := request.PathValue("resource")
 	if !management.CanonicalSessionID(session) ||
-		(resource != "live" && resource != "deltas" && resource != "trace") {
+		(resource != "live" && resource != "model" && resource != "deltas" && resource != "trace") {
 		http.NotFound(writer, request)
 		return
 	}
@@ -149,10 +149,14 @@ func (factory *ManagementRelayFactory) relaySession(
 		http.Error(writer, err.Error(), http.StatusBadRequest)
 		return
 	}
+	responseMaximum := int64(maximumSessionManagementBodyBytes)
+	if resource == "model" {
+		responseMaximum = int64(maximumStaticManagementBodyBytes)
+	}
 	factory.relayRequest(base, target, writer, request, relayRequest{
 		method: http.MethodGet,
 		path:   "/sessions/" + session + "/" + resource,
-		query:  query, responseMaximum: maximumSessionManagementBodyBytes,
+		query:  query, responseMaximum: responseMaximum,
 	})
 }
 

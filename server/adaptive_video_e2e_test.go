@@ -290,6 +290,15 @@ func TestAdaptiveVideoGraphRunsThroughCompiledServerProfileAndRealtimeWebSocket(
 		canonicalLive.Configuration.Digest != graphLive.Configuration.Digest {
 		t.Fatalf("composed management route lost graph identity: canonical=%+v", canonicalLive)
 	}
+	canonicalModel := readAdaptiveInspection[inspect.Model](
+		t,
+		httpServer.URL+management.APIPrefix+"/sessions/"+inspectionAccess.SessionID+"/model",
+		management.CapabilityHeader,
+		inspectionAccess.Token,
+	)
+	if err := management.ValidateSessionModel(canonicalLive, canonicalModel); err != nil {
+		t.Fatalf("composed session model did not join exact graph evidence: %v", err)
+	}
 
 	serverLive := realm.Live()
 	if serverLive.Fingerprint != bundle.Plan.Fingerprint || serverLive.Realm != plugin.ServerRealm ||

@@ -2,11 +2,13 @@ package management
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
 // RuntimeSession is satisfied by graph/runtime.Mounted without coupling this
@@ -77,6 +79,39 @@ func (registry *SessionRegistry) Snapshot(_ context.Context, session string) (in
 		return inspect.Live{}, err
 	}
 	return RedactLive(source.Live()), nil
+}
+
+type runtimeGraphSource interface {
+	Graph() ir.Graph
+}
+
+type runtimeInspectionModelSource interface {
+	InspectionModel() (inspect.Model, error)
+}
+
+func (registry *SessionRegistry) Model(_ context.Context, session string) (inspect.Model, error) {
+	source, err := registry.source(session)
+	if err != nil {
+		return inspect.Model{}, err
+	}
+	var model inspect.Model
+	if provider, found := source.(runtimeInspectionModelSource); found {
+		model, err = provider.InspectionModel()
+	} else if provider, found := source.(runtimeGraphSource); found {
+		model, err = inspect.Build(provider.Graph())
+	} else {
+		return inspect.Model{}, ErrUnavailable
+	}
+	if err != nil {
+		if errors.Is(err, ErrUnavailable) {
+			return inspect.Model{}, err
+		}
+		return inspect.Model{}, fmt.Errorf("%w: build session inspection model: %v", ErrConflict, err)
+	}
+	if err := ValidateSessionModel(source.Live(), model); err != nil {
+		return inspect.Model{}, err
+	}
+	return model, nil
 }
 
 func (registry *SessionRegistry) Trace(_ context.Context, session string) (inspect.LiveTrace, error) {

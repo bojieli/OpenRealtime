@@ -32,10 +32,12 @@ const clientSource = `graph managed-client {
 `
 
 type recordedSession struct {
+	graph ir.Graph
 	live  inspect.Live
 	trace inspect.LiveTrace
 }
 
+func (session *recordedSession) Graph() ir.Graph    { return session.graph }
 func (session *recordedSession) Live() inspect.Live { return session.live.Clone() }
 func (session *recordedSession) RecordedTrace() (inspect.LiveTrace, error) {
 	return session.trace.Clone(), nil
@@ -107,7 +109,7 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 
 	live, trace := liveFixture(t, graph)
 	sessions := management.NewSessionRegistry()
-	disposeSession, err := sessions.Register("sess-client", &recordedSession{live: live, trace: trace})
+	disposeSession, err := sessions.Register("sess-client", &recordedSession{graph: graph, live: live, trace: trace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +190,11 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	}
 	if snapshot.Nodes["source"].LastOutcome != "" {
 		t.Fatal("headless client exposed a payload-derived live field")
+	}
+	model, err := remote.Model(context.Background(), "sess-client")
+	if err != nil || model.Fingerprint != snapshot.Fingerprint || model.GraphID != snapshot.GraphID ||
+		len(model.Nodes) != len(snapshot.Nodes) {
+		t.Fatalf("session model = %+v, %v", model, err)
 	}
 	page, err := remote.Deltas(context.Background(), "sess-client", 0, 8)
 	if err != nil || page.Baseline == nil || page.Next != live.Sequence {

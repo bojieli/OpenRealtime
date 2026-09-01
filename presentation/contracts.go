@@ -126,7 +126,7 @@ var (
 	)
 	ClientInspectionContract = semanticContract(
 		"presentation.client.inspection",
-		"openrealtime/presentation/client/inspection/v1:live-delta-trace-redacted-projections",
+		"openrealtime/presentation/client/inspection/v1:live-static-model-delta-trace-redacted-projections",
 	)
 	ClientManagementOperatorAccessContract = semanticContract(
 		"presentation.client.management_operator_access",
