@@ -40,6 +40,10 @@ function strings(value, label) {
   return result;
 }
 
+function sequence(value, label) {
+  return rows(value ?? [], label).map((entry, index) => text(entry, `${label} ${index}`));
+}
+
 function identity(value, label) {
   object(value, label);
   const name = text(value.name, `${label} name`);
@@ -205,11 +209,18 @@ function flowProjection(value, id) {
   if (!/^flow_[0-9]{6}$/.test(id) || source.correlation !== id) {
     throw new Error("live flow contains an unredacted correlation");
   }
+  const edges = sequence(source.edges, `live flow ${id} edges`);
+  if (edges.length === 0) throw new Error(`live flow ${id} has no traversed edges`);
+  const firstNS = integer(source.first_ns ?? 0, `live flow ${id} first time`);
+  const lastNS = integer(source.last_ns ?? 0, `live flow ${id} last time`);
+  if (lastNS < firstNS) {
+    throw new Error(`live flow ${id} contains impossible traversal timing`);
+  }
   return Object.freeze({
     correlation: id,
-    edges: Object.freeze(strings(source.edges, `live flow ${id} edges`)),
-    first_ns: integer(source.first_ns ?? 0, `live flow ${id} first time`),
-    last_ns: integer(source.last_ns ?? 0, `live flow ${id} last time`),
+    edges: Object.freeze(edges),
+    first_ns: firstNS,
+    last_ns: lastNS,
     truncated: boolean(source.truncated, `live flow ${id} truncated`),
   });
 }
@@ -262,6 +273,7 @@ function liveProjection(value) {
   return Object.freeze({
     graphID, revision, fingerprint: source.fingerprint,
     state: text(source.state, "live graph state"), nodes, edges: Object.freeze(edges),
+    flows: Object.freeze(flows),
     snapshot: Object.freeze({
       state: source.state, nodes: Object.freeze(safeNodes), edges: Object.freeze(edges),
       flows: Object.freeze(flows), dropped: integer(source.trace_dropped ?? 0, "live trace dropped"),
@@ -301,8 +313,21 @@ function joinedProjection(liveValue, modelValue) {
     }
     return Object.freeze({ declared, observed });
   });
+  const edgeByID = new Map(model.edges.map((edge) => [edge.id, edge]));
+  const flows = Object.keys(live.flows).sort().map((id) => {
+    const observed = live.flows[id];
+    const stages = observed.edges.map((edgeID, index) => {
+      const declared = edgeByID.get(edgeID);
+      if (!declared) {
+        throw new Error(`live flow ${id} contains unknown internal edge ${edgeID}`);
+      }
+      return Object.freeze({ index: index + 1, declared });
+    });
+    return Object.freeze({ observed, stages: Object.freeze(stages) });
+  });
   return Object.freeze({
     live, model, nodes: Object.freeze(nodes), edges: Object.freeze(edges),
+    flows: Object.freeze(flows),
   });
 }
 
@@ -343,9 +368,10 @@ function queueWait(value) {
   return `${value.queue_wait_ns} ns cumulative; ${Math.floor(value.queue_wait_ns / value.dequeued)} ns per dequeue`;
 }
 
-function renderJoined(nodeContainer, edgeContainer, joined) {
+function renderJoined(nodeContainer, edgeContainer, flowContainer, joined) {
   nodeContainer.replaceChildren();
   edgeContainer.replaceChildren();
+  flowContainer.replaceChildren();
   for (const { declared, observed } of joined.nodes) {
     const card = node("article");
     card.dataset.nodeId = declared.id;
@@ -412,6 +438,26 @@ function renderJoined(nodeContainer, edgeContainer, joined) {
     line(card, "Queue wait", queueWait(observed));
     edgeContainer.append(card);
   }
+  for (const { observed, stages } of joined.flows) {
+    const card = node("article");
+    card.dataset.flowId = observed.correlation;
+    card.dataset.stageCount = String(stages.length);
+    card.dataset.truncated = String(observed.truncated);
+    card.append(node("h3", observed.correlation));
+    line(card, "First traversal", timestamp(observed.first_ns));
+    line(card, "Last traversal", timestamp(observed.last_ns));
+    line(card, "Elapsed", `${observed.last_ns - observed.first_ns} ns`);
+    line(card, "Retention", observed.truncated ? "truncated at configured bound" : "complete");
+    const path = node("ol");
+    path.dataset.role = "flow-stages";
+    for (const stage of stages) {
+      const edge = stage.declared;
+      path.append(node("li", `Stage ${stage.index}: ${endpointText(edge.from)} → ${endpointText(edge.to)} ` +
+        `via ${edge.id} (${edge.type}; ${edge.delivery})`));
+    }
+    card.append(path);
+    flowContainer.append(card);
+  }
 }
 
 export default {
@@ -451,13 +497,16 @@ export default {
     nodeList.dataset.role = "inspection-nodes";
     const edgeList = node("div");
     edgeList.dataset.role = "inspection-edges";
+    const flowList = node("div");
+    flowList.dataset.role = "inspection-flows";
     const details = node("details");
     details.append(node("summary", "Raw redacted live evidence"));
     const snapshot = node("pre");
     snapshot.id = "snapshot";
     details.append(snapshot);
     section.append(style, header, identityView, contractAvailability,
-      node("h3", "Nodes"), nodeList, node("h3", "Channels"), edgeList, details);
+      node("h3", "Nodes"), nodeList, node("h3", "Channels"), edgeList,
+      node("h3", "Correlated flows"), flowList, details);
     let generation = 0;
 
     const load = async () => {
@@ -473,12 +522,13 @@ export default {
         snapshot.textContent = JSON.stringify(live.snapshot, null, 2);
         if (modelResult.status === "fulfilled") {
           const joined = joinedProjection(liveResult.value, modelResult.value);
-          renderJoined(nodeList, edgeList, joined);
+          renderJoined(nodeList, edgeList, flowList, joined);
           contractAvailability.textContent = "Exact static reaction/effect contracts joined to live node evidence.";
           contractAvailability.dataset.state = "joined";
         } else {
           nodeList.replaceChildren();
           edgeList.replaceChildren();
+          flowList.replaceChildren();
           contractAvailability.textContent = "Live evidence available; exact static reaction contracts are unavailable.";
           contractAvailability.dataset.state = "unavailable";
         }
@@ -487,6 +537,7 @@ export default {
         snapshot.textContent = "";
         nodeList.replaceChildren();
         edgeList.replaceChildren();
+        flowList.replaceChildren();
         availability.textContent = "unavailable";
         identityView.textContent = error?.message ?? String(error);
         contractAvailability.textContent = "Static/live evidence could not be joined safely.";
@@ -508,6 +559,7 @@ export default {
       snapshot.textContent = "";
       nodeList.replaceChildren();
       edgeList.replaceChildren();
+      flowList.replaceChildren();
       if (access) load();
     });
     refresh.addEventListener("click", load);

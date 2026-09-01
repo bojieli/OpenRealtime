@@ -77,7 +77,13 @@ const baseLive = {
       dropped: 2, backpressure: 1, queue_wait_ns: 300,
     },
   },
-  flows: {}, trace_dropped: 0,
+  flows: {
+    flow_000001: {
+      correlation: "flow_000001", edges: [edgeID, edgeID],
+      first_ns: 110, last_ns: 150, truncated: false,
+    },
+  },
+  trace_dropped: 0,
 };
 const baseModel = {
   graph_id: "joined_operator",
@@ -147,10 +153,12 @@ const contract = find(section, (entry) => entry.id === "contract-availability");
 const refresh = find(section, (entry) => entry.id === "refresh");
 const card = find(section, (entry) => entry.dataset.nodeId === nodeID);
 const edgeCard = find(section, (entry) => entry.dataset.edgeId === edgeID);
+const flowCard = find(section, (entry) => entry.dataset.flowId === "flow_000001");
 if (availability?.textContent !== "live" || contract?.dataset.state !== "joined" ||
     card?.dataset.activeRuns !== "2" || card?.dataset.state !== "running" ||
     edgeCard?.dataset.delivery !== "lossy" || edgeCard?.dataset.depth !== "4" ||
-    edgeCard?.dataset.occupancy !== "1") {
+    edgeCard?.dataset.occupancy !== "1" || flowCard?.dataset.stageCount !== "2" ||
+    flowCard?.dataset.truncated !== "false") {
   throw new Error("inspection view did not join exact static and live node evidence");
 }
 for (const expected of [
@@ -164,6 +172,10 @@ for (const expected of [
   "Delivery: lossy; depth 4", "Occupancy: 1/4", "High water: 3/4",
   "Enqueued / dequeued: 7 / 6", "Dropped: 2", "Backpressure: 1",
   "Queue wait: 300 ns cumulative; 50 ns per dequeue",
+  "First traversal: 110 ns from mount clock", "Last traversal: 150 ns from mount clock",
+  "Elapsed: 40 ns", "Retention: complete",
+  `Stage 1: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy)`,
+  `Stage 2: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy)`,
 ]) {
   if (!section.textContent.includes(expected)) throw new Error(`joined view omitted ${expected}`);
 }
@@ -237,9 +249,36 @@ if (availability.textContent !== "unavailable" ||
   throw new Error("inspection view accepted a missing declared channel");
 }
 
+live = structuredClone(baseLive);
+live.flows.flow_000001.edges = ["invented"];
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("contains unknown internal edge invented")) {
+  throw new Error("inspection view accepted a flow through an undeclared edge");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.last_ns = 109;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("impossible traversal timing")) {
+  throw new Error("inspection view accepted impossible flow timing");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.first_ns = 0;
+live.flows.flow_000001.last_ns = 0;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" ||
+    !find(section, (entry) => entry.dataset.flowId === "flow_000001") ||
+    !section.textContent.includes("First traversal: not observed")) {
+  throw new Error("inspection view rejected a valid zero-origin mount clock");
+}
+
 accessListener(null);
 if (availability.textContent !== "waiting" || section.dataset.sessionId !== "" ||
-    find(section, (entry) => entry.dataset.nodeId === nodeID)) {
+    find(section, (entry) => entry.dataset.nodeId === nodeID) ||
+    find(section, (entry) => entry.dataset.flowId === "flow_000001")) {
   throw new Error("inspection capability loss retained session evidence");
 }
 for (const dispose of [...disposers].reverse()) await dispose();

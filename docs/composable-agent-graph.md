@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 197 of 249 explicit tracker boxes are checked (79.1%)
+At this reconciliation, 198 of 250 explicit tracker boxes are checked (79.2%)
 and 52 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -1823,7 +1823,7 @@ of-done requirement.
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and complete cross-node/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and per-stage traversal timing, broader graphical editing, and complete output-to-cause semantics |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact receipts, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
@@ -2458,7 +2458,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 707/6,147 at 2026-09-01 19:43 UTC. This dated progress checkpoint is
+  attempt 714/6,147 at 2026-09-01 19:51 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -2798,8 +2798,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     browser operator view. Repeated triggers and shutdown cannot rewrite the
     first occurrence, while Go and JavaScript boundaries reject an output or
     completion that predates its retained trigger. This closes node-local
-    trigger-relative timing; live authority decisions and complete cross-node
-    stage attribution remain open.
+    trigger-relative timing; live authority decisions and per-stage traversal
+    timing remain open.
   - [x] Join every exact static internal-edge delivery/depth contract to its
     redacted live queue evidence and render occupancy, high-water mark,
     enqueue/dequeue counts, drops, backpressure, and cumulative/per-dequeue
@@ -2807,6 +2807,16 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     reject invalid delivery/depth, counter arithmetic, undeclared or missing
     edges, and live occupancy beyond the immutable depth; focused adversarial
     JavaScript and real-Chromium DOM gates cover the complete projection.
+  - [x] Join every retained pseudonymous live flow to its exact immutable
+    internal-edge sequence and render the repeated cross-node stages, first/last
+    traversal times, elapsed duration, and truncation state in the browser
+    operator view. Feedback-loop edge repetitions remain visible instead of
+    being rejected as duplicates. Empty flows, raw correlations, unknown graph
+    edges, regressing timestamps, and markup-shaped node/edge identities fail
+    closed before rendering; focused normal, ten shuffled, race, full
+    presentation-subtree, real-Chromium, vet, and locked-bundle benchmark gates
+    are green. Per-edge traversal timestamps and live authority decisions remain
+    separate open work.
   - [x] Serve the exact source-free static inspection model under the same
     narrow session capability and join it to redacted live node evidence in a
     text-only browser operator view. Identity drift, unredacted identifiers,
@@ -3033,8 +3043,9 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   - [x] Join immutable static graph semantics to redacted live node and channel
     evidence in the production browser view, including trigger-relative node
     timing, cancellation/outcome state, queue depth and occupancy, loss,
-    backpressure, and queue wait. Complete cross-node output correlation and
-    live authority-decision attribution remain open.
+    backpressure, queue wait, and exact pseudonymous cross-node flow stages.
+    Per-edge traversal timing and live authority-decision attribution remain
+    open.
 
 ### Phase 7: dynamic reconciliation
 
@@ -3453,8 +3464,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
   - [x] The joined browser operator view already binds the immutable static
     graph to redacted live nodes and channels, renders trigger-relative node
     timing and exact queue depth/counters/wait, and can export and replay a
-    fingerprinted payload-free trace. Live authority-decision evidence and
-    complete cross-node output-to-cause attribution keep the parent open.
+    fingerprinted payload-free trace. The joined live view now renders bounded
+    pseudonymous cross-node edge sequences, including repeated feedback-loop
+    stages. Live authority-decision evidence, per-edge timing, and complete
+    policy/observation/state semantics keep the parent open.
 - [ ] The browser presentation host/client and macOS app are composable plugin
     profiles over the same clean realtime and observability APIs; the gateway
     contains no privileged UI, and real cross-client end-to-end tests pass.

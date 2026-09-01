@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestInspectionViewRendersExactChannelTelemetryInChromium(t *testing.T) {
+func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.T) {
 	chromium := requireInspectionChromium(t)
 	module, err := browserModule("inspection-view.js")
 	if err != nil {
@@ -50,6 +50,11 @@ func TestInspectionViewRendersExactChannelTelemetryInChromium(t *testing.T) {
 		`data-depth="4"`, `data-occupancy="1"`, "Delivery: ", "lossy; depth 4",
 		"Occupancy: ", "1/4", "Dropped: ", "2", "Backpressure: ", "1",
 		"Queue wait: ", "300 ns cumulative; 50 ns per dequeue",
+		`data-flow-id="flow_000001"`, `data-stage-count="2"`, `data-truncated="false"`,
+		"First traversal: ", "110 ns from mount clock", "Last traversal: ",
+		"150 ns from mount clock", "Elapsed: ", "40 ns", "Retention: ", "complete",
+		"Stage 1: worker.out → worker.in via channel (Event(test.Value); lossy)",
+		"Stage 2: worker.out → worker.in via channel (Event(test.Value); lossy)",
 	} {
 		if !strings.Contains(document, expected) {
 			t.Fatalf("Chromium channel view omitted %q:\n%s", expected, document)
@@ -97,7 +102,10 @@ const live = {
     occupancy: 1, high_water: 3, enqueued: 7, dequeued: 6,
     dropped: 2, backpressure: 1, queue_wait_ns: 300,
   } },
-  flows: {}, trace_dropped: 0,
+  flows: { flow_000001: {
+    correlation: "flow_000001", edges: ["channel", "channel"],
+    first_ns: 110, last_ns: 150, truncated: false,
+  } }, trace_dropped: 0,
 };
 const model = {
   graph_id: "channel_operator", revision: 1, fingerprint,
@@ -131,10 +139,13 @@ try {
     lifecycle: { defer() {} },
   });
   for (let attempt = 0; attempt < 50; attempt++) {
-    if (document.querySelector('[data-edge-id="channel"]')) break;
+    if (document.querySelector('[data-edge-id="channel"]') &&
+        document.querySelector('[data-flow-id="flow_000001"]')) break;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  document.documentElement.dataset.ready = String(Boolean(document.querySelector('[data-edge-id="channel"]')));
+  document.documentElement.dataset.ready = String(Boolean(
+    document.querySelector('[data-edge-id="channel"]') &&
+    document.querySelector('[data-flow-id="flow_000001"]')));
 } catch (error) {
   document.documentElement.dataset.error = error?.message ?? String(error);
 }
