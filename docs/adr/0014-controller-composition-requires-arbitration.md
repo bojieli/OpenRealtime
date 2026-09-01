@@ -1,6 +1,9 @@
 # ADR-0014: Controller composition requires explicit arbitration
 
-**Status:** accepted.
+**Status:** accepted; amended by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Explicit arbitration
+remains mandatory, while controller selection and wiring are typed graph or
+profile choices rather than binding species.
 
 ## Context
 

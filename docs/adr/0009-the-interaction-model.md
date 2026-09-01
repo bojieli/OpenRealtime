@@ -2,8 +2,10 @@
 
 ## Status
 
-Proposed, and measured. Shipped behind `-policy-models interaction`, off by
-default. Extends ADR-0005.
+Superseded as a universal replacement for other interaction controllers by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Retained as a measured
+interaction-policy element and reference-graph choice. It shipped behind
+`-policy-models interaction`, off by default, and extends ADR-0005.
 
 End to end it takes a scripted-conversation suite from 33% to 60%, and two
 capabilities from never working to working: counting out loud while somebody

@@ -1,6 +1,9 @@
 # ADR-0004: One safe-point event loop for asynchronous interaction
 
-- Status: Accepted for the experimental runtime
+- Status: Superseded as a universal runtime topology by
+  [ADR-0015](0015-agent-topology-is-a-versioned-graph.md); retained as the
+  accepted safe-point reference profile and for its bounded-asynchrony,
+  immutable-prefix, and stale-publication invariants
 - Date: 2026-08-18
 - Supersedes: ad hoc direct callback mutation in the target M8/M9 architecture
 

@@ -1,6 +1,10 @@
 # ADR-0012: Make evolving architectures first-class project objects
 
-**Status:** accepted.
+**Status:** accepted; amended by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Immutable revision,
+lineage, fingerprint, and maturity semantics remain; production topology is
+selected by an exact graph plan rather than derived from binding names or
+structural flags.
 
 ## Context
 

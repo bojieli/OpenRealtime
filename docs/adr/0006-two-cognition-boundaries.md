@@ -2,9 +2,12 @@
 
 ## Status
 
-Accepted, v1.0. Extends ADR-0003. The first boundary is narrowed for an
-explicit cascade computer-use mode by ADR-0010; it remains unchanged by
-default and for every other tool and binding.
+Superseded as a universal fast/slow topology by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). It remains the exact
+contract of reference profiles that select proposal-only fast cognition and
+silent slow cognition. Its independent external-effect authority requirement
+remains accepted. The historical first boundary was narrowed for an explicit
+cascade computer-use mode by ADR-0010.
 
 ## Context
 

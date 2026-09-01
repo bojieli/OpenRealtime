@@ -2,8 +2,11 @@
 
 ## Status
 
-Accepted, v1.0; model-taxonomy language amended by
-[ADR-0011](0011-capabilities-not-model-species.md).
+Superseded as a mandatory runtime partition by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Its requirement that
+policies be explicit, replaceable, and measurable remains accepted; the exact
+plane layout is a reference-graph choice. Model-taxonomy language was also
+amended by [ADR-0011](0011-capabilities-not-model-species.md).
 
 ## Context
 

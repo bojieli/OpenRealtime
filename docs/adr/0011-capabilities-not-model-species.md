@@ -1,6 +1,9 @@
 # ADR-0011: Compose capabilities instead of model species
 
-**Status:** accepted.
+**Status:** accepted; amended by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Capabilities remain
+independent of model species, while the ownership vector is now a
+compatibility/inspection projection rather than a topology authority.
 
 ## Context
 

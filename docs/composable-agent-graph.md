@@ -1789,7 +1789,7 @@ reference graphs, or conformance evidence.
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Production graph/config/profile catalog, graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
-| 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
+| 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
 Current checkpoint notes:
 
@@ -2630,7 +2630,12 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   profiles are live; no production compatibility window is required.
 - [ ] Remove kernel assumptions about slow ownership/speech and mandatory audio.
 - [ ] Reduce the architecture catalog and status model to graph-derived facts.
-- [ ] Amend or supersede ADRs whose statements became reference-graph choices.
+- [x] Amend or supersede ADRs whose statements became reference-graph choices.
+  ADR-0015 separates retained safety/reproducibility invariants from historical
+  topology mandates, and the status blocks of ADR-0004 through ADR-0014 now
+  identify whether each affected decision is superseded or merely represented
+  by graph/profile contracts. Historical evidence keeps its original meaning;
+  legacy launch-path deletion remains a separate unchecked implementation gate.
 
 ## 26. Testing and production gates
 

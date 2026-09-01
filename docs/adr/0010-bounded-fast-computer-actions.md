@@ -2,8 +2,11 @@
 
 ## Status
 
-Accepted. Narrows the first boundary in ADR-0006 for an explicit realtime
-computer-use deployment.
+Superseded as a binding/CLI topology mode by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Retained as a measured
+reference composition and for its bounded authority, confirmation, target,
+ledger, audit, and result-feedback requirements. It historically narrowed the
+first boundary in ADR-0006 for an explicit realtime computer-use deployment.
 
 ## Context
 

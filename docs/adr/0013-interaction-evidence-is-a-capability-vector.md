@@ -1,6 +1,10 @@
 # ADR-0013: Attest interaction evidence as a capability vector
 
-**Status:** accepted.
+**Status:** accepted; amended by
+[ADR-0015](0015-agent-topology-is-a-versioned-graph.md). Exact selected
+evidence remains mandatory, while the vector is a compatibility/inspection
+projection of graph ports and selected opaque capability boundaries rather
+than a topology authority.
 
 ## Context
 
