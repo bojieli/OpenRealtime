@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	ErrReconcileStale       = errors.New("plugin reconciliation candidate is stale")
-	ErrReconcileNoChanges   = errors.New("plugin reconciliation candidate has no changes")
-	ErrStateMigrationNeeded = errors.New("plugin reconciliation requires unsupported state migration")
+	ErrReconcileStale               = errors.New("plugin reconciliation candidate is stale")
+	ErrReconcileNoChanges           = errors.New("plugin reconciliation candidate has no changes")
+	ErrCandidatePreMountUnsupported = errors.New("plugin reconciliation candidate cannot be pre-mounted")
+	ErrStateMigrationNeeded         = errors.New("plugin reconciliation requires unsupported state migration")
 )
 
 const ReconcileReceiptFormatVersion = 1
@@ -68,11 +69,27 @@ type ReconcileReceipt struct {
 type preparedUpdate struct {
 	entry          *mountedEntry
 	factory        Factory
+	preMounter     CandidatePreMounter
 	implementation string
 	artifact       inspect.ArtifactIdentity
 	config         json.RawMessage
 	permissions    permissionSet
 	transition     EntryTransition
+	candidate      *preparedCandidateMount
+}
+
+type preparedCandidateMount struct {
+	mount   CandidateMount
+	scope   *lifecycleScope
+	adopted bool
+}
+
+type candidateLifecycleView struct{ scope *lifecycleScope }
+
+func (lifecycle candidateLifecycleView) Defer(
+	name string, dispose func(context.Context) error,
+) error {
+	return lifecycle.scope.Defer(name, dispose)
 }
 
 type previousEntry struct {
@@ -84,11 +101,12 @@ type previousEntry struct {
 }
 
 // Reconcile atomically applies implementation, values, and permission changes
-// under the same immutable plan. It preflights every candidate before
-// quiescing the affected dependency closure, rolls the complete set back on a
-// mount failure, and refuses stateful rows until an explicit state-migration
-// service exists. Topology/descriptor changes require a future plan-level
-// reconciliation API and cannot be smuggled through this method.
+// under the same immutable plan. It validates and effect-restricted pre-mounts
+// every changed row before quiescing the affected dependency closure, rolls the
+// complete set back on an activation failure, and refuses stateful rows until
+// an explicit state-migration service exists. Topology/descriptor changes
+// require a future plan-level reconciliation API and cannot be smuggled through
+// this method.
 func (mounted *Mounted) Reconcile(
 	ctx context.Context, candidate ReconcileCandidate,
 ) (ReconcileReceipt, error) {
@@ -126,6 +144,23 @@ func (mounted *Mounted) Reconcile(
 	if len(prepared) == 0 {
 		return ReconcileReceipt{}, ErrReconcileNoChanges
 	}
+	if err := mounted.preMountReconciliationLocked(ctx, prepared); err != nil {
+		return ReconcileReceipt{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation canceled after candidate pre-mount"),
+		)
+		return ReconcileReceipt{}, errors.Join(
+			fmt.Errorf("reconcile plugin plan: %w", err), cleanupErr,
+		)
+	}
+	if err := mounted.realmErrorLocked("reconcile plugin plan after candidate pre-mount"); err != nil {
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation realm ended after candidate pre-mount"),
+		)
+		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
+	}
 	affected := make(map[string]struct{})
 	previous := make(map[string]previousEntry, len(prepared))
 	for _, update := range prepared {
@@ -142,10 +177,14 @@ func (mounted *Mounted) Reconcile(
 		// Restoration is an integrity obligation, not optional work owned by the
 		// caller's request context. A canceled request must not strand the realm
 		// inactive or make restored lifecycle scopes inherit cancellation.
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation did not reach its safe point"),
+		)
 		restoreErr := mounted.mountEligibleForOperationLocked(mounted.realm, affected)
 		return ReconcileReceipt{}, errors.Join(
 			fmt.Errorf("reconcile plugin plan could not quiesce affected entries: %w", err),
 			wrapOptional("restore after quiesce failure", restoreErr),
+			wrapOptional("dispose pre-mounted candidate", cleanupErr),
 		)
 	}
 	for _, update := range prepared {
@@ -159,11 +198,28 @@ func (mounted *Mounted) Reconcile(
 	// Successful scopes inherit the realm owner, never request-scoped values;
 	// request cancellation is forwarded only until mounting reaches its commit
 	// point.
-	candidateErr := mounted.mountEligibleForOperationLocked(ctx, affected)
+	candidates := make(map[string]*preparedCandidateMount, len(prepared))
+	for index := range prepared {
+		candidates[prepared[index].entry.plan.Entry.ID] = prepared[index].candidate
+	}
+	candidateErr := mounted.mountEligibleWithCandidatesForOperationLocked(ctx, affected, candidates)
+	if candidateErr == nil {
+		for index := range prepared {
+			if !prepared[index].entry.active || !prepared[index].candidate.adopted {
+				candidateErr = errors.Join(candidateErr, fmt.Errorf(
+					"reconcile plugin candidate entry %s did not activate",
+					prepared[index].entry.plan.Entry.ID,
+				))
+			}
+		}
+	}
 	if candidateErr != nil {
 		recoveryContext := mounted.realm
 		cleanupErr := mounted.unmountSetLocked(
 			recoveryContext, affected, errors.New("plugin reconciliation rollback"),
+		)
+		preMountCleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation candidate rollback"),
 		)
 		for id, value := range previous {
 			entry := mounted.byID[id]
@@ -175,10 +231,11 @@ func (mounted *Mounted) Reconcile(
 		}
 		mounted.sequence.Add(1)
 		rollbackErr := mounted.mountEligibleForOperationLocked(recoveryContext, affected)
-		if rollbackErr != nil || cleanupErr != nil {
+		if rollbackErr != nil || cleanupErr != nil || preMountCleanupErr != nil {
 			return ReconcileReceipt{}, errors.Join(
 				fmt.Errorf("reconcile plugin candidate failed: %w", candidateErr),
 				wrapOptional("candidate cleanup", cleanupErr),
+				wrapOptional("pre-mounted candidate cleanup", preMountCleanupErr),
 				wrapOptional("rollback", rollbackErr),
 			)
 		}
@@ -288,7 +345,100 @@ func (mounted *Mounted) prepareReconciliationLocked(updates []EntryUpdate) ([]pr
 			},
 		})
 	}
+	order := make(map[string]int, len(mounted.entries))
+	for index, entry := range mounted.entries {
+		order[entry.plan.Entry.ID] = index
+	}
+	sort.Slice(prepared, func(left, right int) bool {
+		return order[prepared[left].entry.plan.Entry.ID] < order[prepared[right].entry.plan.Entry.ID]
+	})
+	for index := range prepared {
+		preMounter, supportsPreMount := prepared[index].factory.(CandidatePreMounter)
+		if !supportsPreMount {
+			return nil, fmt.Errorf("%w: entry %s implementation %q",
+				ErrCandidatePreMountUnsupported, prepared[index].entry.plan.Entry.ID,
+				prepared[index].implementation)
+		}
+		prepared[index].preMounter = preMounter
+	}
 	return prepared, nil
+}
+
+func (mounted *Mounted) preMountReconciliationLocked(
+	operation context.Context, prepared []preparedUpdate,
+) error {
+	for index := range prepared {
+		update := &prepared[index]
+		entry := update.entry
+		bindings := make(map[string]plugin.DependencyBinding, len(entry.plan.Dependencies))
+		services := boundServices{store: mounted.store, bindings: bindings}
+		for _, binding := range entry.plan.Dependencies {
+			bindings[binding.Service.Name] = binding
+			if binding.Optional {
+				continue
+			}
+			if _, _, _, _, found := services.Lookup(binding.Service.Name); !found {
+				cleanupErr := mounted.disposePreparedCandidatesLocked(
+					prepared, errors.New("plugin reconciliation pre-mount dependency unavailable"),
+				)
+				return errors.Join(fmt.Errorf(
+					"reconcile plugin candidate entry %s requires unavailable service %s from %s",
+					entry.plan.Entry.ID, binding.Service.Name, binding.Provider,
+				), cleanupErr)
+			}
+		}
+
+		scope := newLifecycleScope(mounted.realm, entry.plan.Entry.ID+":candidate", nil)
+		stopOperation := context.AfterFunc(operation, func() {
+			scope.cancel(context.Cause(operation))
+		})
+		candidate, err := update.preMounter.PreMount(scope.ctx, CandidateContext{
+			EntryID: entry.plan.Entry.ID, Identity: entry.plan.Identity,
+			Config: slices.Clone(update.config), Services: services,
+			Lifecycle: candidateLifecycleView{scope: scope}, Permissions: update.permissions.Clone(),
+			Descriptor: entry.plan.Descriptor.Clone(),
+		})
+		if !stopOperation() || operation.Err() != nil {
+			err = errors.Join(err, context.Cause(operation))
+		}
+		if cause := context.Cause(mounted.realm); cause != nil {
+			err = errors.Join(err, fmt.Errorf("realm lifecycle ended: %w", cause))
+		}
+		if nilServiceValue(candidate) {
+			err = errors.Join(err, errors.New("candidate pre-mount returned a nil activation"))
+		}
+		update.candidate = &preparedCandidateMount{mount: candidate, scope: scope}
+		if err != nil {
+			cleanupErr := mounted.disposePreparedCandidatesLocked(
+				prepared, errors.New("plugin reconciliation candidate pre-mount failed"),
+			)
+			return errors.Join(fmt.Errorf(
+				"reconcile plugin candidate entry %s pre-mount: %w", entry.plan.Entry.ID, err,
+			), cleanupErr)
+		}
+	}
+	return nil
+}
+
+func (mounted *Mounted) disposePreparedCandidatesLocked(
+	prepared []preparedUpdate, cause error,
+) error {
+	var failures []error
+	for index := len(prepared) - 1; index >= 0; index-- {
+		candidate := prepared[index].candidate
+		if candidate == nil || candidate.scope == nil {
+			continue
+		}
+		cleanup, cancel := context.WithTimeout(context.Background(), mounted.timeout)
+		err := candidate.scope.close(cleanup, cause)
+		cancel()
+		if err != nil {
+			failures = append(failures, fmt.Errorf(
+				"dispose pre-mounted plugin %s: %w", prepared[index].entry.plan.Entry.ID, err,
+			))
+		}
+	}
+	return errors.Join(failures...)
 }
 
 func permissionSetsEqual(left, right permissionSet) bool {

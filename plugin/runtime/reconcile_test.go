@@ -74,12 +74,26 @@ func TestReconcileAppliesMultiEntryCandidateAndReturnsExactReceipt(t *testing.T)
 	}
 	assertLiveImplementation(t, after, "alpha", "alpha-v2", reconcileArtifact("alpha-v2", "build:alpha-2"))
 	assertLiveImplementation(t, after, "beta", "beta-v2", reconcileArtifact("beta-v2", "build:beta-2"))
+	if after.Entries["alpha"].Effects != 3 || after.Entries["beta"].Effects != 2 {
+		t.Fatalf("live candidate effects omit nested pre-mount ownership: alpha=%d beta=%d",
+			after.Entries["alpha"].Effects, after.Entries["beta"].Effects)
+	}
 	assertObservedMount(t, fixture.alphaV2, `{"limit":2,"mode":"new-alpha"}`, []plugin.Permission{{
 		Kind: "network.request", Resource: "api", Operations: []string{"write"},
 	}}, map[string]string{})
 	assertObservedMount(t, fixture.betaV2, `{"limit":2,"mode":"new-beta"}`, []plugin.Permission{{
 		Kind: "storage.file", Resource: "workspace", Operations: []string{"read", "write"},
 	}}, map[string]string{"client.alpha": "alpha-v2:client.alpha"})
+	assertObservedPreMount(t, fixture.alphaV2, `{"limit":2,"mode":"new-alpha"}`, []plugin.Permission{{
+		Kind: "network.request", Resource: "api", Operations: []string{"write"},
+	}}, map[string]string{})
+	assertObservedPreMount(t, fixture.betaV2, `{"limit":2,"mode":"new-beta"}`, []plugin.Permission{{
+		Kind: "storage.file", Resource: "workspace", Operations: []string{"read", "write"},
+	}}, map[string]string{"client.alpha": "alpha-v1:client.alpha"})
+	if fixture.alphaV2.preMountDisposals() != 0 || fixture.betaV2.preMountDisposals() != 0 {
+		t.Fatalf("activated candidate preparation was disposed early: alpha=%d beta=%d",
+			fixture.alphaV2.preMountDisposals(), fixture.betaV2.preMountDisposals())
+	}
 	if fixture.alphaV1.disposals() != 1 || fixture.betaV1.disposals() != 1 {
 		t.Fatalf("old composition disposal counts = alpha:%d beta:%d, want 1 each",
 			fixture.alphaV1.disposals(), fixture.betaV1.disposals())
@@ -123,6 +137,32 @@ func TestReconcileCandidateMountFailureRestoresCompletePreviousComposition(t *te
 		t.Fatalf("rollback disposal counts = old alpha:%d beta:%d, candidate alpha:%d beta:%d",
 			fixture.alphaV1.disposals(), fixture.betaV1.disposals(),
 			fixture.alphaV2.disposals(), fixture.betaV2.disposals())
+	}
+}
+
+func TestReconcileActivatedPreMountResourcesFollowTheLiveLifecycle(t *testing.T) {
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{})
+	before := fixture.mounted.Live()
+	if _, err := fixture.mounted.Reconcile(
+		context.Background(), fixture.changedCandidate(before.Sequence),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.alphaV2.preMountDisposals() != 0 || fixture.betaV2.preMountDisposals() != 0 {
+		t.Fatal("activated candidate preparation was disposed before live close")
+	}
+	if err := fixture.mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.alphaV2.preMountDisposals() != 1 || fixture.betaV2.preMountDisposals() != 1 {
+		t.Fatalf("live close candidate preparation disposals = alpha:%d beta:%d, want one each",
+			fixture.alphaV2.preMountDisposals(), fixture.betaV2.preMountDisposals())
+	}
+	if err := fixture.mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.alphaV2.preMountDisposals() != 1 || fixture.betaV2.preMountDisposals() != 1 {
+		t.Fatal("idempotent live close repeated candidate preparation disposal")
 	}
 }
 
@@ -173,6 +213,100 @@ func TestReconcileCanceledBeforeSafePointDoesNotTeardown(t *testing.T) {
 	assertUnchangedBeforeTeardown(t, fixture, before.Sequence)
 }
 
+func TestReconcilePreMountFailureDoesNotTeardownLiveComposition(t *testing.T) {
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{
+		betaV2PreMountFailure: errors.New("candidate dependency is unavailable"),
+	})
+	before := fixture.mounted.Live()
+
+	receipt, err := fixture.mounted.Reconcile(
+		context.Background(), fixture.changedCandidate(before.Sequence),
+	)
+	if err == nil || !strings.Contains(err.Error(), "entry beta pre-mount") ||
+		!strings.Contains(err.Error(), "candidate dependency is unavailable") {
+		t.Fatalf("Reconcile() pre-mount error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("failed pre-mount returned a receipt: %#v", receipt)
+	}
+	assertUnchangedBeforeTeardown(t, fixture, before.Sequence)
+	if fixture.alphaV2.preMounts() != 1 || fixture.betaV2.preMounts() != 1 ||
+		fixture.alphaV2.preMountDisposals() != 1 || fixture.betaV2.preMountDisposals() != 1 ||
+		fixture.alphaV2.mounts() != 0 || fixture.betaV2.mounts() != 0 {
+		t.Fatalf("pre-mount failure lifecycle = alpha pre/mount/dispose %d/%d/%d, beta %d/%d/%d",
+			fixture.alphaV2.preMounts(), fixture.alphaV2.mounts(), fixture.alphaV2.preMountDisposals(),
+			fixture.betaV2.preMounts(), fixture.betaV2.mounts(), fixture.betaV2.preMountDisposals())
+	}
+}
+
+func TestReconcileCancellationDuringPreMountDoesNotTeardownLiveComposition(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{
+		cancelBetaV2PreMount: cancel,
+	})
+	before := fixture.mounted.Live()
+
+	receipt, err := fixture.mounted.Reconcile(ctx, fixture.changedCandidate(before.Sequence))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Reconcile() pre-mount cancellation error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("canceled pre-mount returned a receipt: %#v", receipt)
+	}
+	assertUnchangedBeforeTeardown(t, fixture, before.Sequence)
+	if fixture.alphaV2.preMountDisposals() != 1 || fixture.betaV2.preMountDisposals() != 1 ||
+		fixture.alphaV2.mounts() != 0 || fixture.betaV2.mounts() != 0 {
+		t.Fatalf("canceled pre-mount leaked or activated: alpha=%d/%d beta=%d/%d",
+			fixture.alphaV2.preMountDisposals(), fixture.alphaV2.mounts(),
+			fixture.betaV2.preMountDisposals(), fixture.betaV2.mounts())
+	}
+}
+
+func TestReconcileRequiresPreMountSupportBeforeCandidateAcquisition(t *testing.T) {
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{betaV2NoPreMount: true})
+	before := fixture.mounted.Live()
+
+	receipt, err := fixture.mounted.Reconcile(
+		context.Background(), fixture.changedCandidate(before.Sequence),
+	)
+	if !errors.Is(err, pluginruntime.ErrCandidatePreMountUnsupported) ||
+		!strings.Contains(err.Error(), "entry beta") {
+		t.Fatalf("Reconcile() unsupported pre-mount error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("unsupported pre-mount returned a receipt: %#v", receipt)
+	}
+	assertUnchangedBeforeTeardown(t, fixture, before.Sequence)
+	if fixture.alphaV2.preMounts() != 0 || fixture.betaV2.preMounts() != 0 ||
+		fixture.alphaV2.mounts() != 0 || fixture.betaV2.mounts() != 0 {
+		t.Fatalf("support preflight acquired a candidate: alpha=%d/%d beta=%d/%d",
+			fixture.alphaV2.preMounts(), fixture.alphaV2.mounts(),
+			fixture.betaV2.preMounts(), fixture.betaV2.mounts())
+	}
+}
+
+func TestReconcileRejectsTypedNilPreMountBeforeLiveTeardown(t *testing.T) {
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{betaV2TypedNil: true})
+	before := fixture.mounted.Live()
+
+	receipt, err := fixture.mounted.Reconcile(
+		context.Background(), fixture.changedCandidate(before.Sequence),
+	)
+	if err == nil || !strings.Contains(err.Error(), "nil activation") {
+		t.Fatalf("Reconcile() typed-nil pre-mount error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("typed-nil pre-mount returned a receipt: %#v", receipt)
+	}
+	assertUnchangedBeforeTeardown(t, fixture, before.Sequence)
+	if fixture.alphaV2.preMountDisposals() != 1 || fixture.betaV2.preMountDisposals() != 1 ||
+		fixture.alphaV2.mounts() != 0 || fixture.betaV2.mounts() != 0 {
+		t.Fatalf("typed-nil pre-mount leaked or activated: alpha=%d/%d beta=%d/%d",
+			fixture.alphaV2.preMountDisposals(), fixture.alphaV2.mounts(),
+			fixture.betaV2.preMountDisposals(), fixture.betaV2.mounts())
+	}
+}
+
 func TestReconcileSuccessfulScopesOutliveRequestContext(t *testing.T) {
 	type contextKey string
 	const (
@@ -202,6 +336,16 @@ func TestReconcileSuccessfulScopesOutliveRequestContext(t *testing.T) {
 		}
 		if got := mountedContext.Value(requestKey); got != nil {
 			t.Fatalf("%s candidate retained request-only value: %#v", state.label, got)
+		}
+		preparedContext := state.latestPreMount().ctx
+		if err := preparedContext.Err(); err != nil {
+			t.Fatalf("%s pre-mount scope inherited completed request context: %v", state.label, err)
+		}
+		if got := preparedContext.Value(realmKey); got != "owner" {
+			t.Fatalf("%s pre-mount lost realm value: %#v", state.label, got)
+		}
+		if got := preparedContext.Value(requestKey); got != nil {
+			t.Fatalf("%s pre-mount retained request-only value: %#v", state.label, got)
 		}
 	}
 }
@@ -398,11 +542,15 @@ func BenchmarkReconcileLeafPlan64(b *testing.B) {
 }
 
 type reconcileFixtureOptions struct {
-	betaV2Failure     error
-	statefulAlpha     bool
-	cancelBetaV2Mount context.CancelFunc
-	rejectCanceled    bool
-	realm             context.Context
+	betaV2Failure         error
+	betaV2PreMountFailure error
+	betaV2NoPreMount      bool
+	betaV2TypedNil        bool
+	statefulAlpha         bool
+	cancelBetaV2Mount     context.CancelFunc
+	cancelBetaV2PreMount  context.CancelFunc
+	rejectCanceled        bool
+	realm                 context.Context
 }
 
 type reconcileFixture struct {
@@ -444,7 +592,9 @@ func mountReconcileFixture(t *testing.T, options reconcileFixtureOptions) reconc
 		alphaV2: &reconcileFactoryState{label: "alpha-v2"},
 		betaV1:  &reconcileFactoryState{label: "beta-v1", rejectCanceled: options.rejectCanceled},
 		betaV2: &reconcileFactoryState{
-			label: "beta-v2", fail: options.betaV2Failure, cancelMount: options.cancelBetaV2Mount,
+			label: "beta-v2", fail: options.betaV2Failure,
+			preMountFail: options.betaV2PreMountFailure, typedNilCandidate: options.betaV2TypedNil,
+			cancelMount: options.cancelBetaV2Mount, cancelPreMount: options.cancelBetaV2PreMount,
 		},
 	}
 	registry := pluginruntime.NewRegistry()
@@ -457,9 +607,13 @@ func mountReconcileFixture(t *testing.T, options reconcileFixtureOptions) reconc
 	mustRegisterReconcileFactory(t, registry, "beta-v1", "build:beta-1", reconcileFactory{
 		descriptor: beta, state: fixture.betaV1,
 	})
-	mustRegisterReconcileFactory(t, registry, "beta-v2", "build:beta-2", reconcileFactory{
-		descriptor: beta, state: fixture.betaV2,
-	})
+	betaV2Factory := reconcileFactory{descriptor: beta, state: fixture.betaV2}
+	if options.betaV2NoPreMount {
+		mustRegisterMountOnlyReconcileFactory(t, registry, "beta-v2", "build:beta-2",
+			mountOnlyReconcileFactory{factory: betaV2Factory})
+	} else {
+		mustRegisterReconcileFactory(t, registry, "beta-v2", "build:beta-2", betaV2Factory)
+	}
 	realm := options.realm
 	if realm == nil {
 		realm = context.Background()
@@ -525,13 +679,18 @@ type reconcileMountObservation struct {
 }
 
 type reconcileFactoryState struct {
-	mu             sync.Mutex
-	label          string
-	fail           error
-	cancelMount    context.CancelFunc
-	rejectCanceled bool
-	observations   []reconcileMountObservation
-	disposeCount   int
+	mu                   sync.Mutex
+	label                string
+	fail                 error
+	preMountFail         error
+	typedNilCandidate    bool
+	cancelMount          context.CancelFunc
+	cancelPreMount       context.CancelFunc
+	rejectCanceled       bool
+	observations         []reconcileMountObservation
+	preMountObservations []reconcileMountObservation
+	disposeCount         int
+	preMountDisposeCount int
 }
 
 func (state *reconcileFactoryState) observe(ctx context.Context, mount pluginruntime.MountContext) {
@@ -556,6 +715,30 @@ func (state *reconcileFactoryState) noteDispose() {
 	state.mu.Unlock()
 }
 
+func (state *reconcileFactoryState) observePreMount(
+	ctx context.Context, candidate pluginruntime.CandidateContext,
+) {
+	required := make(map[string]string)
+	for _, requirement := range candidate.Descriptor.Requires {
+		value, _, _, _, found := candidate.Services.Lookup(requirement.Contract.Name)
+		if found {
+			required[requirement.Contract.Name] = fmt.Sprint(value)
+		}
+	}
+	state.mu.Lock()
+	state.preMountObservations = append(state.preMountObservations, reconcileMountObservation{
+		ctx: ctx, config: slices.Clone(candidate.Config),
+		permissions: cloneTestPermissions(candidate.Permissions.Snapshot()), required: required,
+	})
+	state.mu.Unlock()
+}
+
+func (state *reconcileFactoryState) notePreMountDispose() {
+	state.mu.Lock()
+	state.preMountDisposeCount++
+	state.mu.Unlock()
+}
+
 func (state *reconcileFactoryState) mounts() int {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -568,6 +751,18 @@ func (state *reconcileFactoryState) disposals() int {
 	return state.disposeCount
 }
 
+func (state *reconcileFactoryState) preMounts() int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return len(state.preMountObservations)
+}
+
+func (state *reconcileFactoryState) preMountDisposals() int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.preMountDisposeCount
+}
+
 func (state *reconcileFactoryState) latest() reconcileMountObservation {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -575,6 +770,19 @@ func (state *reconcileFactoryState) latest() reconcileMountObservation {
 		return reconcileMountObservation{}
 	}
 	observation := state.observations[len(state.observations)-1]
+	observation.config = slices.Clone(observation.config)
+	observation.permissions = cloneTestPermissions(observation.permissions)
+	observation.required = cloneStringMap(observation.required)
+	return observation
+}
+
+func (state *reconcileFactoryState) latestPreMount() reconcileMountObservation {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.preMountObservations) == 0 {
+		return reconcileMountObservation{}
+	}
+	observation := state.preMountObservations[len(state.preMountObservations)-1]
 	observation.config = slices.Clone(observation.config)
 	observation.permissions = cloneTestPermissions(observation.permissions)
 	observation.required = cloneStringMap(observation.required)
@@ -601,6 +809,63 @@ func (factory reconcileFactory) ValidateConfig(raw json.RawMessage) error {
 	return nil
 }
 
+func (factory reconcileFactory) PreMount(
+	ctx context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if _, expanded := candidate.Lifecycle.(pluginruntime.Lifecycle); expanded {
+		return nil, errors.New("candidate lifecycle exposed worker authority")
+	}
+	if factory.state.rejectCanceled {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	factory.state.observePreMount(ctx, candidate)
+	if err := candidate.Lifecycle.Defer("candidate-pre-mount", func(context.Context) error {
+		factory.state.notePreMountDispose()
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if factory.state.cancelPreMount != nil {
+		factory.state.cancelPreMount()
+		<-ctx.Done()
+		return nil, context.Cause(ctx)
+	}
+	if factory.state.preMountFail != nil {
+		return nil, factory.state.preMountFail
+	}
+	if factory.state.typedNilCandidate {
+		var candidate *reconcileCandidateMount
+		return candidate, nil
+	}
+	return reconcileCandidateMount{factory: factory}, nil
+}
+
+type reconcileCandidateMount struct{ factory reconcileFactory }
+
+func (candidate reconcileCandidateMount) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
+type mountOnlyReconcileFactory struct{ factory reconcileFactory }
+
+func (factory mountOnlyReconcileFactory) Descriptor() plugin.Descriptor {
+	return factory.factory.Descriptor()
+}
+
+func (factory mountOnlyReconcileFactory) ValidateConfig(raw json.RawMessage) error {
+	return factory.factory.ValidateConfig(raw)
+}
+
+func (factory mountOnlyReconcileFactory) Mount(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return factory.factory.Mount(ctx, mount)
+}
+
 func (factory reconcileFactory) Mount(ctx context.Context, mount pluginruntime.MountContext) error {
 	if factory.state.rejectCanceled {
 		if err := ctx.Err(); err != nil {
@@ -618,7 +883,9 @@ func (factory reconcileFactory) Mount(ctx context.Context, mount pluginruntime.M
 			return err
 		}
 	}
-	if err := mount.Lifecycle.Defer("reconcile-test", func(context.Context) error {
+	// The plugin-visible name deliberately matches the runtime's nested
+	// candidate label; runtime ownership must not consume this namespace.
+	if err := mount.Lifecycle.Defer("candidate-pre-mount", func(context.Context) error {
 		factory.state.noteDispose()
 		return nil
 	}); err != nil {
@@ -641,6 +908,21 @@ func mustRegisterReconcileFactory(
 ) {
 	t.Helper()
 	if err := registry.RegisterArtifact(implementation, reconcileArtifact(implementation, revision), factory); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustRegisterMountOnlyReconcileFactory(
+	t *testing.T,
+	registry *pluginruntime.Registry,
+	implementation string,
+	revision string,
+	factory mountOnlyReconcileFactory,
+) {
+	t.Helper()
+	if err := registry.RegisterArtifact(
+		implementation, reconcileArtifact(implementation, revision), factory,
+	); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -680,6 +962,22 @@ func assertObservedMount(
 	if string(observation.config) != config || !reflect.DeepEqual(observation.permissions, permissions) ||
 		!reflect.DeepEqual(observation.required, required) {
 		t.Fatalf("latest mount for %s = %#v, want config=%s permissions=%#v required=%#v",
+			state.label, observation, config, permissions, required)
+	}
+}
+
+func assertObservedPreMount(
+	t *testing.T,
+	state *reconcileFactoryState,
+	config string,
+	permissions []plugin.Permission,
+	required map[string]string,
+) {
+	t.Helper()
+	observation := state.latestPreMount()
+	if string(observation.config) != config || !reflect.DeepEqual(observation.permissions, permissions) ||
+		!reflect.DeepEqual(observation.required, required) {
+		t.Fatalf("latest pre-mount for %s = %#v, want config=%s permissions=%#v required=%#v",
 			state.label, observation, config, permissions, required)
 	}
 }

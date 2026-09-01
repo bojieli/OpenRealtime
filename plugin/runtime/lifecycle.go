@@ -20,6 +20,7 @@ type lifecycleScope struct {
 
 	mu          sync.Mutex
 	disposers   []disposer
+	children    []*lifecycleScope
 	disposed    map[string]struct{}
 	workers     map[string]struct{}
 	workerErr   map[string]error
@@ -52,6 +53,26 @@ func (scope *lifecycleScope) Defer(name string, dispose func(context.Context) er
 	}
 	scope.disposed[name] = struct{}{}
 	scope.disposers = append(scope.disposers, disposer{name: name, run: dispose})
+	return nil
+}
+
+// adopt transfers a prepared child lifecycle into a live entry without
+// consuming the plugin-visible disposer namespace.
+func (scope *lifecycleScope) adopt(child *lifecycleScope) error {
+	if child == nil || child == scope {
+		return fmt.Errorf("plugin %s cannot adopt an invalid child lifecycle", scope.entry)
+	}
+	scope.mu.Lock()
+	defer scope.mu.Unlock()
+	if scope.closed {
+		return fmt.Errorf("plugin %s lifecycle is closed", scope.entry)
+	}
+	for _, existing := range scope.children {
+		if existing == child {
+			return fmt.Errorf("plugin %s already adopted candidate lifecycle", scope.entry)
+		}
+	}
+	scope.children = append(scope.children, child)
 	return nil
 }
 
@@ -104,6 +125,8 @@ func (scope *lifecycleScope) close(ctx context.Context, cause error) error {
 	scope.closed = true
 	disposers := append([]disposer(nil), scope.disposers...)
 	scope.disposers = nil
+	children := append([]*lifecycleScope(nil), scope.children...)
+	scope.children = nil
 	workersDone := scope.workersDone
 	scope.mu.Unlock()
 	scope.cancel(cause)
@@ -130,6 +153,12 @@ func (scope *lifecycleScope) close(ctx context.Context, cause error) error {
 				scope.entry, disposers[index].name, err))
 		}
 	}
+	for index := len(children) - 1; index >= 0; index-- {
+		if err := children[index].close(ctx, cause); err != nil {
+			failures = append(failures, fmt.Errorf("plugin %s dispose candidate lifecycle: %w",
+				scope.entry, err))
+		}
+	}
 	scope.mu.Lock()
 	workerNames := make([]string, 0, len(scope.workerErr))
 	for name := range scope.workerErr {
@@ -149,6 +178,14 @@ func (scope *lifecycleScope) counts() (workers, effects int) {
 		return 0, 0
 	}
 	scope.mu.Lock()
-	defer scope.mu.Unlock()
-	return len(scope.workers), len(scope.disposers)
+	workers = len(scope.workers)
+	effects = len(scope.disposers)
+	children := append([]*lifecycleScope(nil), scope.children...)
+	scope.mu.Unlock()
+	for _, child := range children {
+		childWorkers, childEffects := child.counts()
+		workers += childWorkers
+		effects += childEffects
+	}
+	return workers, effects
 }

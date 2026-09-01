@@ -156,6 +156,12 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 }
 
 func (mounted *Mounted) mountEntryLocked(ctx context.Context, entry *mountedEntry) error {
+	return mounted.mountEntryWithCandidateLocked(ctx, entry, nil)
+}
+
+func (mounted *Mounted) mountEntryWithCandidateLocked(
+	ctx context.Context, entry *mountedEntry, candidate *preparedCandidateMount,
+) error {
 	if entry.active {
 		return nil
 	}
@@ -182,12 +188,22 @@ func (mounted *Mounted) mountEntryLocked(ctx context.Context, entry *mountedEntr
 		entry: entry.plan.Entry.ID, descriptor: entry.plan.Descriptor,
 		store: mounted.store, scope: scope,
 	}
-	err := entry.factory.Mount(scope.ctx, MountContext{
+	mount := MountContext{
 		EntryID: entry.plan.Entry.ID, Identity: entry.plan.Identity,
 		Config: slices.Clone(entry.config), Services: services,
 		Publisher: publisher, Lifecycle: scope, Permissions: entry.permissions.Clone(),
 		Descriptor: entry.plan.Descriptor.Clone(),
-	})
+	}
+	var err error
+	if candidate == nil {
+		err = entry.factory.Mount(scope.ctx, mount)
+	} else {
+		err = scope.adopt(candidate.scope)
+		if err == nil {
+			candidate.adopted = true
+			err = candidate.mount.Activate(scope.ctx, mount)
+		}
+	}
 	if err == nil {
 		for _, contract := range entry.plan.Descriptor.Provides {
 			if _, found := mounted.store.lookup(entry.plan.Entry.ID, contract); !found {
@@ -454,6 +470,12 @@ func (mounted *Mounted) unmountSetLocked(
 }
 
 func (mounted *Mounted) mountEligibleLocked(ctx context.Context, allowed map[string]struct{}) error {
+	return mounted.mountEligibleWithCandidatesLocked(ctx, allowed, nil)
+}
+
+func (mounted *Mounted) mountEligibleWithCandidatesLocked(
+	ctx context.Context, allowed map[string]struct{}, candidates map[string]*preparedCandidateMount,
+) error {
 	var failures []error
 	for _, entry := range mounted.entries {
 		if entry.active || !entry.desired {
@@ -478,7 +500,7 @@ func (mounted *Mounted) mountEligibleLocked(ctx context.Context, allowed map[str
 		if !ready {
 			continue
 		}
-		if err := mounted.mountEntryLocked(ctx, entry); err != nil {
+		if err := mounted.mountEntryWithCandidateLocked(ctx, entry, candidates[entry.plan.Entry.ID]); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -538,6 +560,14 @@ func (mounted *Mounted) mountEligibleForOperationLocked(
 ) error {
 	return mounted.mountForOperationLocked(ctx, func(parent context.Context) error {
 		return mounted.mountEligibleLocked(parent, allowed)
+	})
+}
+
+func (mounted *Mounted) mountEligibleWithCandidatesForOperationLocked(
+	ctx context.Context, allowed map[string]struct{}, candidates map[string]*preparedCandidateMount,
+) error {
+	return mounted.mountForOperationLocked(ctx, func(parent context.Context) error {
+		return mounted.mountEligibleWithCandidatesLocked(parent, allowed, candidates)
 	})
 }
 

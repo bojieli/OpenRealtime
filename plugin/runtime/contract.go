@@ -31,6 +31,14 @@ type Lifecycle interface {
 	Go(name string, worker func(context.Context) error) error
 }
 
+// CandidateLifecycle owns resources acquired while a replacement is prepared.
+// It deliberately omits Go: a candidate may acquire reversible resources, but
+// it cannot start background work before the live dependency closure reaches
+// its safe point.
+type CandidateLifecycle interface {
+	Defer(name string, dispose func(context.Context) error) error
+}
+
 // Permissions is the deployment grant selected for one plugin instance. It is
 // always a subset of the immutable descriptor ceiling. A plugin must check the
 // grant at the effect boundary in addition to consuming any declared authority
@@ -52,11 +60,39 @@ type MountContext struct {
 	Descriptor  plugin.Descriptor
 }
 
+// CandidateContext is the effect-restricted environment for a replacement
+// pre-mount. Services are the exact currently bound dependencies and remain
+// read-only. Publication and worker APIs are unavailable until Activate.
+type CandidateContext struct {
+	EntryID     string
+	Identity    plugin.Identity
+	Config      json.RawMessage
+	Services    Services
+	Lifecycle   CandidateLifecycle
+	Permissions Permissions
+	Descriptor  plugin.Descriptor
+}
+
 // Factory mounts one implementation of an immutable plugin descriptor. Mount
 // may register services and scoped work, but it must not start untracked work.
 type Factory interface {
 	Descriptor() plugin.Descriptor
 	Mount(context.Context, MountContext) error
+}
+
+// CandidateMount is a successfully prepared replacement. Activate is called
+// exactly once, after the affected live dependency closure has quiesced, with
+// the ordinary publication and lifecycle capabilities. Resources acquired by
+// PreMount remain runtime-owned through CandidateContext.Lifecycle.
+type CandidateMount interface {
+	Activate(context.Context, MountContext) error
+}
+
+// CandidatePreMounter prepares a replacement without publishing services,
+// starting workers, or changing externally visible state. Reconcile refuses a
+// changed factory that lacks this contract before it tears down live work.
+type CandidatePreMounter interface {
+	PreMount(context.Context, CandidateContext) (CandidateMount, error)
 }
 
 // ConfigValidator proves one separate values document before any plugin is

@@ -63,6 +63,20 @@ func (factory benchmarkFactory) Mount(_ context.Context, mount pluginruntime.Mou
 	return nil
 }
 
+func (factory benchmarkFactory) PreMount(
+	context.Context, pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return benchmarkCandidateMount{factory: factory}, nil
+}
+
+type benchmarkCandidateMount struct{ factory benchmarkFactory }
+
+func (candidate benchmarkCandidateMount) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
 func benchmarkRuntimePlan(b *testing.B, count int) (plugin.Plan, *pluginruntime.Registry) {
 	b.Helper()
 	catalog := plugin.NewCatalog()
