@@ -2634,6 +2634,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   refusal.
 - [ ] Replace topology-derived ownership validation with graph contract and live
   capability validation.
+  - [x] Eliminate the duplicated ownership/capability state from the
+    graph-native binding. Its temporary legacy gateway projection is now
+    defensively derived only from the one frozen, fingerprinted session-adapter
+    profile, so construction cannot leave a second shadow copy that later
+    drifts from the graph contract.
   - [x] Remove shared topology-combination restrictions and bind the remaining
     gateway adapter projection to one exact graph contract. Generic
     `Ownership.Validate` now checks only the owner vocabulary; the frozen

@@ -88,8 +88,6 @@ type NativeConfig struct {
 // unchanged protocol gateway.
 type NativeBinding struct {
 	name              string
-	ownership         legacy.Ownership
-	capabilities      legacy.Capabilities
 	plan              *graphconfig.Plan
 	prepared          *graphruntime.PreparedPlan
 	mountDependencies MountDependencyFactory
@@ -141,15 +139,13 @@ func NewNative(config NativeConfig) (*NativeBinding, error) {
 	}
 
 	profile := config.AdapterProfile.Clone()
-	capabilities := profile.Capabilities
-	capabilities.Observers = slices.Clone(profile.Capabilities.Observers)
 	var recording *TraceRecordingConfig
 	if config.TraceRecording != nil {
 		copy := *config.TraceRecording
 		recording = &copy
 	}
 	return &NativeBinding{
-		name: profile.Name, ownership: profile.Ownership, capabilities: capabilities,
+		name: profile.Name,
 		plan: config.Plan, prepared: prepared,
 		mountDependencies: config.MountDependencies,
 		adapterProfile:    profile, adapter: config.Adapter,
@@ -158,11 +154,19 @@ func NewNative(config NativeConfig) (*NativeBinding, error) {
 	}, nil
 }
 
-func (binding *NativeBinding) Name() string                { return binding.name }
-func (binding *NativeBinding) Ownership() legacy.Ownership { return binding.ownership }
+func (binding *NativeBinding) Name() string { return binding.name }
+
+// Ownership and Capabilities preserve the legacy gateway interface while
+// deriving its projection from the one frozen adapter profile. NativeBinding
+// deliberately stores no second mutable copy that can drift from that graph
+// contract.
+func (binding *NativeBinding) Ownership() legacy.Ownership {
+	return binding.adapterProfile.Ownership
+}
+
 func (binding *NativeBinding) Capabilities() legacy.Capabilities {
-	result := binding.capabilities
-	result.Observers = slices.Clone(binding.capabilities.Observers)
+	result := binding.adapterProfile.Capabilities
+	result.Observers = slices.Clone(binding.adapterProfile.Capabilities.Observers)
 	return result
 }
 func (binding *NativeBinding) Graph() ir.Graph { return binding.plan.Graph() }

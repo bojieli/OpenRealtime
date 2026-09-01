@@ -52,6 +52,17 @@ func TestNativeBindingRunsAnExactPlanThroughTypedSessionBoundaries(t *testing.T)
 	if bind.Graph().Fingerprint != plan.Graph().Fingerprint {
 		t.Fatal("native binding did not retain the immutable plan graph")
 	}
+	if got := bind.Ownership(); got != profile.Ownership {
+		t.Fatalf("native ownership projection = %+v, want frozen profile %+v", got, profile.Ownership)
+	}
+	capabilities := bind.Capabilities()
+	if !reflect.DeepEqual(capabilities, profile.Capabilities) {
+		t.Fatalf("native capability projection = %+v, want frozen profile %+v", capabilities, profile.Capabilities)
+	}
+	capabilities.Observers[0] = "mutated"
+	if got := bind.Capabilities(); !reflect.DeepEqual(got, profile.Capabilities) {
+		t.Fatalf("caller mutated native capability projection: %+v", got)
+	}
 
 	live, err := bind.Start(context.Background(), legacy.Options{
 		Sink: &recordingSink{}, SessionID: "native-session",
@@ -479,6 +490,7 @@ func nativeVideoProfile(t testing.TB, plan *graphconfig.Plan) graphbinding.Sessi
 		GraphFingerprint: graph.Fingerprint, Ownership: nativeOwnership(),
 		Capabilities: legacy.Capabilities{
 			Video: true, Observations: true, FastSlow: true,
+			Observers: []string{"screen"},
 		},
 		Boundaries: []graphbinding.AdapterBoundary{
 			{Operation: graphbinding.AdapterInputVideo, Boundary: "frame", Direction: ir.InputBoundary, Type: videoType},
