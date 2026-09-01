@@ -2273,7 +2273,7 @@ tracker by itself:
   `/openrealtime/v1/sessions/{session}/live` resource and use only the
   management capability header; its source-free static-model sibling uses the
   same session authority, and compiled server profiles own all route mounts.
-- [ ] Freeze every direct candidate contract before its full run.
+- [x] Freeze every direct candidate contract before its full run.
   - [x] Treat the benchmark owner's recorded original numbers as the trusted
     historical comparison targets. Do not reconstruct historical attempts or
     require historical media.
@@ -2290,26 +2290,26 @@ tracker by itself:
     explicit and fail-closed: trial count, campaign and Python hash seeds,
     scheduler concurrency/workers, cadence, timeout, local caller/ASR/synthesis
     models and voices, and fresh per-condition run prefixes.
-  - [ ] Retain every new attempt—including failed, timed-out, and regressed
-    diagnostics—with deterministic outcomes, exact graph/runtime evidence,
-    playable audio and/or synchronized video as applicable, review manifests,
-    and create-only external receipts.
-    - [x] Make attempt-stage retention restartable for the direct FDB v1.5,
-      FDB v3, FD-Bench, and tau-Voice campaigns. Each complete attempt now
-      publishes an atomic canonical commit marker after its media, context,
-      outcome, transcript, and artifacts are durable; `-review-resume` takes a
-      crash-released exclusive lease, admits only the same suite/cell/origin,
-      executable, and machine, reuses exact committed outcomes without replay,
-      and preserves markerless or explicitly incomplete directories under
-      `interruptions/` before retry. Finalization-stage debris remains
-      fail-closed, and this subgate does not close the parent until every
-      required population has actually run and been reviewed.
-  - [ ] Review every retained candidate recording with the exact
-    `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
-    problems but never changes the deterministic scorer.
-  - [ ] Publish a case-by-case pass/fail document that places the new totals,
-    safety/deadline outcomes, and latency distributions beside the trusted
-    historical numbers without inventing unavailable historical detail.
+- [ ] Retain every new attempt—including failed, timed-out, and regressed
+  diagnostics—with deterministic outcomes, exact graph/runtime evidence,
+  playable audio and/or synchronized video as applicable, review manifests,
+  and create-only external receipts.
+  - [x] Make attempt-stage retention restartable for the direct FDB v1.5,
+    FDB v3, FD-Bench, and tau-Voice campaigns. Each complete attempt now
+    publishes an atomic canonical commit marker after its media, context,
+    outcome, transcript, and artifacts are durable; `-review-resume` takes a
+    crash-released exclusive lease, admits only the same suite/cell/origin,
+    executable, and machine, reuses exact committed outcomes without replay,
+    and preserves markerless or explicitly incomplete directories under
+    `interruptions/` before retry. Finalization-stage debris remains
+    fail-closed, and this subgate does not close the parent until every
+    required population has actually run and been reviewed.
+- [ ] Review every retained candidate recording with the exact
+  `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
+  problems but never changes the deterministic scorer.
+- [ ] Publish a case-by-case pass/fail document that places the new totals,
+  safety/deadline outcomes, and latency distributions beside the trusted
+  historical numbers without inventing unavailable historical detail.
 
 The historical scenario trail includes the accepted 140/165 total at fifteen
 repetitions: 15/15 each for asked-not-to-be-interrupted, recorded-menu,
