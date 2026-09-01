@@ -916,14 +916,17 @@ is never flattened speculatively: the projection is marked incomplete and the
 exact property subschemas remain authoritative. An absent resolver is reported
 truthfully as unresolved rather than inventing fields.
 
-The browser configuration editor and the language-service LSP hover projection
-render the complete contract. The LSP form uses the protocol's zero-based
-UTF-16 positions and deterministic plaintext so descriptor-supplied markup is
-data, preserves absent versus explicit `null` JSON, and fails closed on a split
-surrogate, malformed retained schema, or oversized projection. Remaining work
-is the native-client rendering, multi-file/subgraph navigation, and mediation
-of actual file writes. None of that may weaken the strict compile/reconcile
-boundary above.
+The browser configuration editor, language-service LSP hover projection, and
+native SwiftUI editor render the complete contract. The LSP form uses the
+protocol's zero-based UTF-16 positions and deterministic plaintext so
+descriptor-supplied markup is data, preserves absent versus explicit `null`
+JSON, and fails closed on a split surrogate, malformed retained schema, or
+oversized projection. A closed in-memory workspace index now resolves imports,
+import aliases, nested graph declarations, and subgraph boundary definitions
+against exact version/source-digest identities without discovering or opening
+paths. Remaining work includes broader visual editing and mediation of actual
+file writes. None of that may weaken the strict compile/reconcile boundary
+above.
 
 ## 11. Graph IR
 
@@ -1815,7 +1818,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader visual editing/UI rendering, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -1850,9 +1853,14 @@ Current checkpoint notes:
   types. A strict one-message JSON-RPC adapter now freezes the descriptor
   catalog, owns bounded monotonic full-text document snapshots, projects those
   operations through the standard LSP lifecycle, and performs no transport,
-  workspace, filesystem, process, or runtime I/O. Multi-file navigation,
-  mediated writes, and the remaining phase gates stay unchecked until their
-  independent slices are complete.
+  workspace discovery, filesystem, process, or runtime I/O. A separate
+  immutable index now fingerprints the caller-supplied document population and
+  retains each path, URI, version, and source digest while projecting imports,
+  nested graph declarations, and subgraph boundary ports to exact cross-file
+  ranges. Standard LSP definition requests rebuild and lease that closed index;
+  unrelated descriptor and same-document definitions retain their existing
+  behavior. Mediated writes and the remaining phase gates stay unchecked until
+  their independent slices are complete.
 - No item in the project-level definition of done is yet proven end to end.
   Several have foundation-level support, but direct benchmark execution,
   production inspection, reconciliation, and obsolete-path deletion are still
@@ -1923,9 +1931,9 @@ Integrated checkpoint ledger:
 - [x] Retain the already-captured historical trace only as a diagnostic target.
   The payload-free ordinary-turn record is fingerprint-bound and exposes the
   old/new divergence; it is not a runtime dependency or a release arm.
-- [ ] Complete LSP/UI rendering, multi-file/subgraph navigation, mediated
-  authoring writes, reconciliation, direct benchmark execution, and obsolete
-  launch-path deletion.
+- [ ] Complete the remaining visual/UI rendering, mediated authoring writes,
+  reconciliation, direct benchmark execution, and obsolete launch-path
+  deletion.
 
 Active acceptance queue (work in the shared worktree remains unchecked until
 it has been reviewed, tested, and committed with its evidence):
@@ -2723,8 +2731,28 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     stale and adversarial synchronization, frozen-catalog, deterministic wire,
     disposal erasure, concurrent reader/change race, ten shuffled runs, vet,
     and allocation/performance gates are green.
-  - [ ] Add an explicit workspace/index boundary for digest-bound multi-file and
-    subgraph navigation.
+  - [x] Add an explicit workspace/index boundary for digest-bound multi-file and
+    subgraph navigation. The immutable UI-independent index accepts only an
+    explicitly supplied, independently bounded document set; verifies every
+    path, URI, version, source digest, canonical source span, aggregate byte,
+    and import count; and fingerprints the sorted population. Portable logical
+    paths and credential-free relative URI paths resolve only within that
+    closed set—there is no root discovery, file read, loader fallback, or
+    mutation capability. Import strings and aliases, imported/nested graph
+    references, and subgraph boundary ports project to real UTF-16 graph and
+    boundary ranges while preserving the exact target path, URI, version, and
+    digest. Missing, stale, recovered, noncanonical, duplicate-path/URI,
+    duplicate-alias, wrong-graph, absent-boundary, absolute-URI, over-byte,
+    over-document, and over-import inputs fail closed; import namespaces cannot
+    silently fall back to similarly named descriptors. The LSP adapter enforces
+    the same aggregate bounds transactionally, rebuilds the index from leased
+    immutable open documents for definition requests, returns standard
+    LocationLinks only after whole-workspace lease validation, and
+    preserves ordinary descriptor and same-document definitions. Logical/URI,
+    default/explicit alias, nested, deterministic reorder/version fingerprint,
+    caller-mutation isolation, target-change race, ten shuffled runs, vet, and
+    allocation/performance gates are green without adding filesystem or process
+    authority.
   - [ ] Mediate authorized creates and updates with rooted path containment,
     stale-content checks, atomic/no-replace publication, and audit receipts.
 - [ ] Implement the composable presentation and observability design before
@@ -3005,8 +3033,9 @@ integration test for this matrix.
 ### 29.2 Open implementation questions
 
 - The exact canonical encoding and type-ID scheme for Graph IR.
-- The exact `.ortg` grammar details, including import syntax, explicit edge
-  naming, boundary declarations, and formatter stability rules.
+- Whether any additional `.ortg` grammar constructs are justified beyond the
+  settled imports, explicit edge names, boundary declarations, comments, and
+  formatter stability contract.
 - The exact normalized graph schema, strict YAML feature set, and source
   preservation rules.
 - The bounded-depth defaults for each protocol family and the channel-override

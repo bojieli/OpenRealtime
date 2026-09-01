@@ -595,6 +595,57 @@ func (adapter *LSPAdapter) rpcDefinitions(
 	if err != nil {
 		return nil, err
 	}
+	if len(document.Snapshot.file.Imports) != 0 {
+		workspace, leases, err := adapter.workspaceIndex()
+		if err != nil {
+			if len(leases) != 0 && !adapter.workspaceCurrent(leases) {
+				return nil, fmt.Errorf("%w: workspace changed during index construction", ErrLSPVersion)
+			}
+			return nil, err
+		}
+		sourceCurrent := false
+		for _, lease := range leases {
+			if lease.URI == document.URI && lease.Version == document.Version &&
+				lease.Snapshot == document.Snapshot {
+				sourceCurrent = true
+				break
+			}
+		}
+		if !sourceCurrent {
+			return nil, fmt.Errorf("%w: workspace changed before definition lookup", ErrLSPVersion)
+		}
+		definition, handled, workspaceErr := workspace.Definition(document.identity(), position)
+		if handled {
+			if errors.Is(workspaceErr, ErrDefinitionMissing) {
+				if err := adapter.finishRPCWorkspaceQuery(ctx, leases); err != nil {
+					return nil, err
+				}
+				return []LSPLocationLink{}, nil
+			}
+			if workspaceErr != nil {
+				if err := adapter.finishRPCWorkspaceQuery(ctx, leases); err != nil {
+					return nil, err
+				}
+				return nil, workspaceErr
+			}
+			result := []LSPLocationLink{{
+				OriginSelectionRange: definition.OriginSelectionRange,
+				TargetURI:            definition.TargetDocument.URI,
+				TargetRange:          definition.TargetRange,
+				TargetSelectionRange: definition.TargetSelectionRange,
+			}}
+			if err := boundedLSPProjection(result); err != nil {
+				return nil, err
+			}
+			if err := adapter.finishRPCWorkspaceQuery(ctx, leases); err != nil {
+				return nil, err
+			}
+			return result, nil
+		}
+		if workspaceErr != nil {
+			return nil, workspaceErr
+		}
+	}
 	result, err := document.Snapshot.LSPDefinitions(position, document.identity())
 	if errors.Is(err, ErrNoSymbol) || errors.Is(err, ErrDefinitionMissing) {
 		result, err = []LSPLocationLink{}, nil
@@ -606,6 +657,18 @@ func (adapter *LSPAdapter) rpcDefinitions(
 		return nil, err
 	}
 	return result, nil
+}
+
+func (adapter *LSPAdapter) finishRPCWorkspaceQuery(
+	ctx context.Context, documents []lspOpenDocument,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !adapter.workspaceCurrent(documents) {
+		return fmt.Errorf("%w: workspace changed while producing the LSP result", ErrLSPVersion)
+	}
+	return nil
 }
 
 func (adapter *LSPAdapter) rpcRename(

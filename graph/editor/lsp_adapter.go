@@ -40,8 +40,9 @@ type LSPAdapterLimits struct {
 // options may resolve schemas but expose no file, network, process, or runtime
 // mounting operation through this API.
 type LSPAdapterOptions struct {
-	Editor Options          `json:"editor"`
-	Limits LSPAdapterLimits `json:"limits"`
+	Editor    Options          `json:"editor"`
+	Limits    LSPAdapterLimits `json:"limits"`
+	Workspace WorkspaceLimits  `json:"workspace"`
 }
 
 type lspAdapterPhase uint8
@@ -63,12 +64,15 @@ type lspOpenDocument struct {
 // is transport-neutral: a caller supplies one complete JSON-RPC message and
 // decides how bytes are framed or carried.
 type LSPAdapter struct {
-	mu            sync.RWMutex
-	catalog       *resolve.Catalog
-	editorOptions Options
-	limits        LSPAdapterLimits
-	phase         lspAdapterPhase
-	documents     map[string]lspOpenDocument
+	mu               sync.RWMutex
+	catalog          *resolve.Catalog
+	editorOptions    Options
+	limits           LSPAdapterLimits
+	workspace        WorkspaceLimits
+	phase            lspAdapterPhase
+	documents        map[string]lspOpenDocument
+	workspaceBytes   int
+	workspaceImports int
 }
 
 func NewLSPAdapter(catalog *resolve.Catalog, options LSPAdapterOptions) (*LSPAdapter, error) {
@@ -96,12 +100,52 @@ func NewLSPAdapter(catalog *resolve.Catalog, options LSPAdapterOptions) (*LSPAda
 			limits.MaxResponseBytes, limits.MaxIDBytes,
 		)
 	}
+	workspaceConfiguration := options.Workspace
+	if workspaceConfiguration.MaxDocuments == 0 {
+		workspaceConfiguration.MaxDocuments = limits.MaxDocuments
+	}
+	if workspaceConfiguration.MaxTotalSourceBytes == 0 {
+		maximum := int64(limits.MaxDocuments) * int64(editorLimits.MaxSourceBytes)
+		if maximum < 128<<20 {
+			maximum = 128 << 20
+		}
+		if maximum > 1<<30 {
+			maximum = 1 << 30
+		}
+		workspaceConfiguration.MaxTotalSourceBytes = int(maximum)
+	}
+	if workspaceConfiguration.MaxImports == 0 {
+		maximum := int64(limits.MaxDocuments) * 64
+		if maximum < 8192 {
+			maximum = 8192
+		}
+		if maximum > 1<<20 {
+			maximum = 1 << 20
+		}
+		workspaceConfiguration.MaxImports = int(maximum)
+	}
+	workspace, err := normalizeWorkspaceLimits(workspaceConfiguration)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.MaxDocuments < limits.MaxDocuments {
+		return nil, fmt.Errorf(
+			"editor workspace document bound %d is smaller than the LSP adapter bound %d",
+			workspace.MaxDocuments, limits.MaxDocuments,
+		)
+	}
+	if workspace.MaxPathBytes < editorLimits.MaxPathBytes {
+		return nil, fmt.Errorf(
+			"editor workspace path bound %d is smaller than the editor path bound %d",
+			workspace.MaxPathBytes, editorLimits.MaxPathBytes,
+		)
+	}
 	frozen, err := freezeLSPCatalog(catalog, editorLimits)
 	if err != nil {
 		return nil, fmt.Errorf("freeze LSP descriptor catalog: %w", err)
 	}
 	return &LSPAdapter{
-		catalog: frozen, editorOptions: options.Editor, limits: limits,
+		catalog: frozen, editorOptions: options.Editor, limits: limits, workspace: workspace,
 		phase: lspAdapterCreated, documents: make(map[string]lspOpenDocument),
 	}, nil
 }
@@ -168,6 +212,8 @@ func (adapter *LSPAdapter) Dispose() {
 	adapter.mu.Lock()
 	adapter.phase = lspAdapterDisposed
 	clear(adapter.documents)
+	adapter.workspaceBytes = 0
+	adapter.workspaceImports = 0
 	adapter.mu.Unlock()
 }
 
@@ -204,6 +250,8 @@ func (adapter *LSPAdapter) shutdown() error {
 	}
 	adapter.phase = lspAdapterShutdown
 	clear(adapter.documents)
+	adapter.workspaceBytes = 0
+	adapter.workspaceImports = 0
 	return nil
 }
 
@@ -271,7 +319,18 @@ func (adapter *LSPAdapter) openDocument(
 	if len(adapter.documents) >= adapter.limits.MaxDocuments {
 		return fmt.Errorf("LSP adapter document limit %d reached", adapter.limits.MaxDocuments)
 	}
+	imports := len(snapshot.file.Imports)
+	if len(snapshot.source) > adapter.workspace.MaxTotalSourceBytes-adapter.workspaceBytes {
+		return fmt.Errorf("%w: open documents exceed %d source bytes",
+			ErrWorkspaceLimit, adapter.workspace.MaxTotalSourceBytes)
+	}
+	if imports > adapter.workspace.MaxImports-adapter.workspaceImports {
+		return fmt.Errorf("%w: open documents exceed %d imports",
+			ErrWorkspaceLimit, adapter.workspace.MaxImports)
+	}
 	adapter.documents[uri] = lspOpenDocument{URI: uri, Version: version, Snapshot: snapshot}
+	adapter.workspaceBytes += len(snapshot.source)
+	adapter.workspaceImports += imports
 	return nil
 }
 
@@ -311,7 +370,19 @@ func (adapter *LSPAdapter) changeDocument(
 	if latest.Version != current.Version || latest.Snapshot != current.Snapshot {
 		return fmt.Errorf("%w: document advanced during analysis", ErrLSPVersion)
 	}
+	prospectiveBytes := adapter.workspaceBytes - len(latest.Snapshot.source) + len(snapshot.source)
+	prospectiveImports := adapter.workspaceImports - len(latest.Snapshot.file.Imports) + len(snapshot.file.Imports)
+	if prospectiveBytes < 0 || prospectiveBytes > adapter.workspace.MaxTotalSourceBytes {
+		return fmt.Errorf("%w: changed documents exceed %d source bytes",
+			ErrWorkspaceLimit, adapter.workspace.MaxTotalSourceBytes)
+	}
+	if prospectiveImports < 0 || prospectiveImports > adapter.workspace.MaxImports {
+		return fmt.Errorf("%w: changed documents exceed %d imports",
+			ErrWorkspaceLimit, adapter.workspace.MaxImports)
+	}
 	adapter.documents[uri] = lspOpenDocument{URI: uri, Version: version, Snapshot: snapshot}
+	adapter.workspaceBytes = prospectiveBytes
+	adapter.workspaceImports = prospectiveImports
 	return nil
 }
 
@@ -324,10 +395,17 @@ func (adapter *LSPAdapter) closeDocument(uri string) error {
 	if err := adapter.requireReadyLocked(); err != nil {
 		return err
 	}
-	if _, found := adapter.documents[uri]; !found {
+	document, found := adapter.documents[uri]
+	if !found {
 		return ErrLSPDocumentMissing
 	}
+	sourceBytes, imports := len(document.Snapshot.source), len(document.Snapshot.file.Imports)
+	if sourceBytes > adapter.workspaceBytes || imports > adapter.workspaceImports {
+		return errors.New("LSP adapter workspace accounting underflow")
+	}
 	delete(adapter.documents, uri)
+	adapter.workspaceBytes -= sourceBytes
+	adapter.workspaceImports -= imports
 	return nil
 }
 
@@ -353,6 +431,51 @@ func (adapter *LSPAdapter) current(document lspOpenDocument) bool {
 	latest, found := adapter.documents[document.URI]
 	return adapter.phase == lspAdapterReady && found &&
 		latest.Version == document.Version && latest.Snapshot == document.Snapshot
+}
+
+func (adapter *LSPAdapter) workspaceIndex() (
+	*WorkspaceIndex, []lspOpenDocument, error,
+) {
+	adapter.mu.RLock()
+	if err := adapter.requireReadyLocked(); err != nil {
+		adapter.mu.RUnlock()
+		return nil, nil, err
+	}
+	keys := make([]string, 0, len(adapter.documents))
+	for uri := range adapter.documents {
+		keys = append(keys, uri)
+	}
+	sort.Strings(keys)
+	leases := make([]lspOpenDocument, len(keys))
+	documents := make([]WorkspaceDocument, len(keys))
+	for position, uri := range keys {
+		lease := adapter.documents[uri]
+		leases[position] = lease
+		documents[position] = WorkspaceDocument{
+			Identity: lease.identity(), Snapshot: lease.Snapshot,
+		}
+	}
+	adapter.mu.RUnlock()
+	index, err := NewWorkspaceIndex(documents, adapter.workspace)
+	if err != nil {
+		return nil, leases, err
+	}
+	return index, leases, nil
+}
+
+func (adapter *LSPAdapter) workspaceCurrent(documents []lspOpenDocument) bool {
+	adapter.mu.RLock()
+	defer adapter.mu.RUnlock()
+	if adapter.phase != lspAdapterReady || len(adapter.documents) != len(documents) {
+		return false
+	}
+	for _, document := range documents {
+		latest, found := adapter.documents[document.URI]
+		if !found || latest.Version != document.Version || latest.Snapshot != document.Snapshot {
+			return false
+		}
+	}
+	return true
 }
 
 func (document lspOpenDocument) identity() LSPDocumentIdentity {
