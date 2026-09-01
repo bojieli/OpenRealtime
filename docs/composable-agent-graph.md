@@ -2555,12 +2555,22 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [x] Expose native audio, transcription, interaction acts, model state, text
   injection, tools, and cancellation as independent ports/capabilities.
 - [x] Check in locked `omni`, `duplex`, and upstream topologies over the shared
-  `model.External` element. Full mount/dial and benchmark validation is open.
+  `model.External` element. All three exact artifacts compile, bind, mount
+  through the same generic factory, negotiate their selected protocol-v4 ports
+  and capabilities, and cross a typed audio/prepared-audio/outcome data plane.
+  Provisioned provider quality remains part of the separate benchmark gates.
 - [x] Express native and external interaction as topology changes over the same
-  foreground element contract. Executed behavior parity remains open.
+  foreground element contract. The locked cross-mode regression now sends an
+  `answer` act into the external-interaction graph and receives the same act
+  from the native-interaction graph while both retain the identical common
+  full-duplex data plane.
 
-- [ ] **Exit gate:** adding a new capability combination does not require a new
-  binding package or runtime switch.
+- [x] **Exit gate:** adding a new capability combination does not require a new
+  binding package or runtime switch. Graph-selected optional ports and explicit
+  live capability requirements produce the omni external-interaction, duplex
+  native-interaction, and upstream native-interaction combinations through one
+  descriptor, factory, runner, codec, and deployment registry; the locked
+  mount/dial/data-plane regression exercises each without a mode branch.
 
 ### Phase 4: generalize modalities and authority
 
@@ -3294,13 +3304,16 @@ checked from foundation work alone; each requires end-to-end release evidence.
   both-speaking graphs execute complete turns through the same graph runtime;
   direct deliberative speech plus explicit `Tee`/`Mux` topology supplies the
   fork/merge cases without a kernel-owned slow-to-fast handoff.
-- [ ] The same full-duplex foreground can be run with native or external
+- [x] The same full-duplex foreground can be run with native or external
    interaction as a graph change.
   - [x] Locked native- and external-interaction references select the same
     `model.External` element through topology and capability changes, and the
     omni, duplex-native, and upstream-native forms mount and negotiate exact
-    protocol-v4 sessions. Executed cross-mode behavioral parity remains the
-    requirement that keeps the parent gate open.
+    protocol-v4 sessions. The executed cross-mode regression proves the common
+    typed audio/output behavior and the equivalent `answer` selection through
+    the external input versus native output control ports. Live provider quality
+    and performance remain benchmark gates rather than being inferred from this
+    architecture proof.
 - [x] Channel depth, loss, queue occupancy, and latency contribution are
   visible. The joined operator channel cards bind immutable delivery/depth to
   live occupancy/high-water, drop/backpressure, and queue-wait evidence; the

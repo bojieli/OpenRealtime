@@ -24,6 +24,7 @@ import (
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	coreperception "github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/sidecar"
 )
@@ -122,6 +123,7 @@ func TestExternalModelPreparedOutputsUseNativeCompositionContracts(t *testing.T)
 }
 
 func TestLockedExternalModelComponentsMountAndNegotiateExactV4Sessions(t *testing.T) {
+	interactionBehavior := make(map[string]coreinteraction.Act, 3)
 	for _, directory := range []string{
 		"omni-external-interaction",
 		"duplex-native-interaction",
@@ -229,6 +231,9 @@ func TestLockedExternalModelComponentsMountAndNegotiateExactV4Sessions(t *testin
 				}
 			}
 			proveLockedComponentDataPlane(t, mounted, observed.session, contract)
+			interactionBehavior[directory] = proveLockedInteractionSelection(
+				t, directory, mounted, observed.session, contract,
+			)
 
 			cancel()
 			select {
@@ -243,6 +248,97 @@ func TestLockedExternalModelComponentsMountAndNegotiateExactV4Sessions(t *testin
 				t.Fatalf("locked component session closes = %d, want 1", got)
 			}
 		})
+	}
+	if external, native := interactionBehavior["omni-external-interaction"],
+		interactionBehavior["duplex-native-interaction"]; external != coreinteraction.ActAnswer ||
+		native != external {
+		t.Fatalf("locked external/native interaction behavior = %q/%q, want %q/%q",
+			external, native, coreinteraction.ActAnswer, coreinteraction.ActAnswer)
+	}
+}
+
+func proveLockedInteractionSelection(
+	t *testing.T, directory string, mounted *graphruntime.Mounted, session *fakeSession,
+	contract *sidecar.ElementSessionContract,
+) coreinteraction.Act {
+	t.Helper()
+	switch directory {
+	case "omni-external-interaction":
+		selected, err := mounted.Ingress("interaction")
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope := element.Envelope{
+			Type: InteractionType(), ItemID: "interaction-answer", SessionID: "session-locked",
+			RunID: "run-locked", Sequence: 1, TraceID: "trace-locked",
+			CancellationScope: "run-locked", Payload: coreinteraction.ActAnswer,
+		}
+		if result, err := selected.Broadcast(context.Background(), envelope); err != nil || result.Delivered != 1 {
+			t.Fatalf("broadcast external interaction selection = %+v, %v", result, err)
+		}
+		sent := receiveSent(t, session)
+		if err := contract.ValidateEngineFrame(sent); err != nil {
+			t.Fatalf("external interaction selection failed its negotiated contract: %v", err)
+		}
+		if sent.Port != "interaction" || sent.Envelope == nil ||
+			!sent.Envelope.Type.Equal(InteractionType()) || sent.Envelope.RunID != envelope.RunID {
+			t.Fatalf("external interaction selection lost its typed envelope: %+v", sent)
+		}
+		var act coreinteraction.Act
+		if err := json.Unmarshal(sent.Envelope.JSON, &act); err != nil {
+			t.Fatal(err)
+		}
+		if act != coreinteraction.ActAnswer {
+			t.Fatalf("external interaction selection = %q, want %q", act, coreinteraction.ActAnswer)
+		}
+		return act
+
+	case "duplex-native-interaction", "upstream-native-interaction":
+		selected, err := mounted.Egress("interaction_act")
+		if err != nil {
+			t.Fatal(err)
+		}
+		codec := NewStandardJSONCodec()
+		encoded, err := codec.Encode(InteractionActType(), coreinteraction.ActAnswer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope := element.Envelope{
+			Type: InteractionActType(), ItemID: "native-interaction-answer",
+			SessionID: "session-locked", RunID: "run-locked", Sequence: 1,
+			TraceID: "trace-locked", CancellationScope: "run-locked",
+			Payload: coreinteraction.ActAnswer,
+		}
+		wire := sidecar.FromEnvelope(envelope, encoded.JSON)
+		message := sidecar.Message{
+			Type: sidecar.TypeElementFrame, Port: "interaction_act", Envelope: &wire,
+			Payload: encoded.Binary, PayloadBytes: len(encoded.Binary),
+		}
+		if err := contract.ValidateSidecarFrame(message); err != nil {
+			t.Fatalf("native interaction selection is not negotiated data: %v", err)
+		}
+		session.frames <- message
+		observed := receiveEnvelope(t, selected)
+		var act coreinteraction.Act
+		switch payload := observed.Payload.(type) {
+		case *coreinteraction.Act:
+			if payload != nil {
+				act = *payload
+			}
+		case coreinteraction.Act:
+			act = payload
+		default:
+			t.Fatalf("native interaction selection reconstructed as %T", observed.Payload)
+		}
+		if act != coreinteraction.ActAnswer || observed.RunID != envelope.RunID ||
+			!observed.Type.Equal(InteractionActType()) {
+			t.Fatalf("native interaction selection = %q in %+v", act, observed)
+		}
+		return act
+
+	default:
+		t.Fatalf("unknown locked interaction reference %q", directory)
+		return ""
 	}
 }
 
