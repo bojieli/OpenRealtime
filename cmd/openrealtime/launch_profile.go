@@ -15,6 +15,7 @@ import (
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/fdbv3"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
@@ -83,6 +84,7 @@ type scenarioProfileOptions struct {
 	gateSilenceMS      int
 	gateSpeechMS       int
 	maxOutputTokens    int
+	fdbv3Dataset       string
 	serverTokenEnv     string
 	inspectionTokenTTL uint64
 	maxAudioFrameBytes int
@@ -188,6 +190,7 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.IntVar(&options.gateSilenceMS, "gate-silence-ms", options.gateSilenceMS, "silence that closes one utterance")
 	flags.IntVar(&options.gateSpeechMS, "gate-speech-ms", options.gateSpeechMS, "minimum admitted speech")
 	flags.IntVar(&options.maxOutputTokens, "max-output-tokens", options.maxOutputTokens, "model output-token bound")
+	flags.StringVar(&options.fdbv3Dataset, "fdbv3-dataset", options.fdbv3Dataset, "released FDB v3 dataset whose exact tool union replaces the scenario-suite tools")
 	flags.StringVar(&options.serverTokenEnv, "token-env", options.serverTokenEnv, "optional gateway bearer-token environment name")
 	flags.Uint64Var(&options.inspectionTokenTTL, "inspection-token-ttl-ms", options.inspectionTokenTTL, "runtime-inspection token lifetime")
 	flags.IntVar(&options.maxAudioFrameBytes, "max-audio-frame-bytes", options.maxAudioFrameBytes, "Realtime audio-frame bound")
@@ -364,7 +367,7 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
-	tools, err := productionScenarioToolDeclarations()
+	tools, err := productionProfileToolDeclarations(options.fdbv3Dataset)
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
@@ -454,6 +457,15 @@ func freezeProductionScenarioProfile(
 // exact-matches names, descriptions, schemas, and confirmation policy during
 // session.update, so a hand-copied declaration would make the recorded-menu
 // case fail before any behavior could be measured.
+func productionProfileToolDeclarations(
+	fdbv3Dataset string,
+) ([]scenarioconversation.ToolDeclaration, error) {
+	if fdbv3Dataset != "" {
+		return productionFDBV3ToolDeclarations(fdbv3Dataset)
+	}
+	return productionScenarioToolDeclarations()
+}
+
 func productionScenarioToolDeclarations() ([]scenarioconversation.ToolDeclaration, error) {
 	byName := make(map[string]scenarioconversation.ToolDeclaration)
 	var order []string
@@ -483,6 +495,49 @@ func productionScenarioToolDeclarations() ([]scenarioconversation.ToolDeclaratio
 		result = append(result, byName[name])
 	}
 	return result, nil
+}
+
+// productionFDBV3ToolDeclarations derives the application-owned action
+// surface from the same catalog builder the benchmark uses. The profile then
+// exact-matches each session.update declaration, while ordinary scenario
+// profiles retain only their much smaller authored tool surface.
+func productionFDBV3ToolDeclarations(
+	dataset string,
+) ([]scenarioconversation.ToolDeclaration, error) {
+	if strings.TrimSpace(dataset) == "" || dataset != strings.TrimSpace(dataset) {
+		return nil, errors.New("scenario FDB v3 tool selection requires a canonical dataset path")
+	}
+	tasks, err := fdbv3.Load(dataset, 0)
+	if err != nil {
+		return nil, fmt.Errorf("load scenario FDB v3 tool dataset: %w", err)
+	}
+	if len(tasks) == 0 {
+		return nil, errors.New("scenario FDB v3 tool dataset contains no released tasks")
+	}
+	catalog, err := fdbv3.Catalog(tasks)
+	if err != nil {
+		return nil, fmt.Errorf("derive scenario FDB v3 tool catalog: %w", err)
+	}
+	declarations := make([]scenarioconversation.ToolDeclaration, 0, len(catalog))
+	for index, raw := range catalog {
+		var tool struct {
+			Type        string          `json:"type"`
+			Name        string          `json:"name"`
+			Description string          `json:"description"`
+			Parameters  json.RawMessage `json:"parameters"`
+		}
+		if err := json.Unmarshal(raw, &tool); err != nil {
+			return nil, fmt.Errorf("decode scenario FDB v3 tool %d: %w", index, err)
+		}
+		if tool.Type != "function" {
+			return nil, fmt.Errorf("scenario FDB v3 tool %d has type %q, want function", index, tool.Type)
+		}
+		declarations = append(declarations, scenarioconversation.ToolDeclaration{
+			Name: tool.Name, Description: tool.Description,
+			Parameters: tool.Parameters, Confirm: legacyaction.ConfirmNever,
+		})
+	}
+	return declarations, nil
 }
 
 func scenarioProfileASRSelection(

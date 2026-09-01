@@ -161,6 +161,54 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	}
 }
 
+func TestScenarioProfileFreezePinsFDBV3ToolUnion(t *testing.T) {
+	root := t.TempDir()
+	dataset := filepath.Join(root, "fdb-v3")
+	for name, metadata := range map[string]string{
+		"one": `{"id":"one","domain":"ecommerce","title":"Track","difficulty":"easy","expected_tool_calls":[{"function":"track_order","args":{"order_id":"ABC123"}}]}`,
+		"two": `{"id":"two","domain":"ecommerce","title":"Cart","difficulty":"easy","expected_tool_calls":[{"function":"add_to_cart","args":{"product_id":"K2","quantity":2}}]}`,
+	} {
+		directory := filepath.Join(dataset, name)
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "metadata.json"), []byte(metadata), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "input.wav"), []byte("catalog-only fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(root, "scenario-fdbv3-profile.yaml")
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", path, "-fdbv3-dataset", dataset,
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := launchprofile.ParseYAML(path, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, exact := range []string{
+		`"name":"add_to_cart"`, `"description":"add to cart"`,
+		`"product_id":{"description":"product_id","type":"string"}`,
+		`"quantity":{"description":"quantity","type":"number"}`,
+		`"name":"track_order"`,
+		`"order_id":{"description":"order_id","type":"string"}`,
+	} {
+		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
+			t.Fatalf("FDB v3 profile application configuration omitted %s", exact)
+		}
+	}
+	if bytes.Contains(profile.Application.Configuration, []byte(`"name":"press_key"`)) {
+		t.Fatal("FDB v3 profile widened its exact action surface with scenario-suite tools")
+	}
+}
+
 func TestScenarioProfileFreezeRequiresPairedDistinctCompanionOutputs(t *testing.T) {
 	directory := t.TempDir()
 	profile := filepath.Join(directory, "scenario-profile.yaml")

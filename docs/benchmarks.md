@@ -40,6 +40,26 @@ The profile is published last and acts as the marker that its create-only
 companions are durable. Omitting the execution pair remains useful for local
 diagnosis, but it cannot support a graph-native release claim.
 
+FDB v3 sessions submit the union of every released support tool, so their
+strict application profile must select that exact union before the server can
+accept `session.update`. Freeze it from the same released dataset the runner
+will load:
+
+```sh
+openrealtime profile scenario \
+  -fdbv3-dataset /absolute/full-duplex-bench-v3/dataset/fdb_v3_data_released \
+  -out /absolute/fdbv3-campaign/profile.yaml \
+  -graph-out /absolute/fdbv3-campaign/graph.json \
+  -values-out /absolute/fdbv3-campaign/values.json \
+  -resolution-out /absolute/fdbv3-campaign/resolution.json \
+  -execution-out /absolute/fdbv3-campaign/execution.json
+```
+
+The freeze path calls the benchmark's own loader and catalog builder, then
+embeds the resulting names, descriptions, and argument schemas in the profile.
+It does not add those tools to ordinary scenario profiles, whose smaller
+authored action surface remains unchanged.
+
 ## Suites
 
 | Command | Suite | Measures |
