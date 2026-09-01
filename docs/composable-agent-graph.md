@@ -3181,10 +3181,18 @@ checked from foundation work alone; each requires end-to-end release evidence.
    rebuilding the runtime.
 - [ ] The graph can expose any supported combination of text, audio, video,
    images, files, tools, computer use, and control ports; audio is optional.
-- [ ] Trigger, interrupt, timeout, failure, arbitration, authority, and terminal
-   paths are statically inspectable.
-- [ ] Slow/deliberative and fast/foreground roles can be rewired, forked, merged,
-   or removed without kernel changes.
+- [x] Trigger, interrupt, timeout, failure, arbitration, authority, and terminal
+  paths are statically inspectable. The exact static model and generated views
+  expose reaction triggers, interrupts, success/cancellation/refusal/timeout/
+  failure outcome ports, explicit arbiter topology, and effect authority and
+  reversibility. Validation diagnoses missing terminal, interrupt, and typed
+  authority paths, while the fingerprint-bound projection passes the real
+  Chromium developer-profile gate.
+- [x] Slow/deliberative and fast/foreground roles can be rewired, forked, merged,
+  or removed without kernel changes. Locked fast-only, slow-only, and
+  both-speaking graphs execute complete turns through the same graph runtime;
+  direct deliberative speech plus explicit `Tee`/`Mux` topology supplies the
+  fork/merge cases without a kernel-owned slow-to-fast handoff.
 - [ ] The same full-duplex foreground can be run with native or external
    interaction as a graph change.
 - [x] Channel depth, loss, queue occupancy, and latency contribution are
@@ -3193,10 +3201,23 @@ checked from foundation work alone; each requires end-to-end release evidence.
   exact projection passes fail-closed Go/JavaScript validation and a real
   Chromium rendering gate.
 - [ ] Every running session reports an immutable Graph IR fingerprint and exact
-   live-resolved element/config/capability identities.
-- [ ] Mermaid/DOT and the live canvas are generated from that exact graph.
-- [ ] The action authority, target, confirmation, audit, and irreversibility
-   guarantees remain intact or become stronger through typing.
+  live-resolved element/config/capability identities. Production graph-native
+  mounts already pass exact live/static joins, runtime handshakes, and reviewed
+  benchmark attestation; the universal box remains open because an incomplete
+  legacy runtime intentionally receives no inspection capability, and those
+  remaining legacy launch paths have not yet been removed or upgraded.
+- [x] Mermaid/DOT and the live canvas are generated from that exact graph.
+  Mermaid and DOT derive through the same immutable inspection model and carry
+  its fingerprint; the session model endpoint rejects static/live identity or
+  population drift, and real Chromium proves the compiled canvas remains bound
+  to that fingerprint.
+- [x] The action authority, target, confirmation, audit, and irreversibility
+  guarantees remain intact or become stronger through typing. The locked
+  silent computer-use graph requires proposal admission, confirmation, target
+  fencing, canonical commit, ledger commit, and dispatch through distinct typed
+  values; bypasses fail compilation or adversarial refusal gates. Its stable
+  endpoint two-effect regression and reviewed real-Chromium Realtime-CU
+  candidate exercise the complete feedback path with exact live graph evidence.
 - [ ] Static reference graphs match current protocol behavior, and new
     non-audio and alternative speech compositions are covered by release tests.
 - [ ] Every required benchmark has complete, clean, exactly attested
