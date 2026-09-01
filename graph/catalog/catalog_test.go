@@ -106,6 +106,33 @@ func TestEntryPreservesDependencyScopeInIdentityAndRoundTrip(t *testing.T) {
 	}
 }
 
+func TestEntryAcceptsEffectFreeProductionPlanAndRoundTrips(t *testing.T) {
+	entry, err := graphcatalog.NewEntry(
+		catalogPlanWithOptions(t, 1, graphconfig.DependencyScopeProcess, false),
+		graphcatalog.Metadata{
+			Stage: graphcatalog.Candidate, Summary: "Effect-free catalog entry.",
+			Change: "Exercise an exact plan with no declared effects.",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entry.Effects) != 0 {
+		t.Fatalf("effect-free entry effects = %+v", entry.Effects)
+	}
+	document, err := graphcatalog.Freeze([]graphcatalog.Entry{entry})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := document.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := graphcatalog.Parse(payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCatalogIsDeterministicStrictAndSecretRedacted(t *testing.T) {
 	first := catalogEntry(t, 1, graphcatalog.Candidate, []string{"text", "realtime"})
 	second := catalogEntry(t, 2, graphcatalog.Stable, []string{"text", "production"})
@@ -344,8 +371,20 @@ func catalogPlanWithScope(
 	revision uint64,
 	dependencyScope graphconfig.DependencyScope,
 ) *graphconfig.Plan {
+	return catalogPlanWithOptions(t, revision, dependencyScope, true)
+}
+
+func catalogPlanWithOptions(
+	t testing.TB,
+	revision uint64,
+	dependencyScope graphconfig.DependencyScope,
+	withEffects bool,
+) *graphconfig.Plan {
 	t.Helper()
 	descriptor := catalogDescriptor()
+	if !withEffects {
+		descriptor.Effects = nil
+	}
 	identity, err := descriptor.Identity()
 	if err != nil {
 		t.Fatal(err)

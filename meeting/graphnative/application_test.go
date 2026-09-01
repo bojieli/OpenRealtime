@@ -42,6 +42,7 @@ func newMeetingApplicationFixture(
 			Artifacts:           fixture.config.Artifacts,
 			PlanOptions:         options,
 			Plugins:             fixture.config.Plugins,
+			GraphMetadata:       fixture.config.GraphMetadata,
 			SecretCatalog:       fixture.config.SecretCatalog,
 			Evidence:            fixture.config.Evidence,
 			Adapters:            []meetinggraph.AdapterPluginConfig{adapter},

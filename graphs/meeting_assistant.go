@@ -10,6 +10,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -155,6 +156,12 @@ func MeetingAssistantApplicationRegistration(
 	registration, err := meetinggraph.NewApplicationRegistration(meetinggraph.ApplicationHostConfig{
 		ApplicationArtifact: config.ApplicationArtifact, ProviderArtifact: config.ProviderArtifact,
 		Artifacts: artifacts, Plugins: catalog, SecretCatalog: secrets, Evidence: evidence,
+		GraphMetadata: graphcatalog.Metadata{
+			Stage:   graphcatalog.Candidate,
+			Summary: "Graph-native multimodal Meeting Assistant application.",
+			Change:  "Initial exact production graph and configuration revision.",
+			Tags:    []string{"audio", "computer-use", "meeting", "multimodal"},
+		},
 		Adapters:   []meetinggraph.AdapterPluginConfig{adapterConfig},
 		Inspection: config.Inspection, ShutdownTimeout: config.ShutdownTimeout,
 		TraceRecording: config.TraceRecording,

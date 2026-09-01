@@ -19,6 +19,7 @@ import (
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -412,6 +413,10 @@ func newScenarioLaunchFixture(t testing.TB) scenarioLaunchFixture {
 	return scenarioLaunchFixture{
 		counters: counters,
 		config: graphnative.Config{Launch: graphlaunch.Config{
+			GraphMetadata: graphcatalog.Metadata{
+				Stage: graphcatalog.Experimental, Summary: "Scenario launch test graph.",
+				Change: "Initial test graph revision.",
+			},
 			Evidence: graphevidence.Document{
 				APIVersion: graphevidence.APIVersion, Graph: "scenario_session", Profiles: []graphevidence.Profile{},
 			},

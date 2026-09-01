@@ -26,6 +26,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	adaptivevideo "github.com/bojieli/OpenRealtime/graph/binding/adaptivevideo"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -499,6 +500,10 @@ func adaptiveVideoLaunchConfig(
 	providerMetadata := dependency.AssemblyDependency()
 	return graphlaunch.Config{
 		Artifacts: fixture.artifacts, PlanOptions: fixture.options,
+		GraphMetadata: graphcatalog.Metadata{
+			Stage: graphcatalog.Experimental, Summary: "Adaptive-video server test graph.",
+			Change: "Initial test graph revision.",
+		},
 		Catalog: graphlaunch.Catalog{
 			Assembly: fixture.catalog,
 			Adapters: []graphlaunch.AdapterPlugin{adapterPlugin},

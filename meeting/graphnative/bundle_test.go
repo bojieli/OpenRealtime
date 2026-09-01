@@ -31,6 +31,7 @@ import (
 	"github.com/bojieli/OpenRealtime/gateway"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -56,6 +57,7 @@ func TestMeetingBundleSealsExactProviderWithoutAcquiringPlugins(t *testing.T) {
 	}
 	if result.Plan.Graph().ID != meetinggraph.GraphID ||
 		result.Evidence.Graph != meetinggraph.GraphID || result.Evidence.Profiles == nil ||
+		result.CatalogEntry.GraphID != meetinggraph.GraphID || result.CatalogEntry.Plan != result.Plan.Identity() ||
 		result.Binding.Graph().Fingerprint != result.Plan.Graph().Fingerprint {
 		t.Fatalf("meeting provider graph = %+v", result.Binding.Graph())
 	}
@@ -757,6 +759,10 @@ func newProviderFixture(t testing.TB) providerFixture {
 		)
 	}
 	config := meetinggraph.ProviderConfig{
+		GraphMetadata: graphcatalog.Metadata{
+			Stage: graphcatalog.Experimental, Summary: "Meeting Assistant test graph.",
+			Change: "Initial exact test graph revision.", Tags: []string{"meeting", "test"},
+		},
 		Artifacts: graphconfig.Artifacts{
 			Topology:   graphconfig.Artifact{Path: "agent.ortg", Encoding: graphconfig.ORTG, Data: read("agent.ortg")},
 			Values:     graphconfig.Artifact{Path: "agent.values.yaml", Encoding: graphconfig.YAML, Data: read("agent.values.yaml")},

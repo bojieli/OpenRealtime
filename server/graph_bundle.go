@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
@@ -25,11 +26,13 @@ type GraphBundleConfig struct {
 
 // GraphBundle is the immutable boundary between graph preparation and server
 // composition. Constructing it acquires no graph resource and opens no
-// listener. The graph plan and server bundle retain independent fingerprints
-// so inspection can attest both layers without collapsing their identities.
+// listener. The graph plan, its single-entry immutable discovery catalog, and
+// the server bundle retain independent fingerprints so inspection can attest
+// each layer without collapsing their identities.
 type GraphBundle struct {
 	GraphPlan    *graphconfig.Plan
 	Evidence     graphevidence.Document
+	GraphCatalog graphcatalog.Document
 	ServerBundle *Bundle
 	Readiness    []graphlaunch.ReadinessCheck
 }
@@ -53,13 +56,18 @@ func NewGraphBundle(ctx context.Context, config GraphBundleConfig) (*GraphBundle
 	if err != nil {
 		return nil, fmt.Errorf("compose graph server bundle: %w", err)
 	}
+	catalog, err := graphcatalog.Freeze([]graphcatalog.Entry{launched.CatalogEntry})
+	if err != nil {
+		return nil, fmt.Errorf("compose graph server bundle catalog: %w", err)
+	}
 	config.Server.Provider = launched.Binding
 	serverBundle, err := NewBundle(config.Server)
 	if err != nil {
 		return nil, fmt.Errorf("compose graph server bundle: %w", err)
 	}
 	return &GraphBundle{
-		GraphPlan: launched.Plan, Evidence: launched.Evidence, ServerBundle: serverBundle,
-		Readiness: launched.Readiness,
+		GraphPlan: launched.Plan, Evidence: launched.Evidence, GraphCatalog: catalog,
+		ServerBundle: serverBundle,
+		Readiness:    launched.Readiness,
 	}, nil
 }

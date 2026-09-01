@@ -18,6 +18,7 @@ import (
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -64,6 +65,11 @@ func TestNewBuildsExactNativeSessionProviderWithoutAcquiringResources(t *testing
 		result.Evidence.Profiles[0].PlanFingerprint != result.Plan.Identity().PlanFingerprint {
 		t.Fatalf("bound launch evidence = %+v", result.Evidence)
 	}
+	if result.CatalogEntry.GraphID != result.Plan.Identity().GraphID ||
+		result.CatalogEntry.Plan != result.Plan.Identity() || len(result.CatalogEntry.Profiles) != 1 ||
+		result.CatalogEntry.Profiles[0] != result.Evidence.Profiles[0].Artifact {
+		t.Fatalf("launch catalog entry = %+v", result.CatalogEntry)
+	}
 	var provider serverplugin.SessionProvider = result.Binding
 	if provider.Name() != launchAdapterName ||
 		result.Binding.Graph().Fingerprint != result.Plan.Graph().Fingerprint {
@@ -82,8 +88,9 @@ func TestNewBuildsExactNativeSessionProviderWithoutAcquiringResources(t *testing
 	fixture.config.Catalog.MountDependencies[0].Factory = nil
 	fixture.config.Artifacts.Topology.Data[0] = 'X'
 	fixture.config.Evidence.Profiles[0].Name = "redirected"
-	if result.Evidence.Profiles[0].Name != "launch-warm" {
-		t.Fatalf("launch result aliases caller evidence: %+v", result.Evidence)
+	fixture.config.GraphMetadata.Tags[0] = "redirected"
+	if result.Evidence.Profiles[0].Name != "launch-warm" || result.CatalogEntry.Tags[0] != "launch" {
+		t.Fatalf("launch result aliases caller metadata: evidence=%+v catalog=%+v", result.Evidence, result.CatalogEntry)
 	}
 
 	runtime, err := provider.Start(context.Background(), legacy.Options{
@@ -167,6 +174,18 @@ func TestNewFailsClosedOnAdapterAndDependencyCatalogDrift(t *testing.T) {
 		mutate func(*graphlaunch.Config)
 		want   string
 	}{
+		{
+			name:   "missing graph catalog metadata",
+			mutate: func(config *graphlaunch.Config) { config.GraphMetadata = graphcatalog.Metadata{} },
+			want:   "invalid stage",
+		},
+		{
+			name: "competing catalog evidence profiles",
+			mutate: func(config *graphlaunch.Config) {
+				config.GraphMetadata.Profiles = []inspect.ArtifactIdentity{launchArtifact("evidence/competing", "1")}
+			},
+			want: "profiles are derived from evidence",
+		},
 		{
 			name:   "missing evidence manifest",
 			mutate: func(config *graphlaunch.Config) { config.Evidence = graphevidence.Document{} },
@@ -285,8 +304,9 @@ func TestNewFailsClosedOnAdapterAndDependencyCatalogDrift(t *testing.T) {
 				t.Fatalf("New() error = %v, want %q", err, test.want)
 			}
 			assertNoLaunchAcquisition(t, fixture.counters)
-			if strings.Contains(test.name, "evidence") && fixture.counters.binders.Load() != 0 {
-				t.Fatalf("rejected evidence reached adapter binder: %+v", counterSnapshot(fixture.counters))
+			if (strings.Contains(test.name, "evidence") || strings.Contains(test.name, "catalog")) &&
+				fixture.counters.binders.Load() != 0 {
+				t.Fatalf("rejected launch metadata reached adapter binder: %+v", counterSnapshot(fixture.counters))
 			}
 		})
 	}
@@ -475,6 +495,10 @@ func newLaunchFixture(t testing.TB) launchFixture {
 	fixture := launchFixture{
 		artifact: adapterArtifact, counters: counters,
 		config: graphlaunch.Config{
+			GraphMetadata: graphcatalog.Metadata{
+				Stage: graphcatalog.Experimental, Summary: "Graph launch test application.",
+				Change: "Initial exact test graph revision.", Tags: []string{"launch", "test"},
+			},
 			Artifacts: graphconfig.Artifacts{
 				Topology: topology,
 				Values: graphconfig.Artifact{

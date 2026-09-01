@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"regexp"
 	"slices"
 	"sort"
@@ -807,7 +806,7 @@ func validateDerivedMetadata(entry Entry) error {
 		}
 		return wantBoundaries[left].Name < wantBoundaries[right].Name
 	})
-	if !reflect.DeepEqual(entry.Boundaries, wantBoundaries) {
+	if !slices.Equal(entry.Boundaries, wantBoundaries) {
 		return errors.New("boundary metadata differs from Graph IR")
 	}
 
@@ -844,7 +843,7 @@ func validateDerivedMetadata(entry Entry) error {
 		wantEffects = append(wantEffects, effect)
 	}
 	sort.Slice(wantEffects, func(left, right int) bool { return wantEffects[left].Name < wantEffects[right].Name })
-	if !reflect.DeepEqual(entry.Effects, wantEffects) {
+	if !slices.Equal(entry.Effects, wantEffects) {
 		return errors.New("effect metadata differs from Graph IR")
 	}
 	wantChannels := ChannelSummary{}

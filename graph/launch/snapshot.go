@@ -15,6 +15,8 @@ func snapshotConfig(source Config) Config {
 	result.Artifacts = cloneArtifacts(source.Artifacts)
 	result.PlanOptions.OptionalDependencies = slices.Clone(source.PlanOptions.OptionalDependencies)
 	result.Catalog = cloneCatalog(source.Catalog)
+	result.GraphMetadata.Tags = slices.Clone(source.GraphMetadata.Tags)
+	result.GraphMetadata.Profiles = slices.Clone(source.GraphMetadata.Profiles)
 	result.SecretCatalog = cloneSecretCatalog(source.SecretCatalog)
 	result.Evidence = graphevidence.Clone(source.Evidence)
 	result.Readiness = slices.Clone(source.Readiness)

@@ -19,6 +19,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -98,7 +99,9 @@ type Catalog struct {
 }
 
 // Config contains the exact artifacts and selection for one graph-native
-// provider. Evidence is a required separate manifest; an explicit empty
+// provider. GraphMetadata is required public discovery metadata; its Profiles
+// field must be empty because New derives empirical artifact identities only
+// from Evidence. Evidence is a required separate manifest; an explicit empty
 // Profiles list means that the graph makes no empirical claims.
 // PlanOptions.Discovery and PlanOptions.SecretCatalog must be nil: New derives
 // both from Catalog and SecretCatalog so there is only one source of plugin and
@@ -107,6 +110,7 @@ type Config struct {
 	Artifacts     graphconfig.Artifacts
 	PlanOptions   graphconfig.Options
 	Catalog       Catalog
+	GraphMetadata graphcatalog.Metadata
 	SecretCatalog *graphsecret.Document
 	Evidence      graphevidence.Document
 	Adapter       AdapterSelection
@@ -127,13 +131,15 @@ type ReadinessCheck struct {
 	Check func(context.Context) error
 }
 
-// Result retains the immutable plan for management/catalog uses and the
-// prepared NativeBinding used directly as a server.SessionProvider.
+// Result retains the immutable plan, bound evidence, and derived catalog entry
+// for management/discovery uses, plus the prepared NativeBinding used directly
+// as a server.SessionProvider.
 type Result struct {
-	Plan      *graphconfig.Plan
-	Evidence  graphevidence.Document
-	Binding   *graphbinding.NativeBinding
-	Readiness []ReadinessCheck
+	Plan         *graphconfig.Plan
+	Evidence     graphevidence.Document
+	CatalogEntry graphcatalog.Entry
+	Binding      *graphbinding.NativeBinding
+	Readiness    []ReadinessCheck
 }
 
 // New validates and seals a graph-native session provider without acquiring a
@@ -190,6 +196,17 @@ func New(ctx context.Context, source Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("launch graph-native provider evidence: %w", err)
 	}
+	if len(config.GraphMetadata.Profiles) != 0 {
+		return Result{}, errors.New(
+			"launch graph-native provider catalog: empirical profiles are derived from evidence",
+		)
+	}
+	metadata := config.GraphMetadata
+	metadata.Profiles = evidenceArtifacts(evidence)
+	catalogEntry, err := graphcatalog.NewEntry(plan, metadata)
+	if err != nil {
+		return Result{}, fmt.Errorf("launch graph-native provider catalog: %w", err)
+	}
 
 	selectedAssembly, err := config.Catalog.Assembly.Select(plan, config.SecretCatalog)
 	if err != nil {
@@ -226,9 +243,22 @@ func New(ctx context.Context, source Config) (Result, error) {
 		return Result{}, fmt.Errorf("launch graph-native provider binding: %w", err)
 	}
 	return Result{
-		Plan: plan, Evidence: evidence, Binding: native,
+		Plan: plan, Evidence: evidence, CatalogEntry: catalogEntry, Binding: native,
 		Readiness: slices.Clone(config.Readiness),
 	}, nil
+}
+
+func evidenceArtifacts(document graphevidence.Document) []inspect.ArtifactIdentity {
+	seen := make(map[inspect.ArtifactIdentity]struct{}, len(document.Profiles))
+	result := make([]inspect.ArtifactIdentity, 0, len(document.Profiles))
+	for _, profile := range document.Profiles {
+		if _, duplicate := seen[profile.Artifact]; duplicate {
+			continue
+		}
+		seen[profile.Artifact] = struct{}{}
+		result = append(result, profile.Artifact)
+	}
+	return result
 }
 
 func validateReadiness(checks []ReadinessCheck) error {

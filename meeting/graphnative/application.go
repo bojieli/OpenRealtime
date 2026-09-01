@@ -10,6 +10,7 @@ import (
 	"time"
 
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -71,6 +72,7 @@ type ApplicationHostConfig struct {
 	Artifacts     graphconfig.Artifacts
 	PlanOptions   graphconfig.Options
 	Plugins       graphlaunch.Catalog
+	GraphMetadata graphcatalog.Metadata
 	SecretCatalog *graphsecret.Document
 	Evidence      graphevidence.Document
 	Adapters      []AdapterPluginConfig
@@ -173,6 +175,7 @@ func NewApplicationRegistration(
 			launch, err := LaunchConfig(ProviderConfig{
 				Artifacts: cloneApplicationArtifacts(host.Artifacts), PlanOptions: options,
 				Plugins:       cloneApplicationCatalog(host.Plugins),
+				GraphMetadata: cloneApplicationGraphMetadata(host.GraphMetadata),
 				SecretCatalog: cloneApplicationSecretCatalog(host.SecretCatalog),
 				Evidence:      graphevidence.Clone(host.Evidence),
 				Adapter:       adapter.config, Inspection: host.Inspection,
@@ -268,6 +271,7 @@ func cloneApplicationHost(source ApplicationHostConfig) ApplicationHostConfig {
 	result.Artifacts = cloneApplicationArtifacts(source.Artifacts)
 	result.PlanOptions.OptionalDependencies = slices.Clone(source.PlanOptions.OptionalDependencies)
 	result.Plugins = cloneApplicationCatalog(source.Plugins)
+	result.GraphMetadata = cloneApplicationGraphMetadata(source.GraphMetadata)
 	result.SecretCatalog = cloneApplicationSecretCatalog(source.SecretCatalog)
 	result.Evidence = graphevidence.Clone(source.Evidence)
 	result.Adapters = make([]AdapterPluginConfig, len(source.Adapters))
@@ -276,6 +280,13 @@ func cloneApplicationHost(source ApplicationHostConfig) ApplicationHostConfig {
 	}
 	result.TraceRecording = cloneApplicationTraceConfig(source.TraceRecording)
 	result.Readiness = slices.Clone(source.Readiness)
+	return result
+}
+
+func cloneApplicationGraphMetadata(source graphcatalog.Metadata) graphcatalog.Metadata {
+	result := source
+	result.Tags = slices.Clone(source.Tags)
+	result.Profiles = slices.Clone(source.Profiles)
 	return result
 }
 

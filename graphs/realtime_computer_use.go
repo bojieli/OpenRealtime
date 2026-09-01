@@ -18,6 +18,7 @@ import (
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
@@ -182,6 +183,12 @@ func RealtimeComputerUseLaunchConfig(
 	)
 	return graphlaunch.Config{
 		Artifacts: artifacts,
+		GraphMetadata: graphcatalog.Metadata{
+			Stage:   graphcatalog.Candidate,
+			Summary: "Graph-native silent Realtime computer-use application.",
+			Change:  "Initial exact production graph and configuration revision.",
+			Tags:    []string{"computer-use", "realtime", "silent", "visual"},
+		},
 		PlanOptions: graphconfig.Options{
 			Catalog: descriptors, SchemaResolver: schemas,
 			OptionalDependencies: []string{

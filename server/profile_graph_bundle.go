@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/gateway"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 )
@@ -58,6 +59,10 @@ func NewProfileGraphBundle(
 	if err != nil {
 		return nil, fmt.Errorf("compose profiled graph server bundle: %w", err)
 	}
+	catalog, err := graphcatalog.Freeze([]graphcatalog.Entry{launched.CatalogEntry})
+	if err != nil {
+		return nil, fmt.Errorf("compose profiled graph server bundle catalog: %w", err)
+	}
 
 	token := ""
 	if environment := config.Profile.Server.TokenEnvironment; environment != "" {
@@ -95,8 +100,9 @@ func NewProfileGraphBundle(
 		return nil, fmt.Errorf("compose profiled graph server bundle: %w", err)
 	}
 	return &GraphBundle{
-		GraphPlan: launched.Plan, Evidence: launched.Evidence, ServerBundle: bundle,
-		Readiness: launched.Readiness,
+		GraphPlan: launched.Plan, Evidence: launched.Evidence, GraphCatalog: catalog,
+		ServerBundle: bundle,
+		Readiness:    launched.Readiness,
 	}, nil
 }
 

@@ -15,6 +15,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
+	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
@@ -209,6 +210,12 @@ func ScenarioConversationLaunchConfig(
 	)
 	return graphlaunch.Config{
 		Artifacts: artifacts,
+		GraphMetadata: graphcatalog.Metadata{
+			Stage:   graphcatalog.Candidate,
+			Summary: "Graph-native scenario conversation application.",
+			Change:  "Initial exact production graph and configuration revision.",
+			Tags:    []string{"audio", "conversation", "multimodal", "scenario"},
+		},
 		PlanOptions: graphconfig.Options{
 			Catalog: descriptors, SchemaResolver: schemas, Revision: 1,
 			OptionalDependencies: []string{

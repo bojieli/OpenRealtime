@@ -66,6 +66,8 @@ func TestGraphBundleComposesGenericLauncherIntoExactServerRealm(t *testing.T) {
 	if composition.GraphPlan == nil || composition.ServerBundle == nil ||
 		composition.Evidence.Graph != composition.GraphPlan.Graph().ID ||
 		composition.Evidence.Profiles == nil ||
+		len(composition.GraphCatalog.Entries) != 1 ||
+		composition.GraphCatalog.Entries[0].Plan != composition.GraphPlan.Identity() ||
 		composition.GraphPlan.Identity().PlanFingerprint == "" ||
 		composition.ServerBundle.Plan.Fingerprint == "" {
 		t.Fatalf("graph bundle omitted immutable identities: %+v", composition)
