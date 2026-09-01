@@ -2482,8 +2482,13 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   reach and one is genuine redundancy: `durationSamples` already refuses an
   out-of-range sample rate with the identical message.
 
-- [ ] **Exit gate:** the architecture catalog accepts graphs whose exported
-  contracts contain no audio ports.
+- [x] **Exit gate:** the architecture catalog accepts graphs whose exported
+  contracts contain no audio ports. `graph/catalog.NewEntry` derives boundary
+  contracts from a validated `config.Plan` rather than modality flags, and the
+  deterministic strict catalog round-trip accepts a text-only input/output
+  graph while asserting that neither exported boundary acquires an audio type.
+  This closes audio-optional catalog admission; production catalog/profile
+  integration remains the separate open Phase 5 item below.
 
 ### Phase 5: replace configuration and catalog assembly
 
