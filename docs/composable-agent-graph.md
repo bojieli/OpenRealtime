@@ -1810,6 +1810,11 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
+At this reconciliation, 195 of 248 explicit tracker boxes are checked (78.6%)
+and 53 remain open. The percentage records completed reviewable slices; it does
+not dilute an open parent, benchmark population, platform gate, or definition-
+of-done requirement.
+
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
@@ -1861,10 +1866,10 @@ Current checkpoint notes:
   unrelated descriptor and same-document definitions retain their existing
   behavior. Mediated writes and the remaining phase gates stay unchecked until
   their independent slices are complete.
-- No item in the project-level definition of done is yet proven end to end.
-  Several have foundation-level support, but direct benchmark execution,
-  production inspection, reconciliation, and obsolete-path deletion are still
-  outstanding.
+- Seven of the fifteen project-level definition-of-done outcomes are proven end
+  to end. The remaining eight have named completed subgates, but direct
+  benchmark execution, production inspection, reconciliation, native-client
+  evidence, and obsolete-path deletion are still outstanding.
 
 Integrated checkpoint ledger:
 
@@ -2307,9 +2312,21 @@ tracker by itself:
 - [ ] Review every retained candidate recording with the exact
   `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
   problems but never changes the deterministic scorer.
+  - [x] Review and independently reopen every recording in the four completed
+    required candidate populations: Meeting Assistant 4/4, Realtime-CU 16/16,
+    FDB v1.5 498/498, and FDB v3 100/100. Their 618 exact-model evaluations,
+    usable media, create-only receipts, deterministic outcomes, and advisory
+    disagreements remain sealed. The scenario 11×15, active FD-Bench, and both
+    tau-Voice populations keep the universal review gate open.
 - [ ] Publish a case-by-case pass/fail document that places the new totals,
   safety/deadline outcomes, and latency distributions beside the trusted
   historical numbers without inventing unavailable historical detail.
+  - [x] Publish sealed media-linked case-by-case `REVIEW.md` reports for the
+    four completed candidate populations. They preserve deterministic scoring,
+    exact-model advisory findings, reportability, and each available safety or
+    timing result without reconstructing historical attempts. The final shared
+    side-by-side report remains open until every required population and its
+    accepted historical comparison are present.
 
 The historical scenario trail includes the accepted 140/165 total at fifteen
 repetitions: 15/15 each for asked-not-to-be-interrupted, recorded-menu,
@@ -2441,7 +2458,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 668/6,147 at 2026-09-01 18:41 UTC. This dated progress checkpoint is
+  attempt 672/6,147 at 2026-09-01 18:47 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -2556,11 +2573,22 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   complete conversational family cover the topology. The retained historical
   ordinary-turn artifact is diagnostic only; production acceptance comes from
   the new graph's direct integration and benchmark outcomes.
+  - [x] Compile from fresh locks, bind, mount, and directly execute the acoustic,
+    ASR/trajectory, activation, interaction, and complete fast-only/slow-only/
+    both-speaking reference safe points. The payload-free ordinary-turn
+    comparison is fingerprint-bound and retained as diagnostic evidence;
+    shared-server integration and full live quality populations keep the
+    parent open.
 - [x] Add alternative tests where deliberative output speaks directly or fast
   and deliberative streams meet at an explicit stream-aware arbiter.
 
 - [ ] **Exit gate:** no binding-specific control flow is necessary to express
   the componentized reference graph.
+  - [x] Express and execute the direct conversational, Scenario Conversation,
+    Meeting Assistant, Realtime-CU, and adaptive-video compositions through
+    typed graph elements plus policy-free boundary translators under
+    `NativeRuntime`. Retained legacy voice, sidecar, upstream, and pacing paths
+    keep the universal no-binding-control-flow gate open.
 
 ### Phase 3: decompose sidecar, end-to-end, and upstream paths
 
@@ -2598,6 +2626,12 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   lookup, idempotent ledger commit, dispatch, and release/audit outcomes.
 - [ ] Compose visual reflex, slow planner, action arbitration, authority,
   execution, and visual feedback into complete computer-use reference graphs.
+  - [x] Compose and execute the durable single-planner Realtime-CU reference
+    from typed audiovisual observation commit through visual reactivation,
+    one-effect-at-a-time admission, provenance, confirmation, target fencing,
+    canonical/ledger commit, client dispatch, result commit, and changed-screen
+    feedback. A separate visual-reflex lane, slow planner, and explicit action
+    arbiter remain to close the broader multi-planner parent.
 - [x] Add an audio-free text/image/file/attachment component graph with typed
   exported contracts.
 - [x] Add the complete text-and-files cognition agent and silent computer-use
@@ -2727,6 +2761,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
 - [ ] **Exit gate:** normal new deployments do not configure topology through
   the ninety-plus serve flags.
+  - [x] Make the strict production `serve -launch-profile` path consume only
+    graph, values, deployment, secret, evidence, and application-profile
+    artifacts and reject every legacy topology/provider/model/voice/timing/
+    behavior selector before resource or credential work. The still-default
+    flag-only legacy serve path keeps the universal deployment gate open.
 
 ### Phase 6: production inspection and authoring
 
@@ -2981,6 +3020,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
 - [ ] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
+  - [x] Join immutable static graph semantics to redacted live node and channel
+    evidence in the production browser view, including trigger-relative node
+    timing, cancellation/outcome state, queue depth and occupancy, loss,
+    backpressure, and queue wait. Complete cross-node output correlation and
+    live authority-decision attribution remain open.
 
 ### Phase 7: dynamic reconciliation
 
@@ -3024,6 +3068,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
 - [ ] Delete old binding-only launch paths once the corresponding explicit
   profiles are live; no production compatibility window is required.
+  - [x] Delete the historical benchmark migration/parity runner, paired-arm and
+    baseline-registry paths, gateway-owned browser UI, and duplicate standalone
+    presentation forks after their direct replacements landed. The legacy
+    flag-only server and remaining voice/sidecar/upstream binding launches keep
+    the broader deletion parent open.
 - [x] Remove kernel assumptions about slow ownership/speech and mandatory audio.
   Generic ownership validation now accepts engine, model, or remote slow
   cognition and leaves realizable combinations to each adapter contract; the
