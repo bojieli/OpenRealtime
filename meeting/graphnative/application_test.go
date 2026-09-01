@@ -43,6 +43,7 @@ func newMeetingApplicationFixture(
 			PlanOptions:         options,
 			Plugins:             fixture.config.Plugins,
 			SecretCatalog:       fixture.config.SecretCatalog,
+			Evidence:            fixture.config.Evidence,
 			Adapters:            []meetinggraph.AdapterPluginConfig{adapter},
 			Inspection:          fixture.config.Inspection,
 			ShutdownTimeout:     fixture.config.ShutdownTimeout,

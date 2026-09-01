@@ -1786,7 +1786,7 @@ reference graphs, or conformance evidence.
 | 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
-| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment bindings and secret-reference catalogs, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Separate evidence profiles, normal graph-native launch, and executed candidate artifacts |
+| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Production graph/config/profile catalog, graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
@@ -2497,7 +2497,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   graph/config/profile catalog does not.
 - [ ] Replace topology-derived ownership validation with graph contract and live
   capability validation.
-- [ ] Load separate `.ortg` or normalized graph artifacts, typed element values,
+- [x] Load separate `.ortg` or normalized graph artifacts, typed element values,
   deployment bindings, secret references, and evidence profiles.
   - [x] Topology, lock, strict values, deployment-binding, and secret-reference
     artifacts have bounded parsers and a compiler/CLI binding path.
@@ -2509,8 +2509,17 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     and emits canonical public/private deployment plus provider-runtime
     evidence. Drift, missing/excess catalog entries, provider mismatch, and
     ambient secret inputs all fail before factory mount or credential use.
-  - [ ] Add separate evidence-profile artifacts and the normal graph-native
-    launch path over all of these planes.
+  - [x] Add separate evidence-profile artifacts and the normal graph-native
+    launch path over all of these planes. `graph/launch.New` now requires a
+    distinct evidence manifest and binds every claimed profile to the exact
+    prepared graph, plan fingerprint, node contract, and selected immutable
+    implementation before assembly selection or adapter binding. Empty
+    manifests explicitly make no claims but still bind to one graph. Scenario
+    Conversation, Realtime-CU, and Meeting Assistant load their embedded
+    manifests through their ordinary production constructors; launch results
+    and direct/profiled server graph bundles retain the validated document for
+    management and catalog consumers. Missing manifests and graph, plan, node,
+    element, or implementation drift fail without resource acquisition.
 - [ ] Delete topology flags and flattened configuration paths after their
   profile equivalents land; do not translate them into a compatibility graph.
 - [x] Update benchmark architecture cells and gateway inspection to attest exact

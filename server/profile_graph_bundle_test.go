@@ -269,6 +269,8 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 			applicationCalls.Load(), tokenCalls.Load(), acquisitions.Load())
 	}
 	if composition.GraphPlan.Identity() != profile.Plan ||
+		composition.Evidence.Graph != composition.GraphPlan.Graph().ID ||
+		composition.Evidence.Profiles == nil ||
 		composition.ServerBundle.Profile.Name != profile.Server.ProfileName ||
 		len(composition.Readiness) != 1 || readinessCalls.Load() != 0 {
 		t.Fatal("profiled composition lost an exact public identity")

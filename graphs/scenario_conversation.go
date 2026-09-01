@@ -1,7 +1,7 @@
 // Package graphs exposes production constructors for repository-owned graph
 // artifacts. Provider, action, and presentation implementations remain
 // plugins; this file embeds only the scenario conversation topology, values
-// template, descriptor lock, and deployment artifact.
+// template, descriptor lock, deployment artifact, and evidence manifest.
 package graphs
 
 import (
@@ -16,6 +16,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
@@ -25,6 +26,7 @@ import (
 //go:embed components/scenario-conversation/agent.values.yaml
 //go:embed components/scenario-conversation/openrealtime.lock
 //go:embed components/scenario-conversation/agent.deployment.yaml
+//go:embed components/scenario-conversation/agent.evidence.yaml
 var scenarioConversationArtifacts embed.FS
 
 const scenarioConversationArtifactDirectory = "components/scenario-conversation/"
@@ -142,6 +144,20 @@ func updateScenarioNode(
 	return nil
 }
 
+// ScenarioConversationEvidence returns the separate, non-executable empirical
+// claims manifest shipped beside the graph artifacts.
+func ScenarioConversationEvidence() (graphevidence.Document, error) {
+	payload, err := scenarioConversationArtifacts.ReadFile(
+		scenarioConversationArtifactDirectory + "agent.evidence.yaml",
+	)
+	if err != nil {
+		return graphevidence.Document{}, fmt.Errorf(
+			"read embedded scenario conversation agent.evidence.yaml: %w", err,
+		)
+	}
+	return graphevidence.ParseYAML("scenario-conversation/agent.evidence.yaml", payload)
+}
+
 // ScenarioConversationApplicationRegistration connects strict serializable
 // application profiles to this repository-owned artifact constructor.
 func ScenarioConversationApplicationRegistration(
@@ -168,6 +184,10 @@ func ScenarioConversationLaunchConfig(
 		return graphlaunch.Config{}, err
 	}
 	artifacts, err := ScenarioConversationArtifacts(config)
+	if err != nil {
+		return graphlaunch.Config{}, err
+	}
+	evidence, err := ScenarioConversationEvidence()
 	if err != nil {
 		return graphlaunch.Config{}, err
 	}
@@ -200,6 +220,6 @@ func ScenarioConversationLaunchConfig(
 			Assembly: assembly, Adapters: []graphlaunch.AdapterPlugin{plugin.AdapterPlugin()},
 			MountDependencies: plugin.MountDependencies(),
 		},
-		Adapter: plugin.Selection(),
+		Evidence: evidence, Adapter: plugin.Selection(),
 	}, nil
 }

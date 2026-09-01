@@ -50,6 +50,9 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 	if err != nil {
 		t.Fatal(err)
 	}
+	if previewConfig.Evidence.Graph != "scenario_conversation" || previewConfig.Evidence.Profiles == nil {
+		t.Fatalf("scenario launch evidence = %+v", previewConfig.Evidence)
+	}
 	unsupported, err := projectarch.Default().Resolve("cascade.text-policy@3")
 	if err != nil {
 		t.Fatal(err)

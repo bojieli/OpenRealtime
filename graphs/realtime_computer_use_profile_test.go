@@ -105,6 +105,9 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 	if err != nil {
 		t.Fatal(err)
 	}
+	if previewConfig.Evidence.Graph != "realtime_computer_use" || previewConfig.Evidence.Profiles == nil {
+		t.Fatalf("Realtime-CU launch evidence = %+v", previewConfig.Evidence)
+	}
 	preview, err := graphlaunch.New(context.Background(), previewConfig)
 	if err != nil {
 		t.Fatal(err)

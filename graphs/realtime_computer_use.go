@@ -1,6 +1,7 @@
 // Package graphs exposes production constructors for repository-owned graph
 // artifacts. Provider and presentation implementations remain plugins; this
-// package embeds only topology, values templates, locks, and deployment data.
+// package embeds topology, values templates, locks, deployment data, and the
+// separate non-executable evidence manifest.
 package graphs
 
 import (
@@ -18,6 +19,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -28,6 +30,7 @@ import (
 //go:embed components/realtime-computer-use/agent.values.yaml
 //go:embed components/realtime-computer-use/openrealtime.lock
 //go:embed components/realtime-computer-use/agent.deployment.yaml
+//go:embed components/realtime-computer-use/agent.evidence.yaml
 var realtimeComputerUseArtifacts embed.FS
 
 const realtimeComputerUseArtifactDirectory = "components/realtime-computer-use/"
@@ -105,6 +108,20 @@ func RealtimeComputerUseArtifacts(target computeruse.Target) (graphconfig.Artifa
 	}, nil
 }
 
+// RealtimeComputerUseEvidence returns the separate empirical claims manifest
+// shipped with the repository-owned graph.
+func RealtimeComputerUseEvidence() (graphevidence.Document, error) {
+	payload, err := realtimeComputerUseArtifacts.ReadFile(
+		realtimeComputerUseArtifactDirectory + "agent.evidence.yaml",
+	)
+	if err != nil {
+		return graphevidence.Document{}, fmt.Errorf(
+			"read embedded realtime-CU agent.evidence.yaml: %w", err,
+		)
+	}
+	return graphevidence.ParseYAML("realtime-computer-use/agent.evidence.yaml", payload)
+}
+
 // RealtimeComputerUseApplicationRegistration connects the strict,
 // serializable Realtime-CU application profile to these repository-owned
 // immutable graph artifacts. Host factories remain exact registrations and
@@ -129,6 +146,10 @@ func RealtimeComputerUseLaunchConfig(
 		return graphlaunch.Config{}, err
 	}
 	artifacts, err := RealtimeComputerUseArtifacts(config.Target)
+	if err != nil {
+		return graphlaunch.Config{}, err
+	}
+	evidence, err := RealtimeComputerUseEvidence()
 	if err != nil {
 		return graphlaunch.Config{}, err
 	}
@@ -171,6 +192,6 @@ func RealtimeComputerUseLaunchConfig(
 			Assembly: assembly, Adapters: []graphlaunch.AdapterPlugin{plugin.AdapterPlugin()},
 			MountDependencies: plugin.MountDependencies(),
 		},
-		Adapter: plugin.Selection(),
+		Evidence: evidence, Adapter: plugin.Selection(),
 	}, nil
 }

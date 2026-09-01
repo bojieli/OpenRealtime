@@ -20,6 +20,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	graphsecret "github.com/bojieli/OpenRealtime/graph/secret"
@@ -97,14 +98,17 @@ type Catalog struct {
 }
 
 // Config contains the exact artifacts and selection for one graph-native
-// provider. PlanOptions.Discovery and PlanOptions.SecretCatalog must be nil:
-// New derives both from Catalog and SecretCatalog so there is only one source
-// of plugin and secret-catalog authority.
+// provider. Evidence is a required separate manifest; an explicit empty
+// Profiles list means that the graph makes no empirical claims.
+// PlanOptions.Discovery and PlanOptions.SecretCatalog must be nil: New derives
+// both from Catalog and SecretCatalog so there is only one source of plugin and
+// secret-catalog authority.
 type Config struct {
 	Artifacts     graphconfig.Artifacts
 	PlanOptions   graphconfig.Options
 	Catalog       Catalog
 	SecretCatalog *graphsecret.Document
+	Evidence      graphevidence.Document
 	Adapter       AdapterSelection
 
 	Inspection      graphruntime.InspectionConfig
@@ -127,14 +131,16 @@ type ReadinessCheck struct {
 // prepared NativeBinding used directly as a server.SessionProvider.
 type Result struct {
 	Plan      *graphconfig.Plan
+	Evidence  graphevidence.Document
 	Binding   *graphbinding.NativeBinding
 	Readiness []ReadinessCheck
 }
 
 // New validates and seals a graph-native session provider without acquiring a
 // runtime resource. The order is intentional: the complete broad catalog,
-// exact plan, selected assembly, adapter, and dependency inventory are all
-// rejected before graphbinding can expose a provider to a listener.
+// exact plan, bound evidence, selected assembly, adapter, and dependency
+// inventory are all rejected before graphbinding can expose a provider to a
+// listener.
 func New(ctx context.Context, source Config) (Result, error) {
 	if ctx == nil {
 		return Result{}, errors.New("launch graph-native provider: nil context")
@@ -180,6 +186,10 @@ func New(ctx context.Context, source Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("launch graph-native provider plan: %w", err)
 	}
+	evidence, err := graphevidence.Bind(plan, config.Evidence)
+	if err != nil {
+		return Result{}, fmt.Errorf("launch graph-native provider evidence: %w", err)
+	}
 
 	selectedAssembly, err := config.Catalog.Assembly.Select(plan, config.SecretCatalog)
 	if err != nil {
@@ -215,7 +225,10 @@ func New(ctx context.Context, source Config) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("launch graph-native provider binding: %w", err)
 	}
-	return Result{Plan: plan, Binding: native, Readiness: slices.Clone(config.Readiness)}, nil
+	return Result{
+		Plan: plan, Evidence: evidence, Binding: native,
+		Readiness: slices.Clone(config.Readiness),
+	}, nil
 }
 
 func validateReadiness(checks []ReadinessCheck) error {

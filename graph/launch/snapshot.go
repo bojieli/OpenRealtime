@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	graphsecret "github.com/bojieli/OpenRealtime/graph/secret"
@@ -15,6 +16,7 @@ func snapshotConfig(source Config) Config {
 	result.PlanOptions.OptionalDependencies = slices.Clone(source.PlanOptions.OptionalDependencies)
 	result.Catalog = cloneCatalog(source.Catalog)
 	result.SecretCatalog = cloneSecretCatalog(source.SecretCatalog)
+	result.Evidence = graphevidence.Clone(source.Evidence)
 	result.Readiness = slices.Clone(source.Readiness)
 	if source.TraceRecording != nil {
 		recording := *source.TraceRecording

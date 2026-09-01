@@ -95,7 +95,7 @@ func NewProfileGraphBundle(
 		return nil, fmt.Errorf("compose profiled graph server bundle: %w", err)
 	}
 	return &GraphBundle{
-		GraphPlan: launched.Plan, ServerBundle: bundle,
+		GraphPlan: launched.Plan, Evidence: launched.Evidence, ServerBundle: bundle,
 		Readiness: launched.Readiness,
 	}, nil
 }

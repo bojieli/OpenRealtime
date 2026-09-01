@@ -129,6 +129,7 @@ func TestMeetingAssistantRegistrationResolvesExactGraphWithoutAcquiringProviders
 		t.Fatal(err)
 	}
 	if prepared.Plan == nil || prepared.Plan.Graph().ID != meetinggraph.GraphID ||
+		prepared.Evidence.Graph != meetinggraph.GraphID || prepared.Evidence.Profiles == nil ||
 		prepared.Plan.Graph().Fingerprint == "" || launchConfig.Adapter != registration.Adapter {
 		t.Fatalf("prepared Meeting application = %+v", prepared.Plan)
 	}

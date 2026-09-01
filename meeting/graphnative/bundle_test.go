@@ -32,6 +32,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
@@ -54,6 +55,7 @@ func TestMeetingBundleSealsExactProviderWithoutAcquiringPlugins(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Plan.Graph().ID != meetinggraph.GraphID ||
+		result.Evidence.Graph != meetinggraph.GraphID || result.Evidence.Profiles == nil ||
 		result.Binding.Graph().Fingerprint != result.Plan.Graph().Fingerprint {
 		t.Fatalf("meeting provider graph = %+v", result.Binding.Graph())
 	}
@@ -725,6 +727,10 @@ func newProviderFixture(t testing.TB) providerFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	evidence, err := graphevidence.ParseYAML("agent.evidence.yaml", read("agent.evidence.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	mountCalls := &atomic.Int64{}
 	adapterCalls := &atomic.Int64{}
 	plugins := graphlaunch.Catalog{}
@@ -757,7 +763,8 @@ func newProviderFixture(t testing.TB) providerFixture {
 			Lock:       graphconfig.Artifact{Path: "openrealtime.lock", Encoding: graphconfig.JSON, Data: read("openrealtime.lock")},
 			Deployment: graphconfig.Artifact{Path: "agent.deployment.yaml", Encoding: graphconfig.YAML, Data: read("agent.deployment.yaml")},
 		},
-		PlanOptions: graphconfig.Options{Revision: 1}, Plugins: plugins, SecretCatalog: &secrets,
+		PlanOptions: graphconfig.Options{Revision: 1}, Plugins: plugins,
+		SecretCatalog: &secrets, Evidence: evidence,
 		Adapter: meetinggraph.AdapterPluginConfig{
 			Reference: "go://openrealtime/meeting-adapters/cascade/v1",
 			Artifact:  inspect.ArtifactIdentity{ID: "go://openrealtime/meeting-adapters/cascade", Revision: "build-1"},

@@ -11,6 +11,7 @@ import (
 
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -71,6 +72,7 @@ type ApplicationHostConfig struct {
 	PlanOptions   graphconfig.Options
 	Plugins       graphlaunch.Catalog
 	SecretCatalog *graphsecret.Document
+	Evidence      graphevidence.Document
 	Adapters      []AdapterPluginConfig
 
 	Inspection      graphruntime.InspectionConfig
@@ -172,6 +174,7 @@ func NewApplicationRegistration(
 				Artifacts: cloneApplicationArtifacts(host.Artifacts), PlanOptions: options,
 				Plugins:       cloneApplicationCatalog(host.Plugins),
 				SecretCatalog: cloneApplicationSecretCatalog(host.SecretCatalog),
+				Evidence:      graphevidence.Clone(host.Evidence),
 				Adapter:       adapter.config, Inspection: host.Inspection,
 				ShutdownTimeout: host.ShutdownTimeout,
 				TraceRecording:  cloneApplicationTraceConfig(host.TraceRecording),
@@ -266,6 +269,7 @@ func cloneApplicationHost(source ApplicationHostConfig) ApplicationHostConfig {
 	result.PlanOptions.OptionalDependencies = slices.Clone(source.PlanOptions.OptionalDependencies)
 	result.Plugins = cloneApplicationCatalog(source.Plugins)
 	result.SecretCatalog = cloneApplicationSecretCatalog(source.SecretCatalog)
+	result.Evidence = graphevidence.Clone(source.Evidence)
 	result.Adapters = make([]AdapterPluginConfig, len(source.Adapters))
 	for index := range source.Adapters {
 		result.Adapters[index] = cloneAdapterPluginConfig(source.Adapters[index])

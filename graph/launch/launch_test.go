@@ -19,6 +19,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -58,6 +59,11 @@ func TestNewBuildsExactNativeSessionProviderWithoutAcquiringResources(t *testing
 	if err := result.Plan.Validate(); err != nil {
 		t.Fatalf("launcher plan: %v", err)
 	}
+	if result.Evidence.Graph != result.Plan.Identity().GraphID ||
+		len(result.Evidence.Profiles) != 1 ||
+		result.Evidence.Profiles[0].PlanFingerprint != result.Plan.Identity().PlanFingerprint {
+		t.Fatalf("bound launch evidence = %+v", result.Evidence)
+	}
 	var provider serverplugin.SessionProvider = result.Binding
 	if provider.Name() != launchAdapterName ||
 		result.Binding.Graph().Fingerprint != result.Plan.Graph().Fingerprint {
@@ -75,6 +81,10 @@ func TestNewBuildsExactNativeSessionProviderWithoutAcquiringResources(t *testing
 	fixture.config.Catalog.Adapters[0].Bind = nil
 	fixture.config.Catalog.MountDependencies[0].Factory = nil
 	fixture.config.Artifacts.Topology.Data[0] = 'X'
+	fixture.config.Evidence.Profiles[0].Name = "redirected"
+	if result.Evidence.Profiles[0].Name != "launch-warm" {
+		t.Fatalf("launch result aliases caller evidence: %+v", result.Evidence)
+	}
 
 	runtime, err := provider.Start(context.Background(), legacy.Options{
 		Sink: &launchSink{}, SessionID: "launch-normal",
@@ -158,6 +168,46 @@ func TestNewFailsClosedOnAdapterAndDependencyCatalogDrift(t *testing.T) {
 		want   string
 	}{
 		{
+			name:   "missing evidence manifest",
+			mutate: func(config *graphlaunch.Config) { config.Evidence = graphevidence.Document{} },
+			want:   "evidence apiVersion",
+		},
+		{
+			name: "evidence graph drift",
+			mutate: func(config *graphlaunch.Config) {
+				config.Evidence.Graph = "wrong_launch_session"
+			},
+			want: "manifest targets graph",
+		},
+		{
+			name: "evidence plan drift",
+			mutate: func(config *graphlaunch.Config) {
+				config.Evidence.Profiles[0].PlanFingerprint = launchArtifact("plan/drift", "1").Digest
+			},
+			want: "plan fingerprint",
+		},
+		{
+			name: "evidence node drift",
+			mutate: func(config *graphlaunch.Config) {
+				config.Evidence.Profiles[0].NodeID = "missing"
+			},
+			want: "is absent from the plan",
+		},
+		{
+			name: "evidence element drift",
+			mutate: func(config *graphlaunch.Config) {
+				config.Evidence.Profiles[0].Element.Digest = launchArtifact("element/drift", "1").Digest
+			},
+			want: "element identity drifted",
+		},
+		{
+			name: "evidence implementation drift",
+			mutate: func(config *graphlaunch.Config) {
+				config.Evidence.Profiles[0].Implementation = launchArtifact("runtime/drift", "1")
+			},
+			want: "implementation identity drifted",
+		},
+		{
 			name:   "missing selected adapter",
 			mutate: func(config *graphlaunch.Config) { config.Catalog.Adapters = nil },
 			want:   "missing explicitly selected reference",
@@ -235,6 +285,9 @@ func TestNewFailsClosedOnAdapterAndDependencyCatalogDrift(t *testing.T) {
 				t.Fatalf("New() error = %v, want %q", err, test.want)
 			}
 			assertNoLaunchAcquisition(t, fixture.counters)
+			if strings.Contains(test.name, "evidence") && fixture.counters.binders.Load() != 0 {
+				t.Fatalf("rejected evidence reached adapter binder: %+v", counterSnapshot(fixture.counters))
+			}
 		})
 	}
 }
@@ -419,7 +472,7 @@ func newLaunchFixture(t testing.TB) launchFixture {
 			return nil, errors.New("unused dependency factory was called")
 		},
 	}
-	return launchFixture{
+	fixture := launchFixture{
 		artifact: adapterArtifact, counters: counters,
 		config: graphlaunch.Config{
 			Artifacts: graphconfig.Artifacts{
@@ -450,6 +503,30 @@ func newLaunchFixture(t testing.TB) launchFixture {
 			ShutdownTimeout: time.Second,
 		},
 	}
+	options := fixture.config.PlanOptions
+	options.Discovery = discovery
+	plan, err := graphconfig.Create(context.Background(), fixture.config.Artifacts, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := plan.Graph()
+	resolution := plan.Resolution()
+	if len(graph.Nodes) != 1 || len(resolution.Nodes) != 1 {
+		t.Fatalf("launch evidence fixture nodes = %d resolutions = %d", len(graph.Nodes), len(resolution.Nodes))
+	}
+	fixture.config.Evidence = graphevidence.Document{
+		APIVersion: graphevidence.APIVersion, Graph: graph.ID,
+		Profiles: []graphevidence.Profile{{
+			Name: "launch-warm", Artifact: launchArtifact("evidence/launch-warm", "1"),
+			PlanFingerprint: plan.Identity().PlanFingerprint,
+			NodeID:          graph.Nodes[0].ID,
+			Element:         graph.Nodes[0].Element,
+			Implementation:  resolution.Nodes[0].Implementation.Artifact,
+			Hardware:        launchArtifact("hardware/launch", "1"),
+			Load:            launchArtifact("load/launch", "1"),
+		}},
+	}
+	return fixture
 }
 
 type launchServiceValue struct{ counters *launchCounters }

@@ -416,6 +416,7 @@ type adaptiveVideoGraphFixture struct {
 	options   graphconfig.Options
 	catalog   graphassembly.Catalog
 	secrets   *graphsecret.Document
+	evidence  graphevidence.Document
 }
 
 func newAdaptiveVideoGraphFixture(
@@ -465,7 +466,7 @@ func newAdaptiveVideoGraphFixture(
 		},
 	}, options: graphconfig.Options{
 		Catalog: descriptors, SchemaResolver: schemas, Loader: graphcompiler.FileLoader{},
-	}, catalog: catalog, secrets: &secrets}
+	}, catalog: catalog, secrets: &secrets, evidence: evidence}
 }
 
 func adaptiveVideoLaunchConfig(
@@ -507,6 +508,7 @@ func adaptiveVideoLaunchConfig(
 			}},
 		},
 		SecretCatalog: fixture.secrets,
+		Evidence:      fixture.evidence,
 		Adapter:       adapterPlugin.Selection(profileName, profileRevision),
 		Inspection: graphruntime.InspectionConfig{
 			MaxFlows: 64, MaxEdgesPerFlow: 64, MaxCorrelationBytes: 512,

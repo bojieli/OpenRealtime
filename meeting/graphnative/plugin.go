@@ -15,6 +15,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
@@ -305,6 +306,7 @@ type ProviderConfig struct {
 	PlanOptions   graphconfig.Options
 	Plugins       graphlaunch.Catalog
 	SecretCatalog *graphsecret.Document
+	Evidence      graphevidence.Document
 	Adapter       AdapterPluginConfig
 
 	Inspection      graphruntime.InspectionConfig
@@ -362,7 +364,7 @@ func LaunchConfig(config ProviderConfig) (graphlaunch.Config, error) {
 			Assembly: standard, Adapters: adapters,
 			MountDependencies: slices.Clone(config.Plugins.MountDependencies),
 		},
-		SecretCatalog: config.SecretCatalog, Adapter: selection,
+		SecretCatalog: config.SecretCatalog, Evidence: config.Evidence, Adapter: selection,
 		Inspection: config.Inspection, ShutdownTimeout: config.ShutdownTimeout,
 		TraceRecording: config.TraceRecording,
 		Readiness:      slices.Clone(config.Readiness),

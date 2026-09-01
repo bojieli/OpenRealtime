@@ -11,6 +11,7 @@ import (
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -24,6 +25,7 @@ import (
 //go:embed components/meeting-assistant/openrealtime.lock
 //go:embed components/meeting-assistant/agent.deployment.yaml
 //go:embed components/meeting-assistant/agent.secrets.yaml
+//go:embed components/meeting-assistant/agent.evidence.yaml
 var meetingAssistantArtifacts embed.FS
 
 const meetingAssistantArtifactDirectory = "components/meeting-assistant/"
@@ -99,6 +101,20 @@ func MeetingAssistantArtifacts() (graphconfig.Artifacts, *graphsecret.Document, 
 	}, &secrets, nil
 }
 
+// MeetingAssistantEvidence returns the separate empirical claims manifest
+// shipped with the graph. It contains no executable or credential material.
+func MeetingAssistantEvidence() (graphevidence.Document, error) {
+	payload, err := meetingAssistantArtifacts.ReadFile(
+		meetingAssistantArtifactDirectory + "agent.evidence.yaml",
+	)
+	if err != nil {
+		return graphevidence.Document{}, fmt.Errorf(
+			"read embedded Meeting Assistant agent.evidence.yaml: %w", err,
+		)
+	}
+	return graphevidence.ParseYAML("meeting-assistant/agent.evidence.yaml", payload)
+}
+
 // MeetingAssistantApplicationRegistration installs one direct graph-native
 // application behind the common launch-profile/server API. It neither opens a
 // provider nor introduces an application-specific listener or wire route.
@@ -119,6 +135,10 @@ func MeetingAssistantApplicationRegistration(
 	if err != nil {
 		return MeetingAssistantRegistration{}, err
 	}
+	evidence, err := MeetingAssistantEvidence()
+	if err != nil {
+		return MeetingAssistantRegistration{}, err
+	}
 	adapterConfig := plugin.AdapterConfig()
 	_, adapter, err := meetinggraph.AdapterPlugin(adapterConfig)
 	if err != nil {
@@ -134,7 +154,7 @@ func MeetingAssistantApplicationRegistration(
 	}
 	registration, err := meetinggraph.NewApplicationRegistration(meetinggraph.ApplicationHostConfig{
 		ApplicationArtifact: config.ApplicationArtifact, ProviderArtifact: config.ProviderArtifact,
-		Artifacts: artifacts, Plugins: catalog, SecretCatalog: secrets,
+		Artifacts: artifacts, Plugins: catalog, SecretCatalog: secrets, Evidence: evidence,
 		Adapters:   []meetinggraph.AdapterPluginConfig{adapterConfig},
 		Inspection: config.Inspection, ShutdownTimeout: config.ShutdownTimeout,
 		TraceRecording: config.TraceRecording,

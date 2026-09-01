@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 )
 
@@ -28,6 +29,7 @@ type GraphBundleConfig struct {
 // so inspection can attest both layers without collapsing their identities.
 type GraphBundle struct {
 	GraphPlan    *graphconfig.Plan
+	Evidence     graphevidence.Document
 	ServerBundle *Bundle
 	Readiness    []graphlaunch.ReadinessCheck
 }
@@ -57,7 +59,7 @@ func NewGraphBundle(ctx context.Context, config GraphBundleConfig) (*GraphBundle
 		return nil, fmt.Errorf("compose graph server bundle: %w", err)
 	}
 	return &GraphBundle{
-		GraphPlan: launched.Plan, ServerBundle: serverBundle,
+		GraphPlan: launched.Plan, Evidence: launched.Evidence, ServerBundle: serverBundle,
 		Readiness: launched.Readiness,
 	}, nil
 }

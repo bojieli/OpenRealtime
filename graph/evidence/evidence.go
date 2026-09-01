@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/element"
+	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"github.com/bojieli/OpenRealtime/internal/strictyaml"
@@ -50,6 +51,89 @@ type Profile struct {
 	Implementation  inspect.ArtifactIdentity `json:"implementation" yaml:"implementation"`
 	Hardware        inspect.ArtifactIdentity `json:"hardware" yaml:"hardware"`
 	Load            inspect.ArtifactIdentity `json:"load" yaml:"load"`
+}
+
+// Clone returns an independent copy suitable for retaining across a launch
+// boundary. Profile fields contain only immutable value identities; the slice
+// is the sole mutable container in Document.
+func Clone(document Document) Document {
+	result := document
+	if document.Profiles != nil {
+		result.Profiles = make([]Profile, len(document.Profiles))
+		copy(result.Profiles, document.Profiles)
+	}
+	return result
+}
+
+// Bind validates that every empirical claim applies to the exact prepared
+// plan. Hardware and load identities remain claim axes rather than deployment
+// selectors, while graph, plan, node, element, and implementation must match
+// the immutable launch plan exactly. Empty Profiles is an explicit no-claims
+// manifest and still binds to one graph.
+func Bind(plan *graphconfig.Plan, document Document) (Document, error) {
+	if plan == nil {
+		return Document{}, errors.New("bind evidence: nil plan")
+	}
+	if err := plan.Validate(); err != nil {
+		return Document{}, fmt.Errorf("bind evidence plan: %w", err)
+	}
+	normalized, err := normalize(document)
+	if err != nil {
+		return Document{}, fmt.Errorf("bind evidence manifest: %w", err)
+	}
+	identity := plan.Identity()
+	if normalized.Graph != identity.GraphID {
+		return Document{}, fmt.Errorf(
+			"bind evidence: manifest targets graph %q, plan targets %q",
+			normalized.Graph, identity.GraphID,
+		)
+	}
+
+	graph := plan.Graph()
+	nodes := make(map[string]element.Identity, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		nodes[node.ID] = node.Element
+	}
+	resolution := plan.Resolution()
+	implementations := make(map[string]inspect.ArtifactIdentity, len(resolution.Nodes))
+	for _, node := range resolution.Nodes {
+		implementations[node.NodeID] = node.Implementation.Artifact
+	}
+	for _, profile := range normalized.Profiles {
+		if profile.PlanFingerprint != identity.PlanFingerprint {
+			return Document{}, fmt.Errorf(
+				"bind evidence profile %q: plan fingerprint %q does not match %q",
+				profile.Name, profile.PlanFingerprint, identity.PlanFingerprint,
+			)
+		}
+		contract, found := nodes[profile.NodeID]
+		if !found {
+			return Document{}, fmt.Errorf(
+				"bind evidence profile %q: node %q is absent from the plan",
+				profile.Name, profile.NodeID,
+			)
+		}
+		if profile.Element != contract {
+			return Document{}, fmt.Errorf(
+				"bind evidence profile %q: node %q element identity drifted",
+				profile.Name, profile.NodeID,
+			)
+		}
+		implementation, found := implementations[profile.NodeID]
+		if !found {
+			return Document{}, fmt.Errorf(
+				"bind evidence profile %q: node %q has no selected implementation",
+				profile.Name, profile.NodeID,
+			)
+		}
+		if profile.Implementation != implementation {
+			return Document{}, fmt.Errorf(
+				"bind evidence profile %q: node %q implementation identity drifted",
+				profile.Name, profile.NodeID,
+			)
+		}
+	}
+	return Clone(normalized), nil
 }
 
 func ParseJSON(path string, source []byte) (Document, error) {
