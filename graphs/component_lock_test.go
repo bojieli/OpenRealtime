@@ -12,7 +12,7 @@ import (
 )
 
 func TestStandardComponentGraphsCompileFromCommittedLocks(t *testing.T) {
-	for _, name := range []string{"acoustic-endpoint", "multimodal-content"} {
+	for _, name := range []string{"acoustic-endpoint", "multimodal-content", "text-file-cognition"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			directory := filepath.Join("components", name)

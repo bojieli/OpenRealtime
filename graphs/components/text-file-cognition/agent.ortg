@@ -1,0 +1,83 @@
+// Audio-free text and retained-file cognition reference. Participant content
+// becomes a committed trajectory observation before it can activate the
+// model. Files remain opaque handles in the trajectory; the deployment media
+// resolver must cross the explicit lease path to obtain untrusted bytes.
+graph text_file_cognition {
+    ingress.UserContent :: content;
+    media.RetainedMedia :: retention;
+    media.ResolveAttachment :: resolver;
+    state.ObservationCommit :: observation_commit;
+    state.TrajectoryStore :: trajectory;
+    policy.GenerateOnObservation :: activation;
+    cognition.TextModel :: model;
+    interaction.ModelResultCommit :: model_result_commit;
+    flow.Mux :: trajectory_append_mux;
+    flow.Tee :: content_observation_copy;
+    flow.Tee :: trajectory_snapshot_copy;
+    flow.Tee :: trajectory_committed_copy;
+    flow.Tee :: trajectory_rejected_copy;
+    flow.Tee :: observation_outcome_copy;
+    flow.Tee :: model_result_copy;
+
+    content.retain -> retention.retain;
+    retention.retained -> content.retained;
+    content.release -> retention.release;
+    content.store_cancel -> retention.cancel;
+    resolver.fetch -> retention.fetch;
+    retention.fetched -> resolver.fetched;
+    resolver.store_cancel -> retention.cancel;
+    resolver.return_lease -> retention.return_lease;
+
+    content.observations -> content_observation_copy.in;
+    content_observation_copy.out -> observation_commit.observations;
+    observation_commit.append -> trajectory_append_mux.in;
+    model_result_commit.append -> trajectory_append_mux.in;
+    trajectory_append_mux.out -> trajectory.append;
+    trajectory.snapshot -> trajectory_snapshot_copy.in;
+    trajectory_snapshot_copy.out -> model.context;
+    trajectory.committed -> trajectory_committed_copy.in;
+    trajectory_committed_copy.out -> observation_commit.committed;
+    trajectory_committed_copy.out -> model_result_commit.committed;
+    trajectory.rejected -> trajectory_rejected_copy.in;
+    trajectory_rejected_copy.out -> observation_commit.rejected;
+    trajectory_rejected_copy.out -> model_result_commit.rejected;
+    observation_commit.outcome -> observation_outcome_copy.in;
+    observation_outcome_copy.out -> activation.committed;
+    activation.trigger -> model.trigger;
+    model.result -> model_result_copy.in;
+    model_result_copy.out -> model_result_commit.result;
+
+    input text = content.text;
+    input image = content.image;
+    input file = content.file;
+    input attachment = content.attachment;
+    input content_cancel = content.cancel;
+    input media_resolve = resolver.resolve;
+    input media_resolve_cancel = resolver.cancel;
+    input media_return_lease = retention.return_lease;
+    input activation_cancel = activation.cancel;
+    input model_cancel = model.cancel;
+
+    output observations = content_observation_copy.out;
+    output handles = content.handles;
+    output ingress_outcome = content.outcome;
+    output resolved = resolver.resolved;
+    output resolver_outcome = resolver.outcome;
+    output released = retention.released;
+    output lease_returned = retention.lease_returned;
+    output retention_outcome = retention.outcome;
+    output retention_metrics = retention.metrics;
+    output trajectory_snapshot = trajectory_snapshot_copy.out;
+    output trajectory_commit = trajectory_committed_copy.out;
+    output trajectory_rejection = trajectory_rejected_copy.out;
+    output observation_outcome = observation_outcome_copy.out;
+    output activation_authority = activation.authority;
+    output activation_state = activation.state;
+    output activation_outcome = activation.outcome;
+    output prepared_text = model.text;
+    output model_result = model_result_copy.out;
+    output model_proposals = model.tools;
+    output model_outcome = model.outcome;
+    output model_resolution = model.resolved;
+    output model_commit_outcome = model_result_commit.outcome;
+}

@@ -1785,7 +1785,7 @@ reference graphs, or conformance evidence.
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
 | 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
-| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete audio-free text/file cognition and explicit visual-reflex/planner reference agents |
+| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
@@ -1840,7 +1840,8 @@ Integrated checkpoint ledger:
 - [x] Typed tool proposal admission, confirmation, target fencing, idempotent
   ledger commit, dispatch, and release/audit outcomes.
 - [x] Typed audio-free text/image/file/attachment ingress, bounded retention,
-  revocable leases, resolution, cancellation, and release paths.
+  revocable leases, resolution, cancellation, and release paths, plus locked
+  text/file cognition and silent computer-use agents with executed regressions.
 - [x] Graph-native external-model contract and locked omni, duplex, and
   upstream topology variants over shared element contracts.
 - [x] Authenticated benchmark and gateway evidence bound to exact Graph IR,
@@ -2472,8 +2473,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   execution, and visual feedback into complete computer-use reference graphs.
 - [x] Add an audio-free text/image/file/attachment component graph with typed
   exported contracts.
-- [ ] Add the complete text-and-files cognition agent and silent computer-use
-  agent with no audio requirement.
+- [x] Add the complete text-and-files cognition agent and silent computer-use
+  agent with no audio requirement. The locked `text_file_cognition` graph
+  commits authenticated text/file observations, activates a deployment-selected
+  silent model from the exact committed prefix, resolves file bytes only through
+  the retained-media lease path, returns the lease, and commits prepared text
+  without tool or audio authority. Its executed two-turn regression reads exact
+  retained file bytes; the independently locked silent computer-use regression
+  crosses the complete proposal-to-authorized-result chain without audio.
 - [x] Preserve injection checks, confirmation, idempotency, target identity,
   and ledger release gates in decomposed action elements and adversarial tests.
 - [x] Adversarially cover the refusal surface of the authority, provider,

@@ -78,6 +78,7 @@ func TestEveryShippedComponentHasSeparateTruthfulDeploymentSecretAndEvidenceArti
 		"realtime-computer-use",
 		"scenario-conversation",
 		"silent-computer-use",
+		"text-file-cognition",
 		"upstream-native-interaction",
 	}
 	if !slices.Equal(components, want) {

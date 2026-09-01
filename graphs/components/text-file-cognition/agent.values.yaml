@@ -1,0 +1,22 @@
+apiVersion: openrealtime.ai/config/v1alpha1
+graph: text_file_cognition
+nodes:
+  content:
+    retention_scope: session
+  retention:
+    scope: session
+  resolver: {}
+  observation_commit: {}
+  trajectory: {}
+  activation:
+    role: text-file
+    invocation:
+      instruction: Answer from committed participant text and resolve retained files when relevant.
+      max_output_tokens: 1024
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
+  model:
+    provider: deployment.text-file
+    retain_reasoning: false
+  model_result_commit: {}
