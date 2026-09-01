@@ -38,6 +38,7 @@ type Node struct {
 	DeploymentReference string               `json:"deployment_reference,omitempty"`
 	DeploymentDigest    string               `json:"deployment_digest,omitempty"`
 	Ports               []Port               `json:"ports"`
+	Reaction            element.Reaction     `json:"reaction"`
 	Dependencies        []element.Dependency `json:"dependencies,omitempty"`
 	Effects             []element.Effect     `json:"effects,omitempty"`
 }
@@ -410,10 +411,16 @@ func Build(graph ir.Graph) (Model, error) {
 		Scopes:     make([]Scope, 0, len(graph.Scopes)),
 	}
 	for _, source := range graph.Nodes {
+		reaction := source.Reaction
+		reaction.Triggers = slices.Clone(source.Reaction.Triggers)
+		reaction.SampledState = slices.Clone(source.Reaction.SampledState)
+		reaction.Interrupts = slices.Clone(source.Reaction.Interrupts)
+		reaction.Outcomes = slices.Clone(source.Reaction.Outcomes)
 		node := Node{
 			ID: source.ID, Element: source.Element, Implementation: source.Implementation,
 			ConfigReference: source.ConfigReference, ConfigDigest: source.ConfigDigest,
 			DeploymentReference: source.DeploymentReference, DeploymentDigest: source.DeploymentDigest,
+			Reaction:     reaction,
 			Dependencies: append([]element.Dependency(nil), source.Dependencies...),
 			Effects:      append([]element.Effect(nil), source.Effects...),
 		}

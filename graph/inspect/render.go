@@ -203,8 +203,7 @@ func writeMermaidHierarchy(output *strings.Builder, model Model) {
 		output.WriteString(indentation)
 		output.WriteString(mermaidNodeID(node.ID))
 		output.WriteString("[\"")
-		output.WriteString(mermaidText(node.ID + "\n" + node.Element.Name + "@" +
-			strconv.FormatUint(node.Element.Revision, 10)))
+		output.WriteString(mermaidText(nodeInspectionLabel(node)))
 		output.WriteString("\"]\n")
 	}
 	var writeScope func(string, string)
@@ -238,6 +237,44 @@ func writeMermaidHierarchy(output *strings.Builder, model Model) {
 	}
 }
 
+func nodeInspectionLabel(node Node) string {
+	lines := []string{node.ID, node.Element.Name + "@" + strconv.FormatUint(node.Element.Revision, 10)}
+	for _, reaction := range []struct {
+		label string
+		ports []string
+	}{
+		{label: "trigger", ports: node.Reaction.Triggers},
+		{label: "sample", ports: node.Reaction.SampledState},
+		{label: "interrupt", ports: node.Reaction.Interrupts},
+		{label: "outcome", ports: node.Reaction.Outcomes},
+	} {
+		if len(reaction.ports) != 0 {
+			lines = append(lines, reaction.label+": "+strings.Join(reaction.ports, ", "))
+		}
+	}
+	if node.Reaction.MaxConcurrency != 0 {
+		lines = append(lines, "max concurrency: "+strconv.Itoa(node.Reaction.MaxConcurrency))
+	}
+	if node.Reaction.BreaksCycles {
+		lines = append(lines, "causal break: true")
+	}
+	for _, effect := range node.Effects {
+		attributes := make([]string, 0, 2)
+		if effect.External {
+			attributes = append(attributes, "external", "irreversible")
+		} else if effect.Reversible {
+			attributes = append(attributes, "reversible")
+		} else {
+			attributes = append(attributes, "irreversible")
+		}
+		if effect.Authority != "" {
+			attributes = append(attributes, "authority="+effect.Authority)
+		}
+		lines = append(lines, "effect: "+effect.Name+" ["+strings.Join(attributes, ", ")+"]")
+	}
+	return strings.Join(lines, "\n")
+}
+
 func writeDOTHierarchy(output *strings.Builder, model Model) {
 	nodes := make(map[string]Node, len(model.Nodes))
 	for _, node := range model.Nodes {
@@ -257,7 +294,7 @@ func writeDOTHierarchy(output *strings.Builder, model Model) {
 		output.WriteString(indentation)
 		output.WriteString(strconv.Quote(node.ID))
 		output.WriteString(" [label=")
-		output.WriteString(strconv.Quote(node.ID + "\n" + node.Element.Name + "@" + strconv.FormatUint(node.Element.Revision, 10)))
+		output.WriteString(strconv.Quote(nodeInspectionLabel(node)))
 		output.WriteString("];\n")
 	}
 	var writeScope func(string, string)

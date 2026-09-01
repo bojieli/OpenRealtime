@@ -269,13 +269,15 @@ try {
   await waitFor("authoring canvas render", () => evaluate(`(() => {
     const view = document.querySelector('[data-view=authoring-canvas]');
     return view?.querySelector('[data-role=rendering]')?.textContent.includes('"nodes"') &&
+      view?.querySelector('[data-role=rendering]')?.textContent.includes('"reaction"') &&
       view.textContent.includes("sha256:");
   })()`));
   const renderMS = performance.now() - renderStarted;
   check("compile and canvas render remain bound to one graph fingerprint", await evaluate(`(() => {
     const view = document.querySelector('[data-view=authoring-canvas]');
     return view?.textContent.includes("browser_authoring") &&
-      view?.querySelector('[data-role=rendering]')?.textContent.includes('"nodes"');
+      view?.querySelector('[data-role=rendering]')?.textContent.includes('"nodes"') &&
+      view?.querySelector('[data-role=rendering]')?.textContent.includes('"reaction"');
   })()`));
 
   const rotated = await configureOperator(OPERATOR_CAPABILITY_ROTATED);

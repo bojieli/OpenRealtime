@@ -2579,7 +2579,12 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 
 - [x] Add live graph identity, exact node resolution, queue occupancy/counters,
   bounded flow histories, and queue-wait telemetry contracts.
-- [ ] Add complete trigger, cancellation, authority, and per-stage latency
+- [x] Preserve each node's exact reaction and effect contract in the
+  frontend-neutral static inspection model. Generated Mermaid/DOT and the
+  browser authoring canvas now expose trigger, sampled-state, interrupt,
+  outcome, concurrency, causal-break, effect, reversibility, and authority
+  facts from the same immutable Graph IR; the projection is mutation-isolated.
+- [ ] Add complete live trigger, cancellation, authority, and per-stage latency
   operator views over those contracts.
 - [x] Add deterministic semantic graph diff plus bounded, fingerprinted,
   payload-free trace artifacts and exact Graph IR replay validation.

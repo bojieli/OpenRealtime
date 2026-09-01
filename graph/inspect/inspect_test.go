@@ -1,6 +1,7 @@
 package inspect_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -22,7 +23,9 @@ func TestGeneratedViewsAttestExactGraphAndSemantics(t *testing.T) {
 	for name, view := range map[string]string{"mermaid": mermaid, "dot": dot} {
 		for _, required := range []string{
 			graph.Fingerprint, "test.Source@1", "test.Sink@1",
-			"Event&lt;test.Value&gt;", "depth 4",
+			"Event&lt;test.Value&gt;", "depth 4", "trigger: trigger",
+			"interrupt: cancel", "outcome: out", "max concurrency: 2",
+			"effect: computer.click [external, irreversible, authority=Authorized]",
 		} {
 			candidate := required
 			if name == "dot" {
@@ -41,11 +44,16 @@ func TestGeneratedViewsAttestExactGraphAndSemantics(t *testing.T) {
 
 func TestModelClassifiesTriggerInterruptAndState(t *testing.T) {
 	graph := fixture(t)
-	graph.Nodes[0].Implementation = "go://test/source/v1"
-	graph.Nodes[0].ConfigReference = "values://inspect/source"
-	graph.Nodes[0].ConfigDigest = "sha256:" + strings.Repeat("7", 64)
-	graph.Nodes[0].DeploymentReference = "deployment://inspect/source"
-	graph.Nodes[0].DeploymentDigest = "sha256:" + strings.Repeat("8", 64)
+	for index := range graph.Nodes {
+		if graph.Nodes[index].ID != "source" {
+			continue
+		}
+		graph.Nodes[index].Implementation = "go://test/source/v1"
+		graph.Nodes[index].ConfigReference = "values://inspect/source"
+		graph.Nodes[index].ConfigDigest = "sha256:" + strings.Repeat("7", 64)
+		graph.Nodes[index].DeploymentReference = "deployment://inspect/source"
+		graph.Nodes[index].DeploymentDigest = "sha256:" + strings.Repeat("8", 64)
+	}
 	var err error
 	graph, err = ir.Freeze(graph)
 	if err != nil {
@@ -55,12 +63,37 @@ func TestModelClassifiesTriggerInterruptAndState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if model.Nodes[0].Implementation != "go://test/source/v1" ||
-		model.Nodes[0].ConfigReference != "values://inspect/source" ||
-		model.Nodes[0].ConfigDigest != "sha256:"+strings.Repeat("7", 64) ||
-		model.Nodes[0].DeploymentReference != "deployment://inspect/source" ||
-		model.Nodes[0].DeploymentDigest != "sha256:"+strings.Repeat("8", 64) {
-		t.Fatalf("inspection model omitted node selection identity: %+v", model.Nodes[0])
+	var inspectedSource *inspect.Node
+	for index := range model.Nodes {
+		if model.Nodes[index].ID == "source" {
+			inspectedSource = &model.Nodes[index]
+		}
+	}
+	if inspectedSource == nil {
+		t.Fatal("inspection model omitted source node")
+	}
+	if inspectedSource.Implementation != "go://test/source/v1" ||
+		inspectedSource.ConfigReference != "values://inspect/source" ||
+		inspectedSource.ConfigDigest != "sha256:"+strings.Repeat("7", 64) ||
+		inspectedSource.DeploymentReference != "deployment://inspect/source" ||
+		inspectedSource.DeploymentDigest != "sha256:"+strings.Repeat("8", 64) {
+		t.Fatalf("inspection model omitted node selection identity: %+v", inspectedSource)
+	}
+	wantReaction := element.Reaction{
+		Triggers: []string{"trigger"}, SampledState: []string{"context"},
+		Interrupts: []string{"cancel"}, Outcomes: []string{"out"}, MaxConcurrency: 2,
+	}
+	if got := inspectedSource.Reaction; !reflect.DeepEqual(got, wantReaction) ||
+		len(inspectedSource.Effects) != 1 || inspectedSource.Effects[0].Authority != "Authorized" {
+		t.Fatalf("inspection model omitted reaction or authority metadata: %+v", inspectedSource)
+	}
+	inspectedSource.Reaction.Triggers[0] = "mutated"
+	inspectedSource.Effects[0].Authority = "mutated"
+	for _, node := range graph.Nodes {
+		if node.ID == "source" &&
+			(node.Reaction.Triggers[0] != "trigger" || node.Effects[0].Authority != "Authorized") {
+			t.Fatal("inspection model aliases immutable Graph IR reaction or effect metadata")
+		}
 	}
 	roles := map[string]bool{}
 	for _, node := range model.Nodes {
@@ -120,6 +153,11 @@ func fixture(t *testing.T) ir.Graph {
 			{Name: "context", Direction: element.Input, Type: state, Cardinality: element.One},
 			{Name: "out", Direction: element.Output, Type: value, Cardinality: element.One, LossAllowed: true},
 		},
+		Reaction: element.Reaction{
+			Triggers: []string{"trigger"}, SampledState: []string{"context"},
+			Interrupts: []string{"cancel"}, Outcomes: []string{"out"}, MaxConcurrency: 2,
+		},
+		Effects: []element.Effect{{Name: "computer.click", External: true, Authority: "Authorized"}},
 	}
 	sinkDescriptor := element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion, Name: "test.Sink", Revision: 1,
@@ -141,7 +179,7 @@ func fixture(t *testing.T) ir.Graph {
 				{Name: "cancel", Direction: element.Input, Type: interrupt, Cardinality: element.One},
 				{Name: "context", Direction: element.Input, Type: state, Cardinality: element.One},
 				{Name: "out", Direction: element.Output, Type: value, Cardinality: element.One, LossAllowed: true},
-			}},
+			}, Reaction: sourceDescriptor.Reaction, Effects: sourceDescriptor.Effects},
 			{ID: "sink", Element: sinkIdentity, Ports: []ir.Port{{
 				Name: "in", Direction: element.Input, Type: value, Cardinality: element.One, LossAllowed: true,
 			}}},
