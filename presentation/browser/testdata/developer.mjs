@@ -213,11 +213,16 @@ try {
     "joined inspection model", () => evaluate(`(() => {
       const view = document.querySelector('[data-view=inspection]');
       const cards = view?.querySelectorAll('[data-role=inspection-nodes] article') ?? [];
+      const edges = view?.querySelectorAll('[data-role=inspection-edges] article') ?? [];
       return view?.querySelector('#contract-availability')?.dataset.state === "joined" &&
         cards.length > 0 && [...cards].every((card) =>
           card.querySelector('[data-role=reaction-contract]') &&
           card.querySelector('[data-role=reaction-timing]') &&
-          card.querySelector('[data-role=effect-authority]'));
+          card.querySelector('[data-role=effect-authority]')) &&
+        [...edges].every((edge) =>
+          Number(edge.dataset.depth) > 0 && Number(edge.dataset.occupancy) >= 0 &&
+          ["lossless", "lossy"].includes(edge.dataset.delivery) &&
+          edge.textContent.includes("Queue wait:"));
     })()`)));
   const traceIdentity = await waitForValue("causal trace", () => evaluate(`(() => {
     const view = document.querySelector('[data-view=trace]');

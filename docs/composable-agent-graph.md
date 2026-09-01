@@ -1818,7 +1818,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and complete cross-node/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and complete cross-node/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with exact receipts, refusal, and rollback | Candidate pre-mount, graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -2664,6 +2664,13 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     completion that predates its retained trigger. This closes node-local
     trigger-relative timing; live authority decisions and complete cross-node
     stage attribution remain open.
+  - [x] Join every exact static internal-edge delivery/depth contract to its
+    redacted live queue evidence and render occupancy, high-water mark,
+    enqueue/dequeue counts, drops, backpressure, and cumulative/per-dequeue
+    queue wait as text-only channel cards. The public Go and browser boundaries
+    reject invalid delivery/depth, counter arithmetic, undeclared or missing
+    edges, and live occupancy beyond the immutable depth; focused adversarial
+    JavaScript and real-Chromium DOM gates cover the complete projection.
   - [x] Serve the exact source-free static inspection model under the same
     narrow session capability and join it to redacted live node evidence in a
     text-only browser operator view. Identity drift, unredacted identifiers,
@@ -3180,7 +3187,11 @@ checked from foundation work alone; each requires end-to-end release evidence.
    or removed without kernel changes.
 - [ ] The same full-duplex foreground can be run with native or external
    interaction as a graph change.
-- [ ] Channel depth, loss, queue occupancy, and latency contribution are visible.
+- [x] Channel depth, loss, queue occupancy, and latency contribution are
+  visible. The joined operator channel cards bind immutable delivery/depth to
+  live occupancy/high-water, drop/backpressure, and queue-wait evidence; the
+  exact projection passes fail-closed Go/JavaScript validation and a real
+  Chromium rendering gate.
 - [ ] Every running session reports an immutable Graph IR fingerprint and exact
    live-resolved element/config/capability identities.
 - [ ] Mermaid/DOT and the live canvas are generated from that exact graph.

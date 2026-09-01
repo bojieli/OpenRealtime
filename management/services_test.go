@@ -596,6 +596,74 @@ func TestValidateSessionSnapshotRejectsImpossibleTriggerRelativeTiming(t *testin
 	}
 }
 
+func TestValidateSessionSnapshotRejectsImpossibleQueueTelemetry(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	live, _ := managedLiveTrace(t, graph)
+	edge := live.Edges[graph.Edges[0].ID]
+	edge.Occupancy = 1
+	live.Edges[graph.Edges[0].ID] = edge
+	if err := ValidateSessionSnapshot(live); err == nil ||
+		!strings.Contains(err.Error(), "impossible queue telemetry") {
+		t.Fatalf("impossible queue telemetry error = %v", err)
+	}
+}
+
+func TestValidateInspectionModelRejectsInvalidChannelContract(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	model, err := inspect.Build(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Edges[0].Depth = 0
+	if err := ValidateInspectionModel(model); err == nil ||
+		!strings.Contains(err.Error(), "invalid static edge") {
+		t.Fatalf("invalid channel depth error = %v", err)
+	}
+	model, err = inspect.Build(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Edges[0].Delivery = "invented"
+	if err := ValidateInspectionModel(model); err == nil ||
+		!strings.Contains(err.Error(), "invalid static edge") {
+		t.Fatalf("invalid delivery policy error = %v", err)
+	}
+}
+
+func TestValidateSessionModelRequiresExactChannelPopulationAndDepth(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	model, err := inspect.Build(graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, _ := managedLiveTrace(t, graph)
+	if err := ValidateSessionModel(live, model); err != nil {
+		t.Fatalf("valid exact channel population: %v", err)
+	}
+	missing := live.Clone()
+	delete(missing.Edges, graph.Edges[0].ID)
+	if err := ValidateSessionModel(missing, model); err == nil ||
+		!strings.Contains(err.Error(), "edge populations differ") {
+		t.Fatalf("missing live edge error = %v", err)
+	}
+	extra := live.Clone()
+	extra.Edges[ir.BoundaryQueuePrefix+"invented"] = inspect.EdgeLive{}
+	if err := ValidateSessionModel(extra, model); err == nil ||
+		!strings.Contains(err.Error(), "edge populations differ") {
+		t.Fatalf("extra live edge error = %v", err)
+	}
+	beyond := live.Clone()
+	edge := beyond.Edges[graph.Edges[0].ID]
+	edge.Occupancy = model.Edges[0].Depth + 1
+	edge.HighWater = edge.Occupancy
+	edge.Enqueued = uint64(edge.Occupancy)
+	beyond.Edges[graph.Edges[0].ID] = edge
+	if err := ValidateSessionModel(beyond, model); err == nil ||
+		!strings.Contains(err.Error(), "edge evidence differs") {
+		t.Fatalf("live depth overflow error = %v", err)
+	}
+}
+
 func managedLiveTrace(t *testing.T, graph ir.Graph) (inspect.Live, inspect.LiveTrace) {
 	t.Helper()
 	configuration := inspect.ArtifactIdentity{

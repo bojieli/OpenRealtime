@@ -51,6 +51,7 @@ const fingerprint = `sha256:${"a".repeat(64)}`;
 const elementDigest = `sha256:${"b".repeat(64)}`;
 const malicious = `<img src=x onerror="globalThis.compromised=true">`;
 const nodeID = `operator${malicious}`;
+const edgeID = `channel${malicious}`;
 const baseLive = {
   format_version: 1,
   graph_id: "joined_operator",
@@ -70,7 +71,13 @@ const baseLive = {
       },
     },
   },
-  edges: {}, flows: {}, trace_dropped: 0,
+  edges: {
+    [edgeID]: {
+      occupancy: 1, high_water: 3, enqueued: 7, dequeued: 6,
+      dropped: 2, backpressure: 1, queue_wait_ns: 300,
+    },
+  },
+  flows: {}, trace_dropped: 0,
 };
 const baseModel = {
   graph_id: "joined_operator",
@@ -80,12 +87,19 @@ const baseModel = {
     id: nodeID,
     element: { name: "test.Operator", revision: 1, digest: elementDigest },
     implementation: "go.test.operator.v1",
-    ports: [{ name: "trigger", direction: "input", type: "Trigger(test.Value)", cardinality: "one", role: "trigger" }],
+    ports: [
+      { name: "trigger", direction: "input", type: "Trigger(test.Value)", cardinality: "one", role: "trigger" },
+      { name: "done", direction: "output", type: "Event(test.Value)", cardinality: "one", role: "outcome" },
+    ],
     reaction: {
       triggers: ["trigger"], sampled_state: ["context"], interrupts: ["cancel"],
       outcomes: ["done"], max_concurrency: 4, breaks_cycles: true,
     },
     effects: [{ name: "computer.click", external: true, authority: malicious, reversible: false }],
+  }],
+  edges: [{
+    id: edgeID, from: { node: nodeID, port: "done" }, to: { node: nodeID, port: "trigger" },
+    type: "Event(test.Value)", role: "data", delivery: "lossy", depth: 4,
   }],
 };
 
@@ -132,8 +146,11 @@ const availability = find(section, (entry) => entry.id === "availability");
 const contract = find(section, (entry) => entry.id === "contract-availability");
 const refresh = find(section, (entry) => entry.id === "refresh");
 const card = find(section, (entry) => entry.dataset.nodeId === nodeID);
+const edgeCard = find(section, (entry) => entry.dataset.edgeId === edgeID);
 if (availability?.textContent !== "live" || contract?.dataset.state !== "joined" ||
-    card?.dataset.activeRuns !== "2" || card?.dataset.state !== "running") {
+    card?.dataset.activeRuns !== "2" || card?.dataset.state !== "running" ||
+    edgeCard?.dataset.delivery !== "lossy" || edgeCard?.dataset.depth !== "4" ||
+    edgeCard?.dataset.occupancy !== "1") {
   throw new Error("inspection view did not join exact static and live node evidence");
 }
 for (const expected of [
@@ -143,6 +160,10 @@ for (const expected of [
   "Completion: 180 ns from mount clock", "Trigger to completion: 80 ns after first trigger",
   "Cancellation: 160 ns from mount clock", "Trigger to cancellation: 60 ns after first trigger",
   `computer.click: external; authority ${malicious}; not reversible`,
+  `Route: ${nodeID}.done → ${nodeID}.trigger`, "Contract: Event(test.Value); role data",
+  "Delivery: lossy; depth 4", "Occupancy: 1/4", "High water: 3/4",
+  "Enqueued / dequeued: 7 / 6", "Dropped: 2", "Backpressure: 1",
+  "Queue wait: 300 ns cumulative; 50 ns per dequeue",
 ]) {
   if (!section.textContent.includes(expected)) throw new Error(`joined view omitted ${expected}`);
 }
@@ -180,6 +201,40 @@ await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
     !section.textContent.includes("impossible trigger-relative timing")) {
   throw new Error("inspection view accepted impossible trigger-relative timing");
+}
+
+live = structuredClone(baseLive);
+live.edges[edgeID].high_water = 5;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("static and live depth disagree")) {
+  throw new Error("inspection view accepted queue telemetry beyond the declared depth");
+}
+
+live = structuredClone(baseLive);
+live.edges[edgeID].dequeued = 7;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("impossible queue telemetry")) {
+  throw new Error("inspection view accepted internally inconsistent queue counters");
+}
+
+live = structuredClone(baseLive);
+live.edges["boundary:invented"] = {
+  occupancy: 0, high_water: 0, enqueued: 0, dequeued: 0, dropped: 0, backpressure: 0,
+};
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("contains undeclared edge boundary:invented")) {
+  throw new Error("inspection view accepted an undeclared boundary queue");
+}
+
+live = structuredClone(baseLive);
+delete live.edges[edgeID];
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes(`omits declared edge ${edgeID}`)) {
+  throw new Error("inspection view accepted a missing declared channel");
 }
 
 accessListener(null);

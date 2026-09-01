@@ -76,6 +76,15 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 			return fmt.Errorf("%w: session source returned invalid capabilities", ErrConflict)
 		}
 	}
+	if len(snapshot.Edges) > 65_536 {
+		return fmt.Errorf("%w: session source returned too many live edges", ErrConflict)
+	}
+	for id, edge := range snapshot.Edges {
+		if !canonicalEvidenceName(id) || edge.Occupancy < 0 || edge.HighWater < edge.Occupancy ||
+			edge.Dequeued > edge.Enqueued || edge.Enqueued-edge.Dequeued != uint64(edge.Occupancy) {
+			return fmt.Errorf("%w: session source returned impossible queue telemetry", ErrConflict)
+		}
+	}
 	return nil
 }
 
@@ -179,7 +188,8 @@ func ValidateInspectionModel(model inspect.Model) error {
 	edges := make(map[string]struct{}, len(model.Edges))
 	for _, edge := range model.Edges {
 		if !canonicalEvidenceName(edge.ID) || !canonicalEvidenceName(edge.Type) ||
-			!canonicalEvidenceName(edge.Role) {
+			!canonicalEvidenceName(edge.Role) || edge.Depth <= 0 ||
+			(edge.Delivery != ir.Lossless && edge.Delivery != ir.Lossy) {
 			return fmt.Errorf("%w: session source returned an invalid static edge", ErrConflict)
 		}
 		if _, duplicate := edges[edge.ID]; duplicate {
@@ -252,6 +262,22 @@ func ValidateSessionModel(snapshot inspect.Live, model inspect.Model) error {
 		live, found := snapshot.Nodes[node.ID]
 		if !found || live.Resolution == nil || live.Resolution.Element != node.Element {
 			return fmt.Errorf("%w: session static and live node identities differ", ErrConflict)
+		}
+	}
+	expectedEdges := make(map[string]int, len(model.Edges)+len(model.Boundaries))
+	for _, edge := range model.Edges {
+		expectedEdges[edge.ID] = edge.Depth
+	}
+	for _, boundary := range model.Boundaries {
+		expectedEdges[ir.BoundaryQueuePrefix+boundary.Name] = 0
+	}
+	if len(snapshot.Edges) != len(expectedEdges) {
+		return fmt.Errorf("%w: session static and live edge populations differ", ErrConflict)
+	}
+	for id, depth := range expectedEdges {
+		live, found := snapshot.Edges[id]
+		if !found || (depth > 0 && (live.Occupancy > depth || live.HighWater > depth)) {
+			return fmt.Errorf("%w: session static and live edge evidence differs", ErrConflict)
 		}
 	}
 	return nil

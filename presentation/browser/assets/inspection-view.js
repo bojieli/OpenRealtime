@@ -54,6 +54,15 @@ function sameIdentity(left, right) {
   return left.name === right.name && left.revision === right.revision && left.digest === right.digest;
 }
 
+function endpoint(value, label) {
+  const source = object(value, label);
+  return Object.freeze({
+    node: text(source.node, `${label} node`),
+    port: text(source.port, `${label} port`),
+    lane: text(source.lane ?? "", `${label} lane`, true),
+  });
+}
+
 function reaction(value, nodeID) {
   const source = object(value ?? {}, `node ${nodeID} reaction`);
   return Object.freeze({
@@ -100,7 +109,45 @@ function staticProjection(value) {
     });
   });
   if (nodes.length === 0) throw new Error("static session model has no nodes");
-  return Object.freeze({ graphID, revision, fingerprint: source.fingerprint, nodes: Object.freeze(nodes) });
+  const edgeIDs = new Set();
+  const edges = rows(source.edges ?? [], "static edges").map((entry, index) => {
+    const edge = object(entry, `static edge ${index}`);
+    const id = text(edge.id, `static edge ${index} ID`);
+    if (edgeIDs.has(id)) throw new Error(`static model repeats edge ${id}`);
+    edgeIDs.add(id);
+    if (edge.delivery !== "lossless" && edge.delivery !== "lossy") {
+      throw new Error(`static edge ${id} has invalid delivery`);
+    }
+    return Object.freeze({
+      id,
+      from: endpoint(edge.from, `static edge ${id} source`),
+      to: endpoint(edge.to, `static edge ${id} target`),
+      type: text(edge.type, `static edge ${id} type`),
+      role: text(edge.role, `static edge ${id} role`),
+      delivery: edge.delivery,
+      depth: integer(edge.depth, `static edge ${id} depth`, 1),
+    });
+  });
+  const boundaryNames = new Set();
+  const boundaries = rows(source.boundaries ?? [], "static boundaries").map((entry, index) => {
+    const boundary = object(entry, `static boundary ${index}`);
+    const name = text(boundary.name, `static boundary ${index} name`);
+    if (boundaryNames.has(name)) throw new Error(`static model repeats boundary ${name}`);
+    boundaryNames.add(name);
+    if (boundary.direction !== "input" && boundary.direction !== "output") {
+      throw new Error(`static boundary ${name} has invalid direction`);
+    }
+    return Object.freeze({
+      name, direction: boundary.direction,
+      endpoint: endpoint(boundary.endpoint, `static boundary ${name} endpoint`),
+      type: text(boundary.type, `static boundary ${name} type`),
+      role: text(boundary.role, `static boundary ${name} role`),
+    });
+  });
+  return Object.freeze({
+    graphID, revision, fingerprint: source.fingerprint,
+    nodes: Object.freeze(nodes), edges: Object.freeze(edges), boundaries: Object.freeze(boundaries),
+  });
 }
 
 function liveNode(value, id) {
@@ -135,11 +182,18 @@ function liveNode(value, id) {
 function edgeProjection(value, id) {
   const source = object(value, `live edge ${id}`);
   if ((source.last_item_id ?? "") !== "") throw new Error(`live edge ${id} contains an unredacted item identity`);
+  const occupancy = integer(source.occupancy, `live edge ${id} occupancy`);
+  const highWater = integer(source.high_water, `live edge ${id} high water`);
+  const enqueued = integer(source.enqueued, `live edge ${id} enqueued`);
+  const dequeued = integer(source.dequeued, `live edge ${id} dequeued`);
+  if (highWater < occupancy || dequeued > enqueued || enqueued - dequeued !== occupancy) {
+    throw new Error(`live edge ${id} contains impossible queue telemetry`);
+  }
   return Object.freeze({
-    occupancy: integer(source.occupancy, `live edge ${id} occupancy`),
-    high_water: integer(source.high_water, `live edge ${id} high water`),
-    enqueued: integer(source.enqueued, `live edge ${id} enqueued`),
-    dequeued: integer(source.dequeued, `live edge ${id} dequeued`),
+    occupancy,
+    high_water: highWater,
+    enqueued,
+    dequeued,
     dropped: integer(source.dropped, `live edge ${id} dropped`),
     backpressure: integer(source.backpressure, `live edge ${id} backpressure`),
     queue_wait_ns: integer(source.queue_wait_ns ?? 0, `live edge ${id} queue wait`),
@@ -207,7 +261,7 @@ function liveProjection(value) {
   }
   return Object.freeze({
     graphID, revision, fingerprint: source.fingerprint,
-    state: text(source.state, "live graph state"), nodes,
+    state: text(source.state, "live graph state"), nodes, edges: Object.freeze(edges),
     snapshot: Object.freeze({
       state: source.state, nodes: Object.freeze(safeNodes), edges: Object.freeze(edges),
       flows: Object.freeze(flows), dropped: integer(source.trace_dropped ?? 0, "live trace dropped"),
@@ -229,7 +283,27 @@ function joinedProjection(liveValue, modelValue) {
     }
     return Object.freeze({ declared, observed });
   });
-  return Object.freeze({ live, model, nodes: Object.freeze(nodes) });
+  const declaredEdges = new Set(model.edges.map((edge) => edge.id));
+  const expectedLiveEdges = new Set(declaredEdges);
+  for (const boundary of model.boundaries) expectedLiveEdges.add(`boundary:${boundary.name}`);
+  for (const edgeID of Object.keys(live.edges)) {
+    if (!expectedLiveEdges.has(edgeID)) {
+      throw new Error(`live snapshot contains undeclared edge ${edgeID}`);
+    }
+  }
+  for (const edgeID of expectedLiveEdges) {
+    if (!live.edges[edgeID]) throw new Error(`live snapshot omits declared edge ${edgeID}`);
+  }
+  const edges = model.edges.map((declared) => {
+    const observed = live.edges[declared.id];
+    if (observed.occupancy > declared.depth || observed.high_water > declared.depth) {
+      throw new Error(`static and live depth disagree for edge ${declared.id}`);
+    }
+    return Object.freeze({ declared, observed });
+  });
+  return Object.freeze({
+    live, model, nodes: Object.freeze(nodes), edges: Object.freeze(edges),
+  });
 }
 
 function node(name, value = "") {
@@ -260,8 +334,18 @@ function triggerLatency(trigger, value) {
   return `${value - trigger} ns after first trigger`;
 }
 
-function renderJoined(container, joined) {
-  container.replaceChildren();
+function endpointText(value) {
+  return `${value.node}.${value.port}${value.lane ? `[${value.lane}]` : ""}`;
+}
+
+function queueWait(value) {
+  if (value.dequeued === 0) return `${value.queue_wait_ns} ns cumulative; no dequeues`;
+  return `${value.queue_wait_ns} ns cumulative; ${Math.floor(value.queue_wait_ns / value.dequeued)} ns per dequeue`;
+}
+
+function renderJoined(nodeContainer, edgeContainer, joined) {
+  nodeContainer.replaceChildren();
+  edgeContainer.replaceChildren();
   for (const { declared, observed } of joined.nodes) {
     const card = node("article");
     card.dataset.nodeId = declared.id;
@@ -308,7 +392,25 @@ function renderJoined(container, joined) {
       }
     }
     card.append(authority);
-    container.append(card);
+    nodeContainer.append(card);
+  }
+  for (const { declared, observed } of joined.edges) {
+    const card = node("article");
+    card.dataset.edgeId = declared.id;
+    card.dataset.delivery = declared.delivery;
+    card.dataset.depth = String(declared.depth);
+    card.dataset.occupancy = String(observed.occupancy);
+    card.append(node("h3", declared.id));
+    line(card, "Route", `${endpointText(declared.from)} → ${endpointText(declared.to)}`);
+    line(card, "Contract", `${declared.type}; role ${declared.role}`);
+    line(card, "Delivery", `${declared.delivery}; depth ${declared.depth}`);
+    line(card, "Occupancy", `${observed.occupancy}/${declared.depth}`);
+    line(card, "High water", `${observed.high_water}/${declared.depth}`);
+    line(card, "Enqueued / dequeued", `${observed.enqueued} / ${observed.dequeued}`);
+    line(card, "Dropped", String(observed.dropped));
+    line(card, "Backpressure", String(observed.backpressure));
+    line(card, "Queue wait", queueWait(observed));
+    edgeContainer.append(card);
   }
 }
 
@@ -347,12 +449,15 @@ export default {
     contractAvailability.id = "contract-availability";
     const nodeList = node("div");
     nodeList.dataset.role = "inspection-nodes";
+    const edgeList = node("div");
+    edgeList.dataset.role = "inspection-edges";
     const details = node("details");
     details.append(node("summary", "Raw redacted live evidence"));
     const snapshot = node("pre");
     snapshot.id = "snapshot";
     details.append(snapshot);
-    section.append(style, header, identityView, contractAvailability, nodeList, details);
+    section.append(style, header, identityView, contractAvailability,
+      node("h3", "Nodes"), nodeList, node("h3", "Channels"), edgeList, details);
     let generation = 0;
 
     const load = async () => {
@@ -368,11 +473,12 @@ export default {
         snapshot.textContent = JSON.stringify(live.snapshot, null, 2);
         if (modelResult.status === "fulfilled") {
           const joined = joinedProjection(liveResult.value, modelResult.value);
-          renderJoined(nodeList, joined);
+          renderJoined(nodeList, edgeList, joined);
           contractAvailability.textContent = "Exact static reaction/effect contracts joined to live node evidence.";
           contractAvailability.dataset.state = "joined";
         } else {
           nodeList.replaceChildren();
+          edgeList.replaceChildren();
           contractAvailability.textContent = "Live evidence available; exact static reaction contracts are unavailable.";
           contractAvailability.dataset.state = "unavailable";
         }
@@ -380,6 +486,7 @@ export default {
       } catch (error) {
         snapshot.textContent = "";
         nodeList.replaceChildren();
+        edgeList.replaceChildren();
         availability.textContent = "unavailable";
         identityView.textContent = error?.message ?? String(error);
         contractAvailability.textContent = "Static/live evidence could not be joined safely.";
@@ -400,6 +507,7 @@ export default {
       contractAvailability.dataset.state = "waiting";
       snapshot.textContent = "";
       nodeList.replaceChildren();
+      edgeList.replaceChildren();
       if (access) load();
     });
     refresh.addEventListener("click", load);
