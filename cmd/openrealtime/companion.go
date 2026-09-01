@@ -37,6 +37,10 @@ const (
 	companionMaximumReadyBytes    = 1 << 20
 )
 
+var errCompanionPermanentReadiness = errors.New(
+	"companion readiness response is permanently incompatible",
+)
+
 type companionClient string
 
 const (
@@ -239,15 +243,17 @@ func runCompanionContext(
 			}
 			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(header.Get("Content-Type"), ";")[0]))
 			if mediaType != "application/json" {
-				return fmt.Errorf("manifest media type is %q", mediaType)
+				return permanentCompanionReadiness(fmt.Errorf("manifest media type is %q", mediaType))
 			}
 			manifest, parseErr := presentation.ParseManifest(body)
 			if parseErr != nil {
-				return fmt.Errorf("parse manifest: %w", parseErr)
+				return permanentCompanionReadiness(fmt.Errorf("parse manifest: %w", parseErr))
 			}
 			if manifest.Fingerprint != ready.BrowserManifest.Fingerprint ||
 				manifest.Plan.Fingerprint != ready.BrowserManifest.Plan.Fingerprint {
-				return errors.New("served manifest does not match browser-developer-webrtc")
+				return permanentCompanionReadiness(
+					errors.New("served manifest does not match browser-developer-webrtc"),
+				)
 			}
 			return nil
 		},
@@ -715,6 +721,9 @@ func waitCompanionHTTPReady(
 						return nil
 					}
 				}
+				if errors.Is(lastErr, errCompanionPermanentReadiness) {
+					return lastErr
+				}
 			}
 		} else {
 			lastErr = err
@@ -730,6 +739,13 @@ func waitCompanionHTTPReady(
 		case <-ticker.C:
 		}
 	}
+}
+
+func permanentCompanionReadiness(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: %w", errCompanionPermanentReadiness, err)
 }
 
 type companionSerializedWriter struct {

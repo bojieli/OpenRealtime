@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -449,13 +450,64 @@ func TestCompanionRejectsNonWebRTCManifestBeforeReady(t *testing.T) {
 		"-server-listen", companionFreeAddress(t),
 		"-webrtc-listen", companionFreeAddress(t),
 		"-presentation-listen", companionFreeAddress(t),
-		"-client", "none", "-ready-timeout", "2s", "-shutdown-timeout", "2s",
+		"-client", "none", "-ready-timeout", "10s", "-shutdown-timeout", "2s",
 	}, &output, runtime)
 	if err == nil || !strings.Contains(err.Error(), "served manifest does not match browser-developer-webrtc") {
 		t.Fatalf("manifest identity error = %v", err)
 	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("immutable manifest mismatch waited for the readiness deadline: %v", err)
+	}
 	if strings.Contains(output.String(), "companion ready") {
 		t.Fatal("companion announced readiness for the wrong browser profile")
+	}
+}
+
+func TestCompanionReadinessStopsOnPermanentValidationFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"status":"wrong"}`))
+	}))
+	defer server.Close()
+	process := &companionProcess{done: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := waitCompanionHTTPReady(
+		ctx, server.Client(), server.URL, process,
+		func(int, http.Header, []byte) error {
+			return permanentCompanionReadiness(errors.New("immutable identity mismatch"))
+		},
+	)
+	if !errors.Is(err, errCompanionPermanentReadiness) ||
+		!strings.Contains(err.Error(), "immutable identity mismatch") {
+		t.Fatalf("permanent readiness error = %v", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("permanent readiness failure waited for deadline: %v", err)
+	}
+}
+
+func TestCompanionReadinessRetriesTransientValidationFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"status":"warming"}`))
+	}))
+	defer server.Close()
+	process := &companionProcess{done: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	var validations atomic.Int32
+	err := waitCompanionHTTPReady(
+		ctx, server.Client(), server.URL, process,
+		func(int, http.Header, []byte) error {
+			if validations.Add(1) == 1 {
+				return errors.New("still warming")
+			}
+			return nil
+		},
+	)
+	if err != nil || validations.Load() != 2 {
+		t.Fatalf("transient readiness result = %v after %d validations", err, validations.Load())
 	}
 }
 

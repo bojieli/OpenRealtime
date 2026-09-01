@@ -2895,6 +2895,13 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   - [x] Specify the shared server/host/client plugin contract, clean realtime
     and management APIs, client profiles, trust boundaries, rollout/retirement stages,
     cross-client E2E matrix, and presentation performance gates.
+  - [x] Bind standalone companion readiness to the exact immutable browser
+    manifest before announcing the profile. A successful HTTP response with a
+    wrong media type, malformed manifest, or mismatched manifest/plan identity
+    now fails immediately as permanently incompatible; transport and warming
+    failures remain retryable. Fifty repeated focused runs, shuffled coverage,
+    race, vet, Windows/amd64 and Darwin/arm64 production builds, and the
+    low-parallelism full repository gate are green.
   - [ ] Implement descriptor-locked server, presentation-host, and client
     plugin realms with dependencies, permission ceilings, scoped effects, and
     independently inspectable runtime identities. The common descriptor/lock,
