@@ -569,7 +569,10 @@ func (document *Document) Definitions(cursor Cursor) (DefinitionList, error) {
 }
 
 func descriptorURI(identity element.Identity) string {
-	return "openrealtime-descriptor://" + identity.Name + "@" +
+	// This is a path-only URI, not an authority: embedding "name@revision" in
+	// a // authority would be parsed as URI user-info and could be mistaken for
+	// credential-bearing input by a conforming adapter.
+	return "openrealtime-descriptor:/" + identity.Name + "@" +
 		strconv.FormatUint(identity.Revision, 10) + "/" + identity.Digest
 }
 

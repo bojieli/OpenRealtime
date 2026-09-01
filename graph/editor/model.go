@@ -327,6 +327,48 @@ type LSPCompletionList struct {
 	Items        []LSPCompletionItem `json:"items"`
 }
 
+// LSPDocumentIdentity binds protocol wire values to the caller's exact
+// versioned document and this immutable analysis snapshot. Path is the
+// language-service identity; URI is the independently validated LSP identity.
+type LSPDocumentIdentity struct {
+	Path         string `json:"path"`
+	URI          string `json:"uri"`
+	Version      int    `json:"version"`
+	SourceDigest string `json:"source_digest"`
+}
+
+type LSPLocationLink struct {
+	OriginSelectionRange LSPRange `json:"originSelectionRange"`
+	TargetURI            string   `json:"targetUri"`
+	TargetRange          LSPRange `json:"targetRange"`
+	TargetSelectionRange LSPRange `json:"targetSelectionRange"`
+}
+
+// LSPVirtualDocument is immutable adapter input for descriptor-backed
+// definition targets. Its plaintext body is generated from the exact catalog
+// snapshot and grants no filesystem or network authority.
+type LSPVirtualDocument struct {
+	URI        string `json:"uri"`
+	LanguageID string `json:"languageId"`
+	Text       string `json:"text"`
+}
+
+type LSPVersionedTextDocumentIdentifier struct {
+	URI     string `json:"uri"`
+	Version int    `json:"version"`
+}
+
+type LSPTextDocumentEdit struct {
+	TextDocument LSPVersionedTextDocumentIdentifier `json:"textDocument"`
+	Edits        []LSPTextEdit                      `json:"edits"`
+}
+
+// LSPWorkspaceEdit uses documentChanges rather than the unversioned changes
+// map, so a conforming client can refuse edits after its document advances.
+type LSPWorkspaceEdit struct {
+	DocumentChanges []LSPTextDocumentEdit `json:"documentChanges"`
+}
+
 type Definition struct {
 	Kind    SymbolKind   `json:"kind"`
 	URI     string       `json:"uri"`

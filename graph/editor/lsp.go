@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -17,6 +18,7 @@ const (
 	lspFullReport           = "full"
 	lspSource               = "openrealtime"
 	lspPlainTextFormat      = 1
+	lspPlaintextLanguageID  = "plaintext"
 	maxLSPPresentationBytes = 64 << 20
 )
 
@@ -84,8 +86,9 @@ func (document *Document) LSPDiagnostics() (LSPFullDocumentDiagnosticReport, err
 				ErrInvalidPosition, index, diagnostic.Path,
 			)
 		}
-		if diagnostic.Code == "" || len(diagnostic.Code) > 256 ||
-			diagnostic.Message == "" || strings.ContainsRune(diagnostic.Message, '\x00') {
+		if diagnostic.Code == "" || len(diagnostic.Code) > 256 || !utf8.ValidString(diagnostic.Code) ||
+			diagnostic.Message == "" || !utf8.ValidString(diagnostic.Message) ||
+			strings.ContainsRune(diagnostic.Message, '\x00') {
 			return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
 				"%w: diagnostic %d has invalid text", ErrPresentationLimit, index,
 			)
@@ -110,7 +113,7 @@ func (document *Document) LSPDiagnostics() (LSPFullDocumentDiagnosticReport, err
 		}
 		notes := append([]string(nil), diagnostic.Notes...)
 		for noteIndex, note := range notes {
-			if note == "" || strings.ContainsRune(note, '\x00') {
+			if note == "" || !utf8.ValidString(note) || strings.ContainsRune(note, '\x00') {
 				return LSPFullDocumentDiagnosticReport{}, fmt.Errorf(
 					"%w: diagnostic %d note %d has invalid text",
 					ErrPresentationLimit, index, noteIndex,
@@ -163,6 +166,7 @@ func (document *Document) LSPCompletions(position LSPPosition) (LSPCompletionLis
 	previous := ""
 	for index, completion := range completions.Items {
 		if completion.Label == "" || completion.InsertText == "" ||
+			!utf8.ValidString(completion.Label) || !utf8.ValidString(completion.InsertText) ||
 			strings.ContainsAny(completion.Label+completion.InsertText, "\x00\r\n") ||
 			(index > 0 && completion.Label <= previous) {
 			return LSPCompletionList{}, fmt.Errorf(
@@ -214,6 +218,307 @@ func (document *Document) LSPCompletions(position LSPPosition) (LSPCompletionLis
 	result := LSPCompletionList{IsIncomplete: completions.Incomplete, Items: items}
 	if err := boundedLSPProjection(result); err != nil {
 		return LSPCompletionList{}, err
+	}
+	return result, nil
+}
+
+// LSPDefinitions projects the exact symbol target into standards-defined
+// LocationLink values. Same-document node targets use the caller's validated
+// URI. Element and port targets use a deterministic read-only virtual
+// descriptor document, whose real ranges are generated alongside its text;
+// no placeholder descriptor position is invented.
+func (document *Document) LSPDefinitions(
+	position LSPPosition, identity LSPDocumentIdentity,
+) ([]LSPLocationLink, error) {
+	if err := document.validateLSPDocumentIdentity(identity); err != nil {
+		return nil, err
+	}
+	offset, err := document.offsetAtLSPPosition(position)
+	if err != nil {
+		return nil, err
+	}
+	cursor, err := document.Cursor(offset)
+	if err != nil {
+		return nil, err
+	}
+	symbol, err := document.symbolAt(cursor)
+	if err != nil {
+		return nil, err
+	}
+	origin, err := document.lspRange(symbol.span)
+	if err != nil {
+		return nil, err
+	}
+	definitions, err := document.Definitions(cursor)
+	if err != nil {
+		return nil, err
+	}
+	if len(definitions.Items) != 1 {
+		return nil, fmt.Errorf("%w: definition projection requires one exact target", ErrDefinitionMissing)
+	}
+	target := definitions.Items[0]
+	var link LSPLocationLink
+	link.OriginSelectionRange = origin
+	switch target.Kind {
+	case SymbolNodeDeclaration:
+		if target.URI != document.sourceURI() || target.Span == nil {
+			return nil, fmt.Errorf("%w: source definition target changed identity", ErrDefinitionMissing)
+		}
+		targetRange, err := document.lspRange(*target.Span)
+		if err != nil {
+			return nil, err
+		}
+		link.TargetURI = identity.URI
+		link.TargetRange = targetRange
+		link.TargetSelectionRange = targetRange
+	case SymbolElement, SymbolPortReference:
+		virtual, err := document.lspVirtualDescriptor(target.Element)
+		if err != nil {
+			return nil, err
+		}
+		if strings.SplitN(target.URI, "#", 2)[0] != virtual.document.URI {
+			return nil, fmt.Errorf("%w: virtual definition target changed identity", ErrDefinitionMissing)
+		}
+		selection := virtual.elementRange
+		if target.Kind == SymbolPortReference {
+			var found bool
+			selection, found = virtual.portRanges[target.Port]
+			if !found {
+				return nil, fmt.Errorf("%w: descriptor has no port %q", ErrDefinitionMissing, target.Port)
+			}
+		}
+		link.TargetURI = virtual.document.URI
+		link.TargetRange = virtual.fullRange
+		link.TargetSelectionRange = selection
+	default:
+		return nil, fmt.Errorf("%w: unsupported definition kind %q", ErrDefinitionMissing, target.Kind)
+	}
+	result := []LSPLocationLink{link}
+	if err := boundedLSPProjection(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// LSPVirtualDescriptorDocument returns the exact plaintext document targeted
+// by descriptor and port definition links. It is derived only from the
+// immutable catalog snapshot and is safe to serve through an adapter-owned
+// read-only virtual-document scheme.
+func (document *Document) LSPVirtualDescriptorDocument(
+	elementName string,
+) (LSPVirtualDocument, error) {
+	if document == nil {
+		return LSPVirtualDocument{}, ErrSyntaxUnavailable
+	}
+	projection, err := document.lspVirtualDescriptor(elementName)
+	if err != nil {
+		return LSPVirtualDocument{}, err
+	}
+	return projection.document, nil
+}
+
+// LSPRename returns a versioned, single-document WorkspaceEdit for the exact
+// immutable node symbol under position. It never applies the edit or performs
+// file I/O.
+func (document *Document) LSPRename(
+	position LSPPosition, newName string, identity LSPDocumentIdentity,
+) (LSPWorkspaceEdit, error) {
+	if err := document.validateLSPDocumentIdentity(identity); err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	offset, err := document.offsetAtLSPPosition(position)
+	if err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	cursor, err := document.Cursor(offset)
+	if err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	edits, err := document.RenameNode(cursor, newName)
+	if err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	return document.lspWorkspaceEdit(edits, identity)
+}
+
+// LSPFormatting returns a versioned full-document formatting WorkspaceEdit.
+// Recovery snapshots remain non-formatable, and no edit is applied here.
+func (document *Document) LSPFormatting(
+	identity LSPDocumentIdentity,
+) (LSPWorkspaceEdit, error) {
+	if err := document.validateLSPDocumentIdentity(identity); err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	edits, err := document.FormatEdits()
+	if err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	return document.lspWorkspaceEdit(edits, identity)
+}
+
+type lspVirtualDescriptorProjection struct {
+	document     LSPVirtualDocument
+	fullRange    LSPRange
+	elementRange LSPRange
+	portRanges   map[string]LSPRange
+}
+
+func (document *Document) lspVirtualDescriptor(
+	elementName string,
+) (lspVirtualDescriptorProjection, error) {
+	if len(elementName) > document.limits.MaxIdentifierBytes ||
+		!utf8.ValidString(elementName) || strings.ContainsAny(elementName, "\x00\r\n") {
+		return lspVirtualDescriptorProjection{}, fmt.Errorf(
+			"%w: descriptor identity is invalid", ErrDefinitionMissing,
+		)
+	}
+	entry, found := document.catalog[elementName]
+	if !found || entry.metadata.Identity.Name != elementName {
+		return lspVirtualDescriptorProjection{}, fmt.Errorf(
+			"%w: descriptor %q is not in this snapshot", ErrDefinitionMissing, elementName,
+		)
+	}
+	metadata := entry.metadata
+	var output strings.Builder
+	output.WriteString("descriptor ")
+	elementStart := output.Len()
+	output.WriteString(metadata.Identity.Name)
+	elementEnd := output.Len()
+	output.WriteString(" @ revision ")
+	output.WriteString(strconv.FormatUint(metadata.Identity.Revision, 10))
+	output.WriteByte('\n')
+	output.WriteString("digest: ")
+	output.WriteString(strconv.Quote(metadata.Identity.Digest))
+	output.WriteByte('\n')
+	portOffsets := make(map[string][2]int, len(metadata.Ports))
+	for _, port := range metadata.Ports {
+		if _, duplicate := portOffsets[port.Name]; duplicate {
+			return lspVirtualDescriptorProjection{}, fmt.Errorf(
+				"%w: descriptor repeats port %q", ErrDefinitionMissing, port.Name,
+			)
+		}
+		output.WriteString("port ")
+		start := output.Len()
+		output.WriteString(port.Name)
+		end := output.Len()
+		portOffsets[port.Name] = [2]int{start, end}
+		output.WriteString(" · direction ")
+		output.WriteString(strconv.Quote(string(port.Direction)))
+		output.WriteString(" · type ")
+		output.WriteString(strconv.Quote(port.Type.String()))
+		output.WriteByte('\n')
+	}
+	encoded, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		return lspVirtualDescriptorProjection{}, fmt.Errorf("marshal virtual descriptor: %w", err)
+	}
+	output.WriteString("\ncanonical metadata JSON:\n")
+	output.Write(encoded)
+	text := output.String()
+	if len(text) > maxLSPPresentationBytes {
+		return lspVirtualDescriptorProjection{}, fmt.Errorf(
+			"%w: virtual descriptor has %d bytes; maximum is %d",
+			ErrPresentationLimit, len(text), maxLSPPresentationBytes,
+		)
+	}
+	virtualSource := []byte(text)
+	virtual := &Document{
+		source: virtualSource, positions: newSourcePositions(virtualSource),
+	}
+	projectRange := func(start, end int) (LSPRange, error) {
+		span, err := sourceSpan(virtual.positions, start, end)
+		if err != nil {
+			return LSPRange{}, err
+		}
+		return virtual.lspRange(span)
+	}
+	fullRange, err := projectRange(0, len(virtualSource))
+	if err != nil {
+		return lspVirtualDescriptorProjection{}, err
+	}
+	elementRange, err := projectRange(elementStart, elementEnd)
+	if err != nil {
+		return lspVirtualDescriptorProjection{}, err
+	}
+	portRanges := make(map[string]LSPRange, len(portOffsets))
+	for name, offsets := range portOffsets {
+		portRanges[name], err = projectRange(offsets[0], offsets[1])
+		if err != nil {
+			return lspVirtualDescriptorProjection{}, err
+		}
+	}
+	result := lspVirtualDescriptorProjection{
+		document: LSPVirtualDocument{
+			URI: descriptorURI(metadata.Identity), LanguageID: lspPlaintextLanguageID, Text: text,
+		},
+		fullRange: fullRange, elementRange: elementRange, portRanges: portRanges,
+	}
+	if err := boundedLSPProjection(result.document); err != nil {
+		return lspVirtualDescriptorProjection{}, err
+	}
+	return result, nil
+}
+
+func (document *Document) validateLSPDocumentIdentity(identity LSPDocumentIdentity) error {
+	if document == nil {
+		return ErrSyntaxUnavailable
+	}
+	if identity.Path != document.path || identity.SourceDigest != document.digest {
+		return fmt.Errorf("%w: LSP document identity does not match the source snapshot", ErrStalePosition)
+	}
+	if identity.Version < 0 || int64(identity.Version) > int64(1<<31-1) {
+		return fmt.Errorf("%w: LSP document version %d is invalid", ErrInvalidPosition, identity.Version)
+	}
+	if identity.URI == "" || identity.URI != strings.TrimSpace(identity.URI) ||
+		len(identity.URI) > 64<<10 || strings.ContainsAny(identity.URI, "\x00\r\n") {
+		return fmt.Errorf("%w: LSP document URI is invalid", ErrInvalidPosition)
+	}
+	parsed, err := url.ParseRequestURI(identity.URI)
+	if err != nil || parsed.Scheme == "" || parsed.User != nil || parsed.Fragment != "" ||
+		parsed.String() != identity.URI {
+		return fmt.Errorf("%w: LSP document URI is invalid", ErrInvalidPosition)
+	}
+	return nil
+}
+
+func (document *Document) lspWorkspaceEdit(
+	editSet EditSet, identity LSPDocumentIdentity,
+) (LSPWorkspaceEdit, error) {
+	if err := document.validateLSPDocumentIdentity(identity); err != nil {
+		return LSPWorkspaceEdit{}, err
+	}
+	if editSet.Path != document.path || editSet.SourceDigest != document.digest {
+		return LSPWorkspaceEdit{}, ErrStalePosition
+	}
+	edits := make([]LSPTextEdit, len(editSet.Edits))
+	lastEnd := 0
+	lastStart := -1
+	for index, edit := range editSet.Edits {
+		start, end := edit.Span.Start.Offset, edit.Span.End.Offset
+		if start < lastEnd || start <= lastStart || start < 0 || end < start || end > len(document.source) ||
+			string(document.source[start:end]) != edit.OldText ||
+			!utf8.ValidString(edit.OldText) || !utf8.ValidString(edit.NewText) ||
+			strings.ContainsRune(edit.NewText, '\x00') {
+			return LSPWorkspaceEdit{}, fmt.Errorf(
+				"%w: workspace edit %d is stale, overlapping, or invalid", ErrInvalidPosition, index,
+			)
+		}
+		rangeValue, err := document.lspRange(edit.Span)
+		if err != nil {
+			return LSPWorkspaceEdit{}, fmt.Errorf("project workspace edit %d range: %w", index, err)
+		}
+		edits[index] = LSPTextEdit{Range: rangeValue, NewText: edit.NewText}
+		lastStart = start
+		lastEnd = end
+	}
+	result := LSPWorkspaceEdit{DocumentChanges: []LSPTextDocumentEdit{{
+		TextDocument: LSPVersionedTextDocumentIdentifier{
+			URI: identity.URI, Version: identity.Version,
+		},
+		Edits: edits,
+	}}}
+	if err := boundedLSPProjection(result); err != nil {
+		return LSPWorkspaceEdit{}, err
 	}
 	return result, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -232,6 +233,12 @@ func TestLSPDiagnosticsUseExactUTF16RangesAndFailClosedOnPartialEvidence(t *test
 	if _, err := unknownSeverity.LSPDiagnostics(); !errors.Is(err, ErrPresentationLimit) {
 		t.Fatalf("unknown LSP diagnostic severity = %v", err)
 	}
+	malformedText := *document
+	malformedText.diagnostics = []Diagnostic{document.diagnostics[0]}
+	malformedText.diagnostics[0].Message = string([]byte{0xff})
+	if _, err := malformedText.LSPDiagnostics(); !errors.Is(err, ErrPresentationLimit) {
+		t.Fatalf("malformed UTF-8 LSP diagnostic = %v", err)
+	}
 	stale := *document
 	stale.diagnostics = []Diagnostic{document.diagnostics[0]}
 	stale.diagnostics[0].Span.Start.Line++
@@ -322,6 +329,188 @@ func TestLSPCompletionsAreCanonicalBoundedAndSourceDigestBound(t *testing.T) {
 	}
 }
 
+func TestLSPDefinitionsUseExactSourceAndVirtualDescriptorRanges(t *testing.T) {
+	document := lspMetadataDocument(t, validSource)
+	identity := lspDocumentIdentity(document, 7)
+
+	nodeLinks, err := document.LSPDefinitions(LSPPosition{Line: 3, Character: 5}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodeLinks) != 1 || nodeLinks[0].TargetURI != identity.URI ||
+		nodeLinks[0].OriginSelectionRange != (LSPRange{
+			Start: LSPPosition{Line: 3, Character: 4},
+			End:   LSPPosition{Line: 3, Character: 12},
+		}) || nodeLinks[0].TargetSelectionRange != (LSPRange{
+		Start: LSPPosition{Line: 1, Character: 19},
+		End:   LSPPosition{Line: 1, Character: 27},
+	}) || nodeLinks[0].TargetRange != nodeLinks[0].TargetSelectionRange {
+		t.Fatalf("LSP source definition = %+v", nodeLinks)
+	}
+
+	elementLinks, err := document.LSPDefinitions(LSPPosition{Line: 1, Character: 5}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	virtual, err := document.LSPVirtualDescriptorDocument("test.Source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedVirtualURI, parseErr := url.ParseRequestURI(virtual.URI)
+	if len(elementLinks) != 1 || elementLinks[0].TargetURI != virtual.URI ||
+		parseErr != nil || parsedVirtualURI.Scheme != "openrealtime-descriptor" ||
+		parsedVirtualURI.User != nil || parsedVirtualURI.Fragment != "" ||
+		virtual.LanguageID != "plaintext" ||
+		lspRangeText(t, virtual.Text, elementLinks[0].TargetSelectionRange) != "test.Source" ||
+		lspRangeText(t, virtual.Text, elementLinks[0].TargetRange) != virtual.Text ||
+		strings.Contains(virtual.Text, "<b>Model</b>") ||
+		!strings.Contains(virtual.Text, `\u003cb\u003eModel\u003c/b\u003e`) {
+		t.Fatalf("LSP virtual element definition = link %+v document %+v", elementLinks, virtual)
+	}
+	portLinks, err := document.LSPDefinitions(LSPPosition{Line: 3, Character: 14}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(portLinks) != 1 || portLinks[0].TargetURI != virtual.URI ||
+		lspRangeText(t, virtual.Text, portLinks[0].TargetSelectionRange) != "out" ||
+		portLinks[0].OriginSelectionRange != (LSPRange{
+			Start: LSPPosition{Line: 3, Character: 13},
+			End:   LSPPosition{Line: 3, Character: 16},
+		}) {
+		t.Fatalf("LSP virtual port definition = %+v", portLinks)
+	}
+	again, err := document.LSPVirtualDescriptorDocument("test.Source")
+	if err != nil || again != virtual {
+		t.Fatalf("LSP virtual descriptor changed = %+v, %v", again, err)
+	}
+	if _, err := document.LSPVirtualDescriptorDocument("missing.Element"); !errors.Is(err, ErrDefinitionMissing) {
+		t.Fatalf("missing LSP virtual descriptor = %v", err)
+	}
+
+	stale := identity
+	stale.SourceDigest = "sha256:" + strings.Repeat("0", 64)
+	if _, err := document.LSPDefinitions(LSPPosition{Line: 1, Character: 5}, stale); !errors.Is(err, ErrStalePosition) {
+		t.Fatalf("stale LSP definition identity = %v", err)
+	}
+	for _, invalidURI := range []string{
+		"agent.ortg", "file://user:secret@localhost/workspace/agent.ortg",
+		"file:///workspace/agent.ortg#fragment", " file:///workspace/agent.ortg",
+	} {
+		invalid := identity
+		invalid.URI = invalidURI
+		if _, err := document.LSPDefinitions(LSPPosition{Line: 1, Character: 5}, invalid); !errors.Is(err, ErrInvalidPosition) {
+			t.Fatalf("invalid LSP definition URI %q = %v", invalidURI, err)
+		}
+	}
+}
+
+func TestLSPRenameAndFormattingAreExactVersionedWorkspaceEdits(t *testing.T) {
+	document := analyzeValid(t, Limits{})
+	identity := lspDocumentIdentity(document, 11)
+	rename, err := document.LSPRename(LSPPosition{Line: 3, Character: 5}, "camera", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rename.DocumentChanges) != 1 ||
+		rename.DocumentChanges[0].TextDocument != (LSPVersionedTextDocumentIdentifier{
+			URI: identity.URI, Version: 11,
+		}) || len(rename.DocumentChanges[0].Edits) != 3 {
+		t.Fatalf("LSP rename workspace edit = %+v", rename)
+	}
+	renamed := applyLSPTextEdits(t, []byte(validSource), rename.DocumentChanges[0].Edits)
+	wantRenamed := strings.ReplaceAll(validSource, "producer", "camera")
+	if string(renamed) != wantRenamed {
+		t.Fatalf("LSP renamed source:\n%s\nwant:\n%s", renamed, wantRenamed)
+	}
+	encoded, err := json.Marshal(rename)
+	if err != nil || !strings.Contains(string(encoded), `"documentChanges"`) ||
+		!strings.Contains(string(encoded), `"version":11`) ||
+		!strings.Contains(string(encoded), `"newText":"camera"`) ||
+		strings.Contains(string(encoded), "old_text") || strings.Contains(string(encoded), "source_digest") {
+		t.Fatalf("LSP workspace-edit wire projection = %s, %v", encoded, err)
+	}
+	rename.DocumentChanges[0].Edits[0].NewText = "mutated"
+	again, err := document.LSPRename(LSPPosition{Line: 3, Character: 5}, "camera", identity)
+	if err != nil || again.DocumentChanges[0].Edits[0].NewText != "camera" {
+		t.Fatalf("LSP rename retained caller aliases = %+v, %v", again, err)
+	}
+	noOp, err := document.LSPRename(LSPPosition{Line: 3, Character: 5}, "producer", identity)
+	if err != nil || len(noOp.DocumentChanges) != 1 || noOp.DocumentChanges[0].Edits == nil ||
+		len(noOp.DocumentChanges[0].Edits) != 0 {
+		t.Fatalf("no-op LSP rename = %+v, %v", noOp, err)
+	}
+
+	for name, mutation := range map[string]func(*LSPDocumentIdentity){
+		"path":    func(value *LSPDocumentIdentity) { value.Path = "other.ortg" },
+		"digest":  func(value *LSPDocumentIdentity) { value.SourceDigest = "sha256:" + strings.Repeat("0", 64) },
+		"version": func(value *LSPDocumentIdentity) { value.Version = -1 },
+		"uri":     func(value *LSPDocumentIdentity) { value.URI = "relative.ortg" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := identity
+			mutation(&invalid)
+			_, err := document.LSPRename(LSPPosition{Line: 3, Character: 5}, "camera", invalid)
+			if name == "path" || name == "digest" {
+				if !errors.Is(err, ErrStalePosition) {
+					t.Fatalf("LSP identity error = %v", err)
+				}
+			} else if !errors.Is(err, ErrInvalidPosition) {
+				t.Fatalf("LSP identity error = %v", err)
+			}
+		})
+	}
+
+	unformattedSource := strings.Replace(validSource, "test.Source ::", "test.Source  ::", 1)
+	unformatted, err := Analyze("agent.ortg", []byte(unformattedSource), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatIdentity := lspDocumentIdentity(unformatted, 12)
+	format, err := unformatted.LSPFormatting(formatIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(format.DocumentChanges) != 1 || len(format.DocumentChanges[0].Edits) != 1 ||
+		format.DocumentChanges[0].TextDocument.Version != 12 ||
+		string(applyLSPTextEdits(
+			t, []byte(unformattedSource), format.DocumentChanges[0].Edits,
+		)) != validSource {
+		t.Fatalf("LSP formatting workspace edit = %+v", format)
+	}
+	recovered, err := Analyze("agent.ortg", []byte("graph partial {"), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := recovered.LSPFormatting(lspDocumentIdentity(recovered, 13)); !errors.Is(err, ErrFormattingUnavailable) {
+		t.Fatalf("recovered LSP formatting = %v", err)
+	}
+
+	raw, err := document.RenameNode(cursorAt(t, document, validSource, "producer.out", 1), "camera")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.Edits[0].OldText = "stale"
+	if _, err := document.lspWorkspaceEdit(raw, identity); !errors.Is(err, ErrInvalidPosition) {
+		t.Fatalf("stale raw workspace edit = %v", err)
+	}
+	raw, err = document.RenameNode(cursorAt(t, document, validSource, "producer.out", 1), "camera")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.Edits[1].Span = raw.Edits[0].Span
+	if _, err := document.lspWorkspaceEdit(raw, identity); !errors.Is(err, ErrInvalidPosition) {
+		t.Fatalf("overlapping raw workspace edit = %v", err)
+	}
+	raw, err = document.RenameNode(cursorAt(t, document, validSource, "producer.out", 1), "camera")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.Edits[0].NewText = string([]byte{0xff})
+	if _, err := document.lspWorkspaceEdit(raw, identity); !errors.Is(err, ErrInvalidPosition) {
+		t.Fatalf("malformed UTF-8 raw workspace edit = %v", err)
+	}
+}
+
 func TestLSPWireProjectionsAreDeterministicForConcurrentReaders(t *testing.T) {
 	document := lspMetadataDocument(t, validSource)
 	wantDiagnostics, err := document.LSPDiagnostics()
@@ -329,6 +518,15 @@ func TestLSPWireProjectionsAreDeterministicForConcurrentReaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantCompletions, err := document.LSPCompletions(LSPPosition{Line: 1, Character: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := lspDocumentIdentity(document, 19)
+	wantDefinitions, err := document.LSPDefinitions(LSPPosition{Line: 3, Character: 14}, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRename, err := document.LSPRename(LSPPosition{Line: 3, Character: 5}, "camera", identity)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,9 +541,17 @@ func TestLSPWireProjectionsAreDeterministicForConcurrentReaders(t *testing.T) {
 				completions, completionErr := document.LSPCompletions(
 					LSPPosition{Line: 1, Character: 10},
 				)
-				if diagnosticErr != nil || completionErr != nil ||
+				definitions, definitionErr := document.LSPDefinitions(
+					LSPPosition{Line: 3, Character: 14}, identity,
+				)
+				rename, renameErr := document.LSPRename(
+					LSPPosition{Line: 3, Character: 5}, "camera", identity,
+				)
+				if diagnosticErr != nil || completionErr != nil || definitionErr != nil || renameErr != nil ||
 					!reflect.DeepEqual(diagnostics, wantDiagnostics) ||
-					!reflect.DeepEqual(completions, wantCompletions) {
+					!reflect.DeepEqual(completions, wantCompletions) ||
+					!reflect.DeepEqual(definitions, wantDefinitions) ||
+					!reflect.DeepEqual(rename, wantRename) {
 					select {
 					case failures <- "concurrent LSP projection changed":
 					default:
@@ -382,6 +588,77 @@ func BenchmarkLSPCompletionProjection(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func BenchmarkLSPDefinitionAndRenameProjection(b *testing.B) {
+	document := lspMetadataDocument(b, validSource)
+	identity := lspDocumentIdentity(document, 1)
+	b.Run("virtual-port-definition", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			if _, err := document.LSPDefinitions(LSPPosition{Line: 3, Character: 14}, identity); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("versioned-rename", func(b *testing.B) {
+		b.ReportAllocs()
+		for range b.N {
+			if _, err := document.LSPRename(LSPPosition{Line: 3, Character: 5}, "camera", identity); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func lspDocumentIdentity(document *Document, version int) LSPDocumentIdentity {
+	return LSPDocumentIdentity{
+		Path: document.Path(), URI: "file:///workspace/agent.ortg",
+		Version: version, SourceDigest: document.SourceDigest(),
+	}
+}
+
+func lspRangeText(t testing.TB, text string, value LSPRange) string {
+	t.Helper()
+	source := []byte(text)
+	document := &Document{source: source, positions: newSourcePositions(source)}
+	start, err := document.offsetAtLSPPosition(value.Start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	end, err := document.offsetAtLSPPosition(value.End)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if end < start {
+		t.Fatalf("LSP range is reversed: %+v", value)
+	}
+	return string(source[start:end])
+}
+
+func applyLSPTextEdits(t testing.TB, source []byte, edits []LSPTextEdit) []byte {
+	t.Helper()
+	document := &Document{source: source, positions: newSourcePositions(source)}
+	result := append([]byte(nil), source...)
+	for index := len(edits) - 1; index >= 0; index-- {
+		start, err := document.offsetAtLSPPosition(edits[index].Range.Start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		end, err := document.offsetAtLSPPosition(edits[index].Range.End)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if end < start {
+			t.Fatalf("LSP edit %d is reversed", index)
+		}
+		next := make([]byte, 0, len(result)-(end-start)+len(edits[index].NewText))
+		next = append(next, result[:start]...)
+		next = append(next, edits[index].NewText...)
+		next = append(next, result[end:]...)
+		result = next
+	}
+	return result
 }
 
 func lspMetadataDocument(t testing.TB, source string) *Document {
