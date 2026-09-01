@@ -47,6 +47,7 @@ let workspaceSnapshot = {
 const workspaceListeners = new Set();
 const readCalls = [];
 const publicationCalls = [];
+let formatCalls = 0;
 const workspace = Object.freeze({
   snapshot: () => structuredClone(workspaceSnapshot),
   canRead: () => true,
@@ -59,6 +60,16 @@ const workspace = Object.freeze({
     for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
   },
   async analyze() {}, async compile() {}, async render() {},
+  async format() {
+    const edit = workspaceSnapshot.analysis?.formatting?.edits?.[0];
+    if (!edit) throw new Error("fake workspace has no formatter edit");
+    formatCalls++;
+    workspaceSnapshot = { ...workspaceSnapshot, epoch: workspaceSnapshot.epoch + 1,
+      document: { ...workspaceSnapshot.document, source: edit.new_text }, phase: "formatted",
+      analysis: null, compiled: null, rendering: null, publication: null, sourceRead: null };
+    for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+    return structuredClone(workspaceSnapshot);
+  },
   async load(rootIdentity, path) {
     readCalls.push({ rootIdentity, path });
     const source = "graph ui_loaded {\n}\n";
@@ -152,6 +163,7 @@ const sourceText = find(editor, (entry) => entry.name === "authoring-source");
 const sourceRoot = find(editor, (entry) => entry.name === "authoring-root-identity");
 const predecessor = find(editor, (entry) => entry.name === "authoring-expected-digest");
 const loadSource = find(editor, (entry) => entry.dataset.action === "load");
+const formatSource = find(editor, (entry) => entry.dataset.action === "format");
 const createSource = find(editor, (entry) => entry.dataset.action === "publish-create");
 sourcePath.value = "ui-created.ortg";
 sourceText.value = "graph ui_created {\n}\n";
@@ -171,6 +183,28 @@ if (readCalls.length !== 1 || readCalls[0].rootIdentity !== sourceRoot.value ||
     predecessor.value !== `sha256:${"f".repeat(64)}` ||
     !editor.textContent.includes(`sha256:${"a".repeat(64)}`)) {
   throw new Error("authoring editor did not load exact rooted source and payload-free evidence");
+}
+
+const noncanonicalSource = "graph ui_loaded  {\n}\n";
+const canonicalSource = "graph ui_loaded {\n}\n";
+workspaceSnapshot = { ...workspaceSnapshot, epoch: workspaceSnapshot.epoch + 1,
+  document: { ...workspaceSnapshot.document, source: noncanonicalSource }, phase: "analyzed",
+  analysis: { parsed: true, recovered: false, canonical: false,
+    diagnostics: { items: [], total: 0 }, catalog: { elements: [], total: 0 },
+    formatting: { edits: [{ new_text: canonicalSource }] } } };
+for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+if (!formatSource || formatSource.disabled) throw new Error("applicable browser formatter stayed disabled");
+sourceText.value = `${noncanonicalSource}unsaved`;
+await formatSource.dispatch("click");
+if (formatCalls !== 0 || !editor.textContent.includes("analyze the current source before formatting")) {
+  throw new Error("stale visible source reached the workspace formatter");
+}
+sourceText.value = noncanonicalSource;
+await formatSource.dispatch("click");
+if (formatCalls !== 1 || sourceText.value !== canonicalSource ||
+    workspaceSnapshot.document.source !== canonicalSource || workspaceSnapshot.phase !== "formatted" ||
+    !formatSource.disabled) {
+  throw new Error("authoring editor did not apply the analyzed formatter edit atomically");
 }
 
 const malicious = '<img src=x onerror="globalThis.compromised=true">';

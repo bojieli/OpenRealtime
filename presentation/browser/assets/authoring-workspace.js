@@ -114,6 +114,22 @@ export default {
           ...current, phase: "analyzed", error: "", analysis,
         }));
       },
+      format() {
+        ready();
+        const input = state.document;
+        const analysis = state.analysis;
+        if (!analysis?.parsed || analysis.recovered || analysis.canonical || !analysis.formatting ||
+            typeof authoring.applyEdits !== "function") {
+          throw new Error("authoring workspace has no applicable formatter edit");
+        }
+        return invoke("formatting", () => authoring.applyEdits(input, analysis.formatting),
+          (_current, source) => {
+            const document = checkedDocument(input.path, source, input.revision);
+            epoch++;
+            return { document, phase: "formatted", error: "", sourceRead: null, analysis: null,
+              compiled: null, rendering: null, publication: null };
+          });
+      },
       compile() {
         const input = state.document;
         return invoke("compiling", () => authoring.compile(input), (current, compiled) => ({

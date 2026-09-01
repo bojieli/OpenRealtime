@@ -22,8 +22,10 @@ export default {
     source.spellcheck = false;
     const controls = node("div");
     const analyze = node("button", "Analyze");
+    const format = node("button", "Format");
     const compile = node("button", "Compile");
     analyze.dataset.action = "analyze";
+    format.dataset.action = "format";
     compile.dataset.action = "compile";
     const status = node("p", "idle");
     status.dataset.role = "status";
@@ -31,7 +33,7 @@ export default {
     diagnosticStatus.dataset.role = "diagnostic-status";
     const diagnostics = node("ol");
     diagnostics.dataset.role = "diagnostics";
-    controls.append(analyze, compile);
+    controls.append(analyze, format, compile);
     const publication = node("fieldset");
     publication.dataset.role = "source-publication";
     publication.append(node("legend", "Mediated source access"));
@@ -95,9 +97,12 @@ export default {
           diagnostics.append(item);
         }
       }
-      const busy = new Set(["reading", "analyzing", "compiling", "rendering", "publishing"])
+      const busy = new Set(["reading", "analyzing", "formatting", "compiling", "rendering", "publishing"])
         .has(snapshot.phase);
       analyze.disabled = compile.disabled = busy;
+      format.disabled = busy || !snapshot.analysis?.parsed || snapshot.analysis.recovered ||
+        snapshot.analysis.canonical || !snapshot.analysis.formatting ||
+        snapshot.analysis.formatting.edits.length === 0;
       load.disabled = busy || !workspace.canRead();
       create.disabled = update.disabled = busy || !workspace.canPublish();
       if (snapshot.sourceRead) {
@@ -123,6 +128,17 @@ export default {
       }
     };
     const analyzeClick = run(() => workspace.analyze());
+    const formatClick = async () => {
+      try {
+        const current = workspace.snapshot().document;
+        if (path.value !== current.path || source.value !== current.source) {
+          throw new Error("analyze the current source before formatting");
+        }
+        await workspace.format();
+      } catch (error) {
+        status.textContent = error?.message ?? String(error);
+      }
+    };
     const compileClick = run(() => workspace.compile());
     const loadClick = async () => {
       try {
@@ -134,6 +150,7 @@ export default {
     const createClick = run(() => workspace.publish("create", rootIdentity.value));
     const updateClick = run(() => workspace.publish("update", rootIdentity.value, predecessor.value));
     analyze.addEventListener("click", analyzeClick);
+    format.addEventListener("click", formatClick);
     compile.addEventListener("click", compileClick);
     load.addEventListener("click", loadClick);
     create.addEventListener("click", createClick);
@@ -141,6 +158,7 @@ export default {
     const unregister = slots.register("authoring.editor", section, 20);
     context.lifecycle.defer("authoring-editor-events", () => {
       analyze.removeEventListener("click", analyzeClick);
+      format.removeEventListener("click", formatClick);
       compile.removeEventListener("click", compileClick);
       load.removeEventListener("click", loadClick);
       create.removeEventListener("click", createClick);

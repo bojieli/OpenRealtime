@@ -113,6 +113,17 @@ const sha256 = async (value) => {
   const sum = new Uint8Array(await crypto.subtle.digest("SHA-256", value));
   return `sha256:${[...sum].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 };
+const endPosition = (source) => {
+  let offset = 0;
+  let line = 1;
+  let column = 1;
+  for (const character of source) {
+    offset += bytes(character).byteLength;
+    if (character === "\n") { line++; column = 1; }
+    else column++;
+  }
+  return { offset, line, column };
+};
 async function publicationReceipt(request, cleanup = false) {
   const sourceBytes = bytes(request.source);
   const sourceDigest = await sha256(sourceBytes);
@@ -244,6 +255,9 @@ if (analyzed.catalog.elements[0].config.properties[0].default !== null ||
     analyzed.catalog.elements[0].config.additional_properties !== false) {
   throw new Error("complete configuration metadata did not survive the client boundary");
 }
+if (await authoring.applyEdits({ path: "fixture.ortg", source, revision: 1 }, analyzed.formatting) !== source) {
+  throw new Error("canonical no-op formatter changed source bytes");
+}
 const analyzeRequest = requests.at(-1);
 if (analyzeRequest.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
     analyzeRequest.options.body.includes(operatorOne) || analyzeRequest.url.includes(operatorOne) ||
@@ -271,6 +285,74 @@ await authoring.analyze({ path: "fixture.ortg", source, revision: 1 }).then(
   () => { throw new Error("forged configuration property metadata was accepted"); },
   (error) => { if (!String(error).includes("canonical")) throw error; },
 );
+
+const noncanonicalSource = "graph fixture_β  {\n}\n";
+const canonicalSource = "graph fixture_β {\n}\n";
+const noncanonicalDigest = await sha256(bytes(noncanonicalSource));
+const noncanonicalAnalysis = structuredClone(analysis);
+noncanonicalAnalysis.source_digest = noncanonicalDigest;
+noncanonicalAnalysis.canonical = false;
+noncanonicalAnalysis.formatting = {
+  path: "fixture.ortg", source_digest: noncanonicalDigest, edits: [{
+    span: { start: { offset: 0, line: 1, column: 1 }, end: endPosition(noncanonicalSource) },
+    old_text: noncanonicalSource, new_text: canonicalSource,
+  }],
+};
+handlers.push(() => response(noncanonicalAnalysis, `authoring:analyze:${noncanonicalDigest}`));
+const formatterAnalysis = await authoring.analyze({
+  path: "fixture.ortg", source: noncanonicalSource, revision: 1,
+});
+const requestsBeforeLocalFormat = requests.length;
+const formatted = await authoring.applyEdits(
+  { path: "fixture.ortg", source: noncanonicalSource, revision: 1 }, formatterAnalysis.formatting,
+);
+if (formatted !== canonicalSource || requests.length !== requestsBeforeLocalFormat) {
+  throw new Error("formatter edits were not applied locally to the exact UTF-8 source");
+}
+
+workspace.setDocument("fixture.ortg", noncanonicalSource, 1);
+handlers.push(() => response(noncanonicalAnalysis, `authoring:analyze:${noncanonicalDigest}`));
+await workspace.analyze();
+const formatEpoch = workspace.snapshot().epoch;
+await workspace.format();
+const formattedSnapshot = workspace.snapshot();
+if (formattedSnapshot.phase !== "formatted" || formattedSnapshot.document.source !== canonicalSource ||
+    formattedSnapshot.document.revision !== 1 || formattedSnapshot.epoch !== formatEpoch + 1 ||
+    formattedSnapshot.analysis !== null || formattedSnapshot.compiled !== null ||
+    formattedSnapshot.rendering !== null || formattedSnapshot.publication !== null) {
+  throw new Error("authoring workspace did not atomically install and invalidate after formatting");
+}
+
+const invalidFormatterAnalyses = [];
+const wrongFormatPath = structuredClone(noncanonicalAnalysis);
+wrongFormatPath.formatting.path = "other.ortg";
+invalidFormatterAnalyses.push(wrongFormatPath);
+const staleFormatText = structuredClone(noncanonicalAnalysis);
+staleFormatText.formatting.edits[0].old_text = canonicalSource;
+invalidFormatterAnalyses.push(staleFormatText);
+const forgedFormatPosition = structuredClone(noncanonicalAnalysis);
+forgedFormatPosition.formatting.edits[0].span.end.column++;
+invalidFormatterAnalyses.push(forgedFormatPosition);
+const overlappingFormat = structuredClone(noncanonicalAnalysis);
+overlappingFormat.formatting.edits.push(structuredClone(overlappingFormat.formatting.edits[0]));
+invalidFormatterAnalyses.push(overlappingFormat);
+for (const invalid of invalidFormatterAnalyses) {
+  handlers.push(() => response(invalid, `authoring:analyze:${noncanonicalDigest}`));
+  await authoring.analyze({ path: "fixture.ortg", source: noncanonicalSource, revision: 1 }).then(
+    () => { throw new Error("forged formatter edit set was accepted"); },
+    () => {},
+  );
+}
+const beforeStaleLocalFormat = requests.length;
+await authoring.applyEdits(
+  { path: "fixture.ortg", source: canonicalSource, revision: 1 }, formatterAnalysis.formatting,
+).then(
+  () => { throw new Error("stale formatter edit set was accepted"); },
+  () => {},
+);
+if (requests.length !== beforeStaleLocalFormat) {
+  throw new Error("invalid local formatter edit reached the network");
+}
 
 const compiled = { graph, lock: { format_version: 1, elements: [{ reference: "test.Element",
   identity: { name: "test.Element", revision: 1, digest: elementDigest } }] } };
@@ -457,6 +539,16 @@ if (providerLoss?.name !== "AbortError" || control.status().available) {
 for (const dispose of mounted.slice(1).reverse()) await dispose();
 await catalog.graph(graphDigest).then(
   () => { throw new Error("disposed static management service remained usable"); },
+  () => {},
+);
+await authoring.applyEdits(
+  { path: "fixture.ortg", source: noncanonicalSource, revision: 1 }, formatterAnalysis.formatting,
+).then(
+  () => { throw new Error("disposed authoring formatter remained usable"); },
+  () => {},
+);
+await Promise.resolve().then(() => workspace.format()).then(
+  () => { throw new Error("disposed authoring workspace formatter remained usable"); },
   () => {},
 );
 const serialized = JSON.stringify({ manifest, workspace: workspace.snapshot?.(), status: control.status() });

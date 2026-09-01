@@ -276,7 +276,7 @@ try {
   await evaluate(`(() => {
     const view = document.querySelector('[data-view=authoring-editor]');
     view.querySelector('input[name=authoring-path]').value = "browser-authoring.ortg";
-    view.querySelector('textarea[name=authoring-source]').value = ${JSON.stringify(AUTHORING_SOURCE)};
+    view.querySelector('textarea[name=authoring-source]').value = ${JSON.stringify(`${AUTHORING_SOURCE}\n`)};
     view.querySelector('button[data-action=analyze]').click();
   })()`);
   await waitFor("authoring analysis", () => evaluate(
@@ -286,10 +286,34 @@ try {
     `document.querySelector('[data-view=authoring-configuration]')?.textContent ?? ""`);
   check("configuration renderer projects server-validated descriptor metadata",
     configurationMetadata.includes("compat.BindingRuntime") && configurationMetadata.includes("schema://"));
-  check("browser editor renders the exact bounded diagnostic report as text", await evaluate(`(() => {
+  const authoringDiagnostics = await evaluate(`(() => {
     const view = document.querySelector('[data-view=authoring-editor]');
-    return view?.querySelector('[data-role=diagnostic-status]')?.textContent === "0 of 0 diagnostics" &&
-      view.querySelector('[data-role=diagnostics]')?.children.length === 0;
+    return { status: view?.querySelector('[data-role=diagnostic-status]')?.textContent ?? "",
+      count: view?.querySelector('[data-role=diagnostics]')?.children.length ?? -1,
+      text: view?.querySelector('[data-role=diagnostics]')?.textContent ?? "" };
+  })()`);
+  check("browser editor renders the exact bounded diagnostic report as text",
+    authoringDiagnostics.status === "1 of 1 diagnostics" && authoringDiagnostics.count === 1 &&
+      authoringDiagnostics.text.includes("[E_NON_CANONICAL_SOURCE] error") &&
+      authoringDiagnostics.text.includes("format it before position-sensitive editor operations"),
+    JSON.stringify(authoringDiagnostics));
+
+  const formatStarted = performance.now();
+  check("browser formatter is available only for the analyzed noncanonical source", await evaluate(`(() => {
+    const button = document.querySelector('[data-view=authoring-editor] button[data-action=format]');
+    return button && !button.disabled;
+  })()`));
+  await evaluate(
+    `document.querySelector('[data-view=authoring-editor] button[data-action=format]').click()`);
+  await waitFor("authoring format", () => evaluate(
+    `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "formatted"`));
+  const formatMS = performance.now() - formatStarted;
+  check("browser formatter installs the exact canonical bytes and invalidates stale analysis", await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    return view?.querySelector('textarea[name=authoring-source]').value === ${JSON.stringify(AUTHORING_SOURCE)} &&
+      view.querySelector('button[data-action=format]').disabled &&
+      view.querySelector('[data-role=diagnostic-status]').textContent ===
+        "Analyze a graph to inspect diagnostics.";
   })()`));
 
   const compileStarted = performance.now();
@@ -437,9 +461,10 @@ try {
       "authoring-configuration-view", "authoring-canvas-view"]
       .every((entry) => authorityRestore.entries[entry].state === "active"));
   check("authoring and static management stay inside bounded UI latency",
-    staticMS < 5000 && analyzeMS < 10000 && compileMS < 10000 && renderMS < 5000 &&
+    staticMS < 5000 && analyzeMS < 10000 && formatMS < 5000 && compileMS < 10000 && renderMS < 5000 &&
     authorityLossMS < 2000 && authorityRestoreMS < 2000,
-    `static=${staticMS.toFixed(1)}ms analyze=${analyzeMS.toFixed(1)}ms compile=${compileMS.toFixed(1)}ms ` +
+    `static=${staticMS.toFixed(1)}ms analyze=${analyzeMS.toFixed(1)}ms format=${formatMS.toFixed(1)}ms ` +
+      `compile=${compileMS.toFixed(1)}ms ` +
       `render=${renderMS.toFixed(1)}ms loss=${authorityLossMS.toFixed(1)}ms ` +
       `restore=${authorityRestoreMS.toFixed(1)}ms`);
 

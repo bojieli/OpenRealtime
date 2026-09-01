@@ -6,6 +6,7 @@ const MAX_TEXT_BYTES = 64 << 20;
 const MAX_DIAGNOSTIC_BYTES = 64 << 10;
 const MAX_DIAGNOSTIC_NOTES = 256;
 const encoder = new TextEncoder();
+const decoder = new TextDecoder("utf-8", { fatal: true });
 const SCHEMA_TYPES = new Set(["array", "boolean", "integer", "null", "number", "object", "string"]);
 
 function object(value, label) {
@@ -123,6 +124,7 @@ function validateReport(report, collection, label) {
 function sourcePositions(source, offsets) {
   const requested = new Set(offsets);
   const result = new Map();
+  if (requested.size === 0) return result;
   let offset = 0;
   let line = 1;
   let column = 1;
@@ -161,6 +163,71 @@ function sourceSpan(value, positions, label) {
   const end = sourcePosition(value.end, positions, `${label} end`);
   if (end < start) throw new Error(`${label} is reversed`);
   return start;
+}
+
+function sameBytes(left, right) {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index++) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function checkedEditSet(value, input, expectedDigest) {
+  only(value, ["path", "source_digest", "edits"], "authoring edit set");
+  if (value.path !== input.path || value.source_digest !== expectedDigest) {
+    throw new Error("authoring edit set names another source");
+  }
+  digest(value.source_digest, "authoring edit set source digest");
+  const sourceBytes = encoder.encode(input.source);
+  const values = rows(value.edits, "authoring edits");
+  const offsets = [];
+  for (const [index, edit] of values.entries()) {
+    only(edit, ["span", "old_text", "new_text"], `authoring edit ${index}`);
+    sourceSpan(edit.span, null, `authoring edit ${index} span`);
+    offsets.push(edit.span.start.offset, edit.span.end.offset);
+    if (typeof edit.old_text !== "string" || typeof edit.new_text !== "string" ||
+        encoder.encode(edit.old_text).byteLength > MAX_SOURCE_BYTES ||
+        encoder.encode(edit.new_text).byteLength > MAX_SOURCE_BYTES) {
+      throw new Error(`authoring edit ${index} text exceeds its bound`);
+    }
+  }
+  const positions = sourcePositions(input.source, offsets);
+  const edits = values.map((edit, index) => {
+    const start = sourceSpan(edit.span, positions, `authoring edit ${index} span`);
+    const end = edit.span.end.offset;
+    const oldBytes = encoder.encode(edit.old_text);
+    const newBytes = encoder.encode(edit.new_text);
+    if (!sameBytes(sourceBytes.subarray(start, end), oldBytes)) {
+      throw new Error(`authoring edit ${index} has stale old text`);
+    }
+    return { start, end, newBytes };
+  }).sort((left, right) => left.start - right.start || left.end - right.end);
+
+  let previous = 0;
+  let resultBytes = sourceBytes.byteLength;
+  for (const [index, edit] of edits.entries()) {
+    if (edit.start < previous) throw new Error(`authoring edit ${index} overlaps a previous edit`);
+    previous = edit.end;
+    resultBytes += edit.newBytes.byteLength - (edit.end - edit.start);
+    if (!Number.isSafeInteger(resultBytes) || resultBytes < 1 || resultBytes > MAX_SOURCE_BYTES) {
+      throw new Error("formatted authoring source exceeds its bound");
+    }
+  }
+
+  const output = new Uint8Array(resultBytes);
+  let sourceOffset = 0;
+  let outputOffset = 0;
+  for (const edit of edits) {
+    const unchanged = sourceBytes.subarray(sourceOffset, edit.start);
+    output.set(unchanged, outputOffset);
+    outputOffset += unchanged.byteLength;
+    output.set(edit.newBytes, outputOffset);
+    outputOffset += edit.newBytes.byteLength;
+    sourceOffset = edit.end;
+  }
+  output.set(sourceBytes.subarray(sourceOffset), outputOffset);
+  return Object.freeze({ editSet: frozen(value), source: decoder.decode(output) });
 }
 
 function validateDiagnostics(report, source) {
@@ -307,6 +374,20 @@ function validateAnalysis(value, input, requestedDigest, evidence) {
     previous = element.identity.name;
     validateConfigMetadata(element.config);
   }
+  if (value.parsed) {
+    if (value.formatting === undefined || value.formatting === null) {
+      throw new Error("parsed analysis omitted its formatter edit set");
+    }
+    const formatting = checkedEditSet(value.formatting, input, requestedDigest);
+    if (value.canonical && (formatting.editSet.edits.length !== 0 || formatting.source !== input.source)) {
+      throw new Error("canonical analysis proposed source changes");
+    }
+    if (!value.canonical && (formatting.editSet.edits.length === 0 || formatting.source === input.source)) {
+      throw new Error("noncanonical analysis omitted its source changes");
+    }
+  } else if (value.formatting !== undefined) {
+    throw new Error("recovered analysis proposed formatter edits");
+  }
   return frozen(value);
 }
 
@@ -361,6 +442,13 @@ export default {
         const response = await transport.authoring("compile", exact);
         ready();
         return validateCompile(response.value, exact, response.identity);
+      },
+      async applyEdits(input, editSet) {
+        ready();
+        const exact = document(input, true);
+        const fingerprint = await sourceDigest(exact.source);
+        ready();
+        return checkedEditSet(editSet, exact, fingerprint).source;
       },
       async render(graph, format = "model") {
         ready();
