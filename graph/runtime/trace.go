@@ -73,8 +73,8 @@ func (tracer *BufferTracer) Events() []TraceEvent {
 }
 
 type trackedFlow struct {
-	flow    inspect.FlowLive
-	parents map[string][]string
+	flow   inspect.FlowLive
+	stages map[string]inspect.CausalStageLive
 }
 
 // flowTracker retains bounded payload-free routes by envelope correlation.
@@ -144,8 +144,8 @@ func (tracker *flowTracker) record(
 			tracker.dropped++
 		}
 		tracked = &trackedFlow{
-			flow:    inspect.FlowLive{Correlation: key, FirstNS: atNS},
-			parents: make(map[string][]string),
+			flow:   inspect.FlowLive{Correlation: key, FirstNS: atNS},
+			stages: make(map[string]inspect.CausalStageLive),
 		}
 		tracker.flows[key] = tracked
 		tracker.order = append(tracker.order, key)
@@ -157,7 +157,8 @@ func (tracker *flowTracker) record(
 		tracker.dropped++
 		return
 	}
-	if parents, found := tracked.parents[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+	if previous, found := tracked.stages[stage.Item]; found &&
+		(previous.Kind != stage.Kind || !slices.Equal(previous.Parents, stage.Parents)) {
 		tracked.flow.Truncated = true
 		tracker.dropped++
 		return
@@ -174,8 +175,8 @@ func (tracker *flowTracker) record(
 	tracked.flow.Edges = append(tracked.flow.Edges, channel)
 	tracked.flow.EdgeNS = append(tracked.flow.EdgeNS, atNS)
 	tracked.flow.CausalStages = append(tracked.flow.CausalStages, stage)
-	if _, found := tracked.parents[stage.Item]; !found {
-		tracked.parents[stage.Item] = slices.Clone(stage.Parents)
+	if _, found := tracked.stages[stage.Item]; !found {
+		tracked.stages[stage.Item] = stage.Clone()
 	}
 }
 
@@ -189,6 +190,12 @@ func causalStage(
 	stage := inspect.CausalStageLive{
 		Item: envelope.ItemID, Parents: make([]string, 0, len(envelope.CausalParents)),
 	}
+	if kind, present, valid := inspectionCause(envelope.Payload); present {
+		if !valid {
+			return inspect.CausalStageLive{}, false
+		}
+		stage.Kind = kind
+	}
 	seen := make(map[string]struct{}, len(envelope.CausalParents))
 	for _, parent := range envelope.CausalParents {
 		if parent == "" || parent == envelope.ItemID || len(parent) > maxIdentityBytes {
@@ -201,6 +208,26 @@ func causalStage(
 		stage.Parents = append(stage.Parents, parent)
 	}
 	return stage, true
+}
+
+func inspectionCause(payload any) (
+	kind element.InspectionCauseKind, present, valid bool,
+) {
+	provider, present := payload.(element.InspectionCauseProvider)
+	if !present {
+		return "", false, true
+	}
+	// Inspection is best-effort and must never grant a payload a process-crash
+	// capability. A panic is treated exactly like an invalid free-form label:
+	// the caller truncates rather than fabricating semantic evidence.
+	defer func() {
+		if recover() != nil {
+			kind, valid = "", false
+		}
+	}()
+	kind = provider.InspectionCause()
+	valid = kind.Validate() == nil
+	return kind, true, valid
 }
 
 func (tracker *flowTracker) snapshot() (map[string]inspect.FlowLive, uint64) {

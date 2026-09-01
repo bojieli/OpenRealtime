@@ -26,7 +26,8 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 	message := element.Envelope{
 		Type:   element.Event(element.Named("test.Value")),
 		ItemID: "item:" + private, TraceID: "trace:" + private,
-		RunID: "run:" + private, CausalParents: []string{"observation:" + private}, Payload: private,
+		RunID: "run:" + private, CausalParents: []string{"observation:" + private},
+		Payload: recordedSemanticPayload{private: private},
 	}
 	sendRecordedMessage(t, mounted, message)
 	if err := mounted.CheckpointTrace(); err != nil {
@@ -94,6 +95,7 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 			t.Fatalf("flow stage timing was not recorded and replayed: %+v", flow)
 		}
 		if len(flow.CausalStages) != len(flow.Edges) || len(flow.CausalStages) != 1 ||
+			flow.CausalStages[0].Kind != element.CauseModelRun ||
 			len(flow.CausalStages[0].Parents) != 1 ||
 			!strings.HasPrefix(flow.CausalStages[0].Item, "sha256:") ||
 			!strings.HasPrefix(flow.CausalStages[0].Parents[0], "sha256:") ||
@@ -108,6 +110,12 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 	if !errors.Is(mounted.CheckpointTrace(), graphruntime.ErrTraceRecordingClosed) {
 		t.Fatal("sealed recorder accepted another checkpoint")
 	}
+}
+
+type recordedSemanticPayload struct{ private string }
+
+func (recordedSemanticPayload) InspectionCause() element.InspectionCauseKind {
+	return element.CauseModelRun
 }
 
 func TestRecordedTraceCorrelationIsStableOnlyUnderTheInjectedSessionKey(t *testing.T) {

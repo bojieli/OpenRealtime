@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -132,6 +133,14 @@ type Observation struct {
 	Final      bool   `json:"final,omitempty"`
 	OccurredNS uint64 `json:"occurred_ns,omitempty"`
 }
+
+// InspectionCause identifies an emitted perception revision without exposing
+// its text, media, observer, source, or authority.
+func (Observation) InspectionCause() element.InspectionCauseKind {
+	return element.CauseObservation
+}
+
+var _ element.InspectionCauseProvider = Observation{}
 
 // Validate rejects an observation that could not be committed.
 func (observation Observation) Validate() error {

@@ -414,6 +414,7 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 		Correlation: "raw-correlation", Edges: []string{graph.Edges[0].ID},
 		CausalStages: []inspect.CausalStageLive{{
 			Item: "model-output-private", Parents: []string{"observation-private", "state-private"},
+			Kind: element.CauseModelRun,
 		}},
 		EdgeNS: []uint64{30}, FirstNS: 30, LastNS: 30,
 	}
@@ -441,6 +442,7 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	}
 	causal := snapshot.Flows["flow_000001"].CausalStages
 	if len(causal) != 1 || causal[0].Item != "cause_000001" ||
+		causal[0].Kind != element.CauseModelRun ||
 		!slices.Equal(causal[0].Parents, []string{"cause_000002", "cause_000003"}) {
 		t.Fatalf("snapshot omitted redacted causal lineage: %+v", causal)
 	}
@@ -687,7 +689,7 @@ func TestValidateSessionSnapshotRejectsInvalidCausalFlowTelemetry(t *testing.T) 
 	edgeID := graph.Edges[0].ID
 	base.Flows["raw-flow"] = inspect.FlowLive{
 		Correlation: "raw-flow", Edges: []string{edgeID}, EdgeNS: []uint64{10},
-		CausalStages: []inspect.CausalStageLive{{Item: "child", Parents: []string{"parent"}}},
+		CausalStages: []inspect.CausalStageLive{{Item: "child", Parents: []string{"parent"}, Kind: element.CauseObservation}},
 		FirstNS:      10, LastNS: 10,
 	}
 	if err := ValidateSessionSnapshot(base); err != nil {
@@ -724,10 +726,21 @@ func TestValidateSessionSnapshotRejectsInvalidCausalFlowTelemetry(t *testing.T) 
 			flow.CausalStages[0].Parents = make([]string, inspect.MaximumCausalParentsPerStage+1)
 			live.Flows["raw-flow"] = flow
 		}},
-		{name: "conflicting parents", want: "conflicting causal flow parents", mutate: func(live *inspect.Live) {
+		{name: "invalid classification", want: "invalid causal flow classification", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.CausalStages[0].Kind = "private text"
+			live.Flows["raw-flow"] = flow
+		}},
+		{name: "conflicting parents", want: "conflicting causal flow parents or classification", mutate: func(live *inspect.Live) {
 			flow := live.Flows["raw-flow"].Clone()
 			flow.Correlation = "second-flow"
 			flow.CausalStages[0].Parents[0] = "different-parent"
+			live.Flows["second-flow"] = flow
+		}},
+		{name: "conflicting classification", want: "conflicting causal flow parents or classification", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"].Clone()
+			flow.Correlation = "second-flow"
+			flow.CausalStages[0].Kind = element.CausePolicy
 			live.Flows["second-flow"] = flow
 		}},
 		{name: "regressing stage time", want: "invalid flow timing", mutate: func(live *inspect.Live) {

@@ -97,7 +97,7 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 	if len(snapshot.Flows) > 65_536 {
 		return fmt.Errorf("%w: session source returned too many live flows", ErrConflict)
 	}
-	causalAssertions := make(map[string][]string)
+	causalAssertions := make(map[string]inspect.CausalStageLive)
 	causalIdentities := make(map[string]struct{})
 	for id, flow := range snapshot.Flows {
 		if id == "" || len(id) > 65_536 || flow.Correlation != id ||
@@ -125,6 +125,9 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 				len(stage.Parents) > inspect.MaximumCausalParentsPerStage {
 				return fmt.Errorf("%w: session source returned invalid causal flow telemetry", ErrConflict)
 			}
+			if stage.Kind != "" && stage.Kind.Validate() != nil {
+				return fmt.Errorf("%w: session source returned invalid causal flow classification", ErrConflict)
+			}
 			seenParents := make(map[string]struct{}, len(stage.Parents))
 			causalIdentities[stage.Item] = struct{}{}
 			for _, parent := range stage.Parents {
@@ -140,10 +143,11 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 			if len(causalIdentities) > 65_536 {
 				return fmt.Errorf("%w: session source returned too many causal identities", ErrConflict)
 			}
-			if parents, found := causalAssertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
-				return fmt.Errorf("%w: session source returned conflicting causal flow parents", ErrConflict)
+			if previous, found := causalAssertions[stage.Item]; found &&
+				(previous.Kind != stage.Kind || !slices.Equal(previous.Parents, stage.Parents)) {
+				return fmt.Errorf("%w: session source returned conflicting causal flow parents or classification", ErrConflict)
 			}
-			causalAssertions[stage.Item] = slices.Clone(stage.Parents)
+			causalAssertions[stage.Item] = stage.Clone()
 		}
 	}
 	return nil

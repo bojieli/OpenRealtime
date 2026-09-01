@@ -9,9 +9,9 @@ import (
 
 // RedactLive removes free-form and item identifiers that can inherit request
 // payload while retaining exact graph, configuration, runtime, queue, timing,
-// closed categorical authority-decision evidence, and direct causal topology.
-// Flow-stage item and parent identities become snapshot-local pseudonyms. It
-// is safe to apply more than once.
+// closed categorical authority-decision and semantic-cause evidence, and
+// direct causal topology. Flow-stage item and parent identities become
+// snapshot-local pseudonyms. It is safe to apply more than once.
 func RedactLive(snapshot inspect.Live) inspect.Live {
 	result := snapshot
 	if snapshot.Configuration != nil {

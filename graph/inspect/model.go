@@ -389,13 +389,15 @@ func (live NodeLive) Clone() NodeLive {
 const MaximumCausalParentsPerStage = 64
 
 // CausalStageLive is the payload-free causal assertion observed with one flow
-// traversal. Item and Parents are raw envelope identities only inside a local
-// runtime snapshot. Public management snapshots replace them with local
+// traversal. Kind is an optional closed semantic projection supplied only by
+// typed payloads. Item and Parents are raw envelope identities only inside a
+// local runtime snapshot. Public management snapshots replace them with local
 // pseudonyms, and retained traces replace them with session-keyed opaque
 // identities. Parents are direct, not a flattened transitive closure.
 type CausalStageLive struct {
-	Item    string   `json:"item"`
-	Parents []string `json:"parents,omitempty"`
+	Item    string                      `json:"item"`
+	Parents []string                    `json:"parents,omitempty"`
+	Kind    element.InspectionCauseKind `json:"kind,omitempty"`
 }
 
 func (stage CausalStageLive) Clone() CausalStageLive {

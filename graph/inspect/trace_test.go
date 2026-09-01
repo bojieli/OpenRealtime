@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
@@ -72,6 +73,7 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 		len(final.Flows[correlation].EdgeNS) != 1 || final.Flows[correlation].EdgeNS[0] != 120 ||
 		len(final.Flows[correlation].CausalStages) != 1 ||
 		final.Flows[correlation].CausalStages[0].Item != causalItem ||
+		final.Flows[correlation].CausalStages[0].Kind != element.CauseModelRun ||
 		!slices.Equal(final.Flows[correlation].CausalStages[0].Parents, []string{causalParent}) ||
 		final.Nodes["source"].AuthorityDecision == nil ||
 		final.Nodes["source"].AuthorityDecision.Kind != "succeeded" ||
@@ -275,6 +277,12 @@ func TestLiveTraceEnforcesEveryDeclaredRetentionBound(t *testing.T) {
 			copy.CausalStages[0].Parents[0] = inspect.OpaqueTraceCausalIdentity("conflicting-parent")
 			trace.Snapshots[1].Flows = append(trace.Snapshots[1].Flows, copy)
 		}},
+		{name: "conflicting semantic cause assertions", want: "semantic kind", mutate: func(trace *inspect.LiveTrace) {
+			copy := trace.Snapshots[1].Flows[0].Clone()
+			copy.Correlation = inspect.OpaqueTraceCorrelation("conflicting-kind-flow")
+			copy.CausalStages[0].Kind = element.CausePolicy
+			trace.Snapshots[1].Flows = append(trace.Snapshots[1].Flows, copy)
+		}},
 		{name: "capabilities", want: "capabilities, limit", mutate: func(trace *inspect.LiveTrace) {
 			trace.Limits.MaxCapabilitiesPerNode = 1
 			capability := inspect.CapabilityIdentity{
@@ -456,6 +464,9 @@ func TestLiveTraceReplayRejectsSemanticForgeryDespiteValidArtifactFingerprint(t 
 			trace.Events[2].Flow.CausalStages[0].Parents[0] =
 				inspect.OpaqueTraceCausalIdentity("rewritten-parent")
 		}},
+		{name: "semantic cause history rewrite", want: "causal history was rewritten", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.CausalStages[0].Kind = element.CausePolicy
+		}},
 		{name: "unknown flow edge", want: "unknown internal graph edge", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = []string{"unknown-edge"}
 			trace.Snapshots[1].Flows[0].Edges = []string{"unknown-edge"}
@@ -573,6 +584,9 @@ func TestLiveTraceRejectsNonMonotonicTimeSequenceAndImpossibleCounters(t *testin
 		}},
 		{name: "invalid causal item", want: "invalid item identity", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.CausalStages[0].Item = "private-item"
+		}},
+		{name: "invalid semantic cause kind", want: "invalid inspection cause kind", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.CausalStages[0].Kind = "private-payload"
 		}},
 		{name: "self causal parent", want: "invalid parent identity", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.CausalStages[0].Parents[0] = trace.Events[2].Flow.CausalStages[0].Item
@@ -796,7 +810,7 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	finalLive.Flows["trace:"+secret] = inspect.FlowLive{
 		Correlation: "trace:" + secret, Edges: []string{"stream"}, EdgeNS: []uint64{120},
 		CausalStages: []inspect.CausalStageLive{{
-			Item: "item:" + secret, Parents: []string{"observation:" + secret},
+			Item: "item:" + secret, Parents: []string{"observation:" + secret}, Kind: element.CauseModelRun,
 		}},
 		FirstNS: 120, LastNS: 120,
 	}
@@ -819,6 +833,7 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 		CausalStages: []inspect.CausalStageLive{{
 			Item:    inspect.OpaqueTraceCausalIdentity("item:" + secret),
 			Parents: []string{inspect.OpaqueTraceCausalIdentity("observation:" + secret)},
+			Kind:    element.CauseModelRun,
 		}},
 		FirstNS: 120, LastNS: 120,
 	}

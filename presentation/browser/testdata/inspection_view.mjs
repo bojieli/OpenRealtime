@@ -85,8 +85,8 @@ const baseLive = {
       correlation: "flow_000001", edges: [edgeID, edgeID],
       edge_ns: [110, 150], first_ns: 110, last_ns: 150, truncated: false,
       causal_stages: [
-        { item: "cause_000002", parents: ["cause_000001"] },
-        { item: "cause_000003", parents: ["cause_000002", "cause_000001"] },
+		{ item: "cause_000002", parents: ["cause_000001"], kind: "observation" },
+		{ item: "cause_000003", parents: ["cause_000002", "cause_000001"], kind: "state_revision" },
       ],
     },
   },
@@ -184,9 +184,9 @@ for (const expected of [
   "First traversal: 110 ns from mount clock", "Last traversal: 150 ns from mount clock",
   "Elapsed: 40 ns", "Retention: complete",
   `Stage 1: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy); ` +
-    "110 ns from mount clock; first retained stage; causal cause_000002 ← cause_000001",
+	"110 ns from mount clock; first retained stage; causal observation cause_000002 ← cause_000001",
   `Stage 2: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy); ` +
-    "150 ns from mount clock; +40 ns; causal cause_000003 ← cause_000002, cause_000001",
+	"150 ns from mount clock; +40 ns; causal state_revision cause_000003 ← cause_000002, cause_000001",
 ]) {
   if (!section.textContent.includes(expected)) throw new Error(`joined view omitted ${expected}`);
 }
@@ -346,6 +346,14 @@ if (availability.textContent !== "unavailable" ||
 }
 
 live = structuredClone(baseLive);
+live.flows.flow_000001.causal_stages[0].kind = "provider request text";
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("invalid semantic cause kind")) {
+  throw new Error("inspection view accepted a payload-shaped semantic cause kind");
+}
+
+live = structuredClone(baseLive);
 live.flows.flow_000001.causal_stages[0].parents[0] = "cause_000002";
 await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
@@ -378,6 +386,25 @@ await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
     !section.textContent.includes("rewrites causal parents")) {
   throw new Error("inspection view accepted conflicting cross-flow causal assertions");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000002 = structuredClone(live.flows.flow_000001);
+live.flows.flow_000002.correlation = "flow_000002";
+live.flows.flow_000002.causal_stages[0].kind = "policy";
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("semantic cause kind")) {
+  throw new Error("inspection view accepted conflicting cross-flow semantic classification");
+}
+
+live = structuredClone(baseLive);
+delete live.flows.flow_000001.causal_stages[0].kind;
+delete live.flows.flow_000001.causal_stages[1].kind;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" ||
+    !section.textContent.includes("causal cause_000002 ← cause_000001")) {
+  throw new Error("inspection view rejected legacy unclassified causal stages");
 }
 
 live = structuredClone(baseLive);

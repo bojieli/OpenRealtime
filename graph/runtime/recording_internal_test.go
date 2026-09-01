@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
@@ -57,7 +58,7 @@ func TestTraceRecorderCachesOnlySessionPseudonymizedCausalIdentities(t *testing.
 	flows := recorder.pseudonymizeFlowsLocked(map[string]inspect.FlowLive{
 		"trace:private": {
 			Correlation: "trace:private", Edges: []string{"edge"}, EdgeNS: []uint64{1},
-			CausalStages: []inspect.CausalStageLive{{Item: rawItem, Parents: []string{rawParent}}},
+			CausalStages: []inspect.CausalStageLive{{Item: rawItem, Parents: []string{rawParent}, Kind: element.CauseModelRun}},
 			FirstNS:      1, LastNS: 1,
 		},
 	})
@@ -67,7 +68,7 @@ func TestTraceRecorderCachesOnlySessionPseudonymizedCausalIdentities(t *testing.
 	}
 	for _, flow := range flows {
 		stage := flow.CausalStages[0]
-		if stage.Item == rawItem || stage.Parents[0] == rawParent ||
+		if stage.Item == rawItem || stage.Parents[0] == rawParent || stage.Kind != element.CauseModelRun ||
 			!strings.HasPrefix(stage.Item, "hmac-sha256:") ||
 			!strings.HasPrefix(stage.Parents[0], "hmac-sha256:") {
 			t.Fatalf("export candidate retained raw causal identities: %+v", stage)
@@ -75,7 +76,7 @@ func TestTraceRecorderCachesOnlySessionPseudonymizedCausalIdentities(t *testing.
 	}
 	for _, cached := range recorder.active {
 		stage := cached.causalStages[0]
-		if stage.Item == rawItem || stage.Parents[0] == rawParent ||
+		if stage.Item == rawItem || stage.Parents[0] == rawParent || stage.Kind != element.CauseModelRun ||
 			!strings.HasPrefix(stage.Item, "hmac-sha256:") ||
 			!strings.HasPrefix(stage.Parents[0], "hmac-sha256:") {
 			t.Fatalf("recorder cache retained raw causal identities: %+v", stage)

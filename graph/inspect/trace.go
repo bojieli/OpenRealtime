@@ -144,8 +144,9 @@ type TraceEdgeLive struct {
 
 // TraceFlowLive uses SHA-256 opaque correlation and causal identities rather
 // than envelope metadata. Edge repetitions and their parallel monotonic
-// timestamps and direct-parent assertions are retained because loops, retries,
-// and derived items are semantically different from sets of visited channels.
+// timestamps, direct-parent assertions, and closed semantic classifications
+// are retained because loops, retries, and derived items are semantically
+// different from sets of visited channels.
 // EdgeNS and CausalStages remain optional when reading an older trace artifact.
 type TraceFlowLive struct {
 	Correlation  string            `json:"correlation"`
@@ -597,13 +598,14 @@ func validateTraceSnapshot(snapshot TraceSnapshot, limits TraceLimits) error {
 }
 
 func validateCausalAssertions(flows []TraceFlowLive) error {
-	assertions := make(map[string][]string)
+	assertions := make(map[string]CausalStageLive)
 	for _, flow := range flows {
 		for _, stage := range flow.CausalStages {
-			if parents, found := assertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
-				return fmt.Errorf("causal item %s has conflicting direct parents", stage.Item)
+			if previous, found := assertions[stage.Item]; found &&
+				(previous.Kind != stage.Kind || !slices.Equal(previous.Parents, stage.Parents)) {
+				return fmt.Errorf("causal item %s has conflicting direct parents or semantic kind", stage.Item)
 			}
-			assertions[stage.Item] = stage.Parents
+			assertions[stage.Item] = stage.Clone()
 		}
 	}
 	return nil
@@ -785,7 +787,7 @@ func validateTraceFlow(flow TraceFlowLive, limits TraceLimits) error {
 		return fmt.Errorf("live trace flow %s has %d causal stages for %d edges",
 			flow.Correlation, len(flow.CausalStages), len(flow.Edges))
 	}
-	assertions := make(map[string][]string, len(flow.CausalStages))
+	assertions := make(map[string]CausalStageLive, len(flow.CausalStages))
 	for index, stage := range flow.CausalStages {
 		if !canonicalTraceDigest(stage.Item) {
 			return fmt.Errorf("live trace flow %s causal stage %d has invalid item identity %q",
@@ -794,6 +796,12 @@ func validateTraceFlow(flow TraceFlowLive, limits TraceLimits) error {
 		if len(stage.Parents) > MaximumCausalParentsPerStage {
 			return fmt.Errorf("live trace flow %s causal stage %d has %d parents, limit is %d",
 				flow.Correlation, index, len(stage.Parents), MaximumCausalParentsPerStage)
+		}
+		if stage.Kind != "" {
+			if err := stage.Kind.Validate(); err != nil {
+				return fmt.Errorf("live trace flow %s causal stage %d: %w",
+					flow.Correlation, index, err)
+			}
 		}
 		seenParents := make(map[string]struct{}, len(stage.Parents))
 		for _, parent := range stage.Parents {
@@ -807,10 +815,11 @@ func validateTraceFlow(flow TraceFlowLive, limits TraceLimits) error {
 			}
 			seenParents[parent] = struct{}{}
 		}
-		if parents, found := assertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
-			return fmt.Errorf("live trace flow %s rewrites causal parents for one item", flow.Correlation)
+		if previous, found := assertions[stage.Item]; found &&
+			(previous.Kind != stage.Kind || !slices.Equal(previous.Parents, stage.Parents)) {
+			return fmt.Errorf("live trace flow %s rewrites causal parents or semantic kind for one item", flow.Correlation)
 		}
-		assertions[stage.Item] = stage.Parents
+		assertions[stage.Item] = stage.Clone()
 	}
 	for index, atNS := range flow.EdgeNS {
 		if index > 0 && atNS < flow.EdgeNS[index-1] {

@@ -97,6 +97,10 @@ type SessionInvocationUpdate struct {
 	Invocation continuation.Invocation `json:"invocation"`
 }
 
+func (SessionInvocationUpdate) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 type ResponseCreate struct {
 	ResponseID string `json:"response_id"`
 	// ExpectedContextVersion and ExpectedContextItemID are one inseparable
@@ -109,6 +113,10 @@ type ResponseCreate struct {
 	// authenticated prefix from a later State when independent lossless lanes
 	// deliver a newer snapshot first. It must agree with both legacy fields.
 	CommittedContext *stateelements.CommittedContext `json:"committed_context,omitempty"`
+}
+
+func (ResponseCreate) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
 }
 
 type SessionInvocationOutcomeKind string
@@ -137,6 +145,10 @@ type SessionInvocationOutcome struct {
 	FinishedNS         uint64                       `json:"finished_ns,omitempty"`
 }
 
+func (SessionInvocationOutcome) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 type SessionInvocationState struct {
 	Role               string `json:"role"`
 	InvocationRevision uint64 `json:"invocation_revision"`
@@ -150,6 +162,17 @@ type SessionInvocationState struct {
 	TerminalMemory     int    `json:"terminal_memory"`
 	CancellationMemory int    `json:"cancellation_memory"`
 }
+
+func (SessionInvocationState) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
+var (
+	_ element.InspectionCauseProvider = SessionInvocationUpdate{}
+	_ element.InspectionCauseProvider = ResponseCreate{}
+	_ element.InspectionCauseProvider = SessionInvocationOutcome{}
+	_ element.InspectionCauseProvider = SessionInvocationState{}
+)
 
 func decodeSessionInvocationConfig(source json.RawMessage) (SessionInvocationConfig, error) {
 	config := SessionInvocationConfig{

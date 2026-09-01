@@ -145,6 +145,12 @@ type Generate struct {
 	CommittedContext *stateelements.CommittedContext `json:"committed_context,omitempty"`
 }
 
+// InspectionCause records the explicit activation policy that opened the
+// model run; result and stream payloads below identify the run itself.
+func (Generate) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 // Cancel is an addressed control request. RunID may be omitted when the
 // envelope's RunID or cancellation scope supplies the address.
 type Cancel struct {
@@ -173,6 +179,10 @@ type PreparedTextDelta struct {
 	Interrupted bool         `json:"interrupted,omitempty"`
 }
 
+func (PreparedTextDelta) InspectionCause() element.InspectionCauseKind {
+	return element.CauseModelRun
+}
+
 // ToolProposal is structured model output without execution authority. Even a
 // legacy provider descriptor that says "execute" produces only this type;
 // authorization and dispatch require explicit downstream elements.
@@ -180,6 +190,10 @@ type ToolProposal struct {
 	Call              trajectory.ToolCall        `json:"call"`
 	Declared          bool                       `json:"declared"`
 	ProviderAuthority continuation.ToolAuthority `json:"provider_authority"`
+}
+
+func (ToolProposal) InspectionCause() element.InspectionCauseKind {
+	return element.CauseModelRun
 }
 
 // PreparedOutputKind identifies one ordered, uncommitted model-output segment.
@@ -217,6 +231,10 @@ type Result struct {
 	Interrupted       bool                    `json:"interrupted,omitempty"`
 }
 
+func (Result) InspectionCause() element.InspectionCauseKind {
+	return element.CauseModelRun
+}
+
 type OutcomeKind string
 
 const (
@@ -241,6 +259,18 @@ type Outcome struct {
 	FinishedNS        uint64      `json:"finished_ns,omitempty"`
 	DurationNS        uint64      `json:"duration_ns,omitempty"`
 }
+
+func (Outcome) InspectionCause() element.InspectionCauseKind {
+	return element.CauseModelRun
+}
+
+var (
+	_ element.InspectionCauseProvider = Generate{}
+	_ element.InspectionCauseProvider = PreparedTextDelta{}
+	_ element.InspectionCauseProvider = ToolProposal{}
+	_ element.InspectionCauseProvider = Result{}
+	_ element.InspectionCauseProvider = Outcome{}
+)
 
 // ProviderResolution is live startup evidence. DescriptorDigest covers the
 // exact descriptor returned by the created provider instance; RegistryRevision

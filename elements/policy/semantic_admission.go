@@ -269,6 +269,10 @@ type SemanticDecision struct {
 	FinishedNS           uint64              `json:"finished_ns"`
 }
 
+func (SemanticDecision) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 type SemanticAdmissionOutcomeKind string
 
 const (
@@ -293,6 +297,10 @@ type SemanticAdmissionOutcome struct {
 	FinishedNS     uint64                       `json:"finished_ns,omitempty"`
 }
 
+func (SemanticAdmissionOutcome) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 type SemanticAdmissionState struct {
 	InvocationRevision uint64 `json:"invocation_revision"`
 	InvocationDigest   string `json:"invocation_digest,omitempty"`
@@ -311,6 +319,16 @@ type SemanticAdmissionState struct {
 	StandingPolicies   int    `json:"standing_policies"`
 	StandingMemory     int    `json:"standing_memory"`
 }
+
+func (SemanticAdmissionState) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
+var (
+	_ element.InspectionCauseProvider = SemanticDecision{}
+	_ element.InspectionCauseProvider = SemanticAdmissionOutcome{}
+	_ element.InspectionCauseProvider = SemanticAdmissionState{}
+)
 
 type SemanticDeciderResolution struct {
 	Reference        string                    `json:"reference"`

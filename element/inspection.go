@@ -5,6 +5,46 @@ import (
 	"slices"
 )
 
+// InspectionCauseKind is the closed semantic vocabulary that a typed payload
+// may contribute to payload-free causal inspection. Queue traversal, trigger
+// timing, and authority decisions are already retained independently; these
+// four values identify the semantic work that happened between those runtime
+// boundaries without exposing request, provider, or model content.
+type InspectionCauseKind string
+
+const (
+	CauseObservation   InspectionCauseKind = "observation"
+	CauseStateRevision InspectionCauseKind = "state_revision"
+	CausePolicy        InspectionCauseKind = "policy"
+	CauseModelRun      InspectionCauseKind = "model_run"
+)
+
+var supportedInspectionCauseKinds = []InspectionCauseKind{
+	CauseObservation, CauseStateRevision, CausePolicy, CauseModelRun,
+}
+
+// SupportedInspectionCauseKinds returns an independent copy of the exact
+// semantic-causality vocabulary used by runtime and presentation validators.
+func SupportedInspectionCauseKinds() []InspectionCauseKind {
+	return slices.Clone(supportedInspectionCauseKinds)
+}
+
+// Validate rejects free-form classifications that could smuggle payload or
+// provider data into an inspection snapshot.
+func (kind InspectionCauseKind) Validate() error {
+	if !slices.Contains(supportedInspectionCauseKinds, kind) {
+		return fmt.Errorf("invalid inspection cause kind %q", kind)
+	}
+	return nil
+}
+
+// InspectionCauseProvider is implemented only by typed payloads that can
+// project one closed semantic classification. A payload that has no such
+// projection remains unclassified; the runtime rejects invalid projections.
+type InspectionCauseProvider interface {
+	InspectionCause() InspectionCauseKind
+}
+
 // InspectionDecisionKind is a closed, payload-free authority outcome class.
 // It intentionally carries no call, run, session, provider, or message value.
 type InspectionDecisionKind string

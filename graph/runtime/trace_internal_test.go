@@ -13,6 +13,7 @@ func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
 	envelope := element.Envelope{
 		ItemID: "same", TraceID: "feedback", Sequence: 1,
 		CausalParents: []string{"observation", "state-revision"},
+		Payload:       inspectionCausePayload{kind: element.CauseModelRun},
 	}
 	tracker.record("feedback-edge", TraceEnqueue, envelope, 1)
 	tracker.record("feedback-edge", TraceEnqueue, envelope, 2)
@@ -24,6 +25,7 @@ func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
 		flow.Edges[1] != "feedback-edge" || flow.Edges[2] != "exit-edge" ||
 		len(flow.EdgeNS) != 3 || flow.EdgeNS[0] != 1 || flow.EdgeNS[1] != 2 || flow.EdgeNS[2] != 3 ||
 		len(flow.CausalStages) != 3 || flow.CausalStages[0].Item != "same" ||
+		flow.CausalStages[0].Kind != element.CauseModelRun ||
 		!slices.Equal(flow.CausalStages[0].Parents, envelope.CausalParents) ||
 		!flow.Truncated || dropped != 1 {
 		t.Fatalf("bounded feedback flow = %+v, dropped=%d", flow, dropped)
@@ -52,23 +54,32 @@ func TestFlowTrackerTruncatesInvalidOrRewrittenCausalLineage(t *testing.T) {
 		second element.Envelope
 	}{
 		{name: "rewritten parents", second: element.Envelope{
-			ItemID: "derived", TraceID: "trace", CausalParents: []string{"different"},
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"different"}, Payload: inspectionCausePayload{kind: element.CauseObservation},
 		}},
 		{name: "self parent", second: element.Envelope{
-			ItemID: "derived", TraceID: "trace", CausalParents: []string{"derived"},
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"derived"}, Payload: inspectionCausePayload{kind: element.CauseObservation},
 		}},
 		{name: "duplicate parent", second: element.Envelope{
-			ItemID: "derived", TraceID: "trace", CausalParents: []string{"root", "root"},
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"root", "root"}, Payload: inspectionCausePayload{kind: element.CauseObservation},
 		}},
 		{name: "too many parents", second: element.Envelope{
-			ItemID: "derived", TraceID: "trace", CausalParents: []string{"one", "two"},
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"one", "two"}, Payload: inspectionCausePayload{kind: element.CauseObservation},
+		}},
+		{name: "rewritten cause kind", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"root"}, Payload: inspectionCausePayload{kind: element.CausePolicy},
+		}},
+		{name: "invalid cause kind", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"root"}, Payload: inspectionCausePayload{kind: "request text"},
+		}},
+		{name: "panicking cause projection", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"root"}, Payload: panickingInspectionCausePayload{},
 		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			tracker := newFlowTracker(2, 4, 32, 1)
 			tracker.record("first", TraceEnqueue, element.Envelope{
-				ItemID: "derived", TraceID: "trace", CausalParents: []string{"root"},
+				ItemID: "derived", TraceID: "trace", CausalParents: []string{"root"}, Payload: inspectionCausePayload{kind: element.CauseObservation},
 			}, 10)
 			tracker.record("second", TraceEnqueue, test.second, 20)
 			tracker.record("third", TraceEnqueue, element.Envelope{
@@ -107,13 +118,13 @@ func TestFlowTrackerBoundsCorrelationBytesAndClampsRegressingClock(t *testing.T)
 func TestRecordedFlowMonotonicityRequiresAnImmutableTimingModeAndPrefix(t *testing.T) {
 	before := traceCorrelation{
 		edges: []string{"edge"}, edgeNS: []uint64{10},
-		causalStages: []inspect.CausalStageLive{{Item: "item", Parents: []string{"root"}}},
+		causalStages: []inspect.CausalStageLive{{Item: "item", Parents: []string{"root"}, Kind: element.CauseObservation}},
 		firstNS:      10, lastNS: 10,
 	}
 	if !monotonicRecordedFlow(before, inspect.FlowLive{
 		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20},
 		CausalStages: []inspect.CausalStageLive{
-			{Item: "item", Parents: []string{"root"}}, {Item: "next", Parents: []string{"item"}},
+			{Item: "item", Parents: []string{"root"}, Kind: element.CauseObservation}, {Item: "next", Parents: []string{"item"}, Kind: element.CauseStateRevision},
 		},
 		FirstNS: 10, LastNS: 20,
 	}) {
@@ -122,7 +133,7 @@ func TestRecordedFlowMonotonicityRequiresAnImmutableTimingModeAndPrefix(t *testi
 	if monotonicRecordedFlow(before, inspect.FlowLive{
 		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{11, 20},
 		CausalStages: []inspect.CausalStageLive{
-			{Item: "item", Parents: []string{"root"}}, {Item: "next", Parents: []string{"item"}},
+			{Item: "item", Parents: []string{"root"}, Kind: element.CauseObservation}, {Item: "next", Parents: []string{"item"}, Kind: element.CauseStateRevision},
 		},
 		FirstNS: 10, LastNS: 20,
 	}) {
@@ -138,12 +149,32 @@ func TestRecordedFlowMonotonicityRequiresAnImmutableTimingModeAndPrefix(t *testi
 	if monotonicRecordedFlow(before, inspect.FlowLive{
 		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20},
 		CausalStages: []inspect.CausalStageLive{
-			{Item: "item", Parents: []string{"rewritten"}}, {Item: "next", Parents: []string{"item"}},
+			{Item: "item", Parents: []string{"rewritten"}, Kind: element.CauseObservation}, {Item: "next", Parents: []string{"item"}, Kind: element.CauseStateRevision},
 		},
 		FirstNS: 10, LastNS: 20,
 	}) {
 		t.Fatal("rewritten causal prefix was accepted")
 	}
+	if monotonicRecordedFlow(before, inspect.FlowLive{
+		Edges: []string{"edge"}, EdgeNS: []uint64{10},
+		CausalStages: []inspect.CausalStageLive{{
+			Item: "item", Parents: []string{"root"}, Kind: element.CausePolicy,
+		}}, FirstNS: 10, LastNS: 10,
+	}) {
+		t.Fatal("rewritten semantic cause kind was accepted")
+	}
+}
+
+type inspectionCausePayload struct{ kind element.InspectionCauseKind }
+
+func (payload inspectionCausePayload) InspectionCause() element.InspectionCauseKind {
+	return payload.kind
+}
+
+type panickingInspectionCausePayload struct{}
+
+func (panickingInspectionCausePayload) InspectionCause() element.InspectionCauseKind {
+	panic("private payload panic")
 }
 
 type inspectionDecisionPayload struct {

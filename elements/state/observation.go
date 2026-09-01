@@ -91,6 +91,12 @@ type ObservationCommitOutcome struct {
 	Message             string                       `json:"message,omitempty"`
 }
 
+func (ObservationCommitOutcome) InspectionCause() element.InspectionCauseKind {
+	return element.CauseStateRevision
+}
+
+var _ element.InspectionCauseProvider = ObservationCommitOutcome{}
+
 type observationCommitFactory struct{}
 
 func (observationCommitFactory) Descriptor() element.Descriptor {

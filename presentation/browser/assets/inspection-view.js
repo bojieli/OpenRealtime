@@ -2,6 +2,9 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MAX_ROWS = 65_536;
 const MAX_TEXT = 65_536;
 const MAX_CAUSAL_PARENTS = 64;
+const CAUSE_KINDS = new Set([
+  "observation", "state_revision", "policy", "model_run",
+]);
 const DECISION_KINDS = new Set([
   "succeeded", "rejected", "denied", "canceled", "timed_out", "failed", "ignored",
 ]);
@@ -252,6 +255,10 @@ function flowProjection(value, id, causalAssertions, causalIdentities) {
         throw new Error(`live flow ${id} contains an unredacted causal item identity`);
       }
       const parents = strings(stage.parents, `live flow ${id} causal stage ${index} parents`);
+      const kind = text(stage.kind ?? "", `live flow ${id} causal stage ${index} kind`, true);
+      if (kind !== "" && !CAUSE_KINDS.has(kind)) {
+        throw new Error(`live flow ${id} contains an invalid semantic cause kind`);
+      }
       if (parents.length > MAX_CAUSAL_PARENTS ||
           parents.some((parent) => !/^cause_[0-9]{6}$/.test(parent) || parent === item)) {
         throw new Error(`live flow ${id} contains invalid causal parents`);
@@ -263,11 +270,12 @@ function flowProjection(value, id, causalAssertions, causalIdentities) {
       }
       const previous = causalAssertions.get(item);
       if (previous !== undefined &&
-          (previous.length !== parents.length || previous.some((parent, parentIndex) => parent !== parents[parentIndex]))) {
-        throw new Error(`live flow ${id} rewrites causal parents for ${item}`);
+          (previous.kind !== kind || previous.parents.length !== parents.length ||
+           previous.parents.some((parent, parentIndex) => parent !== parents[parentIndex]))) {
+        throw new Error(`live flow ${id} rewrites causal parents or semantic cause kind for ${item}`);
       }
-      causalAssertions.set(item, parents);
-      return Object.freeze({ item, parents: Object.freeze(parents) });
+      causalAssertions.set(item, Object.freeze({ kind, parents: Object.freeze(parents) }));
+      return Object.freeze({ item, kind, parents: Object.freeze(parents) });
     });
   if (causalStages.length !== 0 && causalStages.length !== edges.length) {
     throw new Error(`live flow ${id} causal stages do not match its traversed edges`);
@@ -556,7 +564,7 @@ function renderJoined(nodeContainer, edgeContainer, flowContainer, joined) {
         `${stage.atNS} ns from mount clock; ${stage.deltaNS === null
           ? "first retained stage" : `+${stage.deltaNS} ns`}`;
       const causal = stage.causal === null ? "causal lineage unavailable" :
-        `causal ${stage.causal.item} ← ${stage.causal.parents.length === 0
+        `causal ${stage.causal.kind === "" ? "" : `${stage.causal.kind} `}${stage.causal.item} ← ${stage.causal.parents.length === 0
           ? "root" : stage.causal.parents.join(", ")}`;
       path.append(node("li", `Stage ${stage.index}: ${endpointText(edge.from)} → ${endpointText(edge.to)} ` +
         `via ${edge.id} (${edge.type}; ${edge.delivery}); ${timing}; ${causal}`));

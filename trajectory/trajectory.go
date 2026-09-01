@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/bojieli/OpenRealtime/element"
 )
 
 // ErrVersionConflict means a writer tried to publish work derived from a
@@ -185,6 +187,14 @@ type Snapshot struct {
 	Version uint64 `json:"version"`
 	Items   []Item `json:"items"`
 }
+
+// InspectionCause classifies the immutable prefix identity only; no item or
+// model-visible content enters inspection evidence.
+func (Snapshot) InspectionCause() element.InspectionCauseKind {
+	return element.CauseStateRevision
+}
+
+var _ element.InspectionCauseProvider = Snapshot{}
 
 // PendingToolCall is one executable call that has no terminal result in the
 // supplied trajectory prefix.

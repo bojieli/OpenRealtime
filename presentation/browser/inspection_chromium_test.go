@@ -16,17 +16,18 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 )
 
-func TestInspectionViewMatchesClosedAuthorityDecisionVocabulary(t *testing.T) {
+func TestInspectionViewMatchesClosedInspectionVocabularies(t *testing.T) {
 	module, err := browserModule("inspection-view.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(module)
+	causeStart := strings.Index(source, "const CAUSE_KINDS")
 	kindStart := strings.Index(source, "const DECISION_KINDS")
 	operationStart := strings.Index(source, "const DECISION_OPERATIONS")
 	contractEnd := strings.Index(source, "function object")
-	if kindStart < 0 || operationStart <= kindStart || contractEnd <= operationStart {
-		t.Fatal("inspection view omits its closed authority-decision vocabulary")
+	if causeStart < 0 || kindStart <= causeStart || operationStart <= kindStart || contractEnd <= operationStart {
+		t.Fatal("inspection view omits a closed inspection vocabulary")
 	}
 	assertExact := func(label, section string, expected []string) {
 		t.Helper()
@@ -54,6 +55,12 @@ func TestInspectionViewMatchesClosedAuthorityDecisionVocabulary(t *testing.T) {
 	for index, operation := range operations {
 		wantOperations[index] = string(operation)
 	}
+	causes := element.SupportedInspectionCauseKinds()
+	wantCauses := make([]string, len(causes))
+	for index, cause := range causes {
+		wantCauses[index] = string(cause)
+	}
+	assertExact("cause kind", source[causeStart:kindStart], wantCauses)
 	assertExact("kind", source[kindStart:operationStart], wantKinds)
 	assertExact("operation", source[operationStart:contractEnd], wantOperations)
 	bound := regexp.MustCompile(`const MAX_CAUSAL_PARENTS = ([0-9]+);`).FindStringSubmatch(source)
@@ -112,9 +119,9 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 		"First traversal: ", "110 ns from mount clock", "Last traversal: ",
 		"150 ns from mount clock", "Elapsed: ", "40 ns", "Retention: ", "complete",
 		"Stage 1: worker.out → worker.in via channel (Event(test.Value); lossy); " +
-			"110 ns from mount clock; first retained stage; causal cause_000002 ← cause_000001",
+			"110 ns from mount clock; first retained stage; causal observation cause_000002 ← cause_000001",
 		"Stage 2: worker.out → worker.in via channel (Event(test.Value); lossy); " +
-			"150 ns from mount clock; +40 ns; causal cause_000003 ← cause_000002, cause_000001",
+			"150 ns from mount clock; +40 ns; causal state_revision cause_000003 ← cause_000002, cause_000001",
 	} {
 		if !strings.Contains(document, expected) {
 			t.Fatalf("Chromium channel view omitted %q:\n%s", expected, document)
@@ -166,10 +173,10 @@ const live = {
   flows: { flow_000001: {
     correlation: "flow_000001", edges: ["channel", "channel"],
     edge_ns: [110, 150], first_ns: 110, last_ns: 150, truncated: false,
-    causal_stages: [
-      { item: "cause_000002", parents: ["cause_000001"] },
-      { item: "cause_000003", parents: ["cause_000002", "cause_000001"] },
-    ],
+	causal_stages: [
+	  { item: "cause_000002", parents: ["cause_000001"], kind: "observation" },
+	  { item: "cause_000003", parents: ["cause_000002", "cause_000001"], kind: "state_revision" },
+	],
   } }, trace_dropped: 0,
 };
 const model = {

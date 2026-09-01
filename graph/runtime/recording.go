@@ -459,7 +459,8 @@ func sameRuntimeCausalStagePrefix(before, after []inspect.CausalStageLive) bool 
 		return false
 	}
 	for index, stage := range before {
-		if stage.Item != after[index].Item || !slices.Equal(stage.Parents, after[index].Parents) {
+		if stage.Item != after[index].Item || stage.Kind != after[index].Kind ||
+			!slices.Equal(stage.Parents, after[index].Parents) {
 			return false
 		}
 	}
@@ -471,6 +472,7 @@ func (recorder *traceRecorder) pseudonymizeCausalStagesLocked(
 ) []inspect.CausalStageLive {
 	result := make([]inspect.CausalStageLive, len(stages))
 	for index, stage := range stages {
+		result[index].Kind = stage.Kind
 		result[index].Item = recorder.hmacLocked("causal", []byte(stage.Item))
 		result[index].Parents = make([]string, len(stage.Parents))
 		for parentIndex, parent := range stage.Parents {

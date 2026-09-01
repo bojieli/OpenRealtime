@@ -287,7 +287,12 @@ func (outcome Outcome) InspectionDecision() element.InspectionDecision {
 	}
 }
 
+func (Outcome) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 var _ element.InspectionDecisionProvider = Outcome{}
+var _ element.InspectionCauseProvider = Outcome{}
 
 type LedgerTransition struct {
 	CallID       string             `json:"call_id"`

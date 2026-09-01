@@ -90,6 +90,10 @@ type Append struct {
 	Items           []trajectory.Item `json:"items"`
 }
 
+func (Append) InspectionCause() element.InspectionCauseKind {
+	return element.CauseStateRevision
+}
+
 // CommittedContext compactly binds an accepted transition to the exact State
 // envelope published for its immutable trajectory prefix.
 type CommittedContext struct {
@@ -107,6 +111,10 @@ type Commit struct {
 	Context     CommittedContext    `json:"context"`
 }
 
+func (Commit) InspectionCause() element.InspectionCauseKind {
+	return element.CauseStateRevision
+}
+
 // Rejection is a typed, non-mutating terminal reply. A malformed or stale
 // transaction is a policy-visible outcome, not a reason to crash the graph.
 type Rejection struct {
@@ -117,6 +125,16 @@ type Rejection struct {
 	ItemIndex       *int   `json:"item_index,omitempty"`
 	ItemID          string `json:"item_id,omitempty"`
 }
+
+func (Rejection) InspectionCause() element.InspectionCauseKind {
+	return element.CauseStateRevision
+}
+
+var (
+	_ element.InspectionCauseProvider = Append{}
+	_ element.InspectionCauseProvider = Commit{}
+	_ element.InspectionCauseProvider = Rejection{}
+)
 
 // TrajectoryStoreServiceValue optionally supplies an existing session store.
 // It is a coeffect and never enters Graph IR or configuration artifacts.

@@ -135,6 +135,10 @@ type GenerationOutcome struct {
 	FinishedNS     uint64                `json:"finished_ns,omitempty"`
 }
 
+func (GenerationOutcome) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
 type GenerationState struct {
 	Role               string `json:"role"`
 	ContextVersion     uint64 `json:"context_version"`
@@ -145,6 +149,15 @@ type GenerationState struct {
 	TerminalMemory     int    `json:"terminal_memory"`
 	CancellationMemory int    `json:"cancellation_memory"`
 }
+
+func (GenerationState) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
+}
+
+var (
+	_ element.InspectionCauseProvider = GenerationOutcome{}
+	_ element.InspectionCauseProvider = GenerationState{}
+)
 
 func decodeGenerateOnObservationConfig(source json.RawMessage) (GenerateOnObservationConfig, error) {
 	config := GenerateOnObservationConfig{

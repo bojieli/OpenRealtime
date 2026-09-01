@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 )
 
@@ -50,8 +51,8 @@ func benchmarkRedaction(b *testing.B, redact func(inspect.Live) inspect.Live) {
 		live.Flows[id] = inspect.FlowLive{
 			Correlation: id, Edges: []string{id, id}, EdgeNS: []uint64{1, 2},
 			CausalStages: []inspect.CausalStageLive{
-				{Item: id + "-output", Parents: []string{id + "-observation", id + "-state"}},
-				{Item: id + "-result", Parents: []string{id + "-output"}},
+				{Item: id + "-output", Parents: []string{id + "-observation", id + "-state"}, Kind: element.CauseModelRun},
+				{Item: id + "-result", Parents: []string{id + "-output"}, Kind: element.CauseStateRevision},
 			},
 			FirstNS: 1, LastNS: 2,
 		}

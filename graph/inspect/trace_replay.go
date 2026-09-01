@@ -325,13 +325,14 @@ func (replayer *TraceReplayer) applyEvent(state *replayState, event TraceEvent) 
 }
 
 func validateTraceOverlayCausality(flows map[string]TraceFlowLive) error {
-	assertions := make(map[string][]string)
+	assertions := make(map[string]CausalStageLive)
 	for _, flow := range flows {
 		for _, stage := range flow.CausalStages {
-			if parents, found := assertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
-				return fmt.Errorf("causal item %s has conflicting direct parents", stage.Item)
+			if previous, found := assertions[stage.Item]; found &&
+				(previous.Kind != stage.Kind || !slices.Equal(previous.Parents, stage.Parents)) {
+				return fmt.Errorf("causal item %s has conflicting direct parents or semantic kind", stage.Item)
 			}
-			assertions[stage.Item] = stage.Parents
+			assertions[stage.Item] = stage.Clone()
 		}
 	}
 	return nil
@@ -531,7 +532,8 @@ func sameCausalStagePrefix(before, after []CausalStageLive) bool {
 		return false
 	}
 	for index, stage := range before {
-		if stage.Item != after[index].Item || !slices.Equal(stage.Parents, after[index].Parents) {
+		if stage.Item != after[index].Item || stage.Kind != after[index].Kind ||
+			!slices.Equal(stage.Parents, after[index].Parents) {
 			return false
 		}
 	}
@@ -690,13 +692,13 @@ const maximumRawCausalIdentityBytes = 64 << 10
 type traceCausalIdentitySet struct {
 	opaqueByRaw map[string]string
 	rawByOpaque map[string]string
-	parents     map[string][]string
+	stages      map[string]CausalStageLive
 }
 
 func newTraceCausalIdentitySet() *traceCausalIdentitySet {
 	return &traceCausalIdentitySet{
 		opaqueByRaw: make(map[string]string), rawByOpaque: make(map[string]string),
-		parents: make(map[string][]string),
+		stages: make(map[string]CausalStageLive),
 	}
 }
 
@@ -727,6 +729,11 @@ func (identities *traceCausalIdentitySet) encodeStages(
 	}
 	result := make([]CausalStageLive, len(stages))
 	for index, stage := range stages {
+		if stage.Kind != "" {
+			if err := stage.Kind.Validate(); err != nil {
+				return nil, fmt.Errorf("causal stage %d: %w", index, err)
+			}
+		}
 		if len(stage.Parents) > MaximumCausalParentsPerStage {
 			return nil, fmt.Errorf("causal stage %d has %d parents, limit is %d",
 				index, len(stage.Parents), MaximumCausalParentsPerStage)
@@ -741,15 +748,17 @@ func (identities *traceCausalIdentitySet) encodeStages(
 			}
 			seenParents[parent] = struct{}{}
 		}
-		if parents, found := identities.parents[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
-			return nil, fmt.Errorf("causal stage %d rewrites one item's direct parents", index)
+		if previous, found := identities.stages[stage.Item]; found &&
+			(previous.Kind != stage.Kind || !slices.Equal(previous.Parents, stage.Parents)) {
+			return nil, fmt.Errorf("causal stage %d rewrites one item's direct parents or semantic kind", index)
 		}
-		identities.parents[stage.Item] = slices.Clone(stage.Parents)
+		identities.stages[stage.Item] = stage.Clone()
 		item, err := identities.encode(stage.Item)
 		if err != nil {
 			return nil, fmt.Errorf("causal stage %d item: %w", index, err)
 		}
 		result[index].Item = item
+		result[index].Kind = stage.Kind
 		result[index].Parents = make([]string, len(stage.Parents))
 		for parentIndex, raw := range stage.Parents {
 			parent, err := identities.encode(raw)
