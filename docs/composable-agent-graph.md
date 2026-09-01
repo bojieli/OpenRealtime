@@ -2016,10 +2016,19 @@ it has been reviewed, tested, and committed with its evidence):
     populations remain separately tracked below and are not claimed by this
     wiring checkpoint.
   - [ ] Run the provisioned live 165-attempt scenario candidate comparison
-    against the accepted historical trail, live four-case
-    Meeting Assistant review, live exact-sixteen Realtime-CU review, and signed
-    Darwin macOS client gate. Local synthetic, transport-only, Linux Swift, or
-    manifest-derived probes do not close these live/native requirements.
+    against the accepted historical trail. The sealed 11×1 diagnostic remains
+    diagnostic-only and does not close this exact 11×15 population gate.
+  - [x] Run and independently reopen the live four-case Meeting Assistant
+    review. Candidate-21 retained 4/4 reportable graph-native attempts and four
+    exact-model evaluations behind the source/evaluation/aggregate receipts
+    identified above.
+  - [x] Run and independently reopen the live exact-sixteen Realtime-CU
+    review. Candidate-05 retained 16/16 reportable graph-native attempts and
+    sixteen exact-model evaluations behind the source/evaluation/aggregate
+    receipts identified above.
+  - [ ] Run the signed Darwin macOS client gate. Local synthetic,
+    transport-only, Linux Swift, or manifest-derived probes do not close this
+    native requirement.
 - [x] Complete the sidecar/model protocol-v4 hardening checkpoint.
   - [x] Publish the deployment registry and codec with a genuinely atomic,
     create-only service batch operation. `Bootstrap.Install` publishes both
