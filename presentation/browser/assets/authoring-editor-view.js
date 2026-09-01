@@ -34,7 +34,7 @@ export default {
     controls.append(analyze, compile);
     const publication = node("fieldset");
     publication.dataset.role = "source-publication";
-    publication.append(node("legend", "Mediated source publication"));
+    publication.append(node("legend", "Mediated source access"));
     const rootLabel = node("label", "Root identity ");
     const rootIdentity = node("input");
     rootIdentity.name = "authoring-root-identity";
@@ -47,6 +47,9 @@ export default {
     predecessor.maxLength = 71;
     predecessor.placeholder = "sha256:… (update only)";
     predecessorLabel.append(predecessor);
+    const load = node("button", "Load");
+    load.type = "button";
+    load.dataset.action = "load";
     const create = node("button", "Create");
     create.type = "button";
     create.dataset.action = "publish-create";
@@ -55,7 +58,9 @@ export default {
     update.dataset.action = "publish-update";
     const receipt = node("pre");
     receipt.dataset.role = "publication-receipt";
-    publication.append(rootLabel, predecessorLabel, create, update, receipt);
+    const readResult = node("pre");
+    readResult.dataset.role = "source-read-result";
+    publication.append(rootLabel, predecessorLabel, load, create, update, readResult, receipt);
     section.append(path, source, controls, status, diagnosticStatus, diagnostics, publication);
     let renderedEpoch = -1;
     const changed = workspace.subscribe((snapshot) => {
@@ -90,9 +95,17 @@ export default {
           diagnostics.append(item);
         }
       }
-      const busy = new Set(["analyzing", "compiling", "rendering", "publishing"]).has(snapshot.phase);
+      const busy = new Set(["reading", "analyzing", "compiling", "rendering", "publishing"])
+        .has(snapshot.phase);
       analyze.disabled = compile.disabled = busy;
+      load.disabled = busy || !workspace.canRead();
       create.disabled = update.disabled = busy || !workspace.canPublish();
+      if (snapshot.sourceRead) {
+        predecessor.value = snapshot.sourceRead.source_digest;
+        readResult.textContent = JSON.stringify(snapshot.sourceRead, null, 2);
+      } else if (snapshot.phase === "idle") {
+        readResult.textContent = "";
+      }
       if (snapshot.publication) {
         predecessor.value = snapshot.publication.source_digest;
         receipt.textContent = JSON.stringify(snapshot.publication, null, 2);
@@ -111,21 +124,31 @@ export default {
     };
     const analyzeClick = run(() => workspace.analyze());
     const compileClick = run(() => workspace.compile());
+    const loadClick = async () => {
+      try {
+        await workspace.load(rootIdentity.value, path.value);
+      } catch (error) {
+        status.textContent = error?.message ?? String(error);
+      }
+    };
     const createClick = run(() => workspace.publish("create", rootIdentity.value));
     const updateClick = run(() => workspace.publish("update", rootIdentity.value, predecessor.value));
     analyze.addEventListener("click", analyzeClick);
     compile.addEventListener("click", compileClick);
+    load.addEventListener("click", loadClick);
     create.addEventListener("click", createClick);
     update.addEventListener("click", updateClick);
     const unregister = slots.register("authoring.editor", section, 20);
     context.lifecycle.defer("authoring-editor-events", () => {
       analyze.removeEventListener("click", analyzeClick);
       compile.removeEventListener("click", compileClick);
+      load.removeEventListener("click", loadClick);
       create.removeEventListener("click", createClick);
       update.removeEventListener("click", updateClick);
       source.value = "";
       rootIdentity.value = "";
       predecessor.value = "";
+      readResult.textContent = "";
       receipt.textContent = "";
       diagnostics.replaceChildren();
     });

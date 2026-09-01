@@ -74,6 +74,13 @@ func NewAuthoringProvider(authoring management.Authoring) (pluginruntime.Factory
 	)
 }
 
+func NewSourceReadingProvider(reading management.SourceReading) (pluginruntime.Factory, error) {
+	return newProviderFactory(
+		"openrealtime.management.server.source-reading-provider",
+		management.SourceReadingContract, reading,
+	)
+}
+
 func NewSourcePublicationProvider(
 	publication management.SourcePublication,
 ) (pluginruntime.Factory, error) {

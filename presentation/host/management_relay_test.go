@@ -278,6 +278,16 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			_ = json.NewEncoder(writer).Encode(management.RenderResult{
 				Fingerprint: input.Graph.Fingerprint, Format: input.Format, Text: text,
 			})
+		case management.APIPrefix + "/authoring/read":
+			var input management.SourceReadRequest
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Errorf("decode source-read request: %v", err)
+			}
+			result, resultErr := management.NewSourceReadResult(input, "graph browser_relay {\n}\n")
+			if resultErr != nil {
+				t.Errorf("construct source-read result: %v", resultErr)
+			}
+			_ = json.NewEncoder(writer).Encode(result)
 		case management.APIPrefix + "/authoring/write":
 			var input management.SourceWriteRequest
 			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
@@ -376,6 +386,37 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			renderResponse.Header.Get(ManagementIdentityHeader), renderPayload)
 	}
 
+	readInput := management.SourceReadRequest{
+		FormatVersion: management.SourceReadFormatVersion,
+		RootIdentity:  "sha256:" + strings.Repeat("e", 64),
+		Path:          "browser/relay.ortg",
+	}
+	readBody, err := json.Marshal(readInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReadResult, err := management.NewSourceReadResult(readInput, "graph browser_relay {\n}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readRequest, _ := http.NewRequest(http.MethodPost,
+		hostServer.URL+"/client/v1/management/authoring/read", bytes.NewReader(readBody))
+	readRequest.Header.Set("Content-Type", "application/json")
+	readRequest.Header.Set(management.CapabilityHeader, operatorCapability)
+	readRequest.Header.Set("Authorization", "Bearer must-not-cross")
+	readResponse, err := http.DefaultClient.Do(readRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readPayload, _ := io.ReadAll(readResponse.Body)
+	readResponse.Body.Close()
+	if readResponse.StatusCode != http.StatusOK ||
+		readResponse.Header.Get(ManagementIdentityHeader) != "authoring:read:"+wantReadResult.ResultDigest ||
+		strings.Contains(string(readPayload), operatorCapability) {
+		t.Fatalf("source-read relay status=%d identity=%q body=%s", readResponse.StatusCode,
+			readResponse.Header.Get(ManagementIdentityHeader), readPayload)
+	}
+
 	writeInput := management.SourceWriteRequest{
 		FormatVersion: management.SourceWriteFormatVersion,
 		RootIdentity:  "sha256:" + strings.Repeat("e", 64),
@@ -409,7 +450,7 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			writeResponse.Header.Get(ManagementIdentityHeader), writePayload)
 	}
 
-	for range len(checks) + 2 {
+	for range len(checks) + 3 {
 		observation := <-seen
 		if observation.capability != operatorCapability || observation.authorization != "" {
 			t.Fatalf("management relay crossed credential planes: %+v", observation)
@@ -567,5 +608,48 @@ func TestManagementRelayRejectsForgedSourcePublicationReceipt(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "operator_source_secret") {
 		t.Fatalf("source receipt rejection logged operator capability: %s", logs.String())
+	}
+}
+
+func TestManagementRelayRejectsForgedSourceReadResult(t *testing.T) {
+	input := management.SourceReadRequest{
+		FormatVersion: management.SourceReadFormatVersion,
+		RootIdentity:  "sha256:" + strings.Repeat("7", 64),
+		Path:          "relay/forged.ortg",
+	}
+	result, err := management.NewSourceReadResult(input, "graph relay_forged {\n}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.SourceDigest = "sha256:" + strings.Repeat("8", 64)
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(result)
+	}))
+	defer backend.Close()
+	base, err := url.Parse(backend.URL + management.APIPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/authoring/read", bytes.NewReader(payload))
+	request.SetPathValue("action", "read")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(management.CapabilityHeader, "operator_source_secret")
+	response := httptest.NewRecorder()
+	var logs bytes.Buffer
+	NewManagementRelayFactory(nil, slog.New(slog.NewJSONHandler(&logs, nil))).relayAuthoring(
+		base, relayTarget{DialTimeout: 15 * time.Second}, response, request,
+	)
+	if response.Code != http.StatusBadGateway || response.Header().Get(ManagementIdentityHeader) != "" {
+		t.Fatalf("forged source-read result status=%d identity=%q body=%s", response.Code,
+			response.Header().Get(ManagementIdentityHeader), response.Body.String())
+	}
+	if strings.Contains(logs.String(), "operator_source_secret") {
+		t.Fatalf("source-read rejection logged operator capability: %s", logs.String())
 	}
 }

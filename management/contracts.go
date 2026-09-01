@@ -44,6 +44,10 @@ var (
 		"openrealtime.management.authoring",
 		"openrealtime/management/authoring/v1:analyze-compile-render-bounded-documents",
 	)
+	SourceReadingContract = semanticContract(
+		"openrealtime.management.source_reading",
+		"openrealtime/management/source-reading/v1:root-identity-path-bounded-utf8-result-digest",
+	)
 	SourcePublicationContract = semanticContract(
 		"openrealtime.management.source_publication",
 		"openrealtime/management/source-publication/v1:root-identity-create-update-stale-digest-atomic-receipt",

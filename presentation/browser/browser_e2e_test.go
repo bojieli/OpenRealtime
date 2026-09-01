@@ -69,6 +69,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 			`document.body.dataset.executed='yes'</script></body></html>"}`,
 		ClientEffectIssuer:   receipts,
 		ManagementAuthorizer: operatorAuthority,
+		SourceReading:        sourcePublisher,
 		SourcePublication:    sourcePublisher,
 	})
 	operatorGrants := []management.Grant{
@@ -79,6 +80,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		{Operation: management.AnalyzeDocument, Resource: "authoring"},
 		{Operation: management.CompileDocument, Resource: "authoring"},
 		{Operation: management.RenderGraph, Resource: "authoring"},
+		{Operation: management.ReadSource, Resource: sourceRootIdentity},
 		{Operation: management.CreateSource, Resource: sourceRootIdentity},
 		{Operation: management.UpdateSource, Resource: sourceRootIdentity},
 	}

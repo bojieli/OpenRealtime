@@ -34,6 +34,7 @@ const (
 	AnalyzeDocument Operation = "authoring.analyze"
 	CompileDocument Operation = "authoring.compile"
 	RenderGraph     Operation = "authoring.render"
+	ReadSource      Operation = "authoring.source.read"
 	CreateSource    Operation = "authoring.source.create"
 	UpdateSource    Operation = "authoring.source.update"
 	ApplyCandidate  Operation = "reconciliation.apply"
@@ -134,6 +135,36 @@ type Authoring interface {
 	Analyze(context.Context, AuthoringDocument) (AnalysisResult, error)
 	Compile(context.Context, AuthoringDocument) (CompileResult, error)
 	Render(context.Context, RenderRequest) (RenderResult, error)
+}
+
+// SourceReadFormatVersion identifies the rooted read request/result schema.
+const SourceReadFormatVersion uint64 = 1
+
+// SourceReadRequest names one canonical source artifact beneath an explicitly
+// configured root. The relative path never grants filesystem authority.
+type SourceReadRequest struct {
+	FormatVersion uint64 `json:"format_version"`
+	RootIdentity  string `json:"root_identity"`
+	Path          string `json:"path"`
+}
+
+// SourceReadResult returns the exact bounded UTF-8 source plus deterministic
+// evidence binding it to the requested root and path. ResultDigest covers the
+// metadata and SourceDigest; SourceDigest independently covers Source.
+type SourceReadResult struct {
+	FormatVersion uint64 `json:"format_version"`
+	RootIdentity  string `json:"root_identity"`
+	Path          string `json:"path"`
+	Source        string `json:"source"`
+	SourceDigest  string `json:"source_digest"`
+	SourceBytes   uint64 `json:"source_bytes"`
+	ResultDigest  string `json:"result_digest"`
+}
+
+// SourceReading is the only management contract that can acquire authoring
+// source bytes from a configured filesystem root.
+type SourceReading interface {
+	Read(context.Context, SourceReadRequest) (SourceReadResult, error)
 }
 
 // SourceWriteMode separates create-only publication from stale-digest-bound

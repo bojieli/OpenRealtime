@@ -134,7 +134,7 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	operations := []management.Operation{
 		management.ReadGraph, management.ReadDescriptor, management.ReadSchema,
 		management.ReadSession, management.ReadTrace, management.AnalyzeDocument,
-		management.CompileDocument, management.RenderGraph, management.CreateSource,
+		management.CompileDocument, management.RenderGraph, management.ReadSource, management.CreateSource,
 		management.UpdateSource, management.ApplyCandidate,
 	}
 	grants := make([]management.Grant, len(operations))
@@ -147,7 +147,8 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	}
 	bundle, err := managementserver.NewBundle(managementserver.BundleConfig{
 		Authorizer: authority, StaticCatalog: static, Sessions: sessions,
-		Authoring: authoring, SourcePublication: publication, Reconciliation: reconciler{},
+		Authoring: authoring, SourceReading: publication,
+		SourcePublication: publication, Reconciliation: reconciler{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -279,6 +280,16 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	updatedSource, err := remote.Publish(context.Background(), updateSource)
 	if err != nil || management.ValidateSourceWriteReceipt(updateSource, updatedSource) != nil {
 		t.Fatalf("source update receipt = %+v, %v", updatedSource, err)
+	}
+	readRequest := management.SourceReadRequest{
+		FormatVersion: management.SourceReadFormatVersion,
+		RootIdentity:  publicationIdentity,
+		Path:          createSource.Path,
+	}
+	readSource, err := remote.Read(context.Background(), readRequest)
+	if err != nil || management.ValidateSourceReadResult(readRequest, readSource) != nil ||
+		readSource.Source != updateSource.Source || readSource.SourceDigest != updatedSource.SourceDigest {
+		t.Fatalf("source read result = %+v, %v", readSource, err)
 	}
 	published, err := os.ReadFile(filepath.Join(publicationRoot, createSource.Path))
 	if err != nil || string(published) != updateSource.Source {

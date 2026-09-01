@@ -89,6 +89,9 @@ type Config struct {
 	// keeps its independently negotiated gateway capability. Tests issue their
 	// own operator grants through this seam; no token is built into the server.
 	ManagementAuthorizer management.Authorizer
+	// SourceReading optionally adds the separately authorized, rooted authoring
+	// lookup boundary. It never follows from ManagementAuthorizer alone.
+	SourceReading management.SourceReading
 	// SourcePublication optionally adds the separately authorized authoring
 	// mutation boundary. It never follows from ManagementAuthorizer alone.
 	SourcePublication management.SourcePublication
@@ -206,8 +209,8 @@ func Start(t testing.TB, config Config) Stack {
 	if config.ManagementAuthorizer != nil && graphServed == nil {
 		t.Fatal("testserver static/authoring management requires graph inspection")
 	}
-	if config.SourcePublication != nil && config.ManagementAuthorizer == nil {
-		t.Fatal("testserver source publication requires an explicit management authorizer")
+	if (config.SourceReading != nil || config.SourcePublication != nil) && config.ManagementAuthorizer == nil {
+		t.Fatal("testserver rooted source access requires an explicit management authorizer")
 	}
 	server, err := gateway.New(gateway.Config{
 		Binding: served, ValidateWire: true, ClientEffectIssuer: config.ClientEffectIssuer,
@@ -252,6 +255,7 @@ func Start(t testing.TB, config Config) Stack {
 		operatorAPI, err := managementserver.MountOperatorAPI(context.Background(), protocolHandler,
 			managementserver.OperatorAPIConfig{
 				Authorizer: config.ManagementAuthorizer, StaticCatalog: staticCatalog, Authoring: authoring,
+				SourceReading:     config.SourceReading,
 				SourcePublication: config.SourcePublication,
 			})
 		if err != nil {

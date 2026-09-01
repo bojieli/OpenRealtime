@@ -27,6 +27,7 @@ export default {
   revision: 1,
   async mount(context) {
     const authoring = context.services.get("presentation.client.management_authoring");
+    const sourceReading = context.services.get("presentation.client.source_reading");
     const sourcePublication = context.services.get("presentation.client.source_publication");
     if (!authoring) throw new Error("authoring workspace service is unavailable");
     let disposed = false;
@@ -34,7 +35,8 @@ export default {
     let request = 0;
     let state = {
       document: checkedDocument("agent.ortg", "graph agent {\n}\n"),
-      phase: "idle", error: "", analysis: null, compiled: null, rendering: null, publication: null,
+      phase: "idle", error: "", sourceRead: null,
+      analysis: null, compiled: null, rendering: null, publication: null,
     };
     const listeners = new Set();
     const snapshot = () => frozen({ ...state, epoch });
@@ -74,6 +76,7 @@ export default {
 
     context.publish("presentation.client.authoring_workspace", Object.freeze({
       snapshot,
+      canRead: () => !disposed && Boolean(sourceReading),
       canPublish: () => !disposed && Boolean(sourcePublication),
       subscribe(listener) {
         ready();
@@ -87,7 +90,23 @@ export default {
         epoch++;
         request++;
         return replace({ document: checkedDocument(path, source, revision), phase: "idle", error: "",
-          analysis: null, compiled: null, rendering: null, publication: null });
+          sourceRead: null, analysis: null, compiled: null, rendering: null, publication: null });
+      },
+      load(rootIdentity, path) {
+        ready();
+        if (!sourceReading || typeof sourceReading.read !== "function") {
+          throw new Error("source reading is unavailable in this client profile");
+        }
+        const revision = state.document.revision;
+        return invoke("reading", () => sourceReading.read({
+          format_version: 1, root_identity: rootIdentity, path,
+        }), (_current, result) => {
+          const document = checkedDocument(result.path, result.source, revision);
+          const { source: _source, ...sourceRead } = result;
+          epoch++;
+          return { document, phase: "loaded", error: "", sourceRead,
+            analysis: null, compiled: null, rendering: null, publication: null };
+        });
       },
       analyze() {
         const input = state.document;
@@ -132,7 +151,7 @@ export default {
       request++;
       listeners.clear();
       state = { document: Object.freeze({ path: "", source: "", revision: 0 }), phase: "disposed",
-        error: "", analysis: null, compiled: null, rendering: null, publication: null };
+        error: "", sourceRead: null, analysis: null, compiled: null, rendering: null, publication: null };
     });
   },
 };

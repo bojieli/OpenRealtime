@@ -63,7 +63,7 @@ func NewManagementRelayFactory(client *http.Client, logger *slog.Logger) *Manage
 	return &ManagementRelayFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.management-relay", Revision: 5,
+			Name:          "openrealtime.presentation.host.management-relay", Revision: 6,
 			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 			Requires: []plugin.Requirement{
 				{Contract: presentation.HTTPRoutesContract},
@@ -276,7 +276,8 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
 ) {
 	action := request.PathValue("action")
-	if action != "analyze" && action != "compile" && action != "render" && action != "write" {
+	if action != "analyze" && action != "compile" && action != "render" &&
+		action != "read" && action != "write" {
 		http.NotFound(writer, request)
 		return
 	}
@@ -352,6 +353,22 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 				return "", err
 			}
 			return "authoring:render:" + string(result.Format) + ":" + result.Fingerprint, nil
+		}
+	case "read":
+		var input management.SourceReadRequest
+		if err := decodeRelayJSON(payload, &input); err != nil || management.ValidateSourceReadRequest(input) != nil {
+			http.Error(writer, "invalid source-read request", http.StatusBadRequest)
+			return
+		}
+		spec.validate = func(response []byte) (string, error) {
+			var result management.SourceReadResult
+			if err := decodeRelayJSON(response, &result); err != nil {
+				return "", err
+			}
+			if err := management.ValidateSourceReadResult(input, result); err != nil {
+				return "", err
+			}
+			return "authoring:read:" + result.ResultDigest, nil
 		}
 	case "write":
 		var input management.SourceWriteRequest

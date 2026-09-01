@@ -15,6 +15,7 @@ type BundleConfig struct {
 	StaticCatalog     management.StaticCatalog
 	Sessions          management.SessionInspection
 	Authoring         management.Authoring
+	SourceReading     management.SourceReading
 	SourcePublication management.SourcePublication
 	Reconciliation    management.Reconciliation
 }
@@ -65,6 +66,14 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 		factories["authoring-source"] = provider
 		factories["authoring-api"] = NewAuthoringAPIFactory()
 	}
+	if !nilInterface(config.SourceReading) {
+		provider, err := NewSourceReadingProvider(config.SourceReading)
+		if err != nil {
+			return nil, err
+		}
+		factories["source-reading-source"] = provider
+		factories["source-reading-api"] = NewSourceReadingAPIFactory()
+	}
 	if !nilInterface(config.SourcePublication) {
 		provider, err := NewSourcePublicationProvider(config.SourcePublication)
 		if err != nil {
@@ -91,8 +100,9 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 	// readability; the compiler remains the authority on dependency order.
 	order := []string{
 		"router", "authorizer", "static-source", "session-source", "authoring-source",
-		"source-publication-source", "reconciliation-source", "static-api", "session-api",
-		"authoring-api", "source-publication-api", "reconciliation-api",
+		"source-reading-source", "source-publication-source", "reconciliation-source",
+		"static-api", "session-api", "authoring-api", "source-reading-api",
+		"source-publication-api", "reconciliation-api",
 	}
 	entries := make([]plugin.ProfileEntry, 0, len(factories))
 	catalog := plugin.NewCatalog()

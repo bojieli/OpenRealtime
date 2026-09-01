@@ -114,6 +114,13 @@ function authoringRequest(action, input) {
     case "analyze": return { operation: "authoring.analyze", resource: "authoring" };
     case "compile": return { operation: "authoring.compile", resource: "authoring" };
     case "render": return { operation: "authoring.render", resource: "authoring" };
+    case "read": {
+      if (!input || typeof input !== "object" || Array.isArray(input) ||
+          typeof input.root_identity !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.root_identity)) {
+        throw new Error("source read has an invalid root identity");
+      }
+      return { operation: "authoring.source.read", resource: input.root_identity };
+    }
     case "write": {
       if (!input || typeof input !== "object" || Array.isArray(input) ||
           typeof input.root_identity !== "string" || !/^sha256:[0-9a-f]{64}$/.test(input.root_identity)) {
@@ -204,6 +211,10 @@ export default {
       },
       authoring(action, body) {
         const spec = authoringRequest(action, body);
+        if (action === "read" &&
+            !context.permissions.allows("network.connect", "host-management", "source-read")) {
+          throw new Error("management transport lacks its source-read deployment grant");
+        }
         if (action === "write" &&
             !context.permissions.allows("network.connect", "host-management", "publication")) {
           throw new Error("management transport lacks its source-publication deployment grant");

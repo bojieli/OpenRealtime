@@ -311,19 +311,31 @@ func sourceWriteReceipt(
 func (publisher *RootedSourcePublisher) verifyParentPath(
 	name string, expected os.FileInfo, expectedTarget string,
 ) error {
-	current, identity, target, err := publisher.openParent(name)
+	return publisher.verifySourceParentPath("publish authoring source", name, expected, expectedTarget)
+}
+
+func (publisher *RootedSourcePublisher) verifySourceParentPath(
+	action, name string, expected os.FileInfo, expectedTarget string,
+) error {
+	current, identity, target, err := publisher.openSourceParent(action, name)
 	if current != nil {
 		_ = current.Close()
 	}
 	if err != nil || expected == nil || identity == nil || target != expectedTarget ||
 		!os.SameFile(identity, expected) {
-		return fmt.Errorf("publish authoring source: %w: parent path changed", ErrConflict)
+		return fmt.Errorf("%s: %w: parent path changed", action, ErrConflict)
 	}
 	return nil
 }
 
 func (publisher *RootedSourcePublisher) openParent(
 	name string,
+) (*os.Root, os.FileInfo, string, error) {
+	return publisher.openSourceParent("publish authoring source", name)
+}
+
+func (publisher *RootedSourcePublisher) openSourceParent(
+	action, name string,
 ) (*os.Root, os.FileInfo, string, error) {
 	parentName, target := pathpkg.Split(name)
 	parentName = strings.TrimSuffix(parentName, "/")
@@ -332,25 +344,25 @@ func (publisher *RootedSourcePublisher) openParent(
 	}
 	current, err := publisher.root.OpenRoot(".")
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("publish authoring source: %w: open held root", ErrUnavailable)
+		return nil, nil, "", fmt.Errorf("%s: %w: open held root", action, ErrUnavailable)
 	}
 	if parentName != "." {
 		for _, component := range strings.Split(parentName, "/") {
 			before, statErr := current.Lstat(component)
 			if statErr != nil || before.Mode()&os.ModeSymlink != 0 || !before.IsDir() {
 				_ = current.Close()
-				return nil, nil, "", fmt.Errorf("publish authoring source: %w: parent directory", ErrInvalid)
+				return nil, nil, "", fmt.Errorf("%s: %w: parent directory", action, ErrInvalid)
 			}
 			next, openErr := current.OpenRoot(component)
 			if openErr != nil {
 				_ = current.Close()
-				return nil, nil, "", fmt.Errorf("publish authoring source: %w: open parent directory", ErrUnavailable)
+				return nil, nil, "", fmt.Errorf("%s: %w: open parent directory", action, ErrUnavailable)
 			}
 			after, statErr := next.Stat(".")
 			if statErr != nil || !os.SameFile(before, after) {
 				_ = next.Close()
 				_ = current.Close()
-				return nil, nil, "", fmt.Errorf("publish authoring source: %w: parent identity changed", ErrConflict)
+				return nil, nil, "", fmt.Errorf("%s: %w: parent identity changed", action, ErrConflict)
 			}
 			_ = current.Close()
 			current = next
@@ -359,7 +371,7 @@ func (publisher *RootedSourcePublisher) openParent(
 	identity, err := current.Stat(".")
 	if err != nil || !identity.IsDir() {
 		_ = current.Close()
-		return nil, nil, "", fmt.Errorf("publish authoring source: %w: inspect parent directory", ErrUnavailable)
+		return nil, nil, "", fmt.Errorf("%s: %w: inspect parent directory", action, ErrUnavailable)
 	}
 	return current, identity, target, nil
 }
@@ -377,9 +389,10 @@ func requireSourceAbsent(parent *os.Root, name string) error {
 }
 
 type sourceFileSnapshot struct {
-	file   *os.File
-	info   os.FileInfo
-	digest string
+	file    *os.File
+	info    os.FileInfo
+	digest  string
+	content []byte
 }
 
 func closeSourceSnapshot(snapshot *sourceFileSnapshot) {
@@ -430,7 +443,9 @@ func readSourceSnapshot(parent *os.Root, name string, maximum int) (*sourceFileS
 		return nil, errors.New("source changed while being read")
 	}
 	failed = false
-	return &sourceFileSnapshot{file: file, info: after, digest: digestBytes(first)}, nil
+	return &sourceFileSnapshot{
+		file: file, info: after, digest: digestBytes(first), content: bytes.Clone(first),
+	}, nil
 }
 
 func readBoundedSource(file *os.File, maximum int) ([]byte, error) {

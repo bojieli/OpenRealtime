@@ -18,6 +18,7 @@ type OperatorAPIConfig struct {
 	Authorizer        management.Authorizer
 	StaticCatalog     management.StaticCatalog
 	Authoring         management.Authoring
+	SourceReading     management.SourceReading
 	SourcePublication management.SourcePublication
 	Reconciliation    management.Reconciliation
 }
@@ -44,15 +45,18 @@ func MountOperatorAPI(
 	}
 	staticSelected := !nilInterface(config.StaticCatalog)
 	authoringSelected := !nilInterface(config.Authoring)
+	sourceReadingSelected := !nilInterface(config.SourceReading)
 	sourcePublicationSelected := !nilInterface(config.SourcePublication)
 	reconciliationSelected := !nilInterface(config.Reconciliation)
-	if !staticSelected && !authoringSelected && !sourcePublicationSelected && !reconciliationSelected {
+	if !staticSelected && !authoringSelected && !sourceReadingSelected &&
+		!sourcePublicationSelected && !reconciliationSelected {
 		return nil, errors.New("mount operator management API: no operator service selected")
 	}
 	bundle, err := NewBundle(BundleConfig{
 		Authorizer: config.Authorizer, StaticCatalog: config.StaticCatalog,
-		Authoring: config.Authoring, SourcePublication: config.SourcePublication,
-		Reconciliation: config.Reconciliation,
+		Authoring: config.Authoring, SourceReading: config.SourceReading,
+		SourcePublication: config.SourcePublication,
+		Reconciliation:    config.Reconciliation,
 	})
 	if err != nil {
 		return nil, err
@@ -72,7 +76,7 @@ func MountOperatorAPI(
 			strings.HasPrefix(path, management.APIPrefix+"/schemas/")) {
 			return true
 		}
-		if (authoringSelected || sourcePublicationSelected) &&
+		if (authoringSelected || sourceReadingSelected || sourcePublicationSelected) &&
 			strings.HasPrefix(path, management.APIPrefix+"/authoring/") {
 			return true
 		}

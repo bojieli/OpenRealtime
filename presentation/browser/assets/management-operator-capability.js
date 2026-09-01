@@ -3,7 +3,7 @@ const encoder = new TextEncoder();
 const OPERATIONS = new Set([
   "graph.read", "descriptor.read", "schema.read",
   "authoring.analyze", "authoring.compile", "authoring.render",
-  "authoring.source.create", "authoring.source.update",
+  "authoring.source.read", "authoring.source.create", "authoring.source.update",
 ]);
 
 function canonicalCapability(value) {

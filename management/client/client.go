@@ -320,6 +320,21 @@ func (client *Client) Render(
 	return result, err
 }
 
+func (client *Client) Read(
+	ctx context.Context, request management.SourceReadRequest,
+) (management.SourceReadResult, error) {
+	if err := management.ValidateSourceReadRequest(request); err != nil {
+		return management.SourceReadResult{}, err
+	}
+	var result management.SourceReadResult
+	err := client.post(ctx, []string{"authoring", "read"}, management.ReadSource,
+		request.RootIdentity, request, maxAuthoringRequest, maxJSONBytes, &result)
+	if err == nil {
+		err = management.ValidateSourceReadResult(request, result)
+	}
+	return result, err
+}
+
 func (client *Client) Publish(
 	ctx context.Context, request management.SourceWriteRequest,
 ) (management.SourceWriteReceipt, error) {
@@ -475,6 +490,7 @@ var (
 	_ management.StaticCatalog     = (*Client)(nil)
 	_ management.SessionInspection = (*Client)(nil)
 	_ management.Authoring         = (*Client)(nil)
+	_ management.SourceReading     = (*Client)(nil)
 	_ management.SourcePublication = (*Client)(nil)
 	_ management.Reconciliation    = (*Client)(nil)
 	_ CapabilitySource             = CapabilityFunc(nil)

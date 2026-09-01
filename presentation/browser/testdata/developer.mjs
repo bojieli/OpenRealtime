@@ -156,7 +156,7 @@ try {
     ];
   expectedMounted.push(
       "management-operator", "management-transport", "management-static", "management-authoring",
-      ...(EFFECTS_ENABLED ? ["management-source-publication"] : []),
+      ...(EFFECTS_ENABLED ? ["management-source-reading", "management-source-publication"] : []),
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view",
   );
@@ -168,11 +168,20 @@ try {
         const live = window.__openrealtime.live();
         const manifest = window.__openrealtime.manifest;
         const forbidden = ["effects", "artifact-references", "confirmation-view", "artifact-view",
-          "management-source-publication"];
+          "management-source-reading", "management-source-publication"];
         const services = Object.values(live.entries).flatMap((entry) => entry.services ?? []);
+        const sourceGrant = (manifest.grants ?? []).some((grant) => grant.entry === "management-transport" &&
+          (grant.permissions ?? []).some((permission) => permission.kind === "network.connect" &&
+            permission.resource === "host-management" &&
+            (permission.operations ?? []).some((operation) =>
+              operation === "source-read" || operation === "publication")));
+        const editor = document.querySelector('[data-view=authoring-editor]');
         return !forbidden.some((name) =>
           Object.hasOwn(live.entries, name) || window.__openrealtime.mounted.includes(name)) &&
           !(manifest.grants ?? []).some((grant) => forbidden.includes(grant.entry)) &&
+          !sourceGrant && editor?.querySelector('button[data-action=load]')?.disabled === true &&
+          editor?.querySelector('button[data-action=publish-create]')?.disabled === true &&
+          editor?.querySelector('button[data-action=publish-update]')?.disabled === true &&
           !services.includes("presentation.client.tools_effects") &&
           !services.includes("presentation.client.artifacts") &&
           !(manifest.endpoints ?? []).some((endpoint) => endpoint.name === "effects.local") &&
@@ -334,6 +343,34 @@ try {
       updatedSource.previous_source_digest === createdSource.source_digest &&
       updatedSource.source_digest !== createdSource.source_digest && updatedSource.path === createdSource.path &&
       updatedSource.root_identity === createdSource.root_identity);
+
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      view.querySelector('textarea[name=authoring-source]').value = "graph unsaved_local_text {\\n}\\n";
+      view.querySelector('button[data-action=load]').click();
+    })()`);
+    await waitFor("rooted browser source load", () => evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      const result = view?.querySelector('[data-role=source-read-result]')?.textContent;
+      try { return view.querySelector('[data-role=status]').textContent === "loaded" &&
+        JSON.parse(result).source_digest === ${JSON.stringify(updatedSource.source_digest)}; }
+      catch { return false; }
+    })()`));
+    const loadedSource = await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      return {
+        source: view.querySelector('textarea[name=authoring-source]').value,
+        predecessor: view.querySelector('input[name=authoring-expected-digest]').value,
+        result: JSON.parse(view.querySelector('[data-role=source-read-result]').textContent),
+      };
+    })()`);
+    check("browser load replaces unsaved text with exact rooted source and payload-free evidence",
+      loadedSource.source === AUTHORING_UPDATED_SOURCE &&
+      loadedSource.predecessor === updatedSource.source_digest &&
+      loadedSource.result.source_digest === updatedSource.source_digest &&
+      loadedSource.result.root_identity === SOURCE_ROOT_IDENTITY &&
+      loadedSource.result.path === updatedSource.path && loadedSource.result.source === undefined &&
+      /^sha256:[0-9a-f]{64}$/.test(loadedSource.result.result_digest));
   }
 
   const rotated = await configureOperator(OPERATOR_CAPABILITY_ROTATED);
@@ -376,7 +413,8 @@ try {
   check("operator provider loss disposes the complete authoring subtree",
     authorityLoss.entries["management-operator"].state === "inactive" &&
     ["management-transport", "management-static", "management-authoring",
-      ...(EFFECTS_ENABLED ? ["management-source-publication"] : []), "authoring-workspace",
+      ...(EFFECTS_ENABLED ? ["management-source-reading", "management-source-publication"] : []),
+      "authoring-workspace",
       "management-operator-view", "authoring-editor-view", "authoring-configuration-view",
       "authoring-canvas-view"].every((entry) => authorityLoss.entries[entry].state === "pending") &&
     !(await evaluate(`document.querySelector('[data-view^=authoring]') !== null`)));
@@ -389,7 +427,7 @@ try {
   await configureOperator(OPERATOR_CAPABILITY_ROTATED);
   check("operator provider recovery remounts every desired renderer",
     ["management-operator", "management-transport", "management-static", "management-authoring",
-      ...(EFFECTS_ENABLED ? ["management-source-publication"] : []),
+      ...(EFFECTS_ENABLED ? ["management-source-reading", "management-source-publication"] : []),
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view"]
       .every((entry) => authorityRestore.entries[entry].state === "active"));

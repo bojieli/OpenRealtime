@@ -252,18 +252,19 @@ func buildObserverDeveloperBundle() (*Bundle, error) {
 }
 
 // developerManagementDefinitions is a self-contained descriptor-locked
-// subtree. Source publication is selected only by effects-enabled profiles;
-// observer profiles retain analysis and rendering without a write grant.
-func developerManagementDefinitions(sourcePublication bool) []moduleDefinition {
+// subtree. Rooted source reading and publication are selected only by
+// effects-enabled profiles; observer profiles retain analysis and rendering
+// without a filesystem grant.
+func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 	operatorPermission := plugin.Permission{
 		Kind: "credential.use", Resource: "management-operator", Operations: []string{"header"},
 	}
 	transportPermission := plugin.Permission{
 		Kind: "network.connect", Resource: "host-management",
-		Operations: []string{"static", "authoring", "publication"},
+		Operations: []string{"static", "authoring", "source-read", "publication"},
 	}
 	transportGrant := transportPermission
-	if !sourcePublication {
+	if !sourceAccess {
 		transportGrant.Operations = []string{"static", "authoring"}
 	}
 	definitions := []moduleDefinition{
@@ -299,13 +300,21 @@ func developerManagementDefinitions(sourcePublication bool) []moduleDefinition {
 			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
 		},
 	}
-	if sourcePublication {
-		definitions = append(definitions, moduleDefinition{
-			entry: "management-source-publication", file: "management-source-publication.js",
-			pluginName: "openrealtime.presentation.client.management-source-publication",
-			provides:   []plugin.Contract{presentation.ClientSourcePublicationContract},
-			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
-		})
+	if sourceAccess {
+		definitions = append(definitions,
+			moduleDefinition{
+				entry: "management-source-reading", file: "management-source-reading.js",
+				pluginName: "openrealtime.presentation.client.management-source-reading",
+				provides:   []plugin.Contract{presentation.ClientSourceReadingContract},
+				requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
+			},
+			moduleDefinition{
+				entry: "management-source-publication", file: "management-source-publication.js",
+				pluginName: "openrealtime.presentation.client.management-source-publication",
+				provides:   []plugin.Contract{presentation.ClientSourcePublicationContract},
+				requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
+			},
+		)
 	}
 	definitions = append(definitions, []moduleDefinition{
 		{
@@ -314,6 +323,7 @@ func developerManagementDefinitions(sourcePublication bool) []moduleDefinition {
 			provides:   []plugin.Contract{presentation.ClientAuthoringWorkspaceContract},
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientManagementAuthoringContract},
+				{Contract: presentation.ClientSourceReadingContract, Optional: true},
 				{Contract: presentation.ClientSourcePublicationContract, Optional: true},
 			},
 		},

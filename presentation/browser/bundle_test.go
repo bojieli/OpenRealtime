@@ -178,7 +178,7 @@ func TestEmbeddedBrowserModulesParseAsJavaScript(t *testing.T) {
 		"transport-diagnostics-view.js", "effects-client.js", "artifact-references.js",
 		"confirmation-view.js", "artifact-view.js", "management-operator-capability.js",
 		"management-transport.js", "management-static.js", "management-authoring.js",
-		"management-source-publication.js",
+		"management-source-reading.js", "management-source-publication.js",
 		"authoring-workspace.js", "management-operator-view.js", "authoring-editor-view.js",
 		"authoring-configuration-view.js", "authoring-canvas-view.js",
 	} {
@@ -322,7 +322,8 @@ func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScri
 	temporary := t.TempDir()
 	names := []string{
 		"management-operator-capability.js", "management-transport.js", "management-static.js",
-		"management-authoring.js", "management-source-publication.js", "authoring-workspace.js", "reducer.js",
+		"management-authoring.js", "management-source-reading.js", "management-source-publication.js",
+		"authoring-workspace.js", "reducer.js",
 	}
 	paths := make([]string, 0, len(names))
 	for _, name := range names {
@@ -352,11 +353,27 @@ func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScri
 	if err != nil {
 		t.Fatal(err)
 	}
+	goReadRequest := management.SourceReadRequest{
+		FormatVersion: management.SourceReadFormatVersion,
+		RootIdentity:  goRequest.RootIdentity,
+		Path:          goRequest.Path,
+	}
+	goReadResult, err := management.NewSourceReadResult(goReadRequest, goRequest.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture, err := json.Marshal(struct {
-		Request  management.SourceWriteRequest `json:"request"`
-		Receipt  management.SourceWriteReceipt `json:"receipt"`
-		Evidence string                        `json:"evidence"`
-	}{Request: goRequest, Receipt: goReceipt, Evidence: "authoring:write:" + goReceipt.ReceiptDigest})
+		Request      management.SourceWriteRequest `json:"request"`
+		Receipt      management.SourceWriteReceipt `json:"receipt"`
+		Evidence     string                        `json:"evidence"`
+		ReadRequest  management.SourceReadRequest  `json:"read_request"`
+		ReadResult   management.SourceReadResult   `json:"read_result"`
+		ReadEvidence string                        `json:"read_evidence"`
+	}{
+		Request: goRequest, Receipt: goReceipt, Evidence: "authoring:write:" + goReceipt.ReceiptDigest,
+		ReadRequest: goReadRequest, ReadResult: goReadResult,
+		ReadEvidence: "authoring:read:" + goReadResult.ResultDigest,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +453,8 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 		"effects", "artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
 		"video-controls", "transport-diagnostics", "inspection-view", "trace-view",
 		"management-operator", "management-transport", "management-static", "management-authoring",
-		"management-source-publication", "authoring-workspace", "management-operator-view", "authoring-editor-view",
+		"management-source-reading", "management-source-publication", "authoring-workspace",
+		"management-operator-view", "authoring-editor-view",
 		"authoring-configuration-view", "authoring-canvas-view",
 	}
 	if !reflect.DeepEqual(order, want) {
@@ -453,7 +471,7 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 		!reflect.DeepEqual(grants["inspection"], []string{"http"}) ||
 		!reflect.DeepEqual(grants["effects"], []string{"websocket"}) ||
 		!reflect.DeepEqual(grants["management-operator"], []string{"header"}) ||
-		!reflect.DeepEqual(grants["management-transport"], []string{"authoring", "publication", "static"}) {
+		!reflect.DeepEqual(grants["management-transport"], []string{"authoring", "publication", "source-read", "static"}) {
 		t.Fatalf("WebRTC developer client grants = %#v", grants)
 	}
 	var endpoints []string
@@ -496,7 +514,8 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		"artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
 		"inspection-view", "trace-view",
 		"management-operator", "management-transport", "management-static", "management-authoring",
-		"management-source-publication", "authoring-workspace", "management-operator-view", "authoring-editor-view",
+		"management-source-reading", "management-source-publication", "authoring-workspace",
+		"management-operator-view", "authoring-editor-view",
 		"authoring-configuration-view", "authoring-canvas-view",
 	}
 	if !reflect.DeepEqual(order, want) {
@@ -573,7 +592,8 @@ func TestObserverDeveloperBundleHasManagementWithoutImplicitEffects(t *testing.T
 		}
 	}
 	for _, forbidden := range []string{
-		"effects", "artifact-references", "confirmation-view", "artifact-view", "management-source-publication",
+		"effects", "artifact-references", "confirmation-view", "artifact-view",
+		"management-source-reading", "management-source-publication",
 	} {
 		if _, found := entries[forbidden]; found {
 			t.Fatalf("observer developer bundle retained implicit effect plugin %s", forbidden)
@@ -592,8 +612,9 @@ func TestObserverDeveloperBundleHasManagementWithoutImplicitEffects(t *testing.T
 			continue
 		}
 		for _, permission := range grant.Permissions {
-			if slices.Contains(permission.Operations, "publication") {
-				t.Fatalf("observer developer bundle granted source publication: %#v", grant)
+			if slices.Contains(permission.Operations, "source-read") ||
+				slices.Contains(permission.Operations, "publication") {
+				t.Fatalf("observer developer bundle granted rooted source access: %#v", grant)
 			}
 		}
 	}
@@ -627,7 +648,8 @@ func TestObserverDeveloperWebRTCBundleHasMediaManagementWithoutImplicitEffects(t
 		}
 	}
 	for _, forbidden := range []string{
-		"effects", "artifact-references", "confirmation-view", "artifact-view", "management-source-publication",
+		"effects", "artifact-references", "confirmation-view", "artifact-view",
+		"management-source-reading", "management-source-publication",
 	} {
 		if _, found := entries[forbidden]; found {
 			t.Fatalf("observer WebRTC bundle retained implicit effect plugin %s", forbidden)
@@ -646,8 +668,9 @@ func TestObserverDeveloperWebRTCBundleHasMediaManagementWithoutImplicitEffects(t
 			continue
 		}
 		for _, permission := range grant.Permissions {
-			if slices.Contains(permission.Operations, "publication") {
-				t.Fatalf("observer WebRTC bundle granted source publication: %#v", grant)
+			if slices.Contains(permission.Operations, "source-read") ||
+				slices.Contains(permission.Operations, "publication") {
+				t.Fatalf("observer WebRTC bundle granted rooted source access: %#v", grant)
 			}
 		}
 	}

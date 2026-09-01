@@ -1818,7 +1818,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, a separately authorized rooted source-publication boundary with browser create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, rooted source reads, broader graphical editing, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader graphical editing, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -2660,6 +2660,30 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   erasure on shutdown.
 - [ ] Add a visual editor that reads and writes canonical `.ortg` or normalized
   YAML/JSON using the same descriptors and validator.
+  - [x] Complete the effects-profile browser source cycle over separately
+    authorized rooted read and publication boundaries. `SourceReading` requires
+    its own `authoring.source.read` capability scoped to an opaque configured
+    root identity; it is not implied by document paths, analysis, compilation,
+    session inspection, or create/update authority. The held-root reader
+    accepts only canonical bounded `.ortg`/YAML/JSON paths, rejects symlinked,
+    hard-linked, nonregular, empty, oversized, malformed UTF-8, identity-swapped,
+    and concurrently changed targets or parents, and serializes acquisition
+    with publication. Its exact source response binds root, path, byte count,
+    source digest, and a deterministic result digest. The API, headless client,
+    host relay, and browser client independently revalidate that binding and
+    keep the capability in its header. Only effects-enabled browser profiles
+    receive the source-reading plugin and network grant; observer profiles
+    receive neither read nor publication access. The editor's Load control does
+    not publish unsaved textarea contents: it replaces them with the exact
+    rooted source, advances workspace identity, clears stale analysis,
+    rendering, and publication state, updates the predecessor digest, and
+    retains only payload-free read evidence beside the document. Traversal,
+    wrong-root, missing or unstable targets, source and result forgery,
+    malformed Unicode, duplicate or unknown JSON, provider loss, disposal,
+    Go/JavaScript digest parity, read-versus-write authority separation, and
+    target/parent races are covered through rooted unit tests,
+    server/client/relay tests, JavaScript conformance, and real Chromium
+    create/update/load/final-file verification.
 - [x] Add an immutable, pure language-service snapshot with compiler-backed,
   source-mapped diagnostics, stable source-digest cursors, bounded results, and
   recursively independent metadata for concurrent readers.
@@ -2791,10 +2815,9 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     unchanged updates, forged receipts/host evidence, markup-shaped messages,
     provider loss, and disposal fail closed in JavaScript, Go relay, and real
     Chromium coverage; the real browser create/update path crosses the mounted
-    publisher and is verified against the final rooted file bytes. Rooted
-    source reads and broader graphical editing stay
-    under the separate visual-editor item rather than granting implicit file
-    authority.
+    publisher and is verified against the final rooted file bytes. Broader
+    graphical topology editing stays under the separate visual-editor item
+    rather than granting implicit file authority.
 - [ ] Implement the composable presentation and observability design before
   treating any current UI as the production inspector.
   - [x] Inventory the former standalone presentation clients, the macOS client,

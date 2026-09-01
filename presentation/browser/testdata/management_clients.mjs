@@ -1,8 +1,8 @@
 import { pathToFileURL } from "node:url";
 
-const [operatorPath, transportPath, staticPath, authoringPath, publicationPath,
+const [operatorPath, transportPath, staticPath, authoringPath, readingPath, publicationPath,
   workspacePath, reducerPath, goFixtureJSON] = process.argv.slice(2);
-if (![operatorPath, transportPath, staticPath, authoringPath, publicationPath,
+if (![operatorPath, transportPath, staticPath, authoringPath, readingPath, publicationPath,
   workspacePath, reducerPath, goFixtureJSON].every(Boolean)) {
   throw new Error("management client module paths are required");
 }
@@ -53,19 +53,23 @@ const operatorMount = await mount(operatorPath, [{
   kind: "credential.use", resource: "management-operator", operations: ["header"],
 }]);
 await mount(transportPath, [{
-  kind: "network.connect", resource: "host-management", operations: ["static", "authoring", "publication"],
+  kind: "network.connect", resource: "host-management",
+  operations: ["static", "authoring", "source-read", "publication"],
 }]);
 await mount(staticPath);
 await mount(authoringPath);
+await mount(readingPath);
 await mount(publicationPath);
 await mount(workspacePath);
 
 const control = services.get("presentation.client.management_operator_control");
 const catalog = services.get("presentation.client.management_static");
 const authoring = services.get("presentation.client.management_authoring");
+const reading = services.get("presentation.client.source_reading");
 const publication = services.get("presentation.client.source_publication");
 const workspace = services.get("presentation.client.authoring_workspace");
-if (!control || !catalog || !authoring || !publication || !workspace || !workspace.canPublish()) {
+if (!control || !catalog || !authoring || !reading || !publication || !workspace ||
+    !workspace.canRead() || !workspace.canPublish()) {
   throw new Error("management services were not published");
 }
 
@@ -127,6 +131,23 @@ async function publicationReceipt(request, cleanup = false) {
   parts.push(uint64(sourceBytes.byteLength), Uint8Array.of(cleanup ? 1 : 0));
   receipt.receipt_digest = await sha256(joined(parts));
   return receipt;
+}
+
+async function sourceReadResult(request, source) {
+  const sourceBytes = bytes(source);
+  const sourceDigest = await sha256(sourceBytes);
+  const result = {
+    format_version: 1, root_identity: request.root_identity, path: request.path, source,
+    source_digest: sourceDigest, source_bytes: sourceBytes.byteLength,
+  };
+  const parts = [bytes("openrealtime.management.source-read-result/v1\0")];
+  for (const field of [request.root_identity, request.path, sourceDigest]) {
+    const fieldBytes = bytes(field);
+    parts.push(uint64(fieldBytes.byteLength), fieldBytes);
+  }
+  parts.push(uint64(sourceBytes.byteLength));
+  result.result_digest = await sha256(joined(parts));
+  return result;
 }
 
 const graphDigest = `sha256:${"a".repeat(64)}`;
@@ -304,6 +325,46 @@ if (publishedSnapshot.phase !== "published" ||
     !publishedSnapshot.publication.cleanup_pending) {
   throw new Error("authoring workspace did not retain the exact payload-free publication receipt");
 }
+
+const readRequest = {
+  format_version: 1, root_identity: rootIdentity, path: updateRequest.path,
+};
+const expectedRead = await sourceReadResult(readRequest, updatedSource);
+handlers.push(() => response(expectedRead, `authoring:read:${expectedRead.result_digest}`));
+const read = await reading.read(readRequest);
+const readFetch = requests.at(-1);
+if (read.source !== updatedSource || read.source_digest !== updateReceipt.source_digest ||
+    !readFetch.url.endsWith("/authoring/read") || readFetch.url.includes(rootIdentity) ||
+    readFetch.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
+    readFetch.options.body.includes(operatorOne)) {
+  throw new Error("source read did not preserve exact bytes and its resource-scoped authority boundary");
+}
+
+const forgedRead = { ...expectedRead, source_digest: otherDigest };
+handlers.push(() => response(forgedRead, `authoring:read:${expectedRead.result_digest}`));
+await reading.read(readRequest).then(
+  () => { throw new Error("forged source-read result was accepted"); },
+  (error) => { if (!String(error).includes("source digest")) throw error; },
+);
+
+workspace.setDocument(updateRequest.path, "graph unsaved_local_text {\n}\n", 1);
+handlers.push(() => response(expectedRead, `authoring:read:${expectedRead.result_digest}`));
+await workspace.load(rootIdentity, updateRequest.path);
+const loadedSnapshot = workspace.snapshot();
+if (loadedSnapshot.phase !== "loaded" || loadedSnapshot.document.source !== updatedSource ||
+    loadedSnapshot.sourceRead?.source_digest !== expectedRead.source_digest ||
+    Object.hasOwn(loadedSnapshot.sourceRead ?? {}, "source") || loadedSnapshot.publication !== null) {
+  throw new Error("authoring workspace did not replace local text with exact payload-free read evidence");
+}
+
+handlers.push(() => response(goFixture.read_result, goFixture.read_evidence));
+const crossLanguageRead = await reading.read(goFixture.read_request);
+if (crossLanguageRead.result_digest !== goFixture.read_result.result_digest ||
+    crossLanguageRead.source !== goFixture.read_result.source ||
+    crossLanguageRead.source_bytes !== bytes(goFixture.read_result.source).byteLength) {
+  throw new Error("browser source-read validation diverged from the canonical Go result format");
+}
+
 handlers.push(() => response(goFixture.receipt, goFixture.evidence));
 const crossLanguageReceipt = await publication.publish(goFixture.request);
 if (crossLanguageReceipt.receipt_digest !== goFixture.receipt.receipt_digest ||
@@ -334,6 +395,22 @@ for (const invalid of [
 }
 if (requests.length !== beforeInvalidPublish) {
   throw new Error("invalid source publication request reached the network");
+}
+
+const beforeInvalidRead = requests.length;
+for (const invalid of [
+  { ...readRequest, path: "../escape.ortg" },
+  { ...readRequest, root_identity: `sha256:${"E".repeat(64)}` },
+  { ...readRequest, path: "unicode/\ud800.ortg" },
+  { ...readRequest, unexpected: true },
+]) {
+  await reading.read(invalid).then(
+    () => { throw new Error("invalid source-read request was accepted"); },
+    () => {},
+  );
+}
+if (requests.length !== beforeInvalidRead) {
+  throw new Error("invalid source-read request reached the network");
 }
 
 const operatorExpiring = "operator_secret_expiring";

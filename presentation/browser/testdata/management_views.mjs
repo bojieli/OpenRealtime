@@ -41,12 +41,15 @@ const slotService = Object.freeze({
 });
 let workspaceSnapshot = {
   epoch: 0, document: { path: "agent.ortg", source: "graph agent {\n}\n", revision: 1 },
-  phase: "idle", error: "", analysis: null, compiled: null, rendering: null,
+  phase: "idle", error: "", sourceRead: null, analysis: null, compiled: null, rendering: null,
+  publication: null,
 };
 const workspaceListeners = new Set();
+const readCalls = [];
 const publicationCalls = [];
 const workspace = Object.freeze({
   snapshot: () => structuredClone(workspaceSnapshot),
+  canRead: () => true,
   canPublish: () => true,
   subscribe(listener) { workspaceListeners.add(listener); listener(structuredClone(workspaceSnapshot));
     return () => workspaceListeners.delete(listener); },
@@ -56,6 +59,18 @@ const workspace = Object.freeze({
     for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
   },
   async analyze() {}, async compile() {}, async render() {},
+  async load(rootIdentity, path) {
+    readCalls.push({ rootIdentity, path });
+    const source = "graph ui_loaded {\n}\n";
+    const result = { format_version: 1, root_identity: rootIdentity, path,
+      source_digest: `sha256:${"f".repeat(64)}`, source_bytes: source.length,
+      result_digest: `sha256:${"a".repeat(64)}` };
+    workspaceSnapshot = { ...workspaceSnapshot, epoch: workspaceSnapshot.epoch + 1,
+      document: { path, source, revision: workspaceSnapshot.document.revision },
+      phase: "loaded", sourceRead: result, publication: null };
+    for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+    return structuredClone(workspaceSnapshot);
+  },
   async publish(mode, rootIdentity, expectedSourceDigest = "") {
     publicationCalls.push({ mode, rootIdentity, expectedSourceDigest,
       path: workspaceSnapshot.document.path, source: workspaceSnapshot.document.source });
@@ -135,6 +150,8 @@ const editor = slots.get("authoring.editor");
 const sourcePath = find(editor, (entry) => entry.name === "authoring-path");
 const sourceText = find(editor, (entry) => entry.name === "authoring-source");
 const sourceRoot = find(editor, (entry) => entry.name === "authoring-root-identity");
+const predecessor = find(editor, (entry) => entry.name === "authoring-expected-digest");
+const loadSource = find(editor, (entry) => entry.dataset.action === "load");
 const createSource = find(editor, (entry) => entry.dataset.action === "publish-create");
 sourcePath.value = "ui-created.ortg";
 sourceText.value = "graph ui_created {\n}\n";
@@ -145,6 +162,15 @@ if (publicationCalls.length !== 1 || publicationCalls[0].mode !== "create" ||
     publicationCalls[0].path !== sourcePath.value || publicationCalls[0].source !== sourceText.value ||
     !editor.textContent.includes(`sha256:${"e".repeat(64)}`)) {
   throw new Error("authoring editor did not keep mediated publication explicit and receipt-bound");
+}
+
+sourceText.value = "graph unsaved_local_text {\n}\n";
+await loadSource.dispatch("click");
+if (readCalls.length !== 1 || readCalls[0].rootIdentity !== sourceRoot.value ||
+    readCalls[0].path !== sourcePath.value || sourceText.value !== "graph ui_loaded {\n}\n" ||
+    predecessor.value !== `sha256:${"f".repeat(64)}` ||
+    !editor.textContent.includes(`sha256:${"a".repeat(64)}`)) {
+  throw new Error("authoring editor did not load exact rooted source and payload-free evidence");
 }
 
 const malicious = '<img src=x onerror="globalThis.compromised=true">';
