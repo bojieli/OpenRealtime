@@ -67,6 +67,10 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 		final.Edges["stream"].Occupancy != 0 || final.Edges["stream"].Dequeued != 1 ||
 		len(final.Flows) != 1 || final.Flows[correlation].Edges[0] != "stream" ||
 		len(final.Flows[correlation].EdgeNS) != 1 || final.Flows[correlation].EdgeNS[0] != 120 ||
+		final.Nodes["source"].AuthorityDecision == nil ||
+		final.Nodes["source"].AuthorityDecision.Kind != "succeeded" ||
+		final.Nodes["source"].AuthorityDecision.Operation != "select" ||
+		final.Nodes["source"].AuthorityDecision.AtNS != 108 ||
 		final.Adapter == nil || final.Adapter.Implementation != "go://test/session-adapter/v1" {
 		t.Fatalf("final overlay = %+v", final)
 	}
@@ -75,11 +79,19 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 	}
 }
 
-func TestLiveTracePreservesAValidZeroOriginFlowClock(t *testing.T) {
+func TestLiveTracePreservesValidZeroOriginFlowAndDecisionClocks(t *testing.T) {
 	graph, _, trace, _ := liveTraceFixture(t)
 	candidate := trace.Clone()
 	candidate.Fingerprint = ""
 	for snapshotIndex := range candidate.Snapshots {
+		for nodeIndex := range candidate.Snapshots[snapshotIndex].Nodes {
+			node := &candidate.Snapshots[snapshotIndex].Nodes[nodeIndex]
+			if node.AuthorityDecision != nil {
+				node.FirstTriggerNS = 0
+				node.FirstOutputNS = 0
+				node.AuthorityDecision.AtNS = 0
+			}
+		}
 		for flowIndex := range candidate.Snapshots[snapshotIndex].Flows {
 			flow := &candidate.Snapshots[snapshotIndex].Flows[flowIndex]
 			flow.FirstNS = 0
@@ -87,6 +99,11 @@ func TestLiveTracePreservesAValidZeroOriginFlowClock(t *testing.T) {
 		}
 	}
 	for eventIndex := range candidate.Events {
+		if node := candidate.Events[eventIndex].Node; node != nil && node.AuthorityDecision != nil {
+			node.FirstTriggerNS = 0
+			node.FirstOutputNS = 0
+			node.AuthorityDecision.AtNS = 0
+		}
 		if flow := candidate.Events[eventIndex].Flow; flow != nil {
 			flow.FirstNS = 0
 			flow.EdgeNS[0] = 0
@@ -106,6 +123,9 @@ func TestLiveTracePreservesAValidZeroOriginFlowClock(t *testing.T) {
 	}
 	if len(final.Flows) != 1 {
 		t.Fatalf("zero-origin flow population = %+v", final.Flows)
+	}
+	if decision := final.Nodes["source"].AuthorityDecision; decision == nil || decision.AtNS != 0 {
+		t.Fatalf("zero-origin authority decision = %+v", decision)
 	}
 	for _, flow := range final.Flows {
 		if flow.FirstNS != 0 || len(flow.EdgeNS) != 1 || flow.EdgeNS[0] != 0 || flow.LastNS != 120 {
@@ -384,6 +404,20 @@ func TestLiveTraceReplayRejectsSemanticForgeryDespiteValidArtifactFingerprint(t 
 				}
 			}
 		}},
+		{name: "authority decision time regression", want: "authority decision time regressed", mutate: func(trace *inspect.LiveTrace) {
+			for index := range trace.Snapshots[1].Nodes {
+				if trace.Snapshots[1].Nodes[index].Node == "source" {
+					trace.Snapshots[1].Nodes[index].AuthorityDecision.AtNS--
+				}
+			}
+		}},
+		{name: "authority decision disappearance", want: "authority decision disappeared", mutate: func(trace *inspect.LiveTrace) {
+			for index := range trace.Snapshots[1].Nodes {
+				if trace.Snapshots[1].Nodes[index].Node == "source" {
+					trace.Snapshots[1].Nodes[index].AuthorityDecision = nil
+				}
+			}
+		}},
 		{name: "lifecycle regression", want: "graph state regressed", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[3].Graph.State = inspect.TraceGraphMounted
 		}},
@@ -471,13 +505,24 @@ func TestLiveTraceRejectsNonMonotonicTimeSequenceAndImpossibleCounters(t *testin
 		}},
 		{name: "future node timestamp", want: "exceeds record time", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[0].Node.FirstOutputNS = trace.Events[0].AtNS + 1
+			trace.Events[0].Node.AuthorityDecision.AtNS = trace.Events[0].AtNS + 1
 		}},
 		{name: "future trigger timestamp", want: "exceeds record time", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[0].Node.FirstTriggerNS = trace.Events[0].AtNS + 1
 			trace.Events[0].Node.FirstOutputNS = 0
+			trace.Events[0].Node.AuthorityDecision.AtNS = trace.Events[0].AtNS + 1
 		}},
 		{name: "output before trigger", want: "first output precedes its first trigger", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[0].Node.FirstTriggerNS = trace.Events[0].Node.FirstOutputNS + 1
+		}},
+		{name: "invalid authority decision kind", want: "invalid inspection decision kind", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[0].Node.AuthorityDecision.Kind = "private-payload"
+		}},
+		{name: "authority decision before output", want: "precedes its observed reaction", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[0].Node.AuthorityDecision.AtNS = trace.Events[0].Node.FirstOutputNS - 1
+		}},
+		{name: "future authority decision", want: "authority decision time", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[0].Node.AuthorityDecision.AtNS = trace.Events[0].AtNS + 1
 		}},
 		{name: "incomplete flow edge times", want: "edge timestamps", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = append(trace.Events[2].Flow.Edges, "stream")
@@ -512,10 +557,16 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 		t.Fatal(err)
 	}
 	input.Snapshots[0].Nodes[0].Resolution.Runtime.ID = "mutated"
+	for index := range input.Snapshots[1].Nodes {
+		if input.Snapshots[1].Nodes[index].AuthorityDecision != nil {
+			input.Snapshots[1].Nodes[index].AuthorityDecision.Operation = "cancel"
+		}
+	}
 	input.Snapshots[1].Flows[0].Edges[0] = "mutated"
 	input.Snapshots[1].Flows[0].EdgeNS[0] = 999
 	input.Adapter.Runtime.ID = "mutated"
 	if refrozen.Snapshots[0].Nodes[0].Resolution.Runtime.ID == "mutated" ||
+		traceNode(refrozen.Snapshots[1].Nodes, "source").AuthorityDecision.Operation == "cancel" ||
 		refrozen.Snapshots[1].Flows[0].Edges[0] == "mutated" ||
 		refrozen.Snapshots[1].Flows[0].EdgeNS[0] == 999 ||
 		refrozen.Adapter.Runtime.ID == "mutated" {
@@ -529,6 +580,8 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstSource := first.Nodes["source"]
+	firstSource.AuthorityDecision.Operation = "cancel"
 	first.Nodes["source"] = inspect.TraceNodeLive{}
 	first.Edges["stream"] = inspect.TraceEdgeLive{}
 	for id, flow := range first.Flows {
@@ -541,7 +594,9 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.Nodes["source"].Node != "source" || again.Edges["stream"].Depth == 0 ||
+	if again.Nodes["source"].Node != "source" ||
+		again.Nodes["source"].AuthorityDecision.Operation == "cancel" ||
+		again.Edges["stream"].Depth == 0 ||
 		again.Adapter == nil || again.Adapter.Runtime.ID == "mutated" {
 		t.Fatal("replayer retained returned overlay aliases")
 	}
@@ -666,6 +721,11 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	finalLive := traceLiveView(graph, configuration, 5, "running", "running", secret)
 	finalLive.Error = secret
 	finalLive.Nodes["source"] = withNodeTiming(finalLive.Nodes["source"], 105)
+	finalSource := finalLive.Nodes["source"]
+	finalSource.AuthorityDecision = &inspect.AuthorityDecisionLive{
+		Kind: "succeeded", Operation: "select", AtNS: 108,
+	}
+	finalLive.Nodes["source"] = finalSource
 	stream := finalLive.Edges["stream"]
 	stream.Enqueued, stream.Dequeued, stream.HighWater = 1, 1, 1
 	finalLive.Edges["stream"] = stream
@@ -681,6 +741,9 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	source.State = inspect.TraceNodeRunning
 	source.FirstTriggerNS = 102
 	source.FirstOutputNS = 105
+	source.AuthorityDecision = &inspect.AuthorityDecisionLive{
+		Kind: "succeeded", Operation: "select", AtNS: 108,
+	}
 	edge := *traceEdge(initial.Edges, "stream")
 	edge.Occupancy, edge.HighWater, edge.Enqueued = 1, 1, 1
 	flow := inspect.TraceFlowLive{

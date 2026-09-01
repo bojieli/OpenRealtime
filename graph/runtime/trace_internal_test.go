@@ -82,3 +82,50 @@ func TestRecordedFlowMonotonicityRequiresAnImmutableTimingModeAndPrefix(t *testi
 		t.Fatal("legacy flow changed timing-presence mode without rotating identity")
 	}
 }
+
+type inspectionDecisionPayload struct {
+	decision element.InspectionDecision
+}
+
+func (payload inspectionDecisionPayload) InspectionDecision() element.InspectionDecision {
+	return payload.decision
+}
+
+func TestNodeTelemetryClampsARegressingAuthorityDecisionClock(t *testing.T) {
+	now := uint64(20)
+	mounted := &Mounted{
+		nodeLive: map[string]inspect.NodeLive{"authority": {State: "running"}},
+		clock:    func() uint64 { return now },
+	}
+	telemetry := &nodeTelemetry{
+		mounted: mounted, node: "authority", active: make(map[[32]byte]struct{}),
+	}
+	telemetry.triggerSeen.Store(true)
+	telemetry.observeOutput(element.Envelope{
+		ItemID: "first", Payload: inspectionDecisionPayload{decision: element.InspectionDecision{
+			Kind: element.DecisionSucceeded, Operation: element.DecisionSelect,
+		}},
+	}, true)
+	now = 10
+	telemetry.observeOutput(element.Envelope{
+		ItemID: "second", Payload: inspectionDecisionPayload{decision: element.InspectionDecision{
+			Kind: element.DecisionCanceled, Operation: element.DecisionCancel,
+		}},
+	}, true)
+	decision := mounted.nodeLive["authority"].AuthorityDecision
+	if decision == nil || decision.AtNS != 20 || decision.Kind != element.DecisionCanceled ||
+		decision.Operation != element.DecisionCancel {
+		t.Fatalf("regressing authority-decision clock was not clamped: %+v", decision)
+	}
+}
+
+func TestRecordedNodeCloneOwnsAuthorityDecision(t *testing.T) {
+	source := inspect.TraceNodeLive{AuthorityDecision: &inspect.AuthorityDecisionLive{
+		Kind: element.DecisionSucceeded, Operation: element.DecisionAuthorize, AtNS: 30,
+	}}
+	cloned := cloneRecordedNode(source)
+	source.AuthorityDecision.Operation = element.DecisionCancel
+	if cloned.AuthorityDecision == nil || cloned.AuthorityDecision.Operation != element.DecisionAuthorize {
+		t.Fatalf("recorded node retained authority-decision alias: %+v", cloned.AuthorityDecision)
+	}
+}

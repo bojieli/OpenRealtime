@@ -66,6 +66,9 @@ const baseLive = {
       first_output_ns: 120,
       completion_ns: 180,
       cancellation_ns: 160,
+      authority_decision: {
+        kind: "succeeded", operation: "select", crossed: false, at_ns: 180,
+      },
       resolution: {
         element: { name: "test.Operator", revision: 1, digest: elementDigest },
       },
@@ -168,6 +171,8 @@ for (const expected of [
   "Completion: 180 ns from mount clock", "Trigger to completion: 80 ns after first trigger",
   "Cancellation: 160 ns from mount clock", "Trigger to cancellation: 60 ns after first trigger",
   `computer.click: external; authority ${malicious}; not reversible`,
+  "Outcome: succeeded", "Operation: select", "Irreversible boundary: not crossed",
+  "Observed: 180 ns from mount clock",
   `Route: ${nodeID}.done → ${nodeID}.trigger`, "Contract: Event(test.Value); role data",
   "Delivery: lossy; depth 4", "Occupancy: 1/4", "High water: 3/4",
   "Enqueued / dequeued: 7 / 6", "Dropped: 2", "Backpressure: 1",
@@ -215,6 +220,49 @@ await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
     !section.textContent.includes("impossible trigger-relative timing")) {
   throw new Error("inspection view accepted impossible trigger-relative timing");
+}
+
+live = structuredClone(baseLive);
+live.nodes[nodeID].authority_decision.kind = malicious;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("invalid authority-decision evidence")) {
+  throw new Error("inspection view accepted a payload-shaped authority decision");
+}
+
+live = structuredClone(baseLive);
+live.nodes[nodeID].authority_decision.operation = malicious;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("invalid authority-decision evidence")) {
+  throw new Error("inspection view accepted a payload-shaped authority operation");
+}
+
+live = structuredClone(baseLive);
+live.nodes[nodeID].authority_decision.at_ns = 119;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("invalid authority-decision evidence")) {
+  throw new Error("inspection view accepted an authority decision before first output");
+}
+
+live = structuredClone(baseLive);
+delete live.nodes[nodeID].authority_decision;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" ||
+    !section.textContent.includes("No authority decision observed.")) {
+  throw new Error("inspection view rejected legacy live evidence without an authority decision");
+}
+
+live = structuredClone(baseLive);
+live.nodes[nodeID].first_trigger_ns = 0;
+live.nodes[nodeID].first_output_ns = 0;
+live.nodes[nodeID].completion_ns = 0;
+live.nodes[nodeID].authority_decision.at_ns = 0;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" ||
+    !section.textContent.includes("Observed: 0 ns from mount clock")) {
+  throw new Error("inspection view rejected a zero-origin authority decision");
 }
 
 live = structuredClone(baseLive);

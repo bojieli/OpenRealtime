@@ -196,17 +196,34 @@ func validIdentityDigest(value string) bool {
 		validHexadecimal(value[len(prefix):], true)
 }
 
+// AuthorityDecisionLive is the latest payload-free categorical decision
+// emitted by a typed action-policy element. Presence, rather than a nonzero
+// timestamp, distinguishes a decision observed at a zero-origin mount clock.
+type AuthorityDecisionLive struct {
+	Kind      element.InspectionDecisionKind      `json:"kind"`
+	Operation element.InspectionDecisionOperation `json:"operation"`
+	Crossed   bool                                `json:"crossed,omitempty"`
+	AtNS      uint64                              `json:"at_ns"`
+}
+
+func (decision AuthorityDecisionLive) Validate() error {
+	return (element.InspectionDecision{
+		Kind: decision.Kind, Operation: decision.Operation, Crossed: decision.Crossed,
+	}).Validate()
+}
+
 type NodeLive struct {
-	State          string          `json:"state"`
-	ActiveRuns     int             `json:"active_runs"`
-	LastTriggerID  string          `json:"last_trigger_id,omitempty"`
-	LastOutcome    string          `json:"last_outcome,omitempty"`
-	FirstTriggerNS uint64          `json:"first_trigger_ns,omitempty"`
-	FirstOutputNS  uint64          `json:"first_output_ns,omitempty"`
-	CompletionNS   uint64          `json:"completion_ns,omitempty"`
-	CancellationNS uint64          `json:"cancellation_ns,omitempty"`
-	Error          string          `json:"error,omitempty"`
-	Resolution     *NodeResolution `json:"resolution,omitempty"`
+	State             string                 `json:"state"`
+	ActiveRuns        int                    `json:"active_runs"`
+	LastTriggerID     string                 `json:"last_trigger_id,omitempty"`
+	LastOutcome       string                 `json:"last_outcome,omitempty"`
+	FirstTriggerNS    uint64                 `json:"first_trigger_ns,omitempty"`
+	FirstOutputNS     uint64                 `json:"first_output_ns,omitempty"`
+	CompletionNS      uint64                 `json:"completion_ns,omitempty"`
+	CancellationNS    uint64                 `json:"cancellation_ns,omitempty"`
+	AuthorityDecision *AuthorityDecisionLive `json:"authority_decision,omitempty"`
+	Error             string                 `json:"error,omitempty"`
+	Resolution        *NodeResolution        `json:"resolution,omitempty"`
 }
 
 // ResolutionEvidence states how an immutable runtime identity was learned.
@@ -355,6 +372,10 @@ func (resolution NodeResolution) Clone() NodeResolution {
 
 func (live NodeLive) Clone() NodeLive {
 	result := live
+	if live.AuthorityDecision != nil {
+		copy := *live.AuthorityDecision
+		result.AuthorityDecision = &copy
+	}
 	if live.Resolution != nil {
 		copy := live.Resolution.Clone()
 		result.Resolution = &copy

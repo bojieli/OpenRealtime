@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 )
 
@@ -154,6 +155,22 @@ func (telemetry *nodeTelemetry) observeOutput(envelope element.Envelope, outcome
 			live.CompletionNS = now
 		}
 		changed = true
+	}
+	if outcome {
+		if provider, ok := envelope.Payload.(element.InspectionDecisionProvider); ok {
+			evidence := provider.InspectionDecision()
+			if evidence.Validate() == nil {
+				atNS := max(now, live.FirstTriggerNS, live.FirstOutputNS, live.CompletionNS)
+				if live.AuthorityDecision != nil && atNS < live.AuthorityDecision.AtNS {
+					atNS = live.AuthorityDecision.AtNS
+				}
+				live.AuthorityDecision = &inspect.AuthorityDecisionLive{
+					Kind: evidence.Kind, Operation: evidence.Operation,
+					Crossed: evidence.Crossed, AtNS: atNS,
+				}
+				changed = true
+			}
+		}
 	}
 	telemetry.mounted.nodeLive[telemetry.node] = live
 	telemetry.mounted.liveMu.Unlock()

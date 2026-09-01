@@ -40,7 +40,12 @@ func benchmarkRedaction(b *testing.B, redact func(inspect.Live) inspect.Live) {
 	}
 	for index := range 64 {
 		id := string(rune('a'+index%26)) + strings.Repeat("x", index/26+1)
-		live.Nodes[id] = inspect.NodeLive{LastTriggerID: "private", LastOutcome: "private", Error: "private"}
+		live.Nodes[id] = inspect.NodeLive{
+			LastTriggerID: "private", LastOutcome: "private", Error: "private",
+			AuthorityDecision: &inspect.AuthorityDecisionLive{
+				Kind: "succeeded", Operation: "authorize", Crossed: true, AtNS: 2,
+			},
+		}
 		live.Edges[id] = inspect.EdgeLive{LastItemID: "private"}
 		live.Flows[id] = inspect.FlowLive{
 			Correlation: id, Edges: []string{id, id}, EdgeNS: []uint64{1, 2}, FirstNS: 1, LastNS: 2,
@@ -50,7 +55,8 @@ func benchmarkRedaction(b *testing.B, redact func(inspect.Live) inspect.Live) {
 	b.ResetTimer()
 	for range b.N {
 		result := redact(live)
-		if len(result.Nodes) != 64 || len(result.Flows["flow_000001"].EdgeNS) != 2 {
+		if len(result.Nodes) != 64 || len(result.Flows["flow_000001"].EdgeNS) != 2 ||
+			result.Nodes["ax"].AuthorityDecision == nil {
 			b.Fatal("redaction lost nodes")
 		}
 	}

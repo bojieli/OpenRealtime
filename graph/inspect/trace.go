@@ -117,14 +117,15 @@ type TraceGraphLive struct {
 }
 
 type TraceNodeLive struct {
-	Node           string         `json:"node"`
-	State          TraceNodeState `json:"state"`
-	ActiveRuns     uint32         `json:"active_runs"`
-	FirstTriggerNS uint64         `json:"first_trigger_ns,omitempty"`
-	FirstOutputNS  uint64         `json:"first_output_ns,omitempty"`
-	CompletionNS   uint64         `json:"completion_ns,omitempty"`
-	CancellationNS uint64         `json:"cancellation_ns,omitempty"`
-	Resolution     NodeResolution `json:"resolution"`
+	Node              string                 `json:"node"`
+	State             TraceNodeState         `json:"state"`
+	ActiveRuns        uint32                 `json:"active_runs"`
+	FirstTriggerNS    uint64                 `json:"first_trigger_ns,omitempty"`
+	FirstOutputNS     uint64                 `json:"first_output_ns,omitempty"`
+	CompletionNS      uint64                 `json:"completion_ns,omitempty"`
+	CancellationNS    uint64                 `json:"cancellation_ns,omitempty"`
+	AuthorityDecision *AuthorityDecisionLive `json:"authority_decision,omitempty"`
+	Resolution        NodeResolution         `json:"resolution"`
 }
 
 // TraceEdgeLive is a complete queue overlay after one observation. IDs name
@@ -265,6 +266,10 @@ func (flow TraceFlowLive) Clone() TraceFlowLive {
 
 func cloneTraceNode(node TraceNodeLive) TraceNodeLive {
 	result := node
+	if node.AuthorityDecision != nil {
+		copy := *node.AuthorityDecision
+		result.AuthorityDecision = &copy
+	}
 	result.Resolution = node.Resolution.Clone()
 	return result
 }
@@ -657,6 +662,16 @@ func validateTraceNode(node TraceNodeLive, limits TraceLimits) error {
 	} {
 		if node.FirstTriggerNS != 0 && observed.value != 0 && observed.value < node.FirstTriggerNS {
 			return fmt.Errorf("live trace node %s %s precedes its first trigger", node.Node, observed.label)
+		}
+	}
+	if decision := node.AuthorityDecision; decision != nil {
+		if err := decision.Validate(); err != nil {
+			return fmt.Errorf("live trace node %s authority decision: %w", node.Node, err)
+		}
+		if node.FirstTriggerNS != 0 && decision.AtNS < node.FirstTriggerNS ||
+			node.FirstOutputNS != 0 && decision.AtNS < node.FirstOutputNS ||
+			node.CompletionNS != 0 && decision.AtNS < node.CompletionNS {
+			return fmt.Errorf("live trace node %s authority decision precedes its observed reaction", node.Node)
 		}
 	}
 	return nil

@@ -141,6 +141,9 @@ func publishPayload(
 func publishOutcome(
 	ctx context.Context, emit emitter, output element.OutputPort, parent element.Envelope, outcome Outcome,
 ) error {
+	if err := outcome.InspectionDecision().Validate(); err != nil {
+		return fmt.Errorf("publish action outcome inspection evidence: %w", err)
+	}
 	if outcome.FinishedNS == 0 {
 		outcome.FinishedNS = emit.clock.NowNS()
 	}

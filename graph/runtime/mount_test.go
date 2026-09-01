@@ -224,7 +224,7 @@ func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
 	egress, _ := mounted.Egress("output")
 	message := element.Envelope{
 		Type: element.Event(element.Named("test.Value")), ItemID: "telemetry-trigger",
-		RunID: "run-telemetry", TraceID: "trace-telemetry", Payload: "value",
+		RunID: "run-telemetry", TraceID: "trace-telemetry", Payload: invalidInspectionDecision{},
 	}
 	if result, sendErr := ingress.Broadcast(context.Background(), message); sendErr != nil || result.Delivered != 1 {
 		t.Fatalf("trigger ingress = %+v, %v", result, sendErr)
@@ -258,6 +258,9 @@ func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
 			node.CompletionNS >= node.FirstOutputNS && node.LastOutcome == message.ItemID
 	})
 	before := mounted.Live().Nodes["telemetry"]
+	if before.AuthorityDecision != nil {
+		t.Fatalf("runtime retained an invalid inspection decision: %+v", before.AuthorityDecision)
+	}
 	closeContext, closeCancel := context.WithTimeout(context.Background(), time.Second)
 	defer closeCancel()
 	if err := mounted.Close(closeContext); err != nil {
@@ -275,6 +278,12 @@ func TestReactionTelemetryTracksCancellationAndSurvivesShutdown(t *testing.T) {
 		after.CompletionNS != before.CompletionNS || after.CancellationNS != before.CancellationNS {
 		t.Fatalf("shutdown discarded cancellation telemetry: before=%+v after=%+v", before, after)
 	}
+}
+
+type invalidInspectionDecision struct{}
+
+func (invalidInspectionDecision) InspectionDecision() element.InspectionDecision {
+	return element.InspectionDecision{Kind: "private-payload", Operation: element.DecisionResult}
 }
 
 func waitForNodeTelemetry(t *testing.T, mounted *graphruntime.Mounted, accept func(inspect.NodeLive) bool) {

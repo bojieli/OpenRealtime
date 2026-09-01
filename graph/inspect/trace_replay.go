@@ -435,6 +435,13 @@ func monotonicNode(before, after TraceNodeLive) error {
 				before.Node, timestamp.name, timestamp.before, timestamp.after)
 		}
 	}
+	if before.AuthorityDecision != nil && after.AuthorityDecision == nil {
+		return fmt.Errorf("node %s authority decision disappeared", before.Node)
+	}
+	if before.AuthorityDecision != nil && after.AuthorityDecision != nil &&
+		after.AuthorityDecision.AtNS < before.AuthorityDecision.AtNS {
+		return fmt.Errorf("node %s authority decision time regressed", before.Node)
+	}
 	return nil
 }
 
@@ -578,12 +585,17 @@ func traceSnapshotFromLive(
 		if node.ActiveRuns < 0 || uint64(node.ActiveRuns) > uint64(^uint32(0)) {
 			return TraceSnapshot{}, fmt.Errorf("capture live trace snapshot: node %s has invalid active runs", graphNode.ID)
 		}
-		snapshot.Nodes = append(snapshot.Nodes, TraceNodeLive{
+		traceNode := TraceNodeLive{
 			Node: graphNode.ID, State: state, ActiveRuns: uint32(node.ActiveRuns),
 			FirstTriggerNS: node.FirstTriggerNS, FirstOutputNS: node.FirstOutputNS,
 			CompletionNS:   node.CompletionNS,
 			CancellationNS: node.CancellationNS, Resolution: node.Resolution.Clone(),
-		})
+		}
+		if node.AuthorityDecision != nil {
+			copy := *node.AuthorityDecision
+			traceNode.AuthorityDecision = &copy
+		}
+		snapshot.Nodes = append(snapshot.Nodes, traceNode)
 	}
 	if len(live.Nodes) != len(graph.Nodes) {
 		return TraceSnapshot{}, errors.New("capture live trace snapshot: live view contains extra nodes")
@@ -731,6 +743,10 @@ func validateTraceTimes(recordAt uint64, node *TraceNodeLive, flow *TraceFlowLiv
 			if value > recordAt {
 				return fmt.Errorf("node %s timestamp %d exceeds record time %d", node.Node, value, recordAt)
 			}
+		}
+		if node.AuthorityDecision != nil && node.AuthorityDecision.AtNS > recordAt {
+			return fmt.Errorf("node %s authority decision time %d exceeds record time %d",
+				node.Node, node.AuthorityDecision.AtNS, recordAt)
 		}
 	}
 	if flow != nil && (flow.FirstNS > recordAt || flow.LastNS > recordAt) {

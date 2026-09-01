@@ -8,8 +8,9 @@ import (
 )
 
 // RedactLive removes free-form and item identifiers that can inherit request
-// payload while retaining exact graph, configuration, runtime, queue, and
-// timing evidence. It is safe to apply more than once.
+// payload while retaining exact graph, configuration, runtime, queue, timing,
+// and closed categorical authority-decision evidence. It is safe to apply
+// more than once.
 func RedactLive(snapshot inspect.Live) inspect.Live {
 	result := snapshot
 	if snapshot.Configuration != nil {

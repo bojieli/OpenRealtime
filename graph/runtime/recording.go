@@ -257,6 +257,9 @@ func (recorder *traceRecorder) capture(mounted *Mounted) error {
 	for _, node := range live.Nodes {
 		minimumAtNS = max(minimumAtNS, node.FirstTriggerNS, node.FirstOutputNS,
 			node.CompletionNS, node.CancellationNS)
+		if node.AuthorityDecision != nil {
+			minimumAtNS = max(minimumAtNS, node.AuthorityDecision.AtNS)
+		}
 	}
 	for _, flow := range live.Flows {
 		minimumAtNS = max(minimumAtNS, flow.FirstNS, flow.LastNS)
@@ -520,6 +523,10 @@ func diffTraceSnapshots(before, after inspect.TraceSnapshot) []inspect.TraceEven
 
 func cloneRecordedNode(node inspect.TraceNodeLive) inspect.TraceNodeLive {
 	result := node
+	if node.AuthorityDecision != nil {
+		copy := *node.AuthorityDecision
+		result.AuthorityDecision = &copy
+	}
 	result.Resolution = node.Resolution.Clone()
 	return result
 }

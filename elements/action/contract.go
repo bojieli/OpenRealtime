@@ -276,6 +276,19 @@ type Outcome struct {
 	CanonicalStoreVersion     uint64      `json:"canonical_store_version,omitempty"`
 }
 
+// InspectionDecision deliberately projects only closed categorical outcome
+// evidence. Call/session/run identities, codes, messages, digests, provider
+// values, and payload-derived timestamps never enter live inspection.
+func (outcome Outcome) InspectionDecision() element.InspectionDecision {
+	return element.InspectionDecision{
+		Kind:      element.InspectionDecisionKind(outcome.Kind),
+		Operation: element.InspectionDecisionOperation(outcome.Operation),
+		Crossed:   outcome.Crossed,
+	}
+}
+
+var _ element.InspectionDecisionProvider = Outcome{}
+
 type LedgerTransition struct {
 	CallID       string             `json:"call_id"`
 	CommitmentID string             `json:"commitment_id"`

@@ -3,12 +3,15 @@ package action
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -27,6 +30,15 @@ const actionArbiterGraph = `graph action_arbiter_test {
     output resolved = arbiter.resolved;
 }`
 
+func TestActionOutcomeRefusesAnUninspectableDecisionVocabulary(t *testing.T) {
+	err := publishOutcome(context.Background(), emitter{}, nil, element.Envelope{}, Outcome{
+		Kind: OutcomeSucceeded, Operation: "private-payload",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid inspection decision operation") {
+		t.Fatalf("uninspectable action outcome error = %v", err)
+	}
+}
+
 func TestActionArbiterSelectsFirstCompleteLaneAndCancelsLateCandidate(t *testing.T) {
 	mounted, done, cancel := mountActionArbiter(t, `{}`)
 	defer stopMounted(t, mounted, done, cancel)
@@ -44,6 +56,22 @@ func TestActionArbiterSelectsFirstCompleteLaneAndCancelsLateCandidate(t *testing
 	selected, ok := selectedEnvelope.Payload.(AdmittedProposal)
 	if !ok || selected.ModelRunID != "reflex-run" || selected.Proposal.Call.CallID != "reflex-call" {
 		t.Fatalf("selected action = %#v envelope=%+v", selectedEnvelope.Payload, selectedEnvelope)
+	}
+	outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	if outcome.Kind != OutcomeSucceeded || outcome.Operation != "select" || outcome.Code != "first_complete" {
+		t.Fatalf("selection outcome = %+v", outcome)
+	}
+	var decision *inspect.AuthorityDecisionLive
+	deadline := time.Now().Add(time.Second)
+	for decision == nil && time.Now().Before(deadline) {
+		decision = mounted.Live().Nodes["arbiter"].AuthorityDecision
+		if decision == nil {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if decision == nil || decision.Kind != element.DecisionSucceeded ||
+		decision.Operation != element.DecisionSelect || decision.Crossed {
+		t.Fatalf("payload-free live authority decision = %+v", decision)
 	}
 
 	// The slower activation may arrive after selection because each candidate

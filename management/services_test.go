@@ -402,6 +402,9 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	node.Error = "private failure"
 	node.FirstTriggerNS = 10
 	node.FirstOutputNS = 20
+	node.AuthorityDecision = &inspect.AuthorityDecisionLive{
+		Kind: "succeeded", Operation: "authorize", Crossed: true, AtNS: 25,
+	}
 	live.Nodes["source"] = node
 	edge := live.Edges[graph.Edges[0].ID]
 	edge.LastItemID = "item-private"
@@ -432,9 +435,17 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	if timing := snapshot.Flows["flow_000001"].EdgeNS; len(timing) != 1 || timing[0] != 30 {
 		t.Fatalf("snapshot omitted redacted flow-stage timing: %+v", snapshot.Flows)
 	}
+	if decision := snapshot.Nodes["source"].AuthorityDecision; decision == nil ||
+		decision.Kind != "succeeded" || decision.Operation != "authorize" ||
+		!decision.Crossed || decision.AtNS != 25 {
+		t.Fatalf("snapshot omitted payload-free authority decision: %+v", decision)
+	}
+	snapshotNode := snapshot.Nodes["source"]
+	snapshotNode.AuthorityDecision.Operation = "cancel"
 	snapshot.Nodes["source"] = inspect.NodeLive{}
 	second, err := registry.Snapshot(context.Background(), "sess-one")
-	if err != nil || second.Nodes["source"].Resolution == nil {
+	if err != nil || second.Nodes["source"].Resolution == nil ||
+		second.Nodes["source"].AuthorityDecision.Operation == "cancel" {
 		t.Fatalf("snapshot aliased source: err=%v snapshot=%+v", err, second)
 	}
 	model, err := registry.Model(context.Background(), "sess-one")
@@ -597,6 +608,37 @@ func TestValidateSessionSnapshotRejectsImpossibleTriggerRelativeTiming(t *testin
 	if err := ValidateSessionSnapshot(live); err == nil ||
 		!strings.Contains(err.Error(), "impossible reaction timing") {
 		t.Fatalf("impossible trigger-relative timing error = %v", err)
+	}
+}
+
+func TestValidateSessionSnapshotRejectsInvalidAuthorityDecision(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	for _, test := range []struct {
+		name     string
+		decision inspect.AuthorityDecisionLive
+	}{
+		{name: "unbounded kind", decision: inspect.AuthorityDecisionLive{
+			Kind: "private-payload", Operation: "select", AtNS: 20,
+		}},
+		{name: "unbounded operation", decision: inspect.AuthorityDecisionLive{
+			Kind: "succeeded", Operation: "private-payload", AtNS: 20,
+		}},
+		{name: "before output", decision: inspect.AuthorityDecisionLive{
+			Kind: "succeeded", Operation: "select", AtNS: 19,
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			live, _ := managedLiveTrace(t, graph)
+			node := live.Nodes["source"]
+			node.FirstTriggerNS = 10
+			node.FirstOutputNS = 20
+			node.AuthorityDecision = &test.decision
+			live.Nodes["source"] = node
+			if err := ValidateSessionSnapshot(live); err == nil ||
+				!strings.Contains(err.Error(), "invalid authority-decision evidence") {
+				t.Fatalf("invalid authority-decision error = %v", err)
+			}
+		})
 	}
 }
 

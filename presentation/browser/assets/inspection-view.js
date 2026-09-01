@@ -1,6 +1,15 @@
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MAX_ROWS = 65_536;
 const MAX_TEXT = 65_536;
+const DECISION_KINDS = new Set([
+  "succeeded", "rejected", "denied", "canceled", "timed_out", "failed", "ignored",
+]);
+const DECISION_OPERATIONS = new Set([
+  "accepted", "action", "admit", "already_committed", "attest", "authorize", "cancel",
+  "candidate", "commit", "committed", "complete", "confirm", "context", "execute", "fence",
+  "join", "lookup", "prepare", "promote", "proposal", "provenance", "queue", "result",
+  "rejected", "retry", "select", "timeout",
+]);
 
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -171,6 +180,23 @@ function liveNode(value, id) {
        (completionNS !== 0 && completionNS < firstTriggerNS))) {
     throw new Error(`live node ${id} contains impossible trigger-relative timing`);
   }
+  let authorityDecision = null;
+  if (source.authority_decision !== undefined) {
+    const decision = object(source.authority_decision, `live node ${id} authority decision`);
+    const kind = text(decision.kind, `live node ${id} authority decision kind`);
+    const operation = text(decision.operation, `live node ${id} authority decision operation`);
+    const atNS = integer(decision.at_ns, `live node ${id} authority decision time`);
+    if (!DECISION_KINDS.has(kind) || !DECISION_OPERATIONS.has(operation) ||
+        (firstTriggerNS !== 0 && atNS < firstTriggerNS) ||
+        (firstOutputNS !== 0 && atNS < firstOutputNS) ||
+        (completionNS !== 0 && atNS < completionNS)) {
+      throw new Error(`live node ${id} contains invalid authority-decision evidence`);
+    }
+    authorityDecision = Object.freeze({
+      kind, operation, atNS,
+      crossed: boolean(decision.crossed, `live node ${id} authority decision crossed`),
+    });
+  }
   return Object.freeze({
     id,
     state: text(source.state, `live node ${id} state`),
@@ -179,6 +205,7 @@ function liveNode(value, id) {
     firstOutputNS,
     completionNS,
     cancellationNS: integer(source.cancellation_ns ?? 0, `live node ${id} cancellation`),
+    authorityDecision,
     element: identity(resolution.element, `live node ${id} element`),
   });
 }
@@ -272,7 +299,7 @@ function liveProjection(value) {
   }
   const safeNodes = {};
   for (const [id, observed] of nodes) {
-    safeNodes[id] = Object.freeze({
+    const safeNode = {
       state: observed.state,
       active_runs: observed.activeRuns,
       first_trigger_ns: observed.firstTriggerNS,
@@ -280,7 +307,16 @@ function liveProjection(value) {
       completion_ns: observed.completionNS,
       cancellation_ns: observed.cancellationNS,
       resolution: Object.freeze({ element: observed.element }),
-    });
+    };
+    if (observed.authorityDecision !== null) {
+      safeNode.authority_decision = Object.freeze({
+        kind: observed.authorityDecision.kind,
+        operation: observed.authorityDecision.operation,
+        crossed: observed.authorityDecision.crossed,
+        at_ns: observed.authorityDecision.atNS,
+      });
+    }
+    safeNodes[id] = Object.freeze(safeNode);
   }
   return Object.freeze({
     graphID, revision, fingerprint: source.fingerprint,
@@ -435,6 +471,19 @@ function renderJoined(nodeContainer, edgeContainer, flowContainer, joined) {
       }
     }
     card.append(authority);
+    const decision = node("div");
+    decision.dataset.role = "authority-decision";
+    decision.append(node("h4", "Latest live authority decision"));
+    if (observed.authorityDecision === null) {
+      decision.append(node("p", "No authority decision observed."));
+    } else {
+      line(decision, "Outcome", observed.authorityDecision.kind);
+      line(decision, "Operation", observed.authorityDecision.operation);
+      line(decision, "Irreversible boundary",
+        observed.authorityDecision.crossed ? "crossed" : "not crossed");
+      line(decision, "Observed", `${observed.authorityDecision.atNS} ns from mount clock`);
+    }
+    card.append(decision);
     nodeContainer.append(card);
   }
   for (const { declared, observed } of joined.edges) {

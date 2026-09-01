@@ -6,10 +6,55 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/element"
 )
+
+func TestInspectionViewMatchesClosedAuthorityDecisionVocabulary(t *testing.T) {
+	module, err := browserModule("inspection-view.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(module)
+	kindStart := strings.Index(source, "const DECISION_KINDS")
+	operationStart := strings.Index(source, "const DECISION_OPERATIONS")
+	contractEnd := strings.Index(source, "function object")
+	if kindStart < 0 || operationStart <= kindStart || contractEnd <= operationStart {
+		t.Fatal("inspection view omits its closed authority-decision vocabulary")
+	}
+	assertExact := func(label, section string, expected []string) {
+		t.Helper()
+		matches := regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(section, -1)
+		actual := make(map[string]struct{}, len(matches))
+		for _, match := range matches {
+			actual[match[1]] = struct{}{}
+		}
+		if len(matches) != len(expected) || len(actual) != len(expected) {
+			t.Fatalf("inspection view %s vocabulary = %v, want %v", label, matches, expected)
+		}
+		for _, value := range expected {
+			if _, found := actual[value]; !found {
+				t.Fatalf("inspection view omits authority-decision %s %q", label, value)
+			}
+		}
+	}
+	kinds := element.SupportedInspectionDecisionKinds()
+	wantKinds := make([]string, len(kinds))
+	for index, kind := range kinds {
+		wantKinds[index] = string(kind)
+	}
+	operations := element.SupportedInspectionDecisionOperations()
+	wantOperations := make([]string, len(operations))
+	for index, operation := range operations {
+		wantOperations[index] = string(operation)
+	}
+	assertExact("kind", source[kindStart:operationStart], wantKinds)
+	assertExact("operation", source[operationStart:contractEnd], wantOperations)
+}
 
 func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.T) {
 	chromium := requireInspectionChromium(t)
@@ -50,6 +95,8 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 		`data-depth="4"`, `data-occupancy="1"`, "Delivery: ", "lossy; depth 4",
 		"Occupancy: ", "1/4", "Dropped: ", "2", "Backpressure: ", "1",
 		"Queue wait: ", "300 ns cumulative; 50 ns per dequeue",
+		"Latest live authority decision", "Outcome: ", "succeeded", "Operation: ", "authorize",
+		"Irreversible boundary: ", "crossed", "Observed: ", "180 ns from mount clock",
 		`data-flow-id="flow_000001"`, `data-stage-count="2"`, `data-truncated="false"`,
 		"First traversal: ", "110 ns from mount clock", "Last traversal: ",
 		"150 ns from mount clock", "Elapsed: ", "40 ns", "Retention: ", "complete",
@@ -98,6 +145,7 @@ const live = {
   nodes: { worker: {
     state: "running", active_runs: 0, first_trigger_ns: 100, first_output_ns: 120,
     completion_ns: 180,
+    authority_decision: { kind: "succeeded", operation: "authorize", crossed: true, at_ns: 180 },
     resolution: { element: { name: "test.Worker", revision: 1, digest: elementDigest } },
   } },
   edges: { channel: {

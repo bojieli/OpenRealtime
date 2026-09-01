@@ -68,6 +68,14 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 				(node.CompletionNS != 0 && node.CompletionNS < node.FirstTriggerNS)) {
 			return fmt.Errorf("%w: session source returned impossible reaction timing", ErrConflict)
 		}
+		if decision := node.AuthorityDecision; decision != nil {
+			if err := decision.Validate(); err != nil ||
+				node.FirstTriggerNS != 0 && decision.AtNS < node.FirstTriggerNS ||
+				node.FirstOutputNS != 0 && decision.AtNS < node.FirstOutputNS ||
+				node.CompletionNS != 0 && decision.AtNS < node.CompletionNS {
+				return fmt.Errorf("%w: session source returned invalid authority-decision evidence", ErrConflict)
+			}
+		}
 		if err := element.ValidateIdentity(node.Resolution.Element); err != nil ||
 			node.Resolution.Runtime.Validate() != nil {
 			return fmt.Errorf("%w: session source returned invalid node resolution", ErrConflict)
