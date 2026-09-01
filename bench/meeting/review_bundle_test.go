@@ -11,6 +11,7 @@ import (
 	"image/png"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -2689,6 +2690,27 @@ func BenchmarkMeetingReviewBundleFourCases(b *testing.B) {
 func TestMeetingReviewBundleFourCaseAllocationThreshold(t *testing.T) {
 	if meetingRaceEnabled {
 		t.Skip("allocation budget is measured without race-detector instrumentation")
+	}
+	const helperEnvironment = "OPENREALTIME_MEETING_ALLOCATION_HELPER"
+	switch os.Getenv(helperEnvironment) {
+	case "":
+		// AllocsPerRun reads process-global runtime counters. Run the measurement
+		// in a fresh copy of this exact test binary so delayed cleanup exercised
+		// by earlier adversarial tests cannot be charged to this workload.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		command := exec.CommandContext(ctx, os.Args[0],
+			"-test.run=^TestMeetingReviewBundleFourCaseAllocationThreshold$", "-test.count=1")
+		command.Env = append(os.Environ(), helperEnvironment+"=1")
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("isolated four-case allocation gate: %v\n%s", err, output)
+		}
+		return
+	case "1":
+		// Continue with the isolated measurement below.
+	default:
+		t.Fatalf("invalid %s value", helperEnvironment)
 	}
 	parent := t.TempDir()
 	iteration := 0
