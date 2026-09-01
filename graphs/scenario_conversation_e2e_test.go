@@ -45,7 +45,7 @@ const (
 	scenarioEndpointVoice        = "scenario-endpoint-voice"
 	scenarioEndpointTool         = "lookup.weather"
 	scenarioEndpointCallID       = "call_weather_endpoint_1"
-	scenarioEndpointSilentCallID = "call_weather_silent_endpoint_1"
+	scenarioEndpointSilentCallID = "call_click_silent_endpoint_1"
 	scenarioEndpointPrompt       = "Follow the exact endpoint scenario instructions."
 )
 
@@ -144,7 +144,7 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	client.awaitType(5*time.Second, "session.created")
 	fixture.assertFactories(t, 1)
 
-	client.send(scenarioEndpointSessionUpdate())
+	client.send(scenarioEndpointSessionUpdate(t))
 	updated := client.awaitType(5*time.Second, "session.updated")
 	assertScenarioEndpointSession(t, updated)
 
@@ -302,12 +302,13 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	client.awaitType(5*time.Second, "conversation.item.input_audio_transcription.completed")
 	silentCall := client.awaitType(10*time.Second, "response.function_call_arguments.done")
 	if silentCall["call_id"] != scenarioEndpointSilentCallID ||
-		silentCall["name"] != scenarioEndpointTool {
+		silentCall["name"] != computeruse.Click ||
+		silentCall["arguments"] != `{"source":"screen","x":10,"y":20}` {
 		t.Fatalf("silent cognition tool call = %+v", silentCall)
 	}
 	silentResponseID, _ := silentCall["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, silentResponseID, "completed")
-	barrier := scenarioEndpointSessionUpdate()
+	barrier := scenarioEndpointSessionUpdate(t)
 	barrier["event_id"] = "evt_final_session_barrier"
 	client.send(barrier)
 	client.awaitType(5*time.Second, "session.updated")
@@ -381,6 +382,8 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	target := scenarioEndpointTarget()
+	click := scenarioEndpointClickDefinition(t)
 	fixture.application = scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
@@ -390,11 +393,12 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 			Name: scenarioEndpointTool, Description: "Look up exact weather data.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
 			Confirm:    legacyaction.ConfirmNever,
+		}, {
+			Name: click.Name, Description: click.Description,
+			Parameters: slices.Clone(click.Parameters), Confirm: legacyaction.ConfirmNever,
+			Target: target.Name,
 		}},
-		Target: computeruse.Target{
-			Name: "scenario-client", Sources: []string{scenarioconversation.SourceMessage},
-			Width: 64, Height: 48,
-		},
+		Target: target,
 		Gate: scenarioconversation.ApplicationGateSelection{
 			Threshold: gate.Threshold, PrefixPaddingMS: gate.PrefixPaddingMS,
 			SilenceDurationMS: gate.SilenceDurationMS, SpeechDurationMS: gate.SpeechDurationMS,
@@ -582,7 +586,8 @@ func (provider *scenarioEndpointModel) Continue(
 	switch invocation := provider.invocations.Add(1); invocation {
 	case 1:
 		if request.Invocation.Instruction != scenarioEndpointPrompt ||
-			len(request.Invocation.Tools) != 1 || request.Invocation.Tools[0].Name != scenarioEndpointTool {
+			len(request.Invocation.Tools) != 2 || request.Invocation.Tools[0].Name != scenarioEndpointTool ||
+			request.Invocation.Tools[1].Name != computeruse.Click {
 			return continuation.Completion{}, errors.New("endpoint invocation settings drifted")
 		}
 		if !scenarioEndpointHasFinalAudio(request.Trajectory, "weather in Paris") {
@@ -650,8 +655,8 @@ func (provider *scenarioEndpointModel) Continue(
 			return continuation.Completion{}, err
 		}
 		call := trajectory.ToolCall{
-			CallID: scenarioEndpointSilentCallID, Name: scenarioEndpointTool,
-			Arguments: json.RawMessage(`{"city":"Paris"}`),
+			CallID: scenarioEndpointSilentCallID, Name: computeruse.Click,
+			Arguments: json.RawMessage(`{"source":"screen","x":10,"y":20}`),
 		}
 		if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
 			return continuation.Completion{}, err
@@ -912,7 +917,30 @@ func (client *scenarioEndpointWireClient) eventTypes() string {
 	return strings.Join(types, ",")
 }
 
-func scenarioEndpointSessionUpdate() map[string]any {
+func scenarioEndpointTarget() computeruse.Target {
+	return computeruse.Target{
+		Name: "scenario-client", Sources: []string{"screen"}, Width: 64, Height: 48,
+	}
+}
+
+func scenarioEndpointClickDefinition(t testing.TB) computeruse.Definition {
+	t.Helper()
+	definitions, err := computeruse.DefinitionsFor(scenarioEndpointTarget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, definition := range definitions {
+		if definition.Name == computeruse.Click {
+			return definition
+		}
+	}
+	t.Fatal("computer-use click definition is unavailable")
+	return computeruse.Definition{}
+}
+
+func scenarioEndpointSessionUpdate(t testing.TB) map[string]any {
+	t.Helper()
+	click := scenarioEndpointClickDefinition(t)
 	return map[string]any{
 		"type": "session.update", "event_id": "evt_session_update",
 		"session": map[string]any{
@@ -940,6 +968,10 @@ func scenarioEndpointSessionUpdate() map[string]any {
 						"city": map[string]any{"type": "string"},
 					}, "required": []string{"city"},
 				},
+			}, {
+				"type": "function", "name": click.Name,
+				"description": click.Description, "parameters": json.RawMessage(click.Parameters),
+				"openrealtime": map[string]any{"target": scenarioEndpointTarget().Name},
 			}},
 		},
 	}
@@ -956,7 +988,7 @@ func assertScenarioEndpointSession(t testing.TB, event map[string]any) {
 		t.Fatalf("scenario endpoint modalities = %v", modalities)
 	}
 	tools, _ := session["tools"].([]any)
-	if len(tools) != 1 {
+	if len(tools) != 2 {
 		t.Fatalf("scenario endpoint tools = %v", tools)
 	}
 }

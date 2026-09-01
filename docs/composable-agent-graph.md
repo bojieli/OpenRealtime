@@ -1785,7 +1785,7 @@ reference graphs, or conformance evidence.
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
 | 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
-| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete silent computer-use and independent voice/CU reference agents |
+| 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Complete audio-free text/file cognition and explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Trigger/cancel/authority views, LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
@@ -2166,7 +2166,16 @@ Reference-agent tracker:
   and the clean reviewed Chromium-backed candidate campaign passed all sixteen
   pixel and set-of-mark cases with synchronized A/V and exact live graph
   attestation.
-- [ ] Independent voice and computer-use policies composed in one graph.
+- [x] Independent voice and computer-use policies composed in one graph. The
+  production Scenario Conversation topology has separate voiced and silent
+  invocation branches over one committed trajectory. Voiced prepared text is
+  the only branch connected to segmentation, TTS, and playback; either branch
+  may propose an action only through the independent provenance, admission,
+  declared-tool, confirmation, target-fence, canonical-call, ledger, and
+  dispatch policy chain. Its stable Realtime endpoint regression now executes
+  a voiced tool/result/speech turn and a distinct silent, target-fenced
+  `computer.click` turn, proving that the computer-use action reaches the
+  client while the silent branch emits no synthesized audio.
 - [x] Audio-free typed text, image, file, and multimodal-attachment ingress,
   retention, and resolution component. A complete cognition/action agent over
   that component remains open.
