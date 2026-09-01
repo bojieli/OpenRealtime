@@ -66,7 +66,7 @@ func Verify(ctx context.Context, directory, receiptPath string) (Manifest, Recei
 	}
 	manifestInfo, err := root.Lstat(manifestName)
 	if err != nil || manifestInfo.Mode()&os.ModeSymlink != 0 || !manifestInfo.Mode().IsRegular() ||
-		manifestInfo.Size() <= 0 || manifestInfo.Size() > maximumMetadataBytes {
+		manifestInfo.Size() <= 0 || manifestInfo.Size() > maximumPopulationMetadataBytes {
 		return Manifest{}, Receipt{}, errors.New("candidate source manifest is invalid")
 	}
 	manifestBytes, err := readRegular(root, manifestName, manifestInfo.Size())
@@ -74,7 +74,7 @@ func Verify(ctx context.Context, directory, receiptPath string) (Manifest, Recei
 		return Manifest{}, Receipt{}, errors.New("candidate source manifest differs from its receipt")
 	}
 	var manifest Manifest
-	if err := decodeCanonical(manifestBytes, &manifest); err != nil {
+	if err := decodePopulationCanonical(manifestBytes, &manifest); err != nil {
 		return Manifest{}, Receipt{}, errors.New("candidate source manifest is invalid")
 	}
 	if err := validateManifestHeader(manifest, receipt); err != nil {
@@ -150,7 +150,7 @@ func validateManifestHeader(manifest Manifest, receipt Receipt) error {
 	previous := ""
 	for _, file := range manifest.Files {
 		if !safeRelative(file.Path) || !validDigest(file.SHA256) || file.SizeBytes <= 0 ||
-			file.SizeBytes > maximumSourceFileBytes || file.Path <= previous || file.Purpose == "" {
+			file.SizeBytes > maximumSourceBytesForPath(file.Path) || file.Path <= previous || file.Purpose == "" {
 			return errors.New("candidate source manifest file entry is invalid")
 		}
 		previous = file.Path
@@ -170,7 +170,7 @@ func verifyResult(
 		return bench.Result{}, errors.New("candidate source deterministic result changed")
 	}
 	var result bench.Result
-	if err := decodeCanonical(payload, &result); err != nil ||
+	if err := decodePopulationCanonical(payload, &result); err != nil ||
 		result.Suite != manifest.Suite || !reflect.DeepEqual(result.Cell, manifest.Cell) ||
 		!reflect.DeepEqual(result.Provenance, manifest.Provenance) || len(result.Tasks) > manifest.AttemptCount {
 		return bench.Result{}, errors.New("candidate source deterministic result identity is invalid")
@@ -392,15 +392,18 @@ func readManifestFile(
 }
 
 func decodeCanonical(payload []byte, destination any) error {
-	if len(payload) == 0 || len(payload) > maximumMetadataBytes {
+	return decodeCanonicalBounded(payload, destination, maximumMetadataBytes)
+}
+
+func decodePopulationCanonical(payload []byte, destination any) error {
+	return decodeCanonicalBounded(payload, destination, maximumPopulationMetadataBytes)
+}
+
+func decodeCanonicalBounded(payload []byte, destination any, maximum int) error {
+	if len(payload) == 0 || len(payload) > maximum {
 		return errors.New("candidate source JSON is empty or oversized")
 	}
-	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
-		MaxInputBytes: maximumMetadataBytes, MaxDepth: 128, MaxTokens: 5_000_000,
-		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
-		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: maximumMetadataBytes,
-		MaxWorkBytes: 256 << 20,
-	}); err != nil {
+	if err := validateSourceJSON(payload, maximum); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
@@ -408,7 +411,7 @@ func decodeCanonical(payload []byte, destination any) error {
 	if err := decoder.Decode(destination); err != nil {
 		return err
 	}
-	canonical, err := canonicalIndented(destination)
+	canonical, err := canonicalIndentedBounded(destination, maximum)
 	if err != nil || !bytes.Equal(payload, canonical) {
 		return errors.New("candidate source JSON is noncanonical")
 	}

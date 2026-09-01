@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/internal/fileidentity"
-	"github.com/bojieli/OpenRealtime/internal/strictjson"
 )
 
 const maximumAggregateFileBytes = int64(maximumAggregateJSON)
@@ -229,7 +228,7 @@ func safeAggregateRelative(path string) bool {
 }
 
 func decodeAggregateCanonical(payload []byte, destination any) error {
-	if len(payload) == 0 || len(payload) > maximumAggregateJSON || strictjson.Validate(payload) != nil {
+	if len(payload) == 0 || len(payload) > maximumAggregateJSON || validateAggregateJSON(payload) != nil {
 		return errors.New("candidate review aggregate JSON is invalid")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))

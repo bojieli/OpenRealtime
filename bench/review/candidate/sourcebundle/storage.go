@@ -26,6 +26,14 @@ const (
 	maximumSensitiveValue  = 4 << 10
 )
 
+func maximumSourceBytesForPath(name string) int64 {
+	name = filepath.ToSlash(name)
+	if name == resultName || name == manifestName {
+		return int64(maximumPopulationMetadataBytes)
+	}
+	return maximumSourceFileBytes
+}
+
 type sensitiveGuard struct {
 	values  []string
 	needles [][]byte
@@ -189,7 +197,7 @@ func makeDirectory(root *os.Root, name string) error {
 }
 
 func writeExclusive(root *os.Root, name string, payload []byte) (SourceFile, error) {
-	if root == nil || len(payload) == 0 || int64(len(payload)) > maximumSourceFileBytes {
+	if root == nil || len(payload) == 0 || int64(len(payload)) > maximumSourceBytesForPath(name) {
 		return SourceFile{}, errors.New("candidate source file is empty, oversized, or unavailable")
 	}
 	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o400)
@@ -257,7 +265,7 @@ func walkSourceFiles(root *os.Root) ([]SourceFile, error) {
 			return nil
 		}
 		if !info.Mode().IsRegular() || len(result) >= maximumSourceFiles ||
-			info.Size() <= 0 || info.Size() > maximumSourceFileBytes {
+			info.Size() <= 0 || info.Size() > maximumSourceBytesForPath(path) {
 			return errors.New("candidate source tree contains an invalid file")
 		}
 		payload, err := readRegular(root, filepath.ToSlash(path), info.Size())
@@ -280,7 +288,7 @@ func readRegular(root *os.Root, name string, expected int64) ([]byte, error) {
 	before, err := root.Lstat(name)
 	if err != nil || before.Mode()&os.ModeSymlink != 0 || !before.Mode().IsRegular() ||
 		before.Mode().Perm()&0o022 != 0 || before.Size() != expected || expected <= 0 ||
-		expected > maximumSourceFileBytes {
+		expected > maximumSourceBytesForPath(name) {
 		return nil, errors.New("candidate source file is not a bounded regular file")
 	}
 	file, err := root.Open(name)

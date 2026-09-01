@@ -564,7 +564,7 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 		}
 	}
 
-	resultPayload, err := canonicalIndented(snapshot)
+	resultPayload, err := canonicalPopulationIndented(snapshot)
 	if err != nil || bundle.guard.rejects(resultPayload) {
 		resultErr = errors.Join(resultErr, errors.New("candidate source result is invalid or sensitive"))
 		return resultErr
@@ -603,7 +603,7 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 		ReviewPath: reviewName, ReviewSHA256: reviewFile.SHA256,
 		FileSetSHA256: setDigest, Files: files, Attempts: entries, Advisory: "pending",
 	}
-	manifestPayload, err := canonicalIndented(manifest)
+	manifestPayload, err := canonicalPopulationIndented(manifest)
 	if err != nil || bundle.guard.rejects(manifestPayload) {
 		return errors.Join(resultErr, errors.New("candidate source manifest is invalid or sensitive"))
 	}

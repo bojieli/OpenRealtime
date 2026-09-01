@@ -167,8 +167,8 @@ func (source *ReviewSource) Close(ctx context.Context) error {
 	if err != nil {
 		return errors.Join(resultErr, err)
 	}
-	wantManifestPayload, wantManifestErr := canonicalCompact(wantManifest)
-	gotManifestPayload, gotManifestErr := canonicalCompact(gotManifest)
+	wantManifestPayload, wantManifestErr := canonicalPopulationCompact(wantManifest)
+	gotManifestPayload, gotManifestErr := canonicalPopulationCompact(gotManifest)
 	wantReceiptPayload, wantReceiptErr := canonicalCompact(wantReceipt)
 	gotReceiptPayload, gotReceiptErr := canonicalCompact(gotReceipt)
 	if wantManifestErr != nil || gotManifestErr != nil || wantReceiptErr != nil || gotReceiptErr != nil ||

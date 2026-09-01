@@ -22,6 +22,13 @@ const (
 	resultName            = "result.json"
 	reviewName            = "REVIEW.md"
 	maximumMetadataBytes  = 64 << 20
+	// FD-Bench's required 6,147 rows each retain a complete live graph
+	// attestation. The sealed result and manifest therefore legitimately exceed
+	// the per-attempt metadata bound while remaining a finite declared
+	// population. Keep the larger allowance exclusive to those two files.
+	maximumPopulationMetadataBytes  = 768 << 20
+	maximumPopulationMetadataTokens = 64_000_000
+	maximumPopulationMetadataWork   = int64(2 << 30)
 )
 
 type SourceFile struct {
@@ -91,36 +98,56 @@ type Receipt struct {
 }
 
 func canonicalIndented(value any) ([]byte, error) {
+	return canonicalIndentedBounded(value, maximumMetadataBytes)
+}
+
+func canonicalPopulationIndented(value any) ([]byte, error) {
+	return canonicalIndentedBounded(value, maximumPopulationMetadataBytes)
+}
+
+func canonicalIndentedBounded(value any, maximum int) ([]byte, error) {
 	payload, err := json.MarshalIndent(value, "", "  ")
-	if err != nil || len(payload) == 0 || len(payload) > maximumMetadataBytes {
+	if err != nil || len(payload) == 0 || len(payload) > maximum {
 		return nil, errors.New("candidate source metadata is not bounded JSON")
 	}
 	payload = append(payload, '\n')
-	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
-		MaxInputBytes: maximumMetadataBytes, MaxDepth: 128, MaxTokens: 5_000_000,
-		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
-		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: maximumMetadataBytes,
-		MaxWorkBytes: 256 << 20,
-	}); err != nil {
+	if err := validateSourceJSON(payload, maximum); err != nil {
 		return nil, fmt.Errorf("candidate source metadata is not strict JSON: %w", err)
 	}
 	return payload, nil
 }
 
 func canonicalCompact(value any) ([]byte, error) {
+	return canonicalCompactBounded(value, maximumMetadataBytes)
+}
+
+func canonicalPopulationCompact(value any) ([]byte, error) {
+	return canonicalCompactBounded(value, maximumPopulationMetadataBytes)
+}
+
+func canonicalCompactBounded(value any, maximum int) ([]byte, error) {
 	payload, err := json.Marshal(value)
-	if err != nil || len(payload) == 0 || len(payload) > maximumMetadataBytes {
+	if err != nil || len(payload) == 0 || len(payload) > maximum {
 		return nil, errors.New("candidate source identity is not bounded JSON")
 	}
-	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
-		MaxInputBytes: maximumMetadataBytes, MaxDepth: 128, MaxTokens: 5_000_000,
-		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
-		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: maximumMetadataBytes,
-		MaxWorkBytes: 256 << 20,
-	}); err != nil {
+	if err := validateSourceJSON(payload, maximum); err != nil {
 		return nil, errors.New("candidate source identity is not strict JSON")
 	}
 	return payload, nil
+}
+
+func validateSourceJSON(payload []byte, maximum int) error {
+	limits := strictjson.Limits{
+		MaxInputBytes: maximum, MaxDepth: 128, MaxTokens: 5_000_000,
+		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
+		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: int64(maximum),
+		MaxWorkBytes: 256 << 20,
+	}
+	if maximum == maximumPopulationMetadataBytes {
+		limits.MaxTokens = maximumPopulationMetadataTokens
+		limits.MaxWorkBytes = maximumPopulationMetadataWork
+	}
+	return strictjson.ValidateWithLimits(payload, limits)
 }
 
 func fileSetDigest(files []SourceFile) (string, error) {

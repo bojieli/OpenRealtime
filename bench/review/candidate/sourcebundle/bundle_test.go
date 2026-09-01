@@ -23,6 +23,25 @@ type sourceFixture struct {
 	origin     candidate.RunOrigin
 }
 
+func TestPopulationMetadataBoundCoversFullFDBenchWithoutWideningAttempts(t *testing.T) {
+	const (
+		fdBenchPopulation        = 6_147
+		attestedOutcomeRowBudget = 96 << 10
+	)
+	if maximumPopulationMetadataBytes < fdBenchPopulation*attestedOutcomeRowBudget {
+		t.Fatalf("population metadata bound = %d, below full FD-Bench row budget %d",
+			maximumPopulationMetadataBytes, fdBenchPopulation*attestedOutcomeRowBudget)
+	}
+	if maximumSourceBytesForPath(resultName) != maximumPopulationMetadataBytes ||
+		maximumSourceBytesForPath(manifestName) != maximumPopulationMetadataBytes {
+		t.Fatal("sealed population files do not use the full-population bound")
+	}
+	if maximumSourceBytesForPath("attempts/case/completion.json") != maximumSourceFileBytes ||
+		maximumSourceBytesForPath("attempts/case/audio.stereo.wav") != maximumSourceFileBytes {
+		t.Fatal("the full-population allowance leaked into per-attempt evidence")
+	}
+}
+
 func newSourceFixture(t testing.TB, sensitive ...string) sourceFixture {
 	t.Helper()
 	root := t.TempDir()

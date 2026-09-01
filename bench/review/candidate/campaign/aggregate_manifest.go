@@ -25,7 +25,13 @@ const (
 	aggregateManifestName = "manifest.json"
 	aggregateResultName   = "campaign.json"
 	aggregateReviewName   = "REVIEW.md"
-	maximumAggregateJSON  = 64 << 20
+	// A full FD-Bench campaign carries 6,147 deterministic outcomes with their
+	// live graph attestations plus advisory assessments. Its canonical campaign
+	// is several hundred MiB, so the population-level aggregate needs a larger
+	// finite bound than any individual evaluation bundle.
+	maximumAggregateJSON   = 768 << 20
+	maximumAggregateTokens = 64_000_000
+	maximumAggregateWork   = int64(2 << 30)
 )
 
 type AggregateOptions struct {
@@ -111,12 +117,7 @@ func aggregateCanonical(value any) ([]byte, error) {
 		return nil, errors.New("candidate review aggregate metadata is empty or oversized")
 	}
 	payload = append(payload, '\n')
-	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
-		MaxInputBytes: maximumAggregateJSON, MaxDepth: 128, MaxTokens: 5_000_000,
-		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
-		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: maximumAggregateJSON,
-		MaxWorkBytes: 256 << 20,
-	}); err != nil {
+	if err := validateAggregateJSON(payload); err != nil {
 		return nil, errors.New("candidate review aggregate metadata is not strict JSON")
 	}
 	return payload, nil
@@ -127,15 +128,19 @@ func aggregateCompact(value any) ([]byte, error) {
 	if err != nil || len(payload) == 0 || len(payload) > maximumAggregateJSON {
 		return nil, errors.New("candidate review aggregate identity is empty or oversized")
 	}
-	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
-		MaxInputBytes: maximumAggregateJSON, MaxDepth: 128, MaxTokens: 5_000_000,
-		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
-		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: maximumAggregateJSON,
-		MaxWorkBytes: 256 << 20,
-	}); err != nil {
+	if err := validateAggregateJSON(payload); err != nil {
 		return nil, errors.New("candidate review aggregate identity is not strict JSON")
 	}
 	return payload, nil
+}
+
+func validateAggregateJSON(payload []byte) error {
+	return strictjson.ValidateWithLimits(payload, strictjson.Limits{
+		MaxInputBytes: maximumAggregateJSON, MaxDepth: 128, MaxTokens: maximumAggregateTokens,
+		MaxObjectMembers: 1_000_000, MaxArrayElements: 2_000_000,
+		MaxKeyBytes: 64 << 10, MaxTotalKeyBytes: maximumAggregateJSON,
+		MaxWorkBytes: maximumAggregateWork,
+	})
 }
 
 func aggregateDigest(payload []byte) string {

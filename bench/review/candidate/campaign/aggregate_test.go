@@ -18,6 +18,22 @@ type aggregateFixture struct {
 	options  AggregateOptions
 }
 
+func TestAggregateBoundsCoverFullFDBenchCampaign(t *testing.T) {
+	const (
+		fdBenchPopulation       = 6_147
+		attestedReviewRowBudget = 96 << 10
+		minimumTokensPerRow     = 8_192
+	)
+	if maximumAggregateJSON < fdBenchPopulation*attestedReviewRowBudget {
+		t.Fatalf("aggregate bound = %d, below full FD-Bench row budget %d",
+			maximumAggregateJSON, fdBenchPopulation*attestedReviewRowBudget)
+	}
+	if maximumAggregateTokens < fdBenchPopulation*minimumTokensPerRow {
+		t.Fatalf("aggregate token bound = %d, below full FD-Bench token budget %d",
+			maximumAggregateTokens, fdBenchPopulation*minimumTokensPerRow)
+	}
+}
+
 func newAggregateFixture(t testing.TB, cases ...string) aggregateFixture {
 	t.Helper()
 	campaignFixture := newCampaignFixture(t, cases...)
