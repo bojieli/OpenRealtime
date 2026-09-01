@@ -20,9 +20,10 @@ var (
 	ErrReconcileNoChanges           = errors.New("plugin reconciliation candidate has no changes")
 	ErrCandidatePreMountUnsupported = errors.New("plugin reconciliation candidate cannot be pre-mounted")
 	ErrStateMigrationNeeded         = errors.New("plugin reconciliation requires unsupported state migration")
+	ErrReconcileLeakDetected        = errors.New("plugin reconciliation detected retained ownership")
 )
 
-const ReconcileReceiptFormatVersion = 1
+const ReconcileReceiptFormatVersion = 2
 
 // EntryUpdate is one explicit row replacement. Set fields distinguish an
 // omitted plane from selecting its zero value (for example, the descriptor's
@@ -58,12 +59,26 @@ type EntryTransition struct {
 	AfterPermissions     []plugin.Permission      `json:"after_permissions,omitempty"`
 }
 
+// EntryRetirement is payload-free evidence collected between teardown and
+// replacement activation. A successful receipt always has every captured
+// lifecycle closed and every remaining count at zero.
+type EntryRetirement struct {
+	Entry                string `json:"entry"`
+	RetiredScopes        int    `json:"retired_scopes"`
+	ClosedScopes         int    `json:"closed_scopes"`
+	RemainingWorkers     int    `json:"remaining_workers"`
+	RemainingEffects     int    `json:"remaining_effects"`
+	RemainingChildScopes int    `json:"remaining_child_scopes"`
+	RemainingServices    int    `json:"remaining_services"`
+}
+
 type ReconcileReceipt struct {
 	FormatVersion   uint64            `json:"format_version"`
 	PlanFingerprint string            `json:"plan_fingerprint"`
 	BeforeSequence  uint64            `json:"before_sequence"`
 	AfterSequence   uint64            `json:"after_sequence"`
 	Transitions     []EntryTransition `json:"transitions"`
+	Retirements     []EntryRetirement `json:"retirements"`
 }
 
 type preparedUpdate struct {
@@ -98,6 +113,11 @@ type previousEntry struct {
 	artifact       inspect.ArtifactIdentity
 	config         json.RawMessage
 	permissions    permissionSet
+}
+
+type retirementCapture struct {
+	entry  string
+	scopes []*lifecycleScope
 }
 
 // Reconcile atomically applies implementation, values, and permission changes
@@ -173,7 +193,10 @@ func (mounted *Mounted) Reconcile(
 			permissions: update.entry.permissions.Clone(),
 		}
 	}
-	if err := mounted.unmountSetLocked(ctx, affected, errors.New("plugin reconciliation safe point")); err != nil {
+	retired := mounted.captureRetirementsLocked(affected)
+	quiesceErr := mounted.unmountSetLocked(ctx, affected, errors.New("plugin reconciliation safe point"))
+	retirements, retirementErr := mounted.auditRetirementsLocked(retired)
+	if quiesceErr != nil || retirementErr != nil {
 		// Restoration is an integrity obligation, not optional work owned by the
 		// caller's request context. A canceled request must not strand the realm
 		// inactive or make restored lifecycle scopes inherit cancellation.
@@ -182,7 +205,8 @@ func (mounted *Mounted) Reconcile(
 		)
 		restoreErr := mounted.mountEligibleForOperationLocked(mounted.realm, affected)
 		return ReconcileReceipt{}, errors.Join(
-			fmt.Errorf("reconcile plugin plan could not quiesce affected entries: %w", err),
+			fmt.Errorf("reconcile plugin plan could not quiesce affected entries: %w",
+				errors.Join(quiesceErr, retirementErr)),
 			wrapOptional("restore after quiesce failure", restoreErr),
 			wrapOptional("dispose pre-mounted candidate", cleanupErr),
 		)
@@ -251,7 +275,54 @@ func (mounted *Mounted) Reconcile(
 	return ReconcileReceipt{
 		FormatVersion: ReconcileReceiptFormatVersion, PlanFingerprint: mounted.plan.Fingerprint,
 		BeforeSequence: before, AfterSequence: mounted.sequence.Load(), Transitions: transitions,
+		Retirements: retirements,
 	}, nil
+}
+
+func (mounted *Mounted) captureRetirementsLocked(affected map[string]struct{}) []retirementCapture {
+	result := make([]retirementCapture, 0, len(affected))
+	for _, entry := range mounted.entries {
+		if _, selected := affected[entry.plan.Entry.ID]; !selected {
+			continue
+		}
+		result = append(result, retirementCapture{
+			entry: entry.plan.Entry.ID, scopes: lifecycleClosure(entry.scope),
+		})
+	}
+	sort.Slice(result, func(left, right int) bool { return result[left].entry < result[right].entry })
+	return result
+}
+
+func (mounted *Mounted) auditRetirementsLocked(
+	captured []retirementCapture,
+) ([]EntryRetirement, error) {
+	result := make([]EntryRetirement, len(captured))
+	var failures []error
+	for index, capture := range captured {
+		audit := EntryRetirement{Entry: capture.entry, RetiredScopes: len(capture.scopes)}
+		for _, scope := range capture.scopes {
+			state := scope.state()
+			if state.closed {
+				audit.ClosedScopes++
+			}
+			audit.RemainingWorkers += state.workers
+			audit.RemainingEffects += state.effects
+			audit.RemainingChildScopes += state.children
+		}
+		audit.RemainingServices = mounted.store.countProvider(capture.entry)
+		result[index] = audit
+		if audit.ClosedScopes != audit.RetiredScopes || audit.RemainingWorkers != 0 ||
+			audit.RemainingEffects != 0 || audit.RemainingChildScopes != 0 ||
+			audit.RemainingServices != 0 {
+			failures = append(failures, fmt.Errorf(
+				"%w: entry %s closed scopes %d/%d, remaining workers %d, effects %d, child scopes %d, services %d",
+				ErrReconcileLeakDetected, audit.Entry, audit.ClosedScopes, audit.RetiredScopes,
+				audit.RemainingWorkers, audit.RemainingEffects, audit.RemainingChildScopes,
+				audit.RemainingServices,
+			))
+		}
+	}
+	return result, errors.Join(failures...)
 }
 
 func (mounted *Mounted) prepareReconciliationLocked(updates []EntryUpdate) ([]preparedUpdate, error) {

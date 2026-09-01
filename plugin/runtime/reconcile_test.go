@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/plugin"
@@ -65,6 +66,10 @@ func TestReconcileAppliesMultiEntryCandidateAndReturnsExactReceipt(t *testing.T)
 				}},
 			},
 		},
+		Retirements: []pluginruntime.EntryRetirement{
+			{Entry: "alpha", RetiredScopes: 1, ClosedScopes: 1},
+			{Entry: "beta", RetiredScopes: 1, ClosedScopes: 1},
+		},
 	}
 	if !reflect.DeepEqual(receipt, want) {
 		t.Fatalf("receipt mismatch\n got: %#v\nwant: %#v", receipt, want)
@@ -101,6 +106,77 @@ func TestReconcileAppliesMultiEntryCandidateAndReturnsExactReceipt(t *testing.T)
 	if fixture.alphaV2.mounts() != 1 || fixture.betaV2.mounts() != 1 {
 		t.Fatalf("candidate mount counts = alpha:%d beta:%d, want 1 each",
 			fixture.alphaV2.mounts(), fixture.betaV2.mounts())
+	}
+}
+
+func TestReconcileAuditsNestedRetiredLifecyclesBeforeActivation(t *testing.T) {
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{})
+	before := fixture.mounted.Live()
+	if _, err := fixture.mounted.Reconcile(
+		context.Background(), fixture.changedCandidate(before.Sequence),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	live := fixture.mounted.Live()
+	receipt, err := fixture.mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: fixture.plan.Fingerprint,
+		ExpectedSequence:        live.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "alpha", SetImplementation: true, Implementation: "alpha-v1",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []pluginruntime.EntryRetirement{
+		{Entry: "alpha", RetiredScopes: 2, ClosedScopes: 2},
+		{Entry: "beta", RetiredScopes: 2, ClosedScopes: 2},
+	}
+	if !reflect.DeepEqual(receipt.Retirements, want) {
+		t.Fatalf("retirement audit mismatch\n got: %#v\nwant: %#v", receipt.Retirements, want)
+	}
+	assertLiveImplementation(t, fixture.mounted.Live(), "alpha", "alpha-v1",
+		reconcileArtifact("alpha-v1", "build:alpha-1"))
+	assertObservedMount(t, fixture.betaV2, `{"limit":2,"mode":"new-beta"}`, []plugin.Permission{{
+		Kind: "storage.file", Resource: "workspace", Operations: []string{"read", "write"},
+	}}, map[string]string{"client.alpha": "alpha-v1:client.alpha"})
+}
+
+func TestReconcileRefusesActivationWhenRetiredWorkerRemains(t *testing.T) {
+	release := make(chan struct{})
+	fixture := mountReconcileFixture(t, reconcileFixtureOptions{
+		alphaV1StubbornWorker: release,
+		shutdownTimeout:       20 * time.Millisecond,
+	})
+	before := fixture.mounted.Live()
+
+	receipt, err := fixture.mounted.Reconcile(
+		context.Background(), fixture.changedCandidate(before.Sequence),
+	)
+	if !errors.Is(err, pluginruntime.ErrReconcileLeakDetected) ||
+		!strings.Contains(err.Error(), "remaining workers 1") ||
+		!strings.Contains(err.Error(), "live workers") {
+		t.Fatalf("Reconcile() retained-worker error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("retained worker returned a receipt: %#v", receipt)
+	}
+	if fixture.alphaV2.mounts() != 0 || fixture.betaV2.mounts() != 0 {
+		t.Fatalf("replacement activated despite retained worker: alpha=%d beta=%d",
+			fixture.alphaV2.mounts(), fixture.betaV2.mounts())
+	}
+	if fixture.alphaV2.preMountDisposals() != 1 || fixture.betaV2.preMountDisposals() != 1 {
+		t.Fatalf("retained-worker refusal leaked candidate preparation: alpha=%d beta=%d",
+			fixture.alphaV2.preMountDisposals(), fixture.betaV2.preMountDisposals())
+	}
+	after := fixture.mounted.Live()
+	assertLiveImplementation(t, after, "alpha", "alpha-v1", reconcileArtifact("alpha-v1", "build:alpha-1"))
+	assertLiveImplementation(t, after, "beta", "beta-v1", reconcileArtifact("beta-v1", "build:beta-1"))
+
+	close(release)
+	if err := fixture.mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -551,6 +627,8 @@ type reconcileFixtureOptions struct {
 	cancelBetaV2PreMount  context.CancelFunc
 	rejectCanceled        bool
 	realm                 context.Context
+	alphaV1StubbornWorker <-chan struct{}
+	shutdownTimeout       time.Duration
 }
 
 type reconcileFixture struct {
@@ -587,8 +665,11 @@ func mountReconcileFixture(t *testing.T, options reconcileFixtureOptions) reconc
 	})
 
 	fixture := reconcileFixture{
-		plan:    plan,
-		alphaV1: &reconcileFactoryState{label: "alpha-v1", rejectCanceled: options.rejectCanceled},
+		plan: plan,
+		alphaV1: &reconcileFactoryState{
+			label: "alpha-v1", rejectCanceled: options.rejectCanceled,
+			stubbornWorker: options.alphaV1StubbornWorker,
+		},
 		alphaV2: &reconcileFactoryState{label: "alpha-v2"},
 		betaV1:  &reconcileFactoryState{label: "beta-v1", rejectCanceled: options.rejectCanceled},
 		betaV2: &reconcileFactoryState{
@@ -619,7 +700,7 @@ func mountReconcileFixture(t *testing.T, options reconcileFixtureOptions) reconc
 		realm = context.Background()
 	}
 	mounted, err := pluginruntime.Mount(realm, pluginruntime.Config{
-		Plan: plan, Registry: registry,
+		Plan: plan, Registry: registry, ShutdownTimeout: options.shutdownTimeout,
 		Implementations: map[string]string{"alpha": "alpha-v1", "beta": "beta-v1"},
 		Values: map[string]json.RawMessage{
 			"alpha": json.RawMessage(`{"limit":1,"mode":"old-alpha"}`),
@@ -691,6 +772,7 @@ type reconcileFactoryState struct {
 	preMountObservations []reconcileMountObservation
 	disposeCount         int
 	preMountDisposeCount int
+	stubbornWorker       <-chan struct{}
 }
 
 func (state *reconcileFactoryState) observe(ctx context.Context, mount pluginruntime.MountContext) {
@@ -890,6 +972,14 @@ func (factory reconcileFactory) Mount(ctx context.Context, mount pluginruntime.M
 		return nil
 	}); err != nil {
 		return err
+	}
+	if factory.state.stubbornWorker != nil {
+		if err := mount.Lifecycle.Go("stubborn", func(context.Context) error {
+			<-factory.state.stubbornWorker
+			return nil
+		}); err != nil {
+			return err
+		}
 	}
 	if factory.state.cancelMount != nil {
 		factory.state.cancelMount()

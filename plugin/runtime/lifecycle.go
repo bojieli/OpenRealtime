@@ -30,6 +30,13 @@ type lifecycleScope struct {
 	failOnce    sync.Once
 }
 
+type lifecycleScopeState struct {
+	closed   bool
+	workers  int
+	effects  int
+	children int
+}
+
 func newLifecycleScope(parent context.Context, entry string, onFailure func(error)) *lifecycleScope {
 	ctx, cancel := context.WithCancelCause(parent)
 	return &lifecycleScope{
@@ -188,4 +195,47 @@ func (scope *lifecycleScope) counts() (workers, effects int) {
 		effects += childEffects
 	}
 	return workers, effects
+}
+
+// lifecycleClosure captures every scope currently owned by root. Reconcile
+// retains these pointers across teardown so it can prove that adopted
+// candidate scopes were closed too, even after close has severed the parent
+// links.
+func lifecycleClosure(root *lifecycleScope) []*lifecycleScope {
+	if root == nil {
+		return nil
+	}
+	seen := make(map[*lifecycleScope]struct{})
+	var result []*lifecycleScope
+	var visit func(*lifecycleScope)
+	visit = func(scope *lifecycleScope) {
+		if scope == nil {
+			return
+		}
+		if _, duplicate := seen[scope]; duplicate {
+			return
+		}
+		seen[scope] = struct{}{}
+		result = append(result, scope)
+		scope.mu.Lock()
+		children := append([]*lifecycleScope(nil), scope.children...)
+		scope.mu.Unlock()
+		for _, child := range children {
+			visit(child)
+		}
+	}
+	visit(root)
+	return result
+}
+
+func (scope *lifecycleScope) state() lifecycleScopeState {
+	if scope == nil {
+		return lifecycleScopeState{}
+	}
+	scope.mu.Lock()
+	defer scope.mu.Unlock()
+	return lifecycleScopeState{
+		closed: scope.closed, workers: len(scope.workers), effects: len(scope.disposers),
+		children: len(scope.children),
+	}
 }

@@ -71,6 +71,18 @@ func (store *serviceStore) lookup(provider string, contract plugin.Contract) (se
 	return record, true
 }
 
+func (store *serviceStore) countProvider(provider string) int {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	count := 0
+	for _, record := range store.records {
+		if record.provider == provider {
+			count++
+		}
+	}
+	return count
+}
+
 // Export returns one service deliberately exposed by the compiled profile.
 // The returned revision changes whenever the provider republishes the service,
 // allowing application launchers to detect a replacement without depending on

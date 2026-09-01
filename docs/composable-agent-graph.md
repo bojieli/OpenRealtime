@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 205 of 254 explicit tracker boxes are checked (80.7%)
+At this reconciliation, 206 of 255 explicit tracker boxes are checked (80.8%)
 and 49 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -1824,7 +1824,7 @@ of-done requirement.
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Broader graphical editing and complete server/native presentation lifecycle gates |
-| 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact receipts, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
+| 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
 Current checkpoint notes:
@@ -2458,7 +2458,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 791/6,147 at 2026-09-01 21:45 UTC. This dated progress checkpoint is
+  attempt 801/6,147 at 2026-09-01 21:57 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -3115,7 +3115,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     lifecycle. Multi-entry success, mount failure, cancellation before/during
     transition, request-context detachment, canceled-realm refusal, rollback
     disposal counts, ten shuffled runs, race, and the 64-entry leaf benchmark
-    at approximately 11.8–12.8 microseconds after pre-mount are green.
+    at approximately 11.0–11.2 microseconds with pre-mount and the retirement
+    audit are green.
     Graph-routing safe-point publication, actual state migration, and the full
     leak gate remain open.
   - [x] Require and execute an effect-restricted pre-mount for every changed
@@ -3129,6 +3130,19 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     disposed exactly once with its live lifecycle, while activation failure
     still restores the complete prior dependency closure. Focused normal,
     race, and broader plugin/server/presentation integration gates are green.
+  - [x] Gate replacement activation on an exact payload-free retirement audit
+    at the existing immutable-plan safe point. The runtime captures every
+    affected entry lifecycle and adopted pre-mount child before teardown, then
+    requires all captured scopes closed, zero remaining supervised workers,
+    registered effects, child-scope links, and service publications before a
+    candidate can activate. Receipt format v2 records the sorted per-entry
+    proof; a second-generation replacement covers nested adopted ownership,
+    while an adversarial unresponsive worker refuses activation, disposes the
+    prepared candidates, restores the previous composition, and returns no
+    success receipt. Graph queues,
+    subscriptions, authority registrations outside this plugin lifecycle,
+    state migration, and topology publication remain in the wider leak gate.
+    Focused normal, ten shuffled, and race gates are green.
 - [ ] Begin with leaf config/implementation swaps, then expand to bounded topology
   changes.
   - [x] Apply leaf and bounded multi-entry implementation, config, and
@@ -3498,9 +3512,11 @@ checked from foundation work alone; each requires end-to-end release evidence.
     dependency closure, return deterministic receipts, and either commit under
     realm ownership or dispose the candidate and restore the previous
     composition. Effect-restricted candidate pre-mount now fails before live
-    teardown and transfers its cleanup into the activated entry. State
-    migration, routing-safe topology publication, and the end-to-end leak gate
-    remain requirements of the parent.
+    teardown and transfers its cleanup into the activated entry. Activation is
+    also gated on an exact audit that all retired plugin lifecycles, workers,
+    effects, child scopes, and service publications reached zero. State
+    migration, routing-safe topology publication, and the cross-system leak
+    gate remain requirements of the parent.
 - [x] Operators can trace an externally visible action back through its policy,
     trigger, observation, state revision, model run, queues, and authority
     decision.
