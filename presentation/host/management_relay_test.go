@@ -256,9 +256,13 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 		Node: "source", NewName: "camera",
 	}
 	renameResult := managementRelayRenameResult(t, renameInput)
+	removeInput := management.RemoveDocumentEdgeRequest{
+		Document: renameInput.Document, Edge: "source.out->source.in",
+	}
+	removeResult := managementRelayEdgeRemovalResult(t, removeInput)
 
 	type observation struct{ method, path, capability, authorization string }
-	seen := make(chan observation, 8)
+	seen := make(chan observation, 12)
 	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		seen <- observation{
 			method: request.Method, path: request.URL.Path,
@@ -293,6 +297,12 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 				t.Errorf("decode rename request: %v", err)
 			}
 			_ = json.NewEncoder(writer).Encode(renameResult)
+		case management.APIPrefix + "/authoring/remove-edge":
+			var input management.RemoveDocumentEdgeRequest
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Errorf("decode edge-removal request: %v", err)
+			}
+			_ = json.NewEncoder(writer).Encode(removeResult)
 		case management.APIPrefix + "/authoring/read":
 			var input management.SourceReadRequest
 			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
@@ -424,6 +434,29 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			renameResponse.Header.Get(ManagementIdentityHeader), renamePayload)
 	}
 
+	removeBody, err := json.Marshal(removeInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeRequest, _ := http.NewRequest(http.MethodPost,
+		hostServer.URL+"/client/v1/management/authoring/remove-edge", bytes.NewReader(removeBody))
+	removeRequest.Header.Set("Content-Type", "application/json")
+	removeRequest.Header.Set(management.CapabilityHeader, operatorCapability)
+	removeRequest.Header.Set("Authorization", "Bearer must-not-cross")
+	removeResponse, err := http.DefaultClient.Do(removeRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removePayload, _ := io.ReadAll(removeResponse.Body)
+	removeResponse.Body.Close()
+	if removeResponse.StatusCode != http.StatusOK ||
+		removeResponse.Header.Get(ManagementIdentityHeader) !=
+			"authoring:edge.remove:"+removeResult.Edits.SourceDigest ||
+		strings.Contains(string(removePayload), operatorCapability) {
+		t.Fatalf("edge-removal relay status=%d identity=%q body=%s", removeResponse.StatusCode,
+			removeResponse.Header.Get(ManagementIdentityHeader), removePayload)
+	}
+
 	readInput := management.SourceReadRequest{
 		FormatVersion: management.SourceReadFormatVersion,
 		RootIdentity:  "sha256:" + strings.Repeat("e", 64),
@@ -488,7 +521,7 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			writeResponse.Header.Get(ManagementIdentityHeader), writePayload)
 	}
 
-	for range len(checks) + 4 {
+	for range len(checks) + 5 {
 		observation := <-seen
 		if observation.capability != operatorCapability || observation.authorization != "" {
 			t.Fatalf("management relay crossed credential planes: %+v", observation)
@@ -640,6 +673,43 @@ func TestManagementRelayRejectsRenameThatOmitsOneGraphReference(t *testing.T) {
 	}
 }
 
+func TestManagementRelayRejectsEdgeRemovalThatMutatesAnotherSourceByte(t *testing.T) {
+	input := management.RemoveDocumentEdgeRequest{
+		Document: management.AuthoringDocument{
+			Path: "relay.ortg", Source: "graph relay {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Edge: "source.out->source.in",
+	}
+	forged := managementRelayEdgeRemovalResult(t, input)
+	forged.Edits.Edits[0].NewText += "\n"
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(forged)
+	}))
+	defer backend.Close()
+	base, err := url.Parse(backend.URL + management.APIPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/authoring/remove-edge", bytes.NewReader(payload))
+	request.SetPathValue("action", "remove-edge")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set(management.CapabilityHeader, "operator_edge_secret")
+	response := httptest.NewRecorder()
+	NewManagementRelayFactory(nil, nil).relayAuthoring(
+		base, relayTarget{DialTimeout: 15 * time.Second}, response, request,
+	)
+	if response.Code != http.StatusBadGateway || response.Header().Get(ManagementIdentityHeader) != "" {
+		t.Fatalf("forged edge removal status=%d identity=%q body=%s", response.Code,
+			response.Header().Get(ManagementIdentityHeader), response.Body.String())
+	}
+}
+
 func managementRelayRenameResult(
 	t testing.TB, input management.RenameDocumentRequest,
 ) management.RenameDocumentResult {
@@ -657,6 +727,26 @@ func managementRelayRenameResult(
 		Node: input.Node, NewName: input.NewName, Edits: edits,
 	}
 	if err := management.ValidateRenameDocumentResult(input, result); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func managementRelayEdgeRemovalResult(
+	t testing.TB, input management.RemoveDocumentEdgeRequest,
+) management.RemoveDocumentEdgeResult {
+	t.Helper()
+	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+		resolve.NewCatalog(), editor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := document.RemoveEdgeID(input.Edge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := management.RemoveDocumentEdgeResult{Edge: input.Edge, Edits: edits}
+	if err := management.ValidateRemoveDocumentEdgeResult(input, result); err != nil {
 		t.Fatal(err)
 	}
 	return result

@@ -135,7 +135,8 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	operations := []management.Operation{
 		management.ReadGraph, management.ReadDescriptor, management.ReadSchema,
 		management.ReadSession, management.ReadTrace, management.AnalyzeDocument,
-		management.RenameDocument, management.CompileDocument, management.RenderGraph,
+		management.RenameDocument, management.RemoveDocumentEdge,
+		management.CompileDocument, management.RenderGraph,
 		management.ReadSource, management.CreateSource, management.UpdateSource, management.ApplyCandidate,
 	}
 	grants := make([]management.Grant, len(operations))
@@ -251,6 +252,14 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	renamedSource, err := editor.ApplyEdits([]byte(renameDocument.Source), renameResult.Edits)
 	if err != nil {
 		t.Fatal(err)
+	}
+	removeRequest := management.RemoveDocumentEdgeRequest{
+		Document: renameDocument, Edge: "source.out->sink.in",
+	}
+	removeResult, err := remote.RemoveEdge(context.Background(), removeRequest)
+	if err != nil || management.ValidateRemoveDocumentEdgeResult(removeRequest, removeResult) != nil ||
+		len(removeResult.Edits.Edits) != 1 {
+		t.Fatalf("remote edge removal = %+v, %v", removeResult, err)
 	}
 	renamedCompile, err := remote.Compile(context.Background(), management.AuthoringDocument{
 		Path: renameDocument.Path, Source: string(renamedSource), Revision: renameDocument.Revision + 1,

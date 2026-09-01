@@ -21,6 +21,7 @@ var (
 	ErrInvalidRename         = errors.New("invalid graph node rename")
 	ErrRenameCollision       = errors.New("graph node rename collides with an existing node")
 	ErrEditLimit             = errors.New("graph node rename exceeds the edit bound")
+	ErrInvalidEdgeMutation   = errors.New("invalid graph edge mutation")
 	ErrFormattingUnavailable = errors.New("editor formatting requires a strictly parsed topology")
 	ErrPresentationLimit     = errors.New("editor presentation exceeds its byte bound")
 )

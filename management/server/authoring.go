@@ -15,7 +15,7 @@ type AuthoringAPIFactory struct{ descriptor plugin.Descriptor }
 func NewAuthoringAPIFactory() *AuthoringAPIFactory {
 	return &AuthoringAPIFactory{descriptor: plugin.Descriptor{
 		FormatVersion: plugin.DescriptorFormatVersion,
-		Name:          "openrealtime.management.server.authoring-api", Revision: 3,
+		Name:          "openrealtime.management.server.authoring-api", Revision: 4,
 		Realm: plugin.ServerRealm, Platforms: []string{"go"},
 		Requires: []plugin.Requirement{
 			{Contract: management.HTTPRoutesContract},
@@ -48,6 +48,9 @@ func (factory *AuthoringAPIFactory) Mount(_ context.Context, mount pluginruntime
 			},
 		)},
 		{Pattern: "POST " + management.APIPrefix + "/authoring/rename", Handler: authoringRenameHandler(
+			authorizer, authoring,
+		)},
+		{Pattern: "POST " + management.APIPrefix + "/authoring/remove-edge", Handler: authoringRemoveEdgeHandler(
 			authorizer, authoring,
 		)},
 		{Pattern: "POST " + management.APIPrefix + "/authoring/compile", Handler: authoringDocumentHandler(
@@ -87,6 +90,41 @@ func (factory *AuthoringAPIFactory) Mount(_ context.Context, mount pluginruntime
 				writeJSON(writer, http.StatusOK, result)
 			},
 		)},
+	})
+}
+
+func authoringRemoveEdgeHandler(authorizer management.Authorizer, authoring management.Authoring) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := validateQuery(request); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		if err := authorize(request, authorizer, management.RemoveDocumentEdge, "authoring"); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		var input management.RemoveDocumentEdgeRequest
+		if err := decodeStrictJSON(request, maxAuthoringBody, &input); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		if err := management.ValidateRemoveDocumentEdgeRequest(input); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		result, err := authoring.RemoveEdge(request.Context(), input)
+		if err == nil {
+			err = management.ValidateRemoveDocumentEdgeResult(input, result)
+		}
+		if err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		if err := authorize(request, authorizer, management.RemoveDocumentEdge, "authoring"); err != nil {
+			writeServiceError(writer, err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, result)
 	})
 }
 

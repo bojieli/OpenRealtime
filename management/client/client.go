@@ -305,6 +305,21 @@ func (client *Client) Rename(
 	return result, err
 }
 
+func (client *Client) RemoveEdge(
+	ctx context.Context, input management.RemoveDocumentEdgeRequest,
+) (management.RemoveDocumentEdgeResult, error) {
+	if err := management.ValidateRemoveDocumentEdgeRequest(input); err != nil {
+		return management.RemoveDocumentEdgeResult{}, err
+	}
+	var result management.RemoveDocumentEdgeResult
+	err := client.post(ctx, []string{"authoring", "remove-edge"}, management.RemoveDocumentEdge,
+		"authoring", input, maxAuthoringRequest, maxJSONBytes, &result)
+	if err == nil {
+		err = management.ValidateRemoveDocumentEdgeResult(input, result)
+	}
+	return result, err
+}
+
 func (client *Client) Compile(
 	ctx context.Context, document management.AuthoringDocument,
 ) (management.CompileResult, error) {

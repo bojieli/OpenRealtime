@@ -212,6 +212,92 @@ func TestRenameIsGraphAwareAtomicAndStaleSafe(t *testing.T) {
 	}
 }
 
+func TestRemoveEdgeIDIsCanonicalExactAndStaleSafe(t *testing.T) {
+	source := `graph demo {
+    test.Source :: producer;
+    test.Sink :: consumer;
+    // removable café edge
+    edge optional = producer.out -> consumer.in;
+    input start = producer.start;
+    output done = consumer.done;
+}
+`
+	document, err := Analyze("agent.ortg", []byte(source), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edits, err := document.RemoveEdgeID("optional")
+	if err != nil || edits.Path != "agent.ortg" || edits.SourceDigest != document.SourceDigest() ||
+		len(edits.Edits) != 1 {
+		t.Fatalf("edge-removal edits = %+v, %v", edits, err)
+	}
+	removed, err := ApplyEdits(document.Source(), edits)
+	want := `graph demo {
+    test.Source :: producer;
+    test.Sink :: consumer;
+    input start = producer.start;
+    output done = consumer.done;
+}
+`
+	if err != nil || string(removed) != want {
+		t.Fatalf("edge-removed source:\n%s\nwant:\n%s\nerror: %v", removed, want, err)
+	}
+	parsed, err := syntax.Parse("agent.ortg", removed)
+	if err != nil || syntax.Format(parsed) != string(removed) {
+		t.Fatalf("edge-removed source is not canonical: %v", err)
+	}
+	if _, err := ApplyEdits(append(document.Source(), ' '), edits); !errors.Is(err, ErrStalePosition) {
+		t.Fatalf("stale edge-removal apply = %v", err)
+	}
+	if _, err := document.RemoveEdgeID("missing"); !errors.Is(err, ErrInvalidEdgeMutation) {
+		t.Fatalf("missing edge removal = %v", err)
+	}
+
+	unnamed, err := Analyze("unnamed.ortg", []byte(validSource), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unnamedEdits, err := unnamed.RemoveEdgeID("producer.out->consumer.in")
+	if err != nil {
+		t.Fatalf("unnamed edge removal = %v", err)
+	}
+	unnamedResult, err := ApplyEdits(unnamed.Source(), unnamedEdits)
+	if err != nil || strings.Contains(string(unnamedResult), "producer.out -> consumer.in") {
+		t.Fatalf("unnamed edge remained after removal: %s, %v", unnamedResult, err)
+	}
+	lossySource := strings.Replace(validSource, "producer.out -> consumer.in", "producer.out => consumer.in", 1)
+	lossy, err := Analyze("lossy.ortg", []byte(lossySource), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lossyEdits, err := lossy.RemoveEdgeID("producer.out->consumer.in")
+	if err != nil {
+		t.Fatalf("lossy endpoint-derived edge removal = %v", err)
+	}
+	lossyResult, err := ApplyEdits(lossy.Source(), lossyEdits)
+	if err != nil || strings.Contains(string(lossyResult), "producer.out => consumer.in") {
+		t.Fatalf("lossy edge remained after removal: %s, %v", lossyResult, err)
+	}
+
+	duplicateSource := strings.Replace(source,
+		"    input start", "    edge optional = producer.out -> consumer.in;\n    input start", 1)
+	duplicate, err := Analyze("duplicate.ortg", []byte(duplicateSource), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := duplicate.RemoveEdgeID("optional"); !errors.Is(err, ErrInvalidEdgeMutation) {
+		t.Fatalf("ambiguous edge removal = %v", err)
+	}
+	noncanonical, err := Analyze("noncanonical.ortg",
+		[]byte(strings.Replace(source, "edge optional =", "edge  optional =", 1)), testCatalog(t), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := noncanonical.RemoveEdgeID("optional"); !errors.Is(err, ErrSyntaxUnavailable) {
+		t.Fatalf("noncanonical edge removal = %v", err)
+	}
+}
+
 func TestDiagnosticsPositionsCanonicalityAndUnknownContracts(t *testing.T) {
 	catalog := testCatalog(t)
 	broken := []byte(`graph broken {

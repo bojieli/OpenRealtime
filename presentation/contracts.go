@@ -136,9 +136,10 @@ var (
 		"presentation.client.management_operator_control",
 		"openrealtime/presentation/client/management-operator-control/v1:replace-clear-redacted-status-subscribe",
 	)
-	ClientManagementTransportContract = semanticContract(
+	ClientManagementTransportContract = semanticContractRevision(
 		"presentation.client.management_transport",
-		"openrealtime/presentation/client/management-transport/v1:whitelisted-static-authoring-header-capability-strict-bounded-no-redirect",
+		2,
+		"openrealtime/presentation/client/management-transport/v2:whitelisted-static-authoring-edge-removal-header-capability-strict-bounded-no-redirect",
 	)
 	ClientManagementStaticContract = semanticContract(
 		"presentation.client.management_static",
@@ -148,9 +149,10 @@ var (
 		"presentation.client.management_authoring",
 		"openrealtime/presentation/client/management-authoring/v1:analyze-compile-render-exact-document-graph-identity",
 	)
-	ClientManagementEditingContract = semanticContract(
+	ClientManagementEditingContract = semanticContractRevision(
 		"presentation.client.management_editing",
-		"openrealtime/presentation/client/management-editing/v1:exact-node-rename-validated-local-edit-application",
+		2,
+		"openrealtime/presentation/client/management-editing/v2:exact-node-rename-edge-removal-validated-local-edit-application",
 	)
 	ClientSourceReadingContract = semanticContract(
 		"presentation.client.source_reading",
@@ -160,9 +162,10 @@ var (
 		"presentation.client.source_publication",
 		"openrealtime/presentation/client/source-publication/v1:explicit-root-create-stale-update-receipt-revalidation",
 	)
-	ClientAuthoringWorkspaceContract = semanticContract(
+	ClientAuthoringWorkspaceContract = semanticContractRevision(
 		"presentation.client.authoring_workspace",
-		"openrealtime/presentation/client/authoring-workspace/v1:bounded-document-optional-rooted-read-analysis-compile-render-graph-node-rename-cas-optional-publication-immutable-snapshot-subscribe",
+		2,
+		"openrealtime/presentation/client/authoring-workspace/v2:bounded-document-optional-rooted-read-analysis-compile-render-graph-node-rename-edge-removal-cas-optional-publication-immutable-snapshot-subscribe",
 	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",
@@ -171,8 +174,12 @@ var (
 )
 
 func semanticContract(name, definition string) plugin.Contract {
+	return semanticContractRevision(name, 1, definition)
+}
+
+func semanticContractRevision(name string, revision uint64, definition string) plugin.Contract {
 	digest := sha256.Sum256([]byte(definition))
 	return plugin.Contract{
-		Name: name, Revision: 1, Digest: "sha256:" + hex.EncodeToString(digest[:]),
+		Name: name, Revision: revision, Digest: "sha256:" + hex.EncodeToString(digest[:]),
 	}
 }

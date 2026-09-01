@@ -97,7 +97,7 @@ export default {
           diagnostics.append(item);
         }
       }
-      const busy = new Set(["reading", "analyzing", "formatting", "renaming", "compiling", "rendering", "publishing"])
+      const busy = new Set(["reading", "analyzing", "formatting", "renaming", "removing-edge", "compiling", "rendering", "publishing"])
         .has(snapshot.phase);
       analyze.disabled = compile.disabled = busy;
       format.disabled = busy || !snapshot.analysis?.parsed || snapshot.analysis.recovered ||

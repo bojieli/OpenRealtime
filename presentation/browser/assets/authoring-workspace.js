@@ -164,6 +164,33 @@ export default {
             compiled: null, rendering: null, publication: null };
         });
       },
+      removeEdge(expectedFingerprint, selected) {
+        ready();
+        const input = state.document;
+        const graph = state.compiled?.graph;
+        if (typeof expectedFingerprint !== "string" || !DIGEST.test(expectedFingerprint) ||
+            !graph || graph.fingerprint !== expectedFingerprint || graph.revision !== input.revision ||
+            typeof selected !== "string" || !graph.edges?.some((edge) => edge.id === selected)) {
+          throw new Error("authoring workspace edge selection is stale");
+        }
+        if (input.revision >= Number.MAX_SAFE_INTEGER) {
+          throw new Error("authoring workspace document revision is exhausted");
+        }
+        return invoke("removing-edge", async () => {
+          const result = await editing.removeEdge(input, selected);
+          const source = await editing.applyEdits(input, result.edits);
+          return Object.freeze({ result, source });
+        }, (current, removed) => {
+          if (current.compiled?.graph?.fingerprint !== expectedFingerprint ||
+              !current.compiled.graph.edges?.some((edge) => edge.id === selected)) {
+            throw new Error("authoring workspace edge selection changed during removal");
+          }
+          const document = checkedDocument(input.path, removed.source, input.revision + 1);
+          epoch++;
+          return { document, phase: "edge-removed", error: "", sourceRead: null, analysis: null,
+            compiled: null, rendering: null, publication: null };
+        });
+      },
       compile() {
         const input = state.document;
         return invoke("compiling", () => authoring.compile(input), (current, compiled) => ({

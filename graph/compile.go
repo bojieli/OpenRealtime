@@ -183,10 +183,7 @@ func compileEdges(
 	result := make([]edgeState, 0, len(sources))
 	identities := make(map[string]syntax.Span, len(sources))
 	for _, source := range sources {
-		identity := source.Name
-		if identity == "" {
-			identity = source.From.String() + "->" + source.To.String()
-		}
+		identity := source.Identity()
 		if previous, duplicate := identities[identity]; duplicate {
 			failures.add(path, "E_DUPLICATE_EDGE", source.Span,
 				fmt.Sprintf("edge identity %q is not unique", identity),

@@ -86,6 +86,17 @@ type Edge struct {
 	Span     Span     `json:"span"`
 }
 
+// Identity returns the stable edge identifier emitted into Graph IR. Named
+// edges keep their authored name; unnamed edges are identified by their exact
+// endpoint pair. Keeping this rule on the syntax value prevents compiler and
+// visual-editor mutation paths from inventing subtly different identities.
+func (edge Edge) Identity() string {
+	if edge.Name != "" {
+		return edge.Name
+	}
+	return edge.From.String() + "->" + edge.To.String()
+}
+
 // BoundaryDirection is relative to the composite graph.
 type BoundaryDirection string
 

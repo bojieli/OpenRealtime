@@ -5,6 +5,7 @@ const MAX_SOURCE_BYTES = 1 << 20;
 const MAX_ITEMS = 65_536;
 const MAX_RENAME_EDITS = 8_192;
 const MAX_IDENTIFIER_BYTES = 256;
+const MAX_EDGE_ID_BYTES = 4 * MAX_IDENTIFIER_BYTES + 4;
 const MAX_TEXT_BYTES = 64 << 20;
 const MAX_DIAGNOSTIC_BYTES = 64 << 10;
 const MAX_DIAGNOSTIC_NOTES = 256;
@@ -184,6 +185,49 @@ function nodeName(value, label) {
     throw new Error(`${label} is not a canonical node identifier`);
   }
   return value;
+}
+
+function edgeName(value, label) {
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value ||
+      /[\0\r\n]/.test(value) || encoder.encode(value).byteLength > MAX_EDGE_ID_BYTES) {
+    throw new Error(`${label} is not a canonical edge identity`);
+  }
+  return value;
+}
+
+// Canonical formatting places every edge statement on one ASCII line. This
+// independently derives the exact post-removal source, including removal of
+// the selected statement's attached canonical comment lines.
+function edgeRemovalSource(source, selected) {
+  topologyTokens(source);
+  const identifier = "[A-Za-z_][A-Za-z0-9_-]*";
+  const endpoint = `(${identifier})\\.(${identifier})`;
+  const named = new RegExp(`^    edge (${identifier}) = ${endpoint} (?:->|=>) ${endpoint};$`);
+  const unnamed = new RegExp(`^    ${endpoint} (?:->|=>) ${endpoint};$`);
+  const lines = source.split("\n");
+  if (lines.at(-1) !== "" || lines.at(-2) !== "}") {
+    throw new Error("authoring edge removal requires canonical source");
+  }
+  const matches = [];
+  for (let index = 0; index < lines.length; index++) {
+    let identity = "";
+    const namedMatch = lines[index].match(named);
+    if (namedMatch) {
+      identity = namedMatch[1];
+    } else {
+      const unnamedMatch = lines[index].match(unnamed);
+      if (unnamedMatch) identity = `${unnamedMatch[1]}.${unnamedMatch[2]}->${unnamedMatch[3]}.${unnamedMatch[4]}`;
+    }
+    if (identity === selected) matches.push(index);
+  }
+  if (matches.length !== 1) {
+    throw new Error("authoring edge removal source does not contain the selected edge exactly once");
+  }
+  const end = matches[0];
+  let start = end;
+  while (start > 0 && lines[start - 1].startsWith("    //")) start--;
+  lines.splice(start, end - start + 1);
+  return lines.join("\n");
 }
 
 // Tokenize only the syntax needed to prove node-reference coverage. Canonical
@@ -376,6 +420,20 @@ function validateRename(value, input, selected, replacement, requestedDigest, ev
       if (!expected.delete(key)) throw new Error("authoring rename result edits another source span");
     }
     if (expected.size !== 0) throw new Error("authoring rename result omitted a node reference");
+  }
+  return frozen(value);
+}
+
+function validateEdgeRemoval(value, input, selected, requestedDigest, evidence) {
+  only(value, ["edge", "edits"], "authoring edge-removal result");
+  if (edgeName(value.edge, "authoring edge-removal result edge") !== selected ||
+      evidence !== `authoring:edge.remove:${requestedDigest}`) {
+    throw new Error("authoring edge-removal result changed request identity");
+  }
+  const expected = edgeRemovalSource(input.source, selected);
+  const applied = checkedEditSet(value.edits, input, requestedDigest);
+  if (applied.editSet.edits.length !== 1 || applied.source !== expected) {
+    throw new Error("authoring edge-removal result changes more or less than the selected edge");
   }
   return frozen(value);
 }
@@ -619,6 +677,20 @@ export default {
         });
         ready();
         return validateRename(response.value, exact, node, newName, fingerprint, response.identity);
+      },
+      async removeEdge(input, selected) {
+        ready();
+        const exact = document(input, true);
+        if ((exact.lock !== undefined && exact.lock !== null) ||
+            (exact.channel_depth !== undefined && Object.keys(exact.channel_depth).length !== 0)) {
+          throw new Error("authoring edge removal does not accept resolution or channel-depth planes");
+        }
+        const edge = edgeName(selected, "authoring edge-removal edge");
+        edgeRemovalSource(exact.source, edge);
+        const fingerprint = await sourceDigest(exact.source);
+        const response = await transport.authoring("remove-edge", { document: exact, edge });
+        ready();
+        return validateEdgeRemoval(response.value, exact, edge, fingerprint, response.identity);
       },
       async applyEdits(input, editSet) {
         ready();

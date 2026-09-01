@@ -107,6 +107,34 @@ func (engine *AuthoringEngine) Rename(
 	return result, nil
 }
 
+func (engine *AuthoringEngine) RemoveEdge(
+	ctx context.Context, input RemoveDocumentEdgeRequest,
+) (RemoveDocumentEdgeResult, error) {
+	if err := checkAuthoringContext(ctx); err != nil {
+		return RemoveDocumentEdgeResult{}, err
+	}
+	if err := ValidateRemoveDocumentEdgeRequest(input); err != nil {
+		return RemoveDocumentEdgeResult{}, err
+	}
+	document, err := editor.AnalyzeWithOptions(
+		ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
+			Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
+		},
+	)
+	if err != nil {
+		return RemoveDocumentEdgeResult{}, fmt.Errorf("%w: analyze topology for edge removal: %v", ErrInvalid, err)
+	}
+	edits, err := document.RemoveEdgeID(input.Edge)
+	if err != nil {
+		return RemoveDocumentEdgeResult{}, fmt.Errorf("%w: remove topology edge: %v", ErrInvalid, err)
+	}
+	result := RemoveDocumentEdgeResult{Edge: input.Edge, Edits: edits}
+	if err := ValidateRemoveDocumentEdgeResult(input, result); err != nil {
+		return RemoveDocumentEdgeResult{}, fmt.Errorf("authoring edge removal produced invalid edits: %w", err)
+	}
+	return result, nil
+}
+
 func (engine *AuthoringEngine) Compile(
 	ctx context.Context, input AuthoringDocument,
 ) (CompileResult, error) {

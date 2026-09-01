@@ -382,6 +382,45 @@ try {
       view?.querySelector('[data-role=rendering]')?.textContent.includes('"renamed_runtime"');
   })()`));
 
+  const renamedAuthoringFingerprint = await evaluate(`document.querySelector(
+    '[data-view=authoring-canvas] button[data-action=select-edge][data-edge=optional]')?.dataset.fingerprint ?? ""`);
+  check("compiled canvas exposes the exact selectable edge",
+    /^sha256:[0-9a-f]{64}$/.test(renamedAuthoringFingerprint) &&
+      renamedAuthoringFingerprint !== originalAuthoringFingerprint);
+  const edgeRemovalStarted = performance.now();
+  await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-canvas]');
+    const selected = view.querySelector('button[data-action=select-edge][data-edge=optional]');
+    const remove = view.querySelector('button[data-action=remove-edge]');
+    if (!selected || !remove) throw new Error("compiled optional edge is not selectable");
+    selected.click();
+    remove.click();
+  })()`);
+  await waitFor("authoring canvas edge removal", () => evaluate(
+    `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "edge-removed"`));
+  const edgeRemovalMS = performance.now() - edgeRemovalStarted;
+  check("canvas edge removal installs exact canonical source and invalidates the old compile", await evaluate(`(() => {
+    const editor = document.querySelector('[data-view=authoring-editor]');
+    const canvas = document.querySelector('[data-view=authoring-canvas]');
+    const source = editor?.querySelector('textarea[name=authoring-source]')?.value ?? "";
+    return source.includes(":: renamed_runtime;") && !source.includes("edge optional =") &&
+      canvas?.querySelectorAll('button[data-action=select-edge]').length === 0;
+  })()`));
+
+  const edgeCompileStarted = performance.now();
+  await evaluate(
+    `document.querySelector('[data-view=authoring-editor] button[data-action=compile]').click()`);
+  await waitFor("edge-removed authoring compile", () => evaluate(
+    `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "compiled"`));
+  const edgeCompileMS = performance.now() - edgeCompileStarted;
+  check("edge-removed source recompiles at the next revision under a changed fingerprint", await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-canvas]');
+    const renamed = view?.querySelector('button[data-action=select-node][data-node=renamed_runtime]');
+    return renamed?.dataset.fingerprint && renamed.dataset.fingerprint !==
+      ${JSON.stringify(renamedAuthoringFingerprint)} && view.textContent.includes("· r3 ·") &&
+      !view.querySelector('button[data-action=select-edge][data-edge=optional]');
+  })()`));
+
   if (EFFECTS_ENABLED) {
     await evaluate(`(() => {
       const view = document.querySelector('[data-view=authoring-editor]');
@@ -506,11 +545,13 @@ try {
   check("authoring and static management stay inside bounded UI latency",
     staticMS < 5000 && analyzeMS < 10000 && formatMS < 5000 && compileMS < 10000 &&
     renameMS < 10000 && renamedCompileMS < 10000 && renderMS < 5000 &&
+    edgeRemovalMS < 10000 && edgeCompileMS < 10000 &&
     authorityLossMS < 2000 && authorityRestoreMS < 2000,
     `static=${staticMS.toFixed(1)}ms analyze=${analyzeMS.toFixed(1)}ms format=${formatMS.toFixed(1)}ms ` +
       `compile=${compileMS.toFixed(1)}ms rename=${renameMS.toFixed(1)}ms ` +
       `renamed-compile=${renamedCompileMS.toFixed(1)}ms ` +
-      `render=${renderMS.toFixed(1)}ms loss=${authorityLossMS.toFixed(1)}ms ` +
+      `render=${renderMS.toFixed(1)}ms edge-remove=${edgeRemovalMS.toFixed(1)}ms ` +
+      `edge-compile=${edgeCompileMS.toFixed(1)}ms loss=${authorityLossMS.toFixed(1)}ms ` +
       `restore=${authorityRestoreMS.toFixed(1)}ms`);
 
   const lossStarted = performance.now();

@@ -48,6 +48,7 @@ const workspaceListeners = new Set();
 const readCalls = [];
 const publicationCalls = [];
 const renameCalls = [];
+const edgeRemovalCalls = [];
 let formatCalls = 0;
 const workspace = Object.freeze({
   snapshot: () => structuredClone(workspaceSnapshot),
@@ -73,6 +74,23 @@ const workspace = Object.freeze({
         source: workspaceSnapshot.document.source.replaceAll(selected, replacement),
         revision: workspaceSnapshot.document.revision + 1 },
       phase: "renamed", sourceRead: null, analysis: null, compiled: null, rendering: null,
+      publication: null };
+    for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+    return structuredClone(workspaceSnapshot);
+  },
+  async removeEdge(expectedFingerprint, selected) {
+    const graph = workspaceSnapshot.compiled?.graph;
+    if (!graph || graph.fingerprint !== expectedFingerprint ||
+        !graph.edges?.some((edge) => edge.id === selected)) {
+      throw new Error("fake workspace received a stale edge selection");
+    }
+    edgeRemovalCalls.push({ expectedFingerprint, selected });
+    workspaceSnapshot = { ...workspaceSnapshot, epoch: workspaceSnapshot.epoch + 1,
+      document: { ...workspaceSnapshot.document,
+        source: workspaceSnapshot.document.source.split("\n")
+          .filter((line) => !line.includes("edge optional =")).join("\n"),
+        revision: workspaceSnapshot.document.revision + 1 },
+      phase: "edge-removed", sourceRead: null, analysis: null, compiled: null, rendering: null,
       publication: null };
     for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
     return structuredClone(workspaceSnapshot);
@@ -231,6 +249,7 @@ workspaceSnapshot = {
   document: { path: "ui-created.ortg", source: `graph fixture {
     test.Element :: zeta;
     test.Element :: alpha;
+    edge optional = alpha.out -> zeta.in;
 }
 `, revision: 1 },
   analysis: { diagnostics: { total: 1, items: [{
@@ -251,7 +270,8 @@ workspaceSnapshot = {
     nodes: [
       { id: "zeta", element: { name: "test.Element" } },
       { id: "alpha", element: { name: "test.Element" } },
-    ] } },
+    ], edges: [{ id: "optional", from: { node: "alpha", port: "out" },
+      to: { node: "zeta", port: "in" } }] } },
   rendering: { fingerprint: `sha256:${"c".repeat(64)}`, format: "mermaid", text: `<svg onload=alert(1)>` },
 };
 for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
@@ -279,6 +299,10 @@ if (JSON.stringify(nodeIDs) !== JSON.stringify(["alpha", "zeta"])) {
   throw new Error(`authoring canvas node controls are not deterministic: ${JSON.stringify(nodeIDs)}`);
 }
 const alpha = canvasNodes.children[0];
+const canvasEdges = find(canvas, (entry) => entry.dataset.role === "edges");
+if (JSON.stringify(canvasEdges.children.map((entry) => entry.dataset.edge)) !== JSON.stringify(["optional"])) {
+  throw new Error("authoring canvas edge controls are not deterministic");
+}
 const renameInput = find(canvas, (entry) => entry.name === "authoring-node-name");
 const renameNode = find(canvas, (entry) => entry.dataset.action === "rename-node");
 await alpha.dispatch("click");
@@ -290,6 +314,26 @@ if (renameCalls.length !== 1 || renameCalls[0].expectedFingerprint !== `sha256:$
     !workspaceSnapshot.document.source.includes(":: beta;") || workspaceSnapshot.compiled !== null ||
     !canvas.textContent.includes("Renamed alpha")) {
   throw new Error("authoring canvas did not initiate a fingerprint-bound graph node rename");
+}
+
+workspaceSnapshot = { ...workspaceSnapshot, phase: "compiled",
+  compiled: { graph: { id: "fixture", revision: 2, fingerprint: `sha256:${"d".repeat(64)}`,
+    nodes: [
+      { id: "zeta", element: { name: "test.Element" } },
+      { id: "beta", element: { name: "test.Element" } },
+    ], edges: [{ id: "optional", from: { node: "beta", port: "out" },
+      to: { node: "zeta", port: "in" } }] } } };
+for (const listener of workspaceListeners) listener(structuredClone(workspaceSnapshot));
+const optional = find(canvas, (entry) => entry.dataset.action === "select-edge");
+const removeEdge = find(canvas, (entry) => entry.dataset.action === "remove-edge");
+await optional.dispatch("click");
+await removeEdge.dispatch("click");
+if (edgeRemovalCalls.length !== 1 ||
+    edgeRemovalCalls[0].expectedFingerprint !== `sha256:${"d".repeat(64)}` ||
+    edgeRemovalCalls[0].selected !== "optional" || workspaceSnapshot.phase !== "edge-removed" ||
+    workspaceSnapshot.document.revision !== 3 || workspaceSnapshot.document.source.includes("edge optional") ||
+    workspaceSnapshot.compiled !== null || !canvas.textContent.includes("Removed optional")) {
+  throw new Error("authoring canvas did not initiate a fingerprint-bound edge removal");
 }
 
 for (const dispose of disposers.reverse()) await dispose();

@@ -168,6 +168,82 @@ func TestAuthoringNodeRenameIsExactGraphWideAndIndependentlyValidated(t *testing
 	}
 }
 
+func TestAuthoringEdgeRemovalIsExactAndIndependentlyValidated(t *testing.T) {
+	engine, err := NewAuthoringEngine(AuthoringOptions{Catalog: managedElementCatalog(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := strings.Replace(managedSource, "    source.out -> sink.in;",
+		"    // removable\n    edge optional = source.out -> sink.in;", 1)
+	document := AuthoringDocument{Path: "agent.ortg", Source: source, Revision: 7}
+	request := RemoveDocumentEdgeRequest{Document: document, Edge: "optional"}
+	result, err := engine.RemoveEdge(context.Background(), request)
+	if err != nil || result.Edge != "optional" || len(result.Edits.Edits) != 1 {
+		t.Fatalf("edge removal result = %+v, %v", result, err)
+	}
+	if err := ValidateRemoveDocumentEdgeResult(request, result); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := editor.ApplyEdits([]byte(source), result.Edits)
+	want := `graph managed {
+    test.ManagedSource :: source;
+    test.ManagedSink :: sink;
+}
+`
+	if err != nil || string(removed) != want {
+		t.Fatalf("edge-removed source = %q, %v; want %q", removed, err, want)
+	}
+
+	unnamedRequest := RemoveDocumentEdgeRequest{
+		Document: AuthoringDocument{Path: "agent.ortg", Source: managedSource},
+		Edge:     "source.out->sink.in",
+	}
+	if unnamed, err := engine.RemoveEdge(context.Background(), unnamedRequest); err != nil ||
+		ValidateRemoveDocumentEdgeResult(unnamedRequest, unnamed) != nil {
+		t.Fatalf("unnamed edge removal = %+v, %v", unnamed, err)
+	}
+	for _, invalid := range []RemoveDocumentEdgeRequest{
+		{Document: document, Edge: "missing"},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source + "\n"}, Edge: "optional"},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source,
+			Lock: &resolve.Lock{}}, Edge: "optional"},
+		{Document: AuthoringDocument{Path: document.Path, Source: document.Source,
+			ChannelDepth: map[string]int{"optional": 1}}, Edge: "optional"},
+	} {
+		if _, err := engine.RemoveEdge(context.Background(), invalid); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid edge removal %+v = %v", invalid, err)
+		}
+	}
+
+	clone := func(source RemoveDocumentEdgeResult) RemoveDocumentEdgeResult {
+		encoded, err := json.Marshal(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var copied RemoveDocumentEdgeResult
+		if err := json.Unmarshal(encoded, &copied); err != nil {
+			t.Fatal(err)
+		}
+		return copied
+	}
+	forged := []RemoveDocumentEdgeResult{clone(result), clone(result), clone(result), clone(result)}
+	forged[0].Edge = "other"
+	forged[1].Edits.Edits[0].NewText += "\n"
+	forged[2].Edits.Edits[0].Span.End.Column++
+	forged[3].Edits.Edits = append(forged[3].Edits.Edits, forged[3].Edits.Edits[0])
+	for _, value := range forged {
+		if err := ValidateRemoveDocumentEdgeResult(request, value); !errors.Is(err, ErrConflict) {
+			t.Fatalf("forged edge removal %+v = %v", value, err)
+		}
+	}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := engine.RemoveEdge(canceled, request); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("canceled edge removal = %v", err)
+	}
+}
+
 func TestAuthoringRecoveryFormattingAndResolvedPropertiesNeverCrossCompileBoundary(t *testing.T) {
 	base := managedElementCatalog(t)
 	configured := resolve.NewCatalog()

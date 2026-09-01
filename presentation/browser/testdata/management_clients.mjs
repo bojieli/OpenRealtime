@@ -457,6 +457,86 @@ if (requests.length !== beforeInvalidRename) {
   throw new Error("invalid graph-wide rename reached the network");
 }
 
+const edgeSource = `graph fixture_edge {
+    test.Element :: source;
+    test.Element :: sink;
+    // removable café edge
+    edge optional = source.out -> sink.out;
+}
+`;
+const edgeRemovedSource = `graph fixture_edge {
+    test.Element :: source;
+    test.Element :: sink;
+}
+`;
+const edgeDigest = await sha256(bytes(edgeSource));
+const edgeResult = {
+  edge: "optional",
+  edits: { path: "edge.ortg", source_digest: edgeDigest, edits: [{
+    span: { start: { offset: 0, line: 1, column: 1 }, end: endPosition(edgeSource) },
+    old_text: edgeSource, new_text: edgeRemovedSource,
+  }] },
+};
+handlers.push(() => response(edgeResult, `authoring:edge.remove:${edgeDigest}`));
+const exactEdgeRemoval = await editing.removeEdge(
+  { path: "edge.ortg", source: edgeSource, revision: 4 }, "optional",
+);
+const edgeFetch = requests.at(-1);
+const edgeWire = JSON.parse(edgeFetch.options.body);
+if (!edgeFetch.url.endsWith("/authoring/remove-edge") ||
+    edgeFetch.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
+    edgeWire.edge !== "optional" || edgeWire.document.source !== edgeSource ||
+    edgeWire.document.revision !== 4 || exactEdgeRemoval.edits.edits.length !== 1) {
+  throw new Error("edge removal did not preserve its exact source and authority boundary");
+}
+const locallyRemovedEdge = await editing.applyEdits(
+  { path: "edge.ortg", source: edgeSource, revision: 4 }, exactEdgeRemoval.edits,
+);
+if (locallyRemovedEdge !== edgeRemovedSource) {
+  throw new Error("edge removal did not apply the exact canonical source mutation locally");
+}
+
+const forgedEdgeResults = [];
+const wrongEdgeIdentity = structuredClone(edgeResult);
+wrongEdgeIdentity.edge = "other";
+forgedEdgeResults.push([wrongEdgeIdentity, `authoring:edge.remove:${edgeDigest}`]);
+const wrongEdgeSource = structuredClone(edgeResult);
+wrongEdgeSource.edits.edits[0].new_text += "\n";
+forgedEdgeResults.push([wrongEdgeSource, `authoring:edge.remove:${edgeDigest}`]);
+const missingEdgeEdit = structuredClone(edgeResult);
+missingEdgeEdit.edits.edits = [];
+forgedEdgeResults.push([missingEdgeEdit, `authoring:edge.remove:${edgeDigest}`]);
+const forgedEdgePosition = structuredClone(edgeResult);
+forgedEdgePosition.edits.edits[0].span.end.column++;
+forgedEdgeResults.push([forgedEdgePosition, `authoring:edge.remove:${edgeDigest}`]);
+forgedEdgeResults.push([edgeResult, `authoring:edge.remove:${otherDigest}`]);
+for (const [forged, evidence] of forgedEdgeResults) {
+  handlers.push(() => response(forged, evidence));
+  await editing.removeEdge(
+    { path: "edge.ortg", source: edgeSource, revision: 4 }, "optional",
+  ).then(
+    () => { throw new Error("forged edge removal was accepted"); },
+    () => {},
+  );
+}
+const beforeInvalidEdge = requests.length;
+for (const invalid of [
+  [{ path: "edge.ortg", source: edgeSource, revision: 4 }, "missing"],
+  [{ path: "edge.ortg", source: `${edgeSource}\n`, revision: 4 }, "optional"],
+  [{ path: "edge.ortg", source: edgeSource, revision: 4,
+    lock: { format_version: 1, elements: [] } }, "optional"],
+  [{ path: "edge.ortg", source: edgeSource, revision: 4,
+    channel_depth: { optional: 1 } }, "optional"],
+]) {
+  await editing.removeEdge(...invalid).then(
+    () => { throw new Error("invalid edge removal was accepted"); },
+    () => {},
+  );
+}
+if (requests.length !== beforeInvalidEdge) {
+  throw new Error("invalid edge removal reached the network");
+}
+
 const renameGraphDigest = `sha256:${"9".repeat(64)}`;
 const renamedGraphDigest = `sha256:${"8".repeat(64)}`;
 const renameGraph = structuredClone(graph);
@@ -523,6 +603,80 @@ if (!String(staleRename).includes("changed during request") ||
     replacementSnapshot.document.source !== "graph replacement {\n}\n" ||
     replacementSnapshot.phase !== "idle") {
   throw new Error("workspace CAS did not preserve a newer document against a late rename");
+}
+
+const edgeGraphDigest = `sha256:${"7".repeat(64)}`;
+const edgeRemovedGraphDigest = `sha256:${"6".repeat(64)}`;
+const edgeGraph = structuredClone(graph);
+edgeGraph.id = "fixture_edge";
+edgeGraph.revision = 4;
+edgeGraph.fingerprint = edgeGraphDigest;
+edgeGraph.nodes[0].id = "source";
+edgeGraph.nodes.push({ ...structuredClone(edgeGraph.nodes[0]), id: "sink" });
+edgeGraph.edges = [{ id: "optional", from: { node: "source", port: "out" },
+  to: { node: "sink", port: "out" } }];
+const edgeCompiled = { graph: edgeGraph, lock: { format_version: 1, elements: [{
+  reference: "test.Element", identity: { name: "test.Element", revision: 1, digest: elementDigest },
+}] } };
+workspace.setDocument("edge.ortg", edgeSource, 4);
+handlers.push(() => response(edgeCompiled, `authoring:compile:${edgeGraphDigest}`));
+await workspace.compile();
+const edgeEpoch = workspace.snapshot().epoch;
+handlers.push(() => response(edgeResult, `authoring:edge.remove:${edgeDigest}`));
+await workspace.removeEdge(edgeGraphDigest, "optional");
+const edgeRemovedSnapshot = workspace.snapshot();
+if (edgeRemovedSnapshot.phase !== "edge-removed" ||
+    edgeRemovedSnapshot.document.source !== edgeRemovedSource ||
+    edgeRemovedSnapshot.document.revision !== 5 || edgeRemovedSnapshot.epoch !== edgeEpoch + 1 ||
+    edgeRemovedSnapshot.sourceRead !== null || edgeRemovedSnapshot.analysis !== null ||
+    edgeRemovedSnapshot.compiled !== null || edgeRemovedSnapshot.rendering !== null ||
+    edgeRemovedSnapshot.publication !== null) {
+  throw new Error("authoring workspace did not atomically install and invalidate an edge removal");
+}
+const edgeRemovedGraph = structuredClone(edgeGraph);
+edgeRemovedGraph.revision = 5;
+edgeRemovedGraph.fingerprint = edgeRemovedGraphDigest;
+edgeRemovedGraph.edges = [];
+handlers.push(() => response({ ...edgeCompiled, graph: edgeRemovedGraph },
+  `authoring:compile:${edgeRemovedGraphDigest}`));
+await workspace.compile();
+if (workspace.snapshot().compiled.graph.edges.length !== 0 ||
+    workspace.snapshot().compiled.graph.fingerprint !== edgeRemovedGraphDigest) {
+  throw new Error("edge-removed workspace source did not compile under its incremented revision");
+}
+const beforeStaleEdgeSelection = requests.length;
+await Promise.resolve().then(() => workspace.removeEdge(edgeRemovedGraphDigest, "optional")).then(
+  () => { throw new Error("stale edge selection was accepted"); },
+  () => {},
+);
+if (requests.length !== beforeStaleEdgeSelection) {
+  throw new Error("stale edge selection reached the network");
+}
+
+workspace.setDocument("edge.ortg", edgeSource, 4);
+handlers.push(() => response(edgeCompiled, `authoring:compile:${edgeGraphDigest}`));
+await workspace.compile();
+let releaseEdgeRemoval;
+handlers.push(() => new Promise((resolve) => {
+  releaseEdgeRemoval = () => resolve(response(edgeResult, `authoring:edge.remove:${edgeDigest}`));
+}));
+const pendingEdgeRemoval = workspace.removeEdge(edgeGraphDigest, "optional").then(
+  () => { throw new Error("edge removal completed after the workspace document changed"); },
+  (error) => error,
+);
+for (let attempt = 0; attempt < 20 && !releaseEdgeRemoval; attempt++) {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+if (!releaseEdgeRemoval) throw new Error("deferred edge removal never reached transport");
+workspace.setDocument("replacement.ortg", "graph replacement {\n}\n", 1);
+releaseEdgeRemoval();
+const staleEdgeRemoval = await pendingEdgeRemoval;
+const replacementAfterEdge = workspace.snapshot();
+if (!String(staleEdgeRemoval).includes("changed during request") ||
+    replacementAfterEdge.document.path !== "replacement.ortg" ||
+    replacementAfterEdge.document.source !== "graph replacement {\n}\n" ||
+    replacementAfterEdge.phase !== "idle") {
+  throw new Error("workspace CAS did not preserve a newer document against a late edge removal");
 }
 
 const compiled = { graph, lock: { format_version: 1, elements: [{ reference: "test.Element",
@@ -716,6 +870,12 @@ await editing.applyEdits(
   { path: "fixture.ortg", source: noncanonicalSource, revision: 1 }, formatterAnalysis.formatting,
 ).then(
   () => { throw new Error("disposed authoring formatter remained usable"); },
+  () => {},
+);
+await editing.removeEdge(
+  { path: "edge.ortg", source: edgeSource, revision: 4 }, "optional",
+).then(
+  () => { throw new Error("disposed authoring edge remover remained usable"); },
   () => {},
 );
 await Promise.resolve().then(() => workspace.format()).then(

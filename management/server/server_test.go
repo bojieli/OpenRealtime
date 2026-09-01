@@ -36,7 +36,8 @@ func (authorizer testAuthorizer) Authorize(_ context.Context, request management
 			request.Resource == "sess-test"
 	case "author-token":
 		allowed = request.Resource == "authoring" && (request.Operation == management.AnalyzeDocument ||
-			request.Operation == management.RenameDocument || request.Operation == management.CompileDocument ||
+			request.Operation == management.RenameDocument || request.Operation == management.RemoveDocumentEdge ||
+			request.Operation == management.CompileDocument ||
 			request.Operation == management.RenderGraph)
 	case "operator-token":
 		allowed = request.Operation == management.ApplyCandidate && request.Resource == "sess-test"
@@ -127,6 +128,18 @@ func (authorizer *revocableRenameAuthorizer) Authorize(
 	return management.ErrUnauthorized
 }
 
+type revocableEdgeAuthorizer struct{ allowed atomic.Bool }
+
+func (authorizer *revocableEdgeAuthorizer) Authorize(
+	_ context.Context, request management.AuthorizationRequest,
+) error {
+	if authorizer.allowed.Load() && request.Capability == "scoped-token" &&
+		request.Operation == management.RemoveDocumentEdge && request.Resource == "authoring" {
+		return nil
+	}
+	return management.ErrUnauthorized
+}
+
 type blockingSessions struct {
 	testSessions
 	entered chan struct{}
@@ -168,10 +181,14 @@ func (sessions *blockingSessions) Snapshot(ctx context.Context, session string) 
 type testAuthoring struct {
 	analyzeCalls      atomic.Int64
 	renameCalls       atomic.Int64
+	removeEdgeCalls   atomic.Int64
 	forgeResult       bool
 	forgeRenameResult bool
+	forgeRemoveResult bool
 	renameEntered     chan struct{}
 	renameRelease     chan struct{}
+	removeEdgeEntered chan struct{}
+	removeEdgeRelease chan struct{}
 }
 
 func (authoring *testAuthoring) Rename(
@@ -204,6 +221,36 @@ func (authoring *testAuthoring) Rename(
 	return management.RenameDocumentResult{
 		Node: input.Node, NewName: input.NewName, Edits: edits,
 	}, nil
+}
+
+func (authoring *testAuthoring) RemoveEdge(
+	ctx context.Context, input management.RemoveDocumentEdgeRequest,
+) (management.RemoveDocumentEdgeResult, error) {
+	authoring.removeEdgeCalls.Add(1)
+	if authoring.removeEdgeEntered != nil {
+		select {
+		case authoring.removeEdgeEntered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-authoring.removeEdgeRelease:
+		case <-ctx.Done():
+			return management.RemoveDocumentEdgeResult{}, ctx.Err()
+		}
+	}
+	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+		resolve.NewCatalog(), editor.DefaultLimits())
+	if err != nil {
+		return management.RemoveDocumentEdgeResult{}, err
+	}
+	edits, err := document.RemoveEdgeID(input.Edge)
+	if err != nil {
+		return management.RemoveDocumentEdgeResult{}, err
+	}
+	if authoring.forgeRemoveResult && len(edits.Edits) == 1 {
+		edits.Edits[0].NewText += "\n"
+	}
+	return management.RemoveDocumentEdgeResult{Edge: input.Edge, Edits: edits}, nil
 }
 
 func (authoring *testAuthoring) Analyze(_ context.Context, document management.AuthoringDocument) (management.AnalysisResult, error) {
@@ -387,6 +434,35 @@ func TestManagementBundleRoutesAreScopedAuthorizedAndStrict(t *testing.T) {
 	if response.Code != http.StatusNotFound || authoring.renameCalls.Load() != 1 {
 		t.Fatalf("wrong-scope rename = %d calls=%d body=%s",
 			response.Code, authoring.renameCalls.Load(), response.Body.String())
+	}
+	removeInput := management.RemoveDocumentEdgeRequest{
+		Document: renameInput.Document, Edge: "source.out->source.in",
+	}
+	removeBody, err := json.Marshal(removeInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/remove-edge", "author-token", removeBody)
+	if response.Code != http.StatusOK || authoring.removeEdgeCalls.Load() != 1 ||
+		!strings.Contains(response.Body.String(), `"edge":"source.out->source.in"`) ||
+		!strings.Contains(response.Body.String(), `"edits"`) {
+		t.Fatalf("valid edge removal = %d calls=%d body=%s",
+			response.Code, authoring.removeEdgeCalls.Load(), response.Body.String())
+	}
+	duplicateRemove := []byte(`{"document":{"path":"agent.ortg","source":"graph x {\n}\n"},` +
+		`"edge":"first","edge":"second"}`)
+	response = request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/remove-edge", "author-token", duplicateRemove)
+	if response.Code != http.StatusBadRequest || authoring.removeEdgeCalls.Load() != 1 {
+		t.Fatalf("duplicate-key edge removal = %d calls=%d body=%s",
+			response.Code, authoring.removeEdgeCalls.Load(), response.Body.String())
+	}
+	response = request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/remove-edge", "session-token", removeBody)
+	if response.Code != http.StatusNotFound || authoring.removeEdgeCalls.Load() != 1 {
+		t.Fatalf("wrong-scope edge removal = %d calls=%d body=%s",
+			response.Code, authoring.removeEdgeCalls.Load(), response.Body.String())
 	}
 
 	reconcileBody, err := json.Marshal(management.ReconciliationRequest{
@@ -611,6 +687,44 @@ func TestAuthoringRenameRouteRejectsProviderEditsNotBoundToEveryReference(t *tes
 	}
 }
 
+func TestAuthoringEdgeRemovalRouteRejectsProviderMutationBeyondSelectedEdge(t *testing.T) {
+	authoring := &testAuthoring{forgeRemoveResult: true}
+	bundle, err := NewBundle(BundleConfig{Authorizer: testAuthorizer{}, Authoring: authoring})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := bundle.Mount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mounted.Close(ctx); err != nil {
+			t.Errorf("close management bundle: %v", err)
+		}
+	})
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(management.RemoveDocumentEdgeRequest{
+		Document: management.AuthoringDocument{
+			Path: "agent.ortg", Source: "graph x {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Edge: "source.out->source.in",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := request(t, handler, http.MethodPost,
+		management.APIPrefix+"/authoring/remove-edge", "author-token", body)
+	if response.Code != http.StatusConflict || authoring.removeEdgeCalls.Load() != 1 {
+		t.Fatalf("forged edge removal = %d calls=%d body=%s",
+			response.Code, authoring.removeEdgeCalls.Load(), response.Body.String())
+	}
+}
+
 func TestAuthoringRenameResponseRechecksCapabilityAfterProviderCompletes(t *testing.T) {
 	authorizer := &revocableRenameAuthorizer{}
 	authorizer.allowed.Store(true)
@@ -670,6 +784,68 @@ func TestAuthoringRenameResponseRechecksCapabilityAfterProviderCompletes(t *test
 	if response.Code != http.StatusNotFound || authoring.renameCalls.Load() != 1 {
 		t.Fatalf("revoked rename disclosed a completed edit set: %d calls=%d body=%s",
 			response.Code, authoring.renameCalls.Load(), response.Body.String())
+	}
+}
+
+func TestAuthoringEdgeRemovalResponseRechecksCapabilityAfterProviderCompletes(t *testing.T) {
+	authorizer := &revocableEdgeAuthorizer{}
+	authorizer.allowed.Store(true)
+	authoring := &testAuthoring{
+		removeEdgeEntered: make(chan struct{}, 1), removeEdgeRelease: make(chan struct{}),
+	}
+	bundle, err := NewBundle(BundleConfig{Authorizer: authorizer, Authoring: authoring})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := bundle.Mount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := mounted.Close(ctx); err != nil {
+			t.Errorf("close management bundle: %v", err)
+		}
+	})
+	handler, err := HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(management.RemoveDocumentEdgeRequest{
+		Document: management.AuthoringDocument{
+			Path: "agent.ortg", Source: "graph x {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+		},
+		Edge: "source.out->source.in",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpRequest := httptest.NewRequest(http.MethodPost,
+		management.APIPrefix+"/authoring/remove-edge", bytes.NewReader(body))
+	httpRequest.Header.Set("Content-Type", "application/json")
+	httpRequest.Header.Set(management.CapabilityHeader, "scoped-token")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, httpRequest)
+		close(done)
+	}()
+	select {
+	case <-authoring.removeEdgeEntered:
+	case <-time.After(time.Second):
+		t.Fatal("edge-removal provider did not begin after initial authorization")
+	}
+	authorizer.allowed.Store(false)
+	close(authoring.removeEdgeRelease)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("revoked edge-removal request did not finish")
+	}
+	if response.Code != http.StatusNotFound || authoring.removeEdgeCalls.Load() != 1 {
+		t.Fatalf("revoked edge removal disclosed a completed edit set: %d calls=%d body=%s",
+			response.Code, authoring.removeEdgeCalls.Load(), response.Body.String())
 	}
 }
 

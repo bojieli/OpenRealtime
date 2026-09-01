@@ -231,9 +231,10 @@ func Start(t testing.TB, config Config) Stack {
 	if config.ManagementAuthorizer != nil {
 		staticGraph = graphServed.Graph()
 		elementCatalog := resolve.NewCatalog()
-		descriptor := compat.Descriptor()
-		if err := elementCatalog.Register(descriptor); err != nil {
-			t.Fatalf("register test management element: %v", err)
+		for _, descriptor := range compatibilityAuthoringDescriptors() {
+			if err := elementCatalog.Register(descriptor); err != nil {
+				t.Fatalf("register test management element: %v", err)
+			}
 		}
 		plugins := plugin.NewCatalog()
 		staticCatalog, err := management.NewCatalog(elementCatalog, plugins)
@@ -312,7 +313,32 @@ func compatibilityAuthoringSource(name string) string {
 			Endpoint: syntax.Endpoint{Node: "runtime", Port: port.Name},
 		}})
 	}
+	statements = append(statements,
+		syntax.Statement{Node: &syntax.Node{Element: "test.AuthoringProducer", Name: "producer"}},
+		syntax.Statement{Node: &syntax.Node{Element: "test.AuthoringSink", Name: "sink"}},
+		syntax.Statement{Edge: &syntax.Edge{
+			Name: "optional", From: syntax.Endpoint{Node: "producer", Port: "out"},
+			To: syntax.Endpoint{Node: "sink", Port: "in"}, Delivery: syntax.Lossless,
+		}},
+	)
 	return syntax.Format(syntax.File{Graph: syntax.Graph{Name: name, Statements: statements}})
+}
+
+func compatibilityAuthoringDescriptors() []element.Descriptor {
+	value := element.Event(element.Named("test.AuthoringValue"))
+	return []element.Descriptor{
+		compat.Descriptor(),
+		{
+			FormatVersion: element.DescriptorFormatVersion, Name: "test.AuthoringProducer", Revision: 1,
+			Ports:    []element.Port{{Name: "out", Direction: element.Output, Type: value, Cardinality: element.One}},
+			Reaction: element.Reaction{Outcomes: []string{"out"}},
+		},
+		{
+			FormatVersion: element.DescriptorFormatVersion, Name: "test.AuthoringSink", Revision: 1,
+			Ports:    []element.Port{{Name: "in", Direction: element.Input, Type: value, Cardinality: element.One}},
+			Reaction: element.Reaction{Triggers: []string{"in"}},
+		},
+	}
 }
 
 // --- the scripted stand-ins -------------------------------------------------

@@ -26,19 +26,20 @@ var (
 type Operation string
 
 const (
-	ReadGraph       Operation = "graph.read"
-	ReadDescriptor  Operation = "descriptor.read"
-	ReadSchema      Operation = "schema.read"
-	ReadSession     Operation = "session.read"
-	ReadTrace       Operation = "trace.read"
-	AnalyzeDocument Operation = "authoring.analyze"
-	RenameDocument  Operation = "authoring.rename"
-	CompileDocument Operation = "authoring.compile"
-	RenderGraph     Operation = "authoring.render"
-	ReadSource      Operation = "authoring.source.read"
-	CreateSource    Operation = "authoring.source.create"
-	UpdateSource    Operation = "authoring.source.update"
-	ApplyCandidate  Operation = "reconciliation.apply"
+	ReadGraph          Operation = "graph.read"
+	ReadDescriptor     Operation = "descriptor.read"
+	ReadSchema         Operation = "schema.read"
+	ReadSession        Operation = "session.read"
+	ReadTrace          Operation = "trace.read"
+	AnalyzeDocument    Operation = "authoring.analyze"
+	RenameDocument     Operation = "authoring.rename"
+	RemoveDocumentEdge Operation = "authoring.edge.remove"
+	CompileDocument    Operation = "authoring.compile"
+	RenderGraph        Operation = "authoring.render"
+	ReadSource         Operation = "authoring.source.read"
+	CreateSource       Operation = "authoring.source.create"
+	UpdateSource       Operation = "authoring.source.update"
+	ApplyCandidate     Operation = "reconciliation.apply"
 )
 
 // AuthorizationRequest contains no request payload. Resource is a canonical
@@ -127,6 +128,19 @@ type RenameDocumentResult struct {
 	Edits   editor.EditSet `json:"edits"`
 }
 
+// RemoveDocumentEdgeRequest identifies one edge in an exact canonical .ortg
+// document. Edge is the same stable identity emitted into compiled Graph IR.
+// The operation returns edits only and performs no I/O.
+type RemoveDocumentEdgeRequest struct {
+	Document AuthoringDocument `json:"document"`
+	Edge     string            `json:"edge"`
+}
+
+type RemoveDocumentEdgeResult struct {
+	Edge  string         `json:"edge"`
+	Edits editor.EditSet `json:"edits"`
+}
+
 type RenderFormat string
 
 const (
@@ -150,6 +164,7 @@ type RenderResult struct {
 type Authoring interface {
 	Analyze(context.Context, AuthoringDocument) (AnalysisResult, error)
 	Rename(context.Context, RenameDocumentRequest) (RenameDocumentResult, error)
+	RemoveEdge(context.Context, RemoveDocumentEdgeRequest) (RemoveDocumentEdgeResult, error)
 	Compile(context.Context, AuthoringDocument) (CompileResult, error)
 	Render(context.Context, RenderRequest) (RenderResult, error)
 }
