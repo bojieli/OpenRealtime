@@ -51,6 +51,20 @@ const PinnedRevision = "c3398666e6559e3a063da3fc04b5acf7f941464e"
 // dividing by whatever ran.
 const TaskCount = 278
 
+const (
+	// DefaultSeed is the upstream tau2 campaign seed. It is passed explicitly;
+	// relying on tau2's current default would let an upstream CLI change alter
+	// task trials and sampled voices without changing this runner.
+	DefaultSeed = 300
+	// DefaultMaxConcurrency preserves tau2's released in-process scheduler while
+	// making its load on the measured Realtime endpoint part of the contract.
+	DefaultMaxConcurrency = 3
+	// DefaultWorkers keeps one checkpoint owner and no controller subprocesses.
+	DefaultWorkers = 0
+
+	maximumRunConcurrency = 64
+)
+
 // Condition is one speech condition.
 type Condition string
 
@@ -113,6 +127,14 @@ type Config struct {
 	// Trials repeats each task. The published metric is pass^1, but a single
 	// trial cannot separate a flaky system from a bad one.
 	Trials int
+	// Seed is tau2's campaign seed. Tau2 deterministically derives one seed per
+	// trial from it, while PYTHONHASHSEED fixes its per-task voice derivation.
+	Seed int
+	// MaxConcurrency is the number of simulations held in flight by the pinned
+	// in-process scheduler. Workers is pinned separately because N workers
+	// multiply the effective concurrency by this value.
+	MaxConcurrency int
+	Workers        int
 	// TaskIDs restricts the run to named tasks, for reproducing one row. A cell
 	// that uses it is never complete.
 	TaskIDs []string
@@ -210,6 +232,12 @@ func (config *Config) applyDefaults() {
 	}
 	if config.Trials <= 0 {
 		config.Trials = 1
+	}
+	if config.Seed == 0 {
+		config.Seed = DefaultSeed
+	}
+	if config.MaxConcurrency == 0 {
+		config.MaxConcurrency = DefaultMaxConcurrency
 	}
 	if config.Cadence <= 0 {
 		config.Cadence = 0.2
@@ -351,6 +379,15 @@ func (config *Config) Verify(ctx context.Context) error {
 		}
 	} else if config.Cell.Execution.Required() && config.TaskAttestor == nil {
 		return errors.New("tau-Voice attested cell requires independently captured execution evidence")
+	}
+	if config.Seed < 0 {
+		return errors.New("tau-Voice seed cannot be negative")
+	}
+	if config.MaxConcurrency < 1 || config.MaxConcurrency > maximumRunConcurrency {
+		return fmt.Errorf("tau-Voice max concurrency must be 1..%d", maximumRunConcurrency)
+	}
+	if config.Workers < 0 || config.Workers > maximumRunConcurrency {
+		return fmt.Errorf("tau-Voice workers must be 0..%d", maximumRunConcurrency)
 	}
 	if strings.TrimSpace(config.Tau2Dir) == "" {
 		return errors.New("a prepared tau2-bench checkout is required; run scripts/prepare-tau-voice.sh")
@@ -520,6 +557,9 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 		"-m", "tau2.cli", "run",
 		"--domain", domain,
 		"--num-trials", fmt.Sprint(config.Trials),
+		"--seed", fmt.Sprint(config.Seed),
+		"--max-concurrency", fmt.Sprint(config.MaxConcurrency),
+		"--workers", fmt.Sprint(config.Workers),
 		"--save-to", runName,
 		// A benchmark cell takes hours and tau2 checkpoints it specifically so
 		// an interrupted run can continue. The subprocess has no interactive
@@ -569,23 +609,26 @@ func (config *Config) runDomain(ctx context.Context, domain, runName string) ([]
 	}
 	command := exec.CommandContext(ctx, config.Python, arguments...)
 	command.Dir = config.Tau2Dir
-	command.Env = append(os.Environ(),
-		"PYTHONPATH="+filepath.Join(config.Tau2Dir, "src"),
+	command.Env = replaceEnvironment(os.Environ(), map[string]string{
+		"PYTHONPATH":              filepath.Join(config.Tau2Dir, "src"),
+		"PYTHONHASHSEED":          "0",
+		"PYTHONDONTWRITEBYTECODE": "1",
+		"PYTHONNOUSERSITE":        "1",
 		// tau2's adapter insists on a credential even for an endpoint that
 		// accepts anything, so the runner supplies the one the endpoint
 		// actually wants rather than leaving it to the operator's shell.
-		"OPENAI_REALTIME_API_KEY="+token,
-		"OPENAI_REALTIME_VOICE="+config.AgentVoice,
-		"OPENAI_REALTIME_TRANSCRIPTION_MODEL="+config.AgentTranscriptionModel,
+		"OPENAI_REALTIME_API_KEY":             token,
+		"OPENAI_REALTIME_VOICE":               config.AgentVoice,
+		"OPENAI_REALTIME_TRANSCRIPTION_MODEL": config.AgentTranscriptionModel,
 		// Regular speech asks a caller-side LLM whether to interrupt or
 		// backchannel. Upstream defaults those auxiliary calls to hosted
 		// gpt-4.1 even when --user-llm points at a local endpoint, producing a
 		// mixed and often unrunnable condition. Keep every caller decision on
 		// the caller model the operator selected.
-		"TAU2_VOICE_USER_DECISION_MODEL="+config.userModelName(),
-		"TAU2_VOICE_USER_DECISION_ARGS="+config.userModelArgs(),
-		"OPENAI_API_KEY="+os.Getenv("OPENAI_API_KEY"),
-	)
+		"TAU2_VOICE_USER_DECISION_MODEL": config.userModelName(),
+		"TAU2_VOICE_USER_DECISION_ARGS":  config.userModelArgs(),
+		"OPENAI_API_KEY":                 os.Getenv("OPENAI_API_KEY"),
+	})
 	// tau2 writes its progress and its summary to stdout and its logging to
 	// stderr, so both are followed. Forwarding them is the difference between
 	// a runner that appears to have hung for two hours and one that is visibly

@@ -1594,6 +1594,9 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		runPrefix       string
 		out             string
 		trials          int
+		seed            int
+		maxConcurrency  int
+		workers         int
 		limit           int
 		cadence         float64
 		cellName        string
@@ -1634,6 +1637,11 @@ func runTauVoice(arguments []string, output io.Writer) error {
 	flags.StringVar(&runPrefix, "run-prefix", "openrealtime", "names the tau2 runs, and resumes one that exists")
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
 	flags.IntVar(&trials, "trials", 1, "repeat each task this many times")
+	flags.IntVar(&seed, "seed", tauvoice.DefaultSeed, "fixed upstream campaign seed")
+	flags.IntVar(&maxConcurrency, "max-concurrency", tauvoice.DefaultMaxConcurrency,
+		"maximum in-flight simulations per worker")
+	flags.IntVar(&workers, "workers", tauvoice.DefaultWorkers,
+		"upstream worker processes; zero uses the pinned in-process scheduler")
 	flags.IntVar(&limit, "limit", 0, "stop after this many tasks per domain")
 	flags.Float64Var(&cadence, "cadence", 0.2, "trigger cadence in seconds, matching factor F4")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
@@ -1679,7 +1687,8 @@ func runTauVoice(arguments []string, output io.Writer) error {
 
 	config := tauvoice.Config{
 		Tau2Dir: tau2Dir, Endpoint: endpoint, Model: model, Domain: domain,
-		Condition: speech, Trials: trials, Limit: limit, UserModel: userModel,
+		Condition: speech, Trials: trials, Seed: seed,
+		MaxConcurrency: maxConcurrency, Workers: workers, Limit: limit, UserModel: userModel,
 		UserModelURL: userURL, UserModelThinking: thinking, HallucinationRetries: halluRetry,
 		Cadence: cadence, Timeout: timeout, Cell: cell, Python: python, TokenEnv: tokenEnv,
 		ExecutionEvidence: executionEvidence,

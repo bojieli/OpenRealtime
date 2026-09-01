@@ -105,6 +105,27 @@ func TestVerifyRefusesAnUnpreparedEnvironment(t *testing.T) {
 			wants:  "prepare-tau-voice.sh",
 		},
 		{
+			name: "negative seed",
+			config: tauvoice.Config{
+				Endpoint: "ws://127.0.0.1:8765/v1/realtime", Seed: -1,
+			},
+			wants: "seed cannot be negative",
+		},
+		{
+			name: "invalid concurrency",
+			config: tauvoice.Config{
+				Endpoint: "ws://127.0.0.1:8765/v1/realtime", MaxConcurrency: 65,
+			},
+			wants: "max concurrency must be 1..64",
+		},
+		{
+			name: "invalid workers",
+			config: tauvoice.Config{
+				Endpoint: "ws://127.0.0.1:8765/v1/realtime", Workers: -1,
+			},
+			wants: "workers must be 0..64",
+		},
+		{
 			name:   "no endpoint",
 			config: tauvoice.Config{Tau2Dir: t.TempDir()},
 			wants:  "endpoint is required",
@@ -291,6 +312,7 @@ func TestANonZeroExitWithNoResultsIsAFailure(t *testing.T) {
 }
 
 func TestTheRunnerNamesTheMeasuredLocalVoiceAndTranscriber(t *testing.T) {
+	t.Setenv("PYTHONHASHSEED", "random")
 	checkout := t.TempDir()
 	saveTo := filepath.Join(checkout, "data", "simulations", "cell-airline-control")
 	if err := os.MkdirAll(saveTo, 0o755); err != nil {
@@ -303,7 +325,11 @@ func TestTheRunnerNamesTheMeasuredLocalVoiceAndTranscriber(t *testing.T) {
 		"test \"$OPENAI_REALTIME_TRANSCRIPTION_MODEL\" = local-asr || exit 42\n" +
 		"test \"$TAU2_VOICE_USER_DECISION_MODEL\" = openai/qwen-caller || exit 43\n" +
 		"case \"$TAU2_VOICE_USER_DECISION_ARGS\" in *\"http://127.0.0.1:8000/v1\"*) ;; *) exit 44;; esac\n" +
-		"case \" $* \" in *\" --auto-resume \"*) ;; *) exit 45;; esac\n" +
+		"test \"$PYTHONHASHSEED\" = 0 || exit 45\n" +
+		"case \" $* \" in *\" --auto-resume \"*) ;; *) exit 46;; esac\n" +
+		"case \" $* \" in *\" --seed 417 \"*) ;; *) exit 47;; esac\n" +
+		"case \" $* \" in *\" --max-concurrency 2 \"*) ;; *) exit 48;; esac\n" +
+		"case \" $* \" in *\" --workers 0 \"*) ;; *) exit 49;; esac\n" +
 		"printf '%s\\n' '{\"simulation_index\":[{\"id\":\"a\",\"task_id\":\"airline_1\",\"trial\":0,\"reward\":1.0}]}' > " + results + "\n"
 	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -313,6 +339,7 @@ func TestTheRunnerNamesTheMeasuredLocalVoiceAndTranscriber(t *testing.T) {
 		Tau2Dir: checkout, Endpoint: "ws://127.0.0.1:8765/v1/realtime", Python: stub,
 		AgentVoice: "fish-fixed", AgentTranscriptionModel: "local-asr",
 		UserModel: "qwen-caller", UserModelURL: "http://127.0.0.1:8000/v1",
+		Seed: 417, MaxConcurrency: 2, Workers: 0,
 	}, "airline", "cell-airline-control")
 	if err != nil {
 		t.Fatalf("run with explicit local identities: %v", err)

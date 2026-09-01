@@ -2174,9 +2174,19 @@ tracker by itself:
   - [x] Treat the benchmark owner's recorded original numbers as the trusted
     historical comparison targets. Do not reconstruct historical attempts or
     require historical media.
-  - [ ] Pin fixture/task revisions, model/provider revisions, voices, tools,
+  - [x] Pin fixture/task revisions, model/provider revisions, voices, tools,
     timing policy, machine class, concurrency, trial count/seeds where
-    applicable, and every graph/config/profile identity for each new run.
+    applicable, and every graph/config/profile identity for each new run. The
+    digest-checked dataset/preparation gates freeze the FDB, FD-Bench, and tau2
+    populations; the release matrix freezes complete case/condition sets,
+    transports, repetitions, review models, and review concurrency; reviewed
+    execution plus live inspection binds each graph/config/profile and runtime
+    identity before protocol work. Candidate provenance captures the exact
+    executable and CPU/GPU/OS/architecture/Go host class, and comparison refuses
+    build or machine drift. Tau2's last implicit run-defining values are now
+    explicit and fail-closed: trial count, campaign and Python hash seeds,
+    scheduler concurrency/workers, cadence, timeout, local caller/ASR/synthesis
+    models and voices, and fresh per-condition run prefixes.
   - [ ] Retain every new attempt—including failed, timed-out, and regressed
     diagnostics—with deterministic outcomes, exact graph/runtime evidence,
     playable audio and/or synchronized video as applicable, review manifests,
@@ -2322,7 +2332,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   both control and regular conditions with task and interaction metrics. The
   2026-09-01 preflight revalidated the patched checkout at
   `c3398666e6559e3a063da3fc04b5acf7f941464e`, its exact 50/114/114 base-split
-  inventory, and the audio-native environment. A retained earlier one-trial
+  inventory, and the audio-native environment. Both release cells now pin one
+  trial, seed 300 plus `PYTHONHASHSEED=0`, three in-process simulations and zero
+  workers, 0.2-second cadence, ten-minute task timeout, fresh condition-specific
+  run prefixes, and the exact caller, ASR, synthesis, and voice identities; a
+  release-validation test rejects drift in any of those values. A retained earlier one-trial
   control diagnostic completed 278/278 and passed 160 (36/50 airline, 61/114
   retail, 63/114 telecom), but it predates graph-native execution evidence and
   the candidate review plug-in, so it remains nonreportable and is not reused.

@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+func TestCampaignSchedulingDefaultsAreFrozen(t *testing.T) {
+	if DefaultSeed != 300 || DefaultMaxConcurrency != 3 || DefaultWorkers != 0 {
+		t.Fatalf("campaign constants drifted: seed=%d concurrency=%d workers=%d",
+			DefaultSeed, DefaultMaxConcurrency, DefaultWorkers)
+	}
+	config := Config{}
+	config.applyDefaults()
+	if config.Seed != DefaultSeed {
+		t.Fatalf("campaign seed = %d, want frozen upstream seed 300", config.Seed)
+	}
+	if config.MaxConcurrency != DefaultMaxConcurrency {
+		t.Fatalf("max concurrency = %d, want frozen upstream scheduler load 3", config.MaxConcurrency)
+	}
+	if config.Workers != DefaultWorkers {
+		t.Fatalf("workers = %d, want the in-process scheduler", config.Workers)
+	}
+}
+
 func TestRelativeInterpreterIsAnchoredBeforeTauCheckoutChdir(t *testing.T) {
 	relative := filepath.Join("relative-tools", "python")
 	want, err := filepath.Abs(relative)

@@ -127,6 +127,23 @@
       "telecom": 114
     },
     "environment_verified": true,
+    "run_contract": {
+      "trials": 1,
+      "seed": 300,
+      "python_hash_seed": 0,
+      "max_concurrency": 3,
+      "workers": 0,
+      "tick_duration_seconds": 0.2,
+      "task_timeout": "10m",
+      "user_model": "qwen-fast",
+      "agent_voice": "default",
+      "agent_transcription_model": "Qwen/Qwen3-ASR-0.6B",
+      "caller_synthesis_provider": "fish_audio",
+      "caller_synthesis_model": "fishaudio/s2-pro",
+      "caller_synthesis_voice": "default",
+      "control_run_prefix": "candidate-tau-control",
+      "regular_run_prefix": "candidate-tau-regular"
+    },
     "control_started": false,
     "regular_started": false
   },

@@ -398,6 +398,31 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 	if got := len(strings.Split(conditions, ",")); got != 21 {
 		t.Fatalf("FD-Bench candidate condition count = %d, want 21", got)
 	}
+	for id, runPrefix := range map[string]string{
+		"external.benchmark.tau.control": "candidate-tau-control",
+		"external.benchmark.tau.regular": "candidate-tau-regular",
+	} {
+		command := byID[id].Command
+		for flag, want := range map[string]string{
+			"-user-model":                "qwen-fast",
+			"-agent-voice":               "default",
+			"-agent-transcription-model": "Qwen/Qwen3-ASR-0.6B",
+			"-synthesis":                 "fish_audio",
+			"-synthesis-model":           "fishaudio/s2-pro",
+			"-synthesis-voice":           "default",
+			"-run-prefix":                runPrefix,
+			"-trials":                    "1",
+			"-seed":                      "300",
+			"-max-concurrency":           "3",
+			"-workers":                   "0",
+			"-cadence":                   "0.2",
+			"-task-timeout":              "10m",
+		} {
+			if got := argumentAfter(command, flag); got != want {
+				t.Errorf("%s %s = %q, want pinned value %q", id, flag, got, want)
+			}
+		}
+	}
 
 	for _, id := range candidateIDs {
 		if !slices.Contains(byID[id].Command, "-inspection-graph") {
