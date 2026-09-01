@@ -2496,8 +2496,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   deployment bindings, secret references, and evidence profiles.
   - [x] Topology, lock, strict values, deployment-binding, and secret-reference
     artifacts have bounded parsers and a compiler/CLI binding path.
-  - [ ] Resolve deployment-selected implementations and secret providers at
-    mount time and attest their exact private artifact identities.
+  - [x] Resolve deployment-selected implementations and secret providers at
+    mount time and attest their exact private artifact identities. Assembly
+    selects exact immutable implementation/provider registrations against the
+    frozen plan; preparation validates deployment and catalog fingerprints
+    without resource acquisition; mount alone resolves erasable secret handles
+    and emits canonical public/private deployment plus provider-runtime
+    evidence. Drift, missing/excess catalog entries, provider mismatch, and
+    ambient secret inputs all fail before factory mount or credential use.
   - [ ] Add separate evidence-profile artifacts and the normal graph-native
     launch path over all of these planes.
 - [ ] Delete topology flags and flattened configuration paths after their
