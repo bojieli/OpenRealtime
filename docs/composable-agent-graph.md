@@ -916,9 +916,14 @@ is never flattened speculatively: the projection is marked incomplete and the
 exact property subschemas remain authoritative. An absent resolver is reported
 truthfully as unresolved rather than inventing fields.
 
-The remaining presentation work is to render these contracts in LSP, browser,
-and native clients, add multi-file/subgraph navigation, and mediate actual file
-writes. None of that may weaken the strict compile/reconcile boundary above.
+The browser configuration editor and the language-service LSP hover projection
+render the complete contract. The LSP form uses the protocol's zero-based
+UTF-16 positions and deterministic plaintext so descriptor-supplied markup is
+data, preserves absent versus explicit `null` JSON, and fails closed on a split
+surrogate, malformed retained schema, or oversized projection. Remaining work
+is the native-client rendering, multi-file/subgraph navigation, and mediation
+of actual file writes. None of that may weaken the strict compile/reconcile
+boundary above.
 
 ## 11. Graph IR
 
@@ -1789,7 +1794,7 @@ reconstruction, or alternate benchmark path.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-08-30**. This is the progress
+Last reconciled with the repository on **2026-09-01**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
 ledger and `git log origin/main..main` together identify the accepted local
@@ -1810,7 +1815,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, native/LSP rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, a complete LSP plaintext values-contract hover, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, native values rendering, broader LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -1837,9 +1842,11 @@ Current checkpoint notes:
   payload-free trace artifacts, and the canonical `.ortg` language-service
   core, adaptive video ingress/cadence, and the full conversational reference
   family are committed. Bounded recovery, formatter edits, and resolved schema
-  metadata now have a UI-independent Authoring API worktree checkpoint; LSP/UI
-  rendering, multi-file navigation, mediated writes, and sidecar media-format
-  hardening remain unchecked until their independent slices are complete.
+  metadata now have a UI-independent Authoring API checkpoint, and a bounded
+  UTF-16 LSP plaintext hover renders the complete values contract. Native
+  rendering, broader LSP/UI rendering, multi-file navigation, mediated writes,
+  and the remaining phase gates stay unchecked until their independent slices
+  are complete.
 - No item in the project-level definition of done is yet proven end to end.
   Several have foundation-level support, but direct benchmark execution,
   production inspection, reconciliation, and obsolete-path deletion are still
@@ -2120,9 +2127,14 @@ it has been reviewed, tested, and committed with its evidence):
     canonical property schema before the text-only view admits it; malformed
     metadata and markup-bearing values have focused client/view and real-browser
     coverage.
-  - [ ] Render the same metadata in LSP and native-client configuration editors
-    before completing authoring support; a browser projection is not evidence
-    for either client family.
+  - [x] Render the same metadata through a standards-aligned LSP hover. It maps
+    zero-based UTF-16 positions to the exact source snapshot, emits only
+    deterministic plaintext, includes every contract/property field and
+    absent/null distinction, and rejects split surrogates, malformed retained
+    JSON, and oversized output.
+  - [ ] Render the same metadata in native-client configuration editors before
+    completing authoring support; browser and LSP projections are not evidence
+    for the native client family.
 - [x] Complete the sound computer-use authority and trajectory feedback chain.
   - [x] Join tool proposals to exact cognition-result provenance by run and
     call identity without trusting externally asserted causal metadata.
@@ -2643,7 +2655,9 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   - [x] Render all of that metadata in the browser configuration editor through
     a strictly revalidated, text-only client projection with exact absent/null
     handling and adversarial markup coverage.
-  - [ ] Render the same metadata in LSP and native-client configuration editors.
+  - [x] Render the same metadata in a bounded deterministic LSP plaintext hover
+    with exact UTF-16 position conversion and adversarial markup coverage.
+  - [ ] Render the same metadata in native-client configuration editors.
 - [x] Add bounded graph-aware node rename, hover, port completion, and
   go-to-definition for fully parsed canonical `.ortg`.
 - [x] Add independently bounded recovery parsing for incomplete `.ortg` and

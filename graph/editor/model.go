@@ -22,6 +22,7 @@ var (
 	ErrRenameCollision       = errors.New("graph node rename collides with an existing node")
 	ErrEditLimit             = errors.New("graph node rename exceeds the edit bound")
 	ErrFormattingUnavailable = errors.New("editor formatting requires a strictly parsed topology")
+	ErrPresentationLimit     = errors.New("editor presentation exceeds its byte bound")
 )
 
 // Limits bounds every input collection retained by a Document and every
@@ -217,6 +218,35 @@ type Hover struct {
 	Descriptor       *ElementMetadata    `json:"descriptor,omitempty"`
 	Port             *PortMetadata       `json:"port,omitempty"`
 	Config           *NodeConfigContract `json:"config,omitempty"`
+}
+
+// LSPPosition is a Language Server Protocol position: both fields are
+// zero-based and Character counts UTF-16 code units, not UTF-8 bytes or
+// Unicode scalar values.
+type LSPPosition struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type LSPRange struct {
+	Start LSPPosition `json:"start"`
+	End   LSPPosition `json:"end"`
+}
+
+// LSPMarkupContent deliberately uses plaintext. Descriptor and schema text is
+// data supplied by plug-ins, so treating it as Markdown would grant it a
+// presentation language and make markup-shaped values ambiguous.
+type LSPMarkupContent struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+// LSPHover is the protocol-shaped, frontend-independent hover projection used
+// by an LSP adapter. It contains the complete node values contract rather than
+// a lossy summary of the descriptor metadata.
+type LSPHover struct {
+	Contents LSPMarkupContent `json:"contents"`
+	Range    LSPRange         `json:"range"`
 }
 
 type Definition struct {
