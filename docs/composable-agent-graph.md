@@ -2249,8 +2249,23 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   `review-candidate` command resumes an interrupted new campaign; the
   `verify-candidate-review` command verifies a finished one. Neither command
   reads or reconstructs historical attempts.
-- [ ] Run all 498 FDB v1.5 tasks through the new graph-native endpoint and
-  retain per-attempt review media.
+- [x] Run all 498 FDB v1.5 tasks through the new graph-native endpoint and
+  retain per-attempt review media. Candidate-04 at clean commit `fc8195a`
+  completed 498/498 with zero infrastructure failures and graph-native
+  execution evidence on every task. Of 430 applicable cases, interruption
+  yielded on time in 15/156, backchannel held in 90/90, background speech held
+  in 89/89, and talking-to-other held in 93/95; another 68 recordings were
+  honestly not applicable. Interruption latency remains a failed quality gate
+  at 2,412/10,132 ms p50/p95. Exact `google/gemini-3.7-flash` review retained
+  usable WAV media for all 498 attempts and agreed with 450/498 deterministic
+  outcomes; its 215 significant findings (163 on interruption cases) are
+  retained for the later non-regression repair loop. Credential-free reopening
+  verified all 498 evaluations and zero quarantine. The retained result is
+  `fdb-candidate-full498-20260831-04-full-reviewed.json`
+  (`sha256:587bde40005606951fe785e6c70a931aaf785cc79eefa9589772f1b6ff9e73f1`);
+  its complete create-only source/evaluation receipt bundle is sealed by review
+  manifest
+  `sha256:99b822af255d90b1f12696e66b0f467d76977fef261f1626d2e8ab7b8965bd60`.
 - [ ] Run all 100 released FDB v3 examples through the new graph-native
   endpoint and retain per-attempt review media.
 - [ ] Run all 6,147 FD-Bench conversations across all 21 released
