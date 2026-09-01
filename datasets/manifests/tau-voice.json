@@ -97,10 +97,44 @@
       45
     ]
   },
+  "historical_local_diagnostic": {
+    "condition": "control",
+    "upstream_revision": "c3398666e6559e3a063da3fc04b5acf7f941464e",
+    "trials": 1,
+    "seed": 300,
+    "completed_tasks": 278,
+    "passed_tasks": 160,
+    "domain_passes": {
+      "airline": "36/50",
+      "retail": "61/114",
+      "telecom": "63/114"
+    },
+    "result_sha256": {
+      "airline": "e17a50c9f54ba41925bf87cc522589b465f347e0d8e441424d5323f1d69a0c33",
+      "retail": "0ca5313b57dd5fa2ee706df1365fdcc3e99b66db044bbf077fb240ad77832861",
+      "telecom": "3a072558909773692531e207386c34652fb7ca4987fe1fdaa52b06957414a407"
+    },
+    "reportable_current_candidate": false,
+    "reason": "This retained pre-candidate diagnostic predates the graph-native execution requirement and candidate review plug-in. It has no exact current graph/runtime evidence, create-only source/evaluation receipts, or exact Gemini review population and does not satisfy the current control gate."
+  },
+  "current_candidate_preflight": {
+    "verified_at": "2026-09-01",
+    "upstream_revision": "c3398666e6559e3a063da3fc04b5acf7f941464e",
+    "inventory": {
+      "total": 278,
+      "airline": 50,
+      "retail": 114,
+      "telecom": 114
+    },
+    "environment_verified": true,
+    "control_started": false,
+    "regular_started": false
+  },
   "redistributed": false,
-  "status": "full_control_running_regular_and_follow_on_benchmarks_queued",
+  "status": "current_graph_native_control_and_regular_not_started",
   "blockers_observed": [
-    "The complete 278-task control and regular cells, repeated trials, cadence sweeps, and native comparison conditions have not yet completed.",
+    "The exact current graph-native 278-task control and regular cells have not started. They still need per-task deterministic outcomes, external-harness media, exact runtime evidence, create-only receipts, exact Gemini review, and interaction metrics.",
+    "The retained 278-task control diagnostic is historical and unattested; it cannot be promoted into the current candidate population.",
     "GPT-Live and TML Interaction Model endpoints are not publicly executable in the current environment, so their published claims remain contextual rather than local scores."
   ],
   "reporting_rule": "Do not report an OpenRealtime tau-Voice score until the pinned provider adapter passes upstream tests and the complete declared task/condition cell finishes. Partial text-only, mock-tool, or interaction-only runs are not tau-Voice scores."

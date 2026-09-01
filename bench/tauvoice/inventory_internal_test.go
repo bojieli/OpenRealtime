@@ -81,6 +81,17 @@ func TestInventoryLoaderUsesCleanPinnedInputsAndExplicitBaseSplit(t *testing.T) 
 	if !strings.Contains(command, `load_tasks(domain, "base")`) {
 		t.Fatalf("export did not explicitly select the base split:\n%s", command)
 	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeStub, err := filepath.Rel(workingDirectory, stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := exportTaskIdentities(context.Background(), root, relativeStub); err != nil {
+		t.Fatalf("export with caller-relative interpreter: %v", err)
+	}
 
 	// A local edit to any input that can select or interpret a task invalidates
 	// the inventory before Python is allowed to run.

@@ -1,10 +1,30 @@
 package tauvoice
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestRelativeInterpreterIsAnchoredBeforeTauCheckoutChdir(t *testing.T) {
+	relative := filepath.Join("relative-tools", "python")
+	want, err := filepath.Abs(relative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := Config{Python: relative}
+	config.applyDefaults()
+	if config.Python != want {
+		t.Fatalf("relative interpreter = %q, want %q", config.Python, want)
+	}
+
+	config = Config{Python: "python3"}
+	config.applyDefaults()
+	if config.Python != "python3" {
+		t.Fatalf("PATH interpreter = %q, want python3", config.Python)
+	}
+}
 
 // tau2's CLI takes the trajectory directory positionally. Passing it as
 // --input-paths made argparse reject the invocation, and because the measures

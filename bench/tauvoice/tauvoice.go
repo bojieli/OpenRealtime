@@ -204,6 +204,7 @@ func (config *Config) applyDefaults() {
 			config.Tau2Dir = absolute
 		}
 	}
+	config.Python = anchorExecutablePath(config.Python)
 	if config.Condition == "" {
 		config.Condition = Control
 	}
@@ -260,6 +261,23 @@ func (config *Config) applyDefaults() {
 	if config.Logf == nil {
 		config.Logf = func(string, ...any) {}
 	}
+}
+
+// anchorExecutablePath preserves a PATH-resolved executable name but anchors
+// an explicitly supplied relative path before tau2's subprocess changes its
+// working directory to the checkout. Without this step, a path that passed
+// preflight from the caller's directory was looked up a second time beneath
+// Tau2Dir and failed only when Python was invoked.
+func anchorExecutablePath(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || filepath.IsAbs(name) || !strings.ContainsAny(name, `/\`) {
+		return name
+	}
+	absolute, err := filepath.Abs(name)
+	if err != nil {
+		return name
+	}
+	return filepath.Clean(absolute)
 }
 
 // loopback reports whether the endpoint is on this machine.

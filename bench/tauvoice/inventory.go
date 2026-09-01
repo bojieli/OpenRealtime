@@ -291,7 +291,7 @@ func verifyTaskInventoryCheckout(
 }
 
 func exportTaskIdentities(ctx context.Context, root, python string) ([]TaskIdentity, error) {
-	python = strings.TrimSpace(python)
+	python = anchorExecutablePath(python)
 	if python == "" {
 		candidate := filepath.Join(root, ".venv", "bin", "python")
 		if candidateInfo, statErr := os.Stat(candidate); statErr == nil && !candidateInfo.IsDir() {

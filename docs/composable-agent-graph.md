@@ -2319,7 +2319,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
   validates the exact 50 airline / 114 retail / 114 telecom partition.
 - [ ] Run the complete 278-task tau2-bench/τ-Voice task set in
-  both control and regular conditions with task and interaction metrics.
+  both control and regular conditions with task and interaction metrics. The
+  2026-09-01 preflight revalidated the patched checkout at
+  `c3398666e6559e3a063da3fc04b5acf7f941464e`, its exact 50/114/114 base-split
+  inventory, and the audio-native environment. A retained earlier one-trial
+  control diagnostic completed 278/278 and passed 160 (36/50 airline, 61/114
+  retail, 63/114 telecom), but it predates graph-native execution evidence and
+  the candidate review plug-in, so it remains nonreportable and is not reused.
+  The exact current control and regular populations have not started.
 - [x] Preserve the DynaCU-Bench runner as independent optional validation. The
   standalone `bench dynacu` command pins the unmodified AOI environment at
   `3c9f452aca697ee61de87a4907f0937d6c486a99`, requires the complete 100
