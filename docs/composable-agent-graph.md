@@ -3179,8 +3179,18 @@ checked from foundation work alone; each requires end-to-end release evidence.
    sidecar, and remote elements through `.ortg`, normalized YAML/JSON, a
    visual editor, or an optional SDK without adding a binding species or
    rebuilding the runtime.
-- [ ] The graph can expose any supported combination of text, audio, video,
-   images, files, tools, computer use, and control ports; audio is optional.
+  - [x] `.ortg`, strict normalized YAML/JSON, and the optional Go builder lower
+    through the same compiler and produce fingerprint-equivalent Graph IR;
+    native and descriptor-attested protocol-v4 sidecar elements mount through
+    the common factory registry. Graphical topology editing and complete
+    arbitrary-remote release evidence remain requirements of the parent gate.
+- [x] The graph can expose any supported combination of text, audio, video,
+  images, files, tools, computer use, and control ports; audio is optional. The
+  common descriptor and typed-port model admits those capabilities
+  independently. Executed text/file cognition and silent computer-use graphs
+  prove audio-free operation, while the adaptive-video, Meeting Assistant, and
+  reviewed Realtime-CU paths exercise streaming visual, audio, tool, action,
+  and control compositions through the same runtime.
 - [x] Trigger, interrupt, timeout, failure, arbitration, authority, and terminal
   paths are statically inspectable. The exact static model and generated views
   expose reaction triggers, interrupts, success/cancellation/refusal/timeout/
@@ -3195,17 +3205,24 @@ checked from foundation work alone; each requires end-to-end release evidence.
   fork/merge cases without a kernel-owned slow-to-fast handoff.
 - [ ] The same full-duplex foreground can be run with native or external
    interaction as a graph change.
+  - [x] Locked native- and external-interaction references select the same
+    `model.External` element through topology and capability changes, and the
+    omni, duplex-native, and upstream-native forms mount and negotiate exact
+    protocol-v4 sessions. Executed cross-mode behavioral parity remains the
+    requirement that keeps the parent gate open.
 - [x] Channel depth, loss, queue occupancy, and latency contribution are
   visible. The joined operator channel cards bind immutable delivery/depth to
   live occupancy/high-water, drop/backpressure, and queue-wait evidence; the
   exact projection passes fail-closed Go/JavaScript validation and a real
   Chromium rendering gate.
 - [ ] Every running session reports an immutable Graph IR fingerprint and exact
-  live-resolved element/config/capability identities. Production graph-native
-  mounts already pass exact live/static joins, runtime handshakes, and reviewed
-  benchmark attestation; the universal box remains open because an incomplete
-  legacy runtime intentionally receives no inspection capability, and those
-  remaining legacy launch paths have not yet been removed or upgraded.
+  live-resolved element/config/capability identities.
+  - [x] Production graph-native mounts pass exact live/static joins, runtime
+    identity and capability handshakes, and reviewed benchmark attestation;
+    mismatched or incomplete evidence cannot cross the public management
+    boundary. An incomplete legacy runtime intentionally receives no inspection
+    capability, so removing or upgrading the remaining legacy launch paths is
+    still required by the universal parent gate.
 - [x] Mermaid/DOT and the live canvas are generated from that exact graph.
   Mermaid and DOT derive through the same immutable inspection model and carry
   its fingerprint; the session model endpoint rejects static/live identity or
@@ -3220,6 +3237,12 @@ checked from foundation work alone; each requires end-to-end release evidence.
   candidate exercise the complete feedback path with exact live graph evidence.
 - [ ] Static reference graphs match current protocol behavior, and new
     non-audio and alternative speech compositions are covered by release tests.
+  - [x] Locked audio-free text/file cognition and silent computer-use agents
+    have executed regressions, and the fast-only, slow-only, and both-speaking
+    graphs execute complete turns with retained artifacts. The reviewed
+    Realtime-CU campaign supplies live release evidence for the silent action
+    composition; reference safe-point/protocol parity and the remaining live
+    benchmark evidence keep the parent gate open.
 - [ ] Every required benchmark has complete, clean, exactly attested
     pre-refactor and graph-native candidate artifacts; the candidate satisfies
     the predeclared aggregate and per-case non-regression gates, and every
