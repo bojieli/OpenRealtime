@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">OpenRealtime logo brand sheet</title>
+  <desc id="desc">Primary logo, reverse treatment, construction rationale, palette, and small-size tests.</desc>
+  <rect width="1440" height="960" fill="#F4F6F9"/>
+
+  <g font-family="Avenir Next, Avenir, Helvetica Neue, sans-serif">
+    <text x="64" y="74" fill="#101828" font-size="38" font-weight="600" letter-spacing="-1">OpenRealtime identity</text>
+    <text x="64" y="108" fill="#667085" font-size="16">Composable loop · primary direction</text>
+
+    <rect x="64" y="150" width="548" height="548" rx="32" fill="#FFFFFF"/>
+    <text x="96" y="192" fill="#667085" font-size="13" font-weight="600" letter-spacing="1.5">PRIMARY MARK</text>
+    <image href="openrealtime-mark.svg" x="118" y="214" width="440" height="440"/>
+
+    <rect x="644" y="150" width="732" height="258" rx="32" fill="#FFFFFF"/>
+    <text x="676" y="192" fill="#667085" font-size="13" font-weight="600" letter-spacing="1.5">HORIZONTAL LOCKUP</text>
+    <image href="openrealtime-logo-horizontal.svg" x="674" y="220" width="660" height="165"/>
+
+    <rect x="644" y="440" width="356" height="258" rx="32" fill="#101828"/>
+    <text x="676" y="482" fill="#98A2B3" font-size="13" font-weight="600" letter-spacing="1.5">REVERSE</text>
+    <image href="openrealtime-mark-reverse.svg" x="706" y="480" width="232" height="232"/>
+
+    <rect x="1020" y="440" width="356" height="258" rx="32" fill="#FFFFFF"/>
+    <text x="1052" y="482" fill="#667085" font-size="13" font-weight="600" letter-spacing="1.5">CORE PALETTE</text>
+    <rect x="1052" y="516" width="86" height="86" rx="18" fill="#101828"/>
+    <text x="1052" y="627" fill="#101828" font-size="15" font-weight="600">Graph ink</text>
+    <text x="1052" y="651" fill="#667085" font-size="13">#101828</text>
+    <rect x="1228" y="516" width="86" height="86" rx="18" fill="#12BFA7"/>
+    <text x="1228" y="627" fill="#101828" font-size="15" font-weight="600">Live signal</text>
+    <text x="1228" y="651" fill="#667085" font-size="13">#12BFA7</text>
+
+    <rect x="64" y="730" width="1312" height="166" rx="32" fill="#FFFFFF"/>
+    <text x="96" y="772" fill="#667085" font-size="13" font-weight="600" letter-spacing="1.5">WHY THIS SHAPE</text>
+    <text x="96" y="812" fill="#101828" font-size="18" font-weight="600">Tee → two replaceable lanes → Mux</text>
+    <text x="96" y="842" fill="#667085" font-size="15">The explicit split and merge echo ORTG graph semantics; together the lanes form the “O”.</text>
+    <text x="96" y="869" fill="#667085" font-size="15">Angular channels keep the silhouette technical and distinct from a generic network, waveform, or orbit.</text>
+
+    <text x="954" y="772" fill="#667085" font-size="13" font-weight="600" letter-spacing="1.5">SIZE TEST</text>
+    <image href="openrealtime-mark.svg" x="950" y="796" width="72" height="72"/>
+    <image href="openrealtime-mark.svg" x="1058" y="816" width="48" height="48"/>
+    <image href="openrealtime-mark.svg" x="1146" y="828" width="32" height="32"/>
+    <image href="openrealtime-favicon.svg" x="1218" y="836" width="16" height="16"/>
+    <text x="966" y="883" fill="#667085" font-size="11">72</text>
+    <text x="1073" y="883" fill="#667085" font-size="11">48</text>
+    <text x="1154" y="883" fill="#667085" font-size="11">32</text>
+    <text x="1220" y="883" fill="#667085" font-size="11">16</text>
+  </g>
+</svg>

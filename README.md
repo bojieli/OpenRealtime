@@ -1,5 +1,13 @@
 # OpenRealtime
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/openrealtime-mark-reverse.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/brand/openrealtime-mark.svg">
+    <img src="assets/brand/openrealtime-mark.svg" alt="OpenRealtime logo" width="180">
+  </picture>
+</p>
+
 > An open, self-hostable implementation of the OpenAI Realtime API that runs
 > any voice stack, adds a background reasoner, and extends the protocol —
 > minimally and compatibly — to realtime video and computer use.
