@@ -2638,11 +2638,14 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     gateway adapter projection to one exact graph contract. Generic
     `Ownership.Validate` now checks only the owner vocabulary; the frozen
     `SessionAdapterProfile` fingerprints its graph, boundary map, ownership,
-    and advertised capabilities, requires gateway-visible features to have
-    their typed boundary operations, and refuses absent or drifted mounted
-    boundaries. Authenticated inspection and benchmark evidence separately
-    retain each live node capability. The parent remains open until the gateway
-    consumes graph/live capabilities directly and the legacy
+    and advertised capabilities. It refuses video, computer-use, observation,
+    manual-turn, selectable-voice, audio-input/output, transcription,
+    text-injection, or visual-input claims without their required typed
+    operations; named observers additionally require observation support. It
+    also refuses absent or drifted mounted boundaries. Authenticated inspection
+    and benchmark evidence separately retain each live node capability. The
+    parent remains open until the gateway consumes graph/live capabilities
+    directly and the legacy
     `Binding.Ownership`/`Capabilities` projection is deleted.
 - [x] Load separate `.ortg` or normalized graph artifacts, typed element values,
   deployment bindings, secret references, and evidence profiles.

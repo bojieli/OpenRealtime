@@ -38,14 +38,57 @@ func TestSessionAdapterProfileIsCanonicalFingerprintBoundToExactGraphBoundaries(
 func TestSessionAdapterProfileRefusesCapabilitiesWithoutTheirBoundaryOperations(t *testing.T) {
 	plan, _ := nativeVideoPlan(t)
 	graph := plan.Graph()
-	_, err := graphbinding.FreezeSessionAdapterProfile(graphbinding.SessionAdapterProfile{
+	tests := []struct {
+		name         string
+		capabilities legacy.Capabilities
+		want         string
+	}{
+		{name: "video", capabilities: legacy.Capabilities{Video: true}, want: string(graphbinding.AdapterInputVideo)},
+		{name: "computer use", capabilities: legacy.Capabilities{ComputerUse: true}, want: string(graphbinding.AdapterOutputToolCalls)},
+		{name: "observations", capabilities: legacy.Capabilities{Observations: true}, want: string(graphbinding.AdapterOutputObservation)},
+		{name: "manual turns", capabilities: legacy.Capabilities{ManualTurns: true}, want: string(graphbinding.AdapterInputCommitAudio)},
+		{name: "selectable voice", capabilities: legacy.Capabilities{Voice: legacy.VoiceControl{Selectable: true}}, want: string(graphbinding.AdapterInputUpdate)},
+		{name: "audio input", capabilities: legacy.Capabilities{Stack: legacy.StackCapabilities{AudioInput: true}}, want: string(graphbinding.AdapterInputAudio)},
+		{name: "audio output", capabilities: legacy.Capabilities{Stack: legacy.StackCapabilities{AudioOutput: true}}, want: string(graphbinding.AdapterOutputSpeechAudio)},
+		{name: "transcription", capabilities: legacy.Capabilities{Stack: legacy.StackCapabilities{Transcription: true}}, want: string(graphbinding.AdapterOutputTranscript)},
+		{name: "text injection", capabilities: legacy.Capabilities{Stack: legacy.StackCapabilities{TextInjection: true}}, want: string(graphbinding.AdapterInputText)},
+		{name: "visual input", capabilities: legacy.Capabilities{Stack: legacy.StackCapabilities{VisualInput: true}}, want: string(graphbinding.AdapterInputVideo)},
+		{name: "named observers", capabilities: legacy.Capabilities{Observers: []string{"screen"}}, want: "without the observations capability"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := graphbinding.FreezeSessionAdapterProfile(graphbinding.SessionAdapterProfile{
+				FormatVersion: graphbinding.SessionAdapterProfileFormatVersion,
+				Name:          "openrealtime.graph.invalid-capability", Revision: 1,
+				GraphFingerprint: graph.Fingerprint, Ownership: nativeOwnership(),
+				Capabilities: testCase.capabilities,
+			})
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("unmapped %s capability error = %v", testCase.name, err)
+			}
+		})
+	}
+}
+
+func TestSessionAdapterProfileRequiresBothManualTurnOperations(t *testing.T) {
+	plan, _ := nativeVideoPlan(t)
+	graph := plan.Graph()
+	inputType, err := nativeBoundaryType(graph, "frame", ir.InputBoundary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = graphbinding.FreezeSessionAdapterProfile(graphbinding.SessionAdapterProfile{
 		FormatVersion: graphbinding.SessionAdapterProfileFormatVersion,
-		Name:          "openrealtime.graph.invalid-video", Revision: 1,
+		Name:          "openrealtime.graph.incomplete-manual-turns", Revision: 1,
 		GraphFingerprint: graph.Fingerprint, Ownership: nativeOwnership(),
-		Capabilities: legacy.Capabilities{Video: true},
+		Capabilities: legacy.Capabilities{ManualTurns: true},
+		Boundaries: []graphbinding.AdapterBoundary{{
+			Operation: graphbinding.AdapterInputCommitAudio, Boundary: "frame",
+			Direction: ir.InputBoundary, Type: inputType,
+		}},
 	})
-	if err == nil || !strings.Contains(err.Error(), string(graphbinding.AdapterInputVideo)) {
-		t.Fatalf("unmapped video capability error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), string(graphbinding.AdapterInputCreateResponse)) {
+		t.Fatalf("manual turns without response creation error = %v", err)
 	}
 }
 

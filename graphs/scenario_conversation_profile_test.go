@@ -340,7 +340,7 @@ func TestScenarioConversationAdapterCarriesFullScenarioContractWithDistinctPlayb
 					}
 				}
 			},
-			want: "missing required seams",
+			want: string(graphbinding.AdapterOutputSpeechAudio),
 		},
 		{
 			name: "aliased playback receipts",

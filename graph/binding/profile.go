@@ -256,10 +256,15 @@ func (profile SessionAdapterProfile) validateStructure() error {
 		claim     string
 	}{
 		{profile.Capabilities.Video, AdapterInputVideo, "video"},
+		{profile.Capabilities.ComputerUse, AdapterOutputToolCalls, "computer use"},
 		{profile.Capabilities.Observations, AdapterOutputObservation, "observations"},
 		{profile.Capabilities.ManualTurns, AdapterInputCommitAudio, "manual turns"},
 		{profile.Capabilities.ManualTurns, AdapterInputCreateResponse, "manual turns"},
 		{profile.Capabilities.Voice.Selectable, AdapterInputUpdate, "selectable voice"},
+		{profile.Capabilities.Stack.AudioInput, AdapterInputAudio, "audio input"},
+		{profile.Capabilities.Stack.AudioOutput, AdapterOutputSpeechAudio, "audio output"},
+		{profile.Capabilities.Stack.Transcription, AdapterOutputTranscript, "transcription"},
+		{profile.Capabilities.Stack.TextInjection, AdapterInputText, "text injection"},
 	} {
 		if requirement.required {
 			if _, found := seenOperations[requirement.operation]; !found {
@@ -267,6 +272,22 @@ func (profile SessionAdapterProfile) validateStructure() error {
 					profile.Name, requirement.claim, requirement.operation)
 			}
 		}
+	}
+	if profile.Capabilities.Stack.VisualInput {
+		_, video := seenOperations[AdapterInputVideo]
+		_, text := seenOperations[AdapterInputText]
+		if !video && !text {
+			return fmt.Errorf(
+				"session adapter profile %s claims visual input without operation %s or %s",
+				profile.Name, AdapterInputVideo, AdapterInputText,
+			)
+		}
+	}
+	if len(profile.Capabilities.Observers) > 0 && !profile.Capabilities.Observations {
+		return fmt.Errorf(
+			"session adapter profile %s names observers without the observations capability",
+			profile.Name,
+		)
 	}
 	return nil
 }
