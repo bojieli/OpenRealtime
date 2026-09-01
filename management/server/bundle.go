@@ -11,11 +11,12 @@ import (
 )
 
 type BundleConfig struct {
-	Authorizer     management.Authorizer
-	StaticCatalog  management.StaticCatalog
-	Sessions       management.SessionInspection
-	Authoring      management.Authoring
-	Reconciliation management.Reconciliation
+	Authorizer        management.Authorizer
+	StaticCatalog     management.StaticCatalog
+	Sessions          management.SessionInspection
+	Authoring         management.Authoring
+	SourcePublication management.SourcePublication
+	Reconciliation    management.Reconciliation
 }
 
 // Bundle is one compiled server-realm management profile. Optional API
@@ -64,6 +65,14 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 		factories["authoring-source"] = provider
 		factories["authoring-api"] = NewAuthoringAPIFactory()
 	}
+	if !nilInterface(config.SourcePublication) {
+		provider, err := NewSourcePublicationProvider(config.SourcePublication)
+		if err != nil {
+			return nil, err
+		}
+		factories["source-publication-source"] = provider
+		factories["source-publication-api"] = NewSourcePublicationAPIFactory()
+	}
 	if !nilInterface(config.Reconciliation) {
 		provider, err := NewReconciliationProvider(config.Reconciliation)
 		if err != nil {
@@ -80,7 +89,11 @@ func NewBundle(config BundleConfig) (*Bundle, error) {
 	sort.Strings(ids)
 	// Mechanics/providers precede their endpoints in the authored profile for
 	// readability; the compiler remains the authority on dependency order.
-	order := []string{"router", "authorizer", "static-source", "session-source", "authoring-source", "reconciliation-source", "static-api", "session-api", "authoring-api", "reconciliation-api"}
+	order := []string{
+		"router", "authorizer", "static-source", "session-source", "authoring-source",
+		"source-publication-source", "reconciliation-source", "static-api", "session-api",
+		"authoring-api", "source-publication-api", "reconciliation-api",
+	}
 	entries := make([]plugin.ProfileEntry, 0, len(factories))
 	catalog := plugin.NewCatalog()
 	seen := make(map[string]struct{}, len(factories))

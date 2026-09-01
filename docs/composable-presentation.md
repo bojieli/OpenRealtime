@@ -263,6 +263,19 @@ separate operator capability and never reuse the session bearer token.
 Capabilities stay in headers or protected channels, never URLs, Graph IR,
 client manifests, logs, or saved screenshots.
 
+The UI-independent mediated source boundary is now implemented at
+`POST /openrealtime/v1/authoring/write` as a separately selected management
+plugin. A deployment must explicitly provide one opaque-identity-bound rooted
+publisher and issue distinct create or update capability grants; merely
+supplying an authoring document, mounting the pure analyzer, or opening an LSP
+document grants no file access. Creates are atomic and no-replace, updates
+require the exact predecessor content digest and atomically exchange a synced
+same-parent stage, and the response is a content-bound payload-free audit
+receipt. Linux and Darwin use their native no-replace/exchange primitives;
+other server platforms refuse this publisher rather than weakening the
+contract. The browser save workflow remains unmounted until a client profile
+explicitly selects this effect and its operator-root grant.
+
 ### 4.3 Presentation-host API
 
 The optional host exposes only services selected by its profile:

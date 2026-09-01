@@ -34,6 +34,8 @@ const (
 	AnalyzeDocument Operation = "authoring.analyze"
 	CompileDocument Operation = "authoring.compile"
 	RenderGraph     Operation = "authoring.render"
+	CreateSource    Operation = "authoring.source.create"
+	UpdateSource    Operation = "authoring.source.update"
 	ApplyCandidate  Operation = "reconciliation.apply"
 )
 
@@ -132,6 +134,51 @@ type Authoring interface {
 	Analyze(context.Context, AuthoringDocument) (AnalysisResult, error)
 	Compile(context.Context, AuthoringDocument) (CompileResult, error)
 	Render(context.Context, RenderRequest) (RenderResult, error)
+}
+
+// SourceWriteMode separates create-only publication from stale-digest-bound
+// replacement so capabilities can authorize the two effects independently.
+type SourceWriteMode string
+
+const (
+	SourceCreate SourceWriteMode = "create"
+	SourceUpdate SourceWriteMode = "update"
+)
+
+// SourceWriteFormatVersion identifies the request and receipt wire schema.
+const SourceWriteFormatVersion uint64 = 1
+
+// SourceWriteRequest carries an in-memory authoring document to one explicitly
+// configured rooted publisher. Path is a canonical slash-separated path
+// relative to that root; it never grants filesystem authority by itself.
+type SourceWriteRequest struct {
+	FormatVersion        uint64          `json:"format_version"`
+	RootIdentity         string          `json:"root_identity"`
+	Mode                 SourceWriteMode `json:"mode"`
+	Path                 string          `json:"path"`
+	Source               string          `json:"source"`
+	ExpectedSourceDigest string          `json:"expected_source_digest,omitempty"`
+}
+
+// SourceWriteReceipt is payload-free, deterministic evidence of the exact
+// publication. ReceiptDigest binds every preceding field, including whether a
+// superseded staging name could not be removed after an atomic update.
+type SourceWriteReceipt struct {
+	FormatVersion        uint64          `json:"format_version"`
+	RootIdentity         string          `json:"root_identity"`
+	Mode                 SourceWriteMode `json:"mode"`
+	Path                 string          `json:"path"`
+	PreviousSourceDigest string          `json:"previous_source_digest,omitempty"`
+	SourceDigest         string          `json:"source_digest"`
+	SourceBytes          uint64          `json:"source_bytes"`
+	CleanupPending       bool            `json:"cleanup_pending,omitempty"`
+	ReceiptDigest        string          `json:"receipt_digest"`
+}
+
+// SourcePublication is the only management contract that can mutate authoring
+// files. Pure analysis and LSP services deliberately do not implement it.
+type SourcePublication interface {
+	Publish(context.Context, SourceWriteRequest) (SourceWriteReceipt, error)
 }
 
 // ReconciliationRequest names the exact mounted predecessor and the complete

@@ -1818,7 +1818,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader visual editing/UI rendering, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, a separately authorized rooted source-publication boundary, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader visual editing/UI rendering, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -1931,9 +1931,8 @@ Integrated checkpoint ledger:
 - [x] Retain the already-captured historical trace only as a diagnostic target.
   The payload-free ordinary-turn record is fingerprint-bound and exposes the
   old/new divergence; it is not a runtime dependency or a release arm.
-- [ ] Complete the remaining visual/UI rendering, mediated authoring writes,
-  reconciliation, direct benchmark execution, and obsolete launch-path
-  deletion.
+- [ ] Complete the remaining visual/UI rendering, reconciliation, direct
+  benchmark execution, and obsolete launch-path deletion.
 
 Active acceptance queue (work in the shared worktree remains unchecked until
 it has been reviewed, tested, and committed with its evidence):
@@ -2753,8 +2752,36 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     caller-mutation isolation, target-change race, ten shuffled runs, vet, and
     allocation/performance gates are green without adding filesystem or process
     authority.
-  - [ ] Mediate authorized creates and updates with rooted path containment,
+  - [x] Mediate authorized creates and updates with rooted path containment,
     stale-content checks, atomic/no-replace publication, and audit receipts.
+    Filesystem authority is a separate optional `SourcePublication` contract,
+    never inferred by the pure authoring engine, LSP adapter, document path, or
+    session bearer. Its operator API requires distinct
+    `authoring.source.create` and `authoring.source.update` grants scoped to an
+    opaque configured root identity. The publisher accepts only canonical
+    bounded relative `.ortg`/YAML/JSON paths, opens an absolute non-root
+    directory through a retained `os.Root`, rejects symlinked or identity-swapped
+    parents/targets and hard-linked files, creates no directories, and returns
+    no root locator or source payload. Same-parent private stages are bounded,
+    mode-preserving, single-link, and synced before commit. Linux uses
+    `RENAME_NOREPLACE` for create and `RENAME_EXCHANGE` for update; Darwin uses
+    `RENAME_EXCL` and `RENAME_SWAP`; platforms lacking both guarantees reject
+    publisher construction. Updates independently read a stable predecessor
+    before staging and immediately before commit, require the exact expected
+    SHA-256 digest, recheck parent, target, stage, and link identities, and
+    re-read and verify both sides of the atomic exchange before removing the
+    superseded name. Each success returns a
+    deterministic payload-free receipt binding root identity, operation, path,
+    previous/new source digests, byte count, and any cleanup-pending state.
+    The optional plugin route and headless client revalidate that receipt;
+    malformed JSON, wrong-root/wrong-operation capabilities, traversal,
+    external/internal symlinks, hard links, directories, missing/swapped
+    parents, existing creates, stale/raced updates, cancellation, forged
+    receipts, concurrent create/update winners, root-directory rename, and
+    whole-file atomic reader visibility are covered by ten shuffled runs, the
+    race detector, vet, and an approximately 1.10 microsecond receipt-validation
+    benchmark. Browser save controls remain part of the broader visual-editor
+    item rather than granting a view implicit write authority.
 - [ ] Implement the composable presentation and observability design before
   treating any current UI as the production inspector.
   - [x] Inventory the former standalone presentation clients, the macOS client,

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -106,6 +108,19 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	publicationRoot := t.TempDir()
+	publicationIdentity := "sha256:" + strings.Repeat("c", 64)
+	publication, err := management.NewRootedSourcePublisher(management.RootedSourcePublisherOptions{
+		Root: publicationRoot, RootIdentity: publicationIdentity,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := publication.Close(); err != nil {
+			t.Errorf("close client source publisher: %v", err)
+		}
+	})
 
 	live, trace := liveFixture(t, graph)
 	sessions := management.NewSessionRegistry()
@@ -119,7 +134,8 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	operations := []management.Operation{
 		management.ReadGraph, management.ReadDescriptor, management.ReadSchema,
 		management.ReadSession, management.ReadTrace, management.AnalyzeDocument,
-		management.CompileDocument, management.RenderGraph, management.ApplyCandidate,
+		management.CompileDocument, management.RenderGraph, management.CreateSource,
+		management.UpdateSource, management.ApplyCandidate,
 	}
 	grants := make([]management.Grant, len(operations))
 	for index, operation := range operations {
@@ -131,7 +147,7 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	}
 	bundle, err := managementserver.NewBundle(managementserver.BundleConfig{
 		Authorizer: authority, StaticCatalog: static, Sessions: sessions,
-		Authoring: authoring, Reconciliation: reconciler{},
+		Authoring: authoring, SourcePublication: publication, Reconciliation: reconciler{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -244,6 +260,29 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	})
 	if err != nil || rendered.Fingerprint != graph.Fingerprint || !strings.Contains(rendered.Text, graph.Fingerprint) {
 		t.Fatalf("render = %+v, %v", rendered, err)
+	}
+	createSource := management.SourceWriteRequest{
+		FormatVersion: management.SourceWriteFormatVersion,
+		RootIdentity:  publicationIdentity,
+		Mode:          management.SourceCreate,
+		Path:          "client.ortg",
+		Source:        "graph client_write {\n}\n",
+	}
+	createdSource, err := remote.Publish(context.Background(), createSource)
+	if err != nil || management.ValidateSourceWriteReceipt(createSource, createdSource) != nil {
+		t.Fatalf("source create receipt = %+v, %v", createdSource, err)
+	}
+	updateSource := createSource
+	updateSource.Mode = management.SourceUpdate
+	updateSource.Source = "graph client_update {\n}\n"
+	updateSource.ExpectedSourceDigest = createdSource.SourceDigest
+	updatedSource, err := remote.Publish(context.Background(), updateSource)
+	if err != nil || management.ValidateSourceWriteReceipt(updateSource, updatedSource) != nil {
+		t.Fatalf("source update receipt = %+v, %v", updatedSource, err)
+	}
+	published, err := os.ReadFile(filepath.Join(publicationRoot, createSource.Path))
+	if err != nil || string(published) != updateSource.Source {
+		t.Fatalf("published source = %q, %v", published, err)
 	}
 	receipt, err := remote.Apply(context.Background(), management.ReconciliationRequest{
 		SessionID: "sess-client", ExpectedFingerprint: graph.Fingerprint, Candidate: graph,

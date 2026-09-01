@@ -15,10 +15,11 @@ import (
 // short-lived read capability remains owned by the realtime gateway's separate
 // management realm and can never authorize one of these routes.
 type OperatorAPIConfig struct {
-	Authorizer     management.Authorizer
-	StaticCatalog  management.StaticCatalog
-	Authoring      management.Authoring
-	Reconciliation management.Reconciliation
+	Authorizer        management.Authorizer
+	StaticCatalog     management.StaticCatalog
+	Authoring         management.Authoring
+	SourcePublication management.SourcePublication
+	Reconciliation    management.Reconciliation
 }
 
 // OperatorAPI is an independently mounted management realm over a caller's
@@ -43,13 +44,15 @@ func MountOperatorAPI(
 	}
 	staticSelected := !nilInterface(config.StaticCatalog)
 	authoringSelected := !nilInterface(config.Authoring)
+	sourcePublicationSelected := !nilInterface(config.SourcePublication)
 	reconciliationSelected := !nilInterface(config.Reconciliation)
-	if !staticSelected && !authoringSelected && !reconciliationSelected {
+	if !staticSelected && !authoringSelected && !sourcePublicationSelected && !reconciliationSelected {
 		return nil, errors.New("mount operator management API: no operator service selected")
 	}
 	bundle, err := NewBundle(BundleConfig{
 		Authorizer: config.Authorizer, StaticCatalog: config.StaticCatalog,
-		Authoring: config.Authoring, Reconciliation: config.Reconciliation,
+		Authoring: config.Authoring, SourcePublication: config.SourcePublication,
+		Reconciliation: config.Reconciliation,
 	})
 	if err != nil {
 		return nil, err
@@ -69,7 +72,8 @@ func MountOperatorAPI(
 			strings.HasPrefix(path, management.APIPrefix+"/schemas/")) {
 			return true
 		}
-		if authoringSelected && strings.HasPrefix(path, management.APIPrefix+"/authoring/") {
+		if (authoringSelected || sourcePublicationSelected) &&
+			strings.HasPrefix(path, management.APIPrefix+"/authoring/") {
 			return true
 		}
 		return reconciliationSelected && path == management.APIPrefix+"/reconciliations"

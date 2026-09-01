@@ -44,6 +44,10 @@ var (
 		"openrealtime.management.authoring",
 		"openrealtime/management/authoring/v1:analyze-compile-render-bounded-documents",
 	)
+	SourcePublicationContract = semanticContract(
+		"openrealtime.management.source_publication",
+		"openrealtime/management/source-publication/v1:root-identity-create-update-stale-digest-atomic-receipt",
+	)
 	ReconciliationContract = semanticContract(
 		"openrealtime.management.reconciliation",
 		"openrealtime/management/reconciliation/v1:validate-premount-safe-point-swap-receipt",

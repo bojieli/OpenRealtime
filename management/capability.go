@@ -159,7 +159,8 @@ func canonicalGrants(grants []Grant) ([]Grant, error) {
 func validOperation(operation Operation) bool {
 	switch operation {
 	case ReadGraph, ReadDescriptor, ReadSchema, ReadSession, ReadTrace,
-		AnalyzeDocument, CompileDocument, RenderGraph, ApplyCandidate:
+		AnalyzeDocument, CompileDocument, RenderGraph, CreateSource, UpdateSource,
+		ApplyCandidate:
 		return true
 	default:
 		return false

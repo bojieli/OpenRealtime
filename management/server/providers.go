@@ -74,6 +74,15 @@ func NewAuthoringProvider(authoring management.Authoring) (pluginruntime.Factory
 	)
 }
 
+func NewSourcePublicationProvider(
+	publication management.SourcePublication,
+) (pluginruntime.Factory, error) {
+	return newProviderFactory(
+		"openrealtime.management.server.source-publication-provider",
+		management.SourcePublicationContract, publication,
+	)
+}
+
 func NewReconciliationProvider(reconciliation management.Reconciliation) (pluginruntime.Factory, error) {
 	return newProviderFactory(
 		"openrealtime.management.server.reconciliation-provider",

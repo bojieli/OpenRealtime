@@ -320,6 +320,25 @@ func (client *Client) Render(
 	return result, err
 }
 
+func (client *Client) Publish(
+	ctx context.Context, request management.SourceWriteRequest,
+) (management.SourceWriteReceipt, error) {
+	if err := management.ValidateSourceWriteRequest(request); err != nil {
+		return management.SourceWriteReceipt{}, err
+	}
+	operation := management.CreateSource
+	if request.Mode == management.SourceUpdate {
+		operation = management.UpdateSource
+	}
+	var receipt management.SourceWriteReceipt
+	err := client.post(ctx, []string{"authoring", "write"}, operation,
+		request.RootIdentity, request, maxAuthoringRequest, maxJSONBytes, &receipt)
+	if err == nil {
+		err = management.ValidateSourceWriteReceipt(request, receipt)
+	}
+	return receipt, err
+}
+
 func (client *Client) Apply(
 	ctx context.Context, request management.ReconciliationRequest,
 ) (management.ReconciliationReceipt, error) {
@@ -456,6 +475,7 @@ var (
 	_ management.StaticCatalog     = (*Client)(nil)
 	_ management.SessionInspection = (*Client)(nil)
 	_ management.Authoring         = (*Client)(nil)
+	_ management.SourcePublication = (*Client)(nil)
 	_ management.Reconciliation    = (*Client)(nil)
 	_ CapabilitySource             = CapabilityFunc(nil)
 	_ CapabilitySource             = StaticCapability("")
