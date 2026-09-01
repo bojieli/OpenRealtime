@@ -469,13 +469,17 @@ func (document *Document) validateLSPDocumentIdentity(identity LSPDocumentIdenti
 	if identity.Version < 0 || int64(identity.Version) > int64(1<<31-1) {
 		return fmt.Errorf("%w: LSP document version %d is invalid", ErrInvalidPosition, identity.Version)
 	}
-	if identity.URI == "" || identity.URI != strings.TrimSpace(identity.URI) ||
-		len(identity.URI) > 64<<10 || strings.ContainsAny(identity.URI, "\x00\r\n") {
+	return validateLSPDocumentURI(identity.URI)
+}
+
+func validateLSPDocumentURI(value string) error {
+	if value == "" || value != strings.TrimSpace(value) || len(value) > 64<<10 ||
+		strings.ContainsAny(value, "\x00\r\n") {
 		return fmt.Errorf("%w: LSP document URI is invalid", ErrInvalidPosition)
 	}
-	parsed, err := url.ParseRequestURI(identity.URI)
+	parsed, err := url.ParseRequestURI(value)
 	if err != nil || parsed.Scheme == "" || parsed.User != nil || parsed.Fragment != "" ||
-		parsed.String() != identity.URI {
+		parsed.String() != value {
 		return fmt.Errorf("%w: LSP document URI is invalid", ErrInvalidPosition)
 	}
 	return nil

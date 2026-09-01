@@ -1815,7 +1815,7 @@ reference graphs, or conformance evidence.
 | 3 — sidecar/end-to-end | In progress | Typed v1-v4 sidecar negotiation, graph-native external-model element, and locked omni, duplex, and upstream topologies | Mount/dial conformance for every media format, native/external interaction quality, and removal of binding switches |
 | 4 — modalities/authority | In progress | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Explicit visual-reflex/planner reference agents |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Graph-contract-owned capability validation, legacy serve-flag removal, and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader LSP/UI rendering, document synchronization and JSON-RPC adaptation, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, exact session-scoped static/live browser joins, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, and a compiler-backed language-service core exposed through the UI-independent management API | Live authority decisions and true trigger-relative/per-stage latency, broader LSP/UI rendering, multi-file navigation, mediated file writes, and output-to-cause operator workflow |
 | 7 — reconciliation | Foundation only | Mount-scoped services, lifecycle disposal, and reversible-effect declarations | Candidate validation, safe-point swap, state migration, rollback, and leak-proof topology updates |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and binding constraints |
 
@@ -1847,9 +1847,12 @@ Current checkpoint notes:
   render the complete values contract. The same LSP boundary now projects full
   diagnostics, exact-symbol completions, real-range definition links, and
   versioned rename/formatting workspace edits into deterministic protocol wire
-  types. Document synchronization and JSON-RPC adaptation, multi-file
-  navigation, mediated writes, and the remaining phase gates stay unchecked
-  until their independent slices are complete.
+  types. A strict one-message JSON-RPC adapter now freezes the descriptor
+  catalog, owns bounded monotonic full-text document snapshots, projects those
+  operations through the standard LSP lifecycle, and performs no transport,
+  workspace, filesystem, process, or runtime I/O. Multi-file navigation,
+  mediated writes, and the remaining phase gates stay unchecked until their
+  independent slices are complete.
 - No item in the project-level definition of done is yet proven end to end.
   Several have foundation-level support, but direct benchmark execution,
   production inspection, reconciliation, and obsolete-path deletion are still
@@ -2701,8 +2704,25 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     recovery-format, markup, source/virtual-target, deterministic concurrent
     reader, shuffled, race, vet, and performance gates fail closed or pass as
     applicable; the boundary still performs no I/O.
-  - [ ] Add bounded, versioned document synchronization and a transport-neutral
-    JSON-RPC/LSP adapter without granting it filesystem authority.
+  - [x] Add bounded, versioned document synchronization and a transport-neutral
+    JSON-RPC/LSP adapter without granting it filesystem authority. The adapter
+    freezes the latest descriptor catalog at construction, owns only immutable
+    in-memory snapshots, requires monotonically increasing nonnegative 32-bit
+    versions, accepts exactly one full-text change, and stages analysis before
+    compare-and-swap publication so rejected, stale, concurrent, incremental,
+    oversized, and over-capacity changes cannot mutate the retained document.
+    Its one-message JSON-RPC 2.0 boundary has independent request, response,
+    document, URI, method, and ID limits; duplicate-safe structural validation;
+    strict envelopes and typed method params; preserved string/integer IDs;
+    standard lifecycle, error, cancellation, and content-modified forms; and
+    UTF-16/full-sync capabilities. It serves diagnostics, completion, hover,
+    definition, versioned rename, standard formatting edits, and exact
+    read-only virtual descriptor documents without sockets, framing, file or
+    process access, workspace discovery, or mutation authority. Lifecycle,
+    malformed/duplicate/unknown JSON, missing/null/fractional/oversized IDs,
+    stale and adversarial synchronization, frozen-catalog, deterministic wire,
+    disposal erasure, concurrent reader/change race, ten shuffled runs, vet,
+    and allocation/performance gates are green.
   - [ ] Add an explicit workspace/index boundary for digest-bound multi-file and
     subgraph navigation.
   - [ ] Mediate authorized creates and updates with rooted path containment,
