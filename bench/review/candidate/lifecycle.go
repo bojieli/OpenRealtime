@@ -72,6 +72,24 @@ func NewLifecycle(config LifecycleConfig) (*Lifecycle, error) {
 	if err := config.Origin.Validate(); err != nil {
 		return nil, err
 	}
+	binder, bindsRun := config.Plugin.(RunBinder)
+	_, recoversAttempts := config.Plugin.(AttemptRecoverer)
+	if bindsRun != recoversAttempts {
+		return nil, errors.New("candidate evidence recovery plug-in contract is incomplete")
+	}
+	if bindsRun {
+		bound, bindErr := binder.BindRun(
+			config.Context, config.Suite, cloneCell(config.Cell), config.Provenance, config.Origin,
+		)
+		if bindErr != nil {
+			return nil, StageError("", "bind resumable run", bindErr)
+		}
+		if bound.FinishedAt != "" || !matchingBuildProvenance(bound, config.Provenance) {
+			return nil, StageError("", "bind resumable run",
+				errors.New("candidate recovery changed build provenance or claimed a finished run"))
+		}
+		config.Provenance = bound
+	}
 	attemptTimeout, err := evidenceTimeout(
 		"candidate attempt evidence", config.AttemptTimeout, defaultAttemptTimeout,
 	)
@@ -91,6 +109,24 @@ func NewLifecycle(config LifecycleConfig) (*Lifecycle, error) {
 		started: make(map[string]struct{}), cases: make(map[string]int),
 		committed: make(map[string]struct{}),
 	}, nil
+}
+
+// Provenance returns the exact run provenance selected during construction.
+// For a resumed lifecycle this retains the original start time while keeping
+// FinishedAt empty until the suite produces its final result.
+func (lifecycle *Lifecycle) Provenance() bench.Provenance {
+	if lifecycle == nil {
+		return bench.Provenance{}
+	}
+	lifecycle.mu.Lock()
+	defer lifecycle.mu.Unlock()
+	return lifecycle.provenance
+}
+
+func matchingBuildProvenance(left, right bench.Provenance) bool {
+	left.StartedAt, left.FinishedAt = "", ""
+	right.StartedAt, right.FinishedAt = "", ""
+	return reflect.DeepEqual(left, right)
 }
 
 func nilPlugin(value any) bool {
@@ -167,6 +203,29 @@ func (lifecycle *Lifecycle) begin(
 	lifecycle.cases[caseID]++
 	lifecycle.active++
 	lifecycle.mu.Unlock()
+
+	if recoverer, supported := lifecycle.plugin.(AttemptRecoverer); supported {
+		recovered, found, recoverErr := recoverer.RecoverAttempt(lifecycle.ctx, providerSpecification)
+		if recoverErr != nil {
+			lifecycle.release(identity, false)
+			return nil, StageError(caseID, "recover attempt", recoverErr)
+		}
+		if found {
+			completion, cloneErr := CloneCompletion(recovered)
+			if cloneErr != nil || !reflect.DeepEqual(completion.Attempt, specification) {
+				lifecycle.release(identity, false)
+				if cloneErr == nil {
+					cloneErr = errors.New("recovered completion differs from the requested attempt")
+				}
+				return nil, StageError(caseID, "recover attempt", cloneErr)
+			}
+			lifecycle.release(identity, true)
+			return &ActiveAttempt{
+				lifecycle: lifecycle, identity: identity, caseID: caseID,
+				specification: specification, recovered: &completion, terminal: true,
+			}, nil
+		}
+	}
 
 	sink, err := lifecycle.plugin.BeginAttempt(lifecycle.ctx, providerSpecification)
 	if err != nil || nilPlugin(sink) {
@@ -275,8 +334,28 @@ type ActiveAttempt struct {
 	caseID        string
 	specification Attempt
 	sink          AttemptEvidence
+	recovered     *Completion
 	failures      []error
 	terminal      bool
+}
+
+// Recovered returns an owned completion when Begin matched a durable attempt
+// from an interrupted current-run campaign. Callers must skip external work in
+// that case. A normal newly admitted attempt returns found=false.
+func (attempt *ActiveAttempt) Recovered() (completion Completion, found bool, resultErr error) {
+	if attempt == nil {
+		return Completion{}, false, errors.New("candidate active attempt is nil")
+	}
+	attempt.mu.Lock()
+	defer attempt.mu.Unlock()
+	if attempt.recovered == nil {
+		return Completion{}, false, nil
+	}
+	owned, err := CloneCompletion(*attempt.recovered)
+	if err != nil {
+		return Completion{}, false, StageError(attempt.caseID, "read recovered attempt", err)
+	}
+	return owned, true, nil
 }
 
 // RecordFailure binds an external artifact or runner failure to this attempt

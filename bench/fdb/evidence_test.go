@@ -18,6 +18,40 @@ type rejectingEvidencePlugin struct {
 	beginErr     error
 }
 
+type recoveringEvidencePlugin struct {
+	beginCalls   int
+	recoverCalls int
+	result       bench.Result
+}
+
+func (plugin *recoveringEvidencePlugin) BindRun(
+	_ context.Context, _ string, _ bench.Cell, provenance bench.Provenance, _ candidate.RunOrigin,
+) (bench.Provenance, error) {
+	return provenance, nil
+}
+
+func (plugin *recoveringEvidencePlugin) BeginAttempt(
+	context.Context, candidate.Attempt,
+) (candidate.AttemptEvidence, error) {
+	plugin.beginCalls++
+	return nil, errors.New("recovered FDB attempt must not begin recording")
+}
+
+func (plugin *recoveringEvidencePlugin) RecoverAttempt(
+	_ context.Context, attempt candidate.Attempt,
+) (candidate.Completion, bool, error) {
+	plugin.recoverCalls++
+	return candidate.Completion{
+		Attempt: attempt,
+		Outcome: bench.TaskOutcome{ID: attempt.Case, Completed: true, Passed: true},
+	}, true, nil
+}
+
+func (plugin *recoveringEvidencePlugin) FinishSuite(_ context.Context, result bench.Result) error {
+	plugin.result = result
+	return nil
+}
+
 func (plugin *rejectingEvidencePlugin) BeginAttempt(
 	_ context.Context, attempt candidate.Attempt,
 ) (candidate.AttemptEvidence, error) {
@@ -91,5 +125,39 @@ func TestCandidateEvidenceRequiresAnExplicitRunOrigin(t *testing.T) {
 	}
 	if plugin.beginAttempt.Suite != "" || plugin.finishResult.Suite != "" {
 		t.Fatal("invalid origin reached the evidence plug-in")
+	}
+}
+
+func TestCandidateEvidenceRecoverySkipsFDBPlayback(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, string(Interruption), "1")
+	if err := os.MkdirAll(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	metadata := `{"context_text":"Explain the result","current_turn_text":"Actually stop","timestamps":[1,2]}`
+	if err := os.WriteFile(filepath.Join(directory, "metadata.json"), []byte(metadata), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "input.wav"), []byte("must not be read"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	origin, err := candidate.NewRunOrigin(
+		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:1/v1/realtime",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plugin := &recoveringEvidencePlugin{}
+	result, err := Run(t.Context(), Options{
+		Root: root, Endpoint: "ws://127.0.0.1:1/v1/realtime", Cell: bench.Reference(),
+		Categories: []Category{Interruption}, Evidence: plugin, EvidenceOrigin: origin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plugin.beginCalls != 0 || plugin.recoverCalls != 1 || len(result.Tasks) != 1 ||
+		!result.Tasks[0].Completed || !result.Tasks[0].Passed || !plugin.result.Summary.Complete {
+		t.Fatalf("recovered run: begin=%d recover=%d result=%+v finish=%+v",
+			plugin.beginCalls, plugin.recoverCalls, result, plugin.result)
 	}
 }

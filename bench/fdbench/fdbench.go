@@ -200,6 +200,7 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 		if err != nil {
 			return bench.Result{}, fmt.Errorf("create FD-Bench candidate evidence lifecycle: %w", err)
 		}
+		result.Provenance = evidenceLifecycle.Provenance()
 	}
 	finish := func(runErr error) (bench.Result, error) {
 		result.Finish()
@@ -245,6 +246,14 @@ func runConversation(
 		if err != nil {
 			outcome.Error = err.Error()
 			return outcome, err
+		}
+		recovered, found, err := attempt.Recovered()
+		if err != nil {
+			outcome.Error = err.Error()
+			return outcome, err
+		}
+		if found {
+			return recovered.Outcome, nil
 		}
 		defer func() {
 			evidenceErr = errors.Join(evidenceErr, attempt.Complete(outcome, transcript))

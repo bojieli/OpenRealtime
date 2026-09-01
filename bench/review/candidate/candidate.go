@@ -434,3 +434,23 @@ type Plugin interface {
 	BeginAttempt(context.Context, Attempt) (AttemptEvidence, error)
 	FinishSuite(context.Context, bench.Result) error
 }
+
+// RunBinder is an optional recovery boundary implemented by a plug-in that can
+// reopen a previously interrupted current-run campaign. NewLifecycle calls it
+// exactly once before admitting attempts. The returned provenance may retain
+// the original StartedAt value, but it must still identify the same build and
+// machine and must not claim a finish time.
+type RunBinder interface {
+	BindRun(
+		context.Context, string, bench.Cell, bench.Provenance, RunOrigin,
+	) (bench.Provenance, error)
+}
+
+// AttemptRecoverer is the optional per-attempt half of RunBinder; a plug-in
+// must implement both recovery interfaces or neither. A recovered
+// completion is authoritative current-run evidence, not a cache: the lifecycle
+// validates it against the exact newly reconstructed Attempt and counts it as a
+// committed attempt without calling BeginAttempt or any media callback.
+type AttemptRecoverer interface {
+	RecoverAttempt(context.Context, Attempt) (Completion, bool, error)
+}

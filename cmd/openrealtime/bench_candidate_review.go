@@ -34,6 +34,7 @@ type candidateReviewCLIConfig struct {
 	Provider          string
 	APIKeyEnvironment string
 	Concurrency       int
+	Resume            bool
 }
 
 func (config *candidateReviewCLIConfig) bind(flags *flag.FlagSet) {
@@ -45,6 +46,8 @@ func (config *candidateReviewCLIConfig) bind(flags *flag.FlagSet) {
 		"environment variable holding the Gemini review key")
 	flags.IntVar(&config.Concurrency, "review-concurrency", candidateReviewDefaultConcurrency,
 		"concurrent offline Gemini reviews (1..16)")
+	flags.BoolVar(&config.Resume, "review-resume", false,
+		"resume durable attempts from an interrupted current-run source bundle")
 }
 
 type candidateReviewPaths struct {
@@ -131,7 +134,8 @@ func openCandidateReviewCLIWithOperations(
 		if config.Prefix != "" ||
 			(config.Provider != "" && config.Provider != gemini.RegistrationName) ||
 			(config.APIKeyEnvironment != "" && config.APIKeyEnvironment != "GEMINI_API_KEY") ||
-			(config.Concurrency != 0 && config.Concurrency != candidateReviewDefaultConcurrency) {
+			(config.Concurrency != 0 && config.Concurrency != candidateReviewDefaultConcurrency) ||
+			config.Resume {
 			return nil, errors.New("candidate review options require -review-prefix")
 		}
 		return nil, nil
@@ -167,7 +171,11 @@ func openCandidateReviewCLIWithOperations(
 	if candidateReviewPathsContainSensitive(paths, sensitive) {
 		return nil, errors.New("candidate review artifact path contains a sensitive value")
 	}
-	if err := requireFreshCandidateReviewPaths(paths); err != nil {
+	if config.Resume {
+		if err := requireCandidateReviewResumePaths(paths); err != nil {
+			return nil, err
+		}
+	} else if err := requireFreshCandidateReviewPaths(paths); err != nil {
 		return nil, err
 	}
 	origin, err := candidate.NewRunOrigin(
@@ -182,12 +190,22 @@ func openCandidateReviewCLIWithOperations(
 	if err := operations.preflight(ctx, apiKey); err != nil {
 		return nil, err
 	}
-	bundle, err := sourcebundle.New(sourcebundle.Options{
+	bundleOptions := sourcebundle.Options{
 		Directory: paths.SourceDirectory, ReceiptPath: paths.SourceReceipt,
 		SensitiveValues: sensitive,
-	})
+	}
+	var bundle *sourcebundle.Bundle
+	if config.Resume {
+		bundle, err = sourcebundle.Resume(ctx, bundleOptions)
+	} else {
+		bundle, err = sourcebundle.New(bundleOptions)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("create current-run candidate source bundle: %w", err)
+		action := "create"
+		if config.Resume {
+			action = "resume"
+		}
+		return nil, fmt.Errorf("%s current-run candidate source bundle: %w", action, err)
 	}
 	return &candidateReviewCLIResources{
 		paths: paths, bundle: bundle, origin: origin, apiKey: apiKey,
@@ -277,6 +295,25 @@ func requireFreshCandidateReviewPaths(paths candidateReviewPaths) error {
 			return fmt.Errorf("candidate review create-only path already exists: %s", path)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return errors.New("inspect candidate review create-only path")
+		}
+	}
+	return nil
+}
+
+func requireCandidateReviewResumePaths(paths candidateReviewPaths) error {
+	info, err := os.Lstat(paths.SourceDirectory)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return errors.New("candidate review resume source directory is missing or invalid")
+	}
+	for _, path := range []string{
+		paths.SourceReceipt, paths.EvaluationDirectory, paths.EvaluationReceipts,
+		paths.EvaluationQuarantine, paths.AggregateDirectory, paths.AggregateReceipt,
+		paths.AggregateQuarantine,
+	} {
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("candidate review resume path already exists: %s", path)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return errors.New("inspect candidate review resume path")
 		}
 	}
 	return nil
@@ -420,6 +457,9 @@ func runCandidateReviewRecovery(arguments []string, output io.Writer) error {
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(config.Prefix) == "" {
 		return errors.New("review-candidate accepts flags only and requires -review-prefix")
+	}
+	if config.Resume {
+		return errors.New("review-candidate resumes offline evaluation automatically; -review-resume is for benchmark execution")
 	}
 	if config.Provider != gemini.RegistrationName || config.Concurrency < 1 || config.Concurrency > 16 {
 		return errors.New("candidate review recovery requires exact Gemini 3.7 Flash and concurrency 1..16")

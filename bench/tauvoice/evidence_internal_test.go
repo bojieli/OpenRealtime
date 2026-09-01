@@ -20,6 +20,14 @@ type tauCandidatePlugin struct {
 	artifacts   []candidate.CapturedArtifact
 	completions []candidate.Completion
 	finishes    []bench.Result
+	recovered   *bench.TaskOutcome
+	recoveries  int
+}
+
+func (plugin *tauCandidatePlugin) BindRun(
+	_ context.Context, _ string, _ bench.Cell, provenance bench.Provenance, _ candidate.RunOrigin,
+) (bench.Provenance, error) {
+	return provenance, nil
 }
 
 func (plugin *tauCandidatePlugin) BeginAttempt(
@@ -32,6 +40,16 @@ func (plugin *tauCandidatePlugin) BeginAttempt(
 func (plugin *tauCandidatePlugin) FinishSuite(_ context.Context, result bench.Result) error {
 	plugin.finishes = append(plugin.finishes, result)
 	return nil
+}
+
+func (plugin *tauCandidatePlugin) RecoverAttempt(
+	_ context.Context, attempt candidate.Attempt,
+) (candidate.Completion, bool, error) {
+	if plugin.recovered == nil {
+		return candidate.Completion{}, false, nil
+	}
+	plugin.recoveries++
+	return candidate.Completion{Attempt: attempt, Outcome: *plugin.recovered}, true, nil
 }
 
 type tauCandidateAttempt struct{ plugin *tauCandidatePlugin }
@@ -138,6 +156,67 @@ func TestRetainCandidateOutcomeImportsPinnedTauArtifacts(t *testing.T) {
 	if len(plugin.completions) != 1 || plugin.completions[0].Transcript.PlaybackMS != 1234 ||
 		len(plugin.finishes) != 1 {
 		t.Fatalf("completion=%+v finishes=%d", plugin.completions, len(plugin.finishes))
+	}
+}
+
+func TestRetainCandidateOutcomeRecoverySkipsTauArtifactImport(t *testing.T) {
+	const (
+		runName      = "candidate-telecom-regular"
+		simulationID = "70bbf463-1baf-48be-9ae5-a66dd9d4ac22"
+		taskID       = "telecom-task"
+	)
+	config := Config{
+		Tau2Dir: t.TempDir(), Condition: Regular, Cadence: 0.2,
+		Model: "agent", UserModel: "caller", SynthesisProvider: "local",
+		SynthesisModel: "speech", SynthesisVoice: "voice",
+	}
+	simulation := []byte("{\n  \"messages\": [],\n  \"id\": \"" + simulationID + "\"\n}\n")
+	writeTauFixture(t, filepath.Join(
+		config.simulationDir(runName), "simulations", simulationID+".json",
+	), simulation)
+	// No audio is created. A recovered completion must return before the
+	// external-harness media path is opened.
+	outcome := bench.TaskOutcome{
+		ID: "telecom/" + taskID + "/trial-0", Completed: true, Passed: true,
+		Metrics: map[string]float64{"simulation_duration_ms": 1234},
+		Notes: map[string]string{
+			"simulation_id": simulationID, "task_id": taskID, "trial_index": "0",
+		},
+	}
+	plugin := &tauCandidatePlugin{recovered: &outcome}
+	cell := bench.Reference()
+	provenance := bench.Provenance{Revision: "candidate"}
+	origin, err := candidate.NewRunOrigin(
+		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:8080/v1/realtime",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: plugin, Suite: "tau-voice", Cell: cell,
+		Provenance: provenance, Origin: origin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.retainCandidateOutcome(
+		t.Context(), lifecycle, "telecom", runName, outcome,
+	); err != nil {
+		t.Fatal(err)
+	}
+	result := bench.Result{
+		Suite: "tau-voice", Cell: cell, Provenance: provenance, Expected: 1,
+		Tasks: []bench.TaskOutcome{outcome},
+	}
+	result.Finish()
+	if err := lifecycle.Finish(result); err != nil {
+		t.Fatal(err)
+	}
+	if plugin.recoveries != 1 || len(plugin.attempts) != 0 || len(plugin.media) != 0 ||
+		len(plugin.artifacts) != 0 || len(plugin.completions) != 0 || len(plugin.finishes) != 1 {
+		t.Fatalf("tau recovery: recover=%d attempts=%d media=%d artifacts=%d completions=%d finishes=%d",
+			plugin.recoveries, len(plugin.attempts), len(plugin.media), len(plugin.artifacts),
+			len(plugin.completions), len(plugin.finishes))
 	}
 }
 

@@ -2294,6 +2294,16 @@ tracker by itself:
     diagnostics—with deterministic outcomes, exact graph/runtime evidence,
     playable audio and/or synchronized video as applicable, review manifests,
     and create-only external receipts.
+    - [x] Make attempt-stage retention restartable for the direct FDB v1.5,
+      FDB v3, FD-Bench, and tau-Voice campaigns. Each complete attempt now
+      publishes an atomic canonical commit marker after its media, context,
+      outcome, transcript, and artifacts are durable; `-review-resume` takes a
+      crash-released exclusive lease, admits only the same suite/cell/origin,
+      executable, and machine, reuses exact committed outcomes without replay,
+      and preserves markerless or explicitly incomplete directories under
+      `interruptions/` before retry. Finalization-stage debris remains
+      fail-closed, and this subgate does not close the parent until every
+      required population has actually run and been reviewed.
   - [ ] Review every retained candidate recording with the exact
     `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
     problems but never changes the deterministic scorer.
@@ -2387,6 +2397,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   remote model call, retains shared-session or external-harness WAV per attempt,
   publishes create-only per-attempt advisory evaluations plus a media-linked
   aggregate, and reopens the transitive receipts without credentials. The
+  execution commands additionally accept `-review-resume` for the exclusive
+  attempt-stage recovery boundary described above. The
   `review-candidate` command resumes an interrupted new campaign; the
   `verify-candidate-review` command verifies a finished one. Neither command
   reads or reconstructs historical attempts.

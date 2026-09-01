@@ -1699,8 +1699,8 @@ func runTauVoice(arguments []string, output io.Writer) error {
 		Logf:      func(format string, args ...any) { fmt.Fprintf(output, format+"\n", args...) },
 	}
 	if verifyOnly {
-		if strings.TrimSpace(reviewConfig.Prefix) != "" {
-			return errors.New("tau-voice -verify does not execute candidate attempts and cannot use -review-prefix")
+		if strings.TrimSpace(reviewConfig.Prefix) != "" || reviewConfig.Resume {
+			return errors.New("tau-voice -verify does not execute candidate attempts and cannot use candidate review options")
 		}
 		if err := config.Verify(ctx); err != nil {
 			return err

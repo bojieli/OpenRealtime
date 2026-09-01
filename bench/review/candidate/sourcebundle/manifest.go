@@ -21,6 +21,9 @@ const (
 	manifestName          = "manifest.json"
 	resultName            = "result.json"
 	reviewName            = "REVIEW.md"
+	attemptEntryName      = "entry.json"
+	attemptEntryPending   = ".entry.pending"
+	bundleLeaseSuffix     = ".candidate-source.lock"
 	maximumMetadataBytes  = 64 << 20
 	// FD-Bench's required 6,147 rows each retain a complete live graph
 	// attestation. The sealed result and manifest therefore legitimately exceed
@@ -156,6 +159,20 @@ func fileSetDigest(files []SourceFile) (string, error) {
 		return "", err
 	}
 	return digest(payload), nil
+}
+
+func sourceFilePurpose(path string) string {
+	switch path {
+	case resultName:
+		return "authoritative deterministic result"
+	case reviewName:
+		return "case-by-case human review index"
+	default:
+		if strings.HasPrefix(path, "interruptions/") {
+			return "interrupted candidate attempt source evidence"
+		}
+		return "candidate attempt source evidence"
+	}
 }
 
 func receiptPayload(receipt Receipt) ([]byte, error) {

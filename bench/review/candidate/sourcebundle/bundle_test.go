@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -183,6 +184,236 @@ func TestBundleSealsSharedSessionAudioAndVerifiesEveryBinding(t *testing.T) {
 		if !bytes.Contains(review, []byte(want)) {
 			t.Fatalf("REVIEW.md does not contain %q:\n%s", want, review)
 		}
+	}
+}
+
+func TestBundleResumesDurableAttemptsWithoutReplayingThem(t *testing.T) {
+	fixture := newSourceFixture(t)
+	firstSpecification := fixture.attempt(t, "first", 1, false)
+	firstAttempt := beginAttempt(t, fixture, firstSpecification)
+	if err := firstAttempt.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	firstOutcome := fixtureOutcome("first", true)
+	completeAttempt(t, firstAttempt, firstSpecification, firstOutcome)
+	if err := fixture.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := Resume(t.Context(), Options{
+		Directory: fixture.directory, ReceiptPath: fixture.receipt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.bundle = resumed
+	newProcessProvenance := fixture.provenance
+	newProcessProvenance.StartedAt = "2026-08-31T00:00:00Z"
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
+		Provenance: newProcessProvenance, Origin: fixture.origin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lifecycle.Provenance(); got.StartedAt != fixture.provenance.StartedAt {
+		t.Fatalf("resumed start = %q, want %q", got.StartedAt, fixture.provenance.StartedAt)
+	}
+
+	recoveredAttempt, err := lifecycle.Begin(
+		"first", 1, map[string]any{"criterion": "exact", "case": "first"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, found, err := recoveredAttempt.Recovered()
+	if err != nil || !found || !reflect.DeepEqual(recovered.Outcome, firstOutcome) {
+		t.Fatalf("recovered = %+v, found=%v, err=%v", recovered, found, err)
+	}
+
+	secondOutcome := fixtureOutcome("second", false)
+	secondAttempt, err := lifecycle.Begin(
+		"second", 1, map[string]any{"criterion": "exact", "case": "second"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := secondAttempt.Recovered(); err != nil || found {
+		t.Fatalf("fresh attempt reported recovered: found=%v err=%v", found, err)
+	}
+	if err := secondAttempt.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	if err := secondAttempt.Complete(secondOutcome, fixtureTranscript()); err != nil {
+		t.Fatal(err)
+	}
+	result := bench.Result{
+		Suite: "source-suite", Cell: fixture.cell, Provenance: lifecycle.Provenance(),
+		Expected: 2, Tasks: []bench.TaskOutcome{firstOutcome, secondOutcome},
+	}
+	result.Finish()
+	if err := lifecycle.Finish(result); err != nil {
+		t.Fatal(err)
+	}
+	manifest, _, err := Verify(t.Context(), fixture.directory, fixture.receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.AttemptCount != 2 || manifest.Provenance.StartedAt != fixture.provenance.StartedAt {
+		t.Fatalf("resumed manifest = %+v", manifest)
+	}
+	for _, entry := range manifest.Attempts {
+		if _, err := os.Stat(filepath.Join(fixture.directory, entry.Directory, attemptEntryName)); err != nil {
+			t.Fatalf("attempt %s has no durable commit marker: %v", entry.AttemptID, err)
+		}
+	}
+}
+
+func TestBundleExclusiveLeasePreventsConcurrentResume(t *testing.T) {
+	fixture := newSourceFixture(t)
+	options := Options{Directory: fixture.directory, ReceiptPath: fixture.receipt}
+	if _, err := Resume(t.Context(), options); err == nil {
+		t.Fatal("an active candidate source writer was concurrently resumed")
+	}
+	if err := fixture.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	resumed, err := Resume(t.Context(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resume(t.Context(), options); err == nil {
+		t.Fatal("a candidate source bundle admitted two resume owners")
+	}
+	if err := resumed.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBundleResumeArchivesInterruptedAttemptAndAllowsExactRetry(t *testing.T) {
+	fixture := newSourceFixture(t)
+	specification := fixture.attempt(t, "retry", 1, false)
+	attempt := beginAttempt(t, fixture, specification)
+	if err := attempt.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	fixture.bundle.mu.Lock()
+	if err := fixture.bundle.root.Close(); err != nil {
+		fixture.bundle.mu.Unlock()
+		t.Fatal(err)
+	}
+	fixture.bundle.root = nil
+	if err := fixture.bundle.lease.Close(); err != nil {
+		fixture.bundle.mu.Unlock()
+		t.Fatal(err)
+	}
+	fixture.bundle.lease = nil
+	fixture.bundle.mu.Unlock()
+
+	resumed, err := Resume(t.Context(), Options{
+		Directory: fixture.directory, ReceiptPath: fixture.receipt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
+		Provenance: fixture.provenance, Origin: fixture.origin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, err := lifecycle.Begin(
+		"retry", 1, map[string]any{"criterion": "exact", "case": "retry"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := retry.Recovered(); err != nil || found {
+		t.Fatalf("interrupted attempt was recovered: found=%v err=%v", found, err)
+	}
+	if err := retry.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	outcome := fixtureOutcome("retry", true)
+	if err := retry.Complete(outcome, fixtureTranscript()); err != nil {
+		t.Fatal(err)
+	}
+	result := bench.Result{
+		Suite: "source-suite", Cell: fixture.cell, Provenance: lifecycle.Provenance(),
+		Expected: 1, Tasks: []bench.TaskOutcome{outcome},
+	}
+	result.Finish()
+	if err := lifecycle.Finish(result); err != nil {
+		t.Fatal(err)
+	}
+	manifest, _, err := Verify(t.Context(), fixture.directory, fixture.receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPrefix := "interruptions/" + digestName(specification.ID()) + "-000001/"
+	archived := false
+	for _, file := range manifest.Files {
+		if strings.HasPrefix(file.Path, wantPrefix) {
+			archived = true
+			if file.Purpose != "interrupted candidate attempt source evidence" {
+				t.Fatalf("interruption purpose = %q", file.Purpose)
+			}
+		}
+	}
+	if manifest.AttemptCount != 1 || !archived {
+		t.Fatalf("interrupted retry manifest = %+v", manifest)
+	}
+}
+
+func TestBundleResumeRejectsChangedCommitMarkerAndBuildIdentity(t *testing.T) {
+	fixture := newSourceFixture(t)
+	specification := fixture.attempt(t, "durable", 1, false)
+	attempt := beginAttempt(t, fixture, specification)
+	if err := attempt.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	completeAttempt(t, attempt, specification, fixtureOutcome("durable", true))
+	if err := fixture.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := Resume(t.Context(), Options{
+		Directory: fixture.directory, ReceiptPath: fixture.receipt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drifted := fixture.provenance
+	drifted.ExecutableSHA256 = strings.Repeat("b", 64)
+	if _, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
+		Provenance: drifted, Origin: fixture.origin,
+	}); err == nil {
+		t.Fatal("resumed source accepted a different executable identity")
+	}
+	if err := resumed.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	markerPath := filepath.Join(
+		fixture.directory, "attempts", digestName(specification.ID()), attemptEntryName,
+	)
+	if err := os.Chmod(markerPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload[len(payload)/2] ^= 0xff
+	if err := os.WriteFile(markerPath, payload, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resume(t.Context(), Options{
+		Directory: fixture.directory, ReceiptPath: fixture.receipt,
+	}); err == nil {
+		t.Fatal("changed candidate source commit marker was resumed")
 	}
 }
 

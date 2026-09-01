@@ -469,6 +469,7 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 			return bench.Result{}, fmt.Errorf("create tau-Voice candidate evidence lifecycle: %w", err)
 		}
 		evidenceLifecycle = created
+		result.Provenance = evidenceLifecycle.Provenance()
 	}
 	if config.Limit > 0 || len(config.TaskIDs) > 0 || strings.TrimSpace(config.Domain) != "" {
 		// A restricted run is not the declared cell, and the report must not be

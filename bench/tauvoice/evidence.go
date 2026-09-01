@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"unicode"
@@ -95,6 +96,16 @@ func (config *Config) retainCandidateOutcome(
 	})
 	if err != nil {
 		return err
+	}
+	recovered, found, err := attempt.Recovered()
+	if err != nil {
+		return err
+	}
+	if found {
+		if !reflect.DeepEqual(recovered.Outcome, outcome) {
+			return errors.New("tau-Voice recovered candidate outcome differs from the deterministic row")
+		}
+		return nil
 	}
 	if trialErr != nil {
 		_ = attempt.RecordFailure("read upstream trial identity", trialErr)

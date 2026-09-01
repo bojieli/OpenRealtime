@@ -90,14 +90,7 @@ func Verify(ctx context.Context, directory, receiptPath string) (Manifest, Recei
 		if file.Path == manifestName {
 			continue
 		}
-		switch file.Path {
-		case resultName:
-			file.Purpose = "authoritative deterministic result"
-		case reviewName:
-			file.Purpose = "case-by-case human review index"
-		default:
-			file.Purpose = "candidate attempt source evidence"
-		}
+		file.Purpose = sourceFilePurpose(file.Path)
 		filtered = append(filtered, file)
 	}
 	actualFiles = filtered
@@ -281,6 +274,18 @@ func verifyAttempts(
 		}
 		if err := verifyArtifacts(root, entry, files); err != nil {
 			return err
+		}
+		markerPath := filepath.ToSlash(filepath.Join(entry.Directory, attemptEntryName))
+		if marker, retained := files[markerPath]; retained {
+			markerPayload, err := readRegular(root, markerPath, marker.SizeBytes)
+			if err != nil || digest(markerPayload) != marker.SHA256 {
+				return errors.New("candidate source attempt commit marker changed")
+			}
+			var committed AttemptEntry
+			if err := decodeCanonical(markerPayload, &committed); err != nil ||
+				!reflect.DeepEqual(committed, entry) {
+				return errors.New("candidate source attempt commit marker differs from its manifest")
+			}
 		}
 	}
 	for _, remaining := range rows {

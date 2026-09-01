@@ -36,9 +36,12 @@ type Bundle struct {
 	directory  string
 	receipt    string
 	root       *os.Root
+	lease      *os.File
 	identity   os.FileInfo
 	guard      sensitiveGuard
 	attempts   map[string]*attemptState
+	recovered  map[string]candidate.Completion
+	claimed    map[string]struct{}
 	active     int
 	finishing  bool
 	finished   bool
@@ -71,41 +74,65 @@ type reviewContext struct {
 }
 
 func New(options Options) (*Bundle, error) {
-	directory, err := validateAbsolutePath("candidate source directory", options.Directory)
+	directory, receipt, guard, err := validateBundleOptions(options)
 	if err != nil {
 		return nil, err
 	}
-	receipt, err := validateAbsolutePath("candidate source receipt", options.ReceiptPath)
+	lease, err := acquireBundleLease(context.Background(), directory)
 	if err != nil {
 		return nil, err
-	}
-	if withinPath(receipt, directory) || withinPath(directory, receipt) {
-		return nil, errors.New("candidate source directory and receipt must be independent paths")
-	}
-	if _, err := os.Lstat(receipt); err == nil {
-		return nil, errors.New("candidate source receipt already exists")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, errors.New("inspect candidate source receipt destination")
-	}
-	guard, err := newSensitiveGuard(options.SensitiveValues)
-	if err != nil {
-		return nil, err
-	}
-	if guard.rejects([]byte(directory)) || guard.rejects([]byte(receipt)) {
-		return nil, errors.New("candidate source public path contains a declared sensitive value")
 	}
 	root, identity, err := createBundleRoot(directory)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(err, closeBundleLease(lease))
 	}
 	bundle := &Bundle{
-		directory: directory, receipt: receipt, root: root, identity: identity, guard: guard,
-		attempts: make(map[string]*attemptState),
+		directory: directory, receipt: receipt, root: root, lease: lease, identity: identity, guard: guard,
+		attempts: make(map[string]*attemptState), recovered: make(map[string]candidate.Completion),
+		claimed: make(map[string]struct{}),
 	}
 	if err := makeDirectory(root, "attempts"); err != nil {
-		return nil, errors.Join(err, removeCreatedBundle(directory, root, identity))
+		return nil, errors.Join(
+			err, removeCreatedBundle(directory, root, identity), closeBundleLease(lease),
+		)
 	}
 	return bundle, nil
+}
+
+func validateBundleOptions(options Options) (string, string, sensitiveGuard, error) {
+	directory, err := validateAbsolutePath("candidate source directory", options.Directory)
+	if err != nil {
+		return "", "", sensitiveGuard{}, err
+	}
+	receipt, err := validateAbsolutePath("candidate source receipt", options.ReceiptPath)
+	if err != nil {
+		return "", "", sensitiveGuard{}, err
+	}
+	if withinPath(receipt, directory) || withinPath(directory, receipt) {
+		return "", "", sensitiveGuard{}, errors.New(
+			"candidate source directory and receipt must be independent paths",
+		)
+	}
+	if receipt == directory+bundleLeaseSuffix {
+		return "", "", sensitiveGuard{}, errors.New(
+			"candidate source receipt conflicts with its exclusive lease path",
+		)
+	}
+	if _, err := os.Lstat(receipt); err == nil {
+		return "", "", sensitiveGuard{}, errors.New("candidate source receipt already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", sensitiveGuard{}, errors.New("inspect candidate source receipt destination")
+	}
+	guard, err := newSensitiveGuard(options.SensitiveValues)
+	if err != nil {
+		return "", "", sensitiveGuard{}, err
+	}
+	if guard.rejects([]byte(directory)) || guard.rejects([]byte(receipt)) {
+		return "", "", sensitiveGuard{}, errors.New(
+			"candidate source public path contains a declared sensitive value",
+		)
+	}
+	return directory, receipt, guard, nil
 }
 
 func withinPath(path, parent string) bool {
@@ -147,7 +174,7 @@ func (bundle *Bundle) BeginAttempt(
 	if _, duplicate := bundle.attempts[identity]; duplicate {
 		return nil, errors.New("candidate source attempt is duplicated")
 	}
-	if len(bundle.attempts) == 0 {
+	if bundle.suite == "" {
 		bundle.suite = snapshot.Suite
 		bundle.cell = snapshot.Cell
 		bundle.provenance = snapshot.Provenance
@@ -453,7 +480,20 @@ func (attempt *attemptState) Complete(
 	attempt.entry.Deterministic = snapshot.Outcome
 	attempt.entry.Terminal = "completed"
 	attempt.entry.EvidenceComplete = prior == nil && resultErr == nil
+	entry := cloneEntry(attempt.entry)
 	attempt.mu.Unlock()
+	entryPayload, markerErr := canonicalIndented(entry)
+	if markerErr != nil || attempt.bundle.guard.rejects(entryPayload) {
+		markerErr = errors.New("encode candidate source attempt commit marker")
+	} else {
+		_, markerErr = publishAttemptEntry(attempt.bundle.root, attempt.directory, entryPayload)
+	}
+	if markerErr != nil {
+		resultErr = errors.Join(resultErr, markerErr)
+		attempt.mu.Lock()
+		attempt.entry.EvidenceComplete = false
+		attempt.mu.Unlock()
+	}
 	return errors.Join(prior, resultErr)
 }
 
@@ -521,12 +561,19 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 	for _, state := range bundle.attempts {
 		states = append(states, state)
 	}
+	recoveredCount, claimedCount := len(bundle.recovered), len(bundle.claimed)
 	bundle.mu.Unlock()
 	defer func() {
 		bundle.mu.Lock()
 		bundle.finishing = false
 		bundle.finished = true
 		bundle.mu.Unlock()
+	}()
+	defer func() {
+		if err := closeBundleLease(bundle.lease); err != nil {
+			resultErr = errors.Join(resultErr, err)
+		}
+		bundle.lease = nil
 	}()
 	defer func() {
 		if bundle.root != nil {
@@ -557,6 +604,11 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 	if len(entries) != len(snapshot.Tasks) {
 		resultErr = errors.Join(resultErr, errors.New("candidate source population differs from deterministic result"))
 	}
+	if claimedCount != recoveredCount {
+		resultErr = errors.Join(resultErr, errors.New(
+			"candidate source resumed population contains an unclaimed durable attempt",
+		))
+	}
 	for _, entry := range entries {
 		if !entry.EvidenceComplete {
 			resultErr = errors.Join(resultErr, errors.New("candidate source bundle contains incomplete attempt evidence"))
@@ -583,14 +635,7 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 		return errors.Join(resultErr, err)
 	}
 	for index := range files {
-		switch files[index].Path {
-		case resultName:
-			files[index].Purpose = "authoritative deterministic result"
-		case reviewName:
-			files[index].Purpose = "case-by-case human review index"
-		default:
-			files[index].Purpose = "candidate attempt source evidence"
-		}
+		files[index].Purpose = sourceFilePurpose(files[index].Path)
 	}
 	setDigest, err := fileSetDigest(files)
 	if err != nil {
@@ -649,15 +694,18 @@ func (bundle *Bundle) Close() error {
 		return errors.New("candidate source bundle is active or finishing")
 	}
 	bundle.finished = true
-	if bundle.root == nil {
-		return nil
+	var resultErr error
+	if bundle.root != nil {
+		if err := bundle.root.Close(); err != nil {
+			resultErr = errors.Join(resultErr, errors.New("close candidate source bundle"))
+		}
+		bundle.root = nil
 	}
-	err := bundle.root.Close()
-	bundle.root = nil
-	if err != nil {
-		return errors.New("close candidate source bundle")
+	if err := closeBundleLease(bundle.lease); err != nil {
+		resultErr = errors.Join(resultErr, err)
 	}
-	return nil
+	bundle.lease = nil
+	return resultErr
 }
 
 func (bundle *Bundle) guardValues() []string {
@@ -701,7 +749,103 @@ func matchingRunProvenance(left, right bench.Provenance) bool {
 	return reflect.DeepEqual(left, right)
 }
 
+// BindRun binds a fresh or resumed source bundle to exactly one candidate run.
+// A resumed process may have a new wall-clock start observation, but it must be
+// the same immutable build on the same host. The original start time remains
+// authoritative for the final campaign provenance.
+func (bundle *Bundle) BindRun(
+	ctx context.Context, suite string, cell bench.Cell, provenance bench.Provenance,
+	origin candidate.RunOrigin,
+) (bench.Provenance, error) {
+	if bundle == nil || ctx == nil {
+		return bench.Provenance{}, errors.New("bind candidate source run: nil bundle or context")
+	}
+	if err := ctx.Err(); err != nil {
+		return bench.Provenance{}, err
+	}
+	probe, err := candidate.NewAttempt(
+		suite, "source-bundle-run-binding", 1, cell, provenance, origin,
+		map[string]string{"purpose": "validate resumable run identity"},
+	)
+	if err != nil {
+		return bench.Provenance{}, err
+	}
+	bundle.mu.Lock()
+	defer bundle.mu.Unlock()
+	if bundle.finishing || bundle.finished || bundle.root == nil {
+		return bench.Provenance{}, errors.New("candidate source bundle is finishing")
+	}
+	if err := verifyBundleRoot(bundle.root, bundle.directory, bundle.identity); err != nil {
+		return bench.Provenance{}, err
+	}
+	if bundle.suite == "" {
+		bundle.suite, bundle.cell = probe.Suite, probe.Cell
+		bundle.provenance, bundle.origin = probe.Provenance, probe.Origin
+		return bundle.provenance, nil
+	}
+	if probe.Suite != bundle.suite || !reflect.DeepEqual(probe.Cell, bundle.cell) ||
+		probe.Origin != bundle.origin || !matchingResumeBuild(probe.Provenance, bundle.provenance) {
+		return bench.Provenance{}, errors.New("candidate source resumed run identity differs from retained attempts")
+	}
+	retained := bundle.provenance
+	retained.FinishedAt = ""
+	return retained, nil
+}
+
+func matchingResumeBuild(left, right bench.Provenance) bool {
+	left.StartedAt, left.FinishedAt = "", ""
+	right.StartedAt, right.FinishedAt = "", ""
+	return reflect.DeepEqual(left, right)
+}
+
+// RecoverAttempt returns one exact durable completion from a reopened bundle.
+// Each retained identity can be claimed only once by the new lifecycle.
+func (bundle *Bundle) RecoverAttempt(
+	ctx context.Context, specification candidate.Attempt,
+) (candidate.Completion, bool, error) {
+	if bundle == nil || ctx == nil {
+		return candidate.Completion{}, false, errors.New(
+			"recover candidate source attempt: nil bundle or context",
+		)
+	}
+	if err := ctx.Err(); err != nil {
+		return candidate.Completion{}, false, err
+	}
+	snapshot, err := candidate.CloneAttempt(specification)
+	if err != nil {
+		return candidate.Completion{}, false, err
+	}
+	bundle.mu.Lock()
+	defer bundle.mu.Unlock()
+	if bundle.finishing || bundle.finished || bundle.root == nil {
+		return candidate.Completion{}, false, errors.New("candidate source bundle is finishing")
+	}
+	if err := verifyBundleRoot(bundle.root, bundle.directory, bundle.identity); err != nil {
+		return candidate.Completion{}, false, err
+	}
+	recovered, found := bundle.recovered[snapshot.ID()]
+	if !found {
+		return candidate.Completion{}, false, nil
+	}
+	if _, duplicate := bundle.claimed[snapshot.ID()]; duplicate {
+		return candidate.Completion{}, false, errors.New("candidate source recovered attempt was already claimed")
+	}
+	if !reflect.DeepEqual(recovered.Attempt, snapshot) {
+		return candidate.Completion{}, false, errors.New(
+			"candidate source recovered attempt differs from the requested contract",
+		)
+	}
+	owned, err := candidate.CloneCompletion(recovered)
+	if err != nil {
+		return candidate.Completion{}, false, err
+	}
+	bundle.claimed[snapshot.ID()] = struct{}{}
+	return owned, true, nil
+}
+
 var _ candidate.Plugin = (*Bundle)(nil)
 var _ candidate.AttemptEvidence = (*attemptState)(nil)
 var _ candidate.CapturedMediaEvidence = (*attemptState)(nil)
 var _ candidate.CapturedArtifactEvidence = (*attemptState)(nil)
+var _ candidate.RunBinder = (*Bundle)(nil)
+var _ candidate.AttemptRecoverer = (*Bundle)(nil)

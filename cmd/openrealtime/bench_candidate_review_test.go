@@ -90,6 +90,97 @@ func TestOpenCandidateReviewCLIPreflightsBeforeCreatingCurrentRunBundle(t *testi
 	}
 }
 
+func TestOpenCandidateReviewCLIResumesOnlyAnUnsealedSourceTree(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "fdb-candidate-resume")
+	preflightCalls := 0
+	operations := candidateReviewOperations{
+		preflight: func(context.Context, string) error { preflightCalls++; return nil },
+		run: func(
+			context.Context, candidateReviewPaths, string, []string, int,
+		) (campaign.AggregateBundle, error) {
+			return campaign.AggregateBundle{}, errors.New("not used")
+		},
+		verify: func(context.Context, candidateReviewPaths) (campaign.AggregateBundle, error) {
+			return campaign.AggregateBundle{}, errors.New("not used")
+		},
+	}
+	fresh, err := openCandidateReviewCLIWithOperations(
+		t.Context(), candidateReviewFixtureConfig(prefix), "deployment-token-fixture",
+		"ws://127.0.0.1:8765/v1/realtime", candidateReviewFixtureLookup, operations,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenance := bench.Provenance{
+		Revision: "fixture-revision", ExecutableSHA256: strings.Repeat("a", 64),
+		StartedAt: "2026-08-31T00:00:00Z",
+	}
+	specification, err := candidate.NewAttempt(
+		"fixture-suite", "case-1", 1, bench.Reference(), provenance, fresh.origin,
+		map[string]string{"criterion": "exact"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := fresh.bundle.BeginAttempt(t.Context(), specification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := attempt.CaptureAudio(bench.SessionAudioCapture{
+		SampleRateHz: 24_000, RoomPCM16: []int16{100, -100, 200, -200},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outcome := bench.TaskOutcome{ID: "case-1", Completed: true, Passed: true}
+	if err := attempt.Complete(t.Context(), candidate.Completion{
+		Attempt: specification, Outcome: outcome,
+		Transcript: bench.Transcript{PlaybackMS: 10, Moments: []bench.Moment{
+			{AtMS: 1, Kind: bench.MomentTranscript, Text: "hello"},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumeConfig := candidateReviewFixtureConfig(prefix)
+	resumeConfig.Resume = true
+	resumed, err := openCandidateReviewCLIWithOperations(
+		t.Context(), resumeConfig, "deployment-token-fixture",
+		"ws://127.0.0.1:8765/v1/realtime", candidateReviewFixtureLookup, operations,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.bundle == nil || preflightCalls != 2 {
+		t.Fatalf("resumed resources=%+v preflight calls=%d", resumed, preflightCalls)
+	}
+	if err := resumed.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(resumed.paths.EvaluationDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if resources, err := openCandidateReviewCLIWithOperations(
+		t.Context(), resumeConfig, "deployment-token-fixture",
+		"ws://127.0.0.1:8765/v1/realtime", candidateReviewFixtureLookup, operations,
+	); err == nil || resources != nil || !strings.Contains(err.Error(), "resume path already exists") {
+		t.Fatalf("contaminated resume resources=%+v error=%v", resources, err)
+	}
+}
+
+func TestOpenCandidateReviewCLIResumeRequiresPrefix(t *testing.T) {
+	resources, err := openCandidateReviewCLIWithOperations(
+		t.Context(), candidateReviewCLIConfig{Resume: true}, "",
+		"ws://127.0.0.1:8765/v1/realtime", candidateReviewFixtureLookup,
+		candidateReviewOperations{},
+	)
+	if err == nil || resources != nil || !strings.Contains(err.Error(), "require -review-prefix") {
+		t.Fatalf("prefixless resume resources=%+v error=%v", resources, err)
+	}
+}
+
 func TestOpenCandidateReviewCLIRejectsInvalidConfigurationWithoutMutation(t *testing.T) {
 	parent := t.TempDir()
 	tests := []struct {
