@@ -78,7 +78,11 @@ func (registry *SessionRegistry) Snapshot(_ context.Context, session string) (in
 	if err != nil {
 		return inspect.Live{}, err
 	}
-	return RedactLive(source.Live()), nil
+	snapshot := source.Live()
+	if err := ValidateSessionSnapshot(snapshot); err != nil {
+		return inspect.Live{}, err
+	}
+	return RedactLive(snapshot), nil
 }
 
 type runtimeGraphSource interface {

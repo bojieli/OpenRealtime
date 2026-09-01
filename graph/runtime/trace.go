@@ -73,23 +73,25 @@ func (tracer *BufferTracer) Events() []TraceEvent {
 }
 
 type trackedFlow struct {
-	flow inspect.FlowLive
+	flow    inspect.FlowLive
+	parents map[string][]string
 }
 
 // flowTracker retains bounded payload-free routes by envelope correlation.
 // It records internal Graph IR edges only; boundary queues are useful for
 // queue telemetry but are not selected graph paths.
 type flowTracker struct {
-	mu       sync.Mutex
-	maxFlows int
-	maxEdges int
-	maxKey   int
-	order    []string
-	flows    map[string]*trackedFlow
-	dropped  uint64
+	mu        sync.Mutex
+	maxFlows  int
+	maxEdges  int
+	maxKey    int
+	maxParent int
+	order     []string
+	flows     map[string]*trackedFlow
+	dropped   uint64
 }
 
-func newFlowTracker(maxFlows, maxEdges, maxCorrelationBytes int) *flowTracker {
+func newFlowTracker(maxFlows, maxEdges, maxCorrelationBytes, maxCausalParents int) *flowTracker {
 	if maxFlows < 1 {
 		maxFlows = 1
 	}
@@ -99,9 +101,13 @@ func newFlowTracker(maxFlows, maxEdges, maxCorrelationBytes int) *flowTracker {
 	if maxCorrelationBytes < 1 {
 		maxCorrelationBytes = 1024
 	}
+	if maxCausalParents < 1 || maxCausalParents > inspect.MaximumCausalParentsPerStage {
+		maxCausalParents = inspect.MaximumCausalParentsPerStage
+	}
 	return &flowTracker{
 		maxFlows: maxFlows, maxEdges: maxEdges, maxKey: maxCorrelationBytes,
-		flows: make(map[string]*trackedFlow),
+		maxParent: maxCausalParents,
+		flows:     make(map[string]*trackedFlow),
 	}
 }
 
@@ -115,6 +121,7 @@ func (tracker *flowTracker) record(
 	if key == "" {
 		return
 	}
+	stage, validStage := causalStage(envelope, tracker.maxKey, tracker.maxParent)
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	if len(key) > tracker.maxKey {
@@ -122,6 +129,13 @@ func (tracker *flowTracker) record(
 		return
 	}
 	tracked := tracker.flows[key]
+	if !validStage {
+		tracker.dropped++
+		if tracked != nil {
+			tracked.flow.Truncated = true
+		}
+		return
+	}
 	if tracked == nil {
 		if len(tracker.order) == tracker.maxFlows {
 			oldest := tracker.order[0]
@@ -130,13 +144,23 @@ func (tracker *flowTracker) record(
 			tracker.dropped++
 		}
 		tracked = &trackedFlow{
-			flow: inspect.FlowLive{Correlation: key, FirstNS: atNS},
+			flow:    inspect.FlowLive{Correlation: key, FirstNS: atNS},
+			parents: make(map[string][]string),
 		}
 		tracker.flows[key] = tracked
 		tracker.order = append(tracker.order, key)
 	} else if atNS < tracked.flow.LastNS {
 		atNS = tracked.flow.LastNS
 		tracker.dropped++
+	}
+	if tracked.flow.Truncated {
+		tracker.dropped++
+		return
+	}
+	if parents, found := tracked.parents[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+		tracked.flow.Truncated = true
+		tracker.dropped++
+		return
 	}
 	tracked.flow.LastNS = atNS
 	// Enqueue is emitted exactly once per actual traversal. Do not de-duplicate
@@ -149,6 +173,34 @@ func (tracker *flowTracker) record(
 	}
 	tracked.flow.Edges = append(tracked.flow.Edges, channel)
 	tracked.flow.EdgeNS = append(tracked.flow.EdgeNS, atNS)
+	tracked.flow.CausalStages = append(tracked.flow.CausalStages, stage)
+	if _, found := tracked.parents[stage.Item]; !found {
+		tracked.parents[stage.Item] = slices.Clone(stage.Parents)
+	}
+}
+
+func causalStage(
+	envelope element.Envelope, maxIdentityBytes, maxParents int,
+) (inspect.CausalStageLive, bool) {
+	if envelope.ItemID == "" || len(envelope.ItemID) > maxIdentityBytes ||
+		len(envelope.CausalParents) > maxParents {
+		return inspect.CausalStageLive{}, false
+	}
+	stage := inspect.CausalStageLive{
+		Item: envelope.ItemID, Parents: make([]string, 0, len(envelope.CausalParents)),
+	}
+	seen := make(map[string]struct{}, len(envelope.CausalParents))
+	for _, parent := range envelope.CausalParents {
+		if parent == "" || parent == envelope.ItemID || len(parent) > maxIdentityBytes {
+			return inspect.CausalStageLive{}, false
+		}
+		if _, duplicate := seen[parent]; duplicate {
+			return inspect.CausalStageLive{}, false
+		}
+		seen[parent] = struct{}{}
+		stage.Parents = append(stage.Parents, parent)
+	}
+	return stage, true
 }
 
 func (tracker *flowTracker) snapshot() (map[string]inspect.FlowLive, uint64) {

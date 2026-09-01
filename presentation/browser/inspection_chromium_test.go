@@ -7,11 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 )
 
 func TestInspectionViewMatchesClosedAuthorityDecisionVocabulary(t *testing.T) {
@@ -54,6 +56,15 @@ func TestInspectionViewMatchesClosedAuthorityDecisionVocabulary(t *testing.T) {
 	}
 	assertExact("kind", source[kindStart:operationStart], wantKinds)
 	assertExact("operation", source[operationStart:contractEnd], wantOperations)
+	bound := regexp.MustCompile(`const MAX_CAUSAL_PARENTS = ([0-9]+);`).FindStringSubmatch(source)
+	if len(bound) != 2 {
+		t.Fatal("inspection view omits its causal-parent bound")
+	}
+	got, err := strconv.Atoi(bound[1])
+	if err != nil || got != inspect.MaximumCausalParentsPerStage {
+		t.Fatalf("inspection view causal-parent bound = %q, want %d", bound[1],
+			inspect.MaximumCausalParentsPerStage)
+	}
 }
 
 func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.T) {
@@ -101,9 +112,9 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 		"First traversal: ", "110 ns from mount clock", "Last traversal: ",
 		"150 ns from mount clock", "Elapsed: ", "40 ns", "Retention: ", "complete",
 		"Stage 1: worker.out → worker.in via channel (Event(test.Value); lossy); " +
-			"110 ns from mount clock; first retained stage",
+			"110 ns from mount clock; first retained stage; causal cause_000002 ← cause_000001",
 		"Stage 2: worker.out → worker.in via channel (Event(test.Value); lossy); " +
-			"150 ns from mount clock; +40 ns",
+			"150 ns from mount clock; +40 ns; causal cause_000003 ← cause_000002, cause_000001",
 	} {
 		if !strings.Contains(document, expected) {
 			t.Fatalf("Chromium channel view omitted %q:\n%s", expected, document)
@@ -155,6 +166,10 @@ const live = {
   flows: { flow_000001: {
     correlation: "flow_000001", edges: ["channel", "channel"],
     edge_ns: [110, 150], first_ns: 110, last_ns: 150, truncated: false,
+    causal_stages: [
+      { item: "cause_000002", parents: ["cause_000001"] },
+      { item: "cause_000003", parents: ["cause_000002", "cause_000001"] },
+    ],
   } }, trace_dropped: 0,
 };
 const model = {

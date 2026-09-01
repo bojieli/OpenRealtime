@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/element"
@@ -8,8 +9,11 @@ import (
 )
 
 func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
-	tracker := newFlowTracker(2, 3, 1024)
-	envelope := element.Envelope{ItemID: "same", TraceID: "feedback", Sequence: 1}
+	tracker := newFlowTracker(2, 3, 1024, inspect.MaximumCausalParentsPerStage)
+	envelope := element.Envelope{
+		ItemID: "same", TraceID: "feedback", Sequence: 1,
+		CausalParents: []string{"observation", "state-revision"},
+	}
 	tracker.record("feedback-edge", TraceEnqueue, envelope, 1)
 	tracker.record("feedback-edge", TraceEnqueue, envelope, 2)
 	tracker.record("exit-edge", TraceEnqueue, envelope, 3)
@@ -19,6 +23,8 @@ func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
 	if len(flow.Edges) != 3 || flow.Edges[0] != "feedback-edge" ||
 		flow.Edges[1] != "feedback-edge" || flow.Edges[2] != "exit-edge" ||
 		len(flow.EdgeNS) != 3 || flow.EdgeNS[0] != 1 || flow.EdgeNS[1] != 2 || flow.EdgeNS[2] != 3 ||
+		len(flow.CausalStages) != 3 || flow.CausalStages[0].Item != "same" ||
+		!slices.Equal(flow.CausalStages[0].Parents, envelope.CausalParents) ||
 		!flow.Truncated || dropped != 1 {
 		t.Fatalf("bounded feedback flow = %+v, dropped=%d", flow, dropped)
 	}
@@ -40,8 +46,46 @@ func TestFlowTrackerPreservesFeedbackAndBoundsRetention(t *testing.T) {
 	}
 }
 
+func TestFlowTrackerTruncatesInvalidOrRewrittenCausalLineage(t *testing.T) {
+	tests := []struct {
+		name   string
+		second element.Envelope
+	}{
+		{name: "rewritten parents", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"different"},
+		}},
+		{name: "self parent", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"derived"},
+		}},
+		{name: "duplicate parent", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"root", "root"},
+		}},
+		{name: "too many parents", second: element.Envelope{
+			ItemID: "derived", TraceID: "trace", CausalParents: []string{"one", "two"},
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tracker := newFlowTracker(2, 4, 32, 1)
+			tracker.record("first", TraceEnqueue, element.Envelope{
+				ItemID: "derived", TraceID: "trace", CausalParents: []string{"root"},
+			}, 10)
+			tracker.record("second", TraceEnqueue, test.second, 20)
+			tracker.record("third", TraceEnqueue, element.Envelope{
+				ItemID: "later", TraceID: "trace", CausalParents: []string{"derived"},
+			}, 30)
+			flows, dropped := tracker.snapshot()
+			flow := flows["trace:trace"]
+			if !flow.Truncated || len(flow.Edges) != 1 || len(flow.CausalStages) != 1 ||
+				flow.CausalStages[0].Item != "derived" || dropped != 2 {
+				t.Fatalf("invalid causal lineage retention = %+v, dropped=%d", flow, dropped)
+			}
+		})
+	}
+}
+
 func TestFlowTrackerBoundsCorrelationBytesAndClampsRegressingClock(t *testing.T) {
-	tracker := newFlowTracker(2, 3, 16)
+	tracker := newFlowTracker(2, 3, 16, inspect.MaximumCausalParentsPerStage)
 	tracker.record("edge", TraceEnqueue, element.Envelope{
 		ItemID: "item", TraceID: "this-correlation-is-too-large",
 	}, 10)
@@ -62,24 +106,43 @@ func TestFlowTrackerBoundsCorrelationBytesAndClampsRegressingClock(t *testing.T)
 
 func TestRecordedFlowMonotonicityRequiresAnImmutableTimingModeAndPrefix(t *testing.T) {
 	before := traceCorrelation{
-		edges: []string{"edge"}, edgeNS: []uint64{10}, firstNS: 10, lastNS: 10,
+		edges: []string{"edge"}, edgeNS: []uint64{10},
+		causalStages: []inspect.CausalStageLive{{Item: "item", Parents: []string{"root"}}},
+		firstNS:      10, lastNS: 10,
 	}
-	if !monotonicRawFlow(before, inspect.FlowLive{
-		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20}, FirstNS: 10, LastNS: 20,
+	if !monotonicRecordedFlow(before, inspect.FlowLive{
+		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20},
+		CausalStages: []inspect.CausalStageLive{
+			{Item: "item", Parents: []string{"root"}}, {Item: "next", Parents: []string{"item"}},
+		},
+		FirstNS: 10, LastNS: 20,
 	}) {
 		t.Fatal("valid edge and timing append was not monotonic")
 	}
-	if monotonicRawFlow(before, inspect.FlowLive{
-		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{11, 20}, FirstNS: 10, LastNS: 20,
+	if monotonicRecordedFlow(before, inspect.FlowLive{
+		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{11, 20},
+		CausalStages: []inspect.CausalStageLive{
+			{Item: "item", Parents: []string{"root"}}, {Item: "next", Parents: []string{"item"}},
+		},
+		FirstNS: 10, LastNS: 20,
 	}) {
 		t.Fatal("rewritten edge timing prefix was accepted")
 	}
-	if monotonicRawFlow(traceCorrelation{
+	if monotonicRecordedFlow(traceCorrelation{
 		edges: []string{"edge"}, firstNS: 10, lastNS: 10,
 	}, inspect.FlowLive{
 		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20}, FirstNS: 10, LastNS: 20,
 	}) {
 		t.Fatal("legacy flow changed timing-presence mode without rotating identity")
+	}
+	if monotonicRecordedFlow(before, inspect.FlowLive{
+		Edges: []string{"edge", "edge"}, EdgeNS: []uint64{10, 20},
+		CausalStages: []inspect.CausalStageLive{
+			{Item: "item", Parents: []string{"rewritten"}}, {Item: "next", Parents: []string{"item"}},
+		},
+		FirstNS: 10, LastNS: 20,
+	}) {
+		t.Fatal("rewritten causal prefix was accepted")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/element"
@@ -91,6 +92,58 @@ func ValidateSessionSnapshot(snapshot inspect.Live) error {
 		if !canonicalEvidenceName(id) || edge.Occupancy < 0 || edge.HighWater < edge.Occupancy ||
 			edge.Dequeued > edge.Enqueued || edge.Enqueued-edge.Dequeued != uint64(edge.Occupancy) {
 			return fmt.Errorf("%w: session source returned impossible queue telemetry", ErrConflict)
+		}
+	}
+	if len(snapshot.Flows) > 65_536 {
+		return fmt.Errorf("%w: session source returned too many live flows", ErrConflict)
+	}
+	causalAssertions := make(map[string][]string)
+	causalIdentities := make(map[string]struct{})
+	for id, flow := range snapshot.Flows {
+		if id == "" || len(id) > 65_536 || flow.Correlation != id ||
+			len(flow.Edges) == 0 || len(flow.Edges) > 65_536 || flow.FirstNS > flow.LastNS {
+			return fmt.Errorf("%w: session source returned invalid flow telemetry", ErrConflict)
+		}
+		for _, edge := range flow.Edges {
+			if !canonicalEvidenceName(edge) || strings.HasPrefix(edge, ir.BoundaryQueuePrefix) {
+				return fmt.Errorf("%w: session source returned invalid flow telemetry", ErrConflict)
+			}
+		}
+		if len(flow.EdgeNS) != 0 && len(flow.EdgeNS) != len(flow.Edges) {
+			return fmt.Errorf("%w: session source returned invalid flow timing", ErrConflict)
+		}
+		for index, atNS := range flow.EdgeNS {
+			if atNS < flow.FirstNS || atNS > flow.LastNS || index > 0 && atNS < flow.EdgeNS[index-1] {
+				return fmt.Errorf("%w: session source returned invalid flow timing", ErrConflict)
+			}
+		}
+		if len(flow.CausalStages) != 0 && len(flow.CausalStages) != len(flow.Edges) {
+			return fmt.Errorf("%w: session source returned incomplete causal flow telemetry", ErrConflict)
+		}
+		for _, stage := range flow.CausalStages {
+			if stage.Item == "" || len(stage.Item) > 65_536 ||
+				len(stage.Parents) > inspect.MaximumCausalParentsPerStage {
+				return fmt.Errorf("%w: session source returned invalid causal flow telemetry", ErrConflict)
+			}
+			seenParents := make(map[string]struct{}, len(stage.Parents))
+			causalIdentities[stage.Item] = struct{}{}
+			for _, parent := range stage.Parents {
+				if parent == "" || len(parent) > 65_536 || parent == stage.Item {
+					return fmt.Errorf("%w: session source returned invalid causal flow telemetry", ErrConflict)
+				}
+				if _, duplicate := seenParents[parent]; duplicate {
+					return fmt.Errorf("%w: session source returned repeated causal flow parent", ErrConflict)
+				}
+				seenParents[parent] = struct{}{}
+				causalIdentities[parent] = struct{}{}
+			}
+			if len(causalIdentities) > 65_536 {
+				return fmt.Errorf("%w: session source returned too many causal identities", ErrConflict)
+			}
+			if parents, found := causalAssertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+				return fmt.Errorf("%w: session source returned conflicting causal flow parents", ErrConflict)
+			}
+			causalAssertions[stage.Item] = slices.Clone(stage.Parents)
 		}
 	}
 	return nil
@@ -273,8 +326,10 @@ func ValidateSessionModel(snapshot inspect.Live, model inspect.Model) error {
 		}
 	}
 	expectedEdges := make(map[string]int, len(model.Edges)+len(model.Boundaries))
+	internalEdges := make(map[string]struct{}, len(model.Edges))
 	for _, edge := range model.Edges {
 		expectedEdges[edge.ID] = edge.Depth
+		internalEdges[edge.ID] = struct{}{}
 	}
 	for _, boundary := range model.Boundaries {
 		expectedEdges[ir.BoundaryQueuePrefix+boundary.Name] = 0
@@ -286,6 +341,13 @@ func ValidateSessionModel(snapshot inspect.Live, model inspect.Model) error {
 		live, found := snapshot.Edges[id]
 		if !found || (depth > 0 && (live.Occupancy > depth || live.HighWater > depth)) {
 			return fmt.Errorf("%w: session static and live edge evidence differs", ErrConflict)
+		}
+	}
+	for _, flow := range snapshot.Flows {
+		for _, edge := range flow.Edges {
+			if _, found := internalEdges[edge]; !found {
+				return fmt.Errorf("%w: session live flow names an unknown internal edge", ErrConflict)
+			}
 		}
 	}
 	return nil

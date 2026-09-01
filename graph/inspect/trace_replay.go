@@ -237,6 +237,9 @@ func (replayer *TraceReplayer) applySnapshot(state *replayState, snapshot TraceS
 			state.retiredFlow[correlation] = struct{}{}
 		}
 	}
+	if err := validateTraceOverlayCausality(next.Flows); err != nil {
+		return err
+	}
 	state.overlay = next
 	return nil
 }
@@ -306,6 +309,9 @@ func (replayer *TraceReplayer) applyEvent(state *replayState, event TraceEvent) 
 			return fmt.Errorf("flow event exceeds live flow limit %d", replayer.limits.MaxFlows)
 		}
 		state.overlay.Flows[flow.Correlation] = flow.Clone()
+		if err := validateTraceOverlayCausality(state.overlay.Flows); err != nil {
+			return err
+		}
 	case TraceEventFlowRemove:
 		if _, found := state.overlay.Flows[event.FlowID]; !found {
 			return fmt.Errorf("flow_remove names absent flow %s", event.FlowID)
@@ -314,6 +320,19 @@ func (replayer *TraceReplayer) applyEvent(state *replayState, event TraceEvent) 
 		state.retiredFlow[event.FlowID] = struct{}{}
 	default:
 		panic("validated trace event has unknown kind")
+	}
+	return nil
+}
+
+func validateTraceOverlayCausality(flows map[string]TraceFlowLive) error {
+	assertions := make(map[string][]string)
+	for _, flow := range flows {
+		for _, stage := range flow.CausalStages {
+			if parents, found := assertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+				return fmt.Errorf("causal item %s has conflicting direct parents", stage.Item)
+			}
+			assertions[stage.Item] = stage.Parents
+		}
 	}
 	return nil
 }
@@ -496,10 +515,27 @@ func monotonicFlow(before, after TraceFlowLive) error {
 		!slices.Equal(before.EdgeNS, after.EdgeNS[:len(before.EdgeNS)]) {
 		return fmt.Errorf("flow %s edge timing history was rewritten", before.Correlation)
 	}
+	if (len(before.CausalStages) == 0) != (len(after.CausalStages) == 0) ||
+		len(after.CausalStages) < len(before.CausalStages) ||
+		!sameCausalStagePrefix(before.CausalStages, after.CausalStages) {
+		return fmt.Errorf("flow %s causal history was rewritten", before.Correlation)
+	}
 	if after.FirstNS != before.FirstNS || after.LastNS < before.LastNS || before.Truncated && !after.Truncated {
 		return fmt.Errorf("flow %s timing/truncation regressed", before.Correlation)
 	}
 	return nil
+}
+
+func sameCausalStagePrefix(before, after []CausalStageLive) bool {
+	if len(after) < len(before) {
+		return false
+	}
+	for index, stage := range before {
+		if stage.Item != after[index].Item || !slices.Equal(stage.Parents, after[index].Parents) {
+			return false
+		}
+	}
+	return true
 }
 
 // TraceSnapshotFromLive produces a payload-free checkpoint from the existing
@@ -616,6 +652,7 @@ func traceSnapshotFromLive(
 		return TraceSnapshot{}, errors.New("capture live trace snapshot: live view contains extra queues")
 	}
 	seenCorrelations := make(map[string]struct{}, len(live.Flows))
+	causalIdentities := newTraceCausalIdentitySet()
 	for key, flow := range live.Flows {
 		if key == "" || flow.Correlation == "" || key != flow.Correlation {
 			return TraceSnapshot{}, errors.New("capture live trace snapshot: inconsistent flow correlation")
@@ -625,10 +662,15 @@ func traceSnapshotFromLive(
 			return TraceSnapshot{}, errors.New("capture live trace snapshot: opaque flow correlation collision")
 		}
 		seenCorrelations[correlation] = struct{}{}
+		causalStages, causalErr := causalIdentities.encodeStages(flow.CausalStages, len(flow.Edges))
+		if causalErr != nil {
+			return TraceSnapshot{}, fmt.Errorf("capture live trace snapshot: flow %s: %w", key, causalErr)
+		}
 		snapshot.Flows = append(snapshot.Flows, TraceFlowLive{
 			Correlation: correlation,
 			Edges:       slices.Clone(flow.Edges), EdgeNS: slices.Clone(flow.EdgeNS),
-			FirstNS: flow.FirstNS, LastNS: flow.LastNS,
+			CausalStages: causalStages,
+			FirstNS:      flow.FirstNS, LastNS: flow.LastNS,
 			Truncated: flow.Truncated,
 		})
 	}
@@ -641,6 +683,83 @@ func traceSnapshotFromLive(
 		return TraceSnapshot{}, fmt.Errorf("capture live trace snapshot: %w", err)
 	}
 	return snapshot, nil
+}
+
+const maximumRawCausalIdentityBytes = 64 << 10
+
+type traceCausalIdentitySet struct {
+	opaqueByRaw map[string]string
+	rawByOpaque map[string]string
+	parents     map[string][]string
+}
+
+func newTraceCausalIdentitySet() *traceCausalIdentitySet {
+	return &traceCausalIdentitySet{
+		opaqueByRaw: make(map[string]string), rawByOpaque: make(map[string]string),
+		parents: make(map[string][]string),
+	}
+}
+
+func (identities *traceCausalIdentitySet) encode(raw string) (string, error) {
+	if raw == "" || len(raw) > maximumRawCausalIdentityBytes {
+		return "", errors.New("causal identity is empty or oversized")
+	}
+	if opaque, found := identities.opaqueByRaw[raw]; found {
+		return opaque, nil
+	}
+	opaque := OpaqueTraceCausalIdentity(raw)
+	if previous, collision := identities.rawByOpaque[opaque]; collision && previous != raw {
+		return "", errors.New("opaque causal identity collision")
+	}
+	identities.opaqueByRaw[raw] = opaque
+	identities.rawByOpaque[opaque] = raw
+	return opaque, nil
+}
+
+func (identities *traceCausalIdentitySet) encodeStages(
+	stages []CausalStageLive, edges int,
+) ([]CausalStageLive, error) {
+	if len(stages) == 0 {
+		return nil, nil
+	}
+	if len(stages) != edges {
+		return nil, fmt.Errorf("has %d causal stages for %d edges", len(stages), edges)
+	}
+	result := make([]CausalStageLive, len(stages))
+	for index, stage := range stages {
+		if len(stage.Parents) > MaximumCausalParentsPerStage {
+			return nil, fmt.Errorf("causal stage %d has %d parents, limit is %d",
+				index, len(stage.Parents), MaximumCausalParentsPerStage)
+		}
+		seenParents := make(map[string]struct{}, len(stage.Parents))
+		for _, parent := range stage.Parents {
+			if parent == "" || len(parent) > maximumRawCausalIdentityBytes || parent == stage.Item {
+				return nil, fmt.Errorf("causal stage %d has an invalid parent identity", index)
+			}
+			if _, duplicate := seenParents[parent]; duplicate {
+				return nil, fmt.Errorf("causal stage %d repeats a parent identity", index)
+			}
+			seenParents[parent] = struct{}{}
+		}
+		if parents, found := identities.parents[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+			return nil, fmt.Errorf("causal stage %d rewrites one item's direct parents", index)
+		}
+		identities.parents[stage.Item] = slices.Clone(stage.Parents)
+		item, err := identities.encode(stage.Item)
+		if err != nil {
+			return nil, fmt.Errorf("causal stage %d item: %w", index, err)
+		}
+		result[index].Item = item
+		result[index].Parents = make([]string, len(stage.Parents))
+		for parentIndex, raw := range stage.Parents {
+			parent, err := identities.encode(raw)
+			if err != nil {
+				return nil, fmt.Errorf("causal stage %d parent %d: %w", index, parentIndex, err)
+			}
+			result[index].Parents[parentIndex] = parent
+		}
+	}
+	return result, nil
 }
 
 func cloneDeploymentEvidencePointer(source *DeploymentEvidence) *DeploymentEvidence {

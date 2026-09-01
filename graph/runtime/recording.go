@@ -50,12 +50,13 @@ type TraceRecordingConfig struct {
 }
 
 type traceCorrelation struct {
-	token     string
-	edges     []string
-	edgeNS    []uint64
-	firstNS   uint64
-	lastNS    uint64
-	truncated bool
+	token        string
+	edges        []string
+	edgeNS       []uint64
+	causalStages []inspect.CausalStageLive
+	firstNS      uint64
+	lastNS       uint64
+	truncated    bool
 }
 
 type traceRecorder struct {
@@ -399,8 +400,11 @@ func (recorder *traceRecorder) pseudonymizeFlowsLocked(
 			continue
 		}
 		base := recorder.hmacLocked("lookup", []byte(raw))
+		pseudonymizedCausal := recorder.pseudonymizeCausalStagesLocked(flow.CausalStages)
+		comparison := flow
+		comparison.CausalStages = pseudonymizedCausal
 		correlation, found := recorder.active[base]
-		if !found || !monotonicRawFlow(correlation, flow) {
+		if !found || !monotonicRecordedFlow(correlation, comparison) {
 			if found {
 				recorder.dropped = saturatingAdd(recorder.dropped, 1)
 			}
@@ -413,28 +417,67 @@ func (recorder *traceRecorder) pseudonymizeFlowsLocked(
 		}
 		correlation.edges = slices.Clone(flow.Edges)
 		correlation.edgeNS = slices.Clone(flow.EdgeNS)
+		correlation.causalStages = cloneCausalStages(pseudonymizedCausal)
 		correlation.firstNS = flow.FirstNS
 		correlation.lastNS = flow.LastNS
 		correlation.truncated = flow.Truncated
 		nextActive[base] = correlation
 		result[correlation.token] = inspect.FlowLive{
 			Correlation: correlation.token, Edges: slices.Clone(flow.Edges),
-			EdgeNS:  slices.Clone(flow.EdgeNS),
-			FirstNS: flow.FirstNS, LastNS: flow.LastNS, Truncated: flow.Truncated,
+			EdgeNS:       slices.Clone(flow.EdgeNS),
+			CausalStages: cloneCausalStages(pseudonymizedCausal),
+			FirstNS:      flow.FirstNS, LastNS: flow.LastNS, Truncated: flow.Truncated,
 		}
 	}
 	recorder.active = nextActive
 	return result
 }
 
-func monotonicRawFlow(before traceCorrelation, after inspect.FlowLive) bool {
+func monotonicRecordedFlow(before traceCorrelation, after inspect.FlowLive) bool {
 	return before.firstNS == after.FirstNS && before.lastNS <= after.LastNS &&
 		len(before.edges) <= len(after.Edges) &&
 		slices.Equal(before.edges, after.Edges[:len(before.edges)]) &&
 		(len(before.edgeNS) == 0) == (len(after.EdgeNS) == 0) &&
 		len(before.edgeNS) <= len(after.EdgeNS) &&
 		slices.Equal(before.edgeNS, after.EdgeNS[:len(before.edgeNS)]) &&
+		(len(before.causalStages) == 0) == (len(after.CausalStages) == 0) &&
+		len(before.causalStages) <= len(after.CausalStages) &&
+		sameRuntimeCausalStagePrefix(before.causalStages, after.CausalStages) &&
 		(!before.truncated || after.Truncated)
+}
+
+func cloneCausalStages(source []inspect.CausalStageLive) []inspect.CausalStageLive {
+	result := make([]inspect.CausalStageLive, len(source))
+	for index, stage := range source {
+		result[index] = stage.Clone()
+	}
+	return result
+}
+
+func sameRuntimeCausalStagePrefix(before, after []inspect.CausalStageLive) bool {
+	if len(after) < len(before) {
+		return false
+	}
+	for index, stage := range before {
+		if stage.Item != after[index].Item || !slices.Equal(stage.Parents, after[index].Parents) {
+			return false
+		}
+	}
+	return true
+}
+
+func (recorder *traceRecorder) pseudonymizeCausalStagesLocked(
+	stages []inspect.CausalStageLive,
+) []inspect.CausalStageLive {
+	result := make([]inspect.CausalStageLive, len(stages))
+	for index, stage := range stages {
+		result[index].Item = recorder.hmacLocked("causal", []byte(stage.Item))
+		result[index].Parents = make([]string, len(stage.Parents))
+		for parentIndex, parent := range stage.Parents {
+			result[index].Parents[parentIndex] = recorder.hmacLocked("causal", []byte(parent))
+		}
+	}
+	return result
 }
 
 func (recorder *traceRecorder) hmacLocked(domain string, values ...[]byte) string {

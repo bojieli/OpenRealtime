@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -411,6 +412,9 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	live.Edges[graph.Edges[0].ID] = edge
 	live.Flows["raw-correlation"] = inspect.FlowLive{
 		Correlation: "raw-correlation", Edges: []string{graph.Edges[0].ID},
+		CausalStages: []inspect.CausalStageLive{{
+			Item: "model-output-private", Parents: []string{"observation-private", "state-private"},
+		}},
 		EdgeNS: []uint64{30}, FirstNS: 30, LastNS: 30,
 	}
 	registry := NewSessionRegistry()
@@ -435,6 +439,27 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	if timing := snapshot.Flows["flow_000001"].EdgeNS; len(timing) != 1 || timing[0] != 30 {
 		t.Fatalf("snapshot omitted redacted flow-stage timing: %+v", snapshot.Flows)
 	}
+	causal := snapshot.Flows["flow_000001"].CausalStages
+	if len(causal) != 1 || causal[0].Item != "cause_000001" ||
+		!slices.Equal(causal[0].Parents, []string{"cause_000002", "cause_000003"}) {
+		t.Fatalf("snapshot omitted redacted causal lineage: %+v", causal)
+	}
+	encodedSnapshot, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"model-output-private", "observation-private", "state-private"} {
+		if bytes.Contains(encodedSnapshot, []byte(private)) {
+			t.Fatalf("redacted snapshot leaked causal identity %q: %s", private, encodedSnapshot)
+		}
+	}
+	twice, err := json.Marshal(RedactLive(snapshot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(encodedSnapshot, twice) {
+		t.Fatalf("causal redaction is not idempotent:\n%s\n%s", encodedSnapshot, twice)
+	}
 	if decision := snapshot.Nodes["source"].AuthorityDecision; decision == nil ||
 		decision.Kind != "succeeded" || decision.Operation != "authorize" ||
 		!decision.Crossed || decision.AtNS != 25 {
@@ -442,10 +467,12 @@ func TestSessionRegistryProvidesBoundedResumablePagesAndOwnerSafeDisposal(t *tes
 	}
 	snapshotNode := snapshot.Nodes["source"]
 	snapshotNode.AuthorityDecision.Operation = "cancel"
+	snapshot.Flows["flow_000001"].CausalStages[0].Parents[0] = "mutated"
 	snapshot.Nodes["source"] = inspect.NodeLive{}
 	second, err := registry.Snapshot(context.Background(), "sess-one")
 	if err != nil || second.Nodes["source"].Resolution == nil ||
-		second.Nodes["source"].AuthorityDecision.Operation == "cancel" {
+		second.Nodes["source"].AuthorityDecision.Operation == "cancel" ||
+		second.Flows["flow_000001"].CausalStages[0].Parents[0] == "mutated" {
 		t.Fatalf("snapshot aliased source: err=%v snapshot=%+v", err, second)
 	}
 	model, err := registry.Model(context.Background(), "sess-one")
@@ -654,6 +681,75 @@ func TestValidateSessionSnapshotRejectsImpossibleQueueTelemetry(t *testing.T) {
 	}
 }
 
+func TestValidateSessionSnapshotRejectsInvalidCausalFlowTelemetry(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	base, _ := managedLiveTrace(t, graph)
+	edgeID := graph.Edges[0].ID
+	base.Flows["raw-flow"] = inspect.FlowLive{
+		Correlation: "raw-flow", Edges: []string{edgeID}, EdgeNS: []uint64{10},
+		CausalStages: []inspect.CausalStageLive{{Item: "child", Parents: []string{"parent"}}},
+		FirstNS:      10, LastNS: 10,
+	}
+	if err := ValidateSessionSnapshot(base); err != nil {
+		t.Fatalf("valid causal flow telemetry: %v", err)
+	}
+	tests := []struct {
+		name   string
+		want   string
+		mutate func(*inspect.Live)
+	}{
+		{name: "correlation mismatch", want: "invalid flow telemetry", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.Correlation = "other"
+			live.Flows["raw-flow"] = flow
+		}},
+		{name: "incomplete stages", want: "incomplete causal flow telemetry", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.Edges = append(flow.Edges, edgeID)
+			flow.EdgeNS = append(flow.EdgeNS, 10)
+			live.Flows["raw-flow"] = flow
+		}},
+		{name: "self parent", want: "invalid causal flow telemetry", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.CausalStages[0].Parents[0] = flow.CausalStages[0].Item
+			live.Flows["raw-flow"] = flow
+		}},
+		{name: "duplicate parent", want: "repeated causal flow parent", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.CausalStages[0].Parents = []string{"parent", "parent"}
+			live.Flows["raw-flow"] = flow
+		}},
+		{name: "too many parents", want: "invalid causal flow telemetry", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.CausalStages[0].Parents = make([]string, inspect.MaximumCausalParentsPerStage+1)
+			live.Flows["raw-flow"] = flow
+		}},
+		{name: "conflicting parents", want: "conflicting causal flow parents", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"].Clone()
+			flow.Correlation = "second-flow"
+			flow.CausalStages[0].Parents[0] = "different-parent"
+			live.Flows["second-flow"] = flow
+		}},
+		{name: "regressing stage time", want: "invalid flow timing", mutate: func(live *inspect.Live) {
+			flow := live.Flows["raw-flow"]
+			flow.Edges = append(flow.Edges, edgeID)
+			flow.EdgeNS = append(flow.EdgeNS, 9)
+			flow.CausalStages = append(flow.CausalStages,
+				inspect.CausalStageLive{Item: "next", Parents: []string{"child"}})
+			live.Flows["raw-flow"] = flow
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base.Clone()
+			test.mutate(&candidate)
+			if err := ValidateSessionSnapshot(candidate); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("causal flow validation error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestValidateInspectionModelRejectsInvalidChannelContract(t *testing.T) {
 	graph := compileManagedGraph(t, managedElementCatalog(t))
 	model, err := inspect.Build(graph)
@@ -707,6 +803,15 @@ func TestValidateSessionModelRequiresExactChannelPopulationAndDepth(t *testing.T
 	if err := ValidateSessionModel(beyond, model); err == nil ||
 		!strings.Contains(err.Error(), "edge evidence differs") {
 		t.Fatalf("live depth overflow error = %v", err)
+	}
+	unknownFlow := live.Clone()
+	unknownFlow.Flows["raw"] = inspect.FlowLive{
+		Correlation: "raw", Edges: []string{"invented"},
+		CausalStages: []inspect.CausalStageLive{{Item: "item"}},
+	}
+	if err := ValidateSessionModel(unknownFlow, model); err == nil ||
+		!strings.Contains(err.Error(), "unknown internal edge") {
+		t.Fatalf("unknown flow edge error = %v", err)
 	}
 }
 

@@ -26,7 +26,7 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 	message := element.Envelope{
 		Type:   element.Event(element.Named("test.Value")),
 		ItemID: "item:" + private, TraceID: "trace:" + private,
-		RunID: "run:" + private, Payload: private,
+		RunID: "run:" + private, CausalParents: []string{"observation:" + private}, Payload: private,
 	}
 	sendRecordedMessage(t, mounted, message)
 	if err := mounted.CheckpointTrace(); err != nil {
@@ -93,6 +93,14 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 			flow.EdgeNS[0] < flow.FirstNS || flow.EdgeNS[len(flow.EdgeNS)-1] > flow.LastNS {
 			t.Fatalf("flow stage timing was not recorded and replayed: %+v", flow)
 		}
+		if len(flow.CausalStages) != len(flow.Edges) || len(flow.CausalStages) != 1 ||
+			len(flow.CausalStages[0].Parents) != 1 ||
+			!strings.HasPrefix(flow.CausalStages[0].Item, "sha256:") ||
+			!strings.HasPrefix(flow.CausalStages[0].Parents[0], "sha256:") ||
+			flow.CausalStages[0].Item == inspect.OpaqueTraceCausalIdentity(message.ItemID) ||
+			flow.CausalStages[0].Parents[0] == inspect.OpaqueTraceCausalIdentity(message.CausalParents[0]) {
+			t.Fatalf("causal lineage was not session-key pseudonymized and replayed: %+v", flow)
+		}
 	}
 	if now.Load() == 0 {
 		t.Fatal("recording did not use the injected monotonic clock")
@@ -103,16 +111,18 @@ func TestRecordedTraceIsExactPayloadFreeReplayableAndDeterministic(t *testing.T)
 }
 
 func TestRecordedTraceCorrelationIsStableOnlyUnderTheInjectedSessionKey(t *testing.T) {
-	first := recordOneCorrelation(t, bytes.Repeat([]byte{0x41}, 32))
-	again := recordOneCorrelation(t, bytes.Repeat([]byte{0x41}, 32))
-	otherSession := recordOneCorrelation(t, bytes.Repeat([]byte{0x42}, 32))
-	if first != again {
-		t.Fatalf("same explicit key and flow produced unstable identities: %q != %q", first, again)
+	firstFlow, firstCause := recordOneCorrelation(t, bytes.Repeat([]byte{0x41}, 32))
+	againFlow, againCause := recordOneCorrelation(t, bytes.Repeat([]byte{0x41}, 32))
+	otherFlow, otherCause := recordOneCorrelation(t, bytes.Repeat([]byte{0x42}, 32))
+	if firstFlow != againFlow || firstCause != againCause {
+		t.Fatalf("same explicit key produced unstable flow/causal identities: %q/%q != %q/%q",
+			firstFlow, firstCause, againFlow, againCause)
 	}
-	if first == otherSession {
-		t.Fatalf("different per-session keys produced linkable identity %q", first)
+	if firstFlow == otherFlow || firstCause == otherCause {
+		t.Fatalf("different per-session keys produced linkable identities %q/%q", firstFlow, firstCause)
 	}
-	if first == inspect.OpaqueTraceCorrelation("trace:shared-private-trace") {
+	if firstFlow == inspect.OpaqueTraceCorrelation("trace:shared-private-trace") ||
+		firstCause == inspect.OpaqueTraceCausalIdentity("shared-item") {
 		t.Fatal("artifact used an ambient unkeyed raw-correlation hash")
 	}
 }
@@ -362,13 +372,13 @@ func TestTraceRecordingConfigurationIsExplicitAndBounded(t *testing.T) {
 	}
 }
 
-func recordOneCorrelation(t *testing.T, key []byte) string {
+func recordOneCorrelation(t *testing.T, key []byte) (string, string) {
 	t.Helper()
 	mounted, _, _, _ := mountRecordedPassChain(t, key, 8, 4)
 	runDone := runRecordedGraph(t, mounted)
 	sendRecordedMessage(t, mounted, element.Envelope{
 		Type: element.Event(element.Named("test.Value")), ItemID: "shared-item",
-		TraceID: "shared-private-trace", Payload: "private",
+		TraceID: "shared-private-trace", CausalParents: []string{"shared-parent"}, Payload: "private",
 	})
 	if err := mounted.CheckpointTrace(); err != nil {
 		t.Fatal(err)
@@ -389,8 +399,11 @@ func recordOneCorrelation(t *testing.T, key []byte) string {
 	if len(final.Flows) != 1 {
 		t.Fatalf("final flows = %+v", final.Flows)
 	}
-	for correlation := range final.Flows {
-		return correlation
+	for correlation, flow := range final.Flows {
+		if len(flow.CausalStages) != 1 {
+			t.Fatalf("final causal stages = %+v", flow.CausalStages)
+		}
+		return correlation, flow.CausalStages[0].Item
 	}
 	panic("unreachable")
 }

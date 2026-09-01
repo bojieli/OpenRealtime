@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -118,7 +119,8 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	egress, _ := mounted.Egress("output")
 	message := element.Envelope{
 		Type: element.Event(element.Named("test.Value")), ItemID: "item-live",
-		TraceID: "task-7", RunID: "run-7", Sequence: 1, Payload: "hello",
+		TraceID: "task-7", RunID: "run-7", Sequence: 1,
+		CausalParents: []string{"observation-6", "state-revision-4"}, Payload: "hello",
 	}
 	if _, err := ingress.Broadcast(context.Background(), message); err != nil {
 		t.Fatal(err)
@@ -167,6 +169,8 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	flow, found := live.Flows["trace:task-7"]
 	if !found || len(flow.Edges) != 1 || flow.Edges[0] != "first-to-second" ||
 		len(flow.EdgeNS) != 1 || flow.EdgeNS[0] < flow.FirstNS || flow.EdgeNS[0] > flow.LastNS ||
+		len(flow.CausalStages) != 1 || flow.CausalStages[0].Item != message.ItemID ||
+		!slices.Equal(flow.CausalStages[0].Parents, message.CausalParents) ||
 		flow.Correlation != "trace:task-7" || flow.Truncated {
 		t.Fatalf("correlated flow = %+v, found=%t", flow, found)
 	}
@@ -177,11 +181,15 @@ func TestMountedGraphReportsExactLiveResolutionAndCorrelatedInternalFlow(t *test
 	mutatedFlow := live.Flows["trace:task-7"]
 	mutatedFlow.Edges[0] = "mutated"
 	mutatedFlow.EdgeNS[0]++
+	mutatedFlow.CausalStages[0].Item = "mutated"
+	mutatedFlow.CausalStages[0].Parents[0] = "mutated"
 	live.Flows["trace:task-7"] = mutatedFlow
 	again := mounted.Live()
 	if again.Nodes["first"].Resolution.Capabilities[0].Provider.ID != "provider://echo" ||
 		again.Flows["trace:task-7"].Edges[0] != "first-to-second" ||
 		again.Flows["trace:task-7"].EdgeNS[0] != originalEdgeNS ||
+		again.Flows["trace:task-7"].CausalStages[0].Item != message.ItemID ||
+		again.Flows["trace:task-7"].CausalStages[0].Parents[0] != message.CausalParents[0] ||
 		again.Configuration.ID != "values://pass-chain" {
 		t.Fatal("live inspection snapshot retained caller aliases")
 	}
@@ -322,6 +330,24 @@ func TestMountRejectsFactoryContractMutationAndMissingDependency(t *testing.T) {
 	graph = passGraph(t, descriptor)
 	if _, err := graphruntime.Mount(context.Background(), graphruntime.Config{Graph: graph, Registry: registry}); err == nil || !strings.Contains(err.Error(), "unavailable service") {
 		t.Fatalf("dependency error = %v", err)
+	}
+}
+
+func TestMountRejectsUnsafeCausalInspectionBound(t *testing.T) {
+	descriptor := passDescriptor(nil)
+	registry := graphruntime.NewRegistry()
+	if err := registry.Register("", passFactory{descriptor: descriptor}); err != nil {
+		t.Fatal(err)
+	}
+	graph := passGraph(t, descriptor)
+	for _, bound := range []int{-1, inspect.MaximumCausalParentsPerStage + 1} {
+		_, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+			Graph: graph, Registry: registry,
+			Inspection: graphruntime.InspectionConfig{MaxCausalParentsPerStage: bound},
+		})
+		if err == nil || !strings.Contains(err.Error(), "inspection bounds") {
+			t.Fatalf("causal parent bound %d error = %v", bound, err)
+		}
 	}
 }
 

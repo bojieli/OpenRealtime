@@ -45,3 +45,40 @@ func TestTraceRecorderCopiesAndErasesItsSessionKey(t *testing.T) {
 		t.Fatalf("discarded recorder retained sensitive state: %+v", recorder)
 	}
 }
+
+func TestTraceRecorderCachesOnlySessionPseudonymizedCausalIdentities(t *testing.T) {
+	const rawItem = "private-item"
+	const rawParent = "private-parent"
+	recorder := &traceRecorder{
+		key:    bytes.Repeat([]byte{0x73}, traceSessionKeyBytes),
+		active: make(map[string]traceCorrelation),
+	}
+	recorder.mu.Lock()
+	flows := recorder.pseudonymizeFlowsLocked(map[string]inspect.FlowLive{
+		"trace:private": {
+			Correlation: "trace:private", Edges: []string{"edge"}, EdgeNS: []uint64{1},
+			CausalStages: []inspect.CausalStageLive{{Item: rawItem, Parents: []string{rawParent}}},
+			FirstNS:      1, LastNS: 1,
+		},
+	})
+	recorder.mu.Unlock()
+	if len(flows) != 1 || len(recorder.active) != 1 {
+		t.Fatalf("pseudonymized flow/cache population = %+v / %+v", flows, recorder.active)
+	}
+	for _, flow := range flows {
+		stage := flow.CausalStages[0]
+		if stage.Item == rawItem || stage.Parents[0] == rawParent ||
+			!strings.HasPrefix(stage.Item, "hmac-sha256:") ||
+			!strings.HasPrefix(stage.Parents[0], "hmac-sha256:") {
+			t.Fatalf("export candidate retained raw causal identities: %+v", stage)
+		}
+	}
+	for _, cached := range recorder.active {
+		stage := cached.causalStages[0]
+		if stage.Item == rawItem || stage.Parents[0] == rawParent ||
+			!strings.HasPrefix(stage.Item, "hmac-sha256:") ||
+			!strings.HasPrefix(stage.Parents[0], "hmac-sha256:") {
+			t.Fatalf("recorder cache retained raw causal identities: %+v", stage)
+		}
+	}
+}

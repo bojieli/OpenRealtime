@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 201 of 252 explicit tracker boxes are checked (79.8%)
+At this reconciliation, 202 of 253 explicit tracker boxes are checked (79.8%)
 and 51 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -1823,7 +1823,7 @@ of-done requirement.
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Broader graphical editing and complete output-to-cause semantics |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing and direct-parent lineage, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Broader graphical editing and typed policy/observation/state-revision/model-run causal joins |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact receipts, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and end-to-end leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
@@ -2458,7 +2458,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 746/6,147 at 2026-09-01 20:34 UTC. This dated progress checkpoint is
+  attempt 768/6,147 at 2026-09-01 21:13 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -3068,8 +3068,17 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     timing, cancellation/outcome state, queue depth and occupancy, loss,
     backpressure, queue wait, exact pseudonymous cross-node flow stages, and the
     latest categorical authority decision with irreversible-boundary status.
-    Complete policy/observation/state-revision/model-run causal joins remain
-    open.
+  - [x] Retain each accepted internal flow traversal's exact direct envelope
+    parents beside its edge and mount-clock timestamp under an independently
+    bounded causal-stage contract. Invalid, self-parented, duplicate, excess,
+    partial, or rewritten assertions truncate rather than fabricate lineage.
+    Public management views replace raw item and parent identities with stable
+    snapshot-local pseudonyms; recordings first apply a session-secret HMAC
+    and then a fixed-width domain-separated trace identity. Recursive cloning,
+    management validation/redaction, deterministic trace encoding, compaction,
+    exact replay, legacy absence, cross-flow consistency, browser validation,
+    text-only rendering, and real Chromium coverage are green. Typed policy,
+    observation, state-revision, and model-run classification remains open.
 
 ### Phase 7: dynamic reconciliation
 
@@ -3491,8 +3500,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     fingerprinted payload-free trace. The joined live view now renders bounded
     pseudonymous cross-node edge sequences, including repeated feedback-loop
     stages and per-stage timing, plus the latest closed categorical authority
-    decision and irreversible-boundary status. Complete policy, observation,
-    state-revision, and model-run causal semantics keep the parent open.
+    decision and irreversible-boundary status. Every retained stage now also
+    carries its bounded pseudonymous direct-parent assertion through redaction,
+    recording, and replay. Typed policy, observation, state-revision, and
+    model-run causal classification keeps the parent open.
 - [ ] The browser presentation host/client and macOS app are composable plugin
     profiles over the same clean realtime and observability APIs; the gateway
     contains no privileged UI, and real cross-client end-to-end tests pass.

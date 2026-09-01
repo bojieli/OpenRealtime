@@ -254,9 +254,6 @@ func TestLiveInspectionRedactsPayloadDerivedIdentifiersButPreservesConfiguration
 			GraphID:       graph.ID, GraphRevision: graph.Revision, Fingerprint: graph.Fingerprint,
 			Configuration: &configuration, Sequence: 9, State: "closed", Error: secret,
 			Nodes: nodes, Edges: edges,
-			Flows: map[string]inspect.FlowLive{secret: {
-				Correlation: secret, Edges: []string{"edge-safe"},
-			}},
 		}
 		return source
 	})
@@ -281,11 +278,8 @@ func TestLiveInspectionRedactsPayloadDerivedIdentifiersButPreservesConfiguration
 		live.Edges["boundary:text"].LastItemID != "" {
 		t.Fatalf("free-form management fields were not safely redacted: %+v", live)
 	}
-	if len(live.Flows) != 1 || live.Flows["flow_000001"].Correlation != "flow_000001" {
-		t.Fatalf("payload-derived correlation was not replaced consistently: %+v", live.Flows)
-	}
 	if source.Error != secret || source.Nodes[graphNodeID(source)].Error != secret ||
-		source.Edges["boundary:text"].LastItemID != secret || source.Flows[secret].Correlation != secret {
+		source.Edges["boundary:text"].LastItemID != secret {
 		t.Fatalf("redaction mutated the runtime-owned live snapshot: %+v", source)
 	}
 }

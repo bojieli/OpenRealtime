@@ -142,17 +142,19 @@ type TraceEdgeLive struct {
 	QueueWaitNS  uint64 `json:"queue_wait_ns,omitempty"`
 }
 
-// TraceFlowLive uses a SHA-256 opaque correlation rather than an envelope ID.
-// Edge repetitions and their parallel monotonic timestamps are retained
-// because loops and retries are semantically different from a set of visited
-// channels. EdgeNS remains optional when reading an older trace artifact.
+// TraceFlowLive uses SHA-256 opaque correlation and causal identities rather
+// than envelope metadata. Edge repetitions and their parallel monotonic
+// timestamps and direct-parent assertions are retained because loops, retries,
+// and derived items are semantically different from sets of visited channels.
+// EdgeNS and CausalStages remain optional when reading an older trace artifact.
 type TraceFlowLive struct {
-	Correlation string   `json:"correlation"`
-	Edges       []string `json:"edges"`
-	EdgeNS      []uint64 `json:"edge_ns,omitempty"`
-	FirstNS     uint64   `json:"first_ns,omitempty"`
-	LastNS      uint64   `json:"last_ns,omitempty"`
-	Truncated   bool     `json:"truncated,omitempty"`
+	Correlation  string            `json:"correlation"`
+	Edges        []string          `json:"edges"`
+	EdgeNS       []uint64          `json:"edge_ns,omitempty"`
+	CausalStages []CausalStageLive `json:"causal_stages,omitempty"`
+	FirstNS      uint64            `json:"first_ns,omitempty"`
+	LastNS       uint64            `json:"last_ns,omitempty"`
+	Truncated    bool              `json:"truncated,omitempty"`
 }
 
 type TraceSnapshot struct {
@@ -261,6 +263,11 @@ func (event TraceEvent) Clone() TraceEvent {
 func (flow TraceFlowLive) Clone() TraceFlowLive {
 	flow.Edges = slices.Clone(flow.Edges)
 	flow.EdgeNS = slices.Clone(flow.EdgeNS)
+	causalStages := flow.CausalStages
+	flow.CausalStages = make([]CausalStageLive, len(causalStages))
+	for index, stage := range causalStages {
+		flow.CausalStages[index] = stage.Clone()
+	}
 	return flow
 }
 
@@ -583,6 +590,22 @@ func validateTraceSnapshot(snapshot TraceSnapshot, limits TraceLimits) error {
 			return fmt.Errorf("live trace snapshot %d: %w", snapshot.Sequence, err)
 		}
 	}
+	if err := validateCausalAssertions(snapshot.Flows); err != nil {
+		return fmt.Errorf("live trace snapshot %d: %w", snapshot.Sequence, err)
+	}
+	return nil
+}
+
+func validateCausalAssertions(flows []TraceFlowLive) error {
+	assertions := make(map[string][]string)
+	for _, flow := range flows {
+		for _, stage := range flow.CausalStages {
+			if parents, found := assertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+				return fmt.Errorf("causal item %s has conflicting direct parents", stage.Item)
+			}
+			assertions[stage.Item] = stage.Parents
+		}
+	}
 	return nil
 }
 
@@ -758,6 +781,37 @@ func validateTraceFlow(flow TraceFlowLive, limits TraceLimits) error {
 		return fmt.Errorf("live trace flow %s has %d edge timestamps for %d edges",
 			flow.Correlation, len(flow.EdgeNS), len(flow.Edges))
 	}
+	if len(flow.CausalStages) != 0 && len(flow.CausalStages) != len(flow.Edges) {
+		return fmt.Errorf("live trace flow %s has %d causal stages for %d edges",
+			flow.Correlation, len(flow.CausalStages), len(flow.Edges))
+	}
+	assertions := make(map[string][]string, len(flow.CausalStages))
+	for index, stage := range flow.CausalStages {
+		if !canonicalTraceDigest(stage.Item) {
+			return fmt.Errorf("live trace flow %s causal stage %d has invalid item identity %q",
+				flow.Correlation, index, stage.Item)
+		}
+		if len(stage.Parents) > MaximumCausalParentsPerStage {
+			return fmt.Errorf("live trace flow %s causal stage %d has %d parents, limit is %d",
+				flow.Correlation, index, len(stage.Parents), MaximumCausalParentsPerStage)
+		}
+		seenParents := make(map[string]struct{}, len(stage.Parents))
+		for _, parent := range stage.Parents {
+			if !canonicalTraceDigest(parent) || parent == stage.Item {
+				return fmt.Errorf("live trace flow %s causal stage %d has an invalid parent identity",
+					flow.Correlation, index)
+			}
+			if _, duplicate := seenParents[parent]; duplicate {
+				return fmt.Errorf("live trace flow %s causal stage %d repeats a parent identity",
+					flow.Correlation, index)
+			}
+			seenParents[parent] = struct{}{}
+		}
+		if parents, found := assertions[stage.Item]; found && !slices.Equal(parents, stage.Parents) {
+			return fmt.Errorf("live trace flow %s rewrites causal parents for one item", flow.Correlation)
+		}
+		assertions[stage.Item] = stage.Parents
+	}
 	for index, atNS := range flow.EdgeNS {
 		if index > 0 && atNS < flow.EdgeNS[index-1] {
 			return fmt.Errorf("live trace flow %s edge timestamp %d regresses", flow.Correlation, index)
@@ -856,5 +910,13 @@ func mergeTraceRecords(snapshots []TraceSnapshot, events []TraceEvent) ([]traceR
 // keyed pseudonym; the trace intentionally stores no key or original value.
 func OpaqueTraceCorrelation(value string) string {
 	digest := sha256.Sum256([]byte(value))
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+// OpaqueTraceCausalIdentity replaces an envelope item or direct-parent ID with
+// a domain-separated fixed-width trace identity. A recorder first applies its
+// session-secret pseudonym so two artifacts cannot be linked by this digest.
+func OpaqueTraceCausalIdentity(value string) string {
+	digest := sha256.Sum256([]byte("openrealtime/causal/v1\x00" + value))
 	return "sha256:" + hex.EncodeToString(digest[:])
 }

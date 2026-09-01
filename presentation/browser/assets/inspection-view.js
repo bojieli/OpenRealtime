@@ -1,6 +1,7 @@
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MAX_ROWS = 65_536;
 const MAX_TEXT = 65_536;
+const MAX_CAUSAL_PARENTS = 64;
 const DECISION_KINDS = new Set([
   "succeeded", "rejected", "denied", "canceled", "timed_out", "failed", "ignored",
 ]);
@@ -231,7 +232,7 @@ function edgeProjection(value, id) {
   });
 }
 
-function flowProjection(value, id) {
+function flowProjection(value, id, causalAssertions, causalIdentities) {
   const source = object(value, `live flow ${id}`);
   if (!/^flow_[0-9]{6}$/.test(id) || source.correlation !== id) {
     throw new Error("live flow contains an unredacted correlation");
@@ -242,6 +243,34 @@ function flowProjection(value, id) {
     (entry, index) => integer(entry, `live flow ${id} edge time ${index}`));
   if (edgeNS.length !== 0 && edgeNS.length !== edges.length) {
     throw new Error(`live flow ${id} edge timestamps do not match its traversed edges`);
+  }
+  const causalStages = rows(source.causal_stages ?? [], `live flow ${id} causal stages`).map(
+    (entry, index) => {
+      const stage = object(entry, `live flow ${id} causal stage ${index}`);
+      const item = text(stage.item, `live flow ${id} causal stage ${index} item`);
+      if (!/^cause_[0-9]{6}$/.test(item)) {
+        throw new Error(`live flow ${id} contains an unredacted causal item identity`);
+      }
+      const parents = strings(stage.parents, `live flow ${id} causal stage ${index} parents`);
+      if (parents.length > MAX_CAUSAL_PARENTS ||
+          parents.some((parent) => !/^cause_[0-9]{6}$/.test(parent) || parent === item)) {
+        throw new Error(`live flow ${id} contains invalid causal parents`);
+      }
+      causalIdentities.add(item);
+      for (const parent of parents) causalIdentities.add(parent);
+      if (causalIdentities.size > MAX_ROWS) {
+        throw new Error("live flows contain too many causal identities");
+      }
+      const previous = causalAssertions.get(item);
+      if (previous !== undefined &&
+          (previous.length !== parents.length || previous.some((parent, parentIndex) => parent !== parents[parentIndex]))) {
+        throw new Error(`live flow ${id} rewrites causal parents for ${item}`);
+      }
+      causalAssertions.set(item, parents);
+      return Object.freeze({ item, parents: Object.freeze(parents) });
+    });
+  if (causalStages.length !== 0 && causalStages.length !== edges.length) {
+    throw new Error(`live flow ${id} causal stages do not match its traversed edges`);
   }
   const firstNS = integer(source.first_ns ?? 0, `live flow ${id} first time`);
   const lastNS = integer(source.last_ns ?? 0, `live flow ${id} last time`);
@@ -258,6 +287,7 @@ function flowProjection(value, id) {
     correlation: id,
     edges: Object.freeze(edges),
     edge_ns: Object.freeze(edgeNS),
+    causal_stages: Object.freeze(causalStages),
     first_ns: firstNS,
     last_ns: lastNS,
     truncated: boolean(source.truncated, `live flow ${id} truncated`),
@@ -293,9 +323,11 @@ function liveProjection(value) {
   const flowObject = object(source.flows ?? {}, "live flows");
   if (Object.keys(flowObject).length > MAX_ROWS) throw new Error("live flows are not bounded");
   const flows = {};
+  const causalAssertions = new Map();
+  const causalIdentities = new Set();
   for (const [rawID, value] of Object.entries(flowObject)) {
     const id = text(rawID, "live flow ID");
-    flows[id] = flowProjection(value, id);
+    flows[id] = flowProjection(value, id, causalAssertions, causalIdentities);
   }
   const safeNodes = {};
   for (const [id, observed] of nodes) {
@@ -371,6 +403,7 @@ function joinedProjection(liveValue, modelValue) {
       }
       return Object.freeze({
         index: index + 1, declared,
+        causal: observed.causal_stages.length === 0 ? null : observed.causal_stages[index],
         atNS: observed.edge_ns.length === 0 ? null : observed.edge_ns[index],
         deltaNS: observed.edge_ns.length === 0 || index === 0
           ? null : observed.edge_ns[index] - observed.edge_ns[index - 1],
@@ -513,7 +546,8 @@ function renderJoined(nodeContainer, edgeContainer, flowContainer, joined) {
     line(card, "First traversal", timestamp(observed.first_ns));
     line(card, "Last traversal", timestamp(observed.last_ns));
     line(card, "Elapsed", `${observed.last_ns - observed.first_ns} ns`);
-    line(card, "Retention", observed.truncated ? "truncated at configured bound" : "complete");
+    line(card, "Retention", observed.truncated
+      ? "truncated at a retention bound or refused stage" : "complete");
     const path = node("ol");
     path.dataset.role = "flow-stages";
     for (const stage of stages) {
@@ -521,8 +555,11 @@ function renderJoined(nodeContainer, edgeContainer, flowContainer, joined) {
       const timing = stage.atNS === null ? "time unavailable" :
         `${stage.atNS} ns from mount clock; ${stage.deltaNS === null
           ? "first retained stage" : `+${stage.deltaNS} ns`}`;
+      const causal = stage.causal === null ? "causal lineage unavailable" :
+        `causal ${stage.causal.item} ← ${stage.causal.parents.length === 0
+          ? "root" : stage.causal.parents.join(", ")}`;
       path.append(node("li", `Stage ${stage.index}: ${endpointText(edge.from)} → ${endpointText(edge.to)} ` +
-        `via ${edge.id} (${edge.type}; ${edge.delivery}); ${timing}`));
+        `via ${edge.id} (${edge.type}; ${edge.delivery}); ${timing}; ${causal}`));
     }
     card.append(path);
     flowContainer.append(card);

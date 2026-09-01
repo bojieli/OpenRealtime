@@ -84,6 +84,10 @@ const baseLive = {
     flow_000001: {
       correlation: "flow_000001", edges: [edgeID, edgeID],
       edge_ns: [110, 150], first_ns: 110, last_ns: 150, truncated: false,
+      causal_stages: [
+        { item: "cause_000002", parents: ["cause_000001"] },
+        { item: "cause_000003", parents: ["cause_000002", "cause_000001"] },
+      ],
     },
   },
   trace_dropped: 0,
@@ -180,9 +184,9 @@ for (const expected of [
   "First traversal: 110 ns from mount clock", "Last traversal: 150 ns from mount clock",
   "Elapsed: 40 ns", "Retention: complete",
   `Stage 1: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy); ` +
-    "110 ns from mount clock; first retained stage",
+    "110 ns from mount clock; first retained stage; causal cause_000002 ← cause_000001",
   `Stage 2: ${nodeID}.done → ${nodeID}.trigger via ${edgeID} (Event(test.Value); lossy); ` +
-    "150 ns from mount clock; +40 ns",
+    "150 ns from mount clock; +40 ns; causal cause_000003 ← cause_000002, cause_000001",
 ]) {
   if (!section.textContent.includes(expected)) throw new Error(`joined view omitted ${expected}`);
 }
@@ -302,6 +306,7 @@ if (availability.textContent !== "unavailable" ||
 live = structuredClone(baseLive);
 live.flows.flow_000001.edges = ["invented"];
 live.flows.flow_000001.edge_ns = [110];
+live.flows.flow_000001.causal_stages = live.flows.flow_000001.causal_stages.slice(0, 1);
 await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
     !section.textContent.includes("contains unknown internal edge invented")) {
@@ -330,6 +335,57 @@ await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" ||
     !section.textContent.includes("impossible edge timing")) {
   throw new Error("inspection view accepted regressing per-edge timing");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.causal_stages[0].item = malicious;
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("unredacted causal item identity")) {
+  throw new Error("inspection view accepted a payload-shaped causal item identity");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.causal_stages[0].parents[0] = "cause_000002";
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("invalid causal parents")) {
+  throw new Error("inspection view accepted a self-parent causal assertion");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.causal_stages[0].parents = Array.from(
+  { length: 65 }, (_entry, index) => `cause_${String(index + 100).padStart(6, "0")}`);
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("invalid causal parents")) {
+  throw new Error("inspection view accepted an unbounded causal-parent assertion");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000001.causal_stages.pop();
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("causal stages do not match")) {
+  throw new Error("inspection view accepted incomplete causal-stage coverage");
+}
+
+live = structuredClone(baseLive);
+live.flows.flow_000002 = structuredClone(live.flows.flow_000001);
+live.flows.flow_000002.correlation = "flow_000002";
+live.flows.flow_000002.causal_stages[0].parents[0] = "cause_000004";
+await refresh.dispatch("click");
+if (availability.textContent !== "unavailable" ||
+    !section.textContent.includes("rewrites causal parents")) {
+  throw new Error("inspection view accepted conflicting cross-flow causal assertions");
+}
+
+live = structuredClone(baseLive);
+delete live.flows.flow_000001.causal_stages;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" ||
+    !section.textContent.includes("causal lineage unavailable")) {
+  throw new Error("inspection view rejected legacy flow evidence without causal stages");
 }
 
 live = structuredClone(baseLive);

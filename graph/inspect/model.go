@@ -383,23 +383,49 @@ func (live NodeLive) Clone() NodeLive {
 	return result
 }
 
+// MaximumCausalParentsPerStage is the absolute inspection and trace bound for
+// one envelope's direct causal parents. Runtime configuration may choose a
+// smaller bound but cannot make a hostile lineage assertion unbounded.
+const MaximumCausalParentsPerStage = 64
+
+// CausalStageLive is the payload-free causal assertion observed with one flow
+// traversal. Item and Parents are raw envelope identities only inside a local
+// runtime snapshot. Public management snapshots replace them with local
+// pseudonyms, and retained traces replace them with session-keyed opaque
+// identities. Parents are direct, not a flattened transitive closure.
+type CausalStageLive struct {
+	Item    string   `json:"item"`
+	Parents []string `json:"parents,omitempty"`
+}
+
+func (stage CausalStageLive) Clone() CausalStageLive {
+	stage.Parents = slices.Clone(stage.Parents)
+	return stage
+}
+
 // FlowLive is a bounded, payload-free view of internal graph edges traversed
 // by one envelope correlation. Repeated edges remain repeated so feedback
-// loops and retries are not flattened into a misleading set. EdgeNS is the
-// parallel monotonic timestamp sequence for retained traversals; it may be
+// loops and retries are not flattened into a misleading set. EdgeNS and
+// CausalStages are parallel sequences for retained traversals; either may be
 // absent only in an older inspection value.
 type FlowLive struct {
-	Correlation string   `json:"correlation"`
-	Edges       []string `json:"edges"`
-	EdgeNS      []uint64 `json:"edge_ns,omitempty"`
-	FirstNS     uint64   `json:"first_ns,omitempty"`
-	LastNS      uint64   `json:"last_ns,omitempty"`
-	Truncated   bool     `json:"truncated,omitempty"`
+	Correlation  string            `json:"correlation"`
+	Edges        []string          `json:"edges"`
+	EdgeNS       []uint64          `json:"edge_ns,omitempty"`
+	CausalStages []CausalStageLive `json:"causal_stages,omitempty"`
+	FirstNS      uint64            `json:"first_ns,omitempty"`
+	LastNS       uint64            `json:"last_ns,omitempty"`
+	Truncated    bool              `json:"truncated,omitempty"`
 }
 
 func (flow FlowLive) Clone() FlowLive {
 	flow.Edges = slices.Clone(flow.Edges)
 	flow.EdgeNS = slices.Clone(flow.EdgeNS)
+	causalStages := flow.CausalStages
+	flow.CausalStages = make([]CausalStageLive, len(causalStages))
+	for index, stage := range causalStages {
+		flow.CausalStages[index] = stage.Clone()
+	}
 	return flow
 }
 

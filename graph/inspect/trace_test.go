@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -63,10 +64,15 @@ func TestLiveTraceStrictRoundTripAndDeterministicReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	correlation := inspect.OpaqueTraceCorrelation("trace:" + secret)
+	causalItem := inspect.OpaqueTraceCausalIdentity("item:" + secret)
+	causalParent := inspect.OpaqueTraceCausalIdentity("observation:" + secret)
 	if final.Sequence != 6 || final.Live.TraceDropped != 1 ||
 		final.Edges["stream"].Occupancy != 0 || final.Edges["stream"].Dequeued != 1 ||
 		len(final.Flows) != 1 || final.Flows[correlation].Edges[0] != "stream" ||
 		len(final.Flows[correlation].EdgeNS) != 1 || final.Flows[correlation].EdgeNS[0] != 120 ||
+		len(final.Flows[correlation].CausalStages) != 1 ||
+		final.Flows[correlation].CausalStages[0].Item != causalItem ||
+		!slices.Equal(final.Flows[correlation].CausalStages[0].Parents, []string{causalParent}) ||
 		final.Nodes["source"].AuthorityDecision == nil ||
 		final.Nodes["source"].AuthorityDecision.Kind != "succeeded" ||
 		final.Nodes["source"].AuthorityDecision.Operation != "select" ||
@@ -140,6 +146,16 @@ func TestLiveTraceReadsStrictV1WithoutGrantingV2EvidenceFields(t *testing.T) {
 	legacy.FormatVersion = 1
 	legacy.Adapter = nil
 	legacy.Deployment = nil
+	for snapshotIndex := range legacy.Snapshots {
+		for flowIndex := range legacy.Snapshots[snapshotIndex].Flows {
+			legacy.Snapshots[snapshotIndex].Flows[flowIndex].CausalStages = nil
+		}
+	}
+	for eventIndex := range legacy.Events {
+		if legacy.Events[eventIndex].Flow != nil {
+			legacy.Events[eventIndex].Flow.CausalStages = nil
+		}
+	}
 	legacy.Fingerprint = ""
 	frozen, err := inspect.FreezeLiveTrace(legacy)
 	if err != nil {
@@ -252,6 +268,12 @@ func TestLiveTraceEnforcesEveryDeclaredRetentionBound(t *testing.T) {
 		{name: "edges per flow", want: "edges, limit", mutate: func(trace *inspect.LiveTrace) {
 			trace.Limits.MaxEdgesPerFlow = 1
 			trace.Snapshots[1].Flows[0].Edges = append(trace.Snapshots[1].Flows[0].Edges, "stream")
+		}},
+		{name: "conflicting causal assertions", want: "conflicting direct parents", mutate: func(trace *inspect.LiveTrace) {
+			copy := trace.Snapshots[1].Flows[0].Clone()
+			copy.Correlation = inspect.OpaqueTraceCorrelation("conflicting-flow")
+			copy.CausalStages[0].Parents[0] = inspect.OpaqueTraceCausalIdentity("conflicting-parent")
+			trace.Snapshots[1].Flows = append(trace.Snapshots[1].Flows, copy)
 		}},
 		{name: "capabilities", want: "capabilities, limit", mutate: func(trace *inspect.LiveTrace) {
 			trace.Limits.MaxCapabilitiesPerNode = 1
@@ -424,6 +446,15 @@ func TestLiveTraceReplayRejectsSemanticForgeryDespiteValidArtifactFingerprint(t 
 		{name: "flow history rewrite", want: "edge history was rewritten", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = []string{"stream", "stream"}
 			trace.Events[2].Flow.EdgeNS = []uint64{120, 120}
+			trace.Events[2].Flow.CausalStages = append(trace.Events[2].Flow.CausalStages,
+				inspect.CausalStageLive{
+					Item:    inspect.OpaqueTraceCausalIdentity("rewritten-child"),
+					Parents: []string{inspect.OpaqueTraceCausalIdentity("rewritten-parent")},
+				})
+		}},
+		{name: "causal history rewrite", want: "causal history was rewritten", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.CausalStages[0].Parents[0] =
+				inspect.OpaqueTraceCausalIdentity("rewritten-parent")
 		}},
 		{name: "unknown flow edge", want: "unknown internal graph edge", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = []string{"unknown-edge"}
@@ -530,6 +561,32 @@ func TestLiveTraceRejectsNonMonotonicTimeSequenceAndImpossibleCounters(t *testin
 		{name: "regressing flow edge times", want: "edge timestamp 1 regresses", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.Edges = append(trace.Events[2].Flow.Edges, "stream")
 			trace.Events[2].Flow.EdgeNS = []uint64{120, 119}
+			trace.Events[2].Flow.CausalStages = append(trace.Events[2].Flow.CausalStages,
+				inspect.CausalStageLive{
+					Item:    inspect.OpaqueTraceCausalIdentity("later-child"),
+					Parents: []string{inspect.OpaqueTraceCausalIdentity("later-parent")},
+				})
+		}},
+		{name: "incomplete causal stages", want: "causal stages", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.Edges = append(trace.Events[2].Flow.Edges, "stream")
+			trace.Events[2].Flow.EdgeNS = append(trace.Events[2].Flow.EdgeNS, 120)
+		}},
+		{name: "invalid causal item", want: "invalid item identity", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.CausalStages[0].Item = "private-item"
+		}},
+		{name: "self causal parent", want: "invalid parent identity", mutate: func(trace *inspect.LiveTrace) {
+			trace.Events[2].Flow.CausalStages[0].Parents[0] = trace.Events[2].Flow.CausalStages[0].Item
+		}},
+		{name: "duplicate causal parent", want: "repeats a parent identity", mutate: func(trace *inspect.LiveTrace) {
+			parent := trace.Events[2].Flow.CausalStages[0].Parents[0]
+			trace.Events[2].Flow.CausalStages[0].Parents = []string{parent, parent}
+		}},
+		{name: "too many causal parents", want: "parents, limit", mutate: func(trace *inspect.LiveTrace) {
+			parents := make([]string, inspect.MaximumCausalParentsPerStage+1)
+			for index := range parents {
+				parents[index] = inspect.OpaqueTraceCausalIdentity(fmt.Sprintf("parent-%d", index))
+			}
+			trace.Events[2].Flow.CausalStages[0].Parents = parents
 		}},
 		{name: "flow edge time outside span", want: "outside its first/last times", mutate: func(trace *inspect.LiveTrace) {
 			trace.Events[2].Flow.EdgeNS[0] = 121
@@ -564,11 +621,15 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	}
 	input.Snapshots[1].Flows[0].Edges[0] = "mutated"
 	input.Snapshots[1].Flows[0].EdgeNS[0] = 999
+	input.Snapshots[1].Flows[0].CausalStages[0].Item = "mutated"
+	input.Snapshots[1].Flows[0].CausalStages[0].Parents[0] = "mutated"
 	input.Adapter.Runtime.ID = "mutated"
 	if refrozen.Snapshots[0].Nodes[0].Resolution.Runtime.ID == "mutated" ||
 		traceNode(refrozen.Snapshots[1].Nodes, "source").AuthorityDecision.Operation == "cancel" ||
 		refrozen.Snapshots[1].Flows[0].Edges[0] == "mutated" ||
 		refrozen.Snapshots[1].Flows[0].EdgeNS[0] == 999 ||
+		refrozen.Snapshots[1].Flows[0].CausalStages[0].Item == "mutated" ||
+		refrozen.Snapshots[1].Flows[0].CausalStages[0].Parents[0] == "mutated" ||
 		refrozen.Adapter.Runtime.ID == "mutated" {
 		t.Fatal("FreezeLiveTrace retained caller aliases")
 	}
@@ -587,6 +648,8 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 	for id, flow := range first.Flows {
 		flow.Edges[0] = "mutated"
 		flow.EdgeNS[0] = 999
+		flow.CausalStages[0].Item = "mutated"
+		flow.CausalStages[0].Parents[0] = "mutated"
 		first.Flows[id] = flow
 	}
 	first.Adapter.Runtime.ID = "mutated"
@@ -601,7 +664,8 @@ func TestLiveTraceCloneAndConcurrentReplayAreRecursivelyIndependent(t *testing.T
 		t.Fatal("replayer retained returned overlay aliases")
 	}
 	for _, flow := range again.Flows {
-		if flow.Edges[0] == "mutated" || flow.EdgeNS[0] == 999 {
+		if flow.Edges[0] == "mutated" || flow.EdgeNS[0] == 999 ||
+			flow.CausalStages[0].Item == "mutated" || flow.CausalStages[0].Parents[0] == "mutated" {
 			t.Fatal("replayer retained returned flow aliases")
 		}
 	}
@@ -731,6 +795,9 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	finalLive.Edges["stream"] = stream
 	finalLive.Flows["trace:"+secret] = inspect.FlowLive{
 		Correlation: "trace:" + secret, Edges: []string{"stream"}, EdgeNS: []uint64{120},
+		CausalStages: []inspect.CausalStageLive{{
+			Item: "item:" + secret, Parents: []string{"observation:" + secret},
+		}},
 		FirstNS: 120, LastNS: 120,
 	}
 	finalSnapshot, err := inspect.TraceSnapshotFromLive(graph, configuration, finalLive, 130)
@@ -748,7 +815,12 @@ func liveTraceFixture(t *testing.T) (ir.Graph, inspect.ArtifactIdentity, inspect
 	edge.Occupancy, edge.HighWater, edge.Enqueued = 1, 1, 1
 	flow := inspect.TraceFlowLive{
 		Correlation: inspect.OpaqueTraceCorrelation("trace:" + secret),
-		Edges:       []string{"stream"}, EdgeNS: []uint64{120}, FirstNS: 120, LastNS: 120,
+		Edges:       []string{"stream"}, EdgeNS: []uint64{120},
+		CausalStages: []inspect.CausalStageLive{{
+			Item:    inspect.OpaqueTraceCausalIdentity("item:" + secret),
+			Parents: []string{inspect.OpaqueTraceCausalIdentity("observation:" + secret)},
+		}},
+		FirstNS: 120, LastNS: 120,
 	}
 	candidate := inspect.LiveTrace{
 		FormatVersion: inspect.LiveTraceFormatVersion,

@@ -68,9 +68,10 @@ func validateFactoryConfig(node ir.Node, factory element.Factory, value json.Raw
 
 // InspectionConfig bounds payload-free per-correlation route retention.
 type InspectionConfig struct {
-	MaxFlows            int
-	MaxEdgesPerFlow     int
-	MaxCorrelationBytes int
+	MaxFlows                 int
+	MaxEdgesPerFlow          int
+	MaxCorrelationBytes      int
+	MaxCausalParentsPerStage int
 }
 
 type mountedNode struct {
@@ -164,7 +165,8 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	if config.ShutdownTimeout <= 0 {
 		config.ShutdownTimeout = 5 * time.Second
 	}
-	if config.Inspection.MaxFlows < 0 || config.Inspection.MaxEdgesPerFlow < 0 {
+	if config.Inspection.MaxFlows < 0 || config.Inspection.MaxEdgesPerFlow < 0 ||
+		config.Inspection.MaxCausalParentsPerStage < 0 {
 		return nil, errors.New("mount graph inspection bounds cannot be negative")
 	}
 	if config.Inspection.MaxFlows == 0 {
@@ -176,9 +178,14 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	if config.Inspection.MaxCorrelationBytes == 0 {
 		config.Inspection.MaxCorrelationBytes = 1024
 	}
+	if config.Inspection.MaxCausalParentsPerStage == 0 {
+		config.Inspection.MaxCausalParentsPerStage = inspect.MaximumCausalParentsPerStage
+	}
 	if config.Inspection.MaxFlows < 1 || config.Inspection.MaxFlows > 1_000_000 ||
 		config.Inspection.MaxEdgesPerFlow < 1 || config.Inspection.MaxEdgesPerFlow > 65_536 ||
-		config.Inspection.MaxCorrelationBytes < 1 || config.Inspection.MaxCorrelationBytes > 65_536 {
+		config.Inspection.MaxCorrelationBytes < 1 || config.Inspection.MaxCorrelationBytes > 65_536 ||
+		config.Inspection.MaxCausalParentsPerStage < 1 ||
+		config.Inspection.MaxCausalParentsPerStage > inspect.MaximumCausalParentsPerStage {
 		return nil, errors.New("mount graph inspection bounds exceed safety limits")
 	}
 	for _, edge := range config.Graph.Edges {
@@ -300,6 +307,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		flows: newFlowTracker(
 			config.Inspection.MaxFlows, config.Inspection.MaxEdgesPerFlow,
 			config.Inspection.MaxCorrelationBytes,
+			config.Inspection.MaxCausalParentsPerStage,
 		),
 		configuration: configuration, deployment: deploymentIdentity,
 		deploymentEvidence:  deploymentEvidence,

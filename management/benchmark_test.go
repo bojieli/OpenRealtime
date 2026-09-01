@@ -48,7 +48,12 @@ func benchmarkRedaction(b *testing.B, redact func(inspect.Live) inspect.Live) {
 		}
 		live.Edges[id] = inspect.EdgeLive{LastItemID: "private"}
 		live.Flows[id] = inspect.FlowLive{
-			Correlation: id, Edges: []string{id, id}, EdgeNS: []uint64{1, 2}, FirstNS: 1, LastNS: 2,
+			Correlation: id, Edges: []string{id, id}, EdgeNS: []uint64{1, 2},
+			CausalStages: []inspect.CausalStageLive{
+				{Item: id + "-output", Parents: []string{id + "-observation", id + "-state"}},
+				{Item: id + "-result", Parents: []string{id + "-output"}},
+			},
+			FirstNS: 1, LastNS: 2,
 		}
 	}
 	b.ReportAllocs()
@@ -56,6 +61,7 @@ func benchmarkRedaction(b *testing.B, redact func(inspect.Live) inspect.Live) {
 	for range b.N {
 		result := redact(live)
 		if len(result.Nodes) != 64 || len(result.Flows["flow_000001"].EdgeNS) != 2 ||
+			len(result.Flows["flow_000001"].CausalStages) != 2 ||
 			result.Nodes["ax"].AuthorityDecision == nil {
 			b.Fatal("redaction lost nodes")
 		}
