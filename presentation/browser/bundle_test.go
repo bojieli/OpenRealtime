@@ -60,9 +60,11 @@ func TestMinimalBundleIsAnExactReplaceableClientPlan(t *testing.T) {
 
 func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) {
 	source := []byte(`export default {name:"example.client.challenge",revision:1,async mount(){}};`)
+	alternative := []byte(`export default {name:"example.client.challenge",revision:1,async mount(){return "v2";}};`)
 	bundle, err := ComposeTextBundle("openrealtime.browser.composed-test", []ClientModule{{
 		Entry: "challenge", Entrypoint: "challenge.js", PluginName: "example.client.challenge",
-		Source: source,
+		Source:       source,
+		Alternatives: []ClientModuleAlternative{{Entrypoint: "challenge-v2.js", Source: alternative}},
 		Requires: []plugin.Requirement{
 			{Contract: presentation.ClientStateContract},
 			{Contract: presentation.ClientSessionConfigurationContract},
@@ -94,7 +96,19 @@ func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) 
 	if implementationDigest != wantDigest {
 		t.Fatalf("composed module digest = %q, want %q", implementationDigest, wantDigest)
 	}
+	wantAlternativeBytes := sha256.Sum256(alternative)
+	wantAlternative := "sha256:" + hex.EncodeToString(wantAlternativeBytes[:])
+	foundAlternative := false
+	for _, asset := range bundle.Manifest.Assets {
+		if asset.Entry == "challenge" && asset.Name == "challenge-v2.js" {
+			foundAlternative = asset.Digest == wantAlternative
+		}
+	}
+	if !foundAlternative {
+		t.Fatalf("composed module omitted exact alternative digest %q", wantAlternative)
+	}
 	source[0] = 'X'
+	alternative[0] = 'X'
 	if err := bundle.Manifest.Validate(); err != nil {
 		t.Fatalf("caller source mutation invalidated composed bundle: %v", err)
 	}
@@ -105,6 +119,14 @@ func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) 
 		Entry: "empty", Entrypoint: "empty.js", PluginName: "example.client.empty",
 	}}); err == nil || !strings.Contains(err.Error(), "empty source") {
 		t.Fatalf("empty caller module error = %v", err)
+	}
+	if _, err := ComposeTextBundle("openrealtime.browser.empty-alternative", []ClientModule{{
+		Entry: "empty", Entrypoint: "empty.js", PluginName: "example.client.empty",
+		Source:       []byte(`export default {name:"example.client.empty",revision:1,async mount(){}};`),
+		Alternatives: []ClientModuleAlternative{{Entrypoint: "empty-v2.js"}},
+	}}); err == nil || !strings.Contains(err.Error(), "alternative") ||
+		!strings.Contains(err.Error(), "empty source") {
+		t.Fatalf("empty caller alternative error = %v", err)
 	}
 }
 
@@ -748,8 +770,8 @@ func TestMinimalBundleIdentityPinsCanonicalReducerModule(t *testing.T) {
 	replaced := bundle.Manifest.Clone()
 	for index := range replaced.Implementations {
 		if replaced.Implementations[index].Entry == "reducer" {
-			replacement := sha256.Sum256([]byte("replacement reducer implementation"))
-			replaced.Implementations[index].Artifact.Digest = "sha256:" + hex.EncodeToString(replacement[:])
+			replaced.Implementations[index].Implementation = "browser-esm:reducer-v2.js"
+			replaced.Implementations[index].Artifact.ID = "module://reducer-v2"
 		}
 	}
 	replaced, err = presentation.FreezeManifest(replaced)

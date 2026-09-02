@@ -67,6 +67,12 @@ func TestClientManifestStrictExactRoundTrip(t *testing.T) {
 	if err := tampered.Validate(); err == nil || !strings.Contains(err.Error(), "content address") {
 		t.Fatalf("tampered asset path error = %v", err)
 	}
+	mismatchedImplementation := manifest.Clone()
+	mismatchedImplementation.Implementations[0].Artifact.Digest = digest('b')
+	if _, err := presentation.FreezeManifest(mismatchedImplementation); err == nil ||
+		!strings.Contains(err.Error(), "implementation digest") {
+		t.Fatalf("mismatched browser implementation digest error = %v", err)
+	}
 	badEndpoint := manifest.Clone()
 	badEndpoint.Endpoints[0].Protocol = "openrealtime.test.v1"
 	badEndpoint.Endpoints[0].CatalogDigest = "sha256:" + strings.Repeat("A", 64)

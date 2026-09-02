@@ -200,6 +200,12 @@ func (manifest ClientManifest) validateStructure() error {
 			return fmt.Errorf("client manifest entry %s entrypoint %q is not JavaScript",
 				entryID, implementation.Entrypoint)
 		}
+		if manifest.Platform == "browser" && implementation.Artifact.Digest != asset.Digest {
+			return fmt.Errorf(
+				"client manifest browser entry %s implementation digest does not match entrypoint %q",
+				entryID, implementation.Entrypoint,
+			)
+		}
 	}
 	grantEntries := make(map[string]struct{}, len(manifest.Grants))
 	for _, row := range manifest.Grants {

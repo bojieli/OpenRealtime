@@ -571,6 +571,200 @@ func TestMinimalBrowserProfileBootsAndRunsTextSessionInChromium(t *testing.T) {
 	}
 }
 
+func TestBrowserReplacesAuthenticatedClientImplementationAndRollsBackInChromium(t *testing.T) {
+	node, chromium := requireBrowser(t)
+	providerV1 := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable",revision:1,async mount(context){
+  increment(context.root, "providerV1Mounts");
+  context.root.dataset.replaceableProvider = "v1";
+  context.publish("presentation.client.artifacts", Object.freeze({version:"v1"}));
+  context.lifecycle.defer("replaceable-v1", () => {
+    increment(context.root, "providerV1Disposals");
+    if (context.root.dataset.replaceableProvider === "v1") delete context.root.dataset.replaceableProvider;
+  });
+}};`)
+	providerV2 := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable",revision:1,async mount(context){
+  increment(context.root, "providerV2Mounts");
+  context.root.dataset.replaceableProvider = "v2";
+  context.publish("presentation.client.artifacts", Object.freeze({version:"v2"}));
+  context.lifecycle.defer("replaceable-v2", () => {
+    increment(context.root, "providerV2Disposals");
+    if (context.root.dataset.replaceableProvider === "v2") delete context.root.dataset.replaceableProvider;
+  });
+}};`)
+	providerFailure := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable",revision:1,async mount(context){
+  increment(context.root, "failedCandidateMounts");
+  context.root.dataset.replaceableProvider = "failed";
+  context.publish("presentation.client.artifacts", Object.freeze({version:"failed"}));
+  context.lifecycle.defer("replaceable-failure", () => {
+    increment(context.root, "failedCandidateDisposals");
+    if (context.root.dataset.replaceableProvider === "failed") delete context.root.dataset.replaceableProvider;
+  });
+  throw new Error("intentional replacement activation failure");
+}};`)
+	providerWrongIdentity := []byte(`
+export default {name:"example.client.substituted",revision:1,async mount(context){
+  context.root.dataset.wrongIdentityMounted = "yes";
+}};`)
+	consumer := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable-view",revision:1,async mount(context){
+  const provider = context.services.get("presentation.client.artifacts");
+  if (!provider?.version) throw new Error("replaceable provider is unavailable");
+  increment(context.root, "replaceableConsumerMounts");
+  context.root.dataset.replaceableConsumer = provider.version;
+  context.lifecycle.defer("replaceable-consumer", () => {
+    increment(context.root, "replaceableConsumerDisposals");
+    if (context.root.dataset.replaceableConsumer === provider.version) delete context.root.dataset.replaceableConsumer;
+  });
+}};`)
+	bundle, err := presentationbrowser.ComposeTextBundle(
+		"openrealtime.browser.replacement-test", []presentationbrowser.ClientModule{
+			{
+				Entry: "replaceable", Entrypoint: "replaceable-v1.js",
+				PluginName: "example.client.replaceable", Source: providerV1,
+				Alternatives: []presentationbrowser.ClientModuleAlternative{
+					{Entrypoint: "replaceable-v2.js", Source: providerV2},
+					{Entrypoint: "replaceable-failure.js", Source: providerFailure},
+					{Entrypoint: "replaceable-wrong-identity.js", Source: providerWrongIdentity},
+				},
+				Provides: []plugin.Contract{presentation.ClientArtifactsContract},
+			},
+			{
+				Entry: "replaceable-view", Entrypoint: "replaceable-view.js",
+				PluginName: "example.client.replaceable-view", Source: consumer,
+				Requires: []plugin.Requirement{{Contract: presentation.ClientArtifactsContract}},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2 := replacementBrowserManifest(t, bundle.Manifest, "replaceable", "replaceable-v2.js")
+	failing := replacementBrowserManifest(t, bundle.Manifest, "replaceable", "replaceable-failure.js")
+	wrongIdentity := replacementBrowserManifest(
+		t, bundle.Manifest, "replaceable", "replaceable-wrong-identity.js",
+	)
+
+	router := host.NewRouterFactory()
+	target := host.NewEndpointDirectoryFactory()
+	credential := host.NewAnonymousCredentialFactory()
+	relay := host.NewWebSocketRelayFactory(nil)
+	factories := []pluginruntime.Factory{
+		bundle.Shell, bundle.ManifestHost, bundle.ModuleStore, relay, target, credential, router,
+	}
+	ids := map[string]string{
+		bundle.Shell.Descriptor().Name:        "shell",
+		bundle.ManifestHost.Descriptor().Name: "manifest",
+		bundle.ModuleStore.Descriptor().Name:  "modules",
+		relay.Descriptor().Name:               "relay",
+		target.Descriptor().Name:              "target",
+		credential.Descriptor().Name:          "credential",
+		router.Descriptor().Name:              "router",
+	}
+	plan := compileHostPlan(t, factories, ids)
+	registry := pluginruntime.NewRegistry()
+	for _, factory := range factories {
+		if err := registry.Register("", factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+		Values: map[string]json.RawMessage{
+			"target": explicitTargetValues(t, "ws://127.0.0.1:1", "", ""),
+		},
+		Permissions: map[string][]plugin.Permission{"relay": {{
+			Kind: "network.connect", Resource: "realtime-endpoint", Operations: []string{"websocket"},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
+	handler, err := host.HTTPHandler(mounted, "http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var candidate *presentation.ClientManifest
+		switch request.URL.Path {
+		case "/test/replacement-v2.json":
+			candidate = &v2
+		case "/test/replacement-failure.json":
+			candidate = &failing
+		case "/test/replacement-wrong-identity.json":
+			candidate = &wrongIdentity
+		}
+		if candidate != nil {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Header().Set("Cache-Control", "no-store")
+			if err := json.NewEncoder(writer).Encode(candidate); err != nil {
+				t.Errorf("encode replacement manifest: %v", err)
+			}
+			return
+		}
+		handler.ServeHTTP(writer, request)
+	}))
+	defer server.Close()
+
+	driver, err := filepath.Abs(filepath.Join("testdata", "replacement.mjs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, driver, server.URL)
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t))
+	output, err := command.CombinedOutput()
+	t.Log("\n" + string(output))
+	if err != nil {
+		t.Fatalf("browser implementation replacement failed: %v", err)
+	}
+}
+
+func replacementBrowserManifest(
+	t *testing.T, source presentation.ClientManifest, entry, entrypoint string,
+) presentation.ClientManifest {
+	t.Helper()
+	result := source.Clone()
+	var digest string
+	for _, asset := range result.Assets {
+		if asset.Entry == entry && asset.Name == entrypoint {
+			digest = asset.Digest
+			break
+		}
+	}
+	if digest == "" {
+		t.Fatalf("replacement asset %s/%s is absent", entry, entrypoint)
+	}
+	found := false
+	for index := range result.Implementations {
+		if result.Implementations[index].Entry != entry {
+			continue
+		}
+		found = true
+		result.Implementations[index].Implementation = "browser-esm:" + entrypoint
+		result.Implementations[index].Artifact.ID =
+			"module://" + strings.TrimSuffix(entrypoint, ".js")
+		result.Implementations[index].Artifact.Digest = digest
+		result.Implementations[index].Entrypoint = entrypoint
+	}
+	if !found {
+		t.Fatalf("replacement implementation entry %s is absent", entry)
+	}
+	frozen, err := presentation.FreezeManifest(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frozen
+}
+
 func compileHostPlan(
 	t *testing.T, factories []pluginruntime.Factory, ids map[string]string,
 ) plugin.Plan {

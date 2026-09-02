@@ -37,25 +37,42 @@ type Bundle struct {
 // implementation artifact identity. Revision is fixed at 1; changed source
 // changes the immutable artifact and plan fingerprints.
 type ClientModule struct {
-	Entry       string
-	Entrypoint  string
-	PluginName  string
-	Source      []byte
-	Provides    []plugin.Contract
-	Requires    []plugin.Requirement
-	Permissions []plugin.Permission
-	Grants      []plugin.Permission
+	Entry        string
+	Entrypoint   string
+	PluginName   string
+	Source       []byte
+	Alternatives []ClientModuleAlternative
+	Provides     []plugin.Contract
+	Requires     []plugin.Requirement
+	Permissions  []plugin.Permission
+	Grants       []plugin.Permission
+}
+
+// ClientModuleAlternative is another immutable implementation asset admitted
+// by the same descriptor and client plan. It is declared and content-addressed
+// at boot, but remains unloaded and inactive until an exact candidate manifest
+// selects and verifies it. Alternatives do not widen contracts, dependencies,
+// or permission ceilings.
+type ClientModuleAlternative struct {
+	Entrypoint string
+	Source     []byte
+}
+
+type moduleAlternative struct {
+	file    string
+	content []byte
 }
 
 type moduleDefinition struct {
-	entry       string
-	file        string
-	pluginName  string
-	content     []byte
-	provides    []plugin.Contract
-	requires    []plugin.Requirement
-	permissions []plugin.Permission
-	grants      []plugin.Permission
+	entry        string
+	file         string
+	pluginName   string
+	content      []byte
+	alternatives []moduleAlternative
+	provides     []plugin.Contract
+	requires     []plugin.Requirement
+	permissions  []plugin.Permission
+	grants       []plugin.Permission
 }
 
 const clientEffectsProtocol = presentation.ProtocolClientEffects
@@ -117,9 +134,22 @@ func ComposeTextBundle(profileName string, extensions []ClientModule) (*Bundle, 
 		if len(extension.Source) == 0 {
 			return nil, fmt.Errorf("browser client module %q has empty source", extension.Entry)
 		}
+		alternatives := make([]moduleAlternative, len(extension.Alternatives))
+		for index, alternative := range extension.Alternatives {
+			if len(alternative.Source) == 0 {
+				return nil, fmt.Errorf(
+					"browser client module %q alternative %q has empty source",
+					extension.Entry, alternative.Entrypoint,
+				)
+			}
+			alternatives[index] = moduleAlternative{
+				file: alternative.Entrypoint, content: slices.Clone(alternative.Source),
+			}
+		}
 		definitions = append(definitions, moduleDefinition{
 			entry: extension.Entry, file: extension.Entrypoint, pluginName: extension.PluginName,
-			content: slices.Clone(extension.Source), provides: slices.Clone(extension.Provides),
+			content: slices.Clone(extension.Source), alternatives: alternatives,
+			provides: slices.Clone(extension.Provides),
 			requires: slices.Clone(extension.Requires), permissions: slices.Clone(extension.Permissions),
 			grants: slices.Clone(extension.Grants),
 		})
@@ -857,6 +887,12 @@ func buildBundle(
 		sources = append(sources, host.ModuleSource{
 			Name: definition.file, MediaType: "text/javascript", Content: content,
 		})
+		for _, alternative := range definition.alternatives {
+			sources = append(sources, host.ModuleSource{
+				Name: alternative.file, MediaType: "text/javascript",
+				Content: slices.Clone(alternative.content),
+			})
+		}
 	}
 	moduleStore, err := host.NewModuleStoreFactory(1, sources)
 	if err != nil {
@@ -870,12 +906,16 @@ func buildBundle(
 	catalog := plugin.NewCatalog()
 	entries := make([]plugin.ProfileEntry, 0, len(definitions))
 	for _, definition := range definitions {
+		descriptorAssets := []plugin.Asset{assets[definition.file]}
+		for _, alternative := range definition.alternatives {
+			descriptorAssets = append(descriptorAssets, assets[alternative.file])
+		}
 		descriptor := plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
 			Name:          definition.pluginName, Revision: 1,
 			Realm: plugin.ClientRealm, Platforms: []string{"browser"},
 			Provides: definition.provides, Requires: definition.requires,
-			Permissions: definition.permissions, Assets: []plugin.Asset{assets[definition.file]},
+			Permissions: definition.permissions, Assets: descriptorAssets,
 		}
 		if _, err := catalog.Register(descriptor); err != nil {
 			return nil, err
@@ -913,10 +953,17 @@ func buildBundle(
 			},
 			Entrypoint: definition.file,
 		})
-		manifest.Assets = append(manifest.Assets, presentation.ManifestAsset{
-			Entry: definition.entry, Name: asset.Name, MediaType: asset.MediaType, Digest: asset.Digest,
-			Path: "/client/v1/modules/" + strings.TrimPrefix(asset.Digest, "sha256:"),
-		})
+		manifestAssets := []plugin.Asset{asset}
+		for _, alternative := range definition.alternatives {
+			manifestAssets = append(manifestAssets, assets[alternative.file])
+		}
+		for _, candidate := range manifestAssets {
+			manifest.Assets = append(manifest.Assets, presentation.ManifestAsset{
+				Entry: definition.entry, Name: candidate.Name, MediaType: candidate.MediaType,
+				Digest: candidate.Digest,
+				Path:   "/client/v1/modules/" + strings.TrimPrefix(candidate.Digest, "sha256:"),
+			})
+		}
 		if len(definition.grants) > 0 {
 			manifest.Grants = append(manifest.Grants, presentation.ManifestGrant{
 				Entry: definition.entry, Permissions: definition.grants,
