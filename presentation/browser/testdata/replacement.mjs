@@ -471,6 +471,42 @@ try {
     viewTransfer?.migrator_implementation === "" &&
     !JSON.stringify(replacedStateful.receipt).includes('"counter"') &&
     !JSON.stringify(replacedStateful.receipt).includes('"renders"'));
+
+  const recoveredStateful = await evaluate(`(async () => {
+    const root = document.getElementById("openrealtime-root");
+    const before = window.__openrealtime.live();
+    const inactive = await window.__openrealtime.deactivate("stateful");
+    const serializedInactive = JSON.stringify(inactive);
+    root.dataset.failStatefulV2Mount = "true";
+    let failure = "";
+    try { await window.__openrealtime.activate("stateful"); }
+    catch (error) { failure = error?.message ?? String(error); }
+    delete root.dataset.failStatefulV2Mount;
+    const failed = window.__openrealtime.live();
+    const recovered = await window.__openrealtime.activate("stateful");
+    return {
+      before, inactive, serializedInactive, failure, failed, recovered,
+      provider: root.dataset.statefulProvider ?? "",
+      view: root.dataset.statefulView ?? "",
+    };
+  })()`);
+  check("deactivation retains declared state without exposing snapshot bytes",
+    recoveredStateful.inactive.sequence === recoveredStateful.before.sequence + 1 &&
+    recoveredStateful.inactive.entries.stateful.state === "inactive" &&
+    recoveredStateful.inactive.entries["stateful-view"].state === "pending" &&
+    !recoveredStateful.serializedInactive.includes('"counter"') &&
+    !recoveredStateful.serializedInactive.includes('"renders"') &&
+    !recoveredStateful.serializedInactive.includes("v2:8") &&
+    !recoveredStateful.serializedInactive.includes("v2:11"));
+  check("failed state restoration remains retryable from the exact snapshot",
+    recoveredStateful.failure.includes("intentional stateful recovery failure") &&
+    recoveredStateful.failed.sequence === recoveredStateful.inactive.sequence &&
+    recoveredStateful.failed.entries.stateful.state === "failed" &&
+    recoveredStateful.recovered.sequence === recoveredStateful.inactive.sequence + 1 &&
+    recoveredStateful.recovered.entries.stateful.state === "active" &&
+    recoveredStateful.recovered.entries["stateful-view"].state === "active" &&
+    recoveredStateful.provider === "v2:8" && recoveredStateful.view === "v2:11",
+    recoveredStateful.failure);
   check("no uncaught browser exception", exceptions.length === 0, exceptions.join("; "));
 
   await evaluate(`window.__openrealtime.dispose()`);

@@ -743,6 +743,21 @@ try {
       (secret) => managementMarkup.includes(secret) || managementManifest.includes(secret) ||
         managementLive.includes(secret) || browserConsole.some((row) => row.includes(secret))));
 
+  const retainedWorkspacePrepared = await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    const path = view?.querySelector('input[name=authoring-path]');
+    const source = view?.querySelector('textarea[name=authoring-source]');
+    const compile = view?.querySelector('button[data-action=compile]');
+    if (!path || !source || !compile) return false;
+    path.value = ${JSON.stringify(RETAINED_WORKSPACE_PATH)};
+    source.value = ${JSON.stringify(AUTHORING_SOURCE)};
+    compile.click();
+    return true;
+  })()`);
+  check("authoring workspace prepared durable suspension state", retainedWorkspacePrepared && await waitFor(
+    "durable workspace compile", () => evaluate(
+      `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "compiled"`)));
+
   const authorityLossStarted = performance.now();
   const authorityLoss = await evaluate(`window.__openrealtime.deactivate("management-operator")`);
   const authorityLossMS = performance.now() - authorityLossStarted;
@@ -753,7 +768,8 @@ try {
       "authoring-workspace",
       "management-operator-view", "authoring-editor-view", "authoring-configuration-view",
       "authoring-canvas-view"].every((entry) => authorityLoss.entries[entry].state === "pending") &&
-    !(await evaluate(`document.querySelector('[data-view^=authoring]') !== null`)));
+    !(await evaluate(`document.querySelector('[data-view^=authoring]') !== null`)) &&
+    !JSON.stringify(authorityLoss).includes(RETAINED_WORKSPACE_PATH));
   check(`realtime and inspection${EFFECTS_ENABLED ? ", plus signed effects," : ""} survive operator provider loss`,
     authorityLoss.entries.transport.state === "active" && authorityLoss.entries.inspection.state === "active" &&
     (EFFECTS_ENABLED ? authorityLoss.entries.effects?.state === "active" : authorityLoss.entries.effects === undefined));
@@ -767,6 +783,18 @@ try {
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view"]
       .every((entry) => authorityRestore.entries[entry].state === "active"));
+  const recoveredWorkspace = await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    return {
+      path: view?.querySelector('input[name=authoring-path]')?.value ?? "",
+      source: view?.querySelector('textarea[name=authoring-source]')?.value ?? "",
+      status: view?.querySelector('[data-role=status]')?.textContent ?? "",
+    };
+  })()`);
+  check("provider recovery restores the durable authoring document without derived state",
+    recoveredWorkspace.path === RETAINED_WORKSPACE_PATH &&
+    recoveredWorkspace.source === AUTHORING_SOURCE && recoveredWorkspace.status === "idle",
+    JSON.stringify({path: recoveredWorkspace.path, status: recoveredWorkspace.status}));
   check("authoring and static management stay inside bounded UI latency",
     staticMS < 5000 && analyzeMS < 10000 && formatMS < 5000 && compileMS < 10000 &&
     renameMS < 10000 && renamedCompileMS < 10000 && renderMS < 5000 &&
@@ -801,21 +829,6 @@ try {
   check("provider recovery remounts the desired dependent", afterRestore.entries.inspection.state === "active" &&
     afterRestore.entries["inspection-view"].state === "active");
   check("payload-free lifecycle state cannot expose the capability", !JSON.stringify(afterRestore).includes("mgmt_"));
-
-  const retainedWorkspacePrepared = await evaluate(`(() => {
-    const view = document.querySelector('[data-view=authoring-editor]');
-    const path = view?.querySelector('input[name=authoring-path]');
-    const source = view?.querySelector('textarea[name=authoring-source]');
-    const compile = view?.querySelector('button[data-action=compile]');
-    if (!path || !source || !compile) return false;
-    path.value = ${JSON.stringify(RETAINED_WORKSPACE_PATH)};
-    source.value = ${JSON.stringify(AUTHORING_SOURCE)};
-    compile.click();
-    return true;
-  })()`);
-  check("authoring workspace prepared durable replacement state", retainedWorkspacePrepared && await waitFor(
-    "durable workspace compile", () => evaluate(
-      `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "compiled"`)));
 
   let capabilityReplacementSequence = 0;
   if (EFFECTS_REPLACEMENT_PATH) {

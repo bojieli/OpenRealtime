@@ -813,6 +813,9 @@ async migrateState(input){
       delete context.root.dataset.statefulProvider;
     }
   });
+  if (context.root.dataset.failStatefulV2Mount === "true") {
+    throw new Error("intentional stateful recovery failure");
+  }
 }};`)
 	statefulFailure := []byte(`
 const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };

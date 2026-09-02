@@ -304,6 +304,7 @@ async function boot() {
   }]));
   const desired = new Set(entriesByID.keys());
   const mounted = new Map();
+  const suspendedStates = new Map();
 
   // Resolve and authenticate every implementation before any module is
   // allowed to start an effect. A missing or substituted later module cannot
@@ -405,18 +406,23 @@ async function boot() {
   };
 
   const mountDesired = async (restoredStates) => {
+    const stateInputs = new Map(suspendedStates);
+    for (const [id, state] of restoredStates ?? []) {
+      stateInputs.set(id, structuredClone(state));
+    }
     const newlyMounted = [];
     try {
       for (const planned of manifest.plan.entries) {
         const id = planned.entry.id;
         if (!desired.has(id) || mounted.has(id) || !requiredReady(planned)) continue;
-        await mountOne(id, restoredStates);
+        await mountOne(id, stateInputs);
         newlyMounted.push(id);
       }
     } catch (error) {
       for (const id of newlyMounted.reverse()) await stopOne(id, "activation rollback").catch(() => {});
       throw error;
     }
+    for (const id of mounted.keys()) suspendedStates.delete(id);
     return newlyMounted;
   };
 
@@ -525,8 +531,13 @@ async function boot() {
   const deactivate = (id) => serialized(async () => {
     if (disposed) throw new Error("client composition is disposed");
     if (!entriesByID.has(id)) throw new Error(`unknown client plugin ${id}`);
+    const affected = dependentClosure(id);
+    const captures = await captureState(affected);
+    for (const [stateID, capture] of captures) {
+      suspendedStates.set(stateID, structuredClone(capture.snapshot));
+    }
     desired.delete(id);
-    await stopAffected(dependentClosure(id), `client plugin ${id} deactivation failed`);
+    await stopAffected(affected, `client plugin ${id} deactivation failed`);
     sequence++;
     return live();
   });
@@ -701,6 +712,7 @@ async function boot() {
     for (const planned of [...manifest.plan.entries].reverse()) {
       try { await stopOne(planned.entry.id, "client disposal"); } catch (error) { failures.push(error); }
     }
+    suspendedStates.clear();
     root.dataset.state = "disposed";
     if (failures.length) throw new AggregateError(failures, "client disposal failed");
   });
