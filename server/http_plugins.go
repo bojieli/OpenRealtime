@@ -49,25 +49,50 @@ func (factory *HTTPRouterFactory) Descriptor() plugin.Descriptor {
 }
 
 func (factory *HTTPRouterFactory) Mount(
-	_ context.Context, mount pluginruntime.MountContext,
+	ctx context.Context, mount pluginruntime.MountContext,
 ) error {
-	if factory == nil {
-		return errors.New("mount server HTTP router plugin: nil factory")
-	}
-	router := httpservice.NewRouter()
-	if err := mount.Publisher.Provide(HTTPRoutesContract(), httpservice.Registry(router)); err != nil {
+	candidate, err := factory.prepareHTTPRouter()
+	if err != nil {
 		return err
 	}
+	return candidate.Activate(ctx, mount)
+}
+
+func (factory *HTTPRouterFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return factory.prepareHTTPRouter()
+}
+
+func (factory *HTTPRouterFactory) prepareHTTPRouter() (httpRouterCandidate, error) {
+	if factory == nil {
+		return httpRouterCandidate{}, errors.New("mount server HTTP router plugin: nil factory")
+	}
+	return httpRouterCandidate{router: httpservice.NewRouter()}, nil
+}
+
+type httpRouterCandidate struct{ router httpservice.RegistryHandler }
+
+func (candidate httpRouterCandidate) Activate(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
 	if err := mount.Publisher.Provide(
-		management.HTTPRoutesContract, httpservice.Registry(router),
+		HTTPRoutesContract(), httpservice.Registry(candidate.router),
 	); err != nil {
 		return err
 	}
-	if err := mount.Publisher.Provide(management.HTTPHandlerContract, http.Handler(router)); err != nil {
+	if err := mount.Publisher.Provide(
+		management.HTTPRoutesContract, httpservice.Registry(candidate.router),
+	); err != nil {
+		return err
+	}
+	if err := mount.Publisher.Provide(
+		management.HTTPHandlerContract, http.Handler(candidate.router),
+	); err != nil {
 		return err
 	}
 	return mount.Publisher.Provide(
-		RealtimeHTTPContract(), RealtimeHTTP(&composedHTTPService{handler: router}),
+		RealtimeHTTPContract(), RealtimeHTTP(&composedHTTPService{handler: candidate.router}),
 	)
 }
 
@@ -238,6 +263,7 @@ func lookupServerService[T any](services pluginruntime.Services, want plugin.Con
 
 var (
 	_ pluginruntime.Factory             = (*HTTPRouterFactory)(nil)
+	_ pluginruntime.CandidatePreMounter = (*HTTPRouterFactory)(nil)
 	_ pluginruntime.Factory             = (*RealtimeRouteFactory)(nil)
 	_ pluginruntime.CandidatePreMounter = (*RealtimeRouteFactory)(nil)
 	_ pluginruntime.Factory             = (*ObservabilityRouteFactory)(nil)
