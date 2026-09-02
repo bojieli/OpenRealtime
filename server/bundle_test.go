@@ -76,6 +76,32 @@ func TestServerBundleMountsOnlyExactRuntimeArtifactsBeforeServing(t *testing.T) 
 		!strings.Contains(err.Error(), "already mounted") {
 		t.Fatalf("second server realm mount error = %v", err)
 	}
+	closeContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := realm.Close(closeContext); err != nil {
+		t.Fatal(err)
+	}
+	closed := realm.Live()
+	if closed.State != "closed" || closed.Fingerprint != bundle.Plan.Fingerprint ||
+		closed.Exports[serverplugin.RealtimeHTTPExport].Available {
+		t.Fatalf("closed server realm identity = %+v", closed)
+	}
+	for id, entry := range closed.Entries {
+		if entry.State != "closed" || entry.Workers != 0 || entry.Effects != 0 || len(entry.Services) != 0 {
+			t.Fatalf("closed server entry %s retained ownership: %+v", id, entry)
+		}
+	}
+	closedResponse, err := http.Get(httpServer.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closedResponse.Body.Close()
+	if closedResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("closed server realm still served health route: %d", closedResponse.StatusCode)
+	}
+	if err := realm.Close(closeContext); err != nil {
+		t.Fatalf("idempotent server realm close: %v", err)
+	}
 }
 
 func TestServerBundleFailsClosedOnMissingOrMutableIdentity(t *testing.T) {

@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 212 of 260 explicit tracker boxes are checked (81.5%)
+At this reconciliation, 213 of 261 explicit tracker boxes are checked (81.6%)
 and 48 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -2481,7 +2481,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 912/6,147 at 2026-09-02 00:22 UTC. This dated progress checkpoint is
+  attempt 914/6,147 at 2026-09-02 00:25 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -3154,8 +3154,25 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     plugin realms with dependencies, permission ceilings, scoped effects, and
     independently inspectable runtime identities. The common descriptor/lock,
     host mount, permission, scoped-service, and browser lifecycle foundations
-    exist; complete server-realm assembly, replacement/rollback, and leak
-    evidence remain open.
+    exist; the exact server-realm assembly is covered by the following subgate,
+    while complete cross-realm replacement/rollback and leak evidence remain
+    open.
+  - [x] Assemble the clean Realtime server as an exact descriptor-locked server
+    realm before opening a listener. The immutable profile, lock, plan, runtime
+    artifact identities, dependency graph, permission-free server scope, and
+    single HTTP export bind the session provider, inspection authority, gateway,
+    realtime/observability routes, and canonical session management API. Missing
+    dependencies, mutable artifacts, duplicate mounts, and conflicting routes
+    fail before service; exact live evidence names all seven selected entries.
+    A server-specific replacement test proves that a conflicting observability
+    implementation restores the prior routes, while a valid replacement keeps
+    the stable router/export identity and advances only its implementation and
+    runtime evidence. Closing the actual bundle now proves every entry closed
+    with zero workers, effects, and services, makes the export unavailable,
+    removes `/healthz`, and remains idempotent. Focused server assembly,
+    replacement/rollback, and close-ownership tests are green; topology/session
+    resources outside this realm and cross-realm leak evidence remain under the
+    open parent.
   - [x] Complete the browser presentation server and browser client as
     manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
