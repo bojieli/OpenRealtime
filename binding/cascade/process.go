@@ -58,7 +58,15 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		queuedFreshVisual = runtime.queueArmedVisualObservation(batch)
 	}
 	if queuedFreshVisual && !batchHasUserObservation(batch) {
-		return nil
+		// The direct-pixel worker owns this observation, so it is not itself
+		// another request for voice cognition. A signal committed beside it is
+		// still an independent safe-point obligation, however. Returning for the
+		// merged batch used to consume CompositeResume before the ordinary policy
+		// could preserve the nonvisual half of the user's request.
+		respondToObservation = false
+		if batchOnlyVisualObservations(batch) {
+			return nil
+		}
 	}
 	// A successful visual action's result is controller memory, not a new
 	// request for speech or arbitrary reasoning. Composite-resume and the next
@@ -271,7 +279,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		// eligibility snapshot from before that bounded micro-turn finished.
 		userVisualTask = visualAuthorized && runtime.visualIntentEligible(request.VisualIntentID)
 	}
-	armedVisualUpdate := visualObservation(batch) && visualAuthorized &&
+	armedVisualUpdate := !queuedFreshVisual && visualObservation(batch) && visualAuthorized &&
 		runtime.visualIntentEligible(request.VisualIntentID) && !monitorArmedFromUser
 	if explicitVisualActionsComplete(request) {
 		// A completed action chunk is not authority to guess the unfinished
@@ -814,6 +822,32 @@ func visualObservation(batch eventloop.Batch) bool {
 	return false
 }
 
+// batchOnlyVisualObservations distinguishes a direct-pixel evidence batch
+// from one that merely contains pixels beside another event-loop obligation.
+// Submission partitions normally keep them separate, but a deferred visual
+// batch can rejoin a later routine signal at the same safe point.
+func batchOnlyVisualObservations(batch eventloop.Batch) bool {
+	if len(batch.Events) == 0 {
+		return false
+	}
+	for _, event := range batch.Events {
+		if event.Kind != trajectory.KindObservation || event.Observation == nil {
+			return false
+		}
+		visual := false
+		for _, media := range event.Observation.Media {
+			if strings.HasPrefix(strings.ToLower(media.MIMEType), "image/") {
+				visual = true
+				break
+			}
+		}
+		if !visual {
+			return false
+		}
+	}
+	return true
+}
+
 func snapshotHasVisual(snapshot trajectory.Snapshot) bool {
 	for index := len(snapshot.Items) - 1; index >= 0; index-- {
 		item := snapshot.Items[index]
@@ -873,6 +907,7 @@ func (runtime *runtime) visualTask(snapshot trajectory.Snapshot, update bool) (s
 	text := strings.TrimSpace(item.Content)
 	if runtime.visualTaskID == "" {
 		runtime.visualTaskID, runtime.visualTaskRawID, runtime.visualTaskText = rawID, rawID, text
+		runtime.visualTaskObservedNS = item.MonotonicNS
 		return runtime.visualTaskID, runtime.visualTaskText
 	}
 	currentRawID := runtime.visualTaskRawID
@@ -890,6 +925,7 @@ func (runtime *runtime) visualTask(snapshot trajectory.Snapshot, update bool) (s
 		if trajectory.SaidFurther(runtime.visualTaskText, text) ||
 			asrWithinWordRegression(runtime.visualTaskText, text) || canonicalFinalWordCorrection {
 			runtime.visualTaskText = text
+			runtime.visualTaskObservedNS = max(runtime.visualTaskObservedNS, item.MonotonicNS)
 			runtime.visualEvaluated[runtime.visualTaskID] = false
 		}
 		return runtime.visualTaskID, runtime.visualTaskText
@@ -899,6 +935,7 @@ func (runtime *runtime) visualTask(snapshot trajectory.Snapshot, update bool) (s
 		runtime.visualTaskRawID = rawID
 		if text != "" && !strings.Contains(runtime.visualTaskText, text) {
 			runtime.visualTaskText = strings.TrimSpace(runtime.visualTaskText + " " + text)
+			runtime.visualTaskObservedNS = max(runtime.visualTaskObservedNS, item.MonotonicNS)
 			// New user words can turn an earlier terminal fragment into a
 			// complete request ("Wait." / "go back to Overview"). Reopen one
 			// controller decision for those words. Observer frames do not call
@@ -908,6 +945,7 @@ func (runtime *runtime) visualTask(snapshot trajectory.Snapshot, update bool) (s
 		return runtime.visualTaskID, runtime.visualTaskText
 	}
 	runtime.visualTaskID, runtime.visualTaskRawID, runtime.visualTaskText = rawID, rawID, text
+	runtime.visualTaskObservedNS = item.MonotonicNS
 	return runtime.visualTaskID, runtime.visualTaskText
 }
 
@@ -999,6 +1037,17 @@ func (runtime *runtime) queueArmedVisualObservation(batch eventloop.Batch) bool 
 	snapshot := runtime.store.Snapshot()
 	intentID, task := runtime.visualTask(snapshot, false)
 	revision := runtime.latestRevision(batch)
+	runtime.visualActionMu.Lock()
+	taskObservedNS := runtime.visualTaskObservedNS
+	runtime.visualActionMu.Unlock()
+	// The event loop commits observer evidence before deciding when to act on
+	// it. A frame captured before the current user task can therefore still be
+	// waiting here when live ASR arms that task. Do not reinterpret those old
+	// pixels as a post-request observation merely because processing was
+	// delayed; the next frame is the first one that can advance this controller.
+	if !visualObservationAfter(batch, taskObservedNS) {
+		return false
+	}
 	if intentID == "" || task == "" || !runtime.visualIntentArmed(intentID) ||
 		!runtime.visualIntentEligible(intentID) || runtime.visualRevisionHandled(intentID, revision, true) {
 		return false
@@ -1028,6 +1077,25 @@ func (runtime *runtime) queueArmedVisualObservation(batch eventloop.Batch) bool 
 	runtime.visualActionMu.Unlock()
 	runtime.startLiveVisualWorker()
 	return true
+}
+
+// visualObservationAfter reports whether this batch carries direct pixels
+// committed after the current controller task was heard. MonotonicNS and
+// visualTaskObservedNS come from the same session scheduler; Event.OccurredNS
+// may be a wall-clock capture timestamp and is deliberately not compared.
+func visualObservationAfter(batch eventloop.Batch, taskObservedNS uint64) bool {
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindObservation || item.Observation == nil {
+			continue
+		}
+		for _, media := range item.Observation.Media {
+			if strings.HasPrefix(strings.ToLower(media.MIMEType), "image/") &&
+				(taskObservedNS == 0 || item.MonotonicNS > taskObservedNS) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (runtime *runtime) visualAwaitingFreshFrame() bool {

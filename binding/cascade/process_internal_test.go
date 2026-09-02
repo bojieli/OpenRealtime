@@ -891,6 +891,55 @@ func TestLiveVisualTaskKeepsCumulativeTextAfterASlowRecognitionGap(t *testing.T)
 	}
 }
 
+func TestVisualObservationMustFollowTheCurrentControllerTask(t *testing.T) {
+	batch := eventloop.Batch{Items: []trajectory.Item{{
+		ID: "screen-before-request", Kind: trajectory.KindObservation,
+		MonotonicNS: 10,
+		Observation: &trajectory.ObservationMeta{
+			Observer: "video", Authority: trajectory.AuthorityObserver,
+			Media: []trajectory.MediaRef{{
+				Handle: "frame-before-request", MIMEType: "image/jpeg", Source: "screen",
+			}},
+		},
+	}}}
+	if visualObservationAfter(batch, 10) {
+		t.Fatal("a frame committed before the task became control evidence for that task")
+	}
+	if visualObservationAfter(batch, 11) {
+		t.Fatal("an older frame became control evidence for a newer task")
+	}
+	if !visualObservationAfter(batch, 9) {
+		t.Fatal("a frame committed after the task was not admitted as fresh control evidence")
+	}
+	if !visualObservationAfter(batch, 0) {
+		t.Fatal("a task without an observed-time boundary rejected its visual evidence")
+	}
+}
+
+func TestVisualFastPathDoesNotConsumeACoalescedSignal(t *testing.T) {
+	visual := eventloop.Event{
+		Type: "screen.changed", Source: "video", Channel: "screen",
+		Kind: trajectory.KindObservation,
+		Observation: &trajectory.ObservationMeta{
+			Observer: "video", Authority: trajectory.AuthorityObserver,
+			Media: []trajectory.MediaRef{{
+				Handle: "frame-after-request", MIMEType: "image/jpeg", Source: "screen",
+			}},
+		},
+	}
+	batch := eventloop.Batch{Events: []eventloop.Event{visual}}
+	if !batchOnlyVisualObservations(batch) {
+		t.Fatal("a visual-only batch did not stay on the direct-pixel fast path")
+	}
+	batch.Events = append(batch.Events, eventloop.Event{
+		Type: interaction.SignalCompositeResume, Source: "cognition", Channel: "cognition",
+		Kind: eventloop.KindSignal,
+	})
+	if batchOnlyVisualObservations(batch) {
+		t.Fatal("a composite-resume signal was consumed as visual-only evidence")
+	}
+}
+
 func TestLiveVisualTaskRejectsAStaleWithinWordRegression(t *testing.T) {
 	runtime := &runtime{
 		visualTaskID: "utterance-1", visualTaskRawID: "utterance-1",
