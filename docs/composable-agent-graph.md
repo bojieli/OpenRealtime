@@ -1797,7 +1797,7 @@ reconstruction, or alternate benchmark path.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-09-01**. This is the progress
+Last reconciled with the repository on **2026-09-02**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
 ledger and `git log origin/main..main` together identify the accepted local
@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 213 of 261 explicit tracker boxes are checked (81.6%)
+At this reconciliation, 217 of 265 explicit tracker boxes are checked (81.9%)
 and 48 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -2481,7 +2481,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 914/6,147 at 2026-09-02 00:25 UTC. This dated progress checkpoint is
+  attempt 923/6,147 at 2026-09-02 00:38 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
