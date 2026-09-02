@@ -35,6 +35,11 @@ Freeze one strict graph/server profile against the exact running executable
 and explicit provider configurations. Outputs are create-only and contain no
 credential. Use this same executable to serve the resulting file.`
 
+const productionScenarioContinuationInstruction = "Ground every response in canonical evidence already received. " +
+	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
+	"When carrying out a request deferred until an event or time condition, preserve the requested action, subject, and key wording; " +
+	"do not substitute a related check or narrate the setup."
+
 type scenarioProfileOptions struct {
 	out           string
 	graphOut      string
@@ -79,15 +84,16 @@ type scenarioProfileOptions struct {
 	ttsSentenceWrap    bool
 	ttsSentenceMinimum int
 
-	gateThreshold      float64
-	gatePrefixMS       int
-	gateSilenceMS      int
-	gateSpeechMS       int
-	maxOutputTokens    int
-	fdbv3Dataset       string
-	serverTokenEnv     string
-	inspectionTokenTTL uint64
-	maxAudioFrameBytes int
+	gateThreshold           float64
+	gatePrefixMS            int
+	gateSilenceMS           int
+	gateSpeechMS            int
+	maxOutputTokens         int
+	continuationInstruction string
+	fdbv3Dataset            string
+	serverTokenEnv          string
+	inspectionTokenTTL      uint64
+	maxAudioFrameBytes      int
 }
 
 func defaultScenarioProfileOptions() scenarioProfileOptions {
@@ -114,6 +120,7 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		// three-minute task bound. 128 tokens still spans every scripted
 		// acknowledgement while keeping one turn bounded under provider load.
 		gateSpeechMS: 120, maxOutputTokens: 128,
+		continuationInstruction: productionScenarioContinuationInstruction,
 		// Runtime evidence is read only after an entire authored conversation
 		// and its trailing quiet period. Five minutes covers the client's
 		// two-minute per-attempt deadline without making the capability durable.
@@ -190,6 +197,8 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.IntVar(&options.gateSilenceMS, "gate-silence-ms", options.gateSilenceMS, "silence that closes one utterance")
 	flags.IntVar(&options.gateSpeechMS, "gate-speech-ms", options.gateSpeechMS, "minimum admitted speech")
 	flags.IntVar(&options.maxOutputTokens, "max-output-tokens", options.maxOutputTokens, "model output-token bound")
+	flags.StringVar(&options.continuationInstruction, "continuation-instruction", options.continuationInstruction,
+		"profile-owned continuation evidence and deferred-action policy")
 	flags.StringVar(&options.fdbv3Dataset, "fdbv3-dataset", options.fdbv3Dataset, "released FDB v3 dataset whose exact tool union replaces the scenario-suite tools")
 	flags.StringVar(&options.serverTokenEnv, "token-env", options.serverTokenEnv, "optional gateway bearer-token environment name")
 	flags.Uint64Var(&options.inspectionTokenTTL, "inspection-token-ttl-ms", options.inspectionTokenTTL, "runtime-inspection token lifetime")
@@ -396,7 +405,8 @@ func freezeProductionScenarioProfile(
 			MaxItems: 8, MaxBytes: 4 << 20, MaxItemBytes: 2 << 20,
 			MaxPending: 8, MaxActiveLeases: 16,
 		},
-		MaxOutputTokens: options.maxOutputTokens,
+		MaxOutputTokens:         options.maxOutputTokens,
+		ContinuationInstruction: options.continuationInstruction,
 	}
 	delegatePayload, err := json.Marshal(application)
 	if err != nil {

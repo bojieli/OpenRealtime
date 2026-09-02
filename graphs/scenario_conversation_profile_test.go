@@ -71,6 +71,15 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		{name: "unsupported mode", mutate: func(config *scenarioconversation.PluginConfig) {
 			config.Architecture = unsupported
 		}, want: "not the exact composed semantic-policy controller"},
+		{name: "continuation instruction leading whitespace", mutate: func(config *scenarioconversation.PluginConfig) {
+			config.ContinuationInstruction = " leading"
+		}, want: "leading or trailing whitespace"},
+		{name: "continuation instruction invalid UTF-8", mutate: func(config *scenarioconversation.PluginConfig) {
+			config.ContinuationInstruction = string([]byte{0xff})
+		}, want: "valid UTF-8"},
+		{name: "continuation instruction oversized", mutate: func(config *scenarioconversation.PluginConfig) {
+			config.ContinuationInstruction = strings.Repeat("x", 4097)
+		}, want: "no larger than 4096"},
 	}
 	for _, test := range pluginArchitectureTests {
 		t.Run("plugin architecture "+test.name, func(t *testing.T) {
@@ -255,6 +264,12 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		{name: "media bound escalation", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Media.MaxBytes = 2 << 30
 		}), want: "max_bytes"},
+		{name: "continuation instruction trailing whitespace", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.ContinuationInstruction += " "
+		}), want: "leading or trailing whitespace"},
+		{name: "continuation instruction oversized", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
+			config.ContinuationInstruction = strings.Repeat("x", 4097)
+		}), want: "no larger than 4096"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -661,7 +676,7 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 			MaxItems: 7, MaxBytes: 4 << 20, MaxItemBytes: 2 << 20,
 			MaxPending: 5, MaxActiveLeases: 9,
 		},
-		MaxOutputTokens: 4096,
+		MaxOutputTokens: 4096, ContinuationInstruction: "Use only sealed evidence.",
 	}
 	asrOpened, modelOpened, ttsOpened := &atomic.Int32{}, &atomic.Int32{}, &atomic.Int32{}
 	registration := scenarioconversation.ApplicationRegistrationConfig{
@@ -743,6 +758,7 @@ func (fixture scenarioProfileFixture) pluginConfig() scenarioconversation.Plugin
 			SpeechDurationMS:  fixture.application.Gate.SpeechDurationMS,
 		},
 		Media: fixture.application.Media, MaxOutputTokens: fixture.application.MaxOutputTokens,
+		ContinuationInstruction: fixture.application.ContinuationInstruction,
 	}
 }
 

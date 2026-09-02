@@ -96,6 +96,17 @@ func (session *session) invocationForSettings(settings legacy.Settings) (continu
 			maximumAdapterTextBytes,
 		)
 	}
+	instruction := settings.Instruction
+	if policy := session.config.ContinuationInstruction; policy != "" {
+		const separator = "\n\n"
+		if len(instruction) > maximumAdapterTextBytes-len(separator)-len(policy) {
+			return continuation.Invocation{}, fmt.Errorf(
+				"scenario conversation composed instruction must be no larger than %d bytes",
+				maximumAdapterTextBytes,
+			)
+		}
+		instruction += separator + policy
+	}
 	declared := make(map[string]ToolDeclaration, len(session.config.Tools))
 	for _, tool := range session.config.Tools {
 		declared[tool.Name] = tool
@@ -137,7 +148,7 @@ func (session *session) invocationForSettings(settings legacy.Settings) (continu
 		})
 	}
 	return continuation.Invocation{
-		Instruction: settings.Instruction, Capabilities: capabilities, Tools: tools,
+		Instruction: instruction, Capabilities: capabilities, Tools: tools,
 		MaxOutputTokens: session.config.MaxOutputTokens,
 	}, nil
 }

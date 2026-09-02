@@ -73,10 +73,20 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		`"description":"Send a keypad tone on the open call."`,
 		`"digit":{"type":"string"}`,
 		`"max_output_tokens":128`,
+		`"continuation_instruction":"Ground every response in canonical evidence already received.`,
 	} {
 		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
 			t.Fatalf("profile application configuration omitted %s", exact)
 		}
+	}
+	encodedInstruction, err := json.Marshal(productionScenarioContinuationInstruction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInstruction := []byte(`"continuation_instruction":` + string(encodedInstruction))
+	if !bytes.Contains(profile.Application.Configuration, wantInstruction) {
+		t.Fatalf("profile continuation instruction is not the exact production selection: %s",
+			profile.Application.Configuration)
 	}
 	if info, err := os.Stat(path); err != nil {
 		t.Fatal(err)
@@ -158,6 +168,30 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	if err := runLaunchProfile([]string{"scenario", "-out", path}, &bytes.Buffer{}); err == nil ||
 		!strings.Contains(err.Error(), "exclusively") {
 		t.Fatalf("create-only second freeze error = %v", err)
+	}
+}
+
+func TestScenarioProfileFreezeRejectsInvalidContinuationInstructionBeforeOutput(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "leading whitespace", value: " leading", want: "leading or trailing whitespace"},
+		{name: "oversized", value: strings.Repeat("x", 4097), want: "no larger than 4096"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+			err := runLaunchProfile([]string{
+				"scenario", "-out", path, "-continuation-instruction", testCase.value,
+			}, &bytes.Buffer{})
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("continuation instruction error = %v, want %q", err, testCase.want)
+			}
+			if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+				t.Fatalf("invalid continuation instruction created output: %v", statErr)
+			}
+		})
 	}
 }
 
