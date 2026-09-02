@@ -1823,7 +1823,7 @@ of-done requirement.
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, a compiler-backed language-service core exposed through the UI-independent management API, and authenticated rollback-safe stateless browser implementation replacement | Complete signed-native, stateful, multi-row, and remaining presentation replacement gates |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, a compiler-backed language-service core exposed through the UI-independent management API, and authenticated rollback-safe stateless, multi-row, and stateful browser implementation replacement | Complete signed-native, topology-changing, and remaining capability-specific presentation replacement gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
@@ -3228,6 +3228,18 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     and final host close removes every route with zero realm ownership. Ten
     shuffled focused runs, focused and package-wide race, full repository
     tests, and vet are green.
+  - [x] Reconcile a stateful presentation-host route through its exact schema,
+    snapshot/restore lifecycle, and explicit candidate migrator. A candidate
+    without migration support is refused after effect-restricted pre-mount but
+    before snapshot or route teardown. A migrated candidate that fails after
+    registering its route is completely disposed and restores the predecessor
+    implementation, state, endpoint, and runtime evidence with no receipt. A
+    valid transition serves the migrated state and returns only schema,
+    before/after state digests, migrator identity, transition identity, and
+    zero-retained-ownership retirement evidence—never state bytes. Final host
+    close removes the route and disposes the adopted pre-mount scope exactly
+    once. Ten shuffled focused runs, focused and package-wide race, full
+    repository tests, and vet are green.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3319,9 +3331,9 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     The unchanged-server cross-client gate now also proves dependency-ordered
     presentation-host/server shutdown with zero retained plugin ownership and
     independently disappearing HTTP surfaces. A signed native Darwin
-    application run, remaining stateful/multi-row host/client replacement and
-    native lifecycle/leak evidence, and the complete release-matrix rerun
-    remain open.
+    application run, remaining topology-changing and capability-specific
+    host/client replacement, native lifecycle/leak evidence, and the complete
+    release-matrix rerun remain open.
 
 - [x] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
@@ -3825,8 +3837,9 @@ checked from foundation work alone; each requires end-to-end release evidence.
     deleted, and real Chromium plus the unchanged-server macOS-profile probe
     pass. Native manifests and shared Swift services exist; cross-realm
     host/server shutdown now has zero-ownership evidence. The signed Darwin
-    application run and remaining stateful/multi-row host/client replacement
-    and native lifecycle matrix keep the parent open.
+    application run, remaining topology-changing and capability-specific
+    host/client replacement, and the native lifecycle matrix keep the parent
+    open.
 - [ ] Every server, host, and client presentation capability can be replaced or
     removed through a descriptor-locked plugin composition with scoped cleanup,
     explicit permissions, and no implicit effect authority.
@@ -3840,11 +3853,13 @@ checked from foundation work alone; each requires end-to-end release evidence.
     Chromium client-provider removal/recovery proves exact dependent cleanup
     and a zero-ownership close, while the portable native composition proves
     exact provider-loss/remount and idempotent reverse-order shutdown. An
-    authenticated stateless browser implementation can also swap between
+    authenticated browser implementations can also swap one or multiple
     descriptor-declared content-addressed assets with exact dependency cleanup,
-    rollback, and payload-free identity evidence. Complete stateful, multi-row,
-    and remaining host/client capability replacement plus signed-native
-    lifecycle/leak evidence remain open.
+    rollback, payload-free identity evidence, and explicit state migration.
+    Host route capabilities likewise have atomic multi-row and stateful
+    migration/rollback evidence over the stable router and export. Complete
+    topology-changing and remaining capability-specific host/client replacement
+    plus signed-native lifecycle/leak evidence remain open.
 
 ## References
 
