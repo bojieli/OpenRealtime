@@ -62,12 +62,37 @@ func (factory *SessionProviderFactory) Descriptor() plugin.Descriptor {
 }
 
 func (factory *SessionProviderFactory) Mount(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	candidate, err := factory.prepareSessionProvider()
+	if err != nil {
+		return err
+	}
+	return candidate.Activate(ctx, mount)
+}
+
+func (factory *SessionProviderFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return factory.prepareSessionProvider()
+}
+
+func (factory *SessionProviderFactory) prepareSessionProvider() (sessionProviderCandidate, error) {
+	if factory == nil || nilServerInterface(factory.provider) {
+		return sessionProviderCandidate{}, errors.New("mount server session-provider plugin: provider is unavailable")
+	}
+	if err := gateway.ValidateSessionBinding(factory.provider); err != nil {
+		return sessionProviderCandidate{}, fmt.Errorf("mount server session-provider plugin: %w", err)
+	}
+	return sessionProviderCandidate{provider: factory.provider}, nil
+}
+
+type sessionProviderCandidate struct{ provider SessionProvider }
+
+func (candidate sessionProviderCandidate) Activate(
 	_ context.Context, mount pluginruntime.MountContext,
 ) error {
-	if factory == nil || nilServerInterface(factory.provider) {
-		return errors.New("mount server session-provider plugin: provider is unavailable")
-	}
-	return mount.Publisher.Provide(SessionProviderContract(), factory.provider)
+	return mount.Publisher.Provide(SessionProviderContract(), candidate.provider)
 }
 
 // SessionInspectionPlaneFactory publishes one resource-free session
@@ -248,7 +273,8 @@ func nilServerInterface(value any) bool {
 }
 
 var (
-	_ pluginruntime.Factory = (*SessionProviderFactory)(nil)
-	_ pluginruntime.Factory = (*SessionInspectionPlaneFactory)(nil)
-	_ pluginruntime.Factory = (*GatewayFactory)(nil)
+	_ pluginruntime.Factory             = (*SessionProviderFactory)(nil)
+	_ pluginruntime.CandidatePreMounter = (*SessionProviderFactory)(nil)
+	_ pluginruntime.Factory             = (*SessionInspectionPlaneFactory)(nil)
+	_ pluginruntime.Factory             = (*GatewayFactory)(nil)
 )
