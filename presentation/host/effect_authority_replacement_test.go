@@ -152,8 +152,14 @@ func TestDenyEffectAuthorityReplacementReconcilesEffectsClosure(t *testing.T) {
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
 		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
 		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 1 ||
-		len(receipt.Retirements) != 2 || len(receipt.StateTransfers) != 0 {
+		len(receipt.Retirements) != 2 || len(receipt.StateTransfers) != 1 {
 		t.Fatalf("effect-authority replacement receipt = %#v", receipt)
+	}
+	transfer := receipt.StateTransfers[0]
+	if transfer.Entry != "effects" || transfer.Schema != presentation.EffectsStateContract ||
+		transfer.BeforeStateDigest == "" || transfer.BeforeStateDigest != transfer.AfterStateDigest ||
+		transfer.MigratorImplementation != "" {
+		t.Fatalf("unchanged effects state transfer = %#v", transfer)
 	}
 	transition := receipt.Transitions[0]
 	if transition.Entry != "authority" ||

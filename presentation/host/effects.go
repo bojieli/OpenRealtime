@@ -811,9 +811,10 @@ func NewEffectsFactory(options EffectsOptions) (*EffectsFactory, error) {
 		})
 	}
 	schema := presentation.EffectsConfigContract
+	stateSchema := presentation.EffectsStateContract
 	descriptor, err := (plugin.Descriptor{
 		FormatVersion: plugin.DescriptorFormatVersion,
-		Name:          "openrealtime.presentation.host.effects", Revision: 1,
+		Name:          "openrealtime.presentation.host.effects", Revision: 2,
 		Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 		Provides: []plugin.Contract{presentation.EffectsContract},
 		Requires: []plugin.Requirement{
@@ -822,11 +823,11 @@ func NewEffectsFactory(options EffectsOptions) (*EffectsFactory, error) {
 			{Contract: presentation.DownloadStoreContract},
 			{Contract: presentation.EffectAuthorityContract},
 		},
-		ConfigSchema: &schema, Permissions: permissions,
+		ConfigSchema: &schema, StateSchema: &stateSchema, Permissions: permissions,
 		Assets: []plugin.Asset{{
 			Name: "effects/declarations.v1.json", MediaType: "application/json", Digest: contentDigest(catalog),
 		}},
-		Lifecycle: plugin.Lifecycle{DisposeTimeoutMS: 5_000},
+		Lifecycle: plugin.Lifecycle{Snapshot: true, Restore: true, DisposeTimeoutMS: 5_000},
 	}).Canonical()
 	if err != nil {
 		return nil, fmt.Errorf("presentation effects descriptor: %w", err)
@@ -849,8 +850,89 @@ func (factory *EffectsFactory) DeclarationsDocument() []byte { return slices.Clo
 func (factory *EffectsFactory) CatalogDigest() string { return factory.catalogDigest }
 
 func (factory *EffectsFactory) Mount(ctx context.Context, mount pluginruntime.MountContext) error {
+	candidate, err := factory.prepareCandidate(
+		mount.EntryID, mount.Config, mount.Services, mount.Permissions,
+	)
+	if err != nil {
+		return err
+	}
+	return candidate.Activate(ctx, mount)
+}
+
+func (factory *EffectsFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return factory.prepareCandidate(
+		candidate.EntryID, candidate.Config, candidate.Services, candidate.Permissions,
+	)
+}
+
+func (factory *EffectsFactory) prepareCandidate(
+	entryID string,
+	config json.RawMessage,
+	services pluginruntime.Services,
+	permissions pluginruntime.Permissions,
+) (effectsCandidate, error) {
+	limits, err := parseEffectConfig(config)
+	if err != nil {
+		return effectsCandidate{}, err
+	}
+	if _, err := lookupRoutes(services); err != nil {
+		return effectsCandidate{}, err
+	}
+	if _, err := lookupArtifactStore(services); err != nil {
+		return effectsCandidate{}, err
+	}
+	if _, err := lookupDownloadStore(services); err != nil {
+		return effectsCandidate{}, err
+	}
+	if _, err := lookupEffectAuthority(services); err != nil {
+		return effectsCandidate{}, err
+	}
+	tools := cloneCompiledEffectTools(factory.tools)
+	for index := range tools {
+		if !permissions.Allows(effectPermissionKind, tools[index].resource, tools[index].operation) {
+			return effectsCandidate{}, fmt.Errorf("presentation effects lack deployment grant %s/%s/%s",
+				effectPermissionKind, tools[index].resource, tools[index].operation)
+		}
+	}
+	return effectsCandidate{
+		entryID: entryID, limits: limits, tools: tools, policy: factory.policy,
+		catalogDigest: factory.catalogDigest,
+	}, nil
+}
+
+func cloneCompiledEffectTools(source []compiledEffectTool) []compiledEffectTool {
+	result := make([]compiledEffectTool, len(source))
+	copy(result, source)
+	for index := range result {
+		result[index].declaration = result[index].declaration.clone()
+	}
+	return result
+}
+
+type effectsCandidate struct {
+	entryID       string
+	limits        effectLimits
+	tools         []compiledEffectTool
+	policy        EffectPolicy
+	catalogDigest string
+}
+
+func (candidate effectsCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	if mount.EntryID != candidate.entryID {
+		return errors.New("effects candidate entry changed before activation")
+	}
 	limits, err := parseEffectConfig(mount.Config)
 	if err != nil {
+		return err
+	}
+	if limits != candidate.limits {
+		return errors.New("effects candidate limits changed before activation")
+	}
+	if _, err := lookupRoutes(mount.Services); err != nil {
 		return err
 	}
 	artifacts, err := lookupArtifactStore(mount.Services)
@@ -865,8 +947,7 @@ func (factory *EffectsFactory) Mount(ctx context.Context, mount pluginruntime.Mo
 	if err != nil {
 		return err
 	}
-	tools := make([]compiledEffectTool, len(factory.tools))
-	copy(tools, factory.tools)
+	tools := cloneCompiledEffectTools(candidate.tools)
 	for index := range tools {
 		if !mount.Permissions.Allows(effectPermissionKind, tools[index].resource, tools[index].operation) {
 			return fmt.Errorf("presentation effects lack deployment grant %s/%s/%s",
@@ -879,7 +960,16 @@ func (factory *EffectsFactory) Mount(ctx context.Context, mount pluginruntime.Mo
 			tools[index].executor = downloadEffectExecutor{store: downloads}
 		}
 	}
-	hub, err := newEffectsHub(ctx, limits, tools, authority, factory.policy, factory.catalogDigest)
+	if mount.State == nil {
+		return errors.New("presentation effects state lifecycle is unavailable")
+	}
+	restored, available, err := mount.State.Restored()
+	if err != nil {
+		return err
+	}
+	hub, err := newEffectsHub(
+		ctx, limits, tools, authority, candidate.policy, candidate.catalogDigest,
+	)
 	if err != nil {
 		return err
 	}
@@ -887,6 +977,21 @@ func (factory *EffectsFactory) Mount(ctx context.Context, mount pluginruntime.Mo
 	hub.artifacts = artifacts
 	hub.downloads = downloads
 	if err := mount.Lifecycle.Defer("effect-sessions", hub.close); err != nil {
+		return err
+	}
+	if available {
+		state, err := decodeEffectsHubState(restored, limits, tools, candidate.catalogDigest)
+		if err != nil {
+			return err
+		}
+		if err := hub.restoreState(state); err != nil {
+			return err
+		}
+	}
+	if err := mount.State.Quiesce(hub.quiesceState); err != nil {
+		return err
+	}
+	if err := mount.State.Snapshot(hub.snapshotState); err != nil {
 		return err
 	}
 	if err := registerRoutes(mount, []Route{{
@@ -1050,13 +1155,15 @@ type effectsHub struct {
 	catalogDigest string
 	readyBytes    int
 
-	mu       sync.Mutex
-	closed   bool
-	sessions map[string]*effectSession
-	calls    map[string]*effectCallState
-	drained  chan struct{}
-	stats    EffectsStats
-	audit    []EffectAuditRecord
+	mu               sync.Mutex
+	closed           bool
+	quiescing        bool
+	sessions         map[string]*effectSession
+	calls            map[string]*effectCallState
+	drained          chan struct{}
+	mutationsDrained chan struct{}
+	stats            EffectsStats
+	audit            []EffectAuditRecord
 }
 
 func newEffectsHub(
@@ -1136,7 +1243,7 @@ func (hub *effectsHub) setPermissions(permissions pluginruntime.Permissions) {
 func (hub *effectsHub) addSession(session *effectSession) bool {
 	hub.mu.Lock()
 	defer hub.mu.Unlock()
-	if hub.closed || len(hub.sessions) >= hub.limits.MaxSessions {
+	if hub.closed || hub.quiescing || len(hub.sessions) >= hub.limits.MaxSessions {
 		return false
 	}
 	hub.sessions[session.scopeID] = session
@@ -1162,17 +1269,25 @@ func (hub *effectsHub) removeSession(scopeID string) {
 	hub.mu.Unlock()
 }
 
-func (hub *effectsHub) callStarted() {
+func (hub *effectsHub) callStarted() bool {
 	hub.mu.Lock()
-	hub.stats.Calls++
+	defer hub.mu.Unlock()
+	if hub.closed || hub.quiescing {
+		return false
+	}
+	incrementEffectCounter(&hub.stats.Calls)
 	hub.stats.InFlight++
-	hub.mu.Unlock()
+	return true
 }
 
 func (hub *effectsHub) callReleased() {
 	hub.mu.Lock()
 	if hub.stats.InFlight > 0 {
 		hub.stats.InFlight--
+	}
+	if hub.quiescing && hub.stats.InFlight == 0 && hub.mutationsDrained != nil {
+		close(hub.mutationsDrained)
+		hub.mutationsDrained = nil
 	}
 	hub.mu.Unlock()
 }
@@ -1185,18 +1300,18 @@ func (hub *effectsHub) open() bool {
 
 func (hub *effectsHub) record(record EffectAuditRecord) {
 	hub.mu.Lock()
-	hub.stats.Results++
+	incrementEffectCounter(&hub.stats.Results)
 	if record.Authorized {
-		hub.stats.Authorized++
+		incrementEffectCounter(&hub.stats.Authorized)
 	}
 	if record.Executed {
-		hub.stats.Executed++
+		incrementEffectCounter(&hub.stats.Executed)
 	}
 	if record.Replayed {
-		hub.stats.Replayed++
+		incrementEffectCounter(&hub.stats.Replayed)
 	}
 	if record.ErrorCode != "" {
-		hub.stats.Refused++
+		incrementEffectCounter(&hub.stats.Refused)
 	}
 	if len(hub.audit) == hub.limits.MaxAuditRecords {
 		copy(hub.audit, hub.audit[1:])
@@ -1214,6 +1329,8 @@ func (hub *effectsHub) close(ctx context.Context) error {
 	hub.mu.Lock()
 	if !hub.closed {
 		hub.closed = true
+		hub.quiescing = false
+		hub.mutationsDrained = nil
 		hub.stats.Closed = true
 		if len(hub.sessions) == 0 {
 			close(hub.drained)
@@ -1390,6 +1507,11 @@ func (session *effectSession) serve() {
 		}
 		switch envelope.Type {
 		case "call":
+			if !session.hub.callStarted() {
+				_ = session.writeProtocolError("provider_quiescing",
+					"the effect provider is not accepting new calls", "")
+				continue
+			}
 			call, decodeErr := decodeEffectCall(payload)
 			if decodeErr != nil {
 				if validEffectID(call.ID) {
@@ -1397,14 +1519,15 @@ func (session *effectSession) serve() {
 				} else {
 					_ = session.writeProtocolError("invalid_call", decodeErr.Error(), "")
 				}
+				session.hub.callReleased()
 				continue
 			}
 			if !session.startJob() {
 				session.respondDirectFailure(call, nil, "too_many_in_flight",
 					"the effect session reached its declared in-flight limit", time.Now().UTC())
+				session.hub.callReleased()
 				continue
 			}
-			session.hub.callStarted()
 			session.jobs.Add(1)
 			go func() {
 				defer session.jobs.Done()
@@ -2007,8 +2130,17 @@ func (session *effectSession) respondDirectFailure(
 	call effectClientCall, tool *compiledEffectTool, code, message string, started time.Time,
 ) {
 	record := EffectAuditRecord{
-		ScopeID: session.scopeID, SessionID: call.SessionID, CallID: call.ID, Name: call.Name,
-		ErrorCode: code, StartedAt: started, FinishedAt: time.Now().UTC(),
+		ScopeID: session.scopeID, ErrorCode: code,
+		StartedAt: started, FinishedAt: time.Now().UTC(),
+	}
+	if validEffectID(call.SessionID) {
+		record.SessionID = call.SessionID
+	}
+	if validEffectID(call.ID) {
+		record.CallID = call.ID
+	}
+	if validEffectName(call.Name) {
+		record.Name = call.Name
 	}
 	channel := EffectChannel("")
 	if tool != nil {
@@ -2028,4 +2160,6 @@ var _ pluginruntime.Factory = (*DenyEffectAuthorityFactory)(nil)
 var _ pluginruntime.CandidatePreMounter = (*DenyEffectAuthorityFactory)(nil)
 var _ pluginruntime.Factory = (*EffectsFactory)(nil)
 var _ pluginruntime.ConfigValidator = (*EffectsFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*EffectsFactory)(nil)
+var _ pluginruntime.CandidateStateMigrator = effectsCandidate{}
 var _ Effects = (*effectsHub)(nil)

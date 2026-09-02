@@ -86,7 +86,9 @@ func TestEffectsDescriptorLocksDeclarationsDependenciesAndPermissionCeilings(t *
 		t.Fatalf("effects descriptor placement = %#v", descriptor)
 	}
 	if !slices.Equal(descriptor.Provides, []plugin.Contract{presentation.EffectsContract}) ||
-		descriptor.ConfigSchema == nil || *descriptor.ConfigSchema != presentation.EffectsConfigContract {
+		descriptor.ConfigSchema == nil || *descriptor.ConfigSchema != presentation.EffectsConfigContract ||
+		descriptor.StateSchema == nil || *descriptor.StateSchema != presentation.EffectsStateContract ||
+		!descriptor.Lifecycle.Snapshot || !descriptor.Lifecycle.Restore {
 		t.Fatalf("effects descriptor contracts = %#v", descriptor)
 	}
 	for _, contract := range []plugin.Contract{

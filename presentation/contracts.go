@@ -48,6 +48,10 @@ var (
 		"presentation.host.effects",
 		"openrealtime/presentation/host/effects/v1:descriptor-locked-declarations-scoped-websocket-admission-authority-confirmation-target-idempotency-audit",
 	)
+	EffectsStateContract = semanticContract(
+		"presentation.host.effects.state",
+		"openrealtime/presentation/host/effects-state/v1:bounded-terminal-call-idempotency-results-audit-counters-no-authority-arguments-confirmation-nonces",
+	)
 	EffectAuthorityContract = semanticContract(
 		"presentation.host.effect_authority",
 		"openrealtime/presentation/host/effect-authority/v1:verify-opaque-receipt-exact-session-call-declaration-arguments-target",
