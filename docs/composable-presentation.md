@@ -568,8 +568,12 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement on one real address, with exact retirement and inert predecessor
   handlers. The fail-closed effect-authority provider likewise replaces through
   its active effects-socket closure with a stable router/export, exact two-row
-  retirement, and a fresh deny-by-default socket. One authenticated twenty-three-
-  row real-Chromium transition now selects exact candidates for slots, session
+  retirement, and a fresh deny-by-default socket. The revision-2 artifact store
+  now migrates bounded ordered private HTML, metadata, versions, timestamps, and
+  eviction state under an exact schema while its receipt exposes only equal
+  state digests; permissionless and over-envelope candidates leave the live
+  route and content untouched. One authenticated twenty-three-row real-Chromium
+  transition now selects exact candidates for slots, session
   configuration, effects, artifact references, debug, inspection, the stateful
   management-operator authority, management transport/static/authoring/source-
   read/source-publication, the stateful authoring workspace, and all nine
