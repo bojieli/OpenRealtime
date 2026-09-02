@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 221 of 269 explicit tracker boxes are checked (82.2%)
+At this reconciliation, 261 of 309 explicit tracker boxes are checked (84.5%)
 and 48 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -3500,8 +3500,8 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and listener on the same address, and leaves both predecessor handler
     generations inert. Final close removes the route and listener with zero
     realm ownership. Twenty focused runs, five focused race runs, package and
-    package-race tests, and vet are green. Stateful effects and
-    topology-changing host replacement remain open.
+    package-race tests, and vet are green. Topology-changing host replacement
+    remains open.
   - [x] Reconcile the shipped fail-closed effect-authority provider through its
     real effects-service dependency closure. Effect-free candidate pre-mount
     publishes no authority. Replacing the provider implementation closes the
@@ -3510,8 +3510,32 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and HTTP export, advances the effects export revision, and serves a fresh
     socket that still denies an unsigned call. Final close reaches zero realm
     ownership. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green. Stateful effects migration and
-    server-sealed authority rotation remain open.
+    package-race, and vet gates are green. Server-sealed authority rotation
+    remains open.
+  - [x] Reconcile the shipped revision-2 effects provider through its exact
+    bounded state schema and transactional call-admission gate. Effect-
+    restricted pre-mount validates the live router, artifact store, download
+    store, authority, configuration, immutable declaration catalog, and every
+    narrowed effect grant before quiescence. State capture closes new socket
+    and call admission, drains already-admitted calls through confirmation and
+    terminal completion, and resumes the predecessor after any pre-teardown
+    refusal. A permissionless candidate and a terminal-result set larger than
+    the one-MiB migration envelope return no receipt and leave the original
+    socket, export, counters, audit, and call admission live. A valid
+    implementation replacement closes the active predecessor socket, preserves
+    cumulative counters and ordered audit records, and privately migrates every
+    completed CallID identity and exact terminal response, including owned
+    artifact metadata. A duplicate on the fresh socket rechecks authority but
+    replays without confirmation, publication, or executor re-entry; a changed
+    identity remains refused. The strict state does not retain the call-
+    argument document, authority evidence, confirmation nonces, active sessions,
+    or in-flight work, while the receipt exposes only equal state digests,
+    schema, migrator identity, transition, and zero-ownership retirement
+    evidence. Malformed, duplicate, authority- or nonce-bearing, incompatible-
+    catalog, noncanonical-time, inconsistent-counter, invalid-result, and
+    unowned-resource states fail closed. Twenty complete host-package runs, five
+    complete host race runs, full repository tests, and vet are green.
+    Topology-changing host replacement remains open.
   - [x] Reconcile the shipped revision-2 artifact store through its exact
     bounded state schema. Effect-restricted pre-mount validates the live route
     dependency, retention configuration, and memory-publish grant before any
@@ -3528,8 +3552,8 @@ and does not claim statistical parity with the historical 165-attempt sample.
     Strict malformed, duplicate, incompatible-identity, and noncanonical-time
     states fail closed, and the receipt never contains artifact IDs, titles, or
     HTML. Twenty focused runs, five focused race runs, three package-race runs,
-    the complete presentation and repository tests, and vet are green. Stateful
-    effects migration and topology-changing host replacement remain open.
+    the complete presentation and repository tests, and vet are green.
+    Topology-changing host replacement remains open.
   - [x] Reconcile the shipped revision-2 download store through its exact
     bounded state schema. Effect-restricted pre-mount validates the live route
     dependency, retention configuration, and memory-publish grant before any
@@ -3548,8 +3572,7 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and incompatible identities fail closed, while receipts contain no IDs,
     filenames, or content. Twenty focused runs, five focused race runs, three
     package-race runs, the complete presentation and repository tests, and vet
-    are green. Stateful effects and topology-changing host replacement remain
-    open.
+    are green. Topology-changing host replacement remains open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -4380,9 +4403,9 @@ checked from foundation work alone; each requires end-to-end release evidence.
     resolved value, and mounts only the exact graph/schema/descriptor catalog
     plus pure in-memory authoring; session inspection, source I/O, and
     reconciliation remain outside that authority.
-    Topology-changing server/deployment-host/client publication, stateful host
-    store/effect migration, server-sealed authority rotation, and signed-native
-    lifecycle/leak evidence remain open.
+    Topology-changing server/deployment-host/client publication,
+    state-schema-changing migration, server-sealed authority rotation, and
+    signed-native lifecycle/leak evidence remain open.
 
 ## References
 

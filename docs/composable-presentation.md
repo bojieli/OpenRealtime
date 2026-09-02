@@ -576,8 +576,16 @@ tau2/τ-Voice matrix defined by the parent plan.
   guarantees for arbitrary binary attachments, canonical base64 state,
   filenames, media types, and temporary-buffer wiping. Both stores close
   mutation admission transactionally before state capture and resume it after
-  any pre-teardown refusal. One authenticated twenty-three-row real-Chromium
-  transition now selects exact candidates for
+  any pre-teardown refusal. The revision-2 effects provider likewise closes new
+  socket and call admission, drains admitted calls, and migrates its cumulative
+  counters, ordered audit, completed CallID identities, and exact terminal
+  responses through a strict one-MiB private state contract. A duplicate after
+  replacement rechecks authority but replays without executor re-entry, while
+  the call-argument document, authority evidence, confirmation nonces, and
+  active work remain absent from both state and payload-free receipts.
+  Permissionless and over-envelope candidates leave the predecessor socket live
+  and writable. One authenticated twenty-three-row real-Chromium transition now
+  selects exact candidates for
   slots, session
   configuration, effects, artifact references, debug, inspection, the stateful
   management-operator authority, management transport/static/authoring/source-
