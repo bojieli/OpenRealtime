@@ -147,6 +147,96 @@ func TestResourceStoreConfigurationIsStrictAndHardBounded(t *testing.T) {
 	}
 }
 
+func TestResourceStoreStateQuiescenceBlocksMutationAndResumesIdempotently(t *testing.T) {
+	artifactLimits := ResourceStoreLimits{MaxEntries: 2, MaxItemBytes: 64, MaxTotalBytes: 128}
+	artifacts := newArtifactStore(artifactLimits, nil)
+	if _, err := artifacts.Publish(context.Background(), ArtifactInput{
+		ID: "card", Title: "Card", HTML: "<p>before</p>",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := artifacts.snapshot(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "requires quiesced") {
+		t.Fatalf("unquiesced artifact snapshot = %v", err)
+	}
+	resumeArtifacts, err := artifacts.quiesceState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := artifacts.Publish(context.Background(), ArtifactInput{
+		ID: "card", Title: "Changed", HTML: "<p>after</p>",
+	}); !errors.Is(err, ErrResourceStoreQuiescing) {
+		t.Fatalf("artifact mutation during state capture = %v", err)
+	}
+	raw, err := artifacts.snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := decodeArtifactStoreState(raw, artifactLimits)
+	if err != nil || len(state.Entries) != 1 || state.Entries[0].HTML != "<p>before</p>" {
+		t.Fatalf("quiesced artifact state = %#v, %v", state, err)
+	}
+	if err := resumeArtifacts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := resumeArtifacts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if revised, err := artifacts.Publish(context.Background(), ArtifactInput{
+		ID: "card", Title: "Changed", HTML: "<p>after</p>",
+	}); err != nil || revised.Version != 2 {
+		t.Fatalf("resumed artifact mutation = %#v, %v", revised, err)
+	}
+
+	downloadLimits := ResourceStoreLimits{MaxEntries: 2, MaxItemBytes: 64, MaxTotalBytes: 128}
+	downloads := newDownloadStore(downloadLimits, nil)
+	if _, err := downloads.Publish(context.Background(), DownloadInput{
+		ID: "file", Filename: "before.bin", Content: []byte("before"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := downloads.snapshot(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "requires quiesced") {
+		t.Fatalf("unquiesced download snapshot = %v", err)
+	}
+	resumeDownloads, err := downloads.quiesceState(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := downloads.Publish(context.Background(), DownloadInput{
+		ID: "file", Filename: "after.bin", Content: []byte("after"),
+	}); !errors.Is(err, ErrResourceStoreQuiescing) {
+		t.Fatalf("download mutation during state capture = %v", err)
+	}
+	raw, err = downloads.snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	downloadState, err := decodeDownloadStoreState(raw, downloadLimits)
+	if err != nil || len(downloadState.Entries) != 1 ||
+		string(downloadState.Entries[0].Content) != "before" {
+		t.Fatalf("quiesced download state = %#v, %v", downloadState, err)
+	}
+	wipeDownloadStoreState(&downloadState)
+	if err := resumeDownloads(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := resumeDownloads(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if revised, err := downloads.Publish(context.Background(), DownloadInput{
+		ID: "file", Filename: "after.bin", Content: []byte("after"),
+	}); err != nil || revised.Version != 2 {
+		t.Fatalf("resumed download mutation = %#v, %v", revised, err)
+	}
+	if err := artifacts.close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := downloads.close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestArtifactStoreRevisesAndEvictsWithinBothBounds(t *testing.T) {
 	instant := time.Date(2026, 8, 29, 12, 0, 0, 0, time.FixedZone("fixture", 3600))
 	store := newArtifactStore(ResourceStoreLimits{

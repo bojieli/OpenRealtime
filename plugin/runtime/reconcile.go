@@ -141,6 +141,11 @@ type entryStateCapture struct {
 	sourceImplementation string
 }
 
+type entryStateQuiescence struct {
+	entry  string
+	resume StateResumer
+}
+
 // Reconcile atomically applies implementation, values, and permission changes
 // under the same immutable plan. It validates and effect-restricted pre-mounts
 // every changed row before quiescing the affected dependency closure, rolls the
@@ -224,12 +229,22 @@ func (mounted *Mounted) Reconcile(
 		)
 		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
 	}
+	quiesced, err := mounted.quiesceStateLocked(ctx, affected)
+	if err != nil {
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation state quiescence failed"),
+		)
+		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
+	}
 	stateCaptures, err := mounted.captureStateLocked(ctx, affected)
 	if err != nil {
+		resumeErr := mounted.resumeStateQuiescence(quiesced)
 		cleanupErr := mounted.disposePreparedCandidatesLocked(
 			prepared, errors.New("plugin reconciliation state snapshot failed"),
 		)
-		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
+		return ReconcileReceipt{}, errors.Join(
+			err, wrapOptional("resume state mutation admission", resumeErr), cleanupErr,
+		)
 	}
 	previousState := restoredState(stateCaptures)
 	retired := mounted.captureRetirementsLocked(affected)
@@ -338,6 +353,67 @@ func (mounted *Mounted) Reconcile(
 		BeforeSequence: before, AfterSequence: mounted.sequence.Load(), Transitions: transitions,
 		Retirements: retirements, StateTransfers: stateTransfers,
 	}, nil
+}
+
+func (mounted *Mounted) quiesceStateLocked(
+	operation context.Context, affected map[string]struct{},
+) ([]entryStateQuiescence, error) {
+	var quiesced []entryStateQuiescence
+	for index := len(mounted.entries) - 1; index >= 0; index-- {
+		entry := mounted.entries[index]
+		if _, selected := affected[entry.plan.Entry.ID]; !selected || entry.quiesce == nil {
+			continue
+		}
+		quiesceContext, cancel := context.WithTimeout(operation, mounted.timeout)
+		resume, quiesceErr := entry.quiesce(quiesceContext)
+		contextErr := context.Cause(quiesceContext)
+		cancel()
+		if resume != nil {
+			quiesced = append(quiesced, entryStateQuiescence{
+				entry: entry.plan.Entry.ID, resume: resume,
+			})
+		}
+		if contextErr != nil {
+			quiesceErr = errors.Join(quiesceErr, contextErr)
+		}
+		if quiesceErr == nil && resume == nil {
+			quiesceErr = errors.New("state quiescer returned no resume callback")
+		}
+		if quiesceErr != nil {
+			resumeErr := mounted.resumeStateQuiescence(quiesced)
+			return nil, errors.Join(
+				fmt.Errorf(
+					"quiesce plugin state for entry %s schema %s: %w",
+					entry.plan.Entry.ID, entry.plan.Descriptor.StateSchema.Name, quiesceErr,
+				),
+				wrapOptional("resume state mutation admission", resumeErr),
+			)
+		}
+	}
+	return quiesced, nil
+}
+
+func (mounted *Mounted) resumeStateQuiescence(quiesced []entryStateQuiescence) (err error) {
+	for index := len(quiesced) - 1; index >= 0; index-- {
+		row := quiesced[index]
+		func() {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					err = errors.Join(err, fmt.Errorf(
+						"resume plugin state for entry %s panicked: %v", row.entry, recovered,
+					))
+				}
+			}()
+			resumeContext, cancel := context.WithTimeout(context.Background(), mounted.timeout)
+			defer cancel()
+			if resumeErr := row.resume(resumeContext); resumeErr != nil {
+				err = errors.Join(err, fmt.Errorf(
+					"resume plugin state for entry %s: %w", row.entry, resumeErr,
+				))
+			}
+		}()
+	}
+	return err
 }
 
 func (mounted *Mounted) validateStateTransferLocked(affected map[string]struct{}) error {

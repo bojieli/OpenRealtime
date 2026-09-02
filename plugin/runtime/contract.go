@@ -48,12 +48,24 @@ type CandidateLifecycle interface {
 // runtime reconciliation boundary.
 type StateSnapshotter func(context.Context) (json.RawMessage, error)
 
+// StateResumer reopens mutation admission after a refused pre-teardown state
+// capture. It must be idempotent and honor its bounded context.
+type StateResumer func(context.Context) error
+
+// StateQuiescer closes mutation admission and drains already-admitted
+// mutations before a snapshot. The runtime invokes the returned resumer only
+// when reconciliation is refused before lifecycle teardown. A successful
+// transition closes the quiesced scope.
+type StateQuiescer func(context.Context) (StateResumer, error)
+
 // StateLifecycle is the state-transfer boundary available only to descriptors
 // that declare a StateSchema. A restoring mount must consume Restored before it
 // publishes services, and every snapshot-capable mount must register exactly
-// one callback before Mount or Activate returns.
+// one snapshot callback before Mount or Activate returns. Mutation-owning
+// providers may additionally register one transactional quiescer.
 type StateLifecycle interface {
 	Restored() (snapshot json.RawMessage, available bool, err error)
+	Quiesce(StateQuiescer) error
 	Snapshot(StateSnapshotter) error
 }
 

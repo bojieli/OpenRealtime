@@ -70,9 +70,11 @@ func TestReconcileMigratesStateAndReturnsPayloadFreeEvidence(t *testing.T) {
 	if got := v2.currentSnapshot(); got != `{"counter":7,"owner":"v2"}` {
 		t.Fatalf("candidate restored state = %s", got)
 	}
-	if v1.snapshotCalls() != 1 || v2.migrationCalls() != 1 || v2.restoreCalls() != 1 {
-		t.Fatalf("state lifecycle counts snapshot=%d migrate=%d restore=%d",
-			v1.snapshotCalls(), v2.migrationCalls(), v2.restoreCalls())
+	if v1.quiesceCalls() != 1 || v1.resumeCalls() != 0 ||
+		v1.snapshotCalls() != 1 || v2.migrationCalls() != 1 || v2.restoreCalls() != 1 {
+		t.Fatalf("state lifecycle counts quiesce=%d resume=%d snapshot=%d migrate=%d restore=%d",
+			v1.quiesceCalls(), v1.resumeCalls(), v1.snapshotCalls(),
+			v2.migrationCalls(), v2.restoreCalls())
 	}
 	assertLiveImplementation(t, mounted.Live(), "stateful", "stateful-v2",
 		reconcileArtifact("stateful-v2", "build:stateful-2"))
@@ -160,10 +162,11 @@ func TestReconcileRefusesMissingStateMigratorBeforeSnapshotOrTeardown(t *testing
 	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
 		t.Fatalf("missing migrator returned receipt %#v", receipt)
 	}
-	if fixture.v1.snapshotCalls() != 0 || fixture.v1.disposeCalls() != 0 ||
+	if fixture.v1.quiesceCalls() != 0 || fixture.v1.snapshotCalls() != 0 || fixture.v1.disposeCalls() != 0 ||
 		fixture.v2.preMountDisposeCalls() != 1 {
-		t.Fatalf("missing migrator crossed safe point: snapshot=%d old-dispose=%d candidate-dispose=%d",
-			fixture.v1.snapshotCalls(), fixture.v1.disposeCalls(), fixture.v2.preMountDisposeCalls())
+		t.Fatalf("missing migrator crossed safe point: quiesce=%d snapshot=%d old-dispose=%d candidate-dispose=%d",
+			fixture.v1.quiesceCalls(), fixture.v1.snapshotCalls(),
+			fixture.v1.disposeCalls(), fixture.v2.preMountDisposeCalls())
 	}
 	assertStateLiveUnchanged(t, fixture, before.Sequence)
 }
@@ -180,8 +183,10 @@ func TestReconcileSnapshotFailureLeavesLiveCompositionUntouched(t *testing.T) {
 	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
 		t.Fatalf("snapshot failure returned receipt %#v", receipt)
 	}
-	if fixture.v1.disposeCalls() != 0 || fixture.v2.preMountDisposeCalls() != 1 {
-		t.Fatalf("snapshot failure cycled live state: old-dispose=%d candidate-dispose=%d",
+	if fixture.v1.quiesceCalls() != 1 || fixture.v1.resumeCalls() != 1 ||
+		fixture.v1.disposeCalls() != 0 || fixture.v2.preMountDisposeCalls() != 1 {
+		t.Fatalf("snapshot failure lifecycle: quiesce=%d resume=%d old-dispose=%d candidate-dispose=%d",
+			fixture.v1.quiesceCalls(), fixture.v1.resumeCalls(),
 			fixture.v1.disposeCalls(), fixture.v2.preMountDisposeCalls())
 	}
 	assertStateLiveUnchanged(t, fixture, before.Sequence)
@@ -265,8 +270,10 @@ func TestReconcileStatePayloadsAreStrictBoundedAndRollbackSafely(t *testing.T) {
 					t.Fatalf("invalid migrated state did not restore predecessor: dispose=%d restore=%d",
 						fixture.v1.disposeCalls(), fixture.v1.restoreCalls())
 				}
-			} else if fixture.v1.disposeCalls() != 0 || fixture.v1.restoreCalls() != 0 {
-				t.Fatalf("invalid snapshot crossed safe point: dispose=%d restore=%d",
+			} else if fixture.v1.quiesceCalls() != 1 || fixture.v1.resumeCalls() != 1 ||
+				fixture.v1.disposeCalls() != 0 || fixture.v1.restoreCalls() != 0 {
+				t.Fatalf("invalid snapshot lifecycle: quiesce=%d resume=%d dispose=%d restore=%d",
+					fixture.v1.quiesceCalls(), fixture.v1.resumeCalls(),
 					fixture.v1.disposeCalls(), fixture.v1.restoreCalls())
 			}
 		})
@@ -442,7 +449,49 @@ func (factory statefulFactory) Mount(
 			factory.state.restore(restored)
 		}
 	}
+	var gate sync.Mutex
+	quiesced := false
+	if err := mount.State.Quiesce(func(ctx context.Context) (pluginruntime.StateResumer, error) {
+		if ctx == nil {
+			return nil, errors.New("test state quiescence received nil context")
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		gate.Lock()
+		if quiesced {
+			gate.Unlock()
+			return nil, errors.New("test state is already quiesced")
+		}
+		quiesced = true
+		gate.Unlock()
+		factory.state.noteQuiesce()
+		var once sync.Once
+		return func(ctx context.Context) error {
+			if ctx == nil {
+				return errors.New("test state resume received nil context")
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			once.Do(func() {
+				gate.Lock()
+				quiesced = false
+				gate.Unlock()
+				factory.state.noteResume()
+			})
+			return nil
+		}, nil
+	}); err != nil {
+		return err
+	}
 	if err := mount.State.Snapshot(func(context.Context) (json.RawMessage, error) {
+		gate.Lock()
+		ready := quiesced
+		gate.Unlock()
+		if !ready {
+			return nil, errors.New("test state snapshot ran without quiescence")
+		}
 		return factory.state.snapshot()
 	}); err != nil {
 		return err
@@ -512,6 +561,8 @@ type statefulFactoryState struct {
 	disposals         int
 	preMounts         int
 	preMountDisposals int
+	quiesces          int
+	resumes           int
 }
 
 func newStatefulFactoryState(current string) *statefulFactoryState {
@@ -563,6 +614,18 @@ func (state *statefulFactoryState) notePreMountDispose() {
 	state.mu.Unlock()
 }
 
+func (state *statefulFactoryState) noteQuiesce() {
+	state.mu.Lock()
+	state.quiesces++
+	state.mu.Unlock()
+}
+
+func (state *statefulFactoryState) noteResume() {
+	state.mu.Lock()
+	state.resumes++
+	state.mu.Unlock()
+}
+
 func (state *statefulFactoryState) currentSnapshot() string {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -597,6 +660,18 @@ func (state *statefulFactoryState) preMountDisposeCalls() int {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	return state.preMountDisposals
+}
+
+func (state *statefulFactoryState) quiesceCalls() int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.quiesces
+}
+
+func (state *statefulFactoryState) resumeCalls() int {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.resumes
 }
 
 func registerStateFactory(

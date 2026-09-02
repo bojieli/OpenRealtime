@@ -227,6 +227,7 @@ type downloadStore struct {
 	order     []string
 	total     int64
 	evictions uint64
+	quiescing bool
 	lifecycle resourceLifecycle
 	clock     func() time.Time
 }
@@ -263,6 +264,10 @@ func (store *downloadStore) Publish(ctx context.Context, input DownloadInput) (D
 		store.mu.Unlock()
 		return Download{}, ErrResourceStoreClosed
 	}
+	if store.quiescing {
+		store.mu.Unlock()
+		return Download{}, ErrResourceStoreQuiescing
+	}
 	maxItemBytes := store.limits.MaxItemBytes
 	store.mu.Unlock()
 	if len(input.Content) == 0 {
@@ -285,6 +290,9 @@ func (store *downloadStore) Publish(ctx context.Context, input DownloadInput) (D
 	defer store.mu.Unlock()
 	if store.lifecycle.closed {
 		return Download{}, ErrResourceStoreClosed
+	}
+	if store.quiescing {
+		return Download{}, ErrResourceStoreQuiescing
 	}
 	if err := ctx.Err(); err != nil {
 		return Download{}, fmt.Errorf("publish download: %w", err)
@@ -407,6 +415,43 @@ func (store *downloadStore) Stats() ResourceStoreStats {
 	}
 }
 
+func (store *downloadStore) quiesceState(
+	ctx context.Context,
+) (pluginruntime.StateResumer, error) {
+	if ctx == nil {
+		return nil, errors.New("quiesce download store state: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("quiesce download store state: %w", err)
+	}
+	store.mu.Lock()
+	if store.lifecycle.closed {
+		store.mu.Unlock()
+		return nil, ErrResourceStoreClosed
+	}
+	if store.quiescing {
+		store.mu.Unlock()
+		return nil, errors.New("download store state is already quiescing")
+	}
+	store.quiescing = true
+	store.mu.Unlock()
+	var once sync.Once
+	return func(ctx context.Context) error {
+		if ctx == nil {
+			return errors.New("resume download store state: nil context")
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("resume download store state: %w", err)
+		}
+		once.Do(func() {
+			store.mu.Lock()
+			store.quiescing = false
+			store.mu.Unlock()
+		})
+		return nil
+	}, nil
+}
+
 func (store *downloadStore) snapshot(ctx context.Context) (json.RawMessage, error) {
 	if ctx == nil {
 		return nil, errors.New("snapshot download store: nil context")
@@ -419,6 +464,10 @@ func (store *downloadStore) snapshot(ctx context.Context) (json.RawMessage, erro
 	if store.lifecycle.closed {
 		store.mu.Unlock()
 		return nil, ErrResourceStoreClosed
+	}
+	if !store.quiescing {
+		store.mu.Unlock()
+		return nil, errors.New("download store state snapshot requires quiesced mutation admission")
 	}
 	if encodedContentBytes >= int64(pluginruntime.MaximumStateSnapshotBytes) {
 		entries, total := len(store.entries), store.total
@@ -538,6 +587,7 @@ func (store *downloadStore) close(ctx context.Context) error {
 	store.entries = nil
 	store.order = nil
 	store.total = 0
+	store.quiescing = false
 	store.mu.Unlock()
 	return waitForResourceDrain(ctx, drained)
 }
@@ -689,6 +739,9 @@ func (candidate downloadStoreCandidate) Activate(
 			wipeDownloadStoreState(&state)
 			return err
 		}
+	}
+	if err := mount.State.Quiesce(store.quiesceState); err != nil {
+		return err
 	}
 	if err := mount.State.Snapshot(store.snapshot); err != nil {
 		return err

@@ -240,6 +240,12 @@ func TestDownloadStoreReplacementRefusesOversizedSnapshotBeforeTeardown(t *testi
 		stats.Bytes != int64(len(content)) {
 		t.Fatalf("oversized snapshot disturbed predecessor store: %#v", stats)
 	}
+	if admitted, err := host.store.Publish(context.Background(), DownloadInput{
+		ID: "after_refusal_5S", Filename: "after.txt", MediaType: "text/plain",
+		Content: []byte("still writable"),
+	}); err != nil || admitted.Version != 1 {
+		t.Fatalf("download mutation did not resume after snapshot refusal = %#v, %v", admitted, err)
+	}
 	value, contract, provider, revision, err := host.mounted.Export("downloads")
 	if err != nil || value != host.store || contract != presentation.DownloadStoreContract ||
 		provider != "downloads" || revision != host.storeRevision {

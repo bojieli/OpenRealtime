@@ -28,9 +28,14 @@ const (
 	maximumResourceEntries   = 256
 )
 
-// ErrResourceStoreClosed means a withdrawn plugin service was retained by a
-// stale caller. No content is admitted or returned after this error.
-var ErrResourceStoreClosed = errors.New("presentation resource store is closed")
+var (
+	// ErrResourceStoreClosed means a withdrawn plugin service was retained by a
+	// stale caller. No content is admitted or returned after this error.
+	ErrResourceStoreClosed = errors.New("presentation resource store is closed")
+	// ErrResourceStoreQuiescing means reconciliation has temporarily closed
+	// mutation admission while capturing exact restorable state.
+	ErrResourceStoreQuiescing = errors.New("presentation resource store is quiescing for state capture")
+)
 
 // ResourceStoreLimits are the effective, fully bounded retention limits of
 // one artifact or download provider. They are configuration, not mutable

@@ -228,6 +228,11 @@ func TestArtifactStoreReplacementRefusesOversizedSnapshotBeforeTeardown(t *testi
 		stats.Bytes != int64(len(content)) {
 		t.Fatalf("oversized snapshot disturbed predecessor store: %#v", stats)
 	}
+	if admitted, err := host.store.Publish(context.Background(), ArtifactInput{
+		ID: "after_refusal_7Z", Title: "After refusal", HTML: "<p>still writable</p>",
+	}); err != nil || admitted.Version != 1 {
+		t.Fatalf("artifact mutation did not resume after snapshot refusal = %#v, %v", admitted, err)
+	}
 	value, contract, provider, revision, err := host.mounted.Export("artifacts")
 	if err != nil || value != host.store || contract != presentation.ArtifactStoreContract ||
 		provider != "artifacts" || revision != host.storeRevision {

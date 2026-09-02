@@ -21,6 +21,7 @@ type stateLifecycle struct {
 	descriptor plugin.Descriptor
 	restored   json.RawMessage
 	consumed   bool
+	quiesce    StateQuiescer
 	snapshot   StateSnapshotter
 	sealed     bool
 }
@@ -74,28 +75,50 @@ func (state *stateLifecycle) Snapshot(snapshot StateSnapshotter) error {
 	return nil
 }
 
-func (state *stateLifecycle) seal() (StateSnapshotter, error) {
+func (state *stateLifecycle) Quiesce(quiesce StateQuiescer) error {
 	if state == nil {
-		return nil, nil
+		return errors.New("plugin state lifecycle is unavailable")
+	}
+	if quiesce == nil {
+		return errors.New("plugin state quiescence requires a callback")
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.sealed {
-		return nil, errors.New("plugin state lifecycle was already sealed")
+		return errors.New("plugin state lifecycle is sealed")
+	}
+	if !state.descriptor.Lifecycle.Snapshot {
+		return fmt.Errorf("plugin %s does not declare snapshot support", state.descriptor.Name)
+	}
+	if state.quiesce != nil {
+		return fmt.Errorf("plugin %s registered more than one state quiescer", state.descriptor.Name)
+	}
+	state.quiesce = quiesce
+	return nil
+}
+
+func (state *stateLifecycle) seal() (StateSnapshotter, StateQuiescer, error) {
+	if state == nil {
+		return nil, nil, nil
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.sealed {
+		return nil, nil, errors.New("plugin state lifecycle was already sealed")
 	}
 	state.sealed = true
 	if len(state.restored) > 0 {
 		if !state.descriptor.Lifecycle.Restore {
-			return nil, fmt.Errorf("plugin %s does not declare restore support", state.descriptor.Name)
+			return nil, nil, fmt.Errorf("plugin %s does not declare restore support", state.descriptor.Name)
 		}
 		if !state.consumed {
-			return nil, fmt.Errorf("plugin %s did not consume restored state", state.descriptor.Name)
+			return nil, nil, fmt.Errorf("plugin %s did not consume restored state", state.descriptor.Name)
 		}
 	}
 	if state.descriptor.Lifecycle.Snapshot && state.snapshot == nil {
-		return nil, fmt.Errorf("plugin %s did not register a state snapshot", state.descriptor.Name)
+		return nil, nil, fmt.Errorf("plugin %s did not register a state snapshot", state.descriptor.Name)
 	}
-	return state.snapshot, nil
+	return state.snapshot, state.quiesce, nil
 }
 
 func canonicalStateSnapshot(raw json.RawMessage) (json.RawMessage, string, error) {

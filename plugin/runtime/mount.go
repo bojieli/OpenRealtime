@@ -38,6 +38,7 @@ type mountedEntry struct {
 	permissions    permissionSet
 	scope          *lifecycleScope
 	snapshot       StateSnapshotter
+	quiesce        StateQuiescer
 	desired        bool
 	active         bool
 	state          string
@@ -230,8 +231,9 @@ func (mounted *Mounted) mountEntryWithCandidateAndStateLocked(
 		}
 	}
 	var snapshot StateSnapshotter
+	var quiesce StateQuiescer
 	if err == nil && state != nil {
-		snapshot, err = state.seal()
+		snapshot, quiesce, err = state.seal()
 	}
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), mounted.timeout)
@@ -239,6 +241,7 @@ func (mounted *Mounted) mountEntryWithCandidateAndStateLocked(
 		cleanupErr := scope.close(cleanup, err)
 		entry.scope = nil
 		entry.snapshot = nil
+		entry.quiesce = nil
 		entry.active = false
 		entry.state = "failed"
 		entry.err = err.Error()
@@ -246,6 +249,7 @@ func (mounted *Mounted) mountEntryWithCandidateAndStateLocked(
 	}
 	entry.scope = scope
 	entry.snapshot = snapshot
+	entry.quiesce = quiesce
 	entry.active = true
 	entry.state = "active"
 	entry.err = ""
@@ -268,6 +272,7 @@ func (mounted *Mounted) unmountEntryLocked(
 	cancel()
 	entry.scope = nil
 	entry.snapshot = nil
+	entry.quiesce = nil
 	entry.active = false
 	if final {
 		entry.state = "closed"

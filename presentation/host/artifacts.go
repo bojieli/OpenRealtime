@@ -196,6 +196,7 @@ type artifactStore struct {
 	order     []string
 	total     int64
 	evictions uint64
+	quiescing bool
 	lifecycle resourceLifecycle
 	clock     func() time.Time
 }
@@ -232,6 +233,10 @@ func (store *artifactStore) Publish(ctx context.Context, input ArtifactInput) (A
 		store.mu.Unlock()
 		return Artifact{}, ErrResourceStoreClosed
 	}
+	if store.quiescing {
+		store.mu.Unlock()
+		return Artifact{}, ErrResourceStoreQuiescing
+	}
 	maxItemBytes := store.limits.MaxItemBytes
 	store.mu.Unlock()
 	if input.HTML == "" || strings.TrimSpace(input.HTML) == "" {
@@ -257,6 +262,9 @@ func (store *artifactStore) Publish(ctx context.Context, input ArtifactInput) (A
 	defer store.mu.Unlock()
 	if store.lifecycle.closed {
 		return Artifact{}, ErrResourceStoreClosed
+	}
+	if store.quiescing {
+		return Artifact{}, ErrResourceStoreQuiescing
 	}
 	if err := ctx.Err(); err != nil {
 		return Artifact{}, fmt.Errorf("publish artifact: %w", err)
@@ -379,6 +387,43 @@ func (store *artifactStore) Stats() ResourceStoreStats {
 	}
 }
 
+func (store *artifactStore) quiesceState(
+	ctx context.Context,
+) (pluginruntime.StateResumer, error) {
+	if ctx == nil {
+		return nil, errors.New("quiesce artifact store state: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("quiesce artifact store state: %w", err)
+	}
+	store.mu.Lock()
+	if store.lifecycle.closed {
+		store.mu.Unlock()
+		return nil, ErrResourceStoreClosed
+	}
+	if store.quiescing {
+		store.mu.Unlock()
+		return nil, errors.New("artifact store state is already quiescing")
+	}
+	store.quiescing = true
+	store.mu.Unlock()
+	var once sync.Once
+	return func(ctx context.Context) error {
+		if ctx == nil {
+			return errors.New("resume artifact store state: nil context")
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("resume artifact store state: %w", err)
+		}
+		once.Do(func() {
+			store.mu.Lock()
+			store.quiescing = false
+			store.mu.Unlock()
+		})
+		return nil
+	}, nil
+}
+
 func (store *artifactStore) snapshot(ctx context.Context) (json.RawMessage, error) {
 	if ctx == nil {
 		return nil, errors.New("snapshot artifact store: nil context")
@@ -390,6 +435,10 @@ func (store *artifactStore) snapshot(ctx context.Context) (json.RawMessage, erro
 	if store.lifecycle.closed {
 		store.mu.Unlock()
 		return nil, ErrResourceStoreClosed
+	}
+	if !store.quiescing {
+		store.mu.Unlock()
+		return nil, errors.New("artifact store state snapshot requires quiesced mutation admission")
 	}
 	if store.total >= int64(pluginruntime.MaximumStateSnapshotBytes) {
 		entries, total := len(store.entries), store.total
@@ -507,6 +556,7 @@ func (store *artifactStore) close(ctx context.Context) error {
 	store.entries = nil
 	store.order = nil
 	store.total = 0
+	store.quiescing = false
 	store.mu.Unlock()
 	return waitForResourceDrain(ctx, drained)
 }
@@ -691,6 +741,9 @@ func (candidate artifactStoreCandidate) Activate(
 		if err := store.restore(state); err != nil {
 			return err
 		}
+	}
+	if err := mount.State.Quiesce(store.quiesceState); err != nil {
+		return err
 	}
 	if err := mount.State.Snapshot(store.snapshot); err != nil {
 		return err
