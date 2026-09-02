@@ -402,12 +402,8 @@ func (client *Client) Publish(
 func (client *Client) Apply(
 	ctx context.Context, request management.ReconciliationRequest,
 ) (management.ReconciliationReceipt, error) {
-	if !management.CanonicalSessionID(request.SessionID) ||
-		!management.CanonicalDigest(request.ExpectedFingerprint) ||
-		!management.CanonicalDigest(request.ValuesFingerprint) ||
-		!management.CanonicalDigest(request.DeploymentFingerprint) ||
-		request.Candidate.Validate() != nil {
-		return management.ReconciliationReceipt{}, management.ErrInvalid
+	if err := management.ValidateReconciliationRequest(request); err != nil {
+		return management.ReconciliationReceipt{}, err
 	}
 	var receipt management.ReconciliationReceipt
 	err := client.post(ctx, []string{"reconciliations"}, management.ApplyCandidate,

@@ -1000,6 +1000,60 @@ func TestSessionModelRefusesStaticLiveIdentityDriftAndOmitsSource(t *testing.T) 
 	}
 }
 
+func TestReconciliationValidationBindsRequestAndReceiptIdentities(t *testing.T) {
+	graph := compileManagedGraph(t, managedElementCatalog(t))
+	digest := func(value string) string { return "sha256:" + strings.Repeat(value, 64) }
+	request := ReconciliationRequest{
+		SessionID: "sess-reconcile", ExpectedFingerprint: graph.Fingerprint, Candidate: graph,
+		ValuesFingerprint: digest("a"), DeploymentFingerprint: digest("b"),
+		StateMigration: "managed-state-v1",
+	}
+	if err := ValidateReconciliationRequest(request); err != nil {
+		t.Fatalf("valid reconciliation request: %v", err)
+	}
+	receipt := ReconciliationReceipt{
+		FormatVersion: 1, SessionID: request.SessionID,
+		PreviousFingerprint: request.ExpectedFingerprint, CandidateFingerprint: graph.Fingerprint,
+		State: "applied", SafePointSequence: 17,
+	}
+	if err := ValidateReconciliationReceipt(request, receipt); err != nil {
+		t.Fatalf("valid reconciliation receipt: %v", err)
+	}
+
+	requestMutations := map[string]func(*ReconciliationRequest){
+		"session":     func(value *ReconciliationRequest) { value.SessionID = "bad/session" },
+		"predecessor": func(value *ReconciliationRequest) { value.ExpectedFingerprint = "invalid" },
+		"values":      func(value *ReconciliationRequest) { value.ValuesFingerprint = "invalid" },
+		"deployment":  func(value *ReconciliationRequest) { value.DeploymentFingerprint = "invalid" },
+		"candidate":   func(value *ReconciliationRequest) { value.Candidate.Fingerprint = "invalid" },
+		"migration":   func(value *ReconciliationRequest) { value.StateMigration = "payload\ntext" },
+	}
+	for name, mutate := range requestMutations {
+		forged := request
+		mutate(&forged)
+		if err := ValidateReconciliationRequest(forged); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%s request error = %v", name, err)
+		}
+	}
+
+	receiptMutations := map[string]func(*ReconciliationReceipt){
+		"version":     func(value *ReconciliationReceipt) { value.FormatVersion++ },
+		"session":     func(value *ReconciliationReceipt) { value.SessionID = "sess-other" },
+		"predecessor": func(value *ReconciliationReceipt) { value.PreviousFingerprint = digest("c") },
+		"candidate":   func(value *ReconciliationReceipt) { value.CandidateFingerprint = digest("d") },
+		"empty state": func(value *ReconciliationReceipt) { value.State = "" },
+		"state":       func(value *ReconciliationReceipt) { value.State = "applied\npayload" },
+		"rollback":    func(value *ReconciliationReceipt) { value.RollbackFingerprint = "invalid" },
+	}
+	for name, mutate := range receiptMutations {
+		forged := receipt
+		mutate(&forged)
+		if err := ValidateReconciliationReceipt(request, forged); !errors.Is(err, ErrConflict) {
+			t.Fatalf("%s receipt error = %v", name, err)
+		}
+	}
+}
+
 func managedElementCatalog(t testing.TB) *resolve.Catalog {
 	t.Helper()
 	catalog := resolve.NewCatalog()

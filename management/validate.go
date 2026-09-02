@@ -398,8 +398,27 @@ func ValidateDeltaPage(session string, after uint64, limit uint32, page DeltaPag
 	return nil
 }
 
+// ValidateReconciliationRequest verifies the complete immutable identity set
+// selected by a reconciliation caller. StateMigration is an opaque policy or
+// migrator identity, but it is still bounded canonical evidence rather than a
+// payload or credential channel.
+func ValidateReconciliationRequest(request ReconciliationRequest) error {
+	if !CanonicalSessionID(request.SessionID) ||
+		!CanonicalDigest(request.ExpectedFingerprint) ||
+		!CanonicalDigest(request.ValuesFingerprint) ||
+		!CanonicalDigest(request.DeploymentFingerprint) ||
+		(request.StateMigration != "" && !canonicalEvidenceName(request.StateMigration)) {
+		return fmt.Errorf("%w: invalid reconciliation request identity", ErrInvalid)
+	}
+	if err := request.Candidate.Validate(); err != nil {
+		return fmt.Errorf("%w: invalid reconciliation candidate: %v", ErrInvalid, err)
+	}
+	return nil
+}
+
 // ValidateReconciliationReceipt binds a mutation receipt to the exact request
-// reviewed by the caller.
+// reviewed by the caller and rejects payload-shaped state or rollback
+// identities before a provider result crosses the management boundary.
 func ValidateReconciliationReceipt(
 	request ReconciliationRequest, receipt ReconciliationReceipt,
 ) error {
@@ -407,7 +426,9 @@ func ValidateReconciliationReceipt(
 		receipt.PreviousFingerprint != request.ExpectedFingerprint ||
 		receipt.CandidateFingerprint != request.Candidate.Fingerprint ||
 		!CanonicalDigest(receipt.PreviousFingerprint) ||
-		!CanonicalDigest(receipt.CandidateFingerprint) {
+		!CanonicalDigest(receipt.CandidateFingerprint) ||
+		!canonicalEvidenceName(receipt.State) ||
+		(receipt.RollbackFingerprint != "" && !CanonicalDigest(receipt.RollbackFingerprint)) {
 		return fmt.Errorf("%w: reconciler returned an invalid receipt", ErrConflict)
 	}
 	return nil

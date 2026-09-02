@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 
 	"github.com/bojieli/OpenRealtime/management"
@@ -59,13 +58,8 @@ func (factory *ReconciliationAPIFactory) Mount(_ context.Context, mount pluginru
 				writeServiceError(writer, err)
 				return
 			}
-			if !management.CanonicalDigest(input.ExpectedFingerprint) || !management.CanonicalDigest(input.ValuesFingerprint) ||
-				!management.CanonicalDigest(input.DeploymentFingerprint) || !management.CanonicalDigest(input.Candidate.Fingerprint) {
-				writeServiceError(writer, fmt.Errorf("%w: reconciliation identities are incomplete", management.ErrInvalid))
-				return
-			}
-			if err := input.Candidate.Validate(); err != nil {
-				writeServiceError(writer, fmt.Errorf("%w: candidate graph: %v", management.ErrInvalid, err))
+			if err := management.ValidateReconciliationRequest(input); err != nil {
+				writeServiceError(writer, err)
 				return
 			}
 			receipt, err := reconciler.Apply(request.Context(), input)
