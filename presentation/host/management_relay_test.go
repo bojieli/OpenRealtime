@@ -475,6 +475,17 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 		To:   management.AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
 	}
 	createResult := managementRelayEdgeCreationResult(t, createInput)
+	reconcileInput := management.ReconciliationRequest{
+		SessionID: "sess-relay", ExpectedFingerprint: graph.Fingerprint, Candidate: graph,
+		ValuesFingerprint:     "sha256:" + strings.Repeat("8", 64),
+		DeploymentFingerprint: "sha256:" + strings.Repeat("9", 64),
+	}
+	reconcileReceipt := management.ReconciliationReceipt{
+		FormatVersion: 1, SessionID: reconcileInput.SessionID,
+		PreviousFingerprint:  reconcileInput.ExpectedFingerprint,
+		CandidateFingerprint: reconcileInput.Candidate.Fingerprint,
+		State:                "applied", SafePointSequence: 23,
+	}
 
 	type observation struct{ method, path, capability, authorization string }
 	seen := make(chan observation, 12)
@@ -544,6 +555,17 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 				t.Errorf("construct source publication receipt: %v", receiptErr)
 			}
 			_ = json.NewEncoder(writer).Encode(receipt)
+		case management.APIPrefix + "/reconciliations":
+			var input management.ReconciliationRequest
+			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
+				t.Errorf("decode reconciliation request: %v", err)
+			}
+			if input.SessionID != reconcileInput.SessionID ||
+				input.ExpectedFingerprint != reconcileInput.ExpectedFingerprint ||
+				input.Candidate.Fingerprint != reconcileInput.Candidate.Fingerprint {
+				t.Errorf("reconciliation request changed identity: %+v", input)
+			}
+			_ = json.NewEncoder(writer).Encode(reconcileReceipt)
 		default:
 			http.NotFound(writer, request)
 		}
@@ -766,7 +788,32 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 			writeResponse.Header.Get(ManagementIdentityHeader), writePayload)
 	}
 
-	for range len(checks) + 6 {
+	reconcileBody, err := json.Marshal(reconcileInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconcileRequest, _ := http.NewRequest(http.MethodPost,
+		hostServer.URL+"/client/v1/management/reconciliations", bytes.NewReader(reconcileBody))
+	reconcileRequest.Header.Set("Content-Type", "application/json")
+	reconcileRequest.Header.Set(management.CapabilityHeader, operatorCapability)
+	reconcileRequest.Header.Set("Authorization", "Bearer must-not-cross")
+	reconcileResponse, err := http.DefaultClient.Do(reconcileRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconcilePayload, _ := io.ReadAll(reconcileResponse.Body)
+	reconcileResponse.Body.Close()
+	wantReconcileIdentity := "reconciliation:" + reconcileInput.SessionID + ":" +
+		reconcileInput.ExpectedFingerprint + ":" + reconcileInput.Candidate.Fingerprint
+	if reconcileResponse.StatusCode != http.StatusOK ||
+		reconcileResponse.Header.Get(ManagementIdentityHeader) != wantReconcileIdentity ||
+		strings.Contains(string(reconcilePayload), operatorCapability) ||
+		!strings.Contains(string(reconcilePayload), `"safe_point_sequence":23`) {
+		t.Fatalf("reconciliation relay status=%d identity=%q body=%s", reconcileResponse.StatusCode,
+			reconcileResponse.Header.Get(ManagementIdentityHeader), reconcilePayload)
+	}
+
+	for range len(checks) + 7 {
 		observation := <-seen
 		if observation.capability != operatorCapability || observation.authorization != "" {
 			t.Fatalf("management relay crossed credential planes: %+v", observation)
@@ -879,6 +926,73 @@ func TestManagementRelayRejectsRenderContentThatOnlyClaimsTheRequestedIdentity(t
 	)
 	if response.Code != http.StatusBadGateway {
 		t.Fatalf("forged render status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestManagementRelayRejectsInvalidReconciliationRequestsAndReceipts(t *testing.T) {
+	graph, _ := managementRelayGraph(t)
+	input := management.ReconciliationRequest{
+		SessionID: "sess-forged", ExpectedFingerprint: graph.Fingerprint, Candidate: graph,
+		ValuesFingerprint:     "sha256:" + strings.Repeat("7", 64),
+		DeploymentFingerprint: "sha256:" + strings.Repeat("8", 64),
+	}
+	forged := management.ReconciliationReceipt{
+		FormatVersion: 1, SessionID: input.SessionID,
+		PreviousFingerprint:  input.ExpectedFingerprint,
+		CandidateFingerprint: "sha256:" + strings.Repeat("9", 64),
+		State:                "applied",
+	}
+	var calls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(forged)
+	}))
+	defer backend.Close()
+	base, err := url.Parse(backend.URL + management.APIPrefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	factoryLogs := bytes.Buffer{}
+	factory := NewManagementRelayFactory(nil, slog.New(slog.NewJSONHandler(&factoryLogs, nil)))
+	serve := func(request *http.Request) *httptest.ResponseRecorder {
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set(management.CapabilityHeader, "operator_reconciliation_secret")
+		response := httptest.NewRecorder()
+		factory.relayReconciliation(base, relayTarget{DialTimeout: 15 * time.Second}, response, request)
+		return response
+	}
+	response := serve(httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/reconciliations", bytes.NewReader(payload)))
+	if response.Code != http.StatusBadGateway || response.Header().Get(ManagementIdentityHeader) != "" ||
+		calls.Load() != 1 {
+		t.Fatalf("forged reconciliation receipt status=%d identity=%q calls=%d body=%s",
+			response.Code, response.Header().Get(ManagementIdentityHeader), calls.Load(), response.Body.String())
+	}
+
+	duplicate := bytes.Replace(payload, []byte(`{"session_id":`),
+		[]byte(`{"session_id":"sess-forged","session_id":`), 1)
+	response = serve(httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/reconciliations", bytes.NewReader(duplicate)))
+	if response.Code != http.StatusBadRequest || calls.Load() != 1 {
+		t.Fatalf("duplicate reconciliation request status=%d calls=%d body=%s",
+			response.Code, calls.Load(), response.Body.String())
+	}
+
+	oversized := httptest.NewRequest(http.MethodPost,
+		"/client/v1/management/reconciliations", bytes.NewReader(payload))
+	oversized.ContentLength = maximumReconciliationRequestBytes + 1
+	response = serve(oversized)
+	if response.Code != http.StatusRequestEntityTooLarge || calls.Load() != 1 {
+		t.Fatalf("oversized reconciliation request status=%d calls=%d body=%s",
+			response.Code, calls.Load(), response.Body.String())
+	}
+	if strings.Contains(factoryLogs.String(), "operator_reconciliation_secret") {
+		t.Fatalf("reconciliation rejection logged operator capability: %s", factoryLogs.String())
 	}
 }
 

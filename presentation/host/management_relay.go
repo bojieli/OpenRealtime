@@ -25,12 +25,14 @@ import (
 )
 
 const (
-	managementOperation               = "management"
-	maximumSessionManagementBodyBytes = 32 << 20
-	maximumStaticManagementBodyBytes  = 64 << 20
-	maximumSchemaManagementBodyBytes  = 129 << 20
-	maximumAuthoringRequestBytes      = 16 << 20
-	maximumAuthoringResponseBytes     = 64 << 20
+	managementOperation                = "management"
+	maximumSessionManagementBodyBytes  = 32 << 20
+	maximumStaticManagementBodyBytes   = 64 << 20
+	maximumSchemaManagementBodyBytes   = 129 << 20
+	maximumAuthoringRequestBytes       = 16 << 20
+	maximumAuthoringResponseBytes      = 64 << 20
+	maximumReconciliationRequestBytes  = 64 << 20
+	maximumReconciliationResponseBytes = 1 << 20
 
 	// ManagementIdentityHeader is non-secret response evidence produced only
 	// after the host has rebound and validated an upstream resource. Browser
@@ -63,7 +65,7 @@ func NewManagementRelayFactory(client *http.Client, logger *slog.Logger) *Manage
 	return &ManagementRelayFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.management-relay", Revision: 10,
+			Name:          "openrealtime.presentation.host.management-relay", Revision: 11,
 			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 			Requires: []plugin.Requirement{
 				{Contract: presentation.HTTPRoutesContract},
@@ -179,6 +181,12 @@ func (factory *ManagementRelayFactory) mountManagementRelay(
 			"management-authoring-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relayAuthoring(base, target, writer, request)
+			},
+		)},
+		{Pattern: "POST /client/v1/management/reconciliations", Handler: owned(
+			"management-reconciliation-request",
+			func(writer http.ResponseWriter, request *http.Request) {
+				factory.relayReconciliation(base, target, writer, request)
 			},
 		)},
 	})
@@ -499,6 +507,49 @@ func (factory *ManagementRelayFactory) relayAuthoring(
 		}
 	}
 	factory.relayRequest(base, target, writer, request, spec)
+}
+
+func (factory *ManagementRelayFactory) relayReconciliation(
+	base *url.URL, target relayTarget, writer http.ResponseWriter, request *http.Request,
+) {
+	if len(request.URL.Query()) != 0 {
+		http.Error(writer, "reconciliation requests do not accept query parameters", http.StatusBadRequest)
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		http.Error(writer, "reconciliation request must be application/json", http.StatusUnsupportedMediaType)
+		return
+	}
+	if request.ContentLength > maximumReconciliationRequestBytes {
+		http.Error(writer, "reconciliation request exceeds limit", http.StatusRequestEntityTooLarge)
+		return
+	}
+	payload, err := io.ReadAll(io.LimitReader(request.Body, maximumReconciliationRequestBytes+1))
+	if err != nil || len(payload) > maximumReconciliationRequestBytes || strictjson.Validate(payload) != nil {
+		http.Error(writer, "reconciliation request is not bounded strict JSON", http.StatusBadRequest)
+		return
+	}
+	var input management.ReconciliationRequest
+	if err := decodeRelayJSON(payload, &input); err != nil || management.ValidateReconciliationRequest(input) != nil {
+		http.Error(writer, "invalid reconciliation request", http.StatusBadRequest)
+		return
+	}
+	factory.relayRequest(base, target, writer, request, relayRequest{
+		method: http.MethodPost, path: "/reconciliations", body: payload,
+		responseMaximum: maximumReconciliationResponseBytes,
+		validate: func(response []byte) (string, error) {
+			var receipt management.ReconciliationReceipt
+			if err := decodeRelayJSON(response, &receipt); err != nil {
+				return "", err
+			}
+			if err := management.ValidateReconciliationReceipt(input, receipt); err != nil {
+				return "", err
+			}
+			return "reconciliation:" + input.SessionID + ":" + receipt.PreviousFingerprint + ":" +
+				receipt.CandidateFingerprint, nil
+		},
+	})
 }
 
 func validateRelayRender(input management.RenderRequest, result management.RenderResult) error {
