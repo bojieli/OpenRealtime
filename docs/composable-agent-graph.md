@@ -3337,6 +3337,19 @@ and does not claim statistical parity with the historical 165-attempt sample.
     runs, five focused race runs, package and package-race tests, and vet are
     green. Remaining deployment providers and topology-changing host
     replacement stay open.
+  - [x] Reconcile the stateless host router across its complete real listener
+    closure. Effect-restricted pre-mount acquires no route or socket authority.
+    A candidate activation failure tears down no less than the safe-point
+    closure, disposes the failed candidate, and remounts the exact predecessor
+    router, route, and listener artifacts on the same address with fresh
+    exports; the retired handler is inert. A valid replacement advances only
+    the router implementation/runtime artifact, emits exact zero-ownership
+    retirements for all three affected entries, remounts the unchanged route
+    and listener on the same address, and leaves both predecessor handler
+    generations inert. Final close removes the route and listener with zero
+    realm ownership. Twenty focused runs, five focused race runs, package and
+    package-race tests, and vet are green. Stateful stores/effects and
+    topology-changing host replacement remain open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3979,9 +3992,12 @@ checked from foundation work alone; each requires end-to-end release evidence.
     permission refusal, real-port replacement, exact retirement, and final
     zero-ownership evidence. The endpoint directory and secret credential also
     pass atomic replacement through an active relay with exact dependency
-    retirement and verified target/authorization rebinding. Topology-changing
-    deployment-host replacement, remaining capability-specific host/client
-    replacement, and signed-native lifecycle/leak evidence remain open.
+    retirement and verified target/authorization rebinding. The stateless host
+    router passes activation rollback and successful full route-and-listener
+    closure replacement on one real address, with retired handlers inert and
+    exact zero ownership. Topology-changing deployment-host replacement,
+    remaining stateful/capability-specific host/client replacement, and
+    signed-native lifecycle/leak evidence remain open.
 
 ## References
 
