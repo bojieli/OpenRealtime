@@ -3194,6 +3194,16 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     workers, effects, and services and no available export. Focused normal,
     race, and vet coverage is green. Replacement of the remaining host and
     client capabilities remains under the open parent.
+  - [x] Remove and recover a descriptor-locked browser client provider through
+    its real dependency closure. In the 28-entry WebRTC developer profile,
+    deactivating media quiesces transport, reducer, session, authoring, effect,
+    and resource dependents while the independent operator branch stays
+    active; reactivation remounts the desired closure, reconnects, renegotiates
+    effects, and executes without stale session state. Final disposal leaves
+    no mounted plug-in and every row undesired and inactive with zero scoped
+    effects, services, or lifecycle errors. The focused real-Chromium gate is
+    green. Loading different client implementation bytes into the live plan
+    remains under the open parent.
   - [x] Complete the browser presentation server and browser client as
     manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
@@ -3722,9 +3732,11 @@ checked from foundation work alone; each requires end-to-end release evidence.
     permission ceilings and scoped disposal. Complete server-realm assembly and
     its replacement/rollback are covered, and the unchanged-server cross-client
     gate proves zero-ownership host/server shutdown. A host-route replacement,
-    rollback, and removal now preserves the stable host router and export.
-    Complete replacement of the remaining host/client capabilities and
-    signed-native lifecycle/leak evidence remain open.
+    rollback, and removal preserves the stable host router and export; real
+    Chromium client-provider removal/recovery proves exact dependent cleanup
+    and a zero-ownership close. Complete live implementation replacement of the
+    remaining host/client capabilities and signed-native lifecycle/leak
+    evidence remain open.
 
 ## References
 

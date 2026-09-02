@@ -274,10 +274,14 @@ try {
   const disposeStarted = performance.now();
   await evaluate(`window.__openrealtime.dispose()`);
   const disposeMS = performance.now() - disposeStarted;
-  check("WebRTC client lifecycle disposed", await evaluate(
-    `document.getElementById("openrealtime-root").dataset.state`) === "disposed");
+  const finalLive = await evaluate(`window.__openrealtime.live()`);
+  check("WebRTC client lifecycle disposed", finalLive.state === "closed" && (await evaluate(
+    `document.getElementById("openrealtime-root").dataset.state`)) === "disposed");
   check("WebRTC client left no mounted plugin", (await evaluate(
     `window.__openrealtime.mounted.length`)) === 0);
+  check("WebRTC client released every scoped effect and service",
+    Object.values(finalLive.entries).every((entry) => entry.state === "inactive" && !entry.desired &&
+      entry.error === "" && entry.effects === 0 && entry.services.length === 0));
   check("client lifecycle performance stays inside release ceilings",
     bootMS < 5000 && connectMS < 15000 && firstVideoMS < 5000 && firstScreenMS < 5000 && firstAudioReceiptMS < 5000 &&
       lossMS < 2000 && restoreMS < 2000 && disposeMS < 2000,
