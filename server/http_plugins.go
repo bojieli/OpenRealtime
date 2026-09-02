@@ -102,13 +102,38 @@ func (factory *RealtimeRouteFactory) Mount(
 	if factory == nil {
 		return errors.New("mount server realtime route plugin: nil factory")
 	}
-	endpoint, err := lookupServerService[RealtimeEndpoint](mount.Services, RealtimeEndpointContract())
+	routes, err := realtimeRoutes(mount.Services)
 	if err != nil {
 		return err
 	}
-	return httpservice.RegisterRoutes(mount, HTTPRoutesContract(), []httpservice.Route{{
-		Pattern: "GET /v1/realtime", Handler: endpoint.RealtimeHandler(),
-	}})
+	return httpservice.RegisterRoutes(mount, HTTPRoutesContract(), routes)
+}
+
+func (factory *RealtimeRouteFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if factory == nil {
+		return nil, errors.New("pre-mount server realtime route plugin: nil factory")
+	}
+	if _, err := realtimeRoutes(candidate.Services); err != nil {
+		return nil, err
+	}
+	return serverRouteCandidate{activate: factory.Mount}, nil
+}
+
+func realtimeRoutes(services pluginruntime.Services) ([]httpservice.Route, error) {
+	if _, err := httpservice.LookupRegistry(services, HTTPRoutesContract()); err != nil {
+		return nil, err
+	}
+	endpoint, err := lookupServerService[RealtimeEndpoint](services, RealtimeEndpointContract())
+	if err != nil {
+		return nil, err
+	}
+	handler := endpoint.RealtimeHandler()
+	if nilServerInterface(handler) {
+		return nil, errors.New("server realtime endpoint returned a nil handler")
+	}
+	return []httpservice.Route{{Pattern: "GET /v1/realtime", Handler: handler}}, nil
 }
 
 // ObservabilityRouteFactory owns health and bounded telemetry as one
@@ -134,16 +159,53 @@ func (factory *ObservabilityRouteFactory) Mount(
 	if factory == nil {
 		return errors.New("mount server observability route plugin: nil factory")
 	}
-	endpoints, err := lookupServerService[ObservabilityEndpoints](
-		mount.Services, ObservabilityEndpointsContract(),
-	)
+	routes, err := observabilityRoutes(mount.Services)
 	if err != nil {
 		return err
 	}
-	return httpservice.RegisterRoutes(mount, HTTPRoutesContract(), []httpservice.Route{
-		{Pattern: "GET /healthz", Handler: endpoints.HealthHandler()},
-		{Pattern: "GET /metrics", Handler: endpoints.MetricsHandler()},
-	})
+	return httpservice.RegisterRoutes(mount, HTTPRoutesContract(), routes)
+}
+
+func (factory *ObservabilityRouteFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if factory == nil {
+		return nil, errors.New("pre-mount server observability route plugin: nil factory")
+	}
+	if _, err := observabilityRoutes(candidate.Services); err != nil {
+		return nil, err
+	}
+	return serverRouteCandidate{activate: factory.Mount}, nil
+}
+
+func observabilityRoutes(services pluginruntime.Services) ([]httpservice.Route, error) {
+	if _, err := httpservice.LookupRegistry(services, HTTPRoutesContract()); err != nil {
+		return nil, err
+	}
+	endpoints, err := lookupServerService[ObservabilityEndpoints](
+		services, ObservabilityEndpointsContract(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	health, metrics := endpoints.HealthHandler(), endpoints.MetricsHandler()
+	if nilServerInterface(health) || nilServerInterface(metrics) {
+		return nil, errors.New("server observability endpoint returned a nil handler")
+	}
+	return []httpservice.Route{
+		{Pattern: "GET /healthz", Handler: health},
+		{Pattern: "GET /metrics", Handler: metrics},
+	}, nil
+}
+
+type serverRouteCandidate struct {
+	activate func(context.Context, pluginruntime.MountContext) error
+}
+
+func (candidate serverRouteCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.activate(ctx, mount)
 }
 
 func routeDescriptor(name string, endpoint plugin.Contract) plugin.Descriptor {
@@ -175,7 +237,9 @@ func lookupServerService[T any](services pluginruntime.Services, want plugin.Con
 }
 
 var (
-	_ pluginruntime.Factory = (*HTTPRouterFactory)(nil)
-	_ pluginruntime.Factory = (*RealtimeRouteFactory)(nil)
-	_ pluginruntime.Factory = (*ObservabilityRouteFactory)(nil)
+	_ pluginruntime.Factory             = (*HTTPRouterFactory)(nil)
+	_ pluginruntime.Factory             = (*RealtimeRouteFactory)(nil)
+	_ pluginruntime.CandidatePreMounter = (*RealtimeRouteFactory)(nil)
+	_ pluginruntime.Factory             = (*ObservabilityRouteFactory)(nil)
+	_ pluginruntime.CandidatePreMounter = (*ObservabilityRouteFactory)(nil)
 )
