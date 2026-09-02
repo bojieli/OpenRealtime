@@ -572,8 +572,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   now migrates bounded ordered private HTML, metadata, versions, timestamps, and
   eviction state under an exact schema while its receipt exposes only equal
   state digests; permissionless and over-envelope candidates leave the live
-  route and content untouched. One authenticated twenty-three-row real-Chromium
-  transition now selects exact candidates for slots, session
+  route and content untouched. The revision-2 download store provides the same
+  guarantees for arbitrary binary attachments, canonical base64 state,
+  filenames, media types, and temporary-buffer wiping. One authenticated
+  twenty-three-row real-Chromium transition now selects exact candidates for
+  slots, session
   configuration, effects, artifact references, debug, inspection, the stateful
   management-operator authority, management transport/static/authoring/source-
   read/source-publication, the stateful authoring workspace, and all nine

@@ -3500,7 +3500,7 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and listener on the same address, and leaves both predecessor handler
     generations inert. Final close removes the route and listener with zero
     realm ownership. Twenty focused runs, five focused race runs, package and
-    package-race tests, and vet are green. Stateful download/effects and
+    package-race tests, and vet are green. Stateful effects and
     topology-changing host replacement remain open.
   - [x] Reconcile the shipped fail-closed effect-authority provider through its
     real effects-service dependency closure. Effect-free candidate pre-mount
@@ -3510,8 +3510,8 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and HTTP export, advances the effects export revision, and serves a fresh
     socket that still denies an unsigned call. Final close reaches zero realm
     ownership. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green. Stateful effect/download-store
-    migration and server-sealed authority rotation remain open.
+    package-race, and vet gates are green. Stateful effects migration and
+    server-sealed authority rotation remain open.
   - [x] Reconcile the shipped revision-2 artifact store through its exact
     bounded state schema. Effect-restricted pre-mount validates the live route
     dependency, retention configuration, and memory-publish grant before any
@@ -3527,8 +3527,26 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and noncanonical-time states fail closed, and the receipt never contains
     artifact IDs, titles, or HTML. Twenty focused runs, five focused race runs,
     three package-race runs, the complete presentation and repository tests,
-    and vet are green. Stateful download/effects migration and topology-
-    changing host replacement remain open.
+    and vet are green. Stateful effects migration and topology-changing host
+    replacement remain open.
+  - [x] Reconcile the shipped revision-2 download store through its exact
+    bounded state schema. Effect-restricted pre-mount validates the live route
+    dependency, retention configuration, and memory-publish grant before any
+    state capture or teardown. A permissionless candidate and binary content
+    whose base64 state cannot fit the one-MiB migration envelope return no
+    receipt and leave the predecessor sequence, service, attachment route, and
+    bytes untouched. A valid implementation replacement privately migrates
+    ordered arbitrary binary content plus exact filenames, canonical media
+    types, versions, timestamps, and eviction count; wipes the predecessor and
+    temporary decoded buffers; preserves the router and HTTP export;
+    republishes a distinct download service; and emits only equal state
+    digests, schema, migrator identity, transition, and zero-ownership
+    retirement evidence. Duplicate or noncanonical base64, unsafe filenames,
+    invalid media types and timestamps, and incompatible identities fail
+    closed, while receipts contain no IDs, filenames, or content. Twenty
+    focused runs, five focused race runs, three package-race runs, the complete
+    presentation and repository tests, and vet are green. Stateful effects and
+    topology-changing host replacement remain open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
