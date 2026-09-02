@@ -576,13 +576,15 @@ tau2/τ-Voice matrix defined by the parent plan.
   effects-enabled WebSocket-profile view consumers; every text, confirmation,
   artifact, inspection, trace,
   operator, editor, configuration, and canvas surface rebinds its retained
-  services and final disposal reaches zero client ownership. A separate nine-
+  services and final disposal reaches zero client ownership. A separate eleven-
   row real-Chromium WebRTC transition selects slots, session configuration,
-  video protocol, debug, effects, artifact references, inspection, video
-  controls, and transport diagnostics while retaining media, transport, and
-  reducer ownership. It reconstructs every DOM surface, restores inspection
-  and effect negotiation, captures a new camera frame, and executes a sealed
-  artifact. Every shipped browser view consumer now has selected-
+  media, transport, video protocol, debug, effects, artifact references,
+  inspection, video controls, and transport diagnostics. It retires the active
+  media/transport dependency closure, restores the unchanged durable workspace
+  through a byte-free state transfer, remounts the reducer disconnected, and
+  then establishes a fresh offer before restoring inspection, effect
+  negotiation, camera capture, response audio, and sealed-artifact execution.
+  Every shipped browser view consumer now has selected-
   implementation replacement evidence; the replacement slots and session-
   configuration providers reconstruct their DOM/contribution state, the
   replacement inspection/static clients reload exact live/catalog evidence,
@@ -594,9 +596,9 @@ tau2/τ-Voice matrix defined by the parent plan.
   Reversible management-operator loss privately suspends both declared states,
   omits their bytes from live evidence, restores them across the remounted
   dependency closure, and remains retryable after an intentionally failed
-  stateful remount. The reducer plus WebRTC transport/media client providers,
-  deployment-host topology, server-sealed authority rotation, and signed native
-  lifecycle/leak evidence keep this parent open.
+  stateful remount. The stateful reducer, deployment-host topology, server-
+  sealed authority rotation, and signed native lifecycle/leak evidence keep
+  this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
