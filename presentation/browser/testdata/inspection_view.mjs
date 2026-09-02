@@ -115,11 +115,22 @@ const baseModel = {
     type: "Event(test.Value)", role: "data", delivery: "lossy", depth: 4,
   }],
 };
+const baseDelta = {
+  format_version: 1,
+  session_id: "sess-joined",
+  graph: { format_version: 1, id: "joined_operator", revision: 3, fingerprint },
+  after: 0,
+  next: 2,
+  baseline: { sequence: 1 },
+  events: [{ sequence: 2 }],
+};
 
 let live = structuredClone(baseLive);
 let model = structuredClone(baseModel);
+let delta = structuredClone(baseDelta);
 let modelUnavailable = false;
 let accessListener;
+let deltaCalls = 0;
 const inspection = Object.freeze({
   available: () => true,
   subscribe(listener) {
@@ -131,6 +142,11 @@ const inspection = Object.freeze({
   async model() {
     if (modelUnavailable) throw new Error("static model unavailable");
     return structuredClone(model);
+  },
+  async deltas(after, limit) {
+    if (after !== 0 || limit !== 256) throw new Error("inspection view issued an unbounded delta request");
+    deltaCalls++;
+    return structuredClone(delta);
   },
 });
 
@@ -157,11 +173,15 @@ const section = slots.get("inspection.graph");
 if (!section) throw new Error("inspection view omitted its replaceable slot");
 const availability = find(section, (entry) => entry.id === "availability");
 const contract = find(section, (entry) => entry.id === "contract-availability");
+const deltaAvailability = find(section, (entry) => entry.id === "delta-availability");
 const refresh = find(section, (entry) => entry.id === "refresh");
 const card = find(section, (entry) => entry.dataset.nodeId === nodeID);
 const edgeCard = find(section, (entry) => entry.dataset.edgeId === edgeID);
 const flowCard = find(section, (entry) => entry.dataset.flowId === "flow_000001");
 if (availability?.textContent !== "live" || contract?.dataset.state !== "joined" ||
+    deltaAvailability?.dataset.state !== "loaded" || deltaAvailability?.dataset.after !== "0" ||
+    deltaAvailability?.dataset.next !== "2" || deltaAvailability?.dataset.events !== "1" ||
+    deltaAvailability?.dataset.baseline !== "1" || deltaCalls !== 1 ||
     card?.dataset.activeRuns !== "2" || card?.dataset.state !== "running" ||
     edgeCard?.dataset.delivery !== "lossy" || edgeCard?.dataset.depth !== "4" ||
     edgeCard?.dataset.occupancy !== "1" || flowCard?.dataset.stageCount !== "2" ||
@@ -193,6 +213,14 @@ for (const expected of [
 if (tags(section).includes("IMG") || globalThis.compromised) {
   throw new Error("inspection evidence crossed the text-only rendering boundary");
 }
+
+delta.graph.fingerprint = `sha256:${"c".repeat(64)}`;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" || deltaAvailability.dataset.state !== "invalid" ||
+    !section.textContent.includes("does not match this session")) {
+  throw new Error("inspection view accepted a delta page for another graph");
+}
+delta = structuredClone(baseDelta);
 
 model.fingerprint = `sha256:${"c".repeat(64)}`;
 await refresh.dispatch("click");
@@ -428,6 +456,7 @@ if (availability.textContent !== "live" ||
 
 accessListener(null);
 if (availability.textContent !== "waiting" || section.dataset.sessionId !== "" ||
+    deltaAvailability.dataset.state !== "waiting" || deltaAvailability.dataset.next !== undefined ||
     find(section, (entry) => entry.dataset.nodeId === nodeID) ||
     find(section, (entry) => entry.dataset.flowId === "flow_000001")) {
   throw new Error("inspection capability loss retained session evidence");

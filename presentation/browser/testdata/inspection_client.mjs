@@ -89,6 +89,17 @@ if (model.state !== "running" || requests.length !== 2 ||
     requests[1].options.headers["OpenRealtime-Management-Token"] !== "mgmt_secret_one") {
   throw new Error("inspection model did not use the same session-scoped capability");
 }
+const deltas = await inspection.deltas(7, 32);
+if (deltas.state !== "running" || requests.length !== 3 ||
+    requests[2].url !==
+      "http://127.0.0.1:17777/client/v1/management/sessions/sess_one/deltas?after=7&limit=32" ||
+    requests[2].options.headers["OpenRealtime-Management-Token"] !== "mgmt_secret_one") {
+  throw new Error("inspection deltas did not use the bounded session-scoped management API");
+}
+await inspection.deltas(0, 4097).then(
+  () => { throw new Error("inspection accepted an unbounded delta request"); },
+  () => {},
+);
 
 nextResponse = new Response("{}", { status: 200, headers: {
   "Content-Type": "text/plain", "Content-Length": "2",

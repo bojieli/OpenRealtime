@@ -2,6 +2,7 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const MAX_ROWS = 65_536;
 const MAX_TEXT = 65_536;
 const MAX_CAUSAL_PARENTS = 64;
+const DELTA_PAGE_LIMIT = 256;
 const CAUSE_KINDS = new Set([
   "observation", "state_revision", "policy", "model_run",
 ]);
@@ -369,6 +370,45 @@ function liveProjection(value) {
   });
 }
 
+function deltaProjection(value, sessionID, live) {
+  const source = object(value, "session delta page");
+  const graph = object(source.graph, "session delta graph");
+  const after = integer(source.after, "session delta cursor");
+  const next = integer(source.next, "session delta next cursor");
+  if (source.format_version !== 1 || source.session_id !== sessionID || after !== 0 || next < after ||
+      graph.format_version !== 1 || text(graph.id, "session delta graph ID") !== live.graphID ||
+      integer(graph.revision, "session delta graph revision", 1) !== live.revision ||
+      typeof graph.fingerprint !== "string" || !DIGEST.test(graph.fingerprint) ||
+      graph.fingerprint !== live.fingerprint) {
+    throw new Error("session delta page names another request or graph");
+  }
+  const compacted = boolean(source.compacted, "session delta compaction");
+  const dropped = integer(source.dropped ?? 0, "session delta dropped count");
+  let baselineSequence = 0;
+  if (source.baseline !== undefined) {
+    const baseline = object(source.baseline, "session delta baseline");
+    baselineSequence = integer(baseline.sequence, "session delta baseline sequence", 1);
+    if (baselineSequence > next) throw new Error("session delta baseline exceeds its next cursor");
+  }
+  const events = rows(source.events, "session delta events");
+  if (events.length > DELTA_PAGE_LIMIT) throw new Error("session delta page exceeds its requested limit");
+  let previous = Math.max(after, baselineSequence);
+  for (let index = 0; index < events.length; index++) {
+    const event = object(events[index], `session delta event ${index}`);
+    const current = integer(event.sequence, `session delta event ${index} sequence`, 1);
+    if (current <= previous || current > next) {
+      throw new Error(`session delta event ${index} has an invalid sequence`);
+    }
+    previous = current;
+  }
+  if (events.length > 0 && previous !== next) {
+    throw new Error("session delta cursor does not name its last event");
+  }
+  return Object.freeze({
+    sessionID, after, next, compacted, dropped, baselineSequence, eventCount: events.length,
+  });
+}
+
 function joinedProjection(liveValue, modelValue) {
   const live = liveProjection(liveValue);
   const model = staticProjection(modelValue);
@@ -580,7 +620,8 @@ export default {
   async mount(context) {
     const slots = context.services.get("presentation.client.slots");
     const inspection = context.services.get("presentation.client.inspection");
-    if (!slots || !inspection || typeof inspection.model !== "function") {
+    if (!slots || !inspection || typeof inspection.model !== "function" ||
+        typeof inspection.deltas !== "function") {
       throw new Error("inspection view dependencies are unavailable");
     }
     const section = node("section");
@@ -607,6 +648,9 @@ export default {
     identityView.id = "identity";
     const contractAvailability = node("p", "Static reaction contracts are unavailable.");
     contractAvailability.id = "contract-availability";
+    const deltaAvailability = node("p", "Delta journal is unavailable.");
+    deltaAvailability.id = "delta-availability";
+    deltaAvailability.dataset.state = "waiting";
     const nodeList = node("div");
     nodeList.dataset.role = "inspection-nodes";
     const edgeList = node("div");
@@ -618,7 +662,7 @@ export default {
     const snapshot = node("pre");
     snapshot.id = "snapshot";
     details.append(snapshot);
-    section.append(style, header, identityView, contractAvailability,
+    section.append(style, header, identityView, contractAvailability, deltaAvailability,
       node("h3", "Nodes"), nodeList, node("h3", "Channels"), edgeList,
       node("h3", "Correlated flows"), flowList, details);
     let generation = 0;
@@ -627,7 +671,10 @@ export default {
       const current = ++generation;
       refresh.disabled = true;
       availability.textContent = "loading";
-      const [liveResult, modelResult] = await Promise.allSettled([inspection.live(), inspection.model()]);
+      const sessionID = section.dataset.sessionId;
+      const [liveResult, modelResult, deltaResult] = await Promise.allSettled([
+        inspection.live(), inspection.model(), inspection.deltas(0, DELTA_PAGE_LIMIT),
+      ]);
       if (current !== generation) return;
       try {
         if (liveResult.status !== "fulfilled") throw liveResult.reason;
@@ -646,6 +693,26 @@ export default {
           contractAvailability.textContent = "Live evidence available; exact static reaction contracts are unavailable.";
           contractAvailability.dataset.state = "unavailable";
         }
+        try {
+          if (deltaResult.status !== "fulfilled") throw deltaResult.reason;
+          const delta = deltaProjection(deltaResult.value, sessionID, live);
+          deltaAvailability.textContent = `Delta journal: session ${delta.sessionID}; cursor ${delta.after} → ${delta.next}; ` +
+            `${delta.eventCount} event${delta.eventCount === 1 ? "" : "s"}; ` +
+            `${delta.baselineSequence === 0 ? "no baseline" : `baseline ${delta.baselineSequence}`}; ` +
+            `${delta.compacted ? "compacted" : "continuous"}; ${delta.dropped} dropped.`;
+          deltaAvailability.dataset.state = "loaded";
+          deltaAvailability.dataset.after = String(delta.after);
+          deltaAvailability.dataset.next = String(delta.next);
+          deltaAvailability.dataset.events = String(delta.eventCount);
+          deltaAvailability.dataset.baseline = String(delta.baselineSequence);
+        } catch {
+          deltaAvailability.textContent = "Delta journal is unavailable or does not match this session.";
+          deltaAvailability.dataset.state = "invalid";
+          delete deltaAvailability.dataset.after;
+          delete deltaAvailability.dataset.next;
+          delete deltaAvailability.dataset.events;
+          delete deltaAvailability.dataset.baseline;
+        }
         availability.textContent = "live";
       } catch (error) {
         snapshot.textContent = "";
@@ -656,6 +723,12 @@ export default {
         identityView.textContent = error?.message ?? String(error);
         contractAvailability.textContent = "Static/live evidence could not be joined safely.";
         contractAvailability.dataset.state = "invalid";
+        deltaAvailability.textContent = "Delta journal could not be joined safely.";
+        deltaAvailability.dataset.state = "invalid";
+        delete deltaAvailability.dataset.after;
+        delete deltaAvailability.dataset.next;
+        delete deltaAvailability.dataset.events;
+        delete deltaAvailability.dataset.baseline;
       } finally {
         if (current === generation) refresh.disabled = !inspection.available();
       }
@@ -670,6 +743,12 @@ export default {
         : "No scoped inspection capability.";
       contractAvailability.textContent = "Static reaction contracts are unavailable.";
       contractAvailability.dataset.state = "waiting";
+      deltaAvailability.textContent = "Delta journal is unavailable.";
+      deltaAvailability.dataset.state = "waiting";
+      delete deltaAvailability.dataset.after;
+      delete deltaAvailability.dataset.next;
+      delete deltaAvailability.dataset.events;
+      delete deltaAvailability.dataset.baseline;
       snapshot.textContent = "";
       nodeList.replaceChildren();
       edgeList.replaceChildren();

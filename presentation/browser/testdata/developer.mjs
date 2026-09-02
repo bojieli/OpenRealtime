@@ -232,6 +232,17 @@ try {
           ["lossless", "lossy"].includes(edge.dataset.delivery) &&
           edge.textContent.includes("Queue wait:"));
     })()`)));
+  check("bounded resumable session deltas are joined to the exact live graph", await waitFor(
+    "session delta journal", () => evaluate(`(() => {
+      const delta = document.querySelector('[data-view=inspection] #delta-availability');
+      if (delta?.dataset.state !== "loaded" || delta.dataset.after !== "0") return false;
+      const next = Number(delta.dataset.next);
+      const events = Number(delta.dataset.events);
+      const baseline = Number(delta.dataset.baseline);
+      return Number.isSafeInteger(next) && next >= 0 && Number.isSafeInteger(events) &&
+        events >= 0 && events <= 256 && Number.isSafeInteger(baseline) && baseline >= 0 &&
+        baseline <= next && delta.textContent.includes("Delta journal: session ");
+    })()`)));
   const traceIdentity = await waitForValue("causal trace", () => evaluate(`(() => {
     const view = document.querySelector('[data-view=trace]');
     const exact = view?.querySelector('#trace-identity')?.textContent ?? "";

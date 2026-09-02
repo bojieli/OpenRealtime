@@ -110,6 +110,8 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	document := string(output)
 	for _, expected := range []string{
 		`data-ready="true"`, `data-edge-id="channel"`, `data-delivery="lossy"`,
+		`id="delta-availability" data-state="loaded" data-after="0" data-next="2" data-events="1" data-baseline="1"`,
+		"Delta journal: session sess-channel; cursor 0 → 2; 1 event; baseline 1; continuous; 0 dropped.",
 		`data-depth="4"`, `data-occupancy="1"`, "Delivery: ", "lossy; depth 4",
 		"Occupancy: ", "1/4", "Dropped: ", "2", "Backpressure: ", "1",
 		"Queue wait: ", "300 ns cumulative; 50 ns per dequeue",
@@ -194,6 +196,11 @@ const model = {
     to: { node: "worker", port: "in" }, type: "Event(test.Value)", role: "data",
     delivery: "lossy", depth: 4 }],
 };
+const delta = {
+  format_version: 1, session_id: "sess-channel",
+  graph: { format_version: 1, id: "channel_operator", revision: 1, fingerprint },
+  after: 0, next: 2, baseline: { sequence: 1 }, events: [{ sequence: 2 }],
+};
 const slots = { register(_name, value) { document.body.append(value); return () => value.remove(); } };
 const inspection = {
   available: () => true,
@@ -203,6 +210,10 @@ const inspection = {
   },
   async live() { return structuredClone(live); },
   async model() { return structuredClone(model); },
+  async deltas(after, limit) {
+    if (after !== 0 || limit !== 256) throw new Error("unbounded delta request");
+    return structuredClone(delta);
+  },
 };
 try {
   await plugin.mount({
@@ -212,12 +223,14 @@ try {
   });
   for (let attempt = 0; attempt < 50; attempt++) {
     if (document.querySelector('[data-edge-id="channel"]') &&
-        document.querySelector('[data-flow-id="flow_000001"]')) break;
+        document.querySelector('[data-flow-id="flow_000001"]') &&
+        document.querySelector('#delta-availability')?.dataset.state === "loaded") break;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   document.documentElement.dataset.ready = String(Boolean(
     document.querySelector('[data-edge-id="channel"]') &&
-    document.querySelector('[data-flow-id="flow_000001"]')));
+    document.querySelector('[data-flow-id="flow_000001"]') &&
+    document.querySelector('#delta-availability')?.dataset.state === "loaded"));
 } catch (error) {
   document.documentElement.dataset.error = error?.message ?? String(error);
 }
