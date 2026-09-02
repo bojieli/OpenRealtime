@@ -111,17 +111,7 @@ func TestSessionProviderReconcilesThroughLiveServerClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readContext, cancelRead := context.WithTimeout(context.Background(), 2*time.Second)
-	for {
-		if _, _, err := predecessor.Read(readContext); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				cancelRead()
-				t.Fatal("session-provider replacement left the predecessor connection active")
-			}
-			break
-		}
-	}
-	cancelRead()
+	assertServerSessionClosed(t, predecessor, "session-provider replacement")
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
 		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
 		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 1 ||
@@ -223,6 +213,20 @@ func dialServerProviderSession(t *testing.T, endpoint string) *websocket.Conn {
 		t.Fatalf("initial realtime event = %s, %v", payload, err)
 	}
 	return connection
+}
+
+func assertServerSessionClosed(t *testing.T, connection *websocket.Conn, operation string) {
+	t.Helper()
+	readContext, cancelRead := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelRead()
+	for {
+		if _, _, err := connection.Read(readContext); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("%s left the predecessor connection active", operation)
+			}
+			return
+		}
+	}
 }
 
 func assertServerProviderBinding(t *testing.T, endpoint, want string) {

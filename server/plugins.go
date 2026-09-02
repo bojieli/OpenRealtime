@@ -243,40 +243,9 @@ func (factory *GatewayFactory) Descriptor() plugin.Descriptor {
 func (factory *GatewayFactory) Mount(
 	ctx context.Context, mount pluginruntime.MountContext,
 ) error {
-	if factory == nil {
-		return errors.New("mount server gateway plugin: nil factory")
-	}
-	value, contract, _, _, found := mount.Services.Lookup(SessionProviderContract().Name)
-	if !found || contract != SessionProviderContract() {
-		return errors.New("mount server gateway plugin: exact session provider is unavailable")
-	}
-	provider, ok := value.(SessionProvider)
-	if !ok || nilServerInterface(provider) {
-		return fmt.Errorf("mount server gateway plugin: session provider has type %T", value)
-	}
-	value, contract, _, _, found = mount.Services.Lookup(SessionInspectionPlaneContract().Name)
-	if !found || contract != SessionInspectionPlaneContract() {
-		return errors.New("mount server gateway plugin: exact session-inspection plane is unavailable")
-	}
-	inspection, ok := value.(*gateway.SessionInspectionPlane)
-	if !ok || inspection == nil {
-		return fmt.Errorf("mount server gateway plugin: session-inspection plane has type %T", value)
-	}
-	value, contract, _, _, found = mount.Services.Lookup(management.HTTPHandlerContract.Name)
-	if !found || contract != management.HTTPHandlerContract {
-		return errors.New("mount server gateway plugin: exact canonical management handler is unavailable")
-	}
-	managementHandler, ok := value.(http.Handler)
-	if !ok || nilServerInterface(managementHandler) {
-		return fmt.Errorf("mount server gateway plugin: management handler has type %T", value)
-	}
-	config := factory.config
-	config.Binding = provider
-	config.SessionInspection = inspection
-	config.ManagementHandler = managementHandler
-	server, err := gateway.New(config)
+	server, err := factory.newGateway(mount.Services)
 	if err != nil {
-		return fmt.Errorf("mount server gateway plugin: %w", err)
+		return err
 	}
 	if err := mount.Lifecycle.Defer("close-realtime-gateway", func(closeCtx context.Context) error {
 		return server.Close(closeCtx)
@@ -289,6 +258,62 @@ func (factory *GatewayFactory) Mount(
 	return mount.Publisher.Provide(
 		ObservabilityEndpointsContract(), ObservabilityEndpoints(server),
 	)
+}
+
+func (factory *GatewayFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if _, err := factory.newGateway(candidate.Services); err != nil {
+		return nil, err
+	}
+	return gatewayCandidate{factory: factory}, nil
+}
+
+func (factory *GatewayFactory) newGateway(services pluginruntime.Services) (*gateway.Server, error) {
+	if factory == nil {
+		return nil, errors.New("mount server gateway plugin: nil factory")
+	}
+	value, contract, _, _, found := services.Lookup(SessionProviderContract().Name)
+	if !found || contract != SessionProviderContract() {
+		return nil, errors.New("mount server gateway plugin: exact session provider is unavailable")
+	}
+	provider, ok := value.(SessionProvider)
+	if !ok || nilServerInterface(provider) {
+		return nil, fmt.Errorf("mount server gateway plugin: session provider has type %T", value)
+	}
+	value, contract, _, _, found = services.Lookup(SessionInspectionPlaneContract().Name)
+	if !found || contract != SessionInspectionPlaneContract() {
+		return nil, errors.New("mount server gateway plugin: exact session-inspection plane is unavailable")
+	}
+	inspection, ok := value.(*gateway.SessionInspectionPlane)
+	if !ok || inspection == nil {
+		return nil, fmt.Errorf("mount server gateway plugin: session-inspection plane has type %T", value)
+	}
+	value, contract, _, _, found = services.Lookup(management.HTTPHandlerContract.Name)
+	if !found || contract != management.HTTPHandlerContract {
+		return nil, errors.New("mount server gateway plugin: exact canonical management handler is unavailable")
+	}
+	managementHandler, ok := value.(http.Handler)
+	if !ok || nilServerInterface(managementHandler) {
+		return nil, fmt.Errorf("mount server gateway plugin: management handler has type %T", value)
+	}
+	config := factory.config
+	config.Binding = provider
+	config.SessionInspection = inspection
+	config.ManagementHandler = managementHandler
+	server, err := gateway.New(config)
+	if err != nil {
+		return nil, fmt.Errorf("mount server gateway plugin: %w", err)
+	}
+	return server, nil
+}
+
+type gatewayCandidate struct{ factory *GatewayFactory }
+
+func (candidate gatewayCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
 }
 
 func nilServerInterface(value any) bool {
@@ -310,4 +335,5 @@ var (
 	_ pluginruntime.Factory             = (*SessionInspectionPlaneFactory)(nil)
 	_ pluginruntime.CandidatePreMounter = (*SessionInspectionPlaneFactory)(nil)
 	_ pluginruntime.Factory             = (*GatewayFactory)(nil)
+	_ pluginruntime.CandidatePreMounter = (*GatewayFactory)(nil)
 )

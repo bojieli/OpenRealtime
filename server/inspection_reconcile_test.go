@@ -3,7 +3,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -85,17 +84,7 @@ func TestSessionInspectionPlaneReconcilesThroughLiveServerClosure(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	readContext, cancelRead := context.WithTimeout(context.Background(), 2*time.Second)
-	for {
-		if _, _, err := predecessor.Read(readContext); err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				cancelRead()
-				t.Fatal("session-inspection replacement left the predecessor connection active")
-			}
-			break
-		}
-	}
-	cancelRead()
+	assertServerSessionClosed(t, predecessor, "session-inspection replacement")
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
 		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
 		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 1 ||
