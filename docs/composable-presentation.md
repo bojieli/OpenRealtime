@@ -5,6 +5,11 @@
   observability APIs, client plugin lifecycle, security boundaries, and end-to-end gates
 - **Depends on:** [Composable Real-Time Agent Element Graph](composable-agent-graph.md)
 
+> [!IMPORTANT]
+> This is the accepted design record and implementation tracker. For the
+> shipped client workflow, begin with the [quickstart](quickstart.md) or the
+> [macOS client guide](../macos/README.md).
+
 This document extends the element-graph design to the software around the
 agent. The browser application, its local server, the macOS application,
 inspection, editor, media capture, tool hosts, and view components are not
@@ -589,8 +594,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   clean versioned APIs usable without any shipped UI. The default compiled
   server profile now exposes session live/delta/trace through exact outer-realm
   plugins, and the separate operator overlay supplies the other local API
-  families. Deployment-provided operator authority, full delta/reconciliation
-  E2E, and replacement of every presentation consumer remain open.
+  families. All six operator API route consumers now pass one atomic six-row
+  replacement with stable router/export and provider identities, unchanged
+  method admission, and exact zero-ownership retirement. Deployment-provided
+  operator authority, provider replacement, full delta/reconciliation E2E, and
+  replacement of every presentation consumer remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

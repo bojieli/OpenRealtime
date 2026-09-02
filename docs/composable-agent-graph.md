@@ -6,6 +6,12 @@
 - **Audience:** runtime authors, element and model-adapter authors, deployment
   authors, benchmark authors, and UI/tooling authors
 
+> [!IMPORTANT]
+> This is an accepted design proposal and living implementation tracker. It may
+> describe target behavior ahead of the current release. New users should read
+> the [current architecture](architecture.md) and
+> [graph-native assembly guide](graph-native-assembly.md) first.
+
 This document proposes a thorough refactoring of OpenRealtime from a set of
 binding-shaped realtime voice architectures into a typed, inspectable element
 graph for general real-time agents. It is intentionally broader than audio. A
@@ -3224,6 +3230,18 @@ and does not claim statistical parity with the historical 165-attempt sample.
     effect. Twenty focused runs,
     five focused race runs, both affected packages and their race gates, and
     vet are green. Gateway/provider and topology replacement remain open.
+  - [x] Atomically reconcile all six shipped operator-management API route
+    families: static graph/catalog, session, authoring, source reading, source
+    publication, and reconciliation. Shared effect-restricted candidate
+    pre-mount validates the exact current router, authorizer, and provider
+    dependencies without registering a route; activation resolves those
+    dependencies again. A six-row replacement advances every exact
+    implementation and runtime-artifact identity, emits six zero-ownership
+    retirement audits, preserves the router/export and every provider, and
+    retains identical method admission. Final close removes every route and
+    realm-owned resource. Twenty focused runs, five focused race runs, package,
+    package-race, and vet gates are green. Provider replacement and full
+    request-level reconciliation E2E remain open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
@@ -4012,7 +4030,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     exact zero ownership. The shipped server Realtime, observability, and
     canonical session-management routes also pass an atomic three-row
     safe-point replacement without dropping the live session or changing the
-    gateway/router export. Topology-changing
+    gateway/router export. All six shipped operator-management API route
+    families likewise pass one atomic six-row replacement with stable
+    router/export and provider identities, unchanged method admission, and
+    exact zero-ownership retirements. Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain
     open.
