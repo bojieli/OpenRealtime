@@ -45,6 +45,8 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/runtimeartifact"
+	"github.com/bojieli/OpenRealtime/management"
+	managementserver "github.com/bojieli/OpenRealtime/management/server"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/policymodel"
@@ -444,13 +446,15 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 	var warmed atomic.Bool
 	profiled := strings.TrimSpace(options.launchProfile) != ""
 	var (
-		bundle           *serverprofile.Bundle
-		providerName     string
-		graphFingerprint string
-		clientModel      = options.model
-		gatewayToken     string
-		profileReadiness *serveProfileReadiness
-		profileChecks    []graphlaunch.ReadinessCheck
+		bundle            *serverprofile.Bundle
+		providerName      string
+		graphFingerprint  string
+		clientModel       = options.model
+		gatewayToken      string
+		profileReadiness  *serveProfileReadiness
+		profileChecks     []graphlaunch.ReadinessCheck
+		profileGraph      *serverprofile.GraphBundle
+		operatorAuthority management.Authorizer
 	)
 	if profiled {
 		composition, err := newProductionProfiledServeComposition(
@@ -466,6 +470,8 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 		gatewayToken = composition.GatewayToken
 		profileReadiness = composition.Readiness
 		profileChecks = composition.Graph.Readiness
+		profileGraph = composition.Graph
+		operatorAuthority = composition.OperatorAuthorizer
 	} else {
 		bind, recogniser, err := buildBinding(options)
 		if err != nil {
@@ -505,8 +511,25 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 		defer cancel()
 		returnErr = errors.Join(returnErr, realm.Close(shutdown))
 	}()
+	handler := realm.Handler()
+	if operatorAuthority != nil {
+		operatorConfig, err := profileGraph.OperatorAPIConfig(operatorAuthority)
+		if err != nil {
+			return err
+		}
+		operatorAPI, err := managementserver.MountOperatorAPI(ctx, handler, operatorConfig)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), options.shutdownTimeout)
+			defer cancel()
+			returnErr = errors.Join(returnErr, operatorAPI.Close(shutdown))
+		}()
+		handler = operatorAPI.Handler()
+	}
 	httpServer := &http.Server{
-		Addr: options.listen, Handler: realm.Handler(),
+		Addr: options.listen, Handler: handler,
 		ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute,
 	}
 	serveError := make(chan error, 2)

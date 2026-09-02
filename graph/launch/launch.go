@@ -13,10 +13,12 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/element"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
@@ -140,6 +142,20 @@ type Result struct {
 	CatalogEntry graphcatalog.Entry
 	Binding      *graphbinding.NativeBinding
 	Readiness    []ReadinessCheck
+
+	elementDescriptors []element.Descriptor
+}
+
+// ElementDescriptors returns an independent, exact snapshot of every
+// resource-free element descriptor installed in the selected application's
+// assembly catalog. The snapshot is suitable for static management and
+// authoring services; it contains no factory handles or mount authority.
+func (result Result) ElementDescriptors() []element.Descriptor {
+	descriptors := make([]element.Descriptor, len(result.elementDescriptors))
+	for index := range result.elementDescriptors {
+		descriptors[index] = result.elementDescriptors[index].Clone()
+	}
+	return descriptors
 }
 
 // New validates and seals a graph-native session provider without acquiring a
@@ -170,6 +186,12 @@ func New(ctx context.Context, source Config) (Result, error) {
 		return Result{}, fmt.Errorf("launch graph-native provider readiness: %w", err)
 	}
 	discovery, err := config.Catalog.Assembly.Discovery()
+	if err != nil {
+		return Result{}, fmt.Errorf("launch graph-native provider catalog: %w", err)
+	}
+	elementDescriptors, err := catalogElementDescriptors(
+		config.Catalog.Assembly.Implementations, discovery.Snapshot(),
+	)
 	if err != nil {
 		return Result{}, fmt.Errorf("launch graph-native provider catalog: %w", err)
 	}
@@ -244,8 +266,61 @@ func New(ctx context.Context, source Config) (Result, error) {
 	}
 	return Result{
 		Plan: plan, Evidence: evidence, CatalogEntry: catalogEntry, Binding: native,
-		Readiness: slices.Clone(config.Readiness),
+		Readiness: slices.Clone(config.Readiness), elementDescriptors: elementDescriptors,
 	}, nil
+}
+
+func catalogElementDescriptors(
+	registrations []graphruntime.FactoryRegistration,
+	discovery graphconfig.DiscoverySnapshot,
+) ([]element.Descriptor, error) {
+	contracts := make(map[string]element.Identity, len(discovery.Implementations))
+	for _, implementation := range discovery.Implementations {
+		contracts[implementation.Reference] = implementation.Contract
+	}
+	byIdentity := make(map[element.Identity]element.Descriptor, len(registrations))
+	for _, registration := range registrations {
+		want, found := contracts[registration.Profile.Reference]
+		if !found {
+			return nil, fmt.Errorf(
+				"implementation %q disappeared from discovery", registration.Profile.Reference,
+			)
+		}
+		descriptor := registration.Factory.Descriptor()
+		identity, err := descriptor.Identity()
+		if err != nil {
+			return nil, fmt.Errorf(
+				"implementation %q descriptor: %w", registration.Profile.Reference, err,
+			)
+		}
+		if identity != want {
+			return nil, fmt.Errorf(
+				"implementation %q descriptor mutated after discovery", registration.Profile.Reference,
+			)
+		}
+		byIdentity[identity] = descriptor.Clone()
+	}
+	if len(contracts) != len(registrations) {
+		return nil, errors.New("implementation descriptor inventory differs from discovery")
+	}
+	identities := make([]element.Identity, 0, len(byIdentity))
+	for identity := range byIdentity {
+		identities = append(identities, identity)
+	}
+	sort.Slice(identities, func(left, right int) bool {
+		if identities[left].Name != identities[right].Name {
+			return identities[left].Name < identities[right].Name
+		}
+		if identities[left].Revision != identities[right].Revision {
+			return identities[left].Revision < identities[right].Revision
+		}
+		return identities[left].Digest < identities[right].Digest
+	})
+	result := make([]element.Descriptor, len(identities))
+	for index, identity := range identities {
+		result[index] = byIdentity[identity]
+	}
+	return result, nil
 }
 
 func evidenceArtifacts(document graphevidence.Document) []inspect.ArtifactIdentity {

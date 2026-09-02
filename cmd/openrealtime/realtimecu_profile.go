@@ -58,21 +58,22 @@ const (
 )
 
 type realtimeCUProfileOptions struct {
-	out                string
-	graphOut           string
-	valuesOut          string
-	resolutionOut      string
-	executionOut       string
-	name               string
-	revision           uint64
-	targetName         string
-	width              int
-	height             int
-	tokenEnv           string
-	inspectionTTL      uint64
-	maxAudioBytes      int
-	deployments        realtimeCUDeploymentIdentities
-	deploymentVerifier realtimeCUDeploymentVerifier
+	out                   string
+	graphOut              string
+	valuesOut             string
+	resolutionOut         string
+	executionOut          string
+	name                  string
+	revision              uint64
+	targetName            string
+	width                 int
+	height                int
+	tokenEnv              string
+	operatorCapabilityEnv string
+	inspectionTTL         uint64
+	maxAudioBytes         int
+	deployments           realtimeCUDeploymentIdentities
+	deploymentVerifier    realtimeCUDeploymentVerifier
 }
 
 func defaultRealtimeCUProfileOptions() realtimeCUProfileOptions {
@@ -102,6 +103,8 @@ func runRealtimeCUProfileFreeze(arguments []string, output io.Writer) error {
 	flags.IntVar(&options.width, "width", options.width, "exact browser CSS viewport width")
 	flags.IntVar(&options.height, "height", options.height, "exact browser CSS viewport height")
 	flags.StringVar(&options.tokenEnv, "token-env", options.tokenEnv, "required gateway bearer-token environment name")
+	flags.StringVar(&options.operatorCapabilityEnv, "operator-capability-env", options.operatorCapabilityEnv,
+		"optional separate mgmt_ operator-capability environment name")
 	flags.Uint64Var(&options.inspectionTTL, "inspection-token-ttl-ms", options.inspectionTTL, "runtime-inspection token lifetime")
 	flags.IntVar(&options.maxAudioBytes, "max-audio-frame-bytes", options.maxAudioBytes, "Realtime audio-frame bound")
 	if err := flags.Parse(arguments); err != nil {
@@ -488,7 +491,8 @@ func freezeProductionRealtimeCUProfile(
 			ProfileName: "openrealtime.server.realtime-cu-local", ProfileRevision: 1,
 			ProviderArtifact: selected.Provider, GatewayArtifact: executable,
 			TokenEnvironment: options.tokenEnv, Model: realtimeCULocalModelName,
-			TranscriptionModel: realtimeCULocalASRModel, ValidateWire: true,
+			OperatorCapabilityEnvironment: options.operatorCapabilityEnv,
+			TranscriptionModel:            realtimeCULocalASRModel, ValidateWire: true,
 			InspectionTokenTTLMS: options.inspectionTTL,
 			MaxAudioFrameBytes:   options.maxAudioBytes,
 			VideoLimits:          openrealtime.DefaultLimits(),
@@ -950,6 +954,7 @@ func validateRealtimeCUProfileOptions(options realtimeCUProfileOptions) error {
 	if strings.TrimSpace(options.name) == "" || options.revision == 0 ||
 		strings.TrimSpace(options.targetName) == "" || options.width <= 0 || options.height <= 0 ||
 		strings.TrimSpace(options.tokenEnv) == "" || strings.TrimSpace(options.tokenEnv) != options.tokenEnv ||
+		strings.TrimSpace(options.operatorCapabilityEnv) != options.operatorCapabilityEnv ||
 		options.inspectionTTL == 0 || options.maxAudioBytes <= 0 {
 		return errors.New("profile realtime-cu has invalid identity, target, or server bounds")
 	}

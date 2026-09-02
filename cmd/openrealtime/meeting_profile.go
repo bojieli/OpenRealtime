@@ -803,18 +803,19 @@ func newMeetingVisualProvider(
 }
 
 type meetingProfileOptions struct {
-	out           string
-	graphOut      string
-	valuesOut     string
-	resolutionOut string
-	executionOut  string
-	name          string
-	revision      uint64
-	tokenEnv      string
-	inspectionTTL uint64
-	maxAudioBytes int
-	deployments   meetingDeploymentIdentities
-	verifier      meetingDeploymentVerifier
+	out                   string
+	graphOut              string
+	valuesOut             string
+	resolutionOut         string
+	executionOut          string
+	name                  string
+	revision              uint64
+	tokenEnv              string
+	operatorCapabilityEnv string
+	inspectionTTL         uint64
+	maxAudioBytes         int
+	deployments           meetingDeploymentIdentities
+	verifier              meetingDeploymentVerifier
 }
 
 func defaultMeetingProfileOptions() meetingProfileOptions {
@@ -908,8 +909,9 @@ func freezeProductionMeetingProfile(
 		Server: launchprofile.Server{
 			ProfileName: "openrealtime.server.meeting-assistant-local", ProfileRevision: 1,
 			ProviderArtifact: selected.Provider, GatewayArtifact: executable,
-			TokenEnvironment: options.tokenEnv,
-			Model:            meetingLocalModelName, TranscriptionModel: meetingLocalASRModel,
+			TokenEnvironment:              options.tokenEnv,
+			OperatorCapabilityEnvironment: options.operatorCapabilityEnv,
+			Model:                         meetingLocalModelName, TranscriptionModel: meetingLocalASRModel,
 			ValidateWire: true, InspectionTokenTTLMS: options.inspectionTTL,
 			MaxAudioFrameBytes: options.maxAudioBytes,
 			VideoLimits:        videoLimits,

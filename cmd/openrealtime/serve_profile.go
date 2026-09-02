@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
 	"github.com/bojieli/OpenRealtime/internal/runtimeartifact"
+	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
 	serverprofile "github.com/bojieli/OpenRealtime/server"
@@ -449,11 +451,12 @@ func newServeProfileHost(
 }
 
 type profiledServeComposition struct {
-	Profile      launchprofile.Document
-	Graph        *serverprofile.GraphBundle
-	Host         serveProfileHost
-	GatewayToken string
-	Readiness    *serveProfileReadiness
+	Profile            launchprofile.Document
+	Graph              *serverprofile.GraphBundle
+	Host               serveProfileHost
+	GatewayToken       string
+	OperatorAuthorizer management.Authorizer
+	Readiness          *serveProfileReadiness
 }
 
 type serveProfileReadiness struct{ ready atomic.Bool }
@@ -535,9 +538,34 @@ func newProfiledServeComposition(
 	if err != nil {
 		return profiledServeComposition{}, err
 	}
+	var operatorAuthorizer management.Authorizer
+	if environment := profile.Server.OperatorCapabilityEnvironment; environment != "" {
+		operatorToken, resolveErr := resolveProfileTokenEnvironment(ctx, environment)
+		if resolveErr != nil {
+			return profiledServeComposition{}, fmt.Errorf(
+				"resolve launch-profile operator capability environment %s: %w",
+				environment, resolveErr,
+			)
+		}
+		if tokenSnapshot != "" &&
+			subtle.ConstantTimeCompare([]byte(operatorToken), []byte(tokenSnapshot)) == 1 {
+			return profiledServeComposition{},
+				errors.New("launch-profile operator and gateway capabilities must be distinct")
+		}
+		grants, grantErr := graph.OperatorGrants()
+		if grantErr != nil {
+			return profiledServeComposition{}, grantErr
+		}
+		sealed, sealErr := management.NewDeploymentAuthorizer(operatorToken, grants)
+		if sealErr != nil {
+			return profiledServeComposition{}, sealErr
+		}
+		operatorAuthorizer = sealed
+	}
 	return profiledServeComposition{
 		Profile: profile.Clone(), Graph: graph, Host: host,
-		GatewayToken: tokenSnapshot, Readiness: readiness,
+		GatewayToken: tokenSnapshot, OperatorAuthorizer: operatorAuthorizer,
+		Readiness: readiness,
 	}, nil
 }
 

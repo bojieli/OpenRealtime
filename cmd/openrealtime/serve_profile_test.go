@@ -32,6 +32,9 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/management"
+	managementclient "github.com/bojieli/OpenRealtime/management/client"
+	managementserver "github.com/bojieli/OpenRealtime/management/server"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -91,6 +94,142 @@ func TestProductionServeLaunchProfileResolvesExactInstalledApplications(t *testi
 			len(composition.Host.Providers.TTS))
 	}
 	assertServeProviderRegistrationIdentities(t, composition.Host.Providers)
+	if composition.OperatorAuthorizer != nil {
+		t.Fatal("profile without operator authority exposed the operator plane")
+	}
+}
+
+func TestProductionProfileSelectsSeparateOperatorAuthorityAndExactAPIs(t *testing.T) {
+	artifacts, err := executableServeProfileArtifacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers, _ := serveProfileTestProviders(artifacts)
+	host, err := newServeProfileHost(artifacts, providers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const gatewayEnvironment = "OPENREALTIME_TEST_PROFILE_GATEWAY_TOKEN"
+	const operatorEnvironment = "OPENREALTIME_TEST_PROFILE_OPERATOR_CAPABILITY"
+	t.Setenv(gatewayEnvironment, "gateway-profile-token")
+	registry := management.NewCapabilityRegistry()
+	operatorAccess, err := registry.Issue(time.Minute, []management.Grant{{
+		Operation: management.ReadGraph, Resource: "unused",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(operatorEnvironment, operatorAccess.Token)
+	profile := freezeServeProfileTestDocumentWithToken(
+		t, host, serveProfileTestASRSelection(t, host.Providers),
+		serveProfileTestModelSelection(t, host.Providers),
+		serveProfileTestTTSSelection(t, host.Providers), gatewayEnvironment,
+	)
+	profile.Server.OperatorCapabilityEnvironment = operatorEnvironment
+	profile, err = launchprofile.Freeze(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	composition, err := newProfiledServeComposition(context.Background(), profile, host, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if composition.OperatorAuthorizer == nil {
+		t.Fatal("profile-selected operator authority was omitted")
+	}
+	realm, err := composition.Graph.ServerBundle.Mount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := realm.Close(ctx); err != nil {
+			t.Errorf("close profile server realm: %v", err)
+		}
+	})
+	operatorConfig, err := composition.Graph.OperatorAPIConfig(composition.OperatorAuthorizer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operatorAPI, err := managementserver.MountOperatorAPI(
+		context.Background(), realm.Handler(), operatorConfig,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := operatorAPI.Close(ctx); err != nil {
+			t.Errorf("close profile operator API: %v", err)
+		}
+	})
+	httpServer := httptest.NewServer(operatorAPI.Handler())
+	t.Cleanup(httpServer.Close)
+	remote, err := managementclient.New(managementclient.Config{
+		BaseURL:      httpServer.URL,
+		Capabilities: managementclient.StaticCapability(operatorAccess.Token),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := composition.Graph.GraphPlan.Graph()
+	gotGraph, err := remote.Graph(context.Background(), graph.Fingerprint)
+	if err != nil || gotGraph.Fingerprint != graph.Fingerprint {
+		t.Fatalf("profile operator graph = %s, %v", gotGraph.Fingerprint, err)
+	}
+	values, err := remote.ValuesSchema(context.Background(), graph.Fingerprint)
+	if err != nil || values.Digest != composition.Graph.GraphPlan.ValuesSchema().Digest {
+		t.Fatalf("profile operator values schema = %s, %v", values.Digest, err)
+	}
+	if len(graph.Nodes) == 0 {
+		t.Fatal("profile graph has no descriptor-bearing node")
+	}
+	descriptor, err := remote.ElementDescriptor(context.Background(), graph.Nodes[0].Element)
+	if identity, identityErr := descriptor.Identity(); err != nil || identityErr != nil ||
+		identity != graph.Nodes[0].Element {
+		t.Fatalf("profile operator element descriptor = %+v, %v / %v", identity, err, identityErr)
+	}
+	rendered, err := remote.Render(context.Background(), management.RenderRequest{
+		Graph: graph, Format: management.RenderMermaid,
+	})
+	if err != nil || rendered.Fingerprint != graph.Fingerprint {
+		t.Fatalf("profile operator authoring render = %+v, %v", rendered, err)
+	}
+	wrong, err := managementclient.New(managementclient.Config{
+		BaseURL:      httpServer.URL,
+		Capabilities: managementclient.StaticCapability("gateway-profile-token"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wrong.Graph(context.Background(), graph.Fingerprint); !errors.Is(err, management.ErrNotFound) {
+		t.Fatalf("gateway token reached operator graph API: %v", err)
+	}
+	if _, err := remote.Snapshot(context.Background(), "sess-missing"); !errors.Is(err, management.ErrNotFound) {
+		t.Fatalf("operator token crossed into session inspection: %v", err)
+	}
+
+	sameEnvironment := profile.Clone()
+	sameEnvironment.Server.OperatorCapabilityEnvironment = gatewayEnvironment
+	if _, err := launchprofile.Freeze(sameEnvironment); err == nil ||
+		!strings.Contains(err.Error(), "separate environments") {
+		t.Fatalf("same operator/gateway environment error = %v", err)
+	}
+	const aliasEnvironment = "OPENREALTIME_TEST_PROFILE_OPERATOR_ALIAS"
+	t.Setenv(aliasEnvironment, "gateway-profile-token")
+	aliased := profile.Clone()
+	aliased.Server.OperatorCapabilityEnvironment = aliasEnvironment
+	aliased, err = launchprofile.Freeze(aliased)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newProfiledServeComposition(context.Background(), aliased, host, nil); err == nil ||
+		!strings.Contains(err.Error(), "must be distinct") {
+		t.Fatalf("aliased operator/gateway capability error = %v", err)
+	}
 }
 
 func TestProductionServeProfileDescriptorsMatchLazyLiveFactories(t *testing.T) {

@@ -99,11 +99,15 @@ func NewProfileGraphBundle(
 	if err != nil {
 		return nil, fmt.Errorf("compose profiled graph server bundle: %w", err)
 	}
-	return &GraphBundle{
+	result := &GraphBundle{
 		GraphPlan: launched.Plan, Evidence: launched.Evidence, GraphCatalog: catalog,
 		ServerBundle: bundle,
 		Readiness:    launched.Readiness,
-	}, nil
+	}
+	if err := result.prepareOperatorServices(launched); err != nil {
+		return nil, fmt.Errorf("compose profiled graph server operator services: %w", err)
+	}
+	return result, nil
 }
 
 func validateProfileGatewayHooks(config gateway.Config) error {

@@ -70,6 +70,18 @@ func TestNewBuildsExactNativeSessionProviderWithoutAcquiringResources(t *testing
 		result.CatalogEntry.Profiles[0] != result.Evidence.Profiles[0].Artifact {
 		t.Fatalf("launch catalog entry = %+v", result.CatalogEntry)
 	}
+	descriptors := result.ElementDescriptors()
+	if len(descriptors) != 1 {
+		t.Fatalf("launch element descriptor snapshot = %d entries, want one exact identity", len(descriptors))
+	}
+	if identity, identityErr := descriptors[0].Identity(); identityErr != nil ||
+		identity != result.Plan.Graph().Nodes[0].Element {
+		t.Fatalf("launch element descriptor identity = %+v, %v", identity, identityErr)
+	}
+	descriptors[0].Name = "redirected"
+	if result.ElementDescriptors()[0].Name == "redirected" {
+		t.Fatal("launch element descriptor snapshot aliases caller mutation")
+	}
 	var provider serverplugin.SessionProvider = result.Binding
 	if provider.Name() != launchAdapterName ||
 		result.Binding.Graph().Fingerprint != result.Plan.Graph().Fingerprint {

@@ -52,6 +52,8 @@ func runMeetingProfileFreezeWithDependencies(
 	flags.StringVar(&options.name, "name", options.name, "immutable profile name")
 	flags.Uint64Var(&options.revision, "revision", options.revision, "positive profile revision")
 	flags.StringVar(&options.tokenEnv, "token-env", options.tokenEnv, "required gateway bearer-token environment name")
+	flags.StringVar(&options.operatorCapabilityEnv, "operator-capability-env", options.operatorCapabilityEnv,
+		"optional separate mgmt_ operator-capability environment name")
 	flags.Uint64Var(&options.inspectionTTL, "inspection-token-ttl-ms", options.inspectionTTL, "runtime-inspection token lifetime")
 	flags.IntVar(&options.maxAudioBytes, "max-audio-frame-bytes", options.maxAudioBytes, "Realtime audio-frame bound")
 	if err := flags.Parse(arguments); err != nil {
@@ -111,6 +113,7 @@ func validateMeetingProfileOptions(options meetingProfileOptions) error {
 	}
 	if strings.TrimSpace(options.name) == "" || options.revision == 0 ||
 		strings.TrimSpace(options.tokenEnv) == "" || strings.TrimSpace(options.tokenEnv) != options.tokenEnv ||
+		strings.TrimSpace(options.operatorCapabilityEnv) != options.operatorCapabilityEnv ||
 		options.inspectionTTL == 0 || options.maxAudioBytes <= 0 {
 		return errors.New("profile meeting has invalid identity or server bounds")
 	}

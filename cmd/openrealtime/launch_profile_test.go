@@ -15,6 +15,8 @@ import (
 )
 
 func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
+	const operatorEnvironment = "OPENREALTIME_TEST_SCENARIO_OPERATOR_CAPABILITY"
+	t.Setenv(operatorEnvironment, "mgmt_"+strings.Repeat("A", 43))
 	directory := t.TempDir()
 	path := filepath.Join(directory, "scenario-profile.yaml")
 	graphPath := filepath.Join(directory, "scenario.ir.json")
@@ -25,6 +27,7 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 	if err := runLaunchProfile([]string{
 		"scenario", "-out", path, "-graph-out", graphPath, "-values-out", valuesPath,
 		"-resolution-out", resolutionPath, "-execution-out", executionPath,
+		"-operator-capability-env", operatorEnvironment,
 	}, &output); err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +48,9 @@ func TestScenarioProfileFreezePinsLocalProductionSelection(t *testing.T) {
 		t.Fatalf("profile executable artifacts = %+v, %+v; want %+v, %+v",
 			profile.Server.GatewayArtifact, profile.Server.ProviderArtifact,
 			artifacts.Gateway, artifacts.ScenarioProvider)
+	}
+	if profile.Server.OperatorCapabilityEnvironment != operatorEnvironment {
+		t.Fatalf("profile operator capability environment = %q", profile.Server.OperatorCapabilityEnvironment)
 	}
 	for _, exact := range []string{
 		`"architecture":{"fingerprint":"sha256:`,

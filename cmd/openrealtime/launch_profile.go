@@ -92,6 +92,7 @@ type scenarioProfileOptions struct {
 	continuationInstruction string
 	fdbv3Dataset            string
 	serverTokenEnv          string
+	operatorCapabilityEnv   string
 	inspectionTokenTTL      uint64
 	maxAudioFrameBytes      int
 }
@@ -201,6 +202,8 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 		"profile-owned continuation evidence and deferred-action policy")
 	flags.StringVar(&options.fdbv3Dataset, "fdbv3-dataset", options.fdbv3Dataset, "released FDB v3 dataset whose exact tool union replaces the scenario-suite tools")
 	flags.StringVar(&options.serverTokenEnv, "token-env", options.serverTokenEnv, "optional gateway bearer-token environment name")
+	flags.StringVar(&options.operatorCapabilityEnv, "operator-capability-env", options.operatorCapabilityEnv,
+		"optional separate mgmt_ operator-capability environment name")
 	flags.Uint64Var(&options.inspectionTokenTTL, "inspection-token-ttl-ms", options.inspectionTokenTTL, "runtime-inspection token lifetime")
 	flags.IntVar(&options.maxAudioFrameBytes, "max-audio-frame-bytes", options.maxAudioFrameBytes, "Realtime audio-frame bound")
 	if err := flags.Parse(arguments); err != nil {
@@ -424,8 +427,10 @@ func freezeProductionScenarioProfile(
 		Server: launchprofile.Server{
 			ProfileName: "openrealtime.server.scenario-graph-native", ProfileRevision: 1,
 			ProviderArtifact: artifacts.ScenarioProvider, GatewayArtifact: artifacts.Gateway,
-			TokenEnvironment: options.serverTokenEnv, Model: options.modelName,
-			TranscriptionModel: options.asrModel, ValidateWire: true,
+			TokenEnvironment:              options.serverTokenEnv,
+			OperatorCapabilityEnvironment: options.operatorCapabilityEnv,
+			Model:                         options.modelName,
+			TranscriptionModel:            options.asrModel, ValidateWire: true,
 			InspectionTokenTTLMS: options.inspectionTokenTTL,
 			MaxAudioFrameBytes:   options.maxAudioFrameBytes,
 			VideoLimits:          openrealtime.DefaultLimits(),

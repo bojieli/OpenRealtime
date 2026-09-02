@@ -33,6 +33,7 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 	options.valuesOut = filepath.Join(directory, "realtime-cu.values.json")
 	options.resolutionOut = filepath.Join(directory, "realtime-cu.resolution.json")
 	options.executionOut = filepath.Join(directory, "realtime-cu.execution.json")
+	options.operatorCapabilityEnv = "OPENREALTIME_REALTIME_CU_OPERATOR_CAPABILITY"
 	configureRealtimeCUProfileTestDeployments(&options)
 	t.Setenv(options.tokenEnv, "realtime-cu-profile-test-token")
 	if err := validateRealtimeCUProfileOptions(options); err != nil {
@@ -51,7 +52,8 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 		frozen.Profile.Plan != frozen.Plan.Identity() ||
 		frozen.Execution.Kind != bench.ExecutionGraphNative ||
 		frozen.Profile.Server.InspectionTokenTTLMS < uint64((5*time.Minute)/time.Millisecond) ||
-		frozen.Profile.Server.TokenEnvironment != options.tokenEnv {
+		frozen.Profile.Server.TokenEnvironment != options.tokenEnv ||
+		frozen.Profile.Server.OperatorCapabilityEnvironment != options.operatorCapabilityEnv {
 		t.Fatalf("frozen Realtime-CU profile = %+v execution=%+v",
 			frozen.Profile, frozen.Execution)
 	}

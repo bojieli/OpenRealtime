@@ -82,13 +82,14 @@ type Server struct {
 	ProviderArtifact inspect.ArtifactIdentity `json:"provider_artifact" yaml:"provider_artifact"`
 	GatewayArtifact  inspect.ArtifactIdentity `json:"gateway_artifact" yaml:"gateway_artifact"`
 
-	Model                string              `json:"model" yaml:"model"`
-	TranscriptionModel   string              `json:"transcription_model" yaml:"transcription_model"`
-	TokenEnvironment     string              `json:"token_environment,omitempty" yaml:"token_environment,omitempty"`
-	ValidateWire         bool                `json:"validate_wire" yaml:"validate_wire"`
-	InspectionTokenTTLMS uint64              `json:"inspection_token_ttl_ms" yaml:"inspection_token_ttl_ms"`
-	MaxAudioFrameBytes   int                 `json:"max_audio_frame_bytes" yaml:"max_audio_frame_bytes"`
-	VideoLimits          openrealtime.Limits `json:"video_limits" yaml:"video_limits"`
+	Model                         string              `json:"model" yaml:"model"`
+	TranscriptionModel            string              `json:"transcription_model" yaml:"transcription_model"`
+	TokenEnvironment              string              `json:"token_environment,omitempty" yaml:"token_environment,omitempty"`
+	OperatorCapabilityEnvironment string              `json:"operator_capability_environment,omitempty" yaml:"operator_capability_environment,omitempty"`
+	ValidateWire                  bool                `json:"validate_wire" yaml:"validate_wire"`
+	InspectionTokenTTLMS          uint64              `json:"inspection_token_ttl_ms" yaml:"inspection_token_ttl_ms"`
+	MaxAudioFrameBytes            int                 `json:"max_audio_frame_bytes" yaml:"max_audio_frame_bytes"`
+	VideoLimits                   openrealtime.Limits `json:"video_limits" yaml:"video_limits"`
 }
 
 // Document is one immutable graph/server launch intent. Plan records the
@@ -209,6 +210,14 @@ func validateServer(server Server) error {
 	}
 	if server.TokenEnvironment != "" && !environmentName.MatchString(server.TokenEnvironment) {
 		return errors.New("graph launch profile token environment is not canonical")
+	}
+	if server.OperatorCapabilityEnvironment != "" &&
+		!environmentName.MatchString(server.OperatorCapabilityEnvironment) {
+		return errors.New("graph launch profile operator capability environment is not canonical")
+	}
+	if server.OperatorCapabilityEnvironment != "" &&
+		server.OperatorCapabilityEnvironment == server.TokenEnvironment {
+		return errors.New("graph launch profile operator and gateway capabilities require separate environments")
 	}
 	if !server.ValidateWire {
 		return errors.New("graph launch profile must validate the pinned Realtime wire schema")
@@ -457,13 +466,14 @@ type yamlServer struct {
 	ProviderArtifact inspect.ArtifactIdentity `yaml:"provider_artifact"`
 	GatewayArtifact  inspect.ArtifactIdentity `yaml:"gateway_artifact"`
 
-	Model                string          `yaml:"model"`
-	TranscriptionModel   string          `yaml:"transcription_model"`
-	TokenEnvironment     string          `yaml:"token_environment,omitempty"`
-	ValidateWire         bool            `yaml:"validate_wire"`
-	InspectionTokenTTLMS uint64          `yaml:"inspection_token_ttl_ms"`
-	MaxAudioFrameBytes   int             `yaml:"max_audio_frame_bytes"`
-	VideoLimits          yamlVideoLimits `yaml:"video_limits"`
+	Model                         string          `yaml:"model"`
+	TranscriptionModel            string          `yaml:"transcription_model"`
+	TokenEnvironment              string          `yaml:"token_environment,omitempty"`
+	OperatorCapabilityEnvironment string          `yaml:"operator_capability_environment,omitempty"`
+	ValidateWire                  bool            `yaml:"validate_wire"`
+	InspectionTokenTTLMS          uint64          `yaml:"inspection_token_ttl_ms"`
+	MaxAudioFrameBytes            int             `yaml:"max_audio_frame_bytes"`
+	VideoLimits                   yamlVideoLimits `yaml:"video_limits"`
 }
 
 func yamlServerFrom(source Server) yamlServer {
@@ -471,9 +481,11 @@ func yamlServerFrom(source Server) yamlServer {
 		ProfileName: source.ProfileName, ProfileRevision: source.ProfileRevision,
 		ProviderArtifact: source.ProviderArtifact, GatewayArtifact: source.GatewayArtifact,
 		Model: source.Model, TranscriptionModel: source.TranscriptionModel,
-		TokenEnvironment: source.TokenEnvironment, ValidateWire: source.ValidateWire,
-		InspectionTokenTTLMS: source.InspectionTokenTTLMS,
-		MaxAudioFrameBytes:   source.MaxAudioFrameBytes,
+		TokenEnvironment:              source.TokenEnvironment,
+		OperatorCapabilityEnvironment: source.OperatorCapabilityEnvironment,
+		ValidateWire:                  source.ValidateWire,
+		InspectionTokenTTLMS:          source.InspectionTokenTTLMS,
+		MaxAudioFrameBytes:            source.MaxAudioFrameBytes,
 		VideoLimits: yamlVideoLimits{
 			Format: source.VideoLimits.Format, FPSCap: source.VideoLimits.FPSCap,
 			MaxDimension:  source.VideoLimits.MaxDimension,
@@ -487,9 +499,11 @@ func (source yamlServer) server() Server {
 		ProfileName: source.ProfileName, ProfileRevision: source.ProfileRevision,
 		ProviderArtifact: source.ProviderArtifact, GatewayArtifact: source.GatewayArtifact,
 		Model: source.Model, TranscriptionModel: source.TranscriptionModel,
-		TokenEnvironment: source.TokenEnvironment, ValidateWire: source.ValidateWire,
-		InspectionTokenTTLMS: source.InspectionTokenTTLMS,
-		MaxAudioFrameBytes:   source.MaxAudioFrameBytes,
+		TokenEnvironment:              source.TokenEnvironment,
+		OperatorCapabilityEnvironment: source.OperatorCapabilityEnvironment,
+		ValidateWire:                  source.ValidateWire,
+		InspectionTokenTTLMS:          source.InspectionTokenTTLMS,
+		MaxAudioFrameBytes:            source.MaxAudioFrameBytes,
 		VideoLimits: openrealtime.Limits{
 			Format: source.VideoLimits.Format, FPSCap: source.VideoLimits.FPSCap,
 			MaxDimension:  source.VideoLimits.MaxDimension,

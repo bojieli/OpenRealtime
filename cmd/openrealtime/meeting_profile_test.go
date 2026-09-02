@@ -342,6 +342,7 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 	t.Setenv("GEMINI_API_KEY", "meeting-profile-fixture-credential")
 	t.Setenv("GOOGLE_API_KEY", "")
 	options := defaultMeetingProfileOptions()
+	options.operatorCapabilityEnv = "OPENREALTIME_MEETING_OPERATOR_CAPABILITY"
 	verifier := meetingProfileVerifier()
 	options.deployments = verifier.identities
 	options.verifier = verifier
@@ -361,6 +362,7 @@ func TestFreezeMeetingProfileBindsExactGraphResolutionAndDeployments(t *testing.
 		frozen.Profile.Server.Model != meetingLocalModelName ||
 		frozen.Profile.Server.TranscriptionModel != meetingLocalASRModel ||
 		frozen.Profile.Server.TokenEnvironment != "OPENREALTIME_TOKEN" ||
+		frozen.Profile.Server.OperatorCapabilityEnvironment != options.operatorCapabilityEnv ||
 		frozen.Profile.Server.VideoLimits.FPSCap != 5 ||
 		frozen.Profile.Server.VideoLimits.FPSCap !=
 			(frozen.Configuration.Foreground.FrameRateMilliHz+999)/1_000 ||

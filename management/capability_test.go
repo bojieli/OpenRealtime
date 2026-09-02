@@ -3,6 +3,7 @@ package management
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -116,4 +117,49 @@ func TestCapabilityRegistryScopedRevokerIsExactAndIdempotent(t *testing.T) {
 		t.Fatalf("one owner revoker affected another capability: %v", err)
 	}
 	revokeSecond()
+}
+
+func TestDeploymentAuthorizerSealsExactCapabilityAndGrants(t *testing.T) {
+	registry := NewCapabilityRegistry()
+	access, err := registry.Issue(time.Minute, []Grant{{Operation: ReadGraph, Resource: "unused"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := registry.Issue(time.Minute, []Grant{{Operation: ReadGraph, Resource: "unused"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer, err := NewDeploymentAuthorizer(access.Token, []Grant{
+		{Operation: AnalyzeDocument, Resource: "authoring"},
+		{Operation: ReadGraph, Resource: "sha256:" + strings.Repeat("a", 64)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := AuthorizationRequest{
+		Capability: access.Token, Operation: ReadGraph,
+		Resource: "sha256:" + strings.Repeat("a", 64),
+	}
+	if err := authorizer.Authorize(context.Background(), allowed); err != nil {
+		t.Fatalf("authorize exact deployment capability: %v", err)
+	}
+	for name, request := range map[string]AuthorizationRequest{
+		"another capability": {Capability: other.Token, Operation: allowed.Operation, Resource: allowed.Resource},
+		"another resource":   {Capability: access.Token, Operation: allowed.Operation, Resource: "sha256:" + strings.Repeat("b", 64)},
+		"another operation":  {Capability: access.Token, Operation: ReadSchema, Resource: allowed.Resource},
+		"malformed capability": {Capability: "operator-secret", Operation: allowed.Operation,
+			Resource: allowed.Resource},
+	} {
+		if err := authorizer.Authorize(context.Background(), request); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("%s authorization error = %v, want ErrUnauthorized", name, err)
+		}
+	}
+	if _, err := NewDeploymentAuthorizer("operator-secret", []Grant{{
+		Operation: ReadGraph, Resource: allowed.Resource,
+	}}); err == nil {
+		t.Fatal("deployment authorizer accepted a non-capability secret")
+	}
+	if _, err := NewDeploymentAuthorizer(access.Token, nil); err == nil {
+		t.Fatal("deployment authorizer accepted an empty grant set")
+	}
 }

@@ -9,6 +9,10 @@ import (
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
+	"github.com/bojieli/OpenRealtime/graph/resolve"
+	"github.com/bojieli/OpenRealtime/management"
+	managementserver "github.com/bojieli/OpenRealtime/management/server"
+	"github.com/bojieli/OpenRealtime/plugin"
 )
 
 // GraphBundleConfig composes one exact graph-native session provider with the
@@ -35,6 +39,9 @@ type GraphBundle struct {
 	GraphCatalog graphcatalog.Document
 	ServerBundle *Bundle
 	Readiness    []graphlaunch.ReadinessCheck
+
+	operatorCatalog   *management.Catalog
+	operatorAuthoring *management.AuthoringEngine
 }
 
 // NewGraphBundle prepares the exact graph-native provider and compiles the
@@ -65,9 +72,87 @@ func NewGraphBundle(ctx context.Context, config GraphBundleConfig) (*GraphBundle
 	if err != nil {
 		return nil, fmt.Errorf("compose graph server bundle: %w", err)
 	}
-	return &GraphBundle{
+	result := &GraphBundle{
 		GraphPlan: launched.Plan, Evidence: launched.Evidence, GraphCatalog: catalog,
 		ServerBundle: serverBundle,
 		Readiness:    launched.Readiness,
+	}
+	if err := result.prepareOperatorServices(launched); err != nil {
+		return nil, fmt.Errorf("compose graph server operator services: %w", err)
+	}
+	return result, nil
+}
+
+func (bundle *GraphBundle) prepareOperatorServices(launched graphlaunch.Result) error {
+	if bundle == nil || bundle.GraphPlan == nil || bundle.ServerBundle == nil {
+		return errors.New("incomplete graph bundle")
+	}
+	elements := resolve.NewCatalog()
+	for _, descriptor := range launched.ElementDescriptors() {
+		if err := elements.Register(descriptor); err != nil {
+			return fmt.Errorf("register element descriptor: %w", err)
+		}
+	}
+	plugins := plugin.NewCatalog()
+	for _, registration := range bundle.ServerBundle.registrations {
+		if _, err := plugins.Register(registration.factory.Descriptor()); err != nil {
+			return fmt.Errorf("register server plugin descriptor: %w", err)
+		}
+	}
+	catalog, err := management.NewCatalog(elements, plugins)
+	if err != nil {
+		return err
+	}
+	if err := catalog.RegisterGraph(bundle.GraphPlan.Graph(), bundle.GraphPlan.ValuesSchema()); err != nil {
+		return err
+	}
+	authoring, err := management.NewAuthoringEngine(management.AuthoringOptions{Catalog: elements})
+	if err != nil {
+		return err
+	}
+	bundle.operatorCatalog = catalog
+	bundle.operatorAuthoring = authoring
+	return nil
+}
+
+// OperatorGrants returns the least-privilege process-lifetime authority for
+// this exact graph's immutable catalog and the payload-only authoring API. It
+// intentionally excludes session inspection, source I/O, and reconciliation.
+func (bundle *GraphBundle) OperatorGrants() ([]management.Grant, error) {
+	if bundle == nil || bundle.GraphPlan == nil || bundle.operatorCatalog == nil ||
+		bundle.operatorAuthoring == nil {
+		return nil, errors.New("derive graph server operator grants: incomplete graph bundle")
+	}
+	fingerprint := bundle.GraphPlan.Graph().Fingerprint
+	return []management.Grant{
+		{Operation: management.ReadGraph, Resource: fingerprint},
+		{Operation: management.ReadDescriptor, Resource: "*"},
+		{Operation: management.ReadSchema, Resource: fingerprint},
+		{Operation: management.AnalyzeDocument, Resource: "authoring"},
+		{Operation: management.RenameDocument, Resource: "authoring"},
+		{Operation: management.RemoveDocumentEdge, Resource: "authoring"},
+		{Operation: management.CreateDocumentEdge, Resource: "authoring"},
+		{Operation: management.CompileDocument, Resource: "authoring"},
+		{Operation: management.RenderGraph, Resource: "authoring"},
+	}, nil
+}
+
+// OperatorAPIConfig binds the graph bundle's exact static and in-memory
+// authoring services to a caller-owned authority. Mounting remains explicit so
+// a headless profile that omits operator authority exposes no operator routes.
+func (bundle *GraphBundle) OperatorAPIConfig(
+	authorizer management.Authorizer,
+) (managementserver.OperatorAPIConfig, error) {
+	if bundle == nil || bundle.operatorCatalog == nil || bundle.operatorAuthoring == nil {
+		return managementserver.OperatorAPIConfig{},
+			errors.New("configure graph server operator API: incomplete graph bundle")
+	}
+	if authorizer == nil {
+		return managementserver.OperatorAPIConfig{},
+			errors.New("configure graph server operator API: nil authorizer")
+	}
+	return managementserver.OperatorAPIConfig{
+		Authorizer: authorizer, StaticCatalog: bundle.operatorCatalog,
+		Authoring: bundle.operatorAuthoring,
 	}, nil
 }

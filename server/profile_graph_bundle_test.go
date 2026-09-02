@@ -94,7 +94,8 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 			GatewayArtifact:  gatewayArtifact,
 			Model:            "profiled-graph-e2e", TranscriptionModel: "profiled-perception-e2e",
 			TokenEnvironment: "OPENREALTIME_PROFILE_TEST_TOKEN", ValidateWire: true,
-			InspectionTokenTTLMS: 60_000, MaxAudioFrameBytes: 1 << 20,
+			OperatorCapabilityEnvironment: "OPENREALTIME_PROFILE_TEST_OPERATOR_CAPABILITY",
+			InspectionTokenTTLMS:          60_000, MaxAudioFrameBytes: 1 << 20,
 			VideoLimits: openrealtime.DefaultLimits(),
 		},
 	})
@@ -111,6 +112,12 @@ func TestProfileGraphBundleExactMatchesPluginsBeforeTokenOrResources(t *testing.
 	}
 	if !documentsEqual(profile, parsed) {
 		t.Fatalf("profile YAML round trip drifted:\n%s", yamlProfile)
+	}
+	sameAuthority := profile.Clone()
+	sameAuthority.Server.OperatorCapabilityEnvironment = sameAuthority.Server.TokenEnvironment
+	if _, err := launchprofile.Freeze(sameAuthority); err == nil ||
+		!strings.Contains(err.Error(), "separate environments") {
+		t.Fatalf("shared gateway/operator environment error = %v", err)
 	}
 	for _, mutation := range []struct {
 		name string
