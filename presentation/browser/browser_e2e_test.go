@@ -102,6 +102,8 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	replacementModules := []struct {
 		entry, source, candidate string
 	}{
+		{"slots", "slots.js", "slots-v2.js"},
+		{"session-configuration", "session-configuration.js", "session-configuration-v2.js"},
 		{"effects", "effects-client.js", "effects-client-v2.js"},
 		{"artifact-references", "artifact-references.js", "artifact-references-v2.js"},
 		{"debug-session", "debug-session.js", "debug-session-v2.js"},

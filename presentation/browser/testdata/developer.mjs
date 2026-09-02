@@ -18,6 +18,8 @@ const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
 const EFFECTS_REPLACEMENT_PATH = process.env.EFFECTS_REPLACEMENT_PATH ?? "";
 const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
 const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
+  "slots": "browser-esm:slots-v2.js",
+  "session-configuration": "browser-esm:session-configuration-v2.js",
   "effects": "browser-esm:effects-client-v2.js",
   "artifact-references": "browser-esm:artifact-references-v2.js",
   "debug-session": "browser-esm:debug-session-v2.js",
@@ -34,6 +36,8 @@ const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "authoring-canvas-view": "browser-esm:authoring-canvas-view-v2.js",
 });
 const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
+  "slots": "browser-esm:slots.js",
+  "session-configuration": "browser-esm:session-configuration.js",
   "effects": "browser-esm:effects-client.js",
   "artifact-references": "browser-esm:artifact-references.js",
   "debug-session": "browser-esm:debug-session.js",
