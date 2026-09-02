@@ -1021,6 +1021,10 @@ func TestWebRTCRelayReplacementCancelsActiveRequestAndPreservesRouter(t *testing
 	case <-time.After(2 * time.Second):
 		t.Fatal("retired WebRTC relay left its predecessor request active")
 	}
+	retirementDeadline := time.Now().Add(2 * time.Second)
+	for backendActive.Load() != 0 && time.Now().Before(retirementDeadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if backendActive.Load() != 0 {
 		t.Fatalf("retired WebRTC relay retained %d backend requests", backendActive.Load())
 	}
@@ -1059,7 +1063,8 @@ func TestWebRTCRelayReplacementCancelsActiveRequestAndPreservesRouter(t *testing
 		t.Fatalf("replacement WebRTC relay response = %#v", result)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for mounted.Live().Entries["webrtc"].Workers != 0 && time.Now().Before(deadline) {
+	for (mounted.Live().Entries["webrtc"].Workers != 0 || backendActive.Load() != 0) &&
+		time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	if live := mounted.Live(); live.Entries["webrtc"].Workers != 0 || backendActive.Load() != 0 {

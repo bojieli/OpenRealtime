@@ -293,6 +293,10 @@ func TestManagementRelayReplacementCancelsActiveRequestAndPreservesRouter(t *tes
 	case <-time.After(2 * time.Second):
 		t.Fatal("retired management relay left its predecessor request active")
 	}
+	retirementDeadline := time.Now().Add(2 * time.Second)
+	for backendActive.Load() != 0 && time.Now().Before(retirementDeadline) {
+		time.Sleep(time.Millisecond)
+	}
 	if backendActive.Load() != 0 {
 		t.Fatalf("retired management relay retained %d backend requests", backendActive.Load())
 	}
@@ -332,7 +336,8 @@ func TestManagementRelayReplacementCancelsActiveRequestAndPreservesRouter(t *tes
 		t.Fatalf("replacement management relay response = %#v", result)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for mounted.Live().Entries["management"].Workers != 0 && time.Now().Before(deadline) {
+	for (mounted.Live().Entries["management"].Workers != 0 || backendActive.Load() != 0) &&
+		time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	if live := mounted.Live(); live.Entries["management"].Workers != 0 || backendActive.Load() != 0 {
