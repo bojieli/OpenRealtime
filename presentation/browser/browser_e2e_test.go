@@ -104,6 +104,9 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	}{
 		{"effects", "effects-client.js", "effects-client-v2.js"},
 		{"artifact-references", "artifact-references.js", "artifact-references-v2.js"},
+		{"debug-session", "debug-session.js", "debug-session-v2.js"},
+		{"inspection", "inspection-client.js", "inspection-client-v2.js"},
+		{"management-static", "management-static.js", "management-static-v2.js"},
 		{"view", "text-view.js", "text-view-v2.js"},
 		{"confirmation-view", "confirmation-view.js", "confirmation-view-v2.js"},
 		{"artifact-view", "artifact-view.js", "artifact-view-v2.js"},

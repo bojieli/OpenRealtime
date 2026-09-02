@@ -20,6 +20,9 @@ const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
 const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "effects": "browser-esm:effects-client-v2.js",
   "artifact-references": "browser-esm:artifact-references-v2.js",
+  "debug-session": "browser-esm:debug-session-v2.js",
+  "inspection": "browser-esm:inspection-client-v2.js",
+  "management-static": "browser-esm:management-static-v2.js",
   "view": "browser-esm:text-view-v2.js",
   "confirmation-view": "browser-esm:confirmation-view-v2.js",
   "artifact-view": "browser-esm:artifact-view-v2.js",
@@ -33,6 +36,9 @@ const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
 const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
   "effects": "browser-esm:effects-client.js",
   "artifact-references": "browser-esm:artifact-references.js",
+  "debug-session": "browser-esm:debug-session.js",
+  "inspection": "browser-esm:inspection-client.js",
+  "management-static": "browser-esm:management-static.js",
   "view": "browser-esm:text-view.js",
   "confirmation-view": "browser-esm:confirmation-view.js",
   "artifact-view": "browser-esm:artifact-view.js",
@@ -838,6 +844,13 @@ try {
         '[data-view="authoring-editor"]', '[data-view="authoring-configuration"]',
         '[data-view="authoring-canvas"]',
       ].every((selector) => document.querySelector(selector) !== null))()`));
+    check("replacement inspection client rejoins the retained live session", await waitFor(
+      "replacement inspection client", () => evaluate(
+        `document.querySelector('[data-view=inspection] #availability')?.textContent === "live"`)));
+    await loadStatic();
+    await waitFor("replacement static management client", async () => (await staticStatus()) === "loaded");
+    check("replacement static management client rebinds operator authority",
+      (await staticStatus()) === "loaded");
     await waitFor("replacement effect negotiation", () => evaluate(
       `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated === "true"`));
     check("replacement effect provider renegotiated its signed catalog",
