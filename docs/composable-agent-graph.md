@@ -3517,10 +3517,18 @@ and does not claim statistical parity with the historical 165-attempt sample.
     deactivating media quiesces transport, reducer, session, authoring, effect,
     and resource dependents while the independent operator branch stays
     active; reactivation remounts the desired closure, reconnects, renegotiates
-    effects, and executes without stale session state. Final disposal leaves
-    no mounted plug-in and every row undesired and inactive with zero scoped
-    effects, services, or lifecycle errors. The focused real-Chromium gate is
-    green.
+    effects, and executes without stale session state. In the WebSocket
+    developer profile, management-operator loss now captures the workspace's
+    declared bounded canonical state before teardown, keeps its durable bytes
+    out of the live projection, restores path and source while invalidating
+    derived compile state, and remounts the full operator closure. A generic
+    stateful provider/dependent gate also forces the first restoration mount to
+    fail and proves that the exact private snapshots remain available for a
+    successful retry without advancing the failed lifecycle sequence. Final
+    disposal leaves no mounted plug-in and every row undesired and inactive
+    with zero scoped effects, services, or lifecycle errors. Focused real-
+    Chromium, three race-enabled repetitions, presentation-wide tests, vet,
+    and the low-parallelism full repository gate are green.
   - [x] Replace authenticated stateless browser client implementation bytes
     inside one immutable descriptor and plan. A composed descriptor may admit
     multiple exact content-addressed assets while its manifest selects only
@@ -3642,10 +3650,12 @@ and does not claim statistical parity with the historical 165-attempt sample.
     the private operator authority, and returns a format-v3 twenty-one-row
     receipt with one byte-free workspace transfer whose before/after digests
     match. The exact editor document survives while every desired row remounts.
-    JavaScript adversarial tests, three focused race-enabled Chromium runs, the
-    complete presentation suite, vet, and the low-parallelism full repository
-    gate are green. Realtime transport/reducer and secret operator-authority
-    replacement remain open.
+    The same durable document also survives management-operator deactivation
+    and recovery without exposing suspended bytes, while derived state resets
+    to idle. JavaScript adversarial tests, three focused race-enabled Chromium
+    runs, the complete presentation suite, vet, and the low-parallelism full
+    repository gate are green. Realtime transport/reducer and secret operator-
+    authority implementation replacement remain open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in

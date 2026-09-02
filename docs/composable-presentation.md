@@ -586,10 +586,13 @@ tau2/τ-Voice matrix defined by the parent plan.
   configuration providers reconstruct their DOM/contribution state, the
   replacement inspection/static clients reload exact live/catalog evidence,
   and an exact digest-bound state transfer preserves the authoring document
-  while invalidating derived results. Remaining non-view client providers,
-  deployment-host topology, stateful/capability-specific replacement, server-
-  sealed authority rotation, and signed native lifecycle/leak evidence keep
-  this parent open.
+  while invalidating derived results. Reversible management-operator loss now
+  privately suspends that declared durable document, omits its bytes from live
+  evidence, restores it across the remounted dependency closure, and remains
+  retryable after an intentionally failed stateful remount. Remaining non-view
+  client providers, deployment-host topology, stateful/capability-specific
+  implementation replacement, server-sealed authority rotation, and signed
+  native lifecycle/leak evidence keep this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
