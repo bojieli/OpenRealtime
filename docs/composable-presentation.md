@@ -551,7 +551,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   disposal and permission ceilings. Locked minimal, observer, developer
   WebSocket, and developer WebRTC browser profiles boot in real Chromium, and
   shuffled race gates cover the shared host, reducer, and realtime client.
-  Full effect/artifact replacement and lifecycle leak evidence remain open.
+  The shipped effects and artifact-reference providers now pass an atomic
+  real-Chromium replacement, signed-catalog renegotiation, real artifact
+  execution, and exact two-started/zero-active-socket plus zero-scoped-effect
+  final cleanup. Remaining hosting, relay, capability-specific, and signed
+  native lifecycle/leak evidence keeps this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real

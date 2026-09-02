@@ -2035,19 +2035,21 @@ it has been reviewed, tested, and committed with its evidence):
     now require the exact Gemini plug-in, sandboxed FFmpeg/FFprobe media path,
     fresh create-only review roots, first/last synchronized source and review
     media, external source receipts, per-evaluation receipts, and sealed-bundle
-    completion output. The scenario source and separate 165-evaluation gate
-    retain the corresponding first/last population evidence and external
-    receipts. FDB, FDB v3, FD-Bench, and both tau-Voice conditions use the
-    suite-neutral fresh-prefix source/campaign/aggregate composition; their
-    interrupted-run recovery and completed-aggregate verifier accept no
+    completion output. The scenario source and population-configurable
+    evaluation gate retain the corresponding first/last population evidence
+    and external receipts. FDB, FDB v3, FD-Bench, and both tau-Voice conditions
+    use the suite-neutral fresh-prefix source/campaign/aggregate composition;
+    their interrupted-run recovery and completed-aggregate verifier accept no
     historical bundle, migration input, or baseline registry. The live
     populations remain separately tracked below and are not claimed by this
     wiring checkpoint.
-  - [ ] Run the provisioned live 165-attempt scenario candidate comparison
-    against the accepted historical trail. The newest sealed 11×1 diagnostic
-    passed 8/11 with all eleven attempts and exact-model evaluations
-    credential-free reopened, but remains diagnostic-only and does not close
-    this exact 11×15 population gate.
+  - [ ] Run and report one provisioned live attempt for each of the eleven
+    interaction scenarios against the accepted historical trail. The newest
+    sealed 11×1 diagnostic passed 8/11 with all eleven attempts and exact-model
+    evaluations credential-free reopened, but predates the latest repairs.
+    Per the 2026-09-02 operator direction, the next 11×1 pass runs once; code
+    changes do not trigger another complete scenario rerun unless explicitly
+    requested.
   - [x] Run and independently reopen the live four-case Meeting Assistant
     review. Candidate-21 retained 4/4 reportable graph-native attempts and four
     exact-model evaluations behind the source/evaluation/aggregate receipts
@@ -2341,8 +2343,8 @@ tracker by itself:
     required candidate populations: Meeting Assistant 4/4, Realtime-CU 16/16,
     FDB v1.5 498/498, and FDB v3 100/100. Their 618 exact-model evaluations,
     usable media, create-only receipts, deterministic outcomes, and advisory
-    disagreements remain sealed. The scenario 11×15, active FD-Bench, and both
-    tau-Voice populations keep the universal review gate open.
+    disagreements remain sealed. The one-pass scenario 11×1, active FD-Bench,
+    and both tau-Voice populations keep the universal review gate open.
 - [ ] Publish a case-by-case pass/fail document that places the new totals,
   safety/deadline outcomes, and latency distributions beside the trusted
   historical numbers without inventing unavailable historical detail.
@@ -2357,9 +2359,10 @@ The historical scenario trail includes the accepted 140/165 total at fifteen
 repetitions: 15/15 each for asked-not-to-be-interrupted, recorded-menu,
 requested-silence, acknowledgement, ordinary-question, and count-as-they-go;
 14/15 third-party conversation; 13/15 correction interruption; 11/15 each for
-translation and visual description; and 8/15 waiter. Earlier five-run samples
-moved materially on identical code, so the final new scenario run remains
-eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
+translation and visual description; and 8/15 waiter. Those totals remain useful
+comparison context, but the 2026-09-02 operator-scoped checkpoint is exactly one
+new retained attempt for each of the eleven cases. It is reported descriptively
+and does not claim statistical parity with the historical 165-attempt sample.
 
 - [x] Bind the shared benchmark/session evidence path to exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
@@ -2367,8 +2370,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [x] Wire the scenario CLI to that authenticated graph-native evidence path,
   with exact per-attempt scopes for all eleven cases and explicit refusal of
   unattested execution behavior.
-- [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
-  repetitions per scenario (at least 165 newly retained candidate attempts):
+- [ ] Re-run and compare all eleven interaction scenarios once (eleven newly
+  retained candidate attempts, one per case):
   The exact population, sealed review path, offline verifier, and exact-model
   advisory transport are implemented. The newest sealed 11×1 deterministic
   diagnostic, candidate run 18 at `85b6479`, passed 8/11 with all eleven
@@ -2391,10 +2394,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   validator rejected a finding timestamp beyond the sealed WAV duration; no
   aggregate receipt was published. The current main branch now contains the
   model-independent evidence and continuation repairs below, but they have not
-  yet been exercised by a new immutable live candidate. The 165-attempt run has
-  not started. This box and every case below remain open until the full
-  candidate meets or improves on 140/165 without a significant case, safety,
-  or latency regression.
+  yet been exercised by a new immutable live candidate. The requested one-pass
+  eleven-attempt run has not started. This box remains open until those eleven
+  attempts run once, are retained and reviewed/reopened, and receive an honest
+  case-by-case report. A failure is recorded as a remaining behavior gap; it
+  does not automatically trigger another complete scenario run.
   - [x] Preserve split same-speaker endpoints after the last actually played
     assistant boundary and pass exact typed transcript, quiet, and direct-image
     condition evidence through the activation guard. Commit `0e13305` covers
@@ -3292,6 +3296,19 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     migration, rollback, unchanged-dependent preservation, exact disposal, and
     final zero-ownership checks pass under ten shuffled repetitions, focused
     and package-wide race coverage, full repository tests, and vet.
+  - [x] Replace the shipped effects and artifact-reference browser providers
+    together through their real capability subtree. The developer composition
+    API admits deterministic, content-addressed alternatives only for existing
+    entries and refuses unknown entries, empty sources, invalid names, and
+    primary or alternative entrypoint collisions without widening endpoints,
+    grants, or the selected implementations. In real Chromium an authenticated
+    format-v2 transition changes exactly `effects` and `artifact-references`,
+    quiesces their union dependency closure, renegotiates the signed effect
+    catalog, and executes the replacement path to render and verify the sealed
+    artifact. Final disposal leaves every browser row inactive with zero scoped
+    effects and exactly two started/zero active effect sockets. The focused
+    test passes five shuffled repetitions; the complete browser package, its
+    race gate, full repository tests, JavaScript syntax, and vet are green.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
@@ -3587,22 +3604,22 @@ Each required comparison must follow this protocol:
    actually survived. Do not fabricate matched historical attempts,
    transitions, confidence intervals, or media. An aggregate can never erase a
    severe scenario or safety regression.
-4. Require the complete predeclared candidate population and at least the
-   accepted historical quality target wherever comparable numbers exist. A
+4. Require the complete predeclared candidate population and, for statistically
+   comparable gates, at least the accepted historical quality target. A
    merely non-significant difference is not proof of parity, and remaining
    above 80% is not acceptable when the trusted result was materially higher.
-   Final scenario evaluation uses at least fifteen repetitions per case;
-   five-run samples are diagnostic only because identical binaries have shown
-   material per-scenario variation at that size. Other suites declare their
-   own complete candidate population before the run.
+   The current operator-scoped scenario checkpoint uses one retained attempt
+   per case and reports it descriptively, without a statistical parity claim;
+   it is not automatically repeated after code changes. Other suites declare
+   their own complete candidate population before the run.
 5. Treat any material correctness, interaction, safety, deadline, or latency
    regression as an implementation blocker. Preserve the failed artifact, use
    graph diff plus runtime/trace evidence to locate the changed path, fix it,
-   rerun the affected diagnostic slice, and finally rerun the entire suite.
-   Only the final complete rerun can satisfy the gate.
+   rerun only the smallest affected diagnostic slice when explicitly requested.
+   Do not start another complete eleven-scenario run automatically.
 
-The required final matrix is the eleven interaction scenarios at no fewer than
-fifteen repetitions each, all four Meeting Assistant v1 tasks, all sixteen
+The required final matrix is one retained attempt for each of the eleven
+interaction scenarios, all four Meeting Assistant v1 tasks, all sixteen
 Realtime-CU v1 cases, all 498 FDB v1.5 tasks, all 100 FDB v3 examples, all
 6,147 FD-Bench conversations in all 21 conditions, and all 278 tau2-bench/
 tau-Voice tasks in both control and regular conditions. DynaCU-Bench remains an
@@ -3797,8 +3814,9 @@ checked from foundation work alone; each requires end-to-end release evidence.
     exist for Meeting Assistant (4/4), Realtime-CU (16/16), and FDB v3
     (100/100), with exact live graph evidence, retained media, deterministic
     outcomes, exact-model advisory review, and create-only source/evaluation
-    receipts. The scenario 11×15, FD-Bench, both tau-Voice conditions, and the
-    resulting full non-regression cycle keep the universal parent gate open.
+    receipts. The one-pass scenario 11×1, FD-Bench, both tau-Voice conditions,
+    and the resulting full non-regression cycle keep the universal parent gate
+    open.
 - [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
   - [x] Leaf and bounded multi-entry implementation, configuration, and
@@ -3852,10 +3870,13 @@ checked from foundation work alone; each requires end-to-end release evidence.
     rollback, and removal preserves the stable host router and export; real
     Chromium client-provider removal/recovery proves exact dependent cleanup
     and a zero-ownership close, while the portable native composition proves
-    exact provider-loss/remount and idempotent reverse-order shutdown. An
-    authenticated browser implementations can also swap one or multiple
+    exact provider-loss/remount and idempotent reverse-order shutdown.
+    Authenticated browser implementations can also swap one or multiple
     descriptor-declared content-addressed assets with exact dependency cleanup,
     rollback, payload-free identity evidence, and explicit state migration.
+    The shipped effects and artifact-reference providers additionally pass an
+    atomic real-Chromium swap, signed-catalog renegotiation, real artifact
+    execution, and zero-active-socket final cleanup.
     Host route capabilities likewise have atomic multi-row and stateful
     migration/rollback evidence over the stable router and export. Complete
     topology-changing and remaining capability-specific host/client replacement
