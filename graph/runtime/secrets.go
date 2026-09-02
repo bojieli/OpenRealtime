@@ -77,6 +77,7 @@ func (access *nodeSecretAccess) Resolve(
 		)
 	}
 	access.attempts++
+	attempt := access.attempts
 	access.mu.Unlock()
 
 	value, resolution, err := access.store.Resolve(ctx, reference)
@@ -102,7 +103,7 @@ func (access *nodeSecretAccess) Resolve(
 		Provider:           resolution.Provider,
 		ProviderRuntime:    resolution.ProviderRuntime,
 	}
-	if err := access.lifecycle.Defer("secret:"+slot, func(context.Context) error {
+	if err := access.lifecycle.Defer(fmt.Sprintf("secret:%s:%d", slot, attempt), func(context.Context) error {
 		return value.Close()
 	}); err != nil {
 		_ = value.Close()

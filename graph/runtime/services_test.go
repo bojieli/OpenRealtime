@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/bojieli/OpenRealtime/element"
 )
 
 func TestServiceSetInstallIfAbsentPublishesCanonicalBatch(t *testing.T) {
@@ -183,5 +185,53 @@ func TestServiceSetInstallIfAbsentLinearizesAgainstSet(t *testing.T) {
 		} else if registryFound || codecRevision != 1 {
 			t.Fatalf("iteration %d: failed batch partially published: codec revision=%d registry=(%#v,%d,%t), error=%v", iteration, codecRevision, registry, registryRevision, registryFound, installErr)
 		}
+	}
+}
+
+func TestDeclaredServicesExposeOnlyDescriptorDependencies(t *testing.T) {
+	services := NewServiceSet()
+	if _, err := services.Set("service.required", "required-v1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := services.Set("service.optional", "optional-v1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := services.Set("service.ambient", "must-remain-hidden"); err != nil {
+		t.Fatal(err)
+	}
+
+	view := bindDeclaredServices(services, []element.Dependency{
+		{Name: "service.required"},
+		{Name: "service.optional", Optional: true},
+		{Name: "service.absent", Optional: true},
+	})
+	for name, want := range map[string]string{
+		"service.required": "required-v1",
+		"service.optional": "optional-v1",
+	} {
+		value, revision, found := view.Lookup(name)
+		if !found || value != want || revision != 1 {
+			t.Fatalf("declared lookup %q = (%#v, %d, %t), want (%q, 1, true)",
+				name, value, revision, found, want)
+		}
+	}
+	for _, name := range []string{"service.absent", "service.ambient", ""} {
+		if value, revision, found := view.Lookup(name); found || value != nil || revision != 0 {
+			t.Fatalf("unavailable lookup %q = (%#v, %d, %t)", name, value, revision, found)
+		}
+	}
+
+	if revision, err := services.Set("service.required", "required-v2"); err != nil || revision != 2 {
+		t.Fatalf("replace declared service = revision %d, %v", revision, err)
+	}
+	value, revision, found := view.Lookup("service.required")
+	if !found || value != "required-v2" || revision != 2 {
+		t.Fatalf("live declared lookup = (%#v, %d, %t)", value, revision, found)
+	}
+	if _, removed := services.Remove("service.optional"); !removed {
+		t.Fatal("remove optional service failed")
+	}
+	if value, revision, found := view.Lookup("service.optional"); found || value != nil || revision != 0 {
+		t.Fatalf("removed optional lookup = (%#v, %d, %t)", value, revision, found)
 	}
 }

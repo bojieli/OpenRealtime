@@ -333,6 +333,49 @@ func TestMountRejectsFactoryContractMutationAndMissingDependency(t *testing.T) {
 	}
 }
 
+func TestMountExposesOnlyDeclaredServicesToElement(t *testing.T) {
+	descriptor := passDescriptor([]element.Dependency{
+		{Name: "models.fast"},
+		{Name: "models.optional", Optional: true},
+	})
+	registry := graphruntime.NewRegistry()
+	probe := serviceProbeFactory{
+		passFactory: passFactory{descriptor: descriptor},
+		inspect: func(services element.Services) error {
+			value, revision, found := services.Lookup("models.fast")
+			if !found || value != "fast-provider" || revision != 1 {
+				return errors.New("required declared service was not exposed exactly")
+			}
+			if value, revision, found = services.Lookup("models.optional"); found || value != nil || revision != 0 {
+				return errors.New("absent optional service was reported as available")
+			}
+			if value, revision, found = services.Lookup("models.ambient"); found || value != nil || revision != 0 {
+				return errors.New("undeclared ambient service was exposed")
+			}
+			return nil
+		},
+	}
+	if err := registry.Register("", probe); err != nil {
+		t.Fatal(err)
+	}
+	services := graphruntime.NewServiceSet()
+	if _, err := services.Set("models.fast", "fast-provider"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := services.Set("models.ambient", "ambient-provider"); err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: passGraph(t, descriptor), Registry: registry, Services: services,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMountRejectsUnsafeCausalInspectionBound(t *testing.T) {
 	descriptor := passDescriptor(nil)
 	registry := graphruntime.NewRegistry()
@@ -419,6 +462,105 @@ func TestShutdownReportsElementThatIgnoresCancellation(t *testing.T) {
 	close(release)
 }
 
+func TestLifecycleWorkerFailureCancelsMountedGraph(t *testing.T) {
+	descriptor := passDescriptor(nil)
+	registry := graphruntime.NewRegistry()
+	release := make(chan struct{})
+	workerFailure := errors.New("auxiliary reader failed")
+	if err := registry.Register("", lifecycleWorkerFactory{
+		descriptor: descriptor, release: release, failure: workerFailure,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: passGraph(t, descriptor), Registry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(context.Background()) }()
+	close(release)
+	select {
+	case err := <-done:
+		if !errors.Is(err, workerFailure) ||
+			!strings.Contains(err.Error(), "graph node pass lifecycle failed") {
+			t.Fatalf("graph lifecycle failure = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("lifecycle worker failure did not stop graph")
+	}
+	if live := mounted.Live().Nodes["pass"]; live.State != "failed" ||
+		!strings.Contains(live.Error, workerFailure.Error()) {
+		t.Fatalf("failed node lifecycle evidence = %+v", live)
+	}
+}
+
+func TestMountFailureBoundsAndReportsCurrentLifecycleCleanup(t *testing.T) {
+	descriptor := passDescriptor(nil)
+	registry := graphruntime.NewRegistry()
+	release := make(chan struct{})
+	if err := registry.Register("", failingLifecycleFactory{
+		descriptor: descriptor, release: release,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	_, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+		Graph: passGraph(t, descriptor), Registry: registry,
+		ShutdownTimeout: 10 * time.Millisecond,
+	})
+	close(release)
+	if err == nil || !strings.Contains(err.Error(), "factory failed after worker admission") ||
+		!strings.Contains(err.Error(), "live workers: [stubborn]") {
+		t.Fatalf("bounded mount rollback error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("mount rollback exceeded its bound: %s", elapsed)
+	}
+}
+
+func TestMountAndRunContainElementPanics(t *testing.T) {
+	descriptor := passDescriptor(nil)
+	t.Run("factory", func(t *testing.T) {
+		registry := graphruntime.NewRegistry()
+		if err := registry.Register("", panickingFactory{
+			descriptor: descriptor, phase: "factory",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+			Graph: passGraph(t, descriptor), Registry: registry,
+		}); err == nil || !strings.Contains(err.Error(), "factory panicked: factory panic") {
+			t.Fatalf("contained factory panic = %v", err)
+		}
+	})
+
+	t.Run("runnable", func(t *testing.T) {
+		registry := graphruntime.NewRegistry()
+		if err := registry.Register("", panickingFactory{
+			descriptor: descriptor, phase: "runnable",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
+			Graph: passGraph(t, descriptor), Registry: registry,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = mounted.Run(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "graph node pass stopped: panicked: runnable panic") {
+			t.Fatalf("contained runnable panic = %v", err)
+		}
+		if live := mounted.Live().Nodes["pass"]; live.State != "failed" ||
+			!strings.Contains(live.Error, "runnable panic") {
+			t.Fatalf("runnable panic live state = %+v", live)
+		}
+	})
+}
+
 type passFactory struct {
 	descriptor element.Descriptor
 	disposed   *atomic.Bool
@@ -429,6 +571,27 @@ type permissivePassFactory struct{ passFactory }
 type resolvingPassFactory struct{ passFactory }
 
 type telemetryFactory struct{ descriptor element.Descriptor }
+
+type lifecycleWorkerFactory struct {
+	descriptor element.Descriptor
+	release    <-chan struct{}
+	failure    error
+}
+
+type failingLifecycleFactory struct {
+	descriptor element.Descriptor
+	release    <-chan struct{}
+}
+
+type panickingFactory struct {
+	descriptor element.Descriptor
+	phase      string
+}
+
+type serviceProbeFactory struct {
+	passFactory
+	inspect func(element.Services) error
+}
 
 func (permissivePassFactory) ValidateConfig(json.RawMessage) error { return nil }
 
@@ -458,6 +621,67 @@ func (factory resolvingPassFactory) Mount(
 }
 
 func (factory passFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
+
+func (factory lifecycleWorkerFactory) Descriptor() element.Descriptor {
+	return factory.descriptor.Clone()
+}
+
+func (factory lifecycleWorkerFactory) Mount(
+	_ context.Context, mount element.MountContext,
+) (element.Runnable, error) {
+	if err := mount.Lifecycle.Go("auxiliary-reader", func(context.Context) error {
+		<-factory.release
+		return factory.failure
+	}); err != nil {
+		return nil, err
+	}
+	return element.RunnableFunc(func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	}), nil
+}
+
+func (factory failingLifecycleFactory) Descriptor() element.Descriptor {
+	return factory.descriptor.Clone()
+}
+
+func (factory failingLifecycleFactory) Mount(
+	_ context.Context, mount element.MountContext,
+) (element.Runnable, error) {
+	if err := mount.Lifecycle.Go("stubborn", func(context.Context) error {
+		<-factory.release
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("factory failed after worker admission")
+}
+
+func (factory panickingFactory) Descriptor() element.Descriptor {
+	return factory.descriptor.Clone()
+}
+
+func (factory panickingFactory) Mount(
+	_ context.Context, _ element.MountContext,
+) (element.Runnable, error) {
+	if factory.phase == "factory" {
+		panic("factory panic")
+	}
+	return element.RunnableFunc(func(context.Context) error {
+		panic("runnable panic")
+	}), nil
+}
+
+func (factory serviceProbeFactory) Mount(
+	ctx context.Context, mount element.MountContext,
+) (element.Runnable, error) {
+	if factory.inspect != nil {
+		if err := factory.inspect(mount.Services); err != nil {
+			return nil, err
+		}
+	}
+	return factory.passFactory.Mount(ctx, mount)
+}
 
 func (factory telemetryFactory) Descriptor() element.Descriptor { return factory.descriptor.Clone() }
 

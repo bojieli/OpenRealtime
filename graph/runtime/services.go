@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/bojieli/OpenRealtime/element"
 )
 
 type serviceEntry struct {
@@ -128,4 +130,31 @@ func (services *ServiceSet) Lookup(name string) (any, uint64, bool) {
 	defer services.mu.RUnlock()
 	entry, found := services.services[name]
 	return entry.value, entry.revision, found
+}
+
+// declaredServices is the element-facing dependency view for one immutable
+// descriptor. Mount validation may inspect the complete service set, but an
+// element must not acquire an ambient coeffect that it did not declare.
+// Revisions and provider loss remain live because successful lookups delegate
+// to the underlying mount service set instead of copying values at mount time.
+type declaredServices struct {
+	base    element.Services
+	allowed map[string]struct{}
+}
+
+func bindDeclaredServices(
+	base element.Services, dependencies []element.Dependency,
+) element.Services {
+	allowed := make(map[string]struct{}, len(dependencies))
+	for _, dependency := range dependencies {
+		allowed[dependency.Name] = struct{}{}
+	}
+	return declaredServices{base: base, allowed: allowed}
+}
+
+func (services declaredServices) Lookup(name string) (any, uint64, bool) {
+	if _, allowed := services.allowed[name]; !allowed || services.base == nil {
+		return nil, 0, false
+	}
+	return services.base.Lookup(name)
 }

@@ -110,10 +110,40 @@ type Services interface {
 	Lookup(name string) (value any, revision uint64, found bool)
 }
 
-// Lifecycle owns mount-time registrations and resources. Defer registers a
-// bounded disposer that runs in reverse order on unmount.
+// Lifecycle owns mount-time registrations, caller-blocking work, and
+// background workers. Defer registers a bounded disposer that runs in reverse
+// order on unmount. Do runs work in the caller while making it visible to
+// lifecycle cancellation and join; Go starts the same kind of owned work in a
+// supervised goroutine. Worker names are unique within one mount lifecycle.
 type Lifecycle interface {
 	Defer(name string, dispose func(context.Context) error) error
+	Do(name string, work func(context.Context) error) error
+	Go(name string, worker func(context.Context) error) error
+}
+
+// StateSnapshotter returns one bounded strict-JSON object representing the
+// complete restorable state of an element instance. Snapshot payloads remain
+// private to graph reconciliation and are never inspection-plane evidence.
+type StateSnapshotter func(context.Context) (json.RawMessage, error)
+
+// StateResumer reopens mutation admission after a state capture is refused
+// before lifecycle teardown. It must be idempotent and honor its context.
+type StateResumer func(context.Context) error
+
+// StateQuiescer closes mutation admission and drains already-admitted
+// mutations before a snapshot. A successful reconciliation retires the
+// quiesced lifecycle; refusal invokes the returned resumer.
+type StateQuiescer func(context.Context) (StateResumer, error)
+
+// StateLifecycle is present only when the immutable descriptor declares a
+// StateSchema. Restored may be consumed once while mounting. Snapshot and
+// Quiesce register at most one callback each before Factory.Mount returns.
+// Existing stateful factories may omit registration on an ordinary initial
+// mount, but such an instance is ineligible for state-preserving replacement.
+type StateLifecycle interface {
+	Restored() (snapshot json.RawMessage, available bool, err error)
+	Quiesce(StateQuiescer) error
+	Snapshot(StateSnapshotter) error
 }
 
 // ResolutionReporter publishes immutable live runtime/provider selection to
@@ -148,6 +178,7 @@ type MountContext struct {
 	Ports      Ports
 	Services   Services
 	Lifecycle  Lifecycle
+	State      StateLifecycle
 	Resolution ResolutionReporter
 }
 

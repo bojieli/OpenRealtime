@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -75,9 +76,14 @@ type InspectionConfig struct {
 }
 
 type mountedNode struct {
-	id       string
-	runnable element.Runnable
-	scope    *lifecycleScope
+	id             string
+	identity       element.Identity
+	implementation string
+	runnable       element.Runnable
+	scope          *lifecycleScope
+	stateSchema    string
+	snapshot       element.StateSnapshotter
+	quiesce        element.StateQuiescer
 }
 
 type bindingBuilder struct {
@@ -96,6 +102,10 @@ type Mounted struct {
 	egress  map[string]*inputPort
 	changed *condition
 	timeout time.Duration
+	// lifecycleFailures carries at most one supervised-worker failure per node.
+	// It is provisioned before any factory mounts so work started during Mount
+	// cannot fail outside the graph supervisor.
+	lifecycleFailures chan nodeResult
 
 	mu          sync.Mutex
 	started     bool
@@ -122,6 +132,14 @@ type Mounted struct {
 // channel, resolves required services, and mounts elements without starting
 // their long-lived run loops.
 func Mount(ctx context.Context, config Config) (*Mounted, error) {
+	return mount(ctx, config, nil)
+}
+
+// mount is also the private restoration boundary used by graph reconciliation.
+// Public callers cannot inject unauthenticated state through Config.
+func mount(
+	ctx context.Context, config Config, restoredSource map[string]json.RawMessage,
+) (*Mounted, error) {
 	if ctx == nil {
 		return nil, errors.New("mount graph: nil context")
 	}
@@ -216,6 +234,10 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	if err := validateValues(config.Graph, config.Values); err != nil {
 		return nil, err
 	}
+	restoredState, err := validateRestoredState(config.Graph, restoredSource)
+	if err != nil {
+		return nil, err
+	}
 
 	type factoryResolution struct {
 		factory    element.Factory
@@ -303,7 +325,8 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		graph: config.Graph, queues: make(map[string]*queue),
 		ingress: make(map[string]*outputPort), egress: make(map[string]*inputPort),
 		changed: newCondition(), timeout: config.ShutdownTimeout,
-		done: make(chan struct{}), nodeLive: make(map[string]inspect.NodeLive),
+		lifecycleFailures: make(chan nodeResult, len(config.Graph.Nodes)),
+		done:              make(chan struct{}), nodeLive: make(map[string]inspect.NodeLive),
 		flows: newFlowTracker(
 			config.Inspection.MaxFlows, config.Inspection.MaxEdgesPerFlow,
 			config.Inspection.MaxCorrelationBytes,
@@ -345,16 +368,20 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 			queue.close()
 		}
 	}
-	abortMount := func() {
-		cleanupMountedScopes(mounted.nodes, config.ShutdownTimeout)
+	abortMount := func(current *lifecycleScope) error {
+		nodes := mounted.nodes
+		if current != nil {
+			nodes = append(slices.Clone(nodes), mountedNode{scope: current})
+		}
+		cleanupErr := cleanupMountedScopes(nodes, config.ShutdownTimeout)
 		cleanupChannels()
 		mounted.recorder.discard()
+		return cleanupErr
 	}
 	for _, edge := range config.Graph.Edges {
 		channel, err := newQueue(edge.ID, edge.Type, edge.Delivery, edge.Depth, mounted.changed, config.Now, trace)
 		if err != nil {
-			abortMount()
-			return nil, err
+			return nil, errors.Join(err, abortMount(nil))
 		}
 		mounted.queues[edge.ID] = channel
 		bindQueue(builders[edge.From.Node].outputs, edge.From.Port, edge.From.Lane, channel)
@@ -366,8 +393,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		identity := ir.BoundaryQueuePrefix + boundary.Name
 		channel, err := newQueue(identity, boundary.Type, ir.Lossless, depth, mounted.changed, config.Now, trace)
 		if err != nil {
-			abortMount()
-			return nil, err
+			return nil, errors.Join(err, abortMount(nil))
 		}
 		mounted.queues[identity] = channel
 		if boundary.Direction == ir.InputBoundary {
@@ -386,10 +412,16 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 	for _, node := range config.Graph.Nodes {
 		ports, err := buildPortSet(node, builders[node.ID], mounted.changed, newNodeTelemetry(mounted, node))
 		if err != nil {
-			abortMount()
-			return nil, fmt.Errorf("mount graph node %s ports: %w", node.ID, err)
+			primary := fmt.Errorf("mount graph node %s ports: %w", node.ID, err)
+			return nil, errors.Join(primary, abortMount(nil))
 		}
-		scope := &lifecycleScope{instance: node.ID}
+		nodeID := node.ID
+		scope := newLifecycleScope(ctx, nodeID, func(failure error) {
+			// lifecycleScope invokes this callback once. The channel has one slot
+			// per node and exists before the first mount, so this send cannot make
+			// element cleanup depend on the Run loop already being active.
+			mounted.lifecycleFailures <- nodeResult{id: nodeID, err: failure}
+		})
 		nodeServices := element.Services(services)
 		if bindings := config.secretBindings[node.ID]; len(bindings) != 0 {
 			nodeServices = nodeMountServices{
@@ -400,6 +432,7 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 				},
 			}
 		}
+		nodeServices = bindDeclaredServices(nodeServices, node.Dependencies)
 		value := cloneRaw(config.Values[node.ID])
 		if len(value) == 0 {
 			value = json.RawMessage("{}")
@@ -416,25 +449,48 @@ func Mount(ctx context.Context, config Config) (*Mounted, error) {
 		mounted.nodeLive[node.ID] = inspect.NodeLive{
 			State: "mounted", Resolution: liveResolution,
 		}
-		runnable, err := resolution.factory.Mount(ctx, element.MountContext{
+		var state *stateLifecycle
+		if node.StateSchema != "" {
+			state = newStateLifecycle(node.ID, node.StateSchema, restoredState[node.ID])
+		}
+		runnable, err := mountElementFactory(resolution.factory, scope.ctx, element.MountContext{
 			InstanceID: node.ID, Identity: node.Element, Config: value,
-			Ports: ports, Services: nodeServices, Lifecycle: scope,
+			Ports: ports, Services: nodeServices, Lifecycle: scope, State: state,
 			Resolution: nodeResolutionReporter{mounted: mounted, node: node.ID},
 		})
 		if err != nil {
-			_ = scope.close(context.Background())
-			abortMount()
-			return nil, fmt.Errorf("mount graph node %s: %w", node.ID, err)
+			primary := fmt.Errorf("mount graph node %s: %w", node.ID, err)
+			return nil, errors.Join(primary, abortMount(scope))
 		}
 		if runnable == nil {
-			_ = scope.close(context.Background())
-			abortMount()
-			return nil, fmt.Errorf("mount graph node %s returned a nil runnable", node.ID)
+			primary := fmt.Errorf("mount graph node %s returned a nil runnable", node.ID)
+			return nil, errors.Join(primary, abortMount(scope))
 		}
-		mounted.nodes = append(mounted.nodes, mountedNode{id: node.ID, runnable: runnable, scope: scope})
+		snapshot, quiesce, stateErr := state.seal()
+		if stateErr != nil {
+			primary := fmt.Errorf("mount graph node %s state: %w", node.ID, stateErr)
+			return nil, errors.Join(primary, abortMount(scope))
+		}
+		mounted.nodes = append(mounted.nodes, mountedNode{
+			id: node.ID, identity: node.Element, implementation: node.Implementation,
+			runnable: runnable, scope: scope, stateSchema: node.StateSchema,
+			snapshot: snapshot, quiesce: quiesce,
+		})
 	}
 	mounted.recorder.start(mounted)
 	return mounted, nil
+}
+
+func mountElementFactory(
+	factory element.Factory, ctx context.Context, mount element.MountContext,
+) (runnable element.Runnable, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("factory panicked: %v", recovered)
+			runnable = nil
+		}
+	}()
+	return factory.Mount(ctx, mount)
 }
 
 func (mounted *Mounted) Graph() ir.Graph { return mounted.graph }
@@ -614,12 +670,51 @@ func validateValues(graph ir.Graph, values map[string]json.RawMessage) error {
 	return nil
 }
 
+func validateRestoredState(
+	graph ir.Graph, source map[string]json.RawMessage,
+) (map[string]json.RawMessage, error) {
+	if len(source) == 0 {
+		return nil, nil
+	}
+	nodes := make(map[string]ir.Node, len(graph.Nodes))
+	for _, node := range graph.Nodes {
+		nodes[node.ID] = node
+	}
+	keys := make([]string, 0, len(source))
+	for node := range source {
+		keys = append(keys, node)
+	}
+	sort.Strings(keys)
+	result := make(map[string]json.RawMessage, len(source))
+	for _, nodeID := range keys {
+		node, found := nodes[nodeID]
+		if !found {
+			return nil, fmt.Errorf("mount graph restored state refers to unknown node %q", nodeID)
+		}
+		if node.StateSchema == "" {
+			return nil, fmt.Errorf("mount graph restored state refers to stateless node %q", nodeID)
+		}
+		canonical, _, err := canonicalStateSnapshot(source[nodeID])
+		if err != nil {
+			return nil, fmt.Errorf(
+				"mount graph node %s restored state for schema %s: %w",
+				nodeID, node.StateSchema, err,
+			)
+		}
+		result[nodeID] = canonical
+	}
+	return result, nil
+}
+
 func cloneRaw(value json.RawMessage) json.RawMessage { return append(json.RawMessage(nil), value...) }
 
-func cleanupMountedScopes(nodes []mountedNode, timeout time.Duration) {
+func cleanupMountedScopes(nodes []mountedNode, timeout time.Duration) (err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	for index := len(nodes) - 1; index >= 0; index-- {
-		_ = nodes[index].scope.close(ctx)
+		if closeErr := nodes[index].scope.close(ctx); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 	}
+	return err
 }

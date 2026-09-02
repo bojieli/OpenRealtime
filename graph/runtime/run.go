@@ -35,11 +35,12 @@ func (mounted *Mounted) Run(parent context.Context) error {
 
 	results := make(chan nodeResult, len(mounted.nodes))
 	active := make(map[string]struct{}, len(mounted.nodes))
+	lifecycleFailed := make(map[string]struct{})
 	for _, node := range mounted.nodes {
 		active[node.id] = struct{}{}
 		mounted.setNodeState(node.id, inspectState("running", ""))
 		go func(node mountedNode) {
-			err := node.runnable.Run(ctx)
+			err := runMountedNode(node.runnable, ctx)
 			results <- nodeResult{id: node.id, err: err}
 		}(node)
 	}
@@ -59,16 +60,26 @@ func (mounted *Mounted) Run(parent context.Context) error {
 	}
 	for remaining > 0 {
 		select {
+		case result := <-mounted.lifecycleFailures:
+			failure := fmt.Errorf("graph node %s lifecycle failed: %w", result.id, result.err)
+			primary = errors.Join(primary, failure)
+			lifecycleFailed[result.id] = struct{}{}
+			mounted.setNodeState(result.id, inspectState("failed", result.err.Error()))
+			beginCancellation(failure)
 		case result := <-results:
 			if _, found := active[result.id]; !found {
 				continue
 			}
 			delete(active, result.id)
 			remaining--
+			_, ownedWorkFailed := lifecycleFailed[result.id]
 			if result.err != nil && shutdownDeadline == nil && ctx.Err() == nil {
 				primary = fmt.Errorf("graph node %s stopped: %w", result.id, result.err)
 				mounted.setNodeState(result.id, inspectState("failed", result.err.Error()))
 				beginCancellation(primary)
+			} else if ownedWorkFailed {
+				// The lifecycle failure is the node's terminal state. Its main
+				// Runnable returning after sibling cancellation must not erase it.
 			} else if result.err != nil {
 				mounted.setNodeState(result.id, inspectState("stopped", result.err.Error()))
 			} else {
@@ -112,6 +123,15 @@ func (mounted *Mounted) Run(parent context.Context) error {
 	_ = mounted.recorder.finish(mounted)
 	close(mounted.done)
 	return primary
+}
+
+func runMountedNode(runnable interface{ Run(context.Context) error }, ctx context.Context) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("panicked: %v", recovered)
+		}
+	}()
+	return runnable.Run(ctx)
 }
 
 // Close cancels a running graph or disposes a graph that was mounted but never
