@@ -566,8 +566,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   exact closure retirement and target/authorization rebinding. The stateless
   host router passes activation rollback and complete route-and-listener closure
   replacement on one real address, with exact retirement and inert predecessor
-  handlers. Remaining deployment-host topology, stateful/capability-specific,
-  and signed native lifecycle/leak evidence keeps this parent open.
+  handlers. The fail-closed effect-authority provider likewise replaces through
+  its active effects-socket closure with a stable router/export, exact two-row
+  retirement, and a fresh deny-by-default socket. Remaining deployment-host
+  topology, stateful/capability-specific, server-sealed authority rotation, and
+  signed native lifecycle/leak evidence keeps this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real

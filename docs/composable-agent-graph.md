@@ -3423,6 +3423,16 @@ and does not claim statistical parity with the historical 165-attempt sample.
     realm ownership. Twenty focused runs, five focused race runs, package and
     package-race tests, and vet are green. Stateful stores/effects and
     topology-changing host replacement remain open.
+  - [x] Reconcile the shipped fail-closed effect-authority provider through its
+    real effects-service dependency closure. Effect-free candidate pre-mount
+    publishes no authority. Replacing the provider implementation closes the
+    active predecessor WebSocket, retires both authority and effects scopes
+    with zero workers, effects, children, and services, preserves the router
+    and HTTP export, advances the effects export revision, and serves a fresh
+    socket that still denies an unsigned call. Final close reaches zero realm
+    ownership. Twenty focused runs, five focused race runs, package,
+    package-race, and vet gates are green. Stateful effect/store migration and
+    server-sealed authority rotation remain open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
