@@ -222,6 +222,26 @@ if (availability.textContent !== "live" || deltaAvailability.dataset.state !== "
 }
 delta = structuredClone(baseDelta);
 
+delta.baseline.sequence = 3;
+await refresh.dispatch("click");
+if (availability.textContent !== "live" || deltaAvailability.dataset.state !== "invalid") {
+  throw new Error("inspection view accepted a delta baseline beyond its next cursor");
+}
+delta = structuredClone(baseDelta);
+delta.events = [{ sequence: 2 }, { sequence: 2 }];
+await refresh.dispatch("click");
+if (availability.textContent !== "live" || deltaAvailability.dataset.state !== "invalid") {
+  throw new Error("inspection view accepted a regressing delta event sequence");
+}
+delta = structuredClone(baseDelta);
+delta.next = 258;
+delta.events = Array.from({ length: 257 }, (_entry, index) => ({ sequence: index + 2 }));
+await refresh.dispatch("click");
+if (availability.textContent !== "live" || deltaAvailability.dataset.state !== "invalid") {
+  throw new Error("inspection view accepted more events than it requested");
+}
+delta = structuredClone(baseDelta);
+
 model.fingerprint = `sha256:${"c".repeat(64)}`;
 await refresh.dispatch("click");
 if (availability.textContent !== "unavailable" || contract.dataset.state !== "invalid" ||
