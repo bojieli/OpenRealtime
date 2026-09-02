@@ -315,11 +315,11 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 	}
 	transportPermission := plugin.Permission{
 		Kind: "network.connect", Resource: "host-management",
-		Operations: []string{"static", "authoring", "source-read", "publication"},
+		Operations: []string{"static", "authoring", "reconciliation", "source-read", "publication"},
 	}
 	transportGrant := transportPermission
 	if !sourceAccess {
-		transportGrant.Operations = []string{"static", "authoring"}
+		transportGrant.Operations = []string{"static", "authoring", "reconciliation"}
 	}
 	definitions := []moduleDefinition{
 		{
@@ -425,6 +425,8 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 func developerManagementEndpoints() []presentation.ManifestEndpoint {
 	return []presentation.ManifestEndpoint{
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
+			Protocol: managementProtocol},
+		{Name: "management.reconciliation", Method: "POST", Path: "/client/v1/management/reconciliations",
 			Protocol: managementProtocol},
 		{Name: "management.sessions", Method: "GET", Path: "/client/v1/management/sessions",
 			Protocol: managementProtocol},
@@ -640,6 +642,8 @@ func developerBundleEndpoints(catalogDigest string) []presentation.ManifestEndpo
 			Protocol: clientEffectsProtocol, CatalogDigest: catalogDigest},
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
 			Protocol: managementProtocol},
+		{Name: "management.reconciliation", Method: "POST", Path: "/client/v1/management/reconciliations",
+			Protocol: managementProtocol},
 		{Name: "management.sessions", Method: "GET", Path: "/client/v1/management/sessions",
 			Protocol: managementProtocol},
 		{Name: "management.static", Method: "GET", Path: "/client/v1/management",
@@ -769,6 +773,8 @@ func buildObserverDeveloperWebRTCBundle() (*Bundle, error) {
 	definitions = append(definitions, developerManagementDefinitions(false)...)
 	return buildBundle("openrealtime.browser.developer-observer-webrtc", definitions, []presentation.ManifestEndpoint{
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
+			Protocol: managementProtocol},
+		{Name: "management.reconciliation", Method: "POST", Path: "/client/v1/management/reconciliations",
 			Protocol: managementProtocol},
 		{Name: "management.sessions", Method: "GET", Path: "/client/v1/management/sessions",
 			Protocol: managementProtocol},
@@ -950,6 +956,8 @@ func buildDeveloperWebRTCBundle(catalogDigest string) (*Bundle, error) {
 		{Name: "effects.local", Method: "GET", Path: "/client/v1/effects",
 			Protocol: clientEffectsProtocol, CatalogDigest: catalogDigest},
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
+			Protocol: managementProtocol},
+		{Name: "management.reconciliation", Method: "POST", Path: "/client/v1/management/reconciliations",
 			Protocol: managementProtocol},
 		{Name: "management.sessions", Method: "GET", Path: "/client/v1/management/sessions",
 			Protocol: managementProtocol},

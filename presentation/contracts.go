@@ -138,8 +138,8 @@ var (
 	)
 	ClientManagementTransportContract = semanticContractRevision(
 		"presentation.client.management_transport",
-		3,
-		"openrealtime/presentation/client/management-transport/v3:whitelisted-static-authoring-edge-removal-creation-header-capability-strict-bounded-no-redirect",
+		4,
+		"openrealtime/presentation/client/management-transport/v4:whitelisted-static-authoring-reconciliation-edge-removal-creation-header-capability-strict-bounded-no-redirect",
 	)
 	ClientManagementStaticContract = semanticContract(
 		"presentation.client.management_static",

@@ -5,6 +5,7 @@ const OPERATIONS = new Set([
   "authoring.analyze", "authoring.rename", "authoring.edge.remove", "authoring.edge.create",
   "authoring.compile", "authoring.render",
   "authoring.source.read", "authoring.source.create", "authoring.source.update",
+  "reconciliation.apply",
 ]);
 
 function canonicalCapability(value) {

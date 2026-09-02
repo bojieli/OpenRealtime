@@ -18,6 +18,8 @@ const manifest = Object.freeze({ endpoints: [
     protocol: "openrealtime.management.v1" },
   { name: "management.authoring", method: "POST", path: "/client/v1/management/authoring",
     protocol: "openrealtime.management.v1" },
+  { name: "management.reconciliation", method: "POST", path: "/client/v1/management/reconciliations",
+    protocol: "openrealtime.management.v1" },
 ] });
 const services = new Map([
   ["presentation.client.strict_json", codec],
@@ -54,7 +56,7 @@ const operatorMount = await mount(operatorPath, [{
 }]);
 await mount(transportPath, [{
   kind: "network.connect", resource: "host-management",
-  operations: ["static", "authoring", "source-read", "publication"],
+  operations: ["static", "authoring", "reconciliation", "source-read", "publication"],
 }]);
 await mount(staticPath);
 await mount(authoringPath);
@@ -63,13 +65,14 @@ await mount(publicationPath);
 await mount(workspacePath);
 
 const control = services.get("presentation.client.management_operator_control");
+const transport = services.get("presentation.client.management_transport");
 const catalog = services.get("presentation.client.management_static");
 const authoring = services.get("presentation.client.management_authoring");
 const editing = services.get("presentation.client.management_editing");
 const reading = services.get("presentation.client.source_reading");
 const publication = services.get("presentation.client.source_publication");
 const workspace = services.get("presentation.client.authoring_workspace");
-if (!control || !catalog || !authoring || !editing || !reading || !publication || !workspace ||
+if (!control || !transport || !catalog || !authoring || !editing || !reading || !publication || !workspace ||
     !workspace.canRead() || !workspace.canPublish()) {
   throw new Error("management services were not published");
 }
@@ -191,6 +194,60 @@ const graph = {
     ports: [{ name: "out", direction: "output", type: { kind: "event", element: { kind: "named", name: "test.Value" } },
       cardinality: "one", default_depth: 1 }] }],
 };
+
+const reconciliation = {
+  session_id: "sess-browser-reconcile", expected_fingerprint: graphDigest, candidate: graph,
+  values_fingerprint: `sha256:${"e".repeat(64)}`,
+  deployment_fingerprint: `sha256:${"f".repeat(64)}`,
+  state_migration: "browser-state-v1",
+};
+const reconciliationIdentity = `reconciliation:${reconciliation.session_id}:` +
+  `${reconciliation.expected_fingerprint}:${reconciliation.candidate.fingerprint}`;
+const reconciliationReceipt = {
+  format_version: 1, session_id: reconciliation.session_id,
+  previous_fingerprint: reconciliation.expected_fingerprint,
+  candidate_fingerprint: reconciliation.candidate.fingerprint,
+  state: "applied", safe_point_sequence: 29,
+};
+handlers.push((url, options) => {
+  const body = JSON.parse(options.body);
+  if (url !== "http://127.0.0.1:17777/client/v1/management/reconciliations" ||
+      options.method !== "POST" || body.session_id !== reconciliation.session_id ||
+      body.candidate.fingerprint !== graphDigest) {
+    throw new Error("reconciliation transport changed the exact request");
+  }
+  return response(reconciliationReceipt, reconciliationIdentity);
+});
+const reconciliationResult = await transport.reconcile(reconciliation);
+const reconciliationFetch = requests.at(-1);
+if (reconciliationResult.value.safe_point_sequence !== 29 ||
+    reconciliationResult.identity !== reconciliationIdentity ||
+    reconciliationFetch.options.headers["OpenRealtime-Management-Token"] !== operatorOne ||
+    reconciliationFetch.url.includes(operatorOne) ||
+    reconciliationFetch.options.body.includes(operatorOne) ||
+    reconciliationFetch.options.body.includes("mgmt_session_must_not_cross")) {
+  throw new Error("reconciliation transport crossed an identity or authority boundary");
+}
+handlers.push(() => response(reconciliationReceipt,
+  `reconciliation:sess-other:${graphDigest}:${graphDigest}`));
+await transport.reconcile(reconciliation).then(
+  () => { throw new Error("reconciliation with forged host evidence was accepted"); },
+  (error) => { if (!String(error).includes("identity")) throw error; },
+);
+const forgedReconciliationReceipt = { ...reconciliationReceipt, state: "applied\npayload" };
+handlers.push(() => response(forgedReconciliationReceipt, reconciliationIdentity));
+await transport.reconcile(reconciliation).then(
+  () => { throw new Error("payload-shaped reconciliation state was accepted"); },
+  (error) => { if (!String(error).includes("identity")) throw error; },
+);
+const beforeInvalidReconciliation = requests.length;
+await transport.reconcile({ ...reconciliation, state_migration: "payload\ntext" }).then(
+  () => { throw new Error("invalid reconciliation request was accepted"); },
+  () => {},
+);
+if (requests.length !== beforeInvalidReconciliation) {
+  throw new Error("invalid reconciliation request reached the network");
+}
 
 handlers.push(() => response(graph, `graph:${graphDigest}`));
 const exactGraph = await catalog.graph(graphDigest);

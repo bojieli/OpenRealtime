@@ -671,7 +671,8 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 		!reflect.DeepEqual(grants["inspection"], []string{"http"}) ||
 		!reflect.DeepEqual(grants["effects"], []string{"websocket"}) ||
 		!reflect.DeepEqual(grants["management-operator"], []string{"header"}) ||
-		!reflect.DeepEqual(grants["management-transport"], []string{"authoring", "publication", "source-read", "static"}) {
+		!reflect.DeepEqual(grants["management-transport"],
+			[]string{"authoring", "publication", "reconciliation", "source-read", "static"}) {
 		t.Fatalf("WebRTC developer client grants = %#v", grants)
 	}
 	var endpoints []string
@@ -681,6 +682,7 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 	if !reflect.DeepEqual(endpoints, []string{
 		"effects.local GET /client/v1/effects",
 		"management.authoring POST /client/v1/management/authoring",
+		"management.reconciliation POST /client/v1/management/reconciliations",
 		"management.sessions GET /client/v1/management/sessions",
 		"management.static GET /client/v1/management",
 		"realtime.webrtc POST /client/v1/realtime/calls",
