@@ -3583,9 +3583,9 @@ and does not claim statistical parity with the historical 165-attempt sample.
     The text, confirmation, artifact, inspection, trace, management-operator,
     authoring-editor, configuration, and canvas views each move from their exact
     shipped content-addressed module to an admitted candidate in the same
-    eleven-row atomic receipt as the effects and artifact-reference providers.
-    The remounted views rebind
-    retained realtime, inspection, effect, operator, and workspace services;
+    fourteen-row atomic receipt as the effects and artifact-reference providers
+    plus three stateless non-view clients. The remounted views rebind retained
+    realtime, inspection, effect, operator, and workspace services;
     all DOM surfaces remain present, the signed effect catalog renegotiates,
     the replacement executes a sealed artifact, and final disposal retains no
     client ownership or effect socket. Three focused race-enabled real-Chromium
@@ -3603,6 +3603,18 @@ and does not claim statistical parity with the historical 165-attempt sample.
     and vet are green. Every shipped browser view consumer now has selected-
     implementation replacement evidence; remaining non-view providers stay
     open.
+  - [x] Replace the shipped debug-session contributor, scoped inspection
+    client, and immutable management-static client as three additional selected
+    rows in the same authenticated real-browser transition. The inspection
+    client reacquires only the reducer's current narrow session capability and
+    reloads exact live/static/delta evidence; the static client rebinds the
+    retained operator lease and reloads the exact graph catalog; the debug
+    contributor republishes its bounded session configuration. All fourteen
+    selected implementation and runtime-artifact identities are receipt-bound,
+    unrelated services stay active, and no capability enters the receipt,
+    manifest, DOM, logs, or live projection. Three focused race-enabled
+    Chromium runs, the complete browser suite, and vet are green. Stateful
+    workspace/transport providers remain open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
