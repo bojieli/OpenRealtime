@@ -2,6 +2,7 @@ package campaign
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,6 +16,85 @@ import (
 )
 
 const maximumAggregateFileBytes = int64(maximumAggregateJSON)
+
+func aggregatePublicationLeasePath(receiptPath string) string {
+	return receiptPath + ".publication.lock"
+}
+
+func acquireAggregatePublicationLease(ctx context.Context, receiptPath string) (*os.File, error) {
+	if ctx == nil {
+		return nil, errors.New("acquire candidate review aggregate publication lease: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	path := aggregatePublicationLeasePath(receiptPath)
+	parentPath, name := filepath.Dir(path), filepath.Base(path)
+	parent, parentIdentity, err := openAggregateParent(parentPath)
+	if err != nil {
+		return nil, err
+	}
+	defer parent.Close()
+	info, err := parent.Lstat(name)
+	if os.IsNotExist(err) {
+		created, createErr := parent.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
+		if createErr != nil {
+			return nil, errors.New("create candidate review aggregate publication lease marker")
+		}
+		if syncErr := created.Sync(); syncErr != nil {
+			_ = created.Close()
+			return nil, errors.New("sync candidate review aggregate publication lease marker")
+		}
+		if closeErr := created.Close(); closeErr != nil {
+			return nil, errors.New("close candidate review aggregate publication lease marker")
+		}
+		if syncErr := syncAggregateDirectory(parent, "."); syncErr != nil {
+			return nil, syncErr
+		}
+		info, err = parent.Lstat(name)
+	}
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() ||
+		info.Mode().Perm()&0o077 != 0 {
+		return nil, errors.New("candidate review aggregate publication lease marker is invalid")
+	}
+	lease, err := parent.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return nil, errors.New("open candidate review aggregate publication lease marker")
+	}
+	opened, statErr := lease.Stat()
+	if statErr != nil || !os.SameFile(info, opened) || fileidentity.RequireSingleLink(lease) != nil {
+		_ = lease.Close()
+		return nil, errors.New("candidate review aggregate publication lease marker changed while opening")
+	}
+	if err := lockAggregatePublicationFile(lease); err != nil {
+		_ = lease.Close()
+		return nil, errors.New("candidate review aggregate publication is already active")
+	}
+	if err := ctx.Err(); err != nil {
+		_ = lease.Close()
+		return nil, err
+	}
+	after, statErr := parent.Lstat(name)
+	visibleParent, parentErr := os.Lstat(parentPath)
+	if statErr != nil || after.Mode()&os.ModeSymlink != 0 || !after.Mode().IsRegular() ||
+		!os.SameFile(opened, after) || fileidentity.RequireSingleLink(lease) != nil ||
+		parentErr != nil || visibleParent.Mode()&os.ModeSymlink != 0 || !visibleParent.IsDir() ||
+		!os.SameFile(parentIdentity, visibleParent) {
+		_ = lease.Close()
+		return nil, errors.New("candidate review aggregate publication lease changed after locking")
+	}
+	return lease, nil
+}
+
+func closeAggregatePublicationLease(lease *os.File) error {
+	if lease == nil {
+		return nil
+	}
+	if err := lease.Close(); err != nil {
+		return errors.New("close candidate review aggregate publication lease")
+	}
+	return nil
+}
 
 func aggregateStageDirectory(final string) string {
 	return filepath.Join(

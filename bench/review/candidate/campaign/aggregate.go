@@ -45,6 +45,20 @@ func publishAggregate(
 	if err != nil {
 		return AggregateBundle{}, err
 	}
+	lease, err := acquireAggregatePublicationLease(ctx, configuration.ReceiptPath)
+	if err != nil {
+		return AggregateBundle{}, err
+	}
+	bundle, publishErr := publishAggregateLeased(ctx, configuration, result, operations)
+	return bundle, errors.Join(publishErr, closeAggregatePublicationLease(lease))
+}
+
+func publishAggregateLeased(
+	ctx context.Context,
+	configuration AggregateOptions,
+	result Result,
+	operations aggregatePublishOperations,
+) (AggregateBundle, error) {
 	receiptPresent, err := aggregateReceiptExists(configuration.ReceiptPath)
 	if err != nil {
 		return AggregateBundle{}, err
@@ -533,7 +547,8 @@ func validateAggregateResultPaths(options AggregateOptions, result Result) error
 	}
 	paths := []string{
 		options.Directory, options.ReceiptPath, options.SourceReceiptPath,
-		options.QuarantineDirectory, result.Source.Directory,
+		options.QuarantineDirectory, aggregatePublicationLeasePath(options.ReceiptPath),
+		result.Source.Directory,
 	}
 	for _, evaluation := range result.Evaluations {
 		for _, item := range []struct{ label, path string }{
@@ -583,12 +598,16 @@ func validateAggregateOptionPaths(options AggregateOptions) error {
 	for _, item := range []struct{ label, path string }{
 		{"directory", options.Directory}, {"receipt", options.ReceiptPath},
 		{"source receipt", options.SourceReceiptPath}, {"quarantine", options.QuarantineDirectory},
+		{"publication lease", aggregatePublicationLeasePath(options.ReceiptPath)},
 	} {
 		if err := validateAbsolutePath("aggregate "+item.label, item.path); err != nil {
 			return err
 		}
 	}
-	paths := []string{options.Directory, options.ReceiptPath, options.SourceReceiptPath, options.QuarantineDirectory}
+	paths := []string{
+		options.Directory, options.ReceiptPath, options.SourceReceiptPath, options.QuarantineDirectory,
+		aggregatePublicationLeasePath(options.ReceiptPath),
+	}
 	for left := range paths {
 		for right := left + 1; right < len(paths); right++ {
 			if pathsOverlap(paths[left], paths[right]) {
