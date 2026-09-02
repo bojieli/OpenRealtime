@@ -3266,6 +3266,18 @@ and does not claim statistical parity with the historical 165-attempt sample.
     proves the new gateway configuration is live. Twenty focused runs, five
     focused race runs, the complete server package and race gate, and vet are
     green. Bounded topology replacement remains open.
+  - [x] Reconcile the clean server's root HTTP router through its complete
+    five-entry dependency closure. Candidate pre-mount creates the new empty
+    atomic router without publishing routes or acquiring effects. Replacement
+    drains the predecessor WebSocket, retires the router, gateway, Realtime and
+    observability routes, and canonical session API with zero remaining
+    ownership, while preserving the selected session provider and inspection
+    plane. The retired exported handler becomes inert, the realm export changes
+    value and advances revision, and a fresh exported handler restores health,
+    management method admission, and a real Realtime `session.update`. Final
+    close makes the replacement handler inert as well. Twenty focused runs,
+    five focused race runs, the complete server package and race gate, and vet
+    are green. Bounded topology replacement remains open.
   - [x] Atomically reconcile all six shipped operator-management API route
     families: static graph/catalog, session, authoring, source reading, source
     publication, and reconciliation. Shared effect-restricted candidate
