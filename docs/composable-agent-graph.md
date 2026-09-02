@@ -3250,35 +3250,39 @@ and does not claim statistical parity with the historical 165-attempt sample.
     covered below; external provider-state migration and topology replacement
     remain open.
   - [x] Own every shipped operator-management HTTP request through its route
-    lifecycle. The shared wrapper registers each admitted request as a uniquely
-    named worker, propagates caller and route retirement cancellation into its
-    context, closes a blocked request body, and joins the handler before route
-    retirement can pass. A real source-read blocked inside its provider reports
-    one live worker; route replacement cancels and joins it, emits a
-    zero-worker retirement, and serves a validated second request through the
-    replacement. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green.
-  - [x] Reconcile all six operator API route families while each owns one real
-    blocked request. Static catalog, session snapshot, authoring analysis,
-    source read, source publication, and reconciliation calls concurrently
-    report one live worker in their respective route scopes. One atomic six-row
-    replacement cancels and joins all six provider calls before returning,
-    advances every exact route implementation/runtime identity, emits six
-    zero-worker/effect/service retirement audits, preserves the router/export
-    object and revision, restores every method-admission surface, and reaches
-    zero ownership on final close. Twenty focused runs, five focused race runs,
+    lifecycle. The runtime's synchronous `Do` boundary registers admitted work
+    under a route-wide unique worker sequence while preserving the original
+    HTTP goroutine and request context. Caller cancellation is unchanged;
+    route retirement stops new admission and waits for the handler to drain,
+    while timeout/leak auditing refuses a false successful safe point. A real
+    source-read reports one live worker and keeps reconciliation pending until
+    released; its validated predecessor response completes before the
+    zero-worker retirement and replacement request. Twenty focused runs, five
+    focused race runs, package, package-race, vet, and three consecutive real-
+    Chromium developer and companion gates are green.
+  - [x] Reconcile all six operator API route families while they own eight real
+    blocked requests. Static catalog, session live/model/trace, authoring
+    analysis, source read, source publication, and reconciliation calls report
+    their exact live worker counts, including three unique workers in the one
+    session-API scope. One atomic six-row replacement remains pending until all
+    eight calls are released, then joins them before advancing every exact
+    route implementation/runtime identity, emitting six zero-worker/effect/
+    service retirement audits, preserving the router/export object and
+    revision, restoring every method-admission surface, and reaching zero
+    ownership on final close. Twenty focused runs, five focused race runs,
     package, package-race, and vet gates are green.
   - [x] Atomically reconcile all seven shipped operator service bindings:
     authorizer, static catalog, session inspection, authoring, source reading,
     source publication, and reconciliation. Effect-free provider candidate
     pre-mount publishes nothing. A seven-row replacement with a blocked real
-    source-read cancels and joins the predecessor request, retires the complete
-    thirteen-row provider/API closure with zero ownership, advances every exact
-    provider implementation/runtime identity, remounts all six route families,
-    preserves the router/export object and revision, and serves the next read
-    from the new provider. Final close reaches zero realm ownership. Twenty
-    focused runs, five focused race runs, package, package-race, and vet gates
-    are green. External provider-resource state migration remains open.
+    source-read stays pending until the predecessor request is released and
+    joined, then retires the complete thirteen-row provider/API closure with
+    zero ownership, advances every exact provider implementation/runtime
+    identity, remounts all six route families, preserves the router/export
+    object and revision, and serves the next read from the new provider. Final
+    close reaches zero realm ownership. Twenty focused runs, five focused race
+    runs, package, package-race, and vet gates are green. External provider-
+    resource state migration remains open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
@@ -4075,9 +4079,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     retired handlers inert and all providers continuously active. Every
     management request is now lifecycle-owned, and all seven operator provider
     bindings pass one atomic thirteen-row provider/API closure replacement that
-    cancels and joins a blocked source read while preserving the router/export.
-    A separate six-request transition concurrently blocks, cancels, and joins
-    one request in every operator API family before replacing all six routes.
+    drains and joins a blocked source read while preserving the router/export.
+    A separate eight-request transition concurrently blocks and drains every
+    operator API family, including live/model/trace requests in one scope,
+    before replacing all six routes.
     Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain

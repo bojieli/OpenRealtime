@@ -596,12 +596,12 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement while all providers stay active and retired handlers become
   inert. Every operator request is now lifecycle-owned, and all seven provider
   bindings pass one atomic thirteen-row provider/API closure replacement after
-  canceling and joining a blocked source read while the router/export stays
-  exact. A separate six-request transition concurrently blocks, cancels, and
-  joins one request in every operator API family before replacing all six
-  routes. Deployment-provided operator authority, full delta/reconciliation
-  E2E, external provider-state migration, and replacement of every presentation
-  consumer remain open.
+  draining and joining a blocked source read while the router/export stays
+  exact. A separate eight-request transition concurrently blocks and drains
+  every operator API family, including three unique live/model/trace workers in
+  one session-API scope, before replacing all six routes. Deployment-provided
+  operator authority, full delta/reconciliation E2E, external provider-state
+  migration, and replacement of every presentation consumer remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,
