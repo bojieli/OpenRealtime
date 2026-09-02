@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
+	"github.com/bojieli/OpenRealtime/plugin/httpservice"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 )
 
@@ -28,11 +30,7 @@ func NewSessionAPIFactory() *SessionAPIFactory {
 func (factory *SessionAPIFactory) Descriptor() plugin.Descriptor { return factory.descriptor.Clone() }
 
 func (factory *SessionAPIFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	authorizer, err := lookupService[management.Authorizer](mount.Services, management.AuthorizerContract)
-	if err != nil {
-		return err
-	}
-	source, err := lookupService[management.SessionInspection](mount.Services, management.SessionInspectionContract)
+	authorizer, source, err := sessionAPIDependencies(mount.Services)
 	if err != nil {
 		return err
 	}
@@ -177,3 +175,45 @@ func (factory *SessionAPIFactory) Mount(_ context.Context, mount pluginruntime.M
 		)},
 	})
 }
+
+func (factory *SessionAPIFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if factory == nil {
+		return nil, errors.New("pre-mount management session API: nil factory")
+	}
+	if _, _, err := sessionAPIDependencies(candidate.Services); err != nil {
+		return nil, err
+	}
+	return sessionAPICandidate{factory: factory}, nil
+}
+
+func sessionAPIDependencies(
+	services pluginruntime.Services,
+) (management.Authorizer, management.SessionInspection, error) {
+	if _, err := httpservice.LookupRegistry(services, management.HTTPRoutesContract); err != nil {
+		return nil, nil, err
+	}
+	authorizer, err := lookupService[management.Authorizer](services, management.AuthorizerContract)
+	if err != nil {
+		return nil, nil, err
+	}
+	source, err := lookupService[management.SessionInspection](
+		services, management.SessionInspectionContract,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return authorizer, source, nil
+}
+
+type sessionAPICandidate struct{ factory *SessionAPIFactory }
+
+func (candidate sessionAPICandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
+var _ pluginruntime.Factory = (*SessionAPIFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*SessionAPIFactory)(nil)

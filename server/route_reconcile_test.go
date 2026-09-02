@@ -9,12 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/management"
+	managementserver "github.com/bojieli/OpenRealtime/management/server"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 	serverplugin "github.com/bojieli/OpenRealtime/server"
 	"github.com/coder/websocket"
 )
 
-func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testing.T) {
+func TestPublicServerRoutesReconcileWithoutDroppingSession(t *testing.T) {
 	factories := completeServerFactories(t)
 	plan := serverPlan(t, factories, true)
 	registry := pluginruntime.NewRegistry()
@@ -26,8 +28,10 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 	}
 	const realtimeImplementation = "test/server-realtime-route-v2"
 	const observabilityImplementation = "test/server-observability-route-v2"
+	const sessionAPIImplementation = "test/server-session-api-v2"
 	realtimeArtifact := serverArtifact("go://openrealtime/test/realtime-route-v2", "build-2", "b")
 	observabilityArtifact := serverArtifact("go://openrealtime/test/observability-route-v2", "build-2", "c")
+	sessionAPIArtifact := serverArtifact("go://openrealtime/test/session-api-v2", "build-2", "d")
 	if err := registry.RegisterArtifact(
 		realtimeImplementation, realtimeArtifact, serverplugin.NewRealtimeRouteFactory(),
 	); err != nil {
@@ -35,6 +39,11 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 	}
 	if err := registry.RegisterArtifact(
 		observabilityImplementation, observabilityArtifact, serverplugin.NewObservabilityRouteFactory(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterArtifact(
+		sessionAPIImplementation, sessionAPIArtifact, managementserver.NewSessionAPIFactory(),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -58,6 +67,7 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 	defer httpServer.Close()
 	assertHTTPStatus(t, httpServer.URL+"/healthz", http.StatusOK)
 	assertHTTPStatus(t, httpServer.URL+"/metrics", http.StatusOK)
+	assertHTTPStatus(t, httpServer.URL+management.APIPrefix+"/sessions/sess_missing/live", http.StatusNotFound)
 
 	dialContext, cancelDial := context.WithTimeout(context.Background(), 2*time.Second)
 	connection, _, err := websocket.Dial(
@@ -88,6 +98,7 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 		Updates: []pluginruntime.EntryUpdate{
 			{Entry: "realtime", SetImplementation: true, Implementation: realtimeImplementation},
 			{Entry: "observability", SetImplementation: true, Implementation: observabilityImplementation},
+			{Entry: "session-api", SetImplementation: true, Implementation: sessionAPIImplementation},
 		},
 	})
 	if err != nil {
@@ -95,8 +106,8 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 	}
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
 		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
-		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 2 ||
-		len(receipt.Retirements) != 2 || len(receipt.StateTransfers) != 0 {
+		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 3 ||
+		len(receipt.Retirements) != 3 || len(receipt.StateTransfers) != 0 {
 		t.Fatalf("server route reconciliation receipt = %#v", receipt)
 	}
 	transitions := make(map[string]pluginruntime.EntryTransition, len(receipt.Transitions))
@@ -111,6 +122,10 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 		transition.AfterImplementation != observabilityImplementation {
 		t.Fatalf("observability route transition = %#v", transition)
 	}
+	if transition := transitions["session-api"]; transition.BeforeRuntime != originalArtifact || transition.AfterRuntime != sessionAPIArtifact ||
+		transition.AfterImplementation != sessionAPIImplementation {
+		t.Fatalf("session API route transition = %#v", transition)
+	}
 	retired := make(map[string]bool, len(receipt.Retirements))
 	for _, retirement := range receipt.Retirements {
 		retired[retirement.Entry] = true
@@ -120,7 +135,7 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 			t.Fatalf("server route retirement retained ownership = %#v", retirement)
 		}
 	}
-	if !retired["realtime"] || !retired["observability"] {
+	if !retired["realtime"] || !retired["observability"] || !retired["session-api"] {
 		t.Fatalf("server route retirements = %#v", receipt.Retirements)
 	}
 
@@ -130,6 +145,8 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 		after.Entries["realtime"].Runtime != realtimeArtifact ||
 		after.Entries["observability"].Implementation != observabilityImplementation ||
 		after.Entries["observability"].Runtime != observabilityArtifact ||
+		after.Entries["session-api"].Implementation != sessionAPIImplementation ||
+		after.Entries["session-api"].Runtime != sessionAPIArtifact ||
 		after.Entries["gateway"].Runtime != originalArtifact ||
 		after.Entries["http-router"].Runtime != originalArtifact {
 		t.Fatalf("reconciled server route live evidence = %+v", after)
@@ -142,6 +159,7 @@ func TestRealtimeAndObservabilityRoutesReconcileWithoutDroppingSession(t *testin
 	}
 	assertHTTPStatus(t, httpServer.URL+"/healthz", http.StatusOK)
 	assertHTTPStatus(t, httpServer.URL+"/metrics", http.StatusOK)
+	assertHTTPStatus(t, httpServer.URL+management.APIPrefix+"/sessions/sess_missing/live", http.StatusNotFound)
 	updateRealtimeSession(t, connection, "after_reconcile")
 
 	if err := connection.Close(websocket.StatusNormalClosure, "done"); err != nil {
@@ -202,3 +220,5 @@ var _ pluginruntime.Factory = serverplugin.NewRealtimeRouteFactory()
 var _ pluginruntime.CandidatePreMounter = serverplugin.NewRealtimeRouteFactory()
 var _ pluginruntime.Factory = serverplugin.NewObservabilityRouteFactory()
 var _ pluginruntime.CandidatePreMounter = serverplugin.NewObservabilityRouteFactory()
+var _ pluginruntime.Factory = managementserver.NewSessionAPIFactory()
+var _ pluginruntime.CandidatePreMounter = managementserver.NewSessionAPIFactory()
