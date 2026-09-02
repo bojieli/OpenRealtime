@@ -94,8 +94,9 @@ if (!control || !transport || !catalog || !authoring || !editing || !reading || 
     !workspace.canRead() || !workspace.canPublish()) {
   throw new Error("management services were not published");
 }
-if (typeof workspaceMount.plugin.migrateState !== "function" || workspaceMount.snapshot() === undefined) {
-  throw new Error("authoring workspace omitted its state lifecycle");
+if (typeof operatorMount.plugin.migrateState !== "function" || operatorMount.snapshot() === undefined ||
+    typeof workspaceMount.plugin.migrateState !== "function" || workspaceMount.snapshot() === undefined) {
+  throw new Error("management client omitted its state lifecycle");
 }
 
 const operatorOne = "operator_secret_one";
@@ -103,6 +104,42 @@ const operatorTwo = "operator_secret_two";
 control.replace(operatorOne, Date.now() + 60_000);
 if (JSON.stringify(control.status()).includes(operatorOne) || JSON.stringify(workspace.snapshot()).includes(operatorOne)) {
   throw new Error("a serialized management projection retained the operator capability");
+}
+const operatorSnapshot = operatorMount.snapshot();
+if (operatorSnapshot.capability?.token !== operatorOne || operatorSnapshot.generation !== 1 ||
+    operatorSnapshot.capability.expires_at_ms <= Date.now()) {
+  throw new Error("operator capability snapshot did not retain its exact private lease");
+}
+const migratedOperator = await operatorMount.plugin.migrateState({
+  entry: "management-operator",
+  schema: {
+    name: "presentation.client.management_operator.state", revision: 1,
+    digest: "sha256:1f2f9868c1ea32703909c321437e2ac44980d6cb06968ab753a72627514934a1",
+  },
+  source_implementation: "browser-esm:management-operator-capability.js",
+  snapshot: operatorSnapshot,
+});
+if (JSON.stringify(migratedOperator) !== JSON.stringify(operatorSnapshot)) {
+  throw new Error("operator capability migration changed its private state");
+}
+for (const snapshot of [
+  { ...operatorSnapshot, extra: true },
+  { capability: { token: "operator\ninvalid", expires_at_ms: 0 }, generation: 1 },
+  { capability: null, generation: -1 },
+]) {
+  let refused = false;
+  try {
+    await operatorMount.plugin.migrateState({
+      entry: "management-operator",
+      schema: {
+        name: "presentation.client.management_operator.state", revision: 1,
+        digest: "sha256:1f2f9868c1ea32703909c321437e2ac44980d6cb06968ab753a72627514934a1",
+      },
+      source_implementation: "browser-esm:management-operator-capability.js",
+      snapshot,
+    });
+  } catch { refused = true; }
+  if (!refused) throw new Error("operator capability migration admitted malformed private state");
 }
 
 const handlers = [];

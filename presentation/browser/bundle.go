@@ -329,6 +329,8 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 				presentation.ClientManagementOperatorAccessContract,
 				presentation.ClientManagementOperatorControlContract,
 			},
+			stateSchema: &presentation.ClientManagementOperatorStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
 			permissions: []plugin.Permission{operatorPermission}, grants: []plugin.Permission{operatorPermission},
 		},
 		{

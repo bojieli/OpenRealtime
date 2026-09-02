@@ -770,9 +770,13 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		t.Fatal(err)
 	}
 	var order []string
-	var workspaceDescriptor *plugin.Descriptor
+	var operatorDescriptor, workspaceDescriptor *plugin.Descriptor
 	for _, entry := range bundle.Plan.Entries {
 		order = append(order, entry.Entry.ID)
+		if entry.Entry.ID == "management-operator" {
+			descriptor := entry.Descriptor
+			operatorDescriptor = &descriptor
+		}
 		if entry.Entry.ID == "authoring-workspace" {
 			descriptor := entry.Descriptor
 			workspaceDescriptor = &descriptor
@@ -794,6 +798,11 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		*workspaceDescriptor.StateSchema != presentation.ClientAuthoringWorkspaceStateContract ||
 		!workspaceDescriptor.Lifecycle.Snapshot || !workspaceDescriptor.Lifecycle.Restore {
 		t.Fatalf("authoring workspace state lifecycle = %#v", workspaceDescriptor)
+	}
+	if operatorDescriptor == nil || operatorDescriptor.StateSchema == nil ||
+		*operatorDescriptor.StateSchema != presentation.ClientManagementOperatorStateContract ||
+		!operatorDescriptor.Lifecycle.Snapshot || !operatorDescriptor.Lifecycle.Restore {
+		t.Fatalf("management operator state lifecycle = %#v", operatorDescriptor)
 	}
 	if len(bundle.Manifest.Grants) != 5 ||
 		bundle.Manifest.Grants[0].Entry != "effects" ||

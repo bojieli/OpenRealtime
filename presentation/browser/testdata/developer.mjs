@@ -25,6 +25,7 @@ const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "artifact-references": "browser-esm:artifact-references-v2.js",
   "debug-session": "browser-esm:debug-session-v2.js",
   "inspection": "browser-esm:inspection-client-v2.js",
+  "management-operator": "browser-esm:management-operator-capability-v2.js",
   "management-transport": "browser-esm:management-transport-v2.js",
   "management-static": "browser-esm:management-static-v2.js",
   "management-authoring": "browser-esm:management-authoring-v2.js",
@@ -48,6 +49,7 @@ const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
   "artifact-references": "browser-esm:artifact-references.js",
   "debug-session": "browser-esm:debug-session.js",
   "inspection": "browser-esm:inspection-client.js",
+  "management-operator": "browser-esm:management-operator-capability.js",
   "management-transport": "browser-esm:management-transport.js",
   "management-static": "browser-esm:management-static.js",
   "management-authoring": "browser-esm:management-authoring.js",
@@ -776,13 +778,18 @@ try {
   const authorityRestoreStarted = performance.now();
   const authorityRestore = await evaluate(`window.__openrealtime.activate("management-operator")`);
   const authorityRestoreMS = performance.now() - authorityRestoreStarted;
-  await configureOperator(OPERATOR_CAPABILITY_ROTATED);
+  const recoveredOperatorStatus = await evaluate(
+    `document.querySelector('[data-view=management-operator] [data-role=status]')?.textContent ?? ""`);
+  await loadStatic();
+  await waitFor("restored operator catalog read", async () => (await staticStatus()) === "loaded");
   check("operator provider recovery remounts every desired renderer",
     ["management-operator", "management-transport", "management-static", "management-authoring",
       ...(EFFECTS_ENABLED ? ["management-source-reading", "management-source-publication"] : []),
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view"]
-      .every((entry) => authorityRestore.entries[entry].state === "active"));
+      .every((entry) => authorityRestore.entries[entry].state === "active") &&
+    recoveredOperatorStatus.startsWith("Configured · generation ") &&
+    (await staticStatus()) === "loaded");
   const recoveredWorkspace = await evaluate(`(() => {
     const view = document.querySelector('[data-view=authoring-editor]');
     return {
@@ -865,6 +872,8 @@ try {
         SHIPPED_REPLACEMENT_IMPLEMENTATIONS[entry]));
     const workspaceTransfer = (replacement.receipt.state_transfers ?? []).find(
       (row) => row.entry === "authoring-workspace");
+    const operatorTransfer = (replacement.receipt.state_transfers ?? []).find(
+      (row) => row.entry === "management-operator");
     check("shipped consumer replacement receipt is exact and payload-free",
       replacement.receipt.format_version === 3 &&
       replacement.receipt.plan_fingerprint === replacement.before.fingerprint &&
@@ -876,7 +885,14 @@ try {
       transitions.every((row) => row.before_implementation.implementation ===
         SHIPPED_PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
         row.after_implementation.implementation === SHIPPED_REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
-      replacement.receipt.state_transfers?.length === 1 &&
+      replacement.receipt.state_transfers?.length === 2 &&
+      operatorTransfer?.schema?.name === "presentation.client.management_operator.state" &&
+      operatorTransfer.schema.revision === 1 &&
+      operatorTransfer.schema.digest ===
+        "sha256:1f2f9868c1ea32703909c321437e2ac44980d6cb06968ab753a72627514934a1" &&
+      operatorTransfer.before_state_digest === operatorTransfer.after_state_digest &&
+      operatorTransfer.migrator_implementation ===
+        SHIPPED_REPLACEMENT_IMPLEMENTATIONS["management-operator"] &&
       workspaceTransfer?.schema?.name === "presentation.client.authoring_workspace.state" &&
       workspaceTransfer.schema.revision === 1 &&
       workspaceTransfer.schema.digest ===
@@ -885,7 +901,8 @@ try {
       workspaceTransfer.migrator_implementation ===
         SHIPPED_REPLACEMENT_IMPLEMENTATIONS["authoring-workspace"] &&
       !JSON.stringify(replacement.receipt).includes(RETAINED_WORKSPACE_PATH) &&
-      !JSON.stringify(replacement.receipt).includes("authority"));
+      ![OPERATOR_CAPABILITY, OPERATOR_CAPABILITY_ROTATED, "mgmt_invalid_operator_capability"].some(
+        (secret) => JSON.stringify(replacement.receipt).includes(secret)));
     check("shipped consumer union closure remounted without disturbing unrelated plugins",
       JSON.stringify(replacement.mounted) === JSON.stringify(expectedMounted) &&
       expectedReplacementEntries.every((entry) => replacement.after.entries[entry].state === "active") &&
@@ -916,6 +933,11 @@ try {
       restoredWorkspace.path === RETAINED_WORKSPACE_PATH &&
       restoredWorkspace.source === AUTHORING_SOURCE && restoredWorkspace.status === "idle",
       JSON.stringify({path: restoredWorkspace.path, status: restoredWorkspace.status}));
+    const replacementMarkup = await evaluate(`document.documentElement.outerHTML`);
+    check("operator implementation replacement keeps the restored capability private",
+      ![OPERATOR_CAPABILITY, OPERATOR_CAPABILITY_ROTATED, "mgmt_invalid_operator_capability"].some(
+        (secret) => JSON.stringify(replacement).includes(secret) ||
+          replacementMarkup.includes(secret) || browserConsole.some((row) => row.includes(secret))));
     await waitFor("replacement effect negotiation", () => evaluate(
       `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated === "true"`));
     check("replacement effect provider renegotiated its signed catalog",

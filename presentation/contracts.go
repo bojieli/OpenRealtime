@@ -136,6 +136,10 @@ var (
 		"presentation.client.management_operator_control",
 		"openrealtime/presentation/client/management-operator-control/v1:replace-clear-redacted-status-subscribe",
 	)
+	ClientManagementOperatorStateContract = semanticContract(
+		"presentation.client.management_operator.state",
+		"openrealtime/presentation/client/management-operator-state/v1:private-canonical-capability-expiry-generation-restoration-no-serialized-projection",
+	)
 	ClientManagementTransportContract = semanticContractRevision(
 		"presentation.client.management_transport",
 		4,
