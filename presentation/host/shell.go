@@ -63,13 +63,29 @@ func NewBrowserShellFactory(revision uint64, bootstrapDigest string) (*BrowserSh
 
 func (factory *BrowserShellFactory) Descriptor() plugin.Descriptor { return factory.descriptor.Clone() }
 
-func (factory *BrowserShellFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	catalog, err := lookupModuleCatalog(mount.Services)
+func (factory *BrowserShellFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if err := factory.validateModuleCatalog(candidate.Services); err != nil {
+		return nil, err
+	}
+	return browserShellCandidate{factory: factory}, nil
+}
+
+func (factory *BrowserShellFactory) validateModuleCatalog(services pluginruntime.Services) error {
+	catalog, err := lookupModuleCatalog(services)
 	if err != nil {
 		return err
 	}
 	if !catalog.Has(factory.bootstrapDigest) {
 		return errors.New("browser shell bootstrap is absent from the mounted module store")
+	}
+	return nil
+}
+
+func (factory *BrowserShellFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
+	if err := factory.validateModuleCatalog(mount.Services); err != nil {
+		return err
 	}
 	page := append([]byte(nil), factory.page...)
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -90,3 +106,14 @@ func (factory *BrowserShellFactory) Mount(_ context.Context, mount pluginruntime
 		{Pattern: "GET /index.html", Handler: handler},
 	})
 }
+
+type browserShellCandidate struct{ factory *BrowserShellFactory }
+
+func (candidate browserShellCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
+var _ pluginruntime.Factory = (*BrowserShellFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*BrowserShellFactory)(nil)

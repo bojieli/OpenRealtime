@@ -1534,6 +1534,8 @@ func makeHostPlan(t *testing.T, factories []pluginruntime.Factory) plugin.Plan {
 			id = "modules"
 		case "openrealtime.presentation.host.client-manifest":
 			id = "manifest"
+		case "openrealtime.presentation.host.browser-shell":
+			id = "shell"
 		case "openrealtime.presentation.host.endpoint-directory":
 			id = "target"
 		case "openrealtime.presentation.host.secret-credential",

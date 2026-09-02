@@ -108,6 +108,12 @@ func NewModuleStoreFactory(revision uint64, sources []ModuleSource) (*ModuleStor
 
 func (factory *ModuleStoreFactory) Descriptor() plugin.Descriptor { return factory.descriptor.Clone() }
 
+func (factory *ModuleStoreFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return moduleStoreCandidate{factory: factory}, nil
+}
+
 func (factory *ModuleStoreFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
 	store := &moduleStore{modules: make(map[string][]byte, len(factory.modules)), rows: slices.Clone(factory.rows)}
 	for digest, content := range factory.modules {
@@ -149,6 +155,14 @@ func (factory *ModuleStoreFactory) Mount(_ context.Context, mount pluginruntime.
 	return mount.Publisher.Provide(presentation.ModuleCatalogContract, ModuleCatalog(store))
 }
 
+type moduleStoreCandidate struct{ factory *ModuleStoreFactory }
+
+func (candidate moduleStoreCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
 func lookupModuleCatalog(services pluginruntime.Services) (ModuleCatalog, error) {
 	value, contract, _, _, found := services.Lookup(presentation.ModuleCatalogContract.Name)
 	if !found || contract != presentation.ModuleCatalogContract {
@@ -160,3 +174,6 @@ func lookupModuleCatalog(services pluginruntime.Services) (ModuleCatalog, error)
 	}
 	return catalog, nil
 }
+
+var _ pluginruntime.Factory = (*ModuleStoreFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*ModuleStoreFactory)(nil)

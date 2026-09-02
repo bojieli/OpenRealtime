@@ -42,8 +42,17 @@ func NewManifestFactory(manifest presentation.ClientManifest) (*ManifestFactory,
 
 func (factory *ManifestFactory) Descriptor() plugin.Descriptor { return factory.descriptor.Clone() }
 
-func (factory *ManifestFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	catalog, err := lookupModuleCatalog(mount.Services)
+func (factory *ManifestFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if err := factory.validateModuleCatalog(candidate.Services); err != nil {
+		return nil, err
+	}
+	return manifestCandidate{factory: factory}, nil
+}
+
+func (factory *ManifestFactory) validateModuleCatalog(services pluginruntime.Services) error {
+	catalog, err := lookupModuleCatalog(services)
 	if err != nil {
 		return err
 	}
@@ -51,6 +60,13 @@ func (factory *ManifestFactory) Mount(_ context.Context, mount pluginruntime.Mou
 		if !catalog.Has(asset.Digest) {
 			return errors.New("client manifest references an asset absent from the mounted module store")
 		}
+	}
+	return nil
+}
+
+func (factory *ManifestFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
+	if err := factory.validateModuleCatalog(mount.Services); err != nil {
+		return err
 	}
 	payload := slices.Clone(factory.payload)
 	fingerprint := factory.manifest.Fingerprint
@@ -74,3 +90,14 @@ func (factory *ManifestFactory) Mount(_ context.Context, mount pluginruntime.Mou
 	}
 	return mount.Publisher.Provide(presentation.ClientManifestContract, factory.manifest.Clone())
 }
+
+type manifestCandidate struct{ factory *ManifestFactory }
+
+func (candidate manifestCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
+var _ pluginruntime.Factory = (*ManifestFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*ManifestFactory)(nil)
