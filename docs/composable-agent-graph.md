@@ -3591,18 +3591,21 @@ and does not claim statistical parity with the historical 165-attempt sample.
     client ownership or effect socket. Three focused race-enabled real-Chromium
     runs, the complete browser suite, and vet are green. Remaining non-view
     client providers and topology-changing replacement stay open.
-  - [x] Select the two WebRTC-specific view consumers in a separate exact
-    two-row real-profile transition. A media-enabled composition constructor
-    admits deterministic alternatives without changing the selected topology,
-    endpoints, grants, or implementations. Real Chromium replaces video
-    controls and transport diagnostics together, binds every before/after
-    content-addressed artifact in the receipt, preserves all 28 desired rows,
-    rebinds both retained services, and captures another camera frame through
-    the replacement controls. Ten repeated constructor runs, three focused
-    race-enabled Chromium runs, the complete browser and presentation suites,
-    and vet are green. Every shipped browser view consumer now has selected-
-    implementation replacement evidence; remaining non-view providers stay
-    open.
+  - [x] Select the two WebRTC-specific view consumers plus the shipped slots,
+    session-configuration, video-protocol, debug-session, effects, artifact-
+    reference, and inspection implementations in a separate exact nine-row
+    real-profile transition. A media-enabled composition constructor admits
+    deterministic alternatives without changing the selected topology,
+    endpoints, grants, or implementations. With capture stopped at the safe
+    point, real Chromium retains media, transport, and reducer ownership while
+    the replacements reconstruct all 28 desired rows and DOM surfaces, restore
+    scoped inspection, renegotiate signed effects, capture another camera
+    frame, and execute a sealed artifact. Every before/after content-addressed
+    identity is bound into the payload-free receipt. Ten repeated constructor
+    runs, three focused race-enabled Chromium runs, the complete browser and
+    presentation suites, JavaScript syntax, and vet are green. Every shipped
+    browser view consumer now has selected-implementation replacement evidence;
+    stateful non-view providers remain open.
   - [x] Replace the shipped debug-session contributor, scoped inspection
     client, and immutable management-static client as three additional selected
     rows in the same authenticated real-browser transition. The inspection

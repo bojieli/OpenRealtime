@@ -575,10 +575,13 @@ tau2/τ-Voice matrix defined by the parent plan.
   enabled WebSocket-profile view consumers; every text, confirmation, artifact,
   inspection, trace,
   operator, editor, configuration, and canvas surface rebinds its retained
-  services and final disposal reaches zero client ownership. A separate
-  two-row real-Chromium WebRTC transition selects video-control and transport-
-  diagnostics candidates, rebinds their retained services, and captures a new
-  camera frame. Every shipped browser view consumer now has selected-
+  services and final disposal reaches zero client ownership. A separate nine-
+  row real-Chromium WebRTC transition selects slots, session configuration,
+  video protocol, debug, effects, artifact references, inspection, video
+  controls, and transport diagnostics while retaining media, transport, and
+  reducer ownership. It reconstructs every DOM surface, restores inspection
+  and effect negotiation, captures a new camera frame, and executes a sealed
+  artifact. Every shipped browser view consumer now has selected-
   implementation replacement evidence; the replacement slots and session-
   configuration providers reconstruct their DOM/contribution state, and the
   replacement inspection/static clients reload exact live and catalog
