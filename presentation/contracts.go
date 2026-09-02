@@ -32,6 +32,10 @@ var (
 		"presentation.host.artifact_store",
 		"openrealtime/presentation/host/artifact-store/v1:bounded-publish-lookup-list-stats-sandboxed-resource",
 	)
+	ArtifactStoreStateContract = semanticContract(
+		"presentation.host.artifact_store.state",
+		"openrealtime/presentation/host/artifact-store-state/v1:bounded-ordered-versioned-html-entries-evictions",
+	)
 	DownloadStoreContract = semanticContract(
 		"presentation.host.download_store",
 		"openrealtime/presentation/host/download-store/v1:bounded-publish-lookup-list-stats-attachment-resource",

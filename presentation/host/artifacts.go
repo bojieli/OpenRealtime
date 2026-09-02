@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"github.com/bojieli/OpenRealtime/plugin"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 	"github.com/bojieli/OpenRealtime/presentation"
@@ -72,6 +74,119 @@ type ArtifactStore interface {
 type storedArtifact struct {
 	metadata Artifact
 	html     []byte
+}
+
+const artifactStoreStateFormatVersion = 1
+
+type artifactStoreState struct {
+	FormatVersion uint64                    `json:"format_version"`
+	Evictions     uint64                    `json:"evictions"`
+	Entries       []artifactStoreStateEntry `json:"entries"`
+}
+
+type artifactStoreStateEntry struct {
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	HTML      string `json:"html"`
+	Version   uint64 `json:"version"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type artifactStoreStateWire struct {
+	FormatVersion *uint64                        `json:"format_version"`
+	Evictions     *uint64                        `json:"evictions"`
+	Entries       *[]artifactStoreStateEntryWire `json:"entries"`
+}
+
+type artifactStoreStateEntryWire struct {
+	ID        *string `json:"id"`
+	Title     *string `json:"title"`
+	HTML      *string `json:"html"`
+	Version   *uint64 `json:"version"`
+	UpdatedAt *string `json:"updated_at"`
+}
+
+func decodeArtifactStoreState(
+	raw json.RawMessage, limits ResourceStoreLimits,
+) (artifactStoreState, error) {
+	if len(raw) == 0 || len(raw) > pluginruntime.MaximumStateSnapshotBytes {
+		return artifactStoreState{}, fmt.Errorf(
+			"artifact store state must be 1-%d bytes",
+			pluginruntime.MaximumStateSnapshotBytes,
+		)
+	}
+	if err := strictjson.ValidateWithLimits(raw, strictjson.Limits{
+		MaxInputBytes: pluginruntime.MaximumStateSnapshotBytes,
+		MaxDepth:      4, MaxTokens: 16 + 8*limits.MaxEntries,
+		MaxObjectMembers: 5, MaxArrayElements: limits.MaxEntries,
+		MaxKeyBytes: 32, MaxTotalKeyBytes: int64(64 + 64*limits.MaxEntries),
+		MaxWorkBytes: 4 * pluginruntime.MaximumStateSnapshotBytes,
+	}); err != nil {
+		return artifactStoreState{}, fmt.Errorf("artifact store state: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var wire artifactStoreStateWire
+	if err := decoder.Decode(&wire); err != nil {
+		return artifactStoreState{}, fmt.Errorf("artifact store state: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return artifactStoreState{}, errors.New("artifact store state has a trailing JSON value")
+	} else if !errors.Is(err, io.EOF) {
+		return artifactStoreState{}, fmt.Errorf("artifact store state trailing data: %w", err)
+	}
+	if wire.FormatVersion == nil || wire.Evictions == nil || wire.Entries == nil ||
+		*wire.FormatVersion != artifactStoreStateFormatVersion {
+		return artifactStoreState{}, errors.New("artifact store state has missing or unsupported fields")
+	}
+	if len(*wire.Entries) > limits.MaxEntries {
+		return artifactStoreState{}, errors.New("artifact store state exceeds max_entries")
+	}
+	state := artifactStoreState{
+		FormatVersion: artifactStoreStateFormatVersion,
+		Evictions:     *wire.Evictions,
+		Entries:       make([]artifactStoreStateEntry, 0, len(*wire.Entries)),
+	}
+	seen := make(map[string]struct{}, len(*wire.Entries))
+	var total int64
+	for index, entry := range *wire.Entries {
+		if entry.ID == nil || entry.Title == nil || entry.HTML == nil ||
+			entry.Version == nil || entry.UpdatedAt == nil {
+			return artifactStoreState{}, fmt.Errorf("artifact store state entry %d has missing fields", index)
+		}
+		if err := validateResourceID("artifact", *entry.ID); err != nil {
+			return artifactStoreState{}, fmt.Errorf("artifact store state entry %d: %w", index, err)
+		}
+		if _, duplicate := seen[*entry.ID]; duplicate {
+			return artifactStoreState{}, fmt.Errorf("artifact store state repeats id %q", *entry.ID)
+		}
+		seen[*entry.ID] = struct{}{}
+		title, err := validateArtifactTitle(*entry.Title)
+		if err != nil || title == "" || title != *entry.Title {
+			return artifactStoreState{}, fmt.Errorf("artifact store state entry %d has an invalid title", index)
+		}
+		if !utf8.ValidString(*entry.HTML) || strings.TrimSpace(*entry.HTML) == "" ||
+			int64(len(*entry.HTML)) > limits.MaxItemBytes {
+			return artifactStoreState{}, fmt.Errorf("artifact store state entry %d has invalid HTML", index)
+		}
+		if int64(len(*entry.HTML)) > limits.MaxTotalBytes-total {
+			return artifactStoreState{}, errors.New("artifact store state exceeds max_total_bytes")
+		}
+		total += int64(len(*entry.HTML))
+		if *entry.Version == 0 {
+			return artifactStoreState{}, fmt.Errorf("artifact store state entry %d has an invalid version", index)
+		}
+		updatedAt, err := time.Parse(time.RFC3339Nano, *entry.UpdatedAt)
+		if err != nil || updatedAt.IsZero() || *entry.UpdatedAt != updatedAt.UTC().Format(time.RFC3339Nano) {
+			return artifactStoreState{}, fmt.Errorf("artifact store state entry %d has an invalid timestamp", index)
+		}
+		state.Entries = append(state.Entries, artifactStoreStateEntry{
+			ID: *entry.ID, Title: title, HTML: *entry.HTML,
+			Version: *entry.Version, UpdatedAt: *entry.UpdatedAt,
+		})
+	}
+	return state, nil
 }
 
 type artifactStore struct {
@@ -264,6 +379,95 @@ func (store *artifactStore) Stats() ResourceStoreStats {
 	}
 }
 
+func (store *artifactStore) snapshot(ctx context.Context) (json.RawMessage, error) {
+	if ctx == nil {
+		return nil, errors.New("snapshot artifact store: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("snapshot artifact store: %w", err)
+	}
+	store.mu.Lock()
+	if store.lifecycle.closed {
+		store.mu.Unlock()
+		return nil, ErrResourceStoreClosed
+	}
+	if store.total >= int64(pluginruntime.MaximumStateSnapshotBytes) {
+		entries, total := len(store.entries), store.total
+		store.mu.Unlock()
+		return nil, fmt.Errorf(
+			"artifact store state with %d entries and %d content bytes exceeds the %d-byte migration envelope",
+			entries, total, pluginruntime.MaximumStateSnapshotBytes,
+		)
+	}
+	state := artifactStoreState{
+		FormatVersion: artifactStoreStateFormatVersion,
+		Evictions:     store.evictions,
+		Entries:       make([]artifactStoreStateEntry, 0, len(store.order)),
+	}
+	for _, id := range store.order {
+		entry := store.entries[id]
+		state.Entries = append(state.Entries, artifactStoreStateEntry{
+			ID: entry.metadata.ID, Title: entry.metadata.Title, HTML: string(entry.html),
+			Version:   entry.metadata.Version,
+			UpdatedAt: entry.metadata.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	store.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("snapshot artifact store: %w", err)
+	}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot artifact store: %w", err)
+	}
+	if len(raw) > pluginruntime.MaximumStateSnapshotBytes {
+		return nil, fmt.Errorf(
+			"artifact store state is %d bytes; migration limit is %d",
+			len(raw), pluginruntime.MaximumStateSnapshotBytes,
+		)
+	}
+	return raw, nil
+}
+
+func (store *artifactStore) restore(state artifactStoreState) error {
+	entries := make(map[string]*storedArtifact, len(state.Entries))
+	order := make([]string, 0, len(state.Entries))
+	var total int64
+	for _, row := range state.Entries {
+		content := []byte(row.HTML)
+		updatedAt, err := time.Parse(time.RFC3339Nano, row.UpdatedAt)
+		if err != nil {
+			for _, entry := range entries {
+				wipe(entry.html)
+			}
+			return fmt.Errorf("restore artifact store timestamp: %w", err)
+		}
+		entries[row.ID] = &storedArtifact{
+			metadata: Artifact{
+				ID: row.ID, Title: row.Title, Path: "/client/v1/artifacts/" + row.ID,
+				Digest: contentDigest(content), Bytes: int64(len(content)),
+				Version: row.Version, UpdatedAt: updatedAt,
+			},
+			html: content,
+		}
+		order = append(order, row.ID)
+		total += int64(len(content))
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.lifecycle.closed || len(store.entries) != 0 || len(store.order) != 0 || store.total != 0 {
+		for _, entry := range entries {
+			wipe(entry.html)
+		}
+		return errors.New("artifact store cannot restore into a nonempty or closed instance")
+	}
+	store.entries = entries
+	store.order = order
+	store.total = total
+	store.evictions = state.Evictions
+	return nil
+}
+
 type artifactResponse struct {
 	metadata Artifact
 	html     []byte
@@ -395,18 +599,20 @@ type ArtifactStoreFactory struct{ descriptor plugin.Descriptor }
 
 func NewArtifactStoreFactory() *ArtifactStoreFactory {
 	schema := presentation.ArtifactStoreConfigContract
+	stateSchema := presentation.ArtifactStoreStateContract
 	return &ArtifactStoreFactory{descriptor: plugin.Descriptor{
 		FormatVersion: plugin.DescriptorFormatVersion,
-		Name:          "openrealtime.presentation.host.artifact-store", Revision: 1,
+		Name:          "openrealtime.presentation.host.artifact-store", Revision: 2,
 		Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 		Provides:     []plugin.Contract{presentation.ArtifactStoreContract},
 		Requires:     []plugin.Requirement{{Contract: presentation.HTTPRoutesContract}},
 		ConfigSchema: &schema,
+		StateSchema:  &stateSchema,
 		Permissions: []plugin.Permission{{
 			Kind: storagePermissionKind, Resource: artifactStorageResource,
 			Operations: []string{storagePublishOperation},
 		}},
-		Lifecycle: plugin.Lifecycle{DisposeTimeoutMS: 5_000},
+		Lifecycle: plugin.Lifecycle{Snapshot: true, Restore: true, DisposeTimeoutMS: 5_000},
 	}}
 }
 
@@ -419,7 +625,43 @@ func (factory *ArtifactStoreFactory) ValidateConfig(raw json.RawMessage) error {
 	return err
 }
 
-func (factory *ArtifactStoreFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
+func (factory *ArtifactStoreFactory) Mount(ctx context.Context, mount pluginruntime.MountContext) error {
+	limits, err := parseResourceStoreConfig(mount.Config, artifactStorePolicy)
+	if err != nil {
+		return err
+	}
+	return (artifactStoreCandidate{entryID: mount.EntryID, limits: limits}).Activate(ctx, mount)
+}
+
+func (factory *ArtifactStoreFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if !candidate.Permissions.Allows(
+		storagePermissionKind, artifactStorageResource, storagePublishOperation,
+	) {
+		return nil, errors.New("presentation artifact store lacks its deployment memory-publish grant")
+	}
+	if _, err := lookupRoutes(candidate.Services); err != nil {
+		return nil, err
+	}
+	limits, err := parseResourceStoreConfig(candidate.Config, artifactStorePolicy)
+	if err != nil {
+		return nil, err
+	}
+	return artifactStoreCandidate{entryID: candidate.EntryID, limits: limits}, nil
+}
+
+type artifactStoreCandidate struct {
+	entryID string
+	limits  ResourceStoreLimits
+}
+
+func (candidate artifactStoreCandidate) Activate(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	if mount.EntryID != candidate.entryID {
+		return errors.New("artifact store candidate entry changed before activation")
+	}
 	if !mount.Permissions.Allows(storagePermissionKind, artifactStorageResource, storagePublishOperation) {
 		return errors.New("presentation artifact store lacks its deployment memory-publish grant")
 	}
@@ -427,8 +669,30 @@ func (factory *ArtifactStoreFactory) Mount(_ context.Context, mount pluginruntim
 	if err != nil {
 		return err
 	}
+	if limits != candidate.limits {
+		return errors.New("artifact store candidate limits changed before activation")
+	}
+	if mount.State == nil {
+		return errors.New("presentation artifact store state lifecycle is unavailable")
+	}
+	restored, available, err := mount.State.Restored()
+	if err != nil {
+		return err
+	}
 	store := newArtifactStore(limits, time.Now)
 	if err := mount.Lifecycle.Defer("artifact-store", store.close); err != nil {
+		return err
+	}
+	if available {
+		state, err := decodeArtifactStoreState(restored, limits)
+		if err != nil {
+			return err
+		}
+		if err := store.restore(state); err != nil {
+			return err
+		}
+	}
+	if err := mount.State.Snapshot(store.snapshot); err != nil {
 		return err
 	}
 	if err := registerRoutes(mount, []Route{{
@@ -437,6 +701,32 @@ func (factory *ArtifactStoreFactory) Mount(_ context.Context, mount pluginruntim
 		return err
 	}
 	return mount.Publisher.Provide(presentation.ArtifactStoreContract, ArtifactStore(store))
+}
+
+func (candidate artifactStoreCandidate) MigrateState(
+	_ context.Context, migration pluginruntime.StateMigration,
+) (json.RawMessage, error) {
+	if migration.EntryID != candidate.entryID ||
+		migration.Schema != presentation.ArtifactStoreStateContract ||
+		migration.SourceImplementation == "" ||
+		migration.SourceImplementation != strings.TrimSpace(migration.SourceImplementation) {
+		return nil, errors.New("artifact store state migration identity is invalid")
+	}
+	state, err := decodeArtifactStoreState(migration.Snapshot, candidate.limits)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return nil, fmt.Errorf("migrate artifact store state: %w", err)
+	}
+	if len(raw) > pluginruntime.MaximumStateSnapshotBytes {
+		return nil, fmt.Errorf(
+			"migrated artifact store state is %d bytes; limit is %d",
+			len(raw), pluginruntime.MaximumStateSnapshotBytes,
+		)
+	}
+	return raw, nil
 }
 
 func lookupArtifactStore(services pluginruntime.Services) (ArtifactStore, error) {
@@ -450,3 +740,8 @@ func lookupArtifactStore(services pluginruntime.Services) (ArtifactStore, error)
 	}
 	return store, nil
 }
+
+var _ pluginruntime.Factory = (*ArtifactStoreFactory)(nil)
+var _ pluginruntime.ConfigValidator = (*ArtifactStoreFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*ArtifactStoreFactory)(nil)
+var _ pluginruntime.CandidateStateMigrator = artifactStoreCandidate{}

@@ -27,12 +27,14 @@ func TestResourceStoreDescriptorsAreExactHostPlugins(t *testing.T) {
 		factory    pluginruntime.Factory
 		service    plugin.Contract
 		config     plugin.Contract
+		state      *plugin.Contract
 		resource   string
 		pluginName string
 	}{
 		{
 			name: "artifacts", factory: NewArtifactStoreFactory(),
 			service: presentation.ArtifactStoreContract, config: presentation.ArtifactStoreConfigContract,
+			state:    &presentation.ArtifactStoreStateContract,
 			resource: artifactStorageResource, pluginName: "openrealtime.presentation.host.artifact-store",
 		},
 		{
@@ -57,6 +59,10 @@ func TestResourceStoreDescriptorsAreExactHostPlugins(t *testing.T) {
 				}}) || descriptor.ConfigSchema == nil || *descriptor.ConfigSchema != test.config {
 				t.Fatalf("descriptor contracts = %#v", descriptor)
 			}
+			if (descriptor.StateSchema == nil) != (test.state == nil) ||
+				(test.state != nil && *descriptor.StateSchema != *test.state) {
+				t.Fatalf("descriptor state schema = %#v, want %#v", descriptor.StateSchema, test.state)
+			}
 			wantPermission := []plugin.Permission{{
 				Kind: storagePermissionKind, Resource: test.resource,
 				Operations: []string{storagePublishOperation},
@@ -67,8 +73,13 @@ func TestResourceStoreDescriptorsAreExactHostPlugins(t *testing.T) {
 			}) {
 				t.Fatalf("descriptor permission ceiling = %#v, want %#v", descriptor.Permissions, wantPermission)
 			}
-			if descriptor.Lifecycle.DisposeTimeoutMS == 0 {
-				t.Fatal("resource plugin disposal is not explicitly bounded")
+			wantStateLifecycle := test.state != nil
+			if descriptor.Lifecycle != (plugin.Lifecycle{
+				DisposeTimeoutMS: 5_000,
+				Snapshot:         wantStateLifecycle,
+				Restore:          wantStateLifecycle,
+			}) {
+				t.Fatalf("resource plugin lifecycle = %#v", descriptor.Lifecycle)
 			}
 			identity, err := descriptor.Identity()
 			if err != nil || identity.Name != descriptor.Name || identity.Digest == "" {
