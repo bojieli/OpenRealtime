@@ -136,21 +136,53 @@ func (factory *SessionInspectionPlaneFactory) Descriptor() plugin.Descriptor {
 }
 
 func (factory *SessionInspectionPlaneFactory) Mount(
-	_ context.Context, mount pluginruntime.MountContext,
+	ctx context.Context, mount pluginruntime.MountContext,
 ) error {
+	candidate, err := factory.prepareSessionInspectionPlane()
+	if err != nil {
+		return err
+	}
+	return candidate.Activate(ctx, mount)
+}
+
+func (factory *SessionInspectionPlaneFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return factory.prepareSessionInspectionPlane()
+}
+
+func (factory *SessionInspectionPlaneFactory) prepareSessionInspectionPlane() (
+	sessionInspectionPlaneCandidate, error,
+) {
 	if factory == nil || factory.plane == nil {
-		return errors.New("mount server session-inspection plugin: plane is unavailable")
+		return sessionInspectionPlaneCandidate{}, errors.New("mount server session-inspection plugin: plane is unavailable")
 	}
 	if err := factory.plane.Validate(); err != nil {
-		return fmt.Errorf("mount server session-inspection plugin: %w", err)
+		return sessionInspectionPlaneCandidate{}, fmt.Errorf("mount server session-inspection plugin: %w", err)
 	}
-	if err := mount.Publisher.Provide(SessionInspectionPlaneContract(), factory.plane); err != nil {
+	return sessionInspectionPlaneCandidate{
+		plane:      factory.plane,
+		authorizer: factory.plane.Authorizer(),
+		sessions:   factory.plane.Sessions(),
+	}, nil
+}
+
+type sessionInspectionPlaneCandidate struct {
+	plane      *gateway.SessionInspectionPlane
+	authorizer management.Authorizer
+	sessions   management.SessionInspection
+}
+
+func (candidate sessionInspectionPlaneCandidate) Activate(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	if err := mount.Publisher.Provide(SessionInspectionPlaneContract(), candidate.plane); err != nil {
 		return err
 	}
-	if err := mount.Publisher.Provide(management.AuthorizerContract, factory.plane.Authorizer()); err != nil {
+	if err := mount.Publisher.Provide(management.AuthorizerContract, candidate.authorizer); err != nil {
 		return err
 	}
-	return mount.Publisher.Provide(management.SessionInspectionContract, factory.plane.Sessions())
+	return mount.Publisher.Provide(management.SessionInspectionContract, candidate.sessions)
 }
 
 // GatewayFactoryConfig is private deployment configuration for the clean API
@@ -276,5 +308,6 @@ var (
 	_ pluginruntime.Factory             = (*SessionProviderFactory)(nil)
 	_ pluginruntime.CandidatePreMounter = (*SessionProviderFactory)(nil)
 	_ pluginruntime.Factory             = (*SessionInspectionPlaneFactory)(nil)
+	_ pluginruntime.CandidatePreMounter = (*SessionInspectionPlaneFactory)(nil)
 	_ pluginruntime.Factory             = (*GatewayFactory)(nil)
 )
