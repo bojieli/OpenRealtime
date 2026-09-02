@@ -3283,6 +3283,15 @@ and does not claim statistical parity with the historical 165-attempt sample.
     close reaches zero realm ownership. Twenty focused runs, five focused race
     runs, package, package-race, and vet gates are green. External provider-
     resource state migration remains open.
+  - [x] Preserve live session-inspection state when its provider implementation
+    is replaced around the same explicitly external registry owner. The exact
+    registered runtime survives the two-row provider/API dependency-closure
+    retirement, the stable router/export serves it through the replacement,
+    and later unregister/re-register mutations remain live rather than copied.
+    Closing the plugin realm reaches zero ownership without disposing the
+    external registry or its current session. Twenty focused runs, five focused
+    race runs, package, package-race, and vet gates are green. Migration between
+    distinct registry owners remains open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
