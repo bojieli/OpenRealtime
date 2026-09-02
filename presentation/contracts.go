@@ -96,6 +96,10 @@ var (
 		"presentation.client.session_state",
 		"openrealtime/presentation/client/session-state/v1:canonical-snapshot-subscribe-connect-send-text-end-turn-cancel-playout-tool-result",
 	)
+	ClientReducerStateContract = semanticContract(
+		"presentation.client.reducer.state",
+		"openrealtime/presentation/client/reducer-state/v1:bounded-safe-point-machine-outbound-cursor-local-item-private-inspection-access",
+	)
 	ClientCodecContract = semanticContract(
 		"presentation.client.strict_json",
 		"openrealtime/presentation/client/strict-json/v1:duplicate-key-depth-finite-number-parse-stable-encode",

@@ -205,7 +205,9 @@ func minimalTextDefinitions(withSessionConfiguration bool) []moduleDefinition {
 				presentation.ClientStateContract, presentation.ClientInspectionAccessContract,
 				presentation.ClientProtocolEventsContract, presentation.ClientCodecContract,
 			},
-			requires: []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
+			stateSchema: &presentation.ClientReducerStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
+			requires:    []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
 		},
 	}
 	if withSessionConfiguration {
@@ -258,7 +260,9 @@ func buildObserverDeveloperBundle() (*Bundle, error) {
 				presentation.ClientStateContract, presentation.ClientInspectionAccessContract,
 				presentation.ClientProtocolEventsContract, presentation.ClientCodecContract,
 			},
-			requires: []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
+			stateSchema: &presentation.ClientReducerStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
+			requires:    []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
 		},
 		{
 			entry: "session-configuration", file: "session-configuration.js",
@@ -570,7 +574,9 @@ func developerBundleDefinitions() []moduleDefinition {
 				presentation.ClientStateContract, presentation.ClientInspectionAccessContract,
 				presentation.ClientProtocolEventsContract, presentation.ClientCodecContract,
 			},
-			requires: []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
+			stateSchema: &presentation.ClientReducerStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
+			requires:    []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
 		},
 		{
 			entry: "session-configuration", file: "session-configuration.js",
@@ -715,7 +721,9 @@ func buildObserverDeveloperWebRTCBundle() (*Bundle, error) {
 				presentation.ClientStateContract, presentation.ClientInspectionAccessContract,
 				presentation.ClientProtocolEventsContract, presentation.ClientCodecContract,
 			},
-			requires: []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
+			stateSchema: &presentation.ClientReducerStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
+			requires:    []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
 		},
 		{
 			entry: "session-configuration", file: "session-configuration.js",
@@ -883,7 +891,9 @@ func developerWebRTCBundleDefinitions() []moduleDefinition {
 				presentation.ClientStateContract, presentation.ClientInspectionAccessContract,
 				presentation.ClientProtocolEventsContract, presentation.ClientCodecContract,
 			},
-			requires: []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
+			stateSchema: &presentation.ClientReducerStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
+			requires:    []plugin.Requirement{{Contract: presentation.ClientConnectionContract}},
 		},
 		{
 			entry: "session-configuration", file: "session-configuration.js",

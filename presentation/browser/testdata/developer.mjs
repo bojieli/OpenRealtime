@@ -15,6 +15,7 @@ const AUTHORING_JSON_SOURCE = process.env.AUTHORING_JSON_SOURCE ?? "";
 const SOURCE_ROOT_IDENTITY = process.env.SOURCE_ROOT_IDENTITY ?? "";
 const STATIC_GRAPH_FINGERPRINT = process.env.STATIC_GRAPH_FINGERPRINT ?? "";
 const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
+const REDUCER_REPLACEMENT_PATH = process.env.REDUCER_REPLACEMENT_PATH ?? "";
 const EFFECTS_REPLACEMENT_PATH = process.env.EFFECTS_REPLACEMENT_PATH ?? "";
 const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
 const RETAINED_WORKSPACE_PATH = "replacement-retained.ortg";
@@ -78,8 +79,12 @@ if (!OPERATOR_CAPABILITY || !OPERATOR_CAPABILITY_ROTATED || !AUTHORING_SOURCE ||
       !/^sha256:[0-9a-f]{64}$/.test(SOURCE_ROOT_IDENTITY)))) {
   throw new Error("developer management E2E fixture is incomplete");
 }
+if (REDUCER_REPLACEMENT_PATH && (CLIENT_TRANSPORT !== "websocket" ||
+    !REDUCER_REPLACEMENT_PATH.startsWith("/test/"))) {
+  throw new Error("developer reducer replacement fixture is invalid");
+}
 if (EFFECTS_REPLACEMENT_PATH && (!EFFECTS_ENABLED || CLIENT_TRANSPORT !== "websocket" ||
-    !EFFECTS_REPLACEMENT_PATH.startsWith("/test/"))) {
+    !REDUCER_REPLACEMENT_PATH || !EFFECTS_REPLACEMENT_PATH.startsWith("/test/"))) {
   throw new Error("developer shipped-consumer replacement fixture is invalid");
 }
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-developer-client-"));
@@ -839,6 +844,82 @@ try {
     afterRestore.entries["inspection-view"].state === "active");
   check("payload-free lifecycle state cannot expose the capability", !JSON.stringify(afterRestore).includes("mgmt_"));
 
+  let reducerReplacementSequence = 0;
+  if (REDUCER_REPLACEMENT_PATH) {
+    const reducerReplacement = await evaluate(`(async () => {
+      const before = window.__openrealtime.live();
+      const candidate = await fetch(${JSON.stringify(REDUCER_REPLACEMENT_PATH)}, {cache:"no-store"})
+        .then((response) => response.json());
+      const connectionBefore = document.getElementById("state")?.textContent ?? "";
+      const receipt = await window.__openrealtime.replace("reducer", candidate);
+      const after = window.__openrealtime.live();
+      return {
+        before, receipt, after, candidateFingerprint: candidate.fingerprint,
+        candidatePlanFingerprint: candidate.plan.fingerprint,
+        manifestFingerprint: window.__openrealtime.manifest.fingerprint,
+        mounted: window.__openrealtime.mounted,
+        connectionBefore,
+        connectionAfter: document.getElementById("state")?.textContent ?? "",
+        changed: Object.keys(after.entries).filter((entry) =>
+          before.entries[entry].implementation !== after.entries[entry].implementation),
+      };
+    })()`);
+    reducerReplacementSequence = reducerReplacement.after.sequence;
+    const reducerTransfer = (reducerReplacement.receipt.state_transfers ?? []).find(
+      (row) => row.entry === "reducer");
+    const reducerWorkspaceTransfer = (reducerReplacement.receipt.state_transfers ?? []).find(
+      (row) => row.entry === "authoring-workspace");
+    check("stateful reducer replacement retains the live transport and protocol session",
+      reducerReplacement.before.entries.transport.state === "active" &&
+      reducerReplacement.after.entries.transport.state === "active" &&
+      reducerReplacement.before.entries.transport.implementation ===
+        reducerReplacement.after.entries.transport.implementation &&
+      reducerReplacement.connectionBefore === "connected" &&
+      reducerReplacement.connectionAfter === "connected" &&
+      JSON.stringify(reducerReplacement.changed) === JSON.stringify(["reducer"]) &&
+      reducerReplacement.after.entries.reducer.implementation === "browser-esm:reducer-v2.js");
+    check("reducer replacement receipt proves exact private and durable state transfer",
+      reducerReplacement.receipt.format_version === 3 &&
+      reducerReplacement.receipt.entry === "reducer" &&
+      reducerReplacement.receipt.before_implementation.implementation === "browser-esm:reducer.js" &&
+      reducerReplacement.receipt.after_implementation.implementation === "browser-esm:reducer-v2.js" &&
+      reducerReplacement.receipt.plan_fingerprint === reducerReplacement.before.fingerprint &&
+      reducerReplacement.receipt.before_manifest_fingerprint ===
+        reducerReplacement.before.manifest_fingerprint &&
+      reducerReplacement.receipt.after_manifest_fingerprint === reducerReplacement.candidateFingerprint &&
+      reducerReplacement.receipt.before_sequence === reducerReplacement.before.sequence &&
+      reducerReplacement.receipt.after_sequence === reducerReplacement.after.sequence &&
+      reducerReplacement.after.sequence === reducerReplacement.before.sequence + 1 &&
+      reducerReplacement.candidatePlanFingerprint === reducerReplacement.before.fingerprint &&
+      reducerReplacement.manifestFingerprint === reducerReplacement.candidateFingerprint &&
+      reducerReplacement.receipt.state_transfers?.length === 2 &&
+      reducerTransfer?.schema?.name === "presentation.client.reducer.state" &&
+      reducerTransfer.schema.revision === 1 &&
+      reducerTransfer.schema.digest ===
+        "sha256:640ca5e7a3fcb2638dd114be3affa7035514eadcb037c77c323b32abad906f26" &&
+      reducerTransfer.before_state_digest === reducerTransfer.after_state_digest &&
+      reducerTransfer.migrator_implementation === "browser-esm:reducer-v2.js" &&
+      reducerWorkspaceTransfer?.schema?.name === "presentation.client.authoring_workspace.state" &&
+      reducerWorkspaceTransfer.schema.revision === 1 &&
+      reducerWorkspaceTransfer.schema.digest ===
+        "sha256:8dcc2b5181390a1a61b50a3bb07390326bc60e6839a22f9667e3d40247147b78" &&
+      reducerWorkspaceTransfer.before_state_digest === reducerWorkspaceTransfer.after_state_digest &&
+      reducerWorkspaceTransfer.migrator_implementation === "" &&
+      !JSON.stringify(reducerReplacement.receipt).includes(RETAINED_WORKSPACE_PATH) &&
+      !JSON.stringify(reducerReplacement.receipt).includes("mgmt_"));
+    check("reducer replacement remounts every dependent against restored state",
+      JSON.stringify(reducerReplacement.mounted) === JSON.stringify(expectedMounted) &&
+      Object.entries(reducerReplacement.after.entries).every(([, entry]) =>
+        entry.desired && entry.state === "active") &&
+      await waitFor("reducer replacement inspection", () => evaluate(
+        `document.querySelector('[data-view=inspection] #availability')?.textContent === "live"`)));
+    const reducerMarkup = await evaluate(`document.documentElement.outerHTML`);
+    check("reducer migration keeps session inspection authority private",
+      ![OPERATOR_CAPABILITY, OPERATOR_CAPABILITY_ROTATED, "mgmt_invalid_operator_capability"].some(
+        (secret) => JSON.stringify(reducerReplacement).includes(secret) ||
+          reducerMarkup.includes(secret) || browserConsole.some((row) => row.includes(secret))));
+  }
+
   let capabilityReplacementSequence = 0;
   if (EFFECTS_REPLACEMENT_PATH) {
     await waitFor("initial effect negotiation", () => evaluate(
@@ -877,6 +958,8 @@ try {
       (row) => row.entry === "authoring-workspace");
     const operatorTransfer = (replacement.receipt.state_transfers ?? []).find(
       (row) => row.entry === "management-operator");
+    const reducerTransfer = (replacement.receipt.state_transfers ?? []).find(
+      (row) => row.entry === "reducer");
     check("shipped consumer replacement receipt is exact and payload-free",
       replacement.receipt.format_version === 3 &&
       replacement.receipt.plan_fingerprint === replacement.before.fingerprint &&
@@ -884,11 +967,18 @@ try {
       replacement.receipt.after_manifest_fingerprint === replacement.candidateFingerprint &&
       replacement.receipt.before_sequence === replacement.before.sequence &&
       replacement.receipt.after_sequence === replacement.after.sequence &&
+      replacement.before.sequence === reducerReplacementSequence &&
       JSON.stringify(transitionEntries) === JSON.stringify(expectedReplacementEntries) &&
       transitions.every((row) => row.before_implementation.implementation ===
         SHIPPED_PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
         row.after_implementation.implementation === SHIPPED_REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
-      replacement.receipt.state_transfers?.length === 2 &&
+      replacement.receipt.state_transfers?.length === 3 &&
+      reducerTransfer?.schema?.name === "presentation.client.reducer.state" &&
+      reducerTransfer.schema.revision === 1 &&
+      reducerTransfer.schema.digest ===
+        "sha256:640ca5e7a3fcb2638dd114be3affa7035514eadcb037c77c323b32abad906f26" &&
+      reducerTransfer.before_state_digest === reducerTransfer.after_state_digest &&
+      reducerTransfer.migrator_implementation === "" &&
       operatorTransfer?.schema?.name === "presentation.client.management_operator.state" &&
       operatorTransfer.schema.revision === 1 &&
       operatorTransfer.schema.digest ===

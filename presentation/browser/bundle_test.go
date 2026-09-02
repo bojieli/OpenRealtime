@@ -770,9 +770,13 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		t.Fatal(err)
 	}
 	var order []string
-	var operatorDescriptor, workspaceDescriptor *plugin.Descriptor
+	var reducerDescriptor, operatorDescriptor, workspaceDescriptor *plugin.Descriptor
 	for _, entry := range bundle.Plan.Entries {
 		order = append(order, entry.Entry.ID)
+		if entry.Entry.ID == "reducer" {
+			descriptor := entry.Descriptor
+			reducerDescriptor = &descriptor
+		}
 		if entry.Entry.ID == "management-operator" {
 			descriptor := entry.Descriptor
 			operatorDescriptor = &descriptor
@@ -803,6 +807,11 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		*operatorDescriptor.StateSchema != presentation.ClientManagementOperatorStateContract ||
 		!operatorDescriptor.Lifecycle.Snapshot || !operatorDescriptor.Lifecycle.Restore {
 		t.Fatalf("management operator state lifecycle = %#v", operatorDescriptor)
+	}
+	if reducerDescriptor == nil || reducerDescriptor.StateSchema == nil ||
+		*reducerDescriptor.StateSchema != presentation.ClientReducerStateContract ||
+		!reducerDescriptor.Lifecycle.Snapshot || !reducerDescriptor.Lifecycle.Restore {
+		t.Fatalf("reducer state lifecycle = %#v", reducerDescriptor)
 	}
 	if len(bundle.Manifest.Grants) != 5 ||
 		bundle.Manifest.Grants[0].Entry != "effects" ||

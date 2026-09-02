@@ -252,6 +252,8 @@ try {
   const replacementEntries = Object.keys(REPLACEMENT_IMPLEMENTATIONS).sort();
   const workspaceTransfer = (clientReplacement.receipt.state_transfers ?? []).find(
     (row) => row.entry === "authoring-workspace");
+  const reducerTransfer = (clientReplacement.receipt.state_transfers ?? []).find(
+    (row) => row.entry === "reducer");
   check("WebRTC reconstructible client implementations replace atomically",
     clientReplacement.after.sequence === clientReplacement.before.sequence + 1 &&
     clientReplacement.after.fingerprint === clientReplacement.before.fingerprint &&
@@ -266,7 +268,13 @@ try {
     transitions.every((row) => row.before_implementation.implementation ===
       PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
       row.after_implementation.implementation === REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
-    clientReplacement.receipt.state_transfers?.length === 1 &&
+    clientReplacement.receipt.state_transfers?.length === 2 &&
+    reducerTransfer?.schema?.name === "presentation.client.reducer.state" &&
+    reducerTransfer.schema.revision === 1 &&
+    reducerTransfer.schema.digest ===
+      "sha256:640ca5e7a3fcb2638dd114be3affa7035514eadcb037c77c323b32abad906f26" &&
+    reducerTransfer.before_state_digest === reducerTransfer.after_state_digest &&
+    reducerTransfer.migrator_implementation === "" &&
     workspaceTransfer?.schema?.name === "presentation.client.authoring_workspace.state" &&
     workspaceTransfer.schema.revision === 1 &&
     workspaceTransfer.schema.digest ===
@@ -275,6 +283,7 @@ try {
     workspaceTransfer.migrator_implementation === "" &&
     !JSON.stringify(clientReplacement.receipt).includes(RETAINED_WORKSPACE_PATH) &&
     !JSON.stringify(clientReplacement.receipt).includes(RETAINED_WORKSPACE_SOURCE) &&
+    !JSON.stringify(clientReplacement.receipt).includes("mgmt_") &&
     !JSON.stringify(clientReplacement.receipt).includes("authority") &&
     replacementEntries.every((entry) => clientReplacement.after.entries[entry].state === "active") &&
     clientReplacement.mounted.length === 28);
@@ -292,7 +301,7 @@ try {
       status: view?.querySelector('[data-role=status]')?.textContent ?? "",
     };
   })()`);
-  check("WebRTC media/transport replacement preserves only durable workspace state",
+  check("WebRTC media/transport replacement preserves durable reducer and workspace state",
     clientReplacement.connectionState === "disconnected" &&
     restoredWorkspace.path === RETAINED_WORKSPACE_PATH &&
     restoredWorkspace.source === RETAINED_WORKSPACE_SOURCE && restoredWorkspace.status === "idle",
@@ -370,7 +379,14 @@ try {
     !firstArtifact.manifest.includes("ore1.") && !browserConsole.some((row) => row.includes("ore1.")));
 
   const lossStarted = performance.now();
-  const afterMediaLoss = await evaluate(`window.__openrealtime.deactivate("media")`);
+  const afterMediaLoss = await waitForValue("completed response safe point", () => evaluate(`(async () => {
+    try {
+      return await window.__openrealtime.deactivate("media");
+    } catch (error) {
+      if ((error?.message ?? String(error)).includes("in-flight response")) return null;
+      throw error;
+    }
+  })()`));
   const lossMS = performance.now() - lossStarted;
   check("media loss cascades through transport and consumers", afterMediaLoss.entries.media.state === "inactive" &&
     afterMediaLoss.entries.transport.state === "pending" && afterMediaLoss.entries.reducer.state === "pending" &&

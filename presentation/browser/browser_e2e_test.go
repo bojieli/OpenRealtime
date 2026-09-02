@@ -126,7 +126,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		{"authoring-configuration-view", "authoring-configuration-view.js", "authoring-configuration-view-v2.js"},
 		{"authoring-canvas-view", "authoring-canvas-view.js", "authoring-canvas-view-v2.js"},
 	}
-	alternatives := make([]presentationbrowser.DeveloperImplementationAlternative, 0, len(replacementModules))
+	alternatives := make([]presentationbrowser.DeveloperImplementationAlternative, 0, len(replacementModules)+1)
 	for _, module := range replacementModules {
 		source, readErr := os.ReadFile(filepath.Join("assets", module.source))
 		if readErr != nil {
@@ -138,13 +138,30 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 			Entry: module.entry, Entrypoint: module.candidate, Source: candidate,
 		})
 	}
+	reducerCore, err := clientreducer.JavaScriptSource()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reducerAdapter, err := os.ReadFile(filepath.Join("assets", "reducer-adapter.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reducerCandidate := make([]byte, 0, len(reducerCore)+len(reducerAdapter)+64)
+	reducerCandidate = append(reducerCandidate, reducerCore...)
+	reducerCandidate = append(reducerCandidate, '\n', '\n')
+	reducerCandidate = append(reducerCandidate, reducerAdapter...)
+	reducerCandidate = append(reducerCandidate, []byte("\n// shipped reducer replacement candidate\n")...)
+	alternatives = append(alternatives, presentationbrowser.DeveloperImplementationAlternative{
+		Entry: "reducer", Entrypoint: "reducer-v2.js", Source: reducerCandidate,
+	})
 	bundle, err := presentationbrowser.ComposeDeveloperBundle(
 		"openrealtime.browser.developer", effects.CatalogDigest(), alternatives,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := bundle.Manifest
+	reducerReplacement := replacementBrowserManifest(t, bundle.Manifest, "reducer", "reducer-v2.js")
+	replacement := reducerReplacement
 	for _, module := range replacementModules {
 		replacement = replacementBrowserManifest(t, replacement, module.entry, module.candidate)
 	}
@@ -215,11 +232,20 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	const reducerReplacementPath = "/test/developer-reducer-replacement.json"
 	const replacementPath = "/test/developer-shipped-consumers-replacement.json"
 	var effectConnectionStarts atomic.Int32
 	var activeEffectConnections atomic.Int32
 	var realtimeConnectionStarts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == reducerReplacementPath {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Header().Set("Cache-Control", "no-store")
+			if err := json.NewEncoder(writer).Encode(reducerReplacement); err != nil {
+				t.Errorf("encode reducer replacement manifest: %v", err)
+			}
+			return
+		}
 		if request.URL.Path == replacementPath {
 			writer.Header().Set("Content-Type", "application/json")
 			writer.Header().Set("Cache-Control", "no-store")
@@ -250,6 +276,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	command := exec.CommandContext(ctx, node, driver, server.URL)
 	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t),
 		"EXPECT_EFFECTS=1", "CLIENT_TRANSPORT=websocket",
+		"REDUCER_REPLACEMENT_PATH="+reducerReplacementPath,
 		"EFFECTS_REPLACEMENT_PATH="+replacementPath,
 		"OPERATOR_CAPABILITY="+operatorOne.Token,
 		"OPERATOR_CAPABILITY_ROTATED="+operatorTwo.Token,
@@ -269,8 +296,8 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	for activeEffectConnections.Load() != 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if starts, active := effectConnectionStarts.Load(), activeEffectConnections.Load(); starts != 2 || active != 0 {
-		t.Fatalf("effects replacement connections started/active = %d/%d, want 2/0", starts, active)
+	if starts, active := effectConnectionStarts.Load(), activeEffectConnections.Load(); starts != 3 || active != 0 {
+		t.Fatalf("effects replacement connections started/active = %d/%d, want 3/0", starts, active)
 	}
 	if starts := realtimeConnectionStarts.Load(); starts != 2 {
 		t.Fatalf("realtime WebSocket connections started = %d, want 2", starts)

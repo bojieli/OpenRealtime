@@ -6,10 +6,14 @@ const plugin = (await import(pathToFileURL(modulePath))).default;
 
 let inbound;
 let physical;
+let physicalState = "idle";
+let snapshotReducerState;
+let restoredReads = 0;
 const outbound = [];
 const connection = {
   kind: "websocket",
-  connect: async () => {},
+  state: () => physicalState,
+  connect: async () => { physicalState = "connected"; },
   send: (event) => outbound.push(structuredClone(event)),
   subscribe(listener) { inbound = listener; return () => { inbound = undefined; }; },
   onState(listener) { physical = listener; return () => { physical = undefined; }; },
@@ -19,8 +23,25 @@ const disposers = [];
 await plugin.mount({
   services: { get: (name) => name === "presentation.client.connection" ? connection : undefined },
   publish: (name, value) => services.set(name, value),
+  state: {
+    restored() {
+      restoredReads++;
+      if (restoredReads !== 1) throw new Error("reducer restored state was consumed more than once");
+      return undefined;
+    },
+    snapshot(callback) {
+      if (typeof callback !== "function" || snapshotReducerState) {
+        throw new Error("reducer snapshot provider registration is invalid");
+      }
+      snapshotReducerState = callback;
+    },
+  },
   lifecycle: { defer(_name, dispose) { disposers.push(dispose); } },
 });
+if (typeof plugin.migrateState !== "function" || typeof snapshotReducerState !== "function" ||
+    restoredReads !== 1) {
+  throw new Error("reducer adapter did not expose its declared state lifecycle");
+}
 for (const name of [
   "presentation.client.session_state", "presentation.client.inspection_access",
   "presentation.client.protocol_events", "presentation.client.strict_json",
@@ -94,6 +115,50 @@ if (state.snapshot().session.id !== "session-adapter") {
   throw new Error("protocol event consumer mutated reducer state");
 }
 
+const captured = snapshotReducerState();
+if (captured.machine.connection.phase !== "connected" ||
+    captured.machine.session.id !== "session-adapter" ||
+    captured.outbound.length !== captured.command_cursor || captured.local_item !== 0 ||
+    captured.inspection_access?.token !== "mgmt_valid-capability" ||
+    JSON.stringify(state.snapshot()).includes("mgmt_valid-capability")) {
+  throw new Error("reducer adapter did not capture its bounded private safe-point state");
+}
+const schema = {
+  name: "presentation.client.reducer.state",
+  revision: 1,
+  digest: "sha256:640ca5e7a3fcb2638dd114be3affa7035514eadcb037c77c323b32abad906f26",
+};
+const migrated = await plugin.migrateState({
+  entry: "reducer",
+  schema,
+  source_implementation: "browser-esm:reducer.js",
+  snapshot: structuredClone(captured),
+});
+if (JSON.stringify(migrated) !== JSON.stringify(captured)) {
+  throw new Error("reducer adapter migration changed canonical state");
+}
+const rejectsMigration = async (snapshot, message) => {
+  let rejected = false;
+  try {
+    await plugin.migrateState({
+      entry: "reducer", schema, source_implementation: "browser-esm:reducer.js", snapshot,
+    });
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error(message);
+};
+const extraField = structuredClone(captured);
+extraField.unexpected = true;
+await rejectsMigration(extraField, "reducer migration accepted an unknown state field");
+const reconnecting = structuredClone(captured);
+reconnecting.machine.connection.phase = "reconnecting";
+await rejectsMigration(reconnecting, "reducer migration accepted an in-flight reconnect");
+const unsent = structuredClone(captured);
+unsent.outbound.push({ type: "response.create" });
+await rejectsMigration(unsent, "reducer migration accepted an unsent command");
+
+physicalState = "closed";
 physical("closed", "test loss");
 if (access.current() !== null || state.snapshot().connection.phase !== "reconnecting") {
   throw new Error("transport loss did not revoke inspection authority");
