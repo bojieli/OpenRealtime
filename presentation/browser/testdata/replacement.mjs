@@ -96,6 +96,8 @@ try {
     manifest: window.__openrealtime.manifest,
     provider: document.getElementById("openrealtime-root").dataset.replaceableProvider,
     consumer: document.getElementById("openrealtime-root").dataset.replaceableConsumer,
+    statefulProvider: document.getElementById("openrealtime-root").dataset.statefulProvider,
+    statefulView: document.getElementById("openrealtime-root").dataset.statefulView,
   }))()`);
   check("replaceable client starts on the exact v1 implementation",
     initial.provider === "v1" && initial.consumer === "v1" && initial.state.sequence === 1 &&
@@ -104,6 +106,9 @@ try {
     initial.state.fingerprint === initial.manifest.plan.fingerprint &&
     initial.state.manifest_fingerprint === initial.manifest.fingerprint &&
     initial.state.entries.replaceable.artifact.digest.startsWith("sha256:"));
+  check("stateful client and dependent start from exact initial state",
+    initial.statefulProvider === "v1:7" && initial.statefulView === "v1:11" &&
+    initial.state.entries.stateful.implementation === "browser-esm:stateful-v1.js");
 
   const invalid = await evaluate(`(async () => {
     const candidate = await fetch("/test/replacement-v2.json", {cache:"no-store"}).then((value) => value.json());
@@ -316,6 +321,156 @@ try {
       "browser-esm:replaceable-v3.js" &&
     replacedMulti.manifest.implementations.find((row) => row.entry === "replaceable-view").implementation ===
       "browser-esm:replaceable-view-v2.js");
+
+  const missingMigrator = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-stateful-no-migrator.json", {cache:"no-store"})
+      .then((value) => value.json());
+    let error = "";
+    try { await window.__openrealtime.replace("stateful", candidate); }
+    catch (failure) { error = failure?.message ?? String(failure); }
+    const root = document.getElementById("openrealtime-root");
+    return {error, live: window.__openrealtime.live(),
+      provider: root.dataset.statefulProvider, view: root.dataset.statefulView,
+      providerSnapshots: Number(root.dataset.statefulProviderSnapshots || "0"),
+      providerDisposals: Number(root.dataset.statefulV1Disposals || "0"),
+      viewDisposals: Number(root.dataset.statefulViewDisposals || "0")};
+  })()`);
+  check("stateful replacement without an explicit migrator is refused before snapshot or teardown",
+    missingMigrator.error.includes("requires explicit state migration") &&
+    missingMigrator.live.sequence === 3 && missingMigrator.provider === "v1:7" &&
+    missingMigrator.view === "v1:11" && missingMigrator.providerSnapshots === 0 &&
+    missingMigrator.providerDisposals === 0 && missingMigrator.viewDisposals === 0,
+    missingMigrator.error);
+
+  const failedSnapshot = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-stateful-v2.json", {cache:"no-store"})
+      .then((value) => value.json());
+    const root = document.getElementById("openrealtime-root");
+    root.dataset.failStatefulSnapshot = "true";
+    let error = "";
+    try { await window.__openrealtime.replace("stateful", candidate); }
+    catch (failure) { error = failure?.message ?? String(failure); }
+    delete root.dataset.failStatefulSnapshot;
+    return {error, live: window.__openrealtime.live(),
+      provider: root.dataset.statefulProvider, view: root.dataset.statefulView,
+      providerSnapshots: Number(root.dataset.statefulProviderSnapshots || "0"),
+      viewSnapshots: Number(root.dataset.statefulViewSnapshots || "0"),
+      providerDisposals: Number(root.dataset.statefulV1Disposals || "0"),
+      viewDisposals: Number(root.dataset.statefulViewDisposals || "0")};
+  })()`);
+  check("state snapshot failure leaves the complete live closure untouched",
+    failedSnapshot.error.includes("state snapshot failed") &&
+    failedSnapshot.error.includes("intentional state snapshot failure") &&
+    failedSnapshot.live.sequence === 3 && failedSnapshot.provider === "v1:7" &&
+    failedSnapshot.view === "v1:11" && failedSnapshot.providerSnapshots === 1 &&
+    failedSnapshot.viewSnapshots === 0 && failedSnapshot.providerDisposals === 0 &&
+    failedSnapshot.viewDisposals === 0,
+    failedSnapshot.error);
+
+  const failedStateful = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-stateful-failure.json", {cache:"no-store"})
+      .then((value) => value.json());
+    let error = "";
+    try { await window.__openrealtime.replace("stateful", candidate); }
+    catch (failure) { error = failure?.message ?? String(failure); }
+    const root = document.getElementById("openrealtime-root");
+    return {error, candidate, live: window.__openrealtime.live(),
+      manifest: window.__openrealtime.manifest,
+      provider: root.dataset.statefulProvider, view: root.dataset.statefulView,
+      providerSnapshots: Number(root.dataset.statefulProviderSnapshots || "0"),
+      viewSnapshots: Number(root.dataset.statefulViewSnapshots || "0"),
+      v1Mounts: Number(root.dataset.statefulV1Mounts || "0"),
+      v1Disposals: Number(root.dataset.statefulV1Disposals || "0"),
+      failedMounts: Number(root.dataset.statefulFailedMounts || "0"),
+      failedDisposals: Number(root.dataset.statefulFailedDisposals || "0"),
+      viewMounts: Number(root.dataset.statefulViewMounts || "0"),
+      viewDisposals: Number(root.dataset.statefulViewDisposals || "0")};
+  })()`);
+  check("failed stateful activation restores exact provider and unchanged-dependent state",
+    failedStateful.error.includes("rolled back") && failedStateful.live.sequence === 3 &&
+    failedStateful.live.manifest_fingerprint === replacedMulti.candidate.fingerprint &&
+    failedStateful.manifest.fingerprint === replacedMulti.candidate.fingerprint &&
+    failedStateful.live.entries.stateful.implementation === "browser-esm:stateful-v1.js" &&
+    failedStateful.provider === "v1:7" && failedStateful.view === "v1:11",
+    failedStateful.error);
+  check("stateful rollback disposes candidate and predecessor closures exactly once",
+    failedStateful.providerSnapshots === 2 && failedStateful.viewSnapshots === 1 &&
+    failedStateful.v1Mounts === 2 && failedStateful.v1Disposals === 1 &&
+    failedStateful.failedMounts === 1 && failedStateful.failedDisposals === 1 &&
+    failedStateful.viewMounts === 2 && failedStateful.viewDisposals === 1,
+    JSON.stringify(failedStateful));
+
+  const invalidMigration = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-stateful-invalid-migration.json", {cache:"no-store"})
+      .then((value) => value.json());
+    let error = "", nested = "";
+    try { await window.__openrealtime.replace("stateful", candidate); }
+    catch (failure) {
+      error = failure?.message ?? String(failure);
+      nested = (failure?.errors ?? []).map((row) => row?.message ?? String(row)).join("; ");
+    }
+    const root = document.getElementById("openrealtime-root");
+    return {error, nested, live: window.__openrealtime.live(),
+      provider: root.dataset.statefulProvider, view: root.dataset.statefulView,
+      providerSnapshots: Number(root.dataset.statefulProviderSnapshots || "0"),
+      viewSnapshots: Number(root.dataset.statefulViewSnapshots || "0"),
+      v1Mounts: Number(root.dataset.statefulV1Mounts || "0"),
+      v1Disposals: Number(root.dataset.statefulV1Disposals || "0"),
+      viewMounts: Number(root.dataset.statefulViewMounts || "0"),
+      viewDisposals: Number(root.dataset.statefulViewDisposals || "0")};
+  })()`);
+  check("invalid migrated JSON rolls back before candidate activation",
+    invalidMigration.error.includes("rolled back") &&
+    invalidMigration.nested.includes("must be a strict JSON object") &&
+    invalidMigration.live.sequence === 3 && invalidMigration.provider === "v1:7" &&
+    invalidMigration.view === "v1:11" && invalidMigration.providerSnapshots === 3 &&
+    invalidMigration.viewSnapshots === 2 && invalidMigration.v1Mounts === 3 &&
+    invalidMigration.v1Disposals === 2 && invalidMigration.viewMounts === 3 &&
+    invalidMigration.viewDisposals === 2,
+    invalidMigration.error + "; " + invalidMigration.nested);
+
+  const replacedStateful = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-stateful-v2.json", {cache:"no-store"})
+      .then((value) => value.json());
+    const receipt = await window.__openrealtime.replace("stateful", candidate);
+    const root = document.getElementById("openrealtime-root");
+    return {candidate, receipt, live: window.__openrealtime.live(),
+      manifest: window.__openrealtime.manifest,
+      provider: root.dataset.statefulProvider, view: root.dataset.statefulView,
+      providerSnapshots: Number(root.dataset.statefulProviderSnapshots || "0"),
+      viewSnapshots: Number(root.dataset.statefulViewSnapshots || "0"),
+      v1Disposals: Number(root.dataset.statefulV1Disposals || "0"),
+      v2Mounts: Number(root.dataset.statefulV2Mounts || "0"),
+      viewMounts: Number(root.dataset.statefulViewMounts || "0"),
+      viewDisposals: Number(root.dataset.statefulViewDisposals || "0")};
+  })()`);
+  check("stateful replacement migrates provider state and preserves unchanged dependent state",
+    replacedStateful.provider === "v2:8" && replacedStateful.view === "v2:11" &&
+    replacedStateful.live.sequence === 4 &&
+    replacedStateful.live.manifest_fingerprint === replacedStateful.candidate.fingerprint &&
+    replacedStateful.live.entries.stateful.implementation === "browser-esm:stateful-v2.js" &&
+    replacedStateful.providerSnapshots === 4 && replacedStateful.viewSnapshots === 3 &&
+    replacedStateful.v1Disposals === 3 && replacedStateful.v2Mounts === 1 &&
+    replacedStateful.viewMounts === 4 && replacedStateful.viewDisposals === 3,
+    JSON.stringify(replacedStateful));
+  const providerTransfer = replacedStateful.receipt.state_transfers?.find(
+    (row) => row.entry === "stateful");
+  const viewTransfer = replacedStateful.receipt.state_transfers?.find(
+    (row) => row.entry === "stateful-view");
+  check("stateful receipt binds only schemas, digests, identities, and sequences",
+    replacedStateful.receipt.format_version === 3 && replacedStateful.receipt.entry === "stateful" &&
+    replacedStateful.receipt.before_manifest_fingerprint === replacedMulti.candidate.fingerprint &&
+    replacedStateful.receipt.after_manifest_fingerprint === replacedStateful.candidate.fingerprint &&
+    replacedStateful.receipt.before_sequence === 3 && replacedStateful.receipt.after_sequence === 4 &&
+    providerTransfer?.schema.name === "example.client.stateful.state" &&
+    providerTransfer.before_state_digest.startsWith("sha256:") &&
+    providerTransfer.after_state_digest.startsWith("sha256:") &&
+    providerTransfer.before_state_digest !== providerTransfer.after_state_digest &&
+    providerTransfer.migrator_implementation === "browser-esm:stateful-v2.js" &&
+    viewTransfer?.before_state_digest === viewTransfer?.after_state_digest &&
+    viewTransfer?.migrator_implementation === "" &&
+    !JSON.stringify(replacedStateful.receipt).includes('"counter"') &&
+    !JSON.stringify(replacedStateful.receipt).includes('"renders"'));
   check("no uncaught browser exception", exceptions.length === 0, exceptions.join("; "));
 
   await evaluate(`window.__openrealtime.dispose()`);
@@ -324,10 +479,13 @@ try {
     children: document.getElementById("openrealtime-root").childElementCount,
     provider: document.getElementById("openrealtime-root").dataset.replaceableProvider ?? "",
     consumer: document.getElementById("openrealtime-root").dataset.replaceableConsumer ?? "",
+    statefulProvider: document.getElementById("openrealtime-root").dataset.statefulProvider ?? "",
+    statefulView: document.getElementById("openrealtime-root").dataset.statefulView ?? "",
   }))()`);
   check("replaced composition closes with zero scoped ownership",
     closed.live.state === "closed" && closed.mounted.length === 0 && closed.children === 0 &&
-    closed.provider === "" && closed.consumer === "" &&
+    closed.provider === "" && closed.consumer === "" && closed.statefulProvider === "" &&
+    closed.statefulView === "" &&
     Object.values(closed.live.entries).every((entry) => entry.effects === 0 && entry.services.length === 0));
 } catch (error) {
   check("run completed", false, error.stack ?? error.message);

@@ -1,5 +1,6 @@
 const root = document.getElementById("openrealtime-root");
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
+const MAXIMUM_STATE_SNAPSHOT_BYTES = 1 << 20;
 
 function fail(message) {
   root.textContent = `Client failed to start: ${message}`;
@@ -24,6 +25,82 @@ function hex(bytes) {
 
 async function digest(bytes) {
   return `sha256:${hex(await crypto.subtle.digest("SHA-256", bytes))}`;
+}
+
+function normalizedJSON(value, ancestors = new Set(), budget = {nodes: 0, units: 0}, depth = 0) {
+  if (++budget.nodes > MAXIMUM_STATE_SNAPSHOT_BYTES || depth > 128) {
+    reject("client state snapshot exceeds its structural bound");
+  }
+  if (typeof value === "string") {
+    budget.units += value.length;
+    if (budget.units > MAXIMUM_STATE_SNAPSHOT_BYTES) {
+      reject("client state snapshot exceeds its structural bound");
+    }
+    return value;
+  }
+  if (value === null || typeof value === "boolean") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) reject("client state snapshot contains a non-finite number");
+    return Object.is(value, -0) ? 0 : value;
+  }
+  if (typeof value !== "object") reject("client state snapshot is not strict JSON");
+  if (ancestors.has(value)) reject("client state snapshot contains a cycle");
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (value.length > MAXIMUM_STATE_SNAPSHOT_BYTES) {
+        reject("client state snapshot exceeds its structural bound");
+      }
+      const keys = Reflect.ownKeys(value);
+      if (keys.length !== value.length + 1 || !keys.includes("length")) {
+        reject("client state snapshot array has non-JSON properties");
+      }
+      const result = [];
+      for (let index = 0; index < value.length; index++) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) {
+          reject("client state snapshot array is sparse or accessor-backed");
+        }
+        result.push(normalizedJSON(descriptor.value, ancestors, budget, depth + 1));
+      }
+      return result;
+    }
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      reject("client state snapshot contains a non-JSON object");
+    }
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > MAXIMUM_STATE_SNAPSHOT_BYTES || keys.some((key) => typeof key !== "string")) {
+      reject("client state snapshot has non-JSON properties");
+    }
+    const result = Object.create(null);
+    for (const key of keys.sort()) {
+      budget.units += key.length;
+      if (budget.units > MAXIMUM_STATE_SNAPSHOT_BYTES) {
+        reject("client state snapshot exceeds its structural bound");
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor?.enumerable || !("value" in descriptor)) {
+        reject("client state snapshot is accessor-backed or non-enumerable");
+      }
+      result[key] = normalizedJSON(descriptor.value, ancestors, budget, depth + 1);
+    }
+    return result;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+async function canonicalState(value) {
+  const normalized = normalizedJSON(value);
+  if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) {
+    reject("client state snapshot must be a strict JSON object");
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(normalized));
+  if (bytes.byteLength === 0 || bytes.byteLength > MAXIMUM_STATE_SNAPSHOT_BYTES) {
+    reject(`client state snapshot exceeds ${MAXIMUM_STATE_SNAPSHOT_BYTES} bytes`);
+  }
+  return { snapshot: JSON.parse(new TextDecoder().decode(bytes)), digest: await digest(bytes) };
 }
 
 function permissionSet(manifest, entry) {
@@ -155,6 +232,62 @@ class Scope {
   }
 }
 
+class StateBoundary {
+  #descriptor;
+  #restored;
+  #available;
+  #consumed = false;
+  #snapshot;
+  #sealed = false;
+  #api;
+  constructor(descriptor, restored, available) {
+    this.#descriptor = descriptor;
+    this.#restored = available ? structuredClone(restored) : undefined;
+    this.#available = available;
+    this.#api = Object.freeze({
+      restored: () => this.restored(),
+      snapshot: (callback) => this.snapshot(callback),
+    });
+  }
+  get api() { return this.#api; }
+  restored() {
+    if (!this.#descriptor.state_schema) throw new Error("client plugin has no state schema");
+    if (this.#sealed) throw new Error("client plugin state lifecycle is sealed");
+    if (this.#consumed) throw new Error("client restored state was already consumed");
+    this.#consumed = true;
+    return this.#available ? structuredClone(this.#restored) : undefined;
+  }
+  snapshot(callback) {
+    if (!this.#descriptor.state_schema) throw new Error("client plugin has no state schema");
+    if (this.#sealed) throw new Error("client plugin state lifecycle is sealed");
+    if (!this.#descriptor.lifecycle?.snapshot) {
+      throw new Error("client plugin does not declare state snapshot support");
+    }
+    if (typeof callback !== "function") throw new Error("client state snapshot requires a callback");
+    if (this.#snapshot) throw new Error("client plugin registered more than one state snapshot");
+    this.#snapshot = callback;
+  }
+  assertPublicationAllowed() {
+    if (this.#available && !this.#consumed) {
+      throw new Error("client plugin must consume restored state before publishing services");
+    }
+  }
+  seal() {
+    if (this.#sealed) throw new Error("client plugin state lifecycle was already sealed");
+    this.#sealed = true;
+    if (this.#available && !this.#descriptor.lifecycle?.restore) {
+      throw new Error("client plugin does not declare state restore support");
+    }
+    if (this.#available && !this.#consumed) {
+      throw new Error("client plugin did not consume restored state");
+    }
+    if (this.#descriptor.lifecycle?.snapshot && !this.#snapshot) {
+      throw new Error("client plugin did not register a state snapshot");
+    }
+    return this.#snapshot;
+  }
+}
+
 async function boot() {
   const response = await fetch("/client/v1/manifest", { cache: "no-store", credentials: "same-origin" });
   if (!response.ok) reject(`manifest returned ${response.status}`);
@@ -189,7 +322,7 @@ async function boot() {
   const requiredReady = (planned) => (planned.dependencies ?? []).every((binding) =>
     binding.optional || services.has(`${binding.provider}\0${binding.service.name}`));
 
-  const mountOne = async (id) => {
+  const mountOne = async (id, restoredStates) => {
     if (mounted.has(id)) return;
     const planned = entriesByID.get(id);
     if (!planned || !desired.has(id) || !requiredReady(planned)) return;
@@ -197,6 +330,8 @@ async function boot() {
     const dependencies = new Map((planned.dependencies ?? []).map((binding) =>
       [binding.service.name, binding]));
     const scope = new Scope();
+    const state = new StateBoundary(
+      planned.descriptor, restoredStates?.get(id), Boolean(restoredStates?.has(id)));
     const published = new Set();
     states.set(id, { state: "mounting", desired: true, error: "" });
     const context = Object.freeze({
@@ -220,7 +355,9 @@ async function boot() {
         },
       }),
       permissions: permissionSet(manifest, id),
+      state: state.api,
       publish(name, value) {
+        state.assertPublicationAllowed();
         const contract = planned.descriptor.provides?.find((candidate) => candidate.name === name);
         if (!contract || value == null || published.has(name)) throw new Error(`invalid service publication ${name}`);
         const key = `${id}\0${name}`;
@@ -239,12 +376,13 @@ async function boot() {
       for (const contract of planned.descriptor.provides ?? []) {
         if (!published.has(contract.name)) throw new Error(`plugin ${id} omitted service ${contract.name}`);
       }
+      const snapshot = state.seal();
+      mounted.set(id, { scope, published, snapshot });
     } catch (error) {
       await scope.dispose().catch(() => {});
       states.set(id, { state: "failed", desired: desired.has(id), error: error?.message ?? String(error) });
       throw error;
     }
-    mounted.set(id, { scope, published });
     states.set(id, { state: "active", desired: true, error: "" });
   };
 
@@ -266,13 +404,13 @@ async function boot() {
     }
   };
 
-  const mountDesired = async () => {
+  const mountDesired = async (restoredStates) => {
     const newlyMounted = [];
     try {
       for (const planned of manifest.plan.entries) {
         const id = planned.entry.id;
         if (!desired.has(id) || mounted.has(id) || !requiredReady(planned)) continue;
-        await mountOne(id);
+        await mountOne(id, restoredStates);
         newlyMounted.push(id);
       }
     } catch (error) {
@@ -321,6 +459,69 @@ async function boot() {
     }
     if (failures.length) throw new AggregateError(failures, cause);
   };
+  const captureState = async (affected) => {
+    const captures = new Map();
+    for (const planned of manifest.plan.entries) {
+      const id = planned.entry.id;
+      if (!affected.has(id) || !planned.descriptor.state_schema) continue;
+      if (!planned.descriptor.lifecycle?.snapshot || !planned.descriptor.lifecycle?.restore) {
+        throw new Error(`client plugin ${id} requires declared snapshot and restore support`);
+      }
+      const instance = mounted.get(id);
+      if (typeof instance?.snapshot !== "function") {
+        throw new Error(`client plugin ${id} has no live state snapshot callback`);
+      }
+      let sealed;
+      try {
+        sealed = await canonicalState(await instance.snapshot());
+      } catch (error) {
+        throw new Error(`client plugin ${id} state snapshot failed: ${error?.message ?? String(error)}`);
+      }
+      captures.set(id, {
+        entry: id,
+        schema: structuredClone(planned.descriptor.state_schema),
+        snapshot: sealed.snapshot,
+        digest: sealed.digest,
+        source_implementation: implementations.get(id).implementation,
+      });
+    }
+    return captures;
+  };
+  const predecessorState = (captures) => new Map([...captures].map(([id, capture]) =>
+    [id, structuredClone(capture.snapshot)]));
+  const migrateState = async (captures, changed, nextPlugins, nextImplementations) => {
+    const restored = new Map();
+    const transfers = [];
+    for (const [id, capture] of captures) {
+      let after = {snapshot: structuredClone(capture.snapshot), digest: capture.digest};
+      let migratorImplementation = "";
+      if (changed.has(id)) {
+        const plugin = nextPlugins.get(id);
+        let raw;
+        try {
+          raw = await plugin.migrateState(Object.freeze({
+            entry: id,
+            schema: structuredClone(capture.schema),
+            source_implementation: capture.source_implementation,
+            snapshot: structuredClone(capture.snapshot),
+          }));
+          after = await canonicalState(raw);
+        } catch (error) {
+          throw new Error(`client plugin ${id} state migration failed: ${error?.message ?? String(error)}`);
+        }
+        migratorImplementation = nextImplementations.get(id).implementation;
+      }
+      restored.set(id, structuredClone(after.snapshot));
+      transfers.push({
+        entry: id,
+        schema: structuredClone(capture.schema),
+        before_state_digest: capture.digest,
+        after_state_digest: after.digest,
+        migrator_implementation: migratorImplementation,
+      });
+    }
+    return {restored, transfers};
+  };
   const deactivate = (id) => serialized(async () => {
     if (disposed) throw new Error("client composition is disposed");
     if (!entriesByID.has(id)) throw new Error(`unknown client plugin ${id}`);
@@ -353,9 +554,6 @@ async function boot() {
       if (!desired.has(id) || !mounted.has(id)) {
         throw new Error(`client plugin ${id} is not active and desired`);
       }
-      if (planned.descriptor.state_schema) {
-        throw new Error(`client plugin ${id} requires explicit state migration`);
-      }
       requested.add(id);
     }
 
@@ -375,6 +573,7 @@ async function boot() {
         candidate.manifest.fingerprint === manifest.fingerprint) {
       throw new Error("client replacement must change exactly the requested implementations");
     }
+    const changedSet = new Set(changed);
     const nextPlugins = new Map();
     for (const id of changed) {
       const planned = entriesByID.get(id);
@@ -386,6 +585,9 @@ async function boot() {
           nextPlugin.revision !== planned.identity.revision || typeof nextPlugin.mount !== "function") {
         throw new Error(`replacement module identity mismatch for ${id}`);
       }
+      if (planned.descriptor.state_schema && typeof nextPlugin.migrateState !== "function") {
+        throw new Error(`client plugin ${id} requires explicit state migration`);
+      }
       nextPlugins.set(id, nextPlugin);
     }
 
@@ -393,6 +595,8 @@ async function boot() {
     for (const id of changed) {
       for (const affectedID of dependentClosure(id)) affected.add(affectedID);
     }
+    const captures = await captureState(affected);
+    const beforeState = predecessorState(captures);
     const beforeManifest = manifest;
     const beforeImplementations = implementations;
     const beforePlugins = new Map(changed.map((id) => [id, modules.get(id)]));
@@ -405,20 +609,27 @@ async function boot() {
     try {
       await stopAffected(affected, "client replacement quiescence failed");
     } catch (error) {
-      try { await mountDesired(); }
-      catch (restoreError) {
+      try {
+        await mountDesired(beforeState);
+        for (const id of affected) {
+          if (!mounted.has(id)) throw new Error(`previous client plugin ${id} was not restored`);
+        }
+      } catch (restoreError) {
         throw new AggregateError([error, restoreError], "client replacement could not restore");
       }
       throw error;
     }
 
-    manifest = candidate.manifest;
-    implementations = candidate.implementations;
-    for (const [id, plugin] of nextPlugins) modules.set(id, plugin);
-    root.dataset.clientManifestFingerprint = manifest.fingerprint;
+    let stateTransfers = [];
     try {
-      await mountDesired();
-      for (const id of changed) {
+      const migrated = await migrateState(captures, changedSet, nextPlugins, candidate.implementations);
+      stateTransfers = migrated.transfers;
+      manifest = candidate.manifest;
+      implementations = candidate.implementations;
+      for (const [id, plugin] of nextPlugins) modules.set(id, plugin);
+      root.dataset.clientManifestFingerprint = manifest.fingerprint;
+      await mountDesired(migrated.restored);
+      for (const id of affected) {
         if (!mounted.has(id)) throw new Error(`replacement client plugin ${id} did not activate`);
       }
     } catch (error) {
@@ -429,9 +640,9 @@ async function boot() {
       implementations = beforeImplementations;
       for (const [id, plugin] of beforePlugins) modules.set(id, plugin);
       root.dataset.clientManifestFingerprint = manifest.fingerprint;
-      try { await mountDesired(); }
+      try { await mountDesired(beforeState); }
       catch (restoreError) { failures.push(restoreError); }
-      for (const id of changed) {
+      for (const id of affected) {
         if (!mounted.has(id)) failures.push(new Error(`previous client plugin ${id} was not restored`));
       }
       throw new AggregateError(failures, "client replacement failed and was rolled back");
@@ -445,13 +656,21 @@ async function boot() {
       before_sequence: beforeSequence,
       after_sequence: sequence,
     };
-    if (single) {
+    if (single && stateTransfers.length === 0) {
       return Object.freeze({ ...receipt, ...transitions[0] });
     }
-    return Object.freeze({
+    if (!single && stateTransfers.length === 0) return Object.freeze({
       ...receipt,
       format_version: 2,
       transitions: Object.freeze(transitions.map((row) => Object.freeze(row))),
+    });
+    const stateful = single ? {...receipt, ...transitions[0]} : {
+      ...receipt, transitions: Object.freeze(transitions.map((row) => Object.freeze(row))),
+    };
+    return Object.freeze({
+      ...stateful,
+      format_version: 3,
+      state_transfers: Object.freeze(stateTransfers.map((row) => Object.freeze(row))),
     });
   };
   const replace = (id, value) => serialized(() => replaceLocked([id], value, true));

@@ -44,6 +44,8 @@ type ClientModule struct {
 	Alternatives []ClientModuleAlternative
 	Provides     []plugin.Contract
 	Requires     []plugin.Requirement
+	StateSchema  *plugin.Contract
+	Lifecycle    plugin.Lifecycle
 	Permissions  []plugin.Permission
 	Grants       []plugin.Permission
 }
@@ -71,8 +73,18 @@ type moduleDefinition struct {
 	alternatives []moduleAlternative
 	provides     []plugin.Contract
 	requires     []plugin.Requirement
+	stateSchema  *plugin.Contract
+	lifecycle    plugin.Lifecycle
 	permissions  []plugin.Permission
 	grants       []plugin.Permission
+}
+
+func cloneContract(source *plugin.Contract) *plugin.Contract {
+	if source == nil {
+		return nil
+	}
+	result := *source
+	return &result
 }
 
 const clientEffectsProtocol = presentation.ProtocolClientEffects
@@ -150,7 +162,8 @@ func ComposeTextBundle(profileName string, extensions []ClientModule) (*Bundle, 
 			entry: extension.Entry, file: extension.Entrypoint, pluginName: extension.PluginName,
 			content: slices.Clone(extension.Source), alternatives: alternatives,
 			provides: slices.Clone(extension.Provides),
-			requires: slices.Clone(extension.Requires), permissions: slices.Clone(extension.Permissions),
+			requires: slices.Clone(extension.Requires), stateSchema: cloneContract(extension.StateSchema),
+			lifecycle: extension.Lifecycle, permissions: slices.Clone(extension.Permissions),
 			grants: slices.Clone(extension.Grants),
 		})
 	}
@@ -915,6 +928,7 @@ func buildBundle(
 			Name:          definition.pluginName, Revision: 1,
 			Realm: plugin.ClientRealm, Platforms: []string{"browser"},
 			Provides: definition.provides, Requires: definition.requires,
+			StateSchema: definition.stateSchema, Lifecycle: definition.lifecycle,
 			Permissions: definition.permissions, Assets: descriptorAssets,
 		}
 		if _, err := catalog.Register(descriptor); err != nil {

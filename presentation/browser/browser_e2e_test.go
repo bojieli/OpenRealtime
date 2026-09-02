@@ -657,6 +657,104 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
   });
   throw new Error("intentional multi-row consumer activation failure");
 }};`)
+	statefulV1 := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.stateful",revision:1,async mount(context){
+  const state = context.state.restored() ?? {counter:7,owner:"v1"};
+  increment(context.root, "statefulV1Mounts");
+  context.root.dataset.statefulProvider = state.owner + ":" + state.counter;
+  context.state.snapshot(() => {
+    increment(context.root, "statefulProviderSnapshots");
+    if (context.root.dataset.failStatefulSnapshot === "true") {
+      throw new Error("intentional state snapshot failure");
+    }
+    return {...state};
+  });
+  context.publish("example.client.stateful", Object.freeze({version:"v1",counter:state.counter}));
+  context.lifecycle.defer("stateful-v1", () => {
+    increment(context.root, "statefulV1Disposals");
+    if (context.root.dataset.statefulProvider === state.owner + ":" + state.counter) {
+      delete context.root.dataset.statefulProvider;
+    }
+  });
+}};`)
+	statefulV2 := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.stateful",revision:1,
+async migrateState(input){
+  if (input.source_implementation !== "browser-esm:stateful-v1.js" ||
+      input.schema.name !== "example.client.stateful.state" || input.snapshot.owner !== "v1") {
+    throw new Error("unexpected state migration input");
+  }
+  return {counter:input.snapshot.counter + 1,owner:"v2"};
+},async mount(context){
+  const state = context.state.restored();
+  increment(context.root, "statefulV2Mounts");
+  context.root.dataset.statefulProvider = state.owner + ":" + state.counter;
+  context.state.snapshot(() => ({...state}));
+  context.publish("example.client.stateful", Object.freeze({version:"v2",counter:state.counter}));
+  context.lifecycle.defer("stateful-v2", () => {
+    increment(context.root, "statefulV2Disposals");
+    if (context.root.dataset.statefulProvider === state.owner + ":" + state.counter) {
+      delete context.root.dataset.statefulProvider;
+    }
+  });
+}};`)
+	statefulFailure := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.stateful",revision:1,
+async migrateState(input){return {counter:input.snapshot.counter + 100,owner:"failure"};},
+async mount(context){
+  const state = context.state.restored();
+  increment(context.root, "statefulFailedMounts");
+  context.root.dataset.statefulProvider = state.owner + ":" + state.counter;
+  context.state.snapshot(() => ({...state}));
+  context.publish("example.client.stateful", Object.freeze({version:"failure",counter:state.counter}));
+  context.lifecycle.defer("stateful-failure", () => {
+    increment(context.root, "statefulFailedDisposals");
+    if (context.root.dataset.statefulProvider === state.owner + ":" + state.counter) {
+      delete context.root.dataset.statefulProvider;
+    }
+  });
+  throw new Error("intentional stateful activation failure");
+}};`)
+	statefulNoMigrator := []byte(`
+export default {name:"example.client.stateful",revision:1,async mount(context){
+  const state = context.state.restored();
+  context.state.snapshot(() => ({...state}));
+}};`)
+	statefulInvalidMigration := []byte(`
+export default {name:"example.client.stateful",revision:1,
+async migrateState(){return [];},async mount(){throw new Error("invalid migration mounted");}};`)
+	statefulView := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.stateful-view",revision:1,async mount(context){
+  const state = context.state.restored() ?? {renders:11};
+  const provider = context.services.get("example.client.stateful");
+  increment(context.root, "statefulViewMounts");
+  context.root.dataset.statefulView = provider.version + ":" + state.renders;
+  context.state.snapshot(() => {
+    increment(context.root, "statefulViewSnapshots");
+    return {...state};
+  });
+  context.lifecycle.defer("stateful-view", () => {
+    increment(context.root, "statefulViewDisposals");
+    if (context.root.dataset.statefulView === provider.version + ":" + state.renders) {
+      delete context.root.dataset.statefulView;
+    }
+  });
+}};`)
+	statefulService := plugin.Contract{
+		Name: "example.client.stateful", Revision: 1, Digest: "sha256:" + strings.Repeat("6", 64),
+	}
+	statefulSchema := plugin.Contract{
+		Name: "example.client.stateful.state", Revision: 1,
+		Digest: "sha256:" + strings.Repeat("7", 64),
+	}
+	statefulViewSchema := plugin.Contract{
+		Name: "example.client.stateful-view.state", Revision: 1,
+		Digest: "sha256:" + strings.Repeat("8", 64),
+	}
 	bundle, err := presentationbrowser.ComposeTextBundle(
 		"openrealtime.browser.replacement-test", []presentationbrowser.ClientModule{
 			{
@@ -679,6 +777,25 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 				},
 				Requires: []plugin.Requirement{{Contract: presentation.ClientArtifactsContract}},
 			},
+			{
+				Entry: "stateful", Entrypoint: "stateful-v1.js",
+				PluginName: "example.client.stateful", Source: statefulV1,
+				Alternatives: []presentationbrowser.ClientModuleAlternative{
+					{Entrypoint: "stateful-v2.js", Source: statefulV2},
+					{Entrypoint: "stateful-failure.js", Source: statefulFailure},
+					{Entrypoint: "stateful-no-migrator.js", Source: statefulNoMigrator},
+					{Entrypoint: "stateful-invalid-migration.js", Source: statefulInvalidMigration},
+				},
+				Provides: []plugin.Contract{statefulService}, StateSchema: &statefulSchema,
+				Lifecycle: plugin.Lifecycle{Snapshot: true, Restore: true},
+			},
+			{
+				Entry: "stateful-view", Entrypoint: "stateful-view.js",
+				PluginName: "example.client.stateful-view", Source: statefulView,
+				Requires:    []plugin.Requirement{{Contract: statefulService}},
+				StateSchema: &statefulViewSchema,
+				Lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
+			},
 		},
 	)
 	if err != nil {
@@ -694,6 +811,16 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 	multiFailure := replacementBrowserManifest(t, v2, "replaceable", "replaceable-v3.js")
 	multiFailure = replacementBrowserManifest(
 		t, multiFailure, "replaceable-view", "replaceable-view-failure.js",
+	)
+	statefulV2Manifest := replacementBrowserManifest(t, multi, "stateful", "stateful-v2.js")
+	statefulFailureManifest := replacementBrowserManifest(
+		t, multi, "stateful", "stateful-failure.js",
+	)
+	statefulNoMigratorManifest := replacementBrowserManifest(
+		t, multi, "stateful", "stateful-no-migrator.js",
+	)
+	statefulInvalidMigrationManifest := replacementBrowserManifest(
+		t, multi, "stateful", "stateful-invalid-migration.js",
 	)
 
 	router := host.NewRouterFactory()
@@ -749,6 +876,14 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 			candidate = &multi
 		case "/test/replacement-multi-failure.json":
 			candidate = &multiFailure
+		case "/test/replacement-stateful-v2.json":
+			candidate = &statefulV2Manifest
+		case "/test/replacement-stateful-failure.json":
+			candidate = &statefulFailureManifest
+		case "/test/replacement-stateful-no-migrator.json":
+			candidate = &statefulNoMigratorManifest
+		case "/test/replacement-stateful-invalid-migration.json":
+			candidate = &statefulInvalidMigrationManifest
 		}
 		if candidate != nil {
 			writer.Header().Set("Content-Type", "application/json")

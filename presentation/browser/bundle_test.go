@@ -61,6 +61,10 @@ func TestMinimalBundleIsAnExactReplaceableClientPlan(t *testing.T) {
 func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) {
 	source := []byte(`export default {name:"example.client.challenge",revision:1,async mount(){}};`)
 	alternative := []byte(`export default {name:"example.client.challenge",revision:1,async mount(){return "v2";}};`)
+	stateSchema := plugin.Contract{
+		Name: "example.client.challenge.state", Revision: 1,
+		Digest: "sha256:" + strings.Repeat("9", 64),
+	}
 	bundle, err := ComposeTextBundle("openrealtime.browser.composed-test", []ClientModule{{
 		Entry: "challenge", Entrypoint: "challenge.js", PluginName: "example.client.challenge",
 		Source:       source,
@@ -69,6 +73,7 @@ func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) 
 			{Contract: presentation.ClientStateContract},
 			{Contract: presentation.ClientSessionConfigurationContract},
 		},
+		StateSchema: &stateSchema, Lifecycle: plugin.Lifecycle{Snapshot: true, Restore: true},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -107,13 +112,30 @@ func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) 
 	if !foundAlternative {
 		t.Fatalf("composed module omitted exact alternative digest %q", wantAlternative)
 	}
+	foundStateContract := false
+	for _, entry := range bundle.Plan.Entries {
+		if entry.Entry.ID == "challenge" {
+			foundStateContract = entry.Descriptor.StateSchema != nil &&
+				*entry.Descriptor.StateSchema == stateSchema && entry.Descriptor.Lifecycle.Snapshot &&
+				entry.Descriptor.Lifecycle.Restore
+		}
+	}
+	if !foundStateContract {
+		t.Fatalf("composed module omitted exact state lifecycle contract")
+	}
 	source[0] = 'X'
 	alternative[0] = 'X'
+	stateSchema.Name = "example.client.mutated.state"
 	if err := bundle.Manifest.Validate(); err != nil {
 		t.Fatalf("caller source mutation invalidated composed bundle: %v", err)
 	}
 	if got := manifestImplementationDigest(bundle.Manifest, "challenge"); got != wantDigest {
 		t.Fatalf("caller source mutation changed composed digest to %q, want %q", got, wantDigest)
+	}
+	for _, entry := range bundle.Plan.Entries {
+		if entry.Entry.ID == "challenge" && entry.Descriptor.StateSchema.Name != "example.client.challenge.state" {
+			t.Fatalf("caller state-schema mutation changed composed descriptor: %#v", entry.Descriptor.StateSchema)
+		}
 	}
 	if _, err := ComposeTextBundle("openrealtime.browser.empty-module", []ClientModule{{
 		Entry: "empty", Entrypoint: "empty.js", PluginName: "example.client.empty",
