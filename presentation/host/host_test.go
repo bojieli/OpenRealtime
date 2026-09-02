@@ -881,6 +881,197 @@ func TestWebSocketRelayReplacementQuiescesActiveSessionAndPreservesRouter(t *tes
 	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
 }
 
+func TestWebRTCRelayReplacementCancelsActiveRequestAndPreservesRouter(t *testing.T) {
+	var backendStarts atomic.Int32
+	var backendActive atomic.Int32
+	predecessorStarted := make(chan struct{})
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		ordinal := backendStarts.Add(1)
+		backendActive.Add(1)
+		defer backendActive.Add(-1)
+		body, _ := io.ReadAll(request.Body)
+		if ordinal == 1 {
+			close(predecessorStarted)
+			<-request.Context().Done()
+			return
+		}
+		writer.Header().Set("Content-Type", "application/sdp")
+		_, _ = io.WriteString(writer, "answer-"+strconv.Itoa(int(ordinal))+":"+string(body))
+	}))
+	defer backend.Close()
+
+	router := NewRouterFactory()
+	target := NewEndpointDirectoryFactory()
+	credential := NewAnonymousCredentialFactory()
+	relayV1 := NewWebRTCRelayFactory(nil, nil)
+	relayV2 := NewWebRTCRelayFactory(nil, nil)
+	factories := []pluginruntime.Factory{relayV1, target, credential, router}
+	plan := makeHostPlan(t, factories)
+	registry := pluginruntime.NewRegistry()
+	originalArtifacts := map[string]inspect.ArtifactIdentity{
+		relayV1.Descriptor().Name: hostTestArtifact("go://host-webrtc-relay-v1", "build-1", "6"),
+		target.Descriptor().Name:  hostTestArtifact("go://host-endpoint-directory", "build-1", "7"),
+		credential.Descriptor().Name: hostTestArtifact(
+			"go://host-anonymous-credential", "build-1", "8",
+		),
+		router.Descriptor().Name: hostTestArtifact("go://host-router", "build-1", "9"),
+	}
+	for _, factory := range factories {
+		if err := registry.RegisterArtifact(
+			factory.Descriptor().Name, originalArtifacts[factory.Descriptor().Name], factory,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const candidateImplementation = "openrealtime.presentation.host.webrtc-relay-v2"
+	candidateArtifact := hostTestArtifact("go://host-webrtc-relay-v2", "build-2", "a")
+	if err := registry.RegisterArtifact(candidateImplementation, candidateArtifact, relayV2); err != nil {
+		t.Fatal(err)
+	}
+	values := testEndpointDirectoryValues(t, "", presentation.Endpoint{
+		Name: presentation.EndpointRealtimeWebRTC, Protocol: presentation.ProtocolRealtimeWebRTC,
+		URL: backend.URL + "/v1/realtime/calls",
+	})
+	permission := relayPermission(httpOperation)
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry, Values: map[string]json.RawMessage{"target": values},
+		Permissions: map[string][]plugin.Permission{"webrtc": {permission}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
+	value, contract, provider, revision, err := mounted.Export("http")
+	if err != nil || contract != presentation.HTTPHandlerContract || provider != "router" {
+		t.Fatalf("host HTTP export = %T %+v %q %d, %v", value, contract, provider, revision, err)
+	}
+	handler, ok := value.(http.Handler)
+	if !ok {
+		t.Fatalf("host HTTP export value = %T", value)
+	}
+	hostServer := httptest.NewServer(handler)
+	defer hostServer.Close()
+	relayURL := hostServer.URL + "/client/v1/realtime/calls"
+	type requestResult struct {
+		status int
+		body   string
+		err    error
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	post := func(offer string) requestResult {
+		response, err := client.Post(relayURL, "application/sdp", strings.NewReader(offer))
+		if err != nil {
+			return requestResult{err: err}
+		}
+		body, readErr := io.ReadAll(response.Body)
+		response.Body.Close()
+		return requestResult{status: response.StatusCode, body: string(body), err: readErr}
+	}
+	predecessorResult := make(chan requestResult, 1)
+	go func() { predecessorResult <- post("offer-v1") }()
+	select {
+	case <-predecessorStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("predecessor WebRTC relay request did not reach the backend")
+	}
+	before := mounted.Live()
+	if backendActive.Load() != 1 || before.Entries["webrtc"].Workers != 1 ||
+		before.Entries["webrtc"].Effects != 1 {
+		t.Fatalf("active predecessor WebRTC relay ownership = %+v, backend=%d",
+			before.Entries["webrtc"], backendActive.Load())
+	}
+	if receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: before.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "webrtc", SetImplementation: true, Implementation: candidateImplementation,
+			SetPermissions: true,
+		}},
+	}); err == nil || !strings.Contains(err.Error(), "network-connect grant") ||
+		receipt.FormatVersion != 0 {
+		t.Fatalf("permissionless WebRTC candidate receipt/error = %#v, %v", receipt, err)
+	}
+	afterRefusal := mounted.Live()
+	if afterRefusal.Sequence != before.Sequence ||
+		afterRefusal.Entries["webrtc"].Implementation != relayV1.Descriptor().Name ||
+		afterRefusal.Entries["webrtc"].Workers != 1 || backendActive.Load() != 1 {
+		t.Fatalf("refused WebRTC candidate disturbed predecessor = %+v, backend=%d",
+			afterRefusal, backendActive.Load())
+	}
+	select {
+	case result := <-predecessorResult:
+		t.Fatalf("refused candidate ended predecessor request: %#v", result)
+	default:
+	}
+
+	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: afterRefusal.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "webrtc", SetImplementation: true, Implementation: candidateImplementation,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-predecessorResult:
+		if result.err != nil || result.status != http.StatusBadGateway ||
+			!strings.Contains(result.body, "WebRTC endpoint is unavailable") {
+			t.Fatalf("retired WebRTC request result = %#v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("retired WebRTC relay left its predecessor request active")
+	}
+	if backendActive.Load() != 0 {
+		t.Fatalf("retired WebRTC relay retained %d backend requests", backendActive.Load())
+	}
+	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
+		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
+		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 1 ||
+		receipt.Transitions[0].Entry != "webrtc" ||
+		receipt.Transitions[0].BeforeRuntime != originalArtifacts[relayV1.Descriptor().Name] ||
+		receipt.Transitions[0].AfterRuntime != candidateArtifact || len(receipt.Retirements) != 1 {
+		t.Fatalf("WebRTC relay replacement receipt = %#v", receipt)
+	}
+	retirement := receipt.Retirements[0]
+	if retirement.Entry != "webrtc" || retirement.RetiredScopes == 0 ||
+		retirement.ClosedScopes != retirement.RetiredScopes || retirement.RemainingWorkers != 0 ||
+		retirement.RemainingEffects != 0 || retirement.RemainingChildScopes != 0 ||
+		retirement.RemainingServices != 0 {
+		t.Fatalf("WebRTC relay retirement retained ownership: %#v", retirement)
+	}
+	after := mounted.Live()
+	if after.Sequence != receipt.AfterSequence ||
+		after.Entries["webrtc"].Implementation != candidateImplementation ||
+		after.Entries["webrtc"].Runtime != candidateArtifact ||
+		after.Entries["webrtc"].Workers != 0 || after.Entries["webrtc"].Effects != 1 ||
+		after.Entries["router"].Runtime != originalArtifacts[router.Descriptor().Name] {
+		t.Fatalf("replacement WebRTC relay live evidence = %+v", after)
+	}
+	afterValue, afterContract, afterProvider, afterRevision, err := mounted.Export("http")
+	if err != nil || afterValue != value || afterContract != contract || afterProvider != provider ||
+		afterRevision != revision {
+		t.Fatalf("stable host export changed across WebRTC replacement: %T/%+v/%s/%d, %v",
+			afterValue, afterContract, afterProvider, afterRevision, err)
+	}
+
+	result := post("offer-v2")
+	if result.err != nil || result.status != http.StatusOK || result.body != "answer-2:offer-v2" {
+		t.Fatalf("replacement WebRTC relay response = %#v", result)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for mounted.Live().Entries["webrtc"].Workers != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if live := mounted.Live(); live.Entries["webrtc"].Workers != 0 || backendActive.Load() != 0 {
+		t.Fatalf("completed replacement WebRTC request retained ownership: %+v, backend=%d",
+			live.Entries["webrtc"], backendActive.Load())
+	}
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
+}
+
 func TestWebRTCRelayRefusesCredentialBearingRedirect(t *testing.T) {
 	var captured atomic.Bool
 	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -896,7 +1087,7 @@ func TestWebRTCRelayRefusesCredentialBearingRedirect(t *testing.T) {
 	factory := NewWebRTCRelayFactory(nil, nil)
 	request := httptest.NewRequest(http.MethodPost, "/client/v1/realtime/calls", strings.NewReader("offer-sdp"))
 	response := httptest.NewRecorder()
-	factory.relayWebRTC(relayTarget{
+	factory.relayWebRTC(request.Context(), relayTarget{
 		WebRTC: backend.URL + "/offer", DialTimeout: time.Second,
 	}, staticCredential("Bearer must-not-cross-redirect"), response, request)
 	if response.Code != http.StatusTemporaryRedirect || captured.Load() {

@@ -110,19 +110,35 @@ func (factory *WebSocketRelayFactory) mountWebSocketRelay(
 	target relayTarget,
 	credential CredentialSource,
 ) error {
-	var nextSession atomic.Uint64
-	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	handler := lifecycleHTTPHandler(
+		mount.Lifecycle, "websocket-relay-session",
+		func(ctx context.Context, writer http.ResponseWriter, request *http.Request) {
+			factory.relayWebSocket(ctx, target, credential, writer, request)
+		},
+	)
+	return registerRoutes(mount, []Route{{
+		Pattern: "GET /client/v1/realtime", Handler: handler,
+	}})
+}
+
+func lifecycleHTTPHandler(
+	lifecycle pluginruntime.Lifecycle,
+	workerPrefix string,
+	serve func(context.Context, http.ResponseWriter, *http.Request),
+) http.Handler {
+	var nextWorker atomic.Uint64
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		done := make(chan struct{})
-		workerName := fmt.Sprintf("websocket-relay-session-%d", nextSession.Add(1))
-		if err := mount.Lifecycle.Go(workerName, func(lifecycleContext context.Context) error {
+		workerName := fmt.Sprintf("%s-%d", workerPrefix, nextWorker.Add(1))
+		if err := lifecycle.Go(workerName, func(lifecycleContext context.Context) error {
 			defer close(done)
-			sessionContext, cancel := context.WithCancel(lifecycleContext)
+			requestContext, cancel := context.WithCancel(lifecycleContext)
 			stopRequest := context.AfterFunc(request.Context(), cancel)
 			defer func() {
 				stopRequest()
 				cancel()
 			}()
-			factory.relayWebSocket(sessionContext, target, credential, writer, request)
+			serve(requestContext, writer, request)
 			return nil
 		}); err != nil {
 			http.Error(writer, "the presentation relay lifecycle is unavailable", http.StatusServiceUnavailable)
@@ -130,9 +146,6 @@ func (factory *WebSocketRelayFactory) mountWebSocketRelay(
 		}
 		<-done
 	})
-	return registerRoutes(mount, []Route{{
-		Pattern: "GET /client/v1/realtime", Handler: handler,
-	}})
 }
 
 type webSocketRelayCandidate struct {
@@ -280,51 +293,95 @@ func (factory *WebRTCRelayFactory) Descriptor() plugin.Descriptor {
 	return factory.descriptor.Clone()
 }
 
-func (factory *WebRTCRelayFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	if !mount.Permissions.Allows(connectPermissionKind, connectPermissionResource, httpOperation) {
-		return errors.New("WebRTC relay lacks its deployment network-connect grant")
+func (factory *WebRTCRelayFactory) Mount(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	target, credential, err := factory.prepareWebRTCRelay(mount.Services, mount.Permissions)
+	if err != nil {
+		return err
+	}
+	return factory.mountWebRTCRelay(mount, target, credential)
+}
+
+func (factory *WebRTCRelayFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	_, _, err := factory.prepareWebRTCRelay(candidate.Services, candidate.Permissions)
+	if err != nil {
+		return nil, err
+	}
+	return webRTCRelayCandidate{factory: factory}, nil
+}
+
+func (factory *WebRTCRelayFactory) prepareWebRTCRelay(
+	services pluginruntime.Services, permissions pluginruntime.Permissions,
+) (relayTarget, CredentialSource, error) {
+	if !permissions.Allows(connectPermissionKind, connectPermissionResource, httpOperation) {
+		return relayTarget{}, nil, errors.New("WebRTC relay lacks its deployment network-connect grant")
 	}
 	target, endpoint, err := lookupTargetEndpoint(
-		mount.Services,
+		services,
 		presentation.EndpointRealtimeWebRTC,
 		presentation.ProtocolRealtimeWebRTC,
 	)
 	if err != nil {
-		return err
+		return relayTarget{}, nil, err
 	}
 	target.WebRTC = endpoint.URL
-	credential, err := lookupCredential(mount.Services)
+	credential, err := lookupCredential(services)
 	if err != nil {
-		return err
+		return relayTarget{}, nil, err
 	}
-	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		factory.relayWebRTC(target, credential, writer, request)
-	})
+	return target, credential, nil
+}
+
+func (factory *WebRTCRelayFactory) mountWebRTCRelay(
+	mount pluginruntime.MountContext,
+	target relayTarget,
+	credential CredentialSource,
+) error {
+	handler := lifecycleHTTPHandler(
+		mount.Lifecycle, "webrtc-relay-request",
+		func(ctx context.Context, writer http.ResponseWriter, request *http.Request) {
+			factory.relayWebRTC(ctx, target, credential, writer, request)
+		},
+	)
 	return registerRoutes(mount, []Route{{
 		Pattern: "POST /client/v1/realtime/calls", Handler: handler,
 	}})
 }
 
+type webRTCRelayCandidate struct{ factory *WebRTCRelayFactory }
+
+func (candidate webRTCRelayCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
 func (factory *WebRTCRelayFactory) relayWebRTC(
+	ctx context.Context,
 	target relayTarget,
 	credential CredentialSource,
 	writer http.ResponseWriter,
 	request *http.Request,
 ) {
+	stopBody := context.AfterFunc(ctx, func() { _ = request.Body.Close() })
+	defer stopBody()
 	offer, err := io.ReadAll(io.LimitReader(request.Body, 1<<20+1))
 	if err != nil || len(offer) == 0 || len(offer) > 1<<20 {
 		http.Error(writer, "a bounded SDP offer is required", http.StatusBadRequest)
 		return
 	}
-	authorization, err := credential.Authorization(request.Context())
+	authorization, err := credential.Authorization(ctx)
 	if err != nil || strings.ContainsAny(authorization, "\r\n") {
 		factory.logger.Error("presentation WebRTC relay could not obtain its credential", "error", err)
 		http.Error(writer, "relay credential unavailable", http.StatusBadGateway)
 		return
 	}
-	ctx, cancel := context.WithTimeout(request.Context(), target.DialTimeout)
+	requestContext, cancel := context.WithTimeout(ctx, target.DialTimeout)
 	defer cancel()
-	proxied, err := http.NewRequestWithContext(ctx, http.MethodPost,
+	proxied, err := http.NewRequestWithContext(requestContext, http.MethodPost,
 		appendTargetModel(target.WebRTC, target.Model), strings.NewReader(string(offer)))
 	if err != nil {
 		http.Error(writer, "invalid relay target", http.StatusInternalServerError)
@@ -357,6 +414,7 @@ func (factory *WebRTCRelayFactory) relayWebRTC(
 var _ pluginruntime.Factory = (*WebSocketRelayFactory)(nil)
 var _ pluginruntime.CandidatePreMounter = (*WebSocketRelayFactory)(nil)
 var _ pluginruntime.Factory = (*WebRTCRelayFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*WebRTCRelayFactory)(nil)
 
 func relayPermission(operation string) plugin.Permission {
 	return plugin.Permission{
