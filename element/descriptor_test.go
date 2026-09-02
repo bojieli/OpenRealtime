@@ -1,6 +1,7 @@
 package element_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -77,6 +78,63 @@ func TestCompositeFingerprintChangesDescriptorIdentity(t *testing.T) {
 	}
 	if leftIdentity.Digest == rightIdentity.Digest {
 		t.Fatal("subgraph body fingerprint did not affect descriptor identity")
+	}
+}
+
+func TestAbsentStateTransferPreservesLegacyDescriptorIdentity(t *testing.T) {
+	descriptor := textModelDescriptor()
+	identity, err := descriptor.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const legacyDigest = "sha256:1c56f44a0281c19de1fb310dada4c07e9c7388faa067b77e5f388b41230abe8c"
+	if identity.Digest != legacyDigest {
+		t.Fatalf("descriptor digest = %s, want legacy digest %s", identity.Digest, legacyDigest)
+	}
+	canonical, err := descriptor.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), "state_transfer") {
+		t.Fatalf("absent state-transfer contract changed legacy encoding: %s", payload)
+	}
+}
+
+func TestStateTransferChangesIdentityAndCloneOwnsContract(t *testing.T) {
+	without := textModelDescriptor()
+	without.StateSchema = "schema://test/model-state/v1"
+	with := without.Clone()
+	with.StateTransfer = &element.StateTransferCapabilities{
+		Snapshot: true, Restore: true, Quiesce: true,
+	}
+	withoutIdentity, err := without.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	withIdentity, err := with.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withIdentity.Digest == withoutIdentity.Digest {
+		t.Fatal("explicit state-transfer capabilities did not affect descriptor identity")
+	}
+
+	clone := with.Clone()
+	clone.StateTransfer.Restore = false
+	if !with.StateTransfer.Restore {
+		t.Fatal("descriptor clone aliases state-transfer capabilities")
+	}
+	canonical, err := with.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical.StateTransfer.Quiesce = false
+	if !with.StateTransfer.Quiesce {
+		t.Fatal("canonical descriptor aliases state-transfer capabilities")
 	}
 }
 

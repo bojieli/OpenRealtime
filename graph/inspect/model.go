@@ -30,17 +30,19 @@ type Model struct {
 }
 
 type Node struct {
-	ID                  string               `json:"id"`
-	Element             element.Identity     `json:"element"`
-	Implementation      string               `json:"implementation,omitempty"`
-	ConfigReference     string               `json:"config_reference,omitempty"`
-	ConfigDigest        string               `json:"config_digest,omitempty"`
-	DeploymentReference string               `json:"deployment_reference,omitempty"`
-	DeploymentDigest    string               `json:"deployment_digest,omitempty"`
-	Ports               []Port               `json:"ports"`
-	Reaction            element.Reaction     `json:"reaction"`
-	Dependencies        []element.Dependency `json:"dependencies,omitempty"`
-	Effects             []element.Effect     `json:"effects,omitempty"`
+	ID                  string                             `json:"id"`
+	Element             element.Identity                   `json:"element"`
+	Implementation      string                             `json:"implementation,omitempty"`
+	ConfigReference     string                             `json:"config_reference,omitempty"`
+	ConfigDigest        string                             `json:"config_digest,omitempty"`
+	DeploymentReference string                             `json:"deployment_reference,omitempty"`
+	DeploymentDigest    string                             `json:"deployment_digest,omitempty"`
+	Ports               []Port                             `json:"ports"`
+	Reaction            element.Reaction                   `json:"reaction"`
+	StateSchema         string                             `json:"state_schema,omitempty"`
+	StateTransfer       *element.StateTransferCapabilities `json:"state_transfer,omitempty"`
+	Dependencies        []element.Dependency               `json:"dependencies,omitempty"`
+	Effects             []element.Effect                   `json:"effects,omitempty"`
 }
 
 type Port struct {
@@ -474,9 +476,10 @@ func Build(graph ir.Graph) (Model, error) {
 			ID: source.ID, Element: source.Element, Implementation: source.Implementation,
 			ConfigReference: source.ConfigReference, ConfigDigest: source.ConfigDigest,
 			DeploymentReference: source.DeploymentReference, DeploymentDigest: source.DeploymentDigest,
-			Reaction:     reaction,
-			Dependencies: append([]element.Dependency(nil), source.Dependencies...),
-			Effects:      append([]element.Effect(nil), source.Effects...),
+			Reaction: reaction, StateSchema: source.StateSchema,
+			StateTransfer: source.StateTransfer.Clone(),
+			Dependencies:  append([]element.Dependency(nil), source.Dependencies...),
+			Effects:       append([]element.Effect(nil), source.Effects...),
 		}
 		for _, sourcePort := range source.Ports {
 			node.Ports = append(node.Ports, Port{

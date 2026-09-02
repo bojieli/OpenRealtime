@@ -31,6 +31,10 @@ func TestJSONAndYAMLRoundTripCanonicalBundle(t *testing.T) {
 	if !bytes.Equal(left, right) {
 		t.Fatalf("formats differ:\n%s\n%s", left, right)
 	}
+	if !bytes.Contains(left, []byte(`"state_transfer"`)) ||
+		fromJSON.Elements[0].StateTransfer == nil || !fromJSON.Elements[0].StateTransfer.Quiesce {
+		t.Fatalf("state-transfer capabilities did not round trip: %s", left)
+	}
 }
 
 func TestStrictBundleRejectsUnknownAndDuplicateFields(t *testing.T) {
@@ -58,5 +62,9 @@ func descriptor() element.Descriptor {
 			Name: "out", Direction: element.Output, Type: element.Event(element.Named("test.Value")),
 			Cardinality: element.One, DefaultDepth: 4,
 		}},
+		StateSchema: "schema://test/state/v1",
+		StateTransfer: &element.StateTransferCapabilities{
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
 	}
 }

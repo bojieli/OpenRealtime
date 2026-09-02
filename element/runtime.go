@@ -135,11 +135,12 @@ type StateResumer func(context.Context) error
 // quiesced lifecycle; refusal invokes the returned resumer.
 type StateQuiescer func(context.Context) (StateResumer, error)
 
-// StateLifecycle is present only when the immutable descriptor declares a
-// StateSchema. Restored may be consumed once while mounting. Snapshot and
-// Quiesce register at most one callback each before Factory.Mount returns.
-// Existing stateful factories may omit registration on an ordinary initial
-// mount, but such an instance is ineligible for state-preserving replacement.
+// StateLifecycle is present only when the immutable descriptor explicitly
+// declares StateTransfer capabilities. Restored may be consumed once while
+// mounting when restore is declared. Snapshot and Quiesce register at most one
+// callback each before Factory.Mount returns and only when their corresponding
+// capabilities are declared. A StateSchema alone does not grant or imply any
+// live-transfer operation.
 type StateLifecycle interface {
 	Restored() (snapshot json.RawMessage, available bool, err error)
 	Quiesce(StateQuiescer) error

@@ -50,6 +50,8 @@ func TestEntryDerivesExactAudioFreeContractFromPlan(t *testing.T) {
 		}
 	}
 	if len(entry.Nodes) != 1 || entry.Nodes[0].Implementation.Reference != "impl/pass" ||
+		entry.Nodes[0].StateTransfer == nil || !entry.Nodes[0].StateTransfer.Snapshot ||
+		!entry.Nodes[0].StateTransfer.Restore || !entry.Nodes[0].StateTransfer.Quiesce ||
 		len(entry.Dependencies) != 1 || entry.Dependencies[0].Artifact == nil ||
 		entry.Dependencies[0].Scope != graphconfig.DependencyScopeProcess ||
 		len(entry.Effects) != 1 || entry.Effects[0].Name != "local.cache" {
@@ -57,6 +59,10 @@ func TestEntryDerivesExactAudioFreeContractFromPlan(t *testing.T) {
 	}
 	if entry.Tags[0] == "mutated" || entry.Profiles[0].ID == "mutated" {
 		t.Fatal("entry aliased metadata input")
+	}
+	entry.Nodes[0].StateTransfer.Restore = false
+	if !entry.Graph.Nodes[0].StateTransfer.Restore {
+		t.Fatal("catalog node metadata aliases Graph IR state-transfer capabilities")
 	}
 }
 
@@ -455,7 +461,11 @@ func catalogDescriptor() element.Descriptor {
 			{Name: "in", Direction: element.Input, Type: value, Cardinality: element.One, Required: true, DefaultDepth: 4},
 			{Name: "out", Direction: element.Output, Type: value, Cardinality: element.One, Required: true, DefaultDepth: 4},
 		},
-		Reaction:     element.Reaction{Triggers: []string{"in"}, Outcomes: []string{"out"}},
+		Reaction:    element.Reaction{Triggers: []string{"in"}, Outcomes: []string{"out"}},
+		StateSchema: "schema://test/catalog-state/v1",
+		StateTransfer: &element.StateTransferCapabilities{
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
 		Dependencies: []element.Dependency{{Name: "service.clock"}},
 		Effects:      []element.Effect{{Name: "local.cache", Reversible: true}},
 	}

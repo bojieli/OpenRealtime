@@ -82,6 +82,7 @@ type mountedNode struct {
 	runnable       element.Runnable
 	scope          *lifecycleScope
 	stateSchema    string
+	stateTransfer  *element.StateTransferCapabilities
 	snapshot       element.StateSnapshotter
 	quiesce        element.StateQuiescer
 }
@@ -450,12 +451,18 @@ func mount(
 			State: "mounted", Resolution: liveResolution,
 		}
 		var state *stateLifecycle
-		if node.StateSchema != "" {
-			state = newStateLifecycle(node.ID, node.StateSchema, restoredState[node.ID])
+		if node.StateTransfer != nil {
+			state = newStateLifecycle(
+				node.ID, node.StateSchema, node.StateTransfer, restoredState[node.ID],
+			)
+		}
+		var stateBoundary element.StateLifecycle
+		if state != nil {
+			stateBoundary = state
 		}
 		runnable, err := mountElementFactory(resolution.factory, scope.ctx, element.MountContext{
 			InstanceID: node.ID, Identity: node.Element, Config: value,
-			Ports: ports, Services: nodeServices, Lifecycle: scope, State: state,
+			Ports: ports, Services: nodeServices, Lifecycle: scope, State: stateBoundary,
 			Resolution: nodeResolutionReporter{mounted: mounted, node: node.ID},
 		})
 		if err != nil {
@@ -474,7 +481,8 @@ func mount(
 		mounted.nodes = append(mounted.nodes, mountedNode{
 			id: node.ID, identity: node.Element, implementation: node.Implementation,
 			runnable: runnable, scope: scope, stateSchema: node.StateSchema,
-			snapshot: snapshot, quiesce: quiesce,
+			stateTransfer: node.StateTransfer.Clone(),
+			snapshot:      snapshot, quiesce: quiesce,
 		})
 	}
 	mounted.recorder.start(mounted)
@@ -693,6 +701,12 @@ func validateRestoredState(
 		}
 		if node.StateSchema == "" {
 			return nil, fmt.Errorf("mount graph restored state refers to stateless node %q", nodeID)
+		}
+		if node.StateTransfer == nil || !node.StateTransfer.Restore {
+			return nil, fmt.Errorf(
+				"mount graph restored state for node %q requires declared restore capability",
+				nodeID,
+			)
 		}
 		canonical, _, err := canonicalStateSnapshot(source[nodeID])
 		if err != nil {

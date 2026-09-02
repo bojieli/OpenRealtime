@@ -126,6 +126,29 @@ func TestDescriptorValidateRefusesUnlockableContracts(t *testing.T) {
 			want: "has no ports",
 		},
 		{
+			name: "state transfer contract is explicitly empty",
+			edit: func(d *element.Descriptor) {
+				d.StateSchema = "schema://test/state/v1"
+				d.StateTransfer = &element.StateTransferCapabilities{}
+			},
+			want: "state transfer declares no capabilities",
+		},
+		{
+			name: "state transfer has no state schema",
+			edit: func(d *element.Descriptor) {
+				d.StateTransfer = &element.StateTransferCapabilities{Snapshot: true}
+			},
+			want: "state transfer requires a state schema",
+		},
+		{
+			name: "state quiescence cannot transfer without snapshot",
+			edit: func(d *element.Descriptor) {
+				d.StateSchema = "schema://test/state/v1"
+				d.StateTransfer = &element.StateTransferCapabilities{Quiesce: true}
+			},
+			want: "quiescence requires snapshot capability",
+		},
+		{
 			name: "composite fingerprint is not a SHA-256",
 			edit: func(d *element.Descriptor) { d.CompositeFingerprint = "sha256:short" },
 			want: "invalid composite fingerprint",
@@ -154,5 +177,24 @@ func TestDescriptorValidateRefusesUnlockableContracts(t *testing.T) {
 	composite.CompositeFingerprint = "sha256:" + strings.Repeat("a", sha256.Size*2)
 	if err := composite.Validate(); err != nil {
 		t.Fatalf("valid composite fingerprint = %v, want accepted", err)
+	}
+
+	// Snapshot-only predecessors and restore-only candidates are valid roles;
+	// migration policy decides how two exact descriptor revisions may pair.
+	for name, capabilities := range map[string]element.StateTransferCapabilities{
+		"snapshot only": {Snapshot: true},
+		"restore only":  {Restore: true},
+		"quiesced snapshot and restore": {
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			descriptor := baseDescriptor()
+			descriptor.StateSchema = "schema://test/state/v1"
+			descriptor.StateTransfer = &capabilities
+			if err := descriptor.Validate(); err != nil {
+				t.Fatalf("valid state-transfer capabilities = %v", err)
+			}
+		})
 	}
 }

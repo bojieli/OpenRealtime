@@ -419,7 +419,8 @@ func metadataFromDescriptor(descriptor element.Descriptor, identity element.Iden
 			MaxConcurrency: descriptor.Reaction.MaxConcurrency,
 			BreaksCycles:   descriptor.Reaction.BreaksCycles,
 		},
-		StateSchema: descriptor.StateSchema,
+		StateSchema:   descriptor.StateSchema,
+		StateTransfer: descriptor.StateTransfer.Clone(),
 		Config: ConfigContract{
 			Artifact: valuesArtifact, Resolved: true, SchemaReference: descriptor.ConfigSchema,
 			InlineTopologyValues: false, EmptyObjectOnly: descriptor.ConfigSchema == "",
@@ -529,6 +530,7 @@ func cloneElementMetadata(value ElementMetadata) ElementMetadata {
 	value.Reaction.SampledState = slices.Clone(value.Reaction.SampledState)
 	value.Reaction.Interrupts = slices.Clone(value.Reaction.Interrupts)
 	value.Reaction.Outcomes = slices.Clone(value.Reaction.Outcomes)
+	value.StateTransfer = value.StateTransfer.Clone()
 	value.Dependencies = slices.Clone(value.Dependencies)
 	value.Effects = slices.Clone(value.Effects)
 	value.Config = cloneConfigContract(value.Config)

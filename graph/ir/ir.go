@@ -70,20 +70,21 @@ type Graph struct {
 // references are non-secret identities; actual values live in separate
 // artifacts and are schema-checked before mount.
 type Node struct {
-	ID                  string               `json:"id" yaml:"id"`
-	Element             element.Identity     `json:"element" yaml:"element"`
-	Implementation      string               `json:"implementation,omitempty" yaml:"implementation,omitempty"`
-	ConfigReference     string               `json:"config_reference,omitempty" yaml:"config_reference,omitempty"`
-	ConfigDigest        string               `json:"config_digest,omitempty" yaml:"config_digest,omitempty"`
-	DeploymentReference string               `json:"deployment_reference,omitempty" yaml:"deployment_reference,omitempty"`
-	DeploymentDigest    string               `json:"deployment_digest,omitempty" yaml:"deployment_digest,omitempty"`
-	Ports               []Port               `json:"ports" yaml:"ports"`
-	Reaction            element.Reaction     `json:"reaction,omitempty" yaml:"reaction,omitempty"`
-	StateSchema         string               `json:"state_schema,omitempty" yaml:"state_schema,omitempty"`
-	ConfigSchema        string               `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
-	Dependencies        []element.Dependency `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Effects             []element.Effect     `json:"effects,omitempty" yaml:"effects,omitempty"`
-	Source              *Source              `json:"source,omitempty" yaml:"source,omitempty"`
+	ID                  string                             `json:"id" yaml:"id"`
+	Element             element.Identity                   `json:"element" yaml:"element"`
+	Implementation      string                             `json:"implementation,omitempty" yaml:"implementation,omitempty"`
+	ConfigReference     string                             `json:"config_reference,omitempty" yaml:"config_reference,omitempty"`
+	ConfigDigest        string                             `json:"config_digest,omitempty" yaml:"config_digest,omitempty"`
+	DeploymentReference string                             `json:"deployment_reference,omitempty" yaml:"deployment_reference,omitempty"`
+	DeploymentDigest    string                             `json:"deployment_digest,omitempty" yaml:"deployment_digest,omitempty"`
+	Ports               []Port                             `json:"ports" yaml:"ports"`
+	Reaction            element.Reaction                   `json:"reaction,omitempty" yaml:"reaction,omitempty"`
+	StateSchema         string                             `json:"state_schema,omitempty" yaml:"state_schema,omitempty"`
+	StateTransfer       *element.StateTransferCapabilities `json:"state_transfer,omitempty" yaml:"state_transfer,omitempty"`
+	ConfigSchema        string                             `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
+	Dependencies        []element.Dependency               `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Effects             []element.Effect                   `json:"effects,omitempty" yaml:"effects,omitempty"`
+	Source              *Source                            `json:"source,omitempty" yaml:"source,omitempty"`
 }
 
 // Port is a resolved descriptor port group. A variadic port has one stable
@@ -301,6 +302,7 @@ func (graph Graph) clone() Graph {
 		node.Reaction.SampledState = slices.Clone(node.Reaction.SampledState)
 		node.Reaction.Interrupts = slices.Clone(node.Reaction.Interrupts)
 		node.Reaction.Outcomes = slices.Clone(node.Reaction.Outcomes)
+		node.StateTransfer = node.StateTransfer.Clone()
 		node.Dependencies = slices.Clone(node.Dependencies)
 		node.Effects = slices.Clone(node.Effects)
 		if node.Source != nil {
@@ -397,6 +399,14 @@ func (graph Graph) validateStructure() error {
 			}
 			if _, err := hex.DecodeString(strings.TrimPrefix(node.DeploymentDigest, "sha256:")); err != nil {
 				return fmt.Errorf("graph %s node %s has invalid deployment digest: %w", graph.ID, node.ID, err)
+			}
+		}
+		if node.StateTransfer != nil {
+			if err := node.StateTransfer.Validate(); err != nil {
+				return fmt.Errorf("graph %s node %s: %w", graph.ID, node.ID, err)
+			}
+			if node.StateSchema == "" {
+				return fmt.Errorf("graph %s node %s state transfer requires a state schema", graph.ID, node.ID)
 			}
 		}
 		nodes[node.ID] = node

@@ -758,6 +758,9 @@ func verifyNodeContract(node ir.Node, descriptor element.Descriptor) error {
 	if node.StateSchema != descriptor.StateSchema || node.ConfigSchema != descriptor.ConfigSchema {
 		return errors.New("state/config schema differs from the exact descriptor")
 	}
+	if !reflect.DeepEqual(node.StateTransfer, descriptor.StateTransfer) {
+		return errors.New("state-transfer capabilities differ from the exact descriptor")
+	}
 	actualReaction := cloneSortedReaction(node.Reaction)
 	expectedReaction := cloneSortedReaction(descriptor.Reaction)
 	if !reflect.DeepEqual(actualReaction, expectedReaction) {

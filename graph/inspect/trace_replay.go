@@ -857,6 +857,7 @@ func cloneDiffNode(node ir.Node) ir.Node {
 	result.Reaction.SampledState = slices.Clone(node.Reaction.SampledState)
 	result.Reaction.Interrupts = slices.Clone(node.Reaction.Interrupts)
 	result.Reaction.Outcomes = slices.Clone(node.Reaction.Outcomes)
+	result.StateTransfer = node.StateTransfer.Clone()
 	result.Dependencies = slices.Clone(node.Dependencies)
 	result.Effects = slices.Clone(node.Effects)
 	result.Source = nil

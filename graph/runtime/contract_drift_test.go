@@ -25,7 +25,11 @@ func contractDriftDescriptor() element.Descriptor {
 			{Name: "in", Direction: element.Input, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
 			{Name: "out", Direction: element.Output, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
 		},
-		Reaction:     element.Reaction{Triggers: []string{"in"}, Outcomes: []string{"out"}, MaxConcurrency: 1},
+		Reaction:    element.Reaction{Triggers: []string{"in"}, Outcomes: []string{"out"}, MaxConcurrency: 1},
+		StateSchema: "schema://test/state/v1",
+		StateTransfer: &element.StateTransferCapabilities{
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
 		Dependencies: []element.Dependency{{Name: "clock"}},
 		Effects:      []element.Effect{{Name: "registry", Reversible: true}},
 	}
@@ -39,11 +43,12 @@ func contractDriftNode(descriptor element.Descriptor) ir.Node {
 			{Name: "in", Direction: element.Input, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
 			{Name: "out", Direction: element.Output, Type: valueType, Cardinality: element.One, Required: true, DefaultDepth: 2},
 		},
-		Reaction:     descriptor.Reaction,
-		Dependencies: descriptor.Dependencies,
-		Effects:      descriptor.Effects,
-		StateSchema:  descriptor.StateSchema,
-		ConfigSchema: descriptor.ConfigSchema,
+		Reaction:      descriptor.Reaction,
+		Dependencies:  descriptor.Dependencies,
+		Effects:       descriptor.Effects,
+		StateSchema:   descriptor.StateSchema,
+		StateTransfer: descriptor.StateTransfer.Clone(),
+		ConfigSchema:  descriptor.ConfigSchema,
 	}
 }
 
@@ -73,6 +78,13 @@ func TestNodeContractRefusesEveryDescriptorDrift(t *testing.T) {
 			name: "node widens the config schema",
 			edit: func(node *ir.Node, _ *element.Descriptor) { node.ConfigSchema = "vendor/config" },
 			want: "changes descriptor state/config schema",
+		},
+		{
+			name: "node changes state-transfer capabilities",
+			edit: func(node *ir.Node, _ *element.Descriptor) {
+				node.StateTransfer.Restore = false
+			},
+			want: "changes descriptor state-transfer capabilities",
 		},
 		{
 			name: "node changes its reaction contract",

@@ -193,16 +193,17 @@ type ReactionMetadata struct {
 // future visual canvas without claiming to know provider-specific config
 // fields hidden behind Config.SchemaReference.
 type ElementMetadata struct {
-	Identity             element.Identity     `json:"identity"`
-	TopologyDeclaration  string               `json:"topology_declaration"`
-	Generics             []string             `json:"generics,omitempty"`
-	Ports                []PortMetadata       `json:"ports"`
-	Reaction             ReactionMetadata     `json:"reaction"`
-	StateSchema          string               `json:"state_schema,omitempty"`
-	Config               ConfigContract       `json:"config"`
-	Dependencies         []element.Dependency `json:"dependencies,omitempty"`
-	Effects              []element.Effect     `json:"effects,omitempty"`
-	CompositeFingerprint string               `json:"composite_fingerprint,omitempty"`
+	Identity             element.Identity                   `json:"identity"`
+	TopologyDeclaration  string                             `json:"topology_declaration"`
+	Generics             []string                           `json:"generics,omitempty"`
+	Ports                []PortMetadata                     `json:"ports"`
+	Reaction             ReactionMetadata                   `json:"reaction"`
+	StateSchema          string                             `json:"state_schema,omitempty"`
+	StateTransfer        *element.StateTransferCapabilities `json:"state_transfer,omitempty"`
+	Config               ConfigContract                     `json:"config"`
+	Dependencies         []element.Dependency               `json:"dependencies,omitempty"`
+	Effects              []element.Effect                   `json:"effects,omitempty"`
+	CompositeFingerprint string                             `json:"composite_fingerprint,omitempty"`
 }
 
 type MetadataReport struct {

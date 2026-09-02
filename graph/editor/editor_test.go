@@ -122,6 +122,8 @@ func TestLanguageServiceCompletionHoverDefinitionAndMetadata(t *testing.T) {
 	}
 	sourceMetadata := metadata.Elements[1]
 	if sourceMetadata.TopologyDeclaration != "test.Source :: <node>;" ||
+		sourceMetadata.StateTransfer == nil || !sourceMetadata.StateTransfer.Snapshot ||
+		!sourceMetadata.StateTransfer.Restore || !sourceMetadata.StateTransfer.Quiesce ||
 		sourceMetadata.Config.Artifact != valuesArtifact ||
 		!sourceMetadata.Config.Resolved || sourceMetadata.Config.InlineTopologyValues || sourceMetadata.Config.EmptyObjectOnly ||
 		sourceMetadata.Config.SchemaReference != "schema://test/source-config/v1" ||
@@ -135,10 +137,11 @@ func TestLanguageServiceCompletionHoverDefinitionAndMetadata(t *testing.T) {
 	// Every result is recursively independent of the document snapshot.
 	metadata.Elements[1].Ports[0].Type.Arguments[0].Name = "mutated.Type"
 	metadata.Elements[1].Reaction.Triggers[0] = "mutated"
+	metadata.Elements[1].StateTransfer.Restore = false
 	hover.Descriptor.Ports[0].Type.Arguments[0].Name = "mutated.Hover"
 	again := document.CatalogMetadata().Elements[1]
 	if findMetadataPort(t, again, "out").Type.String() != "Event<test.Value>" ||
-		again.Reaction.Triggers[0] != "start" {
+		again.Reaction.Triggers[0] != "start" || !again.StateTransfer.Restore {
 		t.Fatal("metadata result retained caller aliases")
 	}
 	againHover, err := document.Hover(portCursor)
@@ -682,6 +685,9 @@ func sourceDescriptor(revision uint64) element.Descriptor {
 		},
 		Reaction:    element.Reaction{Triggers: []string{"start"}, Outcomes: []string{"out", "telemetry"}, MaxConcurrency: 1},
 		StateSchema: "schema://test/source-state/v1", ConfigSchema: "schema://test/source-config/v1",
+		StateTransfer: &element.StateTransferCapabilities{
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
 		Dependencies: []element.Dependency{{Name: "test.clock"}},
 		Effects:      []element.Effect{{Name: "test.subscription", Reversible: true}},
 	}

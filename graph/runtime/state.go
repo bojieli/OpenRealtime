@@ -25,6 +25,7 @@ type stateLifecycle struct {
 
 	instance string
 	schema   string
+	transfer element.StateTransferCapabilities
 	restored json.RawMessage
 	consumed bool
 	quiesce  element.StateQuiescer
@@ -33,10 +34,17 @@ type stateLifecycle struct {
 }
 
 func newStateLifecycle(
-	instance, schema string, restored json.RawMessage,
+	instance, schema string,
+	transfer *element.StateTransferCapabilities,
+	restored json.RawMessage,
 ) *stateLifecycle {
+	capabilities := element.StateTransferCapabilities{}
+	if transfer != nil {
+		capabilities = *transfer
+	}
 	return &stateLifecycle{
-		instance: instance, schema: schema, restored: slices.Clone(restored),
+		instance: instance, schema: schema, transfer: capabilities,
+		restored: slices.Clone(restored),
 	}
 }
 
@@ -48,6 +56,11 @@ func (state *stateLifecycle) Restored() (json.RawMessage, bool, error) {
 	defer state.mu.Unlock()
 	if state.sealed {
 		return nil, false, fmt.Errorf("element %s state lifecycle is sealed", state.instance)
+	}
+	if !state.transfer.Restore {
+		return nil, false, fmt.Errorf(
+			"element %s does not declare state restore capability", state.instance,
+		)
 	}
 	if state.consumed {
 		return nil, false, fmt.Errorf("element %s restored state was already consumed", state.instance)
@@ -71,6 +84,11 @@ func (state *stateLifecycle) Snapshot(snapshot element.StateSnapshotter) error {
 	if state.sealed {
 		return fmt.Errorf("element %s state lifecycle is sealed", state.instance)
 	}
+	if !state.transfer.Snapshot {
+		return fmt.Errorf(
+			"element %s does not declare state snapshot capability", state.instance,
+		)
+	}
 	if state.snapshot != nil {
 		return fmt.Errorf("element %s registered more than one state snapshot", state.instance)
 	}
@@ -89,6 +107,11 @@ func (state *stateLifecycle) Quiesce(quiesce element.StateQuiescer) error {
 	defer state.mu.Unlock()
 	if state.sealed {
 		return fmt.Errorf("element %s state lifecycle is sealed", state.instance)
+	}
+	if !state.transfer.Quiesce {
+		return fmt.Errorf(
+			"element %s does not declare state quiesce capability", state.instance,
+		)
 	}
 	if state.quiesce != nil {
 		return fmt.Errorf("element %s registered more than one state quiescer", state.instance)
@@ -113,6 +136,18 @@ func (state *stateLifecycle) seal() (
 		if !state.consumed {
 			return nil, nil, fmt.Errorf("element %s did not consume restored state", state.instance)
 		}
+	}
+	if state.transfer.Snapshot && state.snapshot == nil {
+		return nil, nil, fmt.Errorf(
+			"element %s declared state snapshot capability without registering a callback",
+			state.instance,
+		)
+	}
+	if state.transfer.Quiesce && state.quiesce == nil {
+		return nil, nil, fmt.Errorf(
+			"element %s declared state quiesce capability without registering a callback",
+			state.instance,
+		)
 	}
 	if state.quiesce != nil && state.snapshot == nil {
 		return nil, nil, fmt.Errorf(
@@ -208,6 +243,12 @@ func (mounted *Mounted) requireTransferableState(selected map[string]struct{}) e
 	for _, node := range mounted.nodes {
 		if _, affected := selected[node.id]; !affected || node.stateSchema == "" {
 			continue
+		}
+		if node.stateTransfer == nil || !node.stateTransfer.Snapshot {
+			return fmt.Errorf(
+				"graph node %s schema %s does not declare state snapshot capability",
+				node.id, node.stateSchema,
+			)
 		}
 		if node.snapshot == nil {
 			return fmt.Errorf(

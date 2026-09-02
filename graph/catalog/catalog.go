@@ -64,6 +64,7 @@ type Node struct {
 	Implementation graphconfig.ImplementationResolution `json:"implementation"`
 	ConfigSchema   string                               `json:"config_schema,omitempty"`
 	StateSchema    string                               `json:"state_schema,omitempty"`
+	StateTransfer  *element.StateTransferCapabilities   `json:"state_transfer,omitempty"`
 }
 
 type Dependency struct {
@@ -165,6 +166,7 @@ func NewEntry(plan *graphconfig.Plan, metadata Metadata) (Entry, error) {
 		entry.Nodes = append(entry.Nodes, Node{
 			ID: node.ID, Element: node.Element, Implementation: implementation,
 			ConfigSchema: node.ConfigSchema, StateSchema: node.StateSchema,
+			StateTransfer: node.StateTransfer.Clone(),
 		})
 		for _, dependency := range node.Dependencies {
 			current, found := dependencies[dependency.Name]
@@ -487,7 +489,8 @@ func validateEntry(entry Entry) error {
 		}
 		graphNode, found := graphNodes[node.ID]
 		if !found || graphNode.Element != node.Element || graphNode.Implementation != node.Implementation.Reference ||
-			graphNode.ConfigSchema != node.ConfigSchema || graphNode.StateSchema != node.StateSchema {
+			graphNode.ConfigSchema != node.ConfigSchema || graphNode.StateSchema != node.StateSchema ||
+			!stateTransferCapabilitiesEqual(graphNode.StateTransfer, node.StateTransfer) {
 			return fmt.Errorf("catalog entry %s node %s metadata differs from Graph IR", entry.Ref(), node.ID)
 		}
 		if err := node.Implementation.Artifact.Validate(); err != nil {
@@ -640,6 +643,7 @@ func cloneEntry(source Entry) Entry {
 	result.Nodes = make([]Node, len(source.Nodes))
 	for index, node := range source.Nodes {
 		result.Nodes[index] = node
+		result.Nodes[index].StateTransfer = node.StateTransfer.Clone()
 		result.Nodes[index].Implementation = cloneImplementation(node.Implementation)
 	}
 	result.Dependencies = make([]Dependency, len(source.Dependencies))
@@ -653,6 +657,13 @@ func cloneEntry(source Entry) Entry {
 	result.Effects = slices.Clone(source.Effects)
 	result.Profiles = slices.Clone(source.Profiles)
 	return result
+}
+
+func stateTransferCapabilitiesEqual(left, right *element.StateTransferCapabilities) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func cloneImplementation(source graphconfig.ImplementationResolution) graphconfig.ImplementationResolution {

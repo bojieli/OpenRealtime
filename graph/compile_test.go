@@ -172,6 +172,42 @@ func TestLockedCompilationConsumesGeneratedLock(t *testing.T) {
 	}
 }
 
+func TestCompilePropagatesExplicitStateTransferCapabilities(t *testing.T) {
+	catalog := testCatalog(t)
+	descriptor := element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion,
+		Name:          "test.Stateful",
+		Revision:      1,
+		Ports: []element.Port{{
+			Name: "out", Direction: element.Output, Cardinality: element.One,
+			Type: element.Event(element.Named("test.Value")),
+		}},
+		StateSchema: "schema://test/state/v1",
+		StateTransfer: &element.StateTransferCapabilities{
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
+	}
+	mustRegister(t, catalog, descriptor)
+	compiled := compile(t, catalog, `graph stateful {
+    test.Stateful :: stateful;
+    output value = stateful.out;
+}`)
+	node := findNode(t, compiled, "stateful")
+	if node.StateTransfer == nil || !node.StateTransfer.Snapshot ||
+		!node.StateTransfer.Restore || !node.StateTransfer.Quiesce {
+		t.Fatalf("compiled state-transfer capabilities = %#v", node.StateTransfer)
+	}
+	node.StateTransfer.Restore = false
+	identity, err := descriptor.Identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, found := catalog.Exact(identity)
+	if !found || registered.StateTransfer == nil || !registered.StateTransfer.Restore {
+		t.Fatal("compiled Graph IR aliases registered descriptor state-transfer capabilities")
+	}
+}
+
 func compile(t *testing.T, catalog *resolve.Catalog, source string) ir.Graph {
 	t.Helper()
 	result, err := graph.Compile(mustParse(t, source), graph.Options{

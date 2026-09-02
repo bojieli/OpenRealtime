@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -72,20 +73,60 @@ type Effect struct {
 	Reversible bool   `json:"reversible,omitempty" yaml:"reversible,omitempty"`
 }
 
+// StateTransferCapabilities declares which state-transfer lifecycle operations
+// an element implementation supports. It is intentionally separate from
+// StateSchema: a schema describes state bytes, but does not imply that an
+// implementation can safely capture, restore, or quiesce that state.
+//
+// Snapshot and Restore are independent because a predecessor and candidate may
+// have asymmetric roles in an explicitly migrated transition. Quiesce requires
+// Snapshot because stopping mutation without capturing state is not a state
+// transfer capability.
+type StateTransferCapabilities struct {
+	Snapshot bool `json:"snapshot,omitempty" yaml:"snapshot,omitempty"`
+	Restore  bool `json:"restore,omitempty" yaml:"restore,omitempty"`
+	Quiesce  bool `json:"quiesce,omitempty" yaml:"quiesce,omitempty"`
+}
+
+// Validate rejects an empty or internally contradictory capability contract.
+// The owning descriptor or Graph IR node separately verifies StateSchema.
+func (capabilities StateTransferCapabilities) Validate() error {
+	if !capabilities.Snapshot && !capabilities.Restore && !capabilities.Quiesce {
+		return errors.New("state transfer declares no capabilities")
+	}
+	if capabilities.Quiesce && !capabilities.Snapshot {
+		return errors.New("state transfer quiescence requires snapshot capability")
+	}
+	return nil
+}
+
+// Clone returns an independently owned optional capability contract.
+func (capabilities *StateTransferCapabilities) Clone() *StateTransferCapabilities {
+	if capabilities == nil {
+		return nil
+	}
+	result := *capabilities
+	return &result
+}
+
 // Descriptor is the immutable, language-neutral composition contract of an
 // element implementation. Human graph source refers to Name only; a generated
 // lockfile and Graph IR retain Revision and Digest.
 type Descriptor struct {
-	FormatVersion uint64       `json:"format_version" yaml:"format_version"`
-	Name          string       `json:"name" yaml:"name"`
-	Revision      uint64       `json:"revision" yaml:"revision"`
-	Generics      []string     `json:"generics,omitempty" yaml:"generics,omitempty"`
-	Ports         []Port       `json:"ports" yaml:"ports"`
-	Reaction      Reaction     `json:"reaction,omitempty" yaml:"reaction,omitempty"`
-	StateSchema   string       `json:"state_schema,omitempty" yaml:"state_schema,omitempty"`
-	ConfigSchema  string       `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
-	Dependencies  []Dependency `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Effects       []Effect     `json:"effects,omitempty" yaml:"effects,omitempty"`
+	FormatVersion uint64   `json:"format_version" yaml:"format_version"`
+	Name          string   `json:"name" yaml:"name"`
+	Revision      uint64   `json:"revision" yaml:"revision"`
+	Generics      []string `json:"generics,omitempty" yaml:"generics,omitempty"`
+	Ports         []Port   `json:"ports" yaml:"ports"`
+	Reaction      Reaction `json:"reaction,omitempty" yaml:"reaction,omitempty"`
+	StateSchema   string   `json:"state_schema,omitempty" yaml:"state_schema,omitempty"`
+	// StateTransfer is nil for schema-only state. Its optional representation
+	// keeps descriptors authored before this contract byte-for-byte and
+	// digest-compatible while making transfer support an explicit opt-in.
+	StateTransfer *StateTransferCapabilities `json:"state_transfer,omitempty" yaml:"state_transfer,omitempty"`
+	ConfigSchema  string                     `json:"config_schema,omitempty" yaml:"config_schema,omitempty"`
+	Dependencies  []Dependency               `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Effects       []Effect                   `json:"effects,omitempty" yaml:"effects,omitempty"`
 	// CompositeFingerprint is set only for a subgraph descriptor. It binds the
 	// exported contract identity to the exact frozen child Graph IR rather than
 	// allowing a body change behind an unchanged boundary signature.
@@ -175,6 +216,14 @@ func (descriptor Descriptor) Validate() error {
 	}
 	if err := validateNamedContracts(descriptor.Name, descriptor.Dependencies, descriptor.Effects); err != nil {
 		return err
+	}
+	if descriptor.StateTransfer != nil {
+		if err := descriptor.StateTransfer.Validate(); err != nil {
+			return fmt.Errorf("element %s: %w", descriptor.Name, err)
+		}
+		if descriptor.StateSchema == "" {
+			return fmt.Errorf("element %s state transfer requires a state schema", descriptor.Name)
+		}
 	}
 	if descriptor.CompositeFingerprint != "" {
 		if !strings.HasPrefix(descriptor.CompositeFingerprint, "sha256:") ||
@@ -285,6 +334,7 @@ func (descriptor Descriptor) Clone() Descriptor {
 	result.Reaction.SampledState = slices.Clone(descriptor.Reaction.SampledState)
 	result.Reaction.Interrupts = slices.Clone(descriptor.Reaction.Interrupts)
 	result.Reaction.Outcomes = slices.Clone(descriptor.Reaction.Outcomes)
+	result.StateTransfer = descriptor.StateTransfer.Clone()
 	result.Dependencies = slices.Clone(descriptor.Dependencies)
 	result.Effects = slices.Clone(descriptor.Effects)
 	return result

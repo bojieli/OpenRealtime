@@ -17,6 +17,9 @@ func verifyNodeContract(node ir.Node, descriptor element.Descriptor) error {
 	if node.StateSchema != canonical.StateSchema || node.ConfigSchema != canonical.ConfigSchema {
 		return fmt.Errorf("node %s changes descriptor state/config schema", node.ID)
 	}
+	if !reflect.DeepEqual(node.StateTransfer, canonical.StateTransfer) {
+		return fmt.Errorf("node %s changes descriptor state-transfer capabilities", node.ID)
+	}
 	if !reflect.DeepEqual(node.Reaction, canonical.Reaction) {
 		return fmt.Errorf("node %s changes descriptor reaction contract", node.ID)
 	}

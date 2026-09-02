@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,6 +29,7 @@ type fixtureSpec struct {
 	nodeID    string
 	name      string
 	configRef string
+	stateRef  string
 }
 
 type fixture struct {
@@ -195,6 +197,7 @@ func TestResolverBackedGenerationEmbedsAndValidatesContracts(t *testing.T) {
 func TestExactDescriptorAndIRContractsAreRequired(t *testing.T) {
 	fixture := newFixture(t, []fixtureSpec{{
 		nodeID: "configured", name: "test.Configured", configRef: configuredReference,
+		stateRef: "schema://test/state/v1",
 	}})
 	t.Run("unknown", func(t *testing.T) {
 		_, err := Generate(context.Background(), fixture.graph, resolve.NewCatalog(), Options{})
@@ -222,6 +225,17 @@ func TestExactDescriptorAndIRContractsAreRequired(t *testing.T) {
 		_, err := Generate(context.Background(), changed, fixture.catalog, Options{})
 		if !errors.Is(err, ErrDescriptorContractMismatch) {
 			t.Fatalf("error = %v, want ErrDescriptorContractMismatch", err)
+		}
+	})
+	t.Run("state-transfer capability mismatch", func(t *testing.T) {
+		changed := fixture.graph
+		changed.Nodes = slices.Clone(changed.Nodes)
+		changed.Nodes[0].StateTransfer = &element.StateTransferCapabilities{Restore: true}
+		changed = freezeGraph(t, changed)
+		_, err := Generate(context.Background(), changed, fixture.catalog, Options{})
+		if !errors.Is(err, ErrDescriptorContractMismatch) ||
+			!strings.Contains(err.Error(), "state-transfer capabilities") {
+			t.Fatalf("error = %v, want state-transfer ErrDescriptorContractMismatch", err)
 		}
 	})
 	t.Run("port metadata mismatch", func(t *testing.T) {
@@ -612,6 +626,7 @@ func newFixture(t *testing.T, specs []fixtureSpec) fixture {
 				Type: element.Event(element.Named("test.Payload")), Cardinality: element.One,
 			}},
 			ConfigSchema: spec.configRef,
+			StateSchema:  spec.stateRef,
 		}
 		identity, err := descriptor.Identity()
 		if err != nil {
@@ -628,6 +643,7 @@ func newFixture(t *testing.T, specs []fixtureSpec) fixture {
 				Type: element.Event(element.Named("test.Payload")), Cardinality: element.One,
 			}},
 			ConfigSchema: spec.configRef,
+			StateSchema:  spec.stateRef,
 		})
 	}
 	graph := freezeGraph(t, ir.Graph{

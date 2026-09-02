@@ -341,8 +341,9 @@ func emitNodes(path string, nodes map[string]*nodeState, solver *unifier) []ir.N
 		result = append(result, ir.Node{
 			ID: node.source.Name, Element: node.identity, Ports: ports,
 			Reaction: node.descriptor.Reaction, StateSchema: node.descriptor.StateSchema,
-			ConfigSchema: node.descriptor.ConfigSchema,
-			Dependencies: node.descriptor.Dependencies, Effects: node.descriptor.Effects,
+			StateTransfer: node.descriptor.StateTransfer.Clone(),
+			ConfigSchema:  node.descriptor.ConfigSchema,
+			Dependencies:  node.descriptor.Dependencies, Effects: node.descriptor.Effects,
 			Source: source(path, node.source.Span),
 		})
 	}

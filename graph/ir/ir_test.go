@@ -2,6 +2,7 @@ package ir_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/element"
@@ -67,6 +68,58 @@ func TestIRRejectsInternalEdgeInReservedBoundaryQueueNamespace(t *testing.T) {
 	graph.Edges[0].ID = ir.BoundaryQueuePrefix + "input"
 	if _, err := ir.Freeze(graph); err == nil {
 		t.Fatal("expected reserved boundary queue edge ID to fail")
+	}
+}
+
+func TestStateTransferContractIsValidatedClonedAndFingerprinted(t *testing.T) {
+	for name, mutate := range map[string]func(*ir.Node){
+		"empty capabilities": func(node *ir.Node) {
+			node.StateSchema = "schema://test/state/v1"
+			node.StateTransfer = &element.StateTransferCapabilities{}
+		},
+		"missing schema": func(node *ir.Node) {
+			node.StateTransfer = &element.StateTransferCapabilities{Snapshot: true}
+		},
+		"quiesce without snapshot": func(node *ir.Node) {
+			node.StateSchema = "schema://test/state/v1"
+			node.StateTransfer = &element.StateTransferCapabilities{Quiesce: true}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			graph := fixture()
+			mutate(&graph.Nodes[1])
+			if _, err := ir.Freeze(graph); err == nil || !strings.Contains(err.Error(), "state transfer") {
+				t.Fatalf("invalid state-transfer contract error = %v", err)
+			}
+		})
+	}
+
+	schemaOnly := fixture()
+	schemaOnly.Nodes[1].StateSchema = "schema://test/state/v1"
+	schemaOnlyFrozen, err := ir.Freeze(schemaOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transferable := schemaOnly
+	capabilities := &element.StateTransferCapabilities{Restore: true}
+	transferable.Nodes[1].StateTransfer = capabilities
+	transferableFrozen, err := ir.Freeze(transferable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transferableFrozen.Fingerprint == schemaOnlyFrozen.Fingerprint {
+		t.Fatal("state-transfer capability did not affect Graph IR fingerprint")
+	}
+	capabilities.Restore = false
+	if !transferableFrozen.Nodes[1].StateTransfer.Restore {
+		t.Fatal("frozen Graph IR aliases state-transfer capability input")
+	}
+	payload, err := schemaOnlyFrozen.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte(`"state_transfer"`)) {
+		t.Fatalf("schema-only Graph IR encoded absent state-transfer capabilities: %s", payload)
 	}
 }
 

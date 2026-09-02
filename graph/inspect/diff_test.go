@@ -46,7 +46,7 @@ func TestGraphDiffReportsEverySemanticLayerDeterministically(t *testing.T) {
 	for _, field := range []string{
 		"element", "implementation", "config_reference", "config_digest",
 		"deployment_reference", "deployment_digest", "reaction", "state_schema",
-		"config_schema", "dependencies", "effects",
+		"state_transfer", "config_schema", "dependencies", "effects",
 	} {
 		if !slices.Contains(source.Fields, field) {
 			t.Fatalf("source node diff omitted %q: %+v", field, source)
@@ -177,6 +177,7 @@ func graphDiffFixture(t *testing.T) (ir.Graph, ir.Graph) {
 		node.DeploymentReference = "deployment://diff/source"
 		node.DeploymentDigest = "sha256:" + strings.Repeat("9", 64)
 		node.StateSchema = "state://source/v2"
+		node.StateTransfer = &element.StateTransferCapabilities{Restore: true}
 		node.ConfigSchema = "config://source/v2"
 		node.Dependencies = []element.Dependency{{Name: "clock.monotonic"}}
 		node.Effects = []element.Effect{{Name: "subscription.input", Reversible: true}}

@@ -258,6 +258,22 @@ func nodeInspectionLabel(node Node) string {
 	if node.Reaction.BreaksCycles {
 		lines = append(lines, "causal break: true")
 	}
+	if node.StateSchema != "" {
+		lines = append(lines, "state schema: "+node.StateSchema)
+	}
+	if node.StateTransfer != nil {
+		capabilities := make([]string, 0, 3)
+		if node.StateTransfer.Snapshot {
+			capabilities = append(capabilities, "snapshot")
+		}
+		if node.StateTransfer.Restore {
+			capabilities = append(capabilities, "restore")
+		}
+		if node.StateTransfer.Quiesce {
+			capabilities = append(capabilities, "quiesce")
+		}
+		lines = append(lines, "state transfer: "+strings.Join(capabilities, ", "))
+	}
 	for _, effect := range node.Effects {
 		attributes := make([]string, 0, 2)
 		if effect.External {

@@ -17,7 +17,8 @@ import (
 
 func TestStateLifecycleRestorationRegistrationAndSeal(t *testing.T) {
 	restored := json.RawMessage(`{"a":1}`)
-	state := newStateLifecycle("stateful", "schema://state/v1", restored)
+	transfer := &element.StateTransferCapabilities{Snapshot: true, Restore: true, Quiesce: true}
+	state := newStateLifecycle("stateful", "schema://state/v1", transfer, restored)
 	got, available, err := state.Restored()
 	if err != nil || !available || string(got) != string(restored) {
 		t.Fatalf("Restored() = %s, %t, %v", got, available, err)
@@ -61,7 +62,8 @@ func TestStateLifecycleRestorationRegistrationAndSeal(t *testing.T) {
 }
 
 func TestStateLifecycleValidationAndCompatibility(t *testing.T) {
-	state := newStateLifecycle("stateful", "schema://state/v1", nil)
+	all := &element.StateTransferCapabilities{Snapshot: true, Restore: true, Quiesce: true}
+	state := newStateLifecycle("stateful", "schema://state/v1", all, nil)
 	if err := state.Snapshot(nil); err == nil || !strings.Contains(err.Error(), "requires a callback") {
 		t.Fatalf("nil snapshot error = %v", err)
 	}
@@ -85,20 +87,28 @@ func TestStateLifecycleValidationAndCompatibility(t *testing.T) {
 		t.Fatalf("duplicate quiescer error = %v", err)
 	}
 
-	// StateSchema does not yet imply hot-transfer support. Existing stateful
-	// elements remain mountable without callbacks and reconciliation separately
-	// refuses them through requireTransferableState.
-	withoutCallbacks := newStateLifecycle("legacy", "schema://state/v1", nil)
+	// StateSchema alone does not grant a live-transfer operation.
+	withoutCallbacks := newStateLifecycle("legacy", "schema://state/v1", nil, nil)
+	if _, _, err := withoutCallbacks.Restored(); err == nil || !strings.Contains(err.Error(), "does not declare state restore") {
+		t.Fatalf("undeclared restore error = %v", err)
+	}
+	if err := withoutCallbacks.Snapshot(snapshot); err == nil || !strings.Contains(err.Error(), "does not declare state snapshot") {
+		t.Fatalf("undeclared snapshot error = %v", err)
+	}
+	if err := withoutCallbacks.Quiesce(quiesce); err == nil || !strings.Contains(err.Error(), "does not declare state quiesce") {
+		t.Fatalf("undeclared quiesce error = %v", err)
+	}
 	gotSnapshot, gotQuiesce, err := withoutCallbacks.seal()
 	if err != nil || gotSnapshot != nil || gotQuiesce != nil {
 		t.Fatalf("compatible seal = (%v, %v, %v)", gotSnapshot, gotQuiesce, err)
 	}
 
-	unconsumed := newStateLifecycle("unconsumed", "schema://state/v1", json.RawMessage(`{}`))
+	restore := &element.StateTransferCapabilities{Restore: true}
+	unconsumed := newStateLifecycle("unconsumed", "schema://state/v1", restore, json.RawMessage(`{}`))
 	if _, _, err := unconsumed.seal(); err == nil || !strings.Contains(err.Error(), "did not consume") {
 		t.Fatalf("unconsumed restored state error = %v", err)
 	}
-	restoreOnly := newStateLifecycle("restore-only", "schema://state/v1", json.RawMessage(`{}`))
+	restoreOnly := newStateLifecycle("restore-only", "schema://state/v1", restore, json.RawMessage(`{}`))
 	if _, available, err := restoreOnly.Restored(); err != nil || !available {
 		t.Fatalf("restore-only consumption = available %t, error %v", available, err)
 	}
@@ -106,12 +116,21 @@ func TestStateLifecycleValidationAndCompatibility(t *testing.T) {
 		t.Fatalf("restore-only seal = (%v, %v, %v)", snapshot, quiesce, err)
 	}
 
-	quiesceOnly := newStateLifecycle("quiesce-only", "schema://state/v1", nil)
-	if err := quiesceOnly.Quiesce(quiesce); err != nil {
+	snapshotAndQuiesce := &element.StateTransferCapabilities{Snapshot: true, Quiesce: true}
+	missingSnapshot := newStateLifecycle("missing-snapshot", "schema://state/v1", snapshotAndQuiesce, nil)
+	if err := missingSnapshot.Quiesce(quiesce); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := quiesceOnly.seal(); err == nil || !strings.Contains(err.Error(), "without a state snapshot") {
-		t.Fatalf("quiesce-only seal error = %v", err)
+	if _, _, err := missingSnapshot.seal(); err == nil || !strings.Contains(err.Error(), "without registering a callback") {
+		t.Fatalf("missing snapshot callback error = %v", err)
+	}
+
+	missingQuiesce := newStateLifecycle("missing-quiesce", "schema://state/v1", snapshotAndQuiesce, nil)
+	if err := missingQuiesce.Snapshot(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := missingQuiesce.seal(); err == nil || !strings.Contains(err.Error(), "quiesce capability without registering") {
+		t.Fatalf("missing quiesce callback error = %v", err)
 	}
 }
 
@@ -162,6 +181,7 @@ func TestMountedStateQuiesceCaptureAndResumeOrder(t *testing.T) {
 		nodes = append(nodes, mountedNode{
 			id: name, identity: element.Identity{Name: "test.State", Revision: 1, Digest: "sha256:" + strings.Repeat("a", 64)},
 			implementation: "impl://" + name, stateSchema: "schema://state/v1",
+			stateTransfer: testStateTransfer(true, false, true),
 			quiesce: func(context.Context) (element.StateResumer, error) {
 				mu.Lock()
 				order = append(order, "quiesce:"+name)
@@ -228,11 +248,11 @@ func TestMountedStateFailureContainment(t *testing.T) {
 		var order []string
 		failure := errors.New("cannot drain")
 		mounted := &Mounted{timeout: time.Second, nodes: []mountedNode{
-			{id: "alpha", stateSchema: "schema://state/v1", quiesce: func(context.Context) (element.StateResumer, error) {
+			{id: "alpha", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, true), quiesce: func(context.Context) (element.StateResumer, error) {
 				order = append(order, "quiesce:alpha")
 				return func(context.Context) error { order = append(order, "resume:alpha"); return nil }, failure
 			}},
-			{id: "beta", stateSchema: "schema://state/v1", quiesce: func(context.Context) (element.StateResumer, error) {
+			{id: "beta", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, true), quiesce: func(context.Context) (element.StateResumer, error) {
 				order = append(order, "quiesce:beta")
 				return func(context.Context) error { order = append(order, "resume:beta"); return nil }, nil
 			}},
@@ -252,7 +272,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 		failure := errors.New("snapshot failed")
 		mounted := &Mounted{timeout: time.Second, nodes: []mountedNode{
 			{
-				id: "alpha", stateSchema: "schema://state/v1",
+				id: "alpha", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, true),
 				quiesce: func(context.Context) (element.StateResumer, error) {
 					order = append(order, "quiesce:alpha")
 					return func(context.Context) error { order = append(order, "resume:alpha"); return nil }, nil
@@ -263,7 +283,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 				},
 			},
 			{
-				id: "beta", stateSchema: "schema://state/v1",
+				id: "beta", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, true),
 				quiesce: func(context.Context) (element.StateResumer, error) {
 					order = append(order, "quiesce:beta")
 					return func(context.Context) error { order = append(order, "resume:beta"); return nil }, nil
@@ -297,7 +317,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 	}{
 		{
 			name: "quiesce panic",
-			node: mountedNode{id: "node", stateSchema: "schema://state/v1", quiesce: func(context.Context) (element.StateResumer, error) { panic("quiesce panic") }},
+			node: mountedNode{id: "node", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, true), snapshot: func(context.Context) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }, quiesce: func(context.Context) (element.StateResumer, error) { panic("quiesce panic") }},
 			call: func(m *Mounted) error {
 				_, err := m.quiesceState(context.Background(), map[string]struct{}{"node": {}})
 				return err
@@ -306,7 +326,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 		},
 		{
 			name: "quiesce timeout",
-			node: mountedNode{id: "node", stateSchema: "schema://state/v1", quiesce: func(ctx context.Context) (element.StateResumer, error) { <-ctx.Done(); return nil, context.Cause(ctx) }},
+			node: mountedNode{id: "node", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, true), snapshot: func(context.Context) (json.RawMessage, error) { return json.RawMessage(`{}`), nil }, quiesce: func(ctx context.Context) (element.StateResumer, error) { <-ctx.Done(); return nil, context.Cause(ctx) }},
 			call: func(m *Mounted) error {
 				_, err := m.quiesceState(context.Background(), map[string]struct{}{"node": {}})
 				return err
@@ -315,7 +335,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 		},
 		{
 			name: "snapshot panic",
-			node: mountedNode{id: "node", stateSchema: "schema://state/v1", snapshot: func(context.Context) (json.RawMessage, error) { panic("snapshot panic") }},
+			node: mountedNode{id: "node", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, false), snapshot: func(context.Context) (json.RawMessage, error) { panic("snapshot panic") }},
 			call: func(m *Mounted) error {
 				_, err := m.captureState(context.Background(), map[string]struct{}{"node": {}})
 				return err
@@ -324,7 +344,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 		},
 		{
 			name: "snapshot timeout",
-			node: mountedNode{id: "node", stateSchema: "schema://state/v1", snapshot: func(ctx context.Context) (json.RawMessage, error) { <-ctx.Done(); return nil, context.Cause(ctx) }},
+			node: mountedNode{id: "node", stateSchema: "schema://state/v1", stateTransfer: testStateTransfer(true, false, false), snapshot: func(ctx context.Context) (json.RawMessage, error) { <-ctx.Done(); return nil, context.Cause(ctx) }},
 			call: func(m *Mounted) error {
 				_, err := m.captureState(context.Background(), map[string]struct{}{"node": {}})
 				return err
@@ -365,6 +385,7 @@ func TestMountedStateFailureContainment(t *testing.T) {
 
 func TestMountStateLifecycleAndPrivateRestoration(t *testing.T) {
 	descriptor := stateTestDescriptor("schema://state/v1")
+	descriptor.StateTransfer = testStateTransfer(true, true, false)
 	var captured element.StateLifecycle
 	factory := &stateTestFactory{descriptor: descriptor, mount: func(mount element.MountContext) error {
 		captured = mount.State
@@ -410,27 +431,64 @@ func TestMountStateCompatibilityAndRestorationRefusal(t *testing.T) {
 		t.Fatalf("ordinary schema-only mount broke compatibility: %v", err)
 	}
 	if err := mounted.requireTransferableState(map[string]struct{}{"node": {}}); err == nil ||
-		!strings.Contains(err.Error(), "no live state snapshot") {
+		!strings.Contains(err.Error(), "does not declare state snapshot") {
 		t.Fatalf("non-transferable state error = %v", err)
 	}
 	if err := mounted.Close(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
+	var schemaOnlyMounts atomic.Int32
+	schemaOnlyRegistry := NewRegistry()
+	if err := schemaOnlyRegistry.Register("", &stateTestFactory{
+		descriptor: stateful, mounts: &schemaOnlyMounts,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mount(context.Background(), Config{
+		Graph: stateTestGraph(t, stateful), Registry: schemaOnlyRegistry,
+	}, map[string]json.RawMessage{"node": json.RawMessage(`{}`)}); err == nil ||
+		!strings.Contains(err.Error(), "requires declared restore capability") {
+		t.Fatalf("schema-only restoration error = %v", err)
+	}
+	if schemaOnlyMounts.Load() != 0 {
+		t.Fatalf("schema-only restoration acquired resources through %d mounts", schemaOnlyMounts.Load())
+	}
+
+	transferable := stateTestDescriptor("schema://state/v1")
+	transferable.StateTransfer = testStateTransfer(true, true, false)
 	var mounts atomic.Int32
-	unconsumed := &stateTestFactory{descriptor: stateful, mounts: &mounts}
+	unconsumed := &stateTestFactory{descriptor: transferable, mounts: &mounts}
 	unconsumedRegistry := NewRegistry()
 	if err := unconsumedRegistry.Register("", unconsumed); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mount(context.Background(), Config{
-		Graph: stateTestGraph(t, stateful), Registry: unconsumedRegistry,
+		Graph: stateTestGraph(t, transferable), Registry: unconsumedRegistry,
 	}, map[string]json.RawMessage{"node": json.RawMessage(`{}`)}); err == nil ||
 		!strings.Contains(err.Error(), "did not consume restored state") {
 		t.Fatalf("unconsumed mount error = %v", err)
 	}
 	if mounts.Load() != 1 {
 		t.Fatalf("unconsumed factory mounts = %d", mounts.Load())
+	}
+
+	missingSnapshot := stateTestDescriptor("schema://state/v1")
+	missingSnapshot.StateTransfer = testStateTransfer(true, false, false)
+	var missingSnapshotMounts atomic.Int32
+	missingSnapshotRegistry := NewRegistry()
+	if err := missingSnapshotRegistry.Register("", &stateTestFactory{
+		descriptor: missingSnapshot, mounts: &missingSnapshotMounts,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Mount(context.Background(), Config{
+		Graph: stateTestGraph(t, missingSnapshot), Registry: missingSnapshotRegistry,
+	}); err == nil || !strings.Contains(err.Error(), "snapshot capability without registering") {
+		t.Fatalf("missing declared snapshot callback error = %v", err)
+	}
+	if missingSnapshotMounts.Load() != 1 {
+		t.Fatalf("missing-snapshot factory mounts = %d", missingSnapshotMounts.Load())
 	}
 
 	stateless := stateTestDescriptor("")
@@ -473,11 +531,8 @@ func (factory *stateTestFactory) Mount(
 	if factory.mounts != nil {
 		factory.mounts.Add(1)
 	}
-	if factory.descriptor.StateSchema == "" && mount.State != nil {
-		return nil, errors.New("stateless element received a state lifecycle")
-	}
-	if factory.descriptor.StateSchema != "" && mount.State == nil {
-		return nil, errors.New("stateful element did not receive a state lifecycle")
+	if (factory.descriptor.StateTransfer == nil) != (mount.State == nil) {
+		return nil, errors.New("state lifecycle availability differs from transfer contract")
 	}
 	if factory.mount != nil {
 		if err := factory.mount(mount); err != nil {
@@ -519,6 +574,7 @@ func stateTestGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
 				{Name: "out", Direction: element.Output, Type: typeValue, Cardinality: element.One, Required: true, DefaultDepth: 1},
 			},
 			Reaction: descriptor.Reaction, StateSchema: descriptor.StateSchema,
+			StateTransfer: descriptor.StateTransfer.Clone(),
 		}},
 		Boundaries: []ir.Boundary{
 			{Name: "input", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "node", Port: "in"}, Type: typeValue},
@@ -529,4 +585,10 @@ func stateTestGraph(t *testing.T, descriptor element.Descriptor) ir.Graph {
 		t.Fatal(err)
 	}
 	return graph
+}
+
+func testStateTransfer(snapshot, restore, quiesce bool) *element.StateTransferCapabilities {
+	return &element.StateTransferCapabilities{
+		Snapshot: snapshot, Restore: restore, Quiesce: quiesce,
+	}
 }

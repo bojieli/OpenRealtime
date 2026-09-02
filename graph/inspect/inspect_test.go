@@ -25,6 +25,8 @@ func TestGeneratedViewsAttestExactGraphAndSemantics(t *testing.T) {
 			graph.Fingerprint, "test.Source@1", "test.Sink@1",
 			"Event&lt;test.Value&gt;", "depth 4", "trigger: trigger",
 			"interrupt: cancel", "outcome: out", "max concurrency: 2",
+			"state schema: schema://test/inspect-state/v1",
+			"state transfer: snapshot, restore, quiesce",
 			"effect: computer.click [external, irreversible, authority=Authorized]",
 		} {
 			candidate := required
@@ -84,14 +86,18 @@ func TestModelClassifiesTriggerInterruptAndState(t *testing.T) {
 		Interrupts: []string{"cancel"}, Outcomes: []string{"out"}, MaxConcurrency: 2,
 	}
 	if got := inspectedSource.Reaction; !reflect.DeepEqual(got, wantReaction) ||
+		inspectedSource.StateTransfer == nil || !inspectedSource.StateTransfer.Snapshot ||
+		!inspectedSource.StateTransfer.Restore || !inspectedSource.StateTransfer.Quiesce ||
 		len(inspectedSource.Effects) != 1 || inspectedSource.Effects[0].Authority != "Authorized" {
 		t.Fatalf("inspection model omitted reaction or authority metadata: %+v", inspectedSource)
 	}
 	inspectedSource.Reaction.Triggers[0] = "mutated"
+	inspectedSource.StateTransfer.Restore = false
 	inspectedSource.Effects[0].Authority = "mutated"
 	for _, node := range graph.Nodes {
 		if node.ID == "source" &&
-			(node.Reaction.Triggers[0] != "trigger" || node.Effects[0].Authority != "Authorized") {
+			(node.Reaction.Triggers[0] != "trigger" || !node.StateTransfer.Restore ||
+				node.Effects[0].Authority != "Authorized") {
 			t.Fatal("inspection model aliases immutable Graph IR reaction or effect metadata")
 		}
 	}
@@ -157,6 +163,10 @@ func fixture(t *testing.T) ir.Graph {
 			Triggers: []string{"trigger"}, SampledState: []string{"context"},
 			Interrupts: []string{"cancel"}, Outcomes: []string{"out"}, MaxConcurrency: 2,
 		},
+		StateSchema: "schema://test/inspect-state/v1",
+		StateTransfer: &element.StateTransferCapabilities{
+			Snapshot: true, Restore: true, Quiesce: true,
+		},
 		Effects: []element.Effect{{Name: "computer.click", External: true, Authority: "Authorized"}},
 	}
 	sinkDescriptor := element.Descriptor{
@@ -179,7 +189,8 @@ func fixture(t *testing.T) ir.Graph {
 				{Name: "cancel", Direction: element.Input, Type: interrupt, Cardinality: element.One},
 				{Name: "context", Direction: element.Input, Type: state, Cardinality: element.One},
 				{Name: "out", Direction: element.Output, Type: value, Cardinality: element.One, LossAllowed: true},
-			}, Reaction: sourceDescriptor.Reaction, Effects: sourceDescriptor.Effects},
+			}, Reaction: sourceDescriptor.Reaction, StateSchema: sourceDescriptor.StateSchema,
+				StateTransfer: sourceDescriptor.StateTransfer.Clone(), Effects: sourceDescriptor.Effects},
 			{ID: "sink", Element: sinkIdentity, Ports: []ir.Port{{
 				Name: "in", Direction: element.Input, Type: value, Cardinality: element.One, LossAllowed: true,
 			}}},
