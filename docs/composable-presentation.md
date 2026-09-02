@@ -605,9 +605,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   one session-API scope, before replacing all six routes. Replacing the session
   provider around the same external registry also preserves its registered
   runtime and later mutations without transferring registry ownership to the
-  plugin realm. Deployment-provided operator authority, full delta/
-  reconciliation E2E, cross-owner provider-state migration, and replacement of
-  every presentation consumer remain open.
+  plugin realm. The same continuity now covers deployment-owned operator
+  capabilities across authorizer replacement, including live revocation and
+  fresh scoped issue. Production launch-profile selection of operator
+  authority, full delta/reconciliation E2E, cross-owner provider-state
+  migration, and replacement of every presentation consumer remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

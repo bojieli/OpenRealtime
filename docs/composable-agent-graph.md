@@ -3292,6 +3292,15 @@ and does not claim statistical parity with the historical 165-attempt sample.
     external registry or its current session. Twenty focused runs, five focused
     race runs, package, package-race, and vet gates are green. Migration between
     distinct registry owners remains open.
+  - [x] Preserve issued operator capabilities when the authorizer provider
+    implementation is replaced around the same deployment-owned registry. The
+    exact capability survives the two-row authorizer/static-API closure
+    retirement under a stable router/export; revocation and fresh scoped issue
+    remain immediately visible through the replacement. Closing the plugin
+    realm reaches zero ownership without revoking the external registry.
+    Twenty focused runs, five focused race runs, package, package-race, and vet
+    gates are green. Production launch-profile selection of that authority and
+    migration between distinct authority owners remain open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
