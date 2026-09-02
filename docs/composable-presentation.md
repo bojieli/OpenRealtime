@@ -574,8 +574,10 @@ tau2/τ-Voice matrix defined by the parent plan.
   state digests; permissionless and over-envelope candidates leave the live
   route and content untouched. The revision-2 download store provides the same
   guarantees for arbitrary binary attachments, canonical base64 state,
-  filenames, media types, and temporary-buffer wiping. One authenticated
-  twenty-three-row real-Chromium transition now selects exact candidates for
+  filenames, media types, and temporary-buffer wiping. Both stores close
+  mutation admission transactionally before state capture and resume it after
+  any pre-teardown refusal. One authenticated twenty-three-row real-Chromium
+  transition now selects exact candidates for
   slots, session
   configuration, effects, artifact references, debug, inspection, the stateful
   management-operator authority, management transport/static/authoring/source-

@@ -3515,38 +3515,41 @@ and does not claim statistical parity with the historical 165-attempt sample.
   - [x] Reconcile the shipped revision-2 artifact store through its exact
     bounded state schema. Effect-restricted pre-mount validates the live route
     dependency, retention configuration, and memory-publish grant before any
-    state capture or teardown. A permissionless candidate and a retained state
-    larger than the runtime's one-MiB migration envelope return no receipt and
-    leave the predecessor sequence, service, route, metadata, and private HTML
-    untouched. A valid implementation replacement privately migrates ordered
-    retained HTML plus exact titles, versions, timestamps, and eviction count;
-    wipes the retired store; preserves the router and HTTP export; republishes
-    a distinct artifact service; and emits only an equal before/after state
-    digest, schema, migrator identity, transition, and zero-ownership
-    retirement evidence. Strict malformed, duplicate, incompatible-identity,
-    and noncanonical-time states fail closed, and the receipt never contains
-    artifact IDs, titles, or HTML. Twenty focused runs, five focused race runs,
-    three package-race runs, the complete presentation and repository tests,
-    and vet are green. Stateful effects migration and topology-changing host
-    replacement remain open.
+    state capture or teardown. A transactional mutation quiescer closes publish
+    admission before capture; pre-teardown refusal resumes it without changing
+    the store. A permissionless candidate and a retained state larger than the
+    runtime's one-MiB migration envelope return no receipt and leave the
+    predecessor sequence, service, route, metadata, and private HTML untouched.
+    A valid implementation replacement privately migrates ordered retained HTML
+    plus exact titles, versions, timestamps, and eviction count; wipes the
+    retired store; preserves the router and HTTP export; republishes a distinct
+    artifact service; and emits only an equal before/after state digest, schema,
+    migrator identity, transition, and zero-ownership retirement evidence.
+    Strict malformed, duplicate, incompatible-identity, and noncanonical-time
+    states fail closed, and the receipt never contains artifact IDs, titles, or
+    HTML. Twenty focused runs, five focused race runs, three package-race runs,
+    the complete presentation and repository tests, and vet are green. Stateful
+    effects migration and topology-changing host replacement remain open.
   - [x] Reconcile the shipped revision-2 download store through its exact
     bounded state schema. Effect-restricted pre-mount validates the live route
     dependency, retention configuration, and memory-publish grant before any
-    state capture or teardown. A permissionless candidate and binary content
-    whose base64 state cannot fit the one-MiB migration envelope return no
-    receipt and leave the predecessor sequence, service, attachment route, and
-    bytes untouched. A valid implementation replacement privately migrates
-    ordered arbitrary binary content plus exact filenames, canonical media
-    types, versions, timestamps, and eviction count; wipes the predecessor and
-    temporary decoded buffers; preserves the router and HTTP export;
-    republishes a distinct download service; and emits only equal state
-    digests, schema, migrator identity, transition, and zero-ownership
-    retirement evidence. Duplicate or noncanonical base64, unsafe filenames,
-    invalid media types and timestamps, and incompatible identities fail
-    closed, while receipts contain no IDs, filenames, or content. Twenty
-    focused runs, five focused race runs, three package-race runs, the complete
-    presentation and repository tests, and vet are green. Stateful effects and
-    topology-changing host replacement remain open.
+    state capture or teardown. A transactional mutation quiescer closes publish
+    admission before capture; pre-teardown refusal resumes it without changing
+    the store. A permissionless candidate and binary content whose base64 state
+    cannot fit the one-MiB migration envelope return no receipt and leave the
+    predecessor sequence, service, attachment route, and bytes untouched. A
+    valid implementation replacement privately migrates ordered arbitrary
+    binary content plus exact filenames, canonical media types, versions,
+    timestamps, and eviction count; wipes the predecessor and temporary decoded
+    buffers; preserves the router and HTTP export; republishes a distinct
+    download service; and emits only equal state digests, schema, migrator
+    identity, transition, and zero-ownership retirement evidence. Duplicate or
+    noncanonical base64, unsafe filenames, invalid media types and timestamps,
+    and incompatible identities fail closed, while receipts contain no IDs,
+    filenames, or content. Twenty focused runs, five focused race runs, three
+    package-race runs, the complete presentation and repository tests, and vet
+    are green. Stateful effects and topology-changing host replacement remain
+    open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3895,20 +3898,24 @@ and does not claim statistical parity with the historical 165-attempt sample.
     Focused normal, ten shuffled, and race gates are green.
   - [x] Migrate every affected stateful row through its exact immutable state
     schema and explicit lifecycle contract. Snapshot-capable mounts register
-    one bounded strict-JSON snapshot callback; changed rows require an explicit
-    effect-restricted candidate migrator, while unchanged stateful dependents
-    retain their exact canonical snapshot. Migration runs only after the
-    affected predecessor closure retires and before candidate activation.
+    one bounded strict-JSON snapshot callback, and mutation-owning mounts
+    register a transactional quiescer. The runtime closes mutation admission in
+    reverse dependency order before capture; any quiescer, snapshot, or
+    canonicalization refusal resumes admission in dependency order under bounded
+    recovery contexts before returning without teardown. Changed rows require
+    an explicit effect-restricted candidate migrator, while unchanged stateful
+    dependents retain their exact canonical snapshot. Migration runs only after
+    the affected predecessor closure retires and before candidate activation.
     Restoring mounts must consume transferred state before becoming active;
-    snapshot, migration, cancellation, or activation failure restores the
-    exact predecessor snapshots under realm ownership and returns no success
-    receipt. The payload-free receipt records only the schema, before/after
-    digests, and optional migrator identity. Missing lifecycle or migrator
-    support, duplicate-key/non-object/over-1-MiB state, unconsumed restores,
-    and legacy replacement fail closed. Direct migration, unchanged-dependent
-    preservation, rollback, normal, ten shuffled, race, and full repository
-    test and vet gates are green. State-schema-changing replacement remains
-    part of the topology work.
+    migration, cancellation, or activation failure restores the exact
+    predecessor snapshots under realm ownership and returns no success receipt.
+    The payload-free receipt records only the schema, before/after digests, and
+    optional migrator identity. Missing lifecycle or migrator support,
+    duplicate-key/non-object/over-1-MiB state, unconsumed restores, and legacy
+    replacement fail closed. Direct migration, unchanged-dependent preservation,
+    capture refusal and resumption, rollback, normal, ten shuffled, race, and
+    full repository test and vet gates are green. State-schema-changing
+    replacement remains part of the topology work.
 - [ ] Begin with leaf config/implementation swaps, then expand to bounded topology
   changes.
   - [x] Apply leaf and bounded multi-entry implementation, config, and
