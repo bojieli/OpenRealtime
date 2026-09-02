@@ -17,6 +17,32 @@ const STATIC_GRAPH_FINGERPRINT = process.env.STATIC_GRAPH_FINGERPRINT ?? "";
 const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
 const EFFECTS_REPLACEMENT_PATH = process.env.EFFECTS_REPLACEMENT_PATH ?? "";
 const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
+const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
+  "effects": "browser-esm:effects-client-v2.js",
+  "artifact-references": "browser-esm:artifact-references-v2.js",
+  "view": "browser-esm:text-view-v2.js",
+  "confirmation-view": "browser-esm:confirmation-view-v2.js",
+  "artifact-view": "browser-esm:artifact-view-v2.js",
+  "inspection-view": "browser-esm:inspection-view-v2.js",
+  "trace-view": "browser-esm:trace-view-v2.js",
+  "management-operator-view": "browser-esm:management-operator-view-v2.js",
+  "authoring-editor-view": "browser-esm:authoring-editor-view-v2.js",
+  "authoring-configuration-view": "browser-esm:authoring-configuration-view-v2.js",
+  "authoring-canvas-view": "browser-esm:authoring-canvas-view-v2.js",
+});
+const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
+  "effects": "browser-esm:effects-client.js",
+  "artifact-references": "browser-esm:artifact-references.js",
+  "view": "browser-esm:text-view.js",
+  "confirmation-view": "browser-esm:confirmation-view.js",
+  "artifact-view": "browser-esm:artifact-view.js",
+  "inspection-view": "browser-esm:inspection-view.js",
+  "trace-view": "browser-esm:trace-view.js",
+  "management-operator-view": "browser-esm:management-operator-view.js",
+  "authoring-editor-view": "browser-esm:authoring-editor-view.js",
+  "authoring-configuration-view": "browser-esm:authoring-configuration-view.js",
+  "authoring-canvas-view": "browser-esm:authoring-canvas-view.js",
+});
 if (!new Set(["websocket", "webrtc"]).has(CLIENT_TRANSPORT)) {
   throw new Error("developer client transport fixture is invalid");
 }
@@ -29,7 +55,7 @@ if (!OPERATOR_CAPABILITY || !OPERATOR_CAPABILITY_ROTATED || !AUTHORING_SOURCE ||
 }
 if (EFFECTS_REPLACEMENT_PATH && (!EFFECTS_ENABLED || CLIENT_TRANSPORT !== "websocket" ||
     !EFFECTS_REPLACEMENT_PATH.startsWith("/test/"))) {
-  throw new Error("developer effects replacement fixture is invalid");
+  throw new Error("developer shipped-consumer replacement fixture is invalid");
 }
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-developer-client-"));
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
@@ -764,7 +790,7 @@ try {
       const candidate = await fetch(${JSON.stringify(EFFECTS_REPLACEMENT_PATH)}, {cache:"no-store"})
         .then((response) => response.json());
       const receipt = await window.__openrealtime.replaceMany(
-        ["effects", "artifact-references"], candidate);
+        ${JSON.stringify(Object.keys(SHIPPED_REPLACEMENT_IMPLEMENTATIONS))}, candidate);
       const after = window.__openrealtime.live();
       return {
         before, receipt, after, candidateFingerprint: candidate.fingerprint,
@@ -777,39 +803,41 @@ try {
     })()`);
     const transitions = replacement.receipt.transitions ?? [];
     const transitionEntries = transitions.map((row) => row.entry).sort();
+    const expectedReplacementEntries = Object.keys(SHIPPED_REPLACEMENT_IMPLEMENTATIONS).sort();
     capabilityReplacementSequence = replacement.after.sequence;
-    check("atomic replacement selected the two shipped capability implementations",
+    check("atomic replacement selected every shipped capability and view candidate",
       replacement.after.sequence === replacement.before.sequence + 1 &&
       replacement.after.fingerprint === replacement.before.fingerprint &&
       replacement.candidatePlanFingerprint === replacement.before.fingerprint &&
       replacement.after.manifest_fingerprint === replacement.candidateFingerprint &&
       replacement.manifestFingerprint === replacement.candidateFingerprint &&
-      JSON.stringify(replacement.changed.sort()) ===
-        JSON.stringify(["artifact-references", "effects"]) &&
-      replacement.after.entries.effects.implementation === "browser-esm:effects-client-v2.js" &&
-      replacement.after.entries["artifact-references"].implementation ===
-        "browser-esm:artifact-references-v2.js");
-    check("capability replacement receipt is exact and payload-free",
+      JSON.stringify(replacement.changed.sort()) === JSON.stringify(expectedReplacementEntries) &&
+      expectedReplacementEntries.every((entry) => replacement.after.entries[entry].implementation ===
+        SHIPPED_REPLACEMENT_IMPLEMENTATIONS[entry]));
+    check("shipped consumer replacement receipt is exact and payload-free",
       replacement.receipt.format_version === 2 &&
       replacement.receipt.plan_fingerprint === replacement.before.fingerprint &&
       replacement.receipt.before_manifest_fingerprint === replacement.before.manifest_fingerprint &&
       replacement.receipt.after_manifest_fingerprint === replacement.candidateFingerprint &&
       replacement.receipt.before_sequence === replacement.before.sequence &&
       replacement.receipt.after_sequence === replacement.after.sequence &&
-      JSON.stringify(transitionEntries) === JSON.stringify(["artifact-references", "effects"]) &&
-      transitions.some((row) => row.entry === "effects" &&
-        row.before_implementation.implementation === "browser-esm:effects-client.js" &&
-        row.after_implementation.implementation === "browser-esm:effects-client-v2.js") &&
-      transitions.some((row) => row.entry === "artifact-references" &&
-        row.before_implementation.implementation === "browser-esm:artifact-references.js" &&
-        row.after_implementation.implementation === "browser-esm:artifact-references-v2.js") &&
+      JSON.stringify(transitionEntries) === JSON.stringify(expectedReplacementEntries) &&
+      transitions.every((row) => row.before_implementation.implementation ===
+        SHIPPED_PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
+        row.after_implementation.implementation === SHIPPED_REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
       !Object.hasOwn(replacement.receipt, "state_transfers") &&
       !JSON.stringify(replacement.receipt).includes("authority"));
-    check("effects/artifact union closure remounted without disturbing unrelated plugins",
+    check("shipped consumer union closure remounted without disturbing unrelated plugins",
       JSON.stringify(replacement.mounted) === JSON.stringify(expectedMounted) &&
-      ["effects", "artifact-references", "confirmation-view", "artifact-view"]
-        .every((entry) => replacement.after.entries[entry].state === "active") &&
+      expectedReplacementEntries.every((entry) => replacement.after.entries[entry].state === "active") &&
       Object.entries(replacement.after.entries).every(([, entry]) => entry.desired));
+    check("replacement views rebound the retained live services and workspace",
+      await evaluate(`(() => [
+        "#connect", '[data-view="effect-confirmations"]', '[data-view="artifacts"]',
+        '[data-view="inspection"]', '[data-view="trace"]', '[data-view="management-operator"]',
+        '[data-view="authoring-editor"]', '[data-view="authoring-configuration"]',
+        '[data-view="authoring-canvas"]',
+      ].every((selector) => document.querySelector(selector) !== null))()`));
     await waitFor("replacement effect negotiation", () => evaluate(
       `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated === "true"`));
     check("replacement effect provider renegotiated its signed catalog",

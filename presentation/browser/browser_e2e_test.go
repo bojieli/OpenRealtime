@@ -99,43 +99,43 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(revokeTwo)
-	effectsSource, err := os.ReadFile(filepath.Join("assets", "effects-client.js"))
-	if err != nil {
-		t.Fatal(err)
+	replacementModules := []struct {
+		entry, source, candidate string
+	}{
+		{"effects", "effects-client.js", "effects-client-v2.js"},
+		{"artifact-references", "artifact-references.js", "artifact-references-v2.js"},
+		{"view", "text-view.js", "text-view-v2.js"},
+		{"confirmation-view", "confirmation-view.js", "confirmation-view-v2.js"},
+		{"artifact-view", "artifact-view.js", "artifact-view-v2.js"},
+		{"inspection-view", "inspection-view.js", "inspection-view-v2.js"},
+		{"trace-view", "trace-view.js", "trace-view-v2.js"},
+		{"management-operator-view", "management-operator-view.js", "management-operator-view-v2.js"},
+		{"authoring-editor-view", "authoring-editor-view.js", "authoring-editor-view-v2.js"},
+		{"authoring-configuration-view", "authoring-configuration-view.js", "authoring-configuration-view-v2.js"},
+		{"authoring-canvas-view", "authoring-canvas-view.js", "authoring-canvas-view-v2.js"},
 	}
-	artifactReferencesSource, err := os.ReadFile(filepath.Join("assets", "artifact-references.js"))
-	if err != nil {
-		t.Fatal(err)
+	alternatives := make([]presentationbrowser.DeveloperImplementationAlternative, 0, len(replacementModules))
+	for _, module := range replacementModules {
+		source, readErr := os.ReadFile(filepath.Join("assets", module.source))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		candidate := append(append([]byte(nil), source...),
+			[]byte("\n// shipped "+module.entry+" replacement candidate\n")...)
+		alternatives = append(alternatives, presentationbrowser.DeveloperImplementationAlternative{
+			Entry: module.entry, Entrypoint: module.candidate, Source: candidate,
+		})
 	}
-	effectsAlternative := append(
-		append([]byte(nil), effectsSource...), []byte("\n// shipped effects replacement candidate\n")...,
-	)
-	artifactReferencesAlternative := append(
-		append([]byte(nil), artifactReferencesSource...),
-		[]byte("\n// shipped artifact-references replacement candidate\n")...,
-	)
 	bundle, err := presentationbrowser.ComposeDeveloperBundle(
-		"openrealtime.browser.developer", effects.CatalogDigest(),
-		[]presentationbrowser.DeveloperImplementationAlternative{
-			{
-				Entry: "effects", Entrypoint: "effects-client-v2.js",
-				Source: effectsAlternative,
-			},
-			{
-				Entry: "artifact-references", Entrypoint: "artifact-references-v2.js",
-				Source: artifactReferencesAlternative,
-			},
-		},
+		"openrealtime.browser.developer", effects.CatalogDigest(), alternatives,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replacement := replacementBrowserManifest(
-		t, bundle.Manifest, "effects", "effects-client-v2.js",
-	)
-	replacement = replacementBrowserManifest(
-		t, replacement, "artifact-references", "artifact-references-v2.js",
-	)
+	replacement := bundle.Manifest
+	for _, module := range replacementModules {
+		replacement = replacementBrowserManifest(t, replacement, module.entry, module.candidate)
+	}
 	router := host.NewRouterFactory()
 	target := host.NewEndpointDirectoryFactory()
 	credential := host.NewAnonymousCredentialFactory()
@@ -203,7 +203,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	const replacementPath = "/test/developer-effects-artifacts-replacement.json"
+	const replacementPath = "/test/developer-shipped-consumers-replacement.json"
 	var effectConnectionStarts atomic.Int32
 	var activeEffectConnections atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -211,7 +211,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 			writer.Header().Set("Content-Type", "application/json")
 			writer.Header().Set("Cache-Control", "no-store")
 			if err := json.NewEncoder(writer).Encode(replacement); err != nil {
-				t.Errorf("encode effects/artifacts replacement manifest: %v", err)
+				t.Errorf("encode shipped-consumer replacement manifest: %v", err)
 			}
 			return
 		}
