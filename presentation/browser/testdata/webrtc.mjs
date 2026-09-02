@@ -6,9 +6,31 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const PAGE_URL = process.argv[2];
 const PORT = Number(process.env.CDP_PORT ?? 19312);
-const VIEWS_REPLACEMENT_PATH = process.env.VIEWS_REPLACEMENT_PATH ?? "";
-if (!VIEWS_REPLACEMENT_PATH.startsWith("/test/")) {
-  throw new Error("WebRTC view replacement fixture is invalid");
+const CLIENT_REPLACEMENT_PATH = process.env.CLIENT_REPLACEMENT_PATH ?? "";
+const REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
+  "slots": "browser-esm:slots-v2.js",
+  "session-configuration": "browser-esm:session-configuration-v2.js",
+  "video": "browser-esm:video-protocol-v2.js",
+  "debug-session": "browser-esm:debug-session-v2.js",
+  "effects": "browser-esm:effects-client-v2.js",
+  "artifact-references": "browser-esm:artifact-references-v2.js",
+  "inspection": "browser-esm:inspection-client-v2.js",
+  "video-controls": "browser-esm:video-controls-v2.js",
+  "transport-diagnostics": "browser-esm:transport-diagnostics-view-v2.js",
+});
+const PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
+  "slots": "browser-esm:slots.js",
+  "session-configuration": "browser-esm:session-configuration.js",
+  "video": "browser-esm:video-protocol.js",
+  "debug-session": "browser-esm:debug-session.js",
+  "effects": "browser-esm:effects-client.js",
+  "artifact-references": "browser-esm:artifact-references.js",
+  "inspection": "browser-esm:inspection-client.js",
+  "video-controls": "browser-esm:video-controls.js",
+  "transport-diagnostics": "browser-esm:transport-diagnostics-view.js",
+});
+if (!CLIENT_REPLACEMENT_PATH.startsWith("/test/")) {
+  throw new Error("WebRTC client replacement fixture is invalid");
 }
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-webrtc-client-"));
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
@@ -184,42 +206,56 @@ try {
   await evaluate(`document.getElementById("video-stop").click()`);
 
   const replacementStarted = performance.now();
-  const viewReplacement = await evaluate(`(async () => {
+  const clientReplacement = await evaluate(`(async () => {
     const before = window.__openrealtime.live();
-    const candidate = await fetch(${JSON.stringify(VIEWS_REPLACEMENT_PATH)}, {cache:"no-store"})
+    const candidate = await fetch(${JSON.stringify(CLIENT_REPLACEMENT_PATH)}, {cache:"no-store"})
       .then((response) => response.json());
     const receipt = await window.__openrealtime.replaceMany(
-      ["video-controls", "transport-diagnostics"], candidate);
+      ${JSON.stringify(Object.keys(REPLACEMENT_IMPLEMENTATIONS))}, candidate);
     const after = window.__openrealtime.live();
     return {
       before, after, receipt, candidateFingerprint: candidate.fingerprint,
       manifestFingerprint: window.__openrealtime.manifest.fingerprint,
       mounted: window.__openrealtime.mounted,
+      changed: Object.keys(after.entries).filter((entry) =>
+        before.entries[entry].implementation !== after.entries[entry].implementation),
     };
   })()`);
   const replacementMS = performance.now() - replacementStarted;
-  const viewTransitions = viewReplacement.receipt.transitions ?? [];
-  check("WebRTC-only view implementations replace atomically",
-    viewReplacement.after.sequence === viewReplacement.before.sequence + 1 &&
-    viewReplacement.after.fingerprint === viewReplacement.before.fingerprint &&
-    viewReplacement.after.manifest_fingerprint === viewReplacement.candidateFingerprint &&
-    viewReplacement.manifestFingerprint === viewReplacement.candidateFingerprint &&
-    viewReplacement.receipt.format_version === 2 &&
-    viewReplacement.receipt.plan_fingerprint === viewReplacement.before.fingerprint &&
-    viewReplacement.receipt.before_manifest_fingerprint === viewReplacement.before.manifest_fingerprint &&
-    viewReplacement.receipt.after_manifest_fingerprint === viewReplacement.candidateFingerprint &&
-    JSON.stringify(viewTransitions.map((row) => row.entry).sort()) ===
-      JSON.stringify(["transport-diagnostics", "video-controls"]) &&
-    viewTransitions.some((row) => row.entry === "video-controls" &&
-      row.before_implementation.implementation === "browser-esm:video-controls.js" &&
-      row.after_implementation.implementation === "browser-esm:video-controls-v2.js") &&
-    viewTransitions.some((row) => row.entry === "transport-diagnostics" &&
-      row.before_implementation.implementation === "browser-esm:transport-diagnostics-view.js" &&
-      row.after_implementation.implementation === "browser-esm:transport-diagnostics-view-v2.js") &&
-    !Object.hasOwn(viewReplacement.receipt, "state_transfers") &&
-    viewReplacement.after.entries["video-controls"].state === "active" &&
-    viewReplacement.after.entries["transport-diagnostics"].state === "active" &&
-    viewReplacement.mounted.length === 28);
+  const transitions = clientReplacement.receipt.transitions ?? [];
+  const replacementEntries = Object.keys(REPLACEMENT_IMPLEMENTATIONS).sort();
+  check("WebRTC reconstructible client implementations replace atomically",
+    clientReplacement.after.sequence === clientReplacement.before.sequence + 1 &&
+    clientReplacement.after.fingerprint === clientReplacement.before.fingerprint &&
+    clientReplacement.after.manifest_fingerprint === clientReplacement.candidateFingerprint &&
+    clientReplacement.manifestFingerprint === clientReplacement.candidateFingerprint &&
+    clientReplacement.receipt.format_version === 2 &&
+    clientReplacement.receipt.plan_fingerprint === clientReplacement.before.fingerprint &&
+    clientReplacement.receipt.before_manifest_fingerprint === clientReplacement.before.manifest_fingerprint &&
+    clientReplacement.receipt.after_manifest_fingerprint === clientReplacement.candidateFingerprint &&
+    JSON.stringify(clientReplacement.changed.sort()) === JSON.stringify(replacementEntries) &&
+    JSON.stringify(transitions.map((row) => row.entry).sort()) === JSON.stringify(replacementEntries) &&
+    transitions.every((row) => row.before_implementation.implementation ===
+      PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
+      row.after_implementation.implementation === REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
+    !Object.hasOwn(clientReplacement.receipt, "state_transfers") &&
+    !JSON.stringify(clientReplacement.receipt).includes("authority") &&
+    replacementEntries.every((entry) => clientReplacement.after.entries[entry].state === "active") &&
+    clientReplacement.mounted.length === 28);
+  check("replacement slots reconstruct every WebRTC client surface", await evaluate(`(() => [
+    "#connect", '[data-view="effect-confirmations"]', '[data-view="artifacts"]',
+    '[data-view="inspection"]', '[data-view="trace"]', '[data-view="management-operator"]',
+    '[data-view="authoring-editor"]', '[data-view="authoring-configuration"]',
+    '[data-view="authoring-canvas"]', "#video-camera", "#transport-stats",
+  ].every((selector) => document.querySelector(selector) !== null))()`));
+  check("replacement session configuration restores scoped inspection", await waitFor(
+    "replacement WebRTC inspection", () => evaluate(
+      `document.querySelector('[data-view=inspection] #availability')?.textContent === "live"`)));
+  check("replacement session configuration renegotiates signed effects", await waitFor(
+    "replacement WebRTC effect negotiation", () => evaluate(`(() => {
+      const status = document.querySelector('[data-view=effect-confirmations] p');
+      return status?.dataset.providerPhase === "ready" && status?.dataset.negotiated === "true";
+    })()`)));
   check("replacement WebRTC views rebind live media and diagnostics services", await evaluate(`(() =>
     document.getElementById("video-camera")?.disabled === false &&
     document.getElementById("video-screen")?.disabled === false &&

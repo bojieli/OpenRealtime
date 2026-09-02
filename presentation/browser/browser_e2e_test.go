@@ -426,35 +426,42 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 			`"html":"<!doctype html><html><body><main>sealed WebRTC artifact</main></body></html>"}`,
 		ClientEffectIssuer: receipts,
 	})
-	webrtcViewModules := []struct {
+	webrtcReplacementModules := []struct {
 		entry, source, candidate string
 	}{
+		{"slots", "slots.js", "slots-v2.js"},
+		{"session-configuration", "session-configuration.js", "session-configuration-v2.js"},
+		{"video", "video-protocol.js", "video-protocol-v2.js"},
+		{"debug-session", "debug-session.js", "debug-session-v2.js"},
+		{"effects", "effects-client.js", "effects-client-v2.js"},
+		{"artifact-references", "artifact-references.js", "artifact-references-v2.js"},
+		{"inspection", "inspection-client.js", "inspection-client-v2.js"},
 		{"video-controls", "video-controls.js", "video-controls-v2.js"},
 		{"transport-diagnostics", "transport-diagnostics-view.js", "transport-diagnostics-view-v2.js"},
 	}
-	webrtcViewAlternatives := make([]presentationbrowser.DeveloperImplementationAlternative, 0,
-		len(webrtcViewModules))
-	for _, module := range webrtcViewModules {
+	webrtcAlternatives := make([]presentationbrowser.DeveloperImplementationAlternative, 0,
+		len(webrtcReplacementModules))
+	for _, module := range webrtcReplacementModules {
 		source, readErr := os.ReadFile(filepath.Join("assets", module.source))
 		if readErr != nil {
 			t.Fatal(readErr)
 		}
 		candidate := append(append([]byte(nil), source...),
 			[]byte("\n// shipped "+module.entry+" replacement candidate\n")...)
-		webrtcViewAlternatives = append(webrtcViewAlternatives,
+		webrtcAlternatives = append(webrtcAlternatives,
 			presentationbrowser.DeveloperImplementationAlternative{
 				Entry: module.entry, Entrypoint: module.candidate, Source: candidate,
 			})
 	}
 	bundle, err := presentationbrowser.ComposeDeveloperWebRTCBundle(
-		"openrealtime.browser.developer-webrtc", effects.CatalogDigest(), webrtcViewAlternatives,
+		"openrealtime.browser.developer-webrtc", effects.CatalogDigest(), webrtcAlternatives,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	viewReplacement := bundle.Manifest
-	for _, module := range webrtcViewModules {
-		viewReplacement = replacementBrowserManifest(t, viewReplacement, module.entry, module.candidate)
+	clientReplacement := bundle.Manifest
+	for _, module := range webrtcReplacementModules {
+		clientReplacement = replacementBrowserManifest(t, clientReplacement, module.entry, module.candidate)
 	}
 	router := host.NewRouterFactory()
 	target := host.NewEndpointDirectoryFactory()
@@ -523,13 +530,13 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	const viewReplacementPath = "/test/developer-webrtc-views-replacement.json"
+	const clientReplacementPath = "/test/developer-webrtc-client-replacement.json"
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == viewReplacementPath {
+		if request.URL.Path == clientReplacementPath {
 			writer.Header().Set("Content-Type", "application/json")
 			writer.Header().Set("Cache-Control", "no-store")
-			if err := json.NewEncoder(writer).Encode(viewReplacement); err != nil {
-				t.Errorf("encode WebRTC-view replacement manifest: %v", err)
+			if err := json.NewEncoder(writer).Encode(clientReplacement); err != nil {
+				t.Errorf("encode WebRTC client replacement manifest: %v", err)
 			}
 			return
 		}
@@ -545,7 +552,7 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 	defer cancel()
 	command := exec.CommandContext(ctx, node, driver, server.URL)
 	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t),
-		"VIEWS_REPLACEMENT_PATH="+viewReplacementPath)
+		"CLIENT_REPLACEMENT_PATH="+clientReplacementPath)
 	output, err := command.CombinedOutput()
 	t.Log("\n" + string(output))
 	if err != nil {
