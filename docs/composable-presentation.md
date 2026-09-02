@@ -568,12 +568,13 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement on one real address, with exact retirement and inert predecessor
   handlers. The fail-closed effect-authority provider likewise replaces through
   its active effects-socket closure with a stable router/export, exact two-row
-  retirement, and a fresh deny-by-default socket. One authenticated twenty-one-
+  retirement, and a fresh deny-by-default socket. One authenticated twenty-two-
   row real-Chromium transition now selects exact candidates for slots, session
-  configuration, effects, artifact references, debug, inspection, management
-  transport/static/authoring/source-read/source-publication, the stateful
-  authoring workspace, and all nine effects-enabled WebSocket-profile view
-  consumers; every text, confirmation, artifact, inspection, trace,
+  configuration, effects, artifact references, debug, inspection, the stateful
+  management-operator authority, management transport/static/authoring/source-
+  read/source-publication, the stateful authoring workspace, and all nine
+  effects-enabled WebSocket-profile view consumers; every text, confirmation,
+  artifact, inspection, trace,
   operator, editor, configuration, and canvas surface rebinds its retained
   services and final disposal reaches zero client ownership. A separate nine-
   row real-Chromium WebRTC transition selects slots, session configuration,
@@ -585,14 +586,14 @@ tau2/τ-Voice matrix defined by the parent plan.
   implementation replacement evidence; the replacement slots and session-
   configuration providers reconstruct their DOM/contribution state, the
   replacement inspection/static clients reload exact live/catalog evidence,
-  and an exact digest-bound state transfer preserves the authoring document
-  while invalidating derived results. Reversible management-operator loss now
-  privately suspends that declared durable document, omits its bytes from live
-  evidence, restores it across the remounted dependency closure, and remains
-  retryable after an intentionally failed stateful remount. Remaining non-view
-  client providers, deployment-host topology, stateful/capability-specific
-  implementation replacement, server-sealed authority rotation, and signed
-  native lifecycle/leak evidence keep this parent open.
+  and two digest-bound state transfers preserve the private operator capability
+  plus authoring document while invalidating derived authoring results.
+  Reversible management-operator loss privately suspends both declared states,
+  omits their bytes from live evidence, restores them across the remounted
+  dependency closure, and remains retryable after an intentionally failed
+  stateful remount. Remaining realtime transport/reducer/media client
+  providers, deployment-host topology, server-sealed authority rotation, and
+  signed native lifecycle/leak evidence keep this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real

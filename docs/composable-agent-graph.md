@@ -3591,7 +3591,7 @@ and does not claim statistical parity with the historical 165-attempt sample.
     The text, confirmation, artifact, inspection, trace, management-operator,
     authoring-editor, configuration, and canvas views each move from their exact
     shipped content-addressed module to an admitted candidate in the same
-    twenty-one-row atomic receipt as the selected non-view providers and
+    twenty-two-row atomic receipt as the selected non-view providers and
     clients. The remounted views rebind retained realtime, inspection, effect,
     operator, and workspace services; all DOM surfaces remain present, the
     signed effect catalog renegotiates,
@@ -3626,19 +3626,19 @@ and does not claim statistical parity with the historical 165-attempt sample.
     unrelated services stay active, and no capability enters the receipt,
     manifest, DOM, logs, or live projection. Three focused race-enabled
     Chromium runs, the complete browser suite, and vet are green. Realtime
-    transport/reducer and operator-capability providers remain open.
+    transport/reducer providers remain open.
   - [x] Replace the shipped slots and session-configuration providers in that
     authenticated transition. Replacing slots remounts every dependent view
     into a fresh service and reconstructs the complete ordered DOM surface;
     replacing session configuration remounts its contributors, republishes the
     bounded debug/effect declarations, and renegotiates the signed effect
     catalog through the retained session. They participate in the exact twenty-
-    one-row payload-free receipt; every desired entry returns active, and final
+    two-row payload-free receipt; every desired entry returns active, and final
     disposal reaches zero browser-owned effects and services. Three focused
     race-enabled real-Chromium repetitions, the complete browser suite,
     JavaScript syntax, and
-    vet are green. Stateful transport, reducer, media, and capability owners
-    remain open.
+    vet are green. Stateful realtime transport, reducer, and media
+    implementations remain open.
   - [x] Preserve the shipped authoring workspace through management-client and
     workspace implementation replacement. Its descriptor now declares an exact
     digest-bound state schema plus snapshot/restore lifecycle; the module
@@ -3646,16 +3646,30 @@ and does not claim statistical parity with the historical 165-attempt sample.
     malformed migration input, and deliberately invalidates derived analysis,
     compile, render, and publication state on restore. One real-Chromium
     transition selects management transport, authoring, source reading, source
-    publication, and the workspace alongside the prior sixteen rows, retains
-    the private operator authority, and returns a format-v3 twenty-one-row
-    receipt with one byte-free workspace transfer whose before/after digests
+    publication, and the workspace alongside the prior sixteen rows, then adds
+    the stateful operator provider, and returns a format-v3 twenty-two-row
+    receipt with two byte-free state transfers whose before/after digests
     match. The exact editor document survives while every desired row remounts.
     The same durable document also survives management-operator deactivation
     and recovery without exposing suspended bytes, while derived state resets
     to idle. JavaScript adversarial tests, three focused race-enabled Chromium
     runs, the complete presentation suite, vet, and the low-parallelism full
-    repository gate are green. Realtime transport/reducer and secret operator-
-    authority implementation replacement remain open.
+    repository gate are green. Realtime transport/reducer implementation
+    replacement remains open.
+  - [x] Migrate the secret-bearing browser operator authority across provider
+    recovery and authenticated implementation replacement. Its descriptor now
+    declares an exact digest-bound state schema for the private canonical
+    capability, expiry, and generation; its snapshot and candidate migrator
+    strictly validate that bounded state. Provider loss restores authorized
+    catalog access without operator re-entry, and the twenty-two-row transition
+    replaces the provider plus its complete management dependency closure while
+    preserving the active capability. The format-v3 receipt contains only the
+    schema, before/after digests, and migrator identity; capability bytes remain
+    absent from the receipt, manifest, live projection, DOM, and browser logs.
+    Malformed migration snapshots fail closed. JavaScript conformance, all four
+    real-Chromium developer variants, three focused race-enabled repetitions,
+    the presentation suite, vet, and the low-parallelism full repository gate
+    are green. Server-sealed authority rotation remains open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
