@@ -591,9 +591,12 @@ tau2/τ-Voice matrix defined by the parent plan.
   plugins, and the separate operator overlay supplies the other local API
   families. All six operator API route consumers now pass one atomic six-row
   replacement with stable router/export and provider identities, unchanged
-  method admission, and exact zero-ownership retirement. Deployment-provided
-  operator authority, provider replacement, full delta/reconciliation E2E, and
-  replacement of every presentation consumer remain open.
+  method admission, and exact zero-ownership retirement. Their stateless root
+  router also passes activation rollback and successful full six-API closure
+  replacement while all providers stay active and retired handlers become
+  inert. Deployment-provided operator authority, provider replacement, full
+  delta/reconciliation E2E, and replacement of every presentation consumer
+  remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

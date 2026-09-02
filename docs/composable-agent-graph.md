@@ -3236,6 +3236,18 @@ and does not claim statistical parity with the historical 165-attempt sample.
     realm-owned resource. Twenty focused runs, five focused race runs, package,
     package-race, and vet gates are green. Provider replacement and full
     request-level reconciliation E2E remain open.
+  - [x] Reconcile the stateless operator router across its complete six-API
+    dependency closure. Effect-restricted pre-mount acquires no route or
+    publication authority. A candidate activation failure returns no receipt,
+    leaves the retired handler inert, and remounts the exact predecessor router
+    and all six API artifacts with every route restored. A valid replacement
+    advances only the router implementation/runtime identity, retires exactly
+    the router and six route consumers with zero ownership, keeps all seven
+    provider artifacts active, and serves every method-admission surface through
+    a fresh export. Final close makes that handler inert and removes every
+    realm-owned resource. Twenty focused runs, five focused race runs, package,
+    package-race, and vet gates are green. Provider and topology replacement
+    remain open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
@@ -4027,7 +4039,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     gateway/router export. All six shipped operator-management API route
     families likewise pass one atomic six-row replacement with stable
     router/export and provider identities, unchanged method admission, and
-    exact zero-ownership retirements. Topology-changing
+    exact zero-ownership retirements. Their stateless root router also passes
+    activation rollback and successful full six-API closure replacement, with
+    retired handlers inert and all providers continuously active.
+    Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain
     open.
