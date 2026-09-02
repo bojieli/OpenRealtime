@@ -2336,6 +2336,17 @@ tracker by itself:
     `interruptions/` before retry. Finalization-stage debris remains
     fail-closed, and this subgate does not close the parent until every
     required population has actually run and been reviewed.
+  - [x] Serialize final candidate-review aggregate publication across concurrent
+    writers. A persistent, private, single-link OS-lock marker is derived from
+    and reserved beside the exact external receipt; its descriptor is
+    crash-released, and identity checks fence the parent and marker before and
+    after locking. Exactly one publisher owns recovery, abandoned-stage
+    quarantine, receipt commit, verification, and no-replace promotion, so a
+    rival can no longer quarantine an active stage or make both publications
+    fail. Twenty focused contention runs, five complete package runs, race,
+    vet, and Windows/amd64 plus Darwin/arm64 builds are green. This closes the
+    publication race, not the still-unrun benchmark populations under the
+    parent.
 - [ ] Review every retained candidate recording with the exact
   `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
   problems but never changes the deterministic scorer.
@@ -3286,6 +3297,32 @@ and does not claim statistical parity with the historical 165-attempt sample.
     worker, and final close reaches zero realm ownership. All three shipped
     relay replacements pass ten shuffled focused runs, focused and package-wide
     host/browser race and integration gates, full repository tests, and vet.
+  - [x] Atomically reconcile the shipped immutable browser-hosting providers:
+    module store, client manifest, and browser shell. Effect-restricted
+    pre-mount validates the exact live module catalog; a manifest that names an
+    absent asset returns no receipt and leaves the predecessor sequence,
+    implementation, services, routes, and bytes unchanged. A valid three-row
+    replacement advances every exact implementation/runtime artifact, preserves
+    the stable router/export identity and byte-identical shell, manifest, and
+    content-addressed module responses, and emits three retirement audits with
+    zero workers, effects, child scopes, and services. Final close reaches zero
+    realm ownership. Ten shuffled focused runs, ten package runs, three package
+    race runs, browser integration/race, full repository tests, and vet are
+    green. Listener replacement is covered by the next subgate; broader
+    deployment-host replacement remains open.
+  - [x] Reconcile the shipped loopback listener across a real socket boundary.
+    Effect-restricted pre-mount validates the exact config, router dependency,
+    and deployment grant without binding a candidate port. A permissionless
+    candidate returns no receipt and leaves the predecessor sequence, runtime
+    artifact, listener export, address, and health route unchanged. A valid
+    implementation/config replacement retires both predecessor workers and all
+    effects and service publications before candidate activation, preserves the
+    stable router and HTTP export identity, advances the exact listener runtime
+    artifact and export revision, serves the new loopback address, and makes the
+    old address unreachable. Final close reaches zero realm ownership. Twenty
+    focused runs, five focused race runs, package and package-race tests, full
+    repository tests, and vet are green. Broader deployment-host composition
+    replacement remains open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3920,11 +3957,15 @@ checked from foundation work alone; each requires end-to-end release evidence.
     atomic real-Chromium swap, signed-catalog renegotiation, real artifact
     execution, and zero-active-socket final cleanup.
     Host route capabilities likewise have atomic multi-row and stateful
-    migration/rollback evidence over the stable router and export, and the
-    shipped WebSocket, WebRTC, and management relays now pass real active-
-    session/request replacement with exact zero-ownership retirement audits.
-    Complete topology-changing and remaining capability-specific host/client
-    replacement plus signed-native lifecycle/leak evidence remain open.
+    migration/rollback evidence over the stable router and export. The shipped
+    immutable module-store/manifest/shell hosting trio passes atomic replacement
+    with byte-identical service, while the WebSocket, WebRTC, and management
+    relays pass real active-session/request replacement; every retirement audit
+    reaches exact zero ownership. The shipped loopback listener likewise passes
+    permission refusal, real-port replacement, exact retirement, and final
+    zero-ownership evidence. Topology-changing deployment-host replacement,
+    remaining capability-specific host/client replacement, and signed-native
+    lifecycle/leak evidence remain open.
 
 ## References
 

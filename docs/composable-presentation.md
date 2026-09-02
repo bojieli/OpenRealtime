@@ -556,9 +556,14 @@ tau2/τ-Voice matrix defined by the parent plan.
   execution, and exact two-started/zero-active-socket plus zero-scoped-effect
   final cleanup. The shipped WebSocket, WebRTC, and management relays also pass
   pre-mount refusal and active-session/request replacement with exact
-  zero-worker retirement under a stable router/export. Remaining hosting,
-  capability-specific, and signed native lifecycle/leak evidence keeps this
-  parent open.
+  zero-worker retirement under a stable router/export. The immutable module
+  store, client manifest, and browser shell now pass an atomic three-row swap
+  with byte-identical routes, stable router/export identity, and exact
+  zero-ownership retirement. The shipped loopback listener also passes
+  permission refusal, real-port replacement under the same router/export, exact
+  zero-ownership retirement, and old-port closure. Remaining deployment-host
+  topology, capability-specific, and signed native lifecycle/leak evidence
+  keeps this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
