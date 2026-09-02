@@ -373,6 +373,14 @@ func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch
 	if batchHasUserObservation(batch) {
 		return true
 	}
+	// An observer relevance decision governs only an observer-only batch. A
+	// cognition signal committed beside old pixels is its own safe-point
+	// obligation: suppressing the whole merged batch here consumed composite
+	// resume after the silent visual branch had already accepted the user's
+	// live, not-yet-canonical words.
+	if !batchOnlyObserverObservations(batch) {
+		return true
+	}
 	if !runtime.observationHasUserIntent(batch) {
 		return false
 	}
@@ -410,6 +418,19 @@ func (runtime *runtime) worthActingOn(ctx context.Context, batch eventloop.Batch
 		return true
 	}
 	return act != interaction.ActStaySilent
+}
+
+func batchOnlyObserverObservations(batch eventloop.Batch) bool {
+	if len(batch.Events) == 0 {
+		return false
+	}
+	for _, event := range batch.Events {
+		if event.Kind != trajectory.KindObservation || event.Observation == nil ||
+			event.Observation.Authority != trajectory.AuthorityObserver {
+			return false
+		}
+	}
+	return true
 }
 
 // observationHasUserIntent arms observer-driven cognition after a person has

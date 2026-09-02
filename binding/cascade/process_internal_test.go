@@ -916,7 +916,7 @@ func TestVisualObservationMustFollowTheCurrentControllerTask(t *testing.T) {
 	}
 }
 
-func TestVisualFastPathDoesNotConsumeACoalescedSignal(t *testing.T) {
+func TestObserverFastPathsDoNotConsumeACoalescedSignal(t *testing.T) {
 	visual := eventloop.Event{
 		Type: "screen.changed", Source: "video", Channel: "screen",
 		Kind: trajectory.KindObservation,
@@ -931,12 +931,18 @@ func TestVisualFastPathDoesNotConsumeACoalescedSignal(t *testing.T) {
 	if !batchOnlyVisualObservations(batch) {
 		t.Fatal("a visual-only batch did not stay on the direct-pixel fast path")
 	}
+	if !batchOnlyObserverObservations(batch) {
+		t.Fatal("an observer-only batch did not reach the observer relevance gate")
+	}
 	batch.Events = append(batch.Events, eventloop.Event{
 		Type: interaction.SignalCompositeResume, Source: "cognition", Channel: "cognition",
 		Kind: eventloop.KindSignal,
 	})
 	if batchOnlyVisualObservations(batch) {
 		t.Fatal("a composite-resume signal was consumed as visual-only evidence")
+	}
+	if batchOnlyObserverObservations(batch) {
+		t.Fatal("a composite-resume signal was consumed by the observer relevance gate")
 	}
 }
 
