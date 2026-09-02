@@ -666,6 +666,221 @@ func TestCredentialHoldingRelaysUseOnlyPublicEndpoints(t *testing.T) {
 	}
 }
 
+func TestWebSocketRelayReplacementQuiescesActiveSessionAndPreservesRouter(t *testing.T) {
+	var backendStarts atomic.Int32
+	var backendActive atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		ordinal := backendStarts.Add(1)
+		connection, err := websocket.Accept(writer, request, nil)
+		if err != nil {
+			return
+		}
+		backendActive.Add(1)
+		defer backendActive.Add(-1)
+		defer connection.CloseNow()
+		if err := connection.Write(
+			request.Context(), websocket.MessageText,
+			[]byte("backend-"+strconv.Itoa(int(ordinal))),
+		); err != nil {
+			return
+		}
+		for {
+			kind, payload, err := connection.Read(request.Context())
+			if err != nil {
+				return
+			}
+			if err := connection.Write(request.Context(), kind, payload); err != nil {
+				return
+			}
+		}
+	}))
+	defer backend.Close()
+
+	router := NewRouterFactory()
+	target := NewEndpointDirectoryFactory()
+	credential := NewAnonymousCredentialFactory()
+	relayV1 := NewWebSocketRelayFactory(nil)
+	relayV2 := NewWebSocketRelayFactory(nil)
+	factories := []pluginruntime.Factory{relayV1, target, credential, router}
+	plan := makeHostPlan(t, factories)
+	registry := pluginruntime.NewRegistry()
+	originalArtifacts := map[string]inspect.ArtifactIdentity{
+		relayV1.Descriptor().Name: hostTestArtifact("go://host-websocket-relay-v1", "build-1", "1"),
+		target.Descriptor().Name:  hostTestArtifact("go://host-endpoint-directory", "build-1", "2"),
+		credential.Descriptor().Name: hostTestArtifact(
+			"go://host-anonymous-credential", "build-1", "3",
+		),
+		router.Descriptor().Name: hostTestArtifact("go://host-router", "build-1", "4"),
+	}
+	for _, factory := range factories {
+		if err := registry.RegisterArtifact(
+			factory.Descriptor().Name, originalArtifacts[factory.Descriptor().Name], factory,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const candidateImplementation = "openrealtime.presentation.host.websocket-relay-v2"
+	candidateArtifact := hostTestArtifact("go://host-websocket-relay-v2", "build-2", "5")
+	if err := registry.RegisterArtifact(candidateImplementation, candidateArtifact, relayV2); err != nil {
+		t.Fatal(err)
+	}
+	values := testEndpointDirectoryValues(t, "", presentation.Endpoint{
+		Name: presentation.EndpointRealtimeWebSocket, Protocol: presentation.ProtocolRealtimeWebSocket,
+		URL: "ws" + strings.TrimPrefix(backend.URL, "http") + "/v1/realtime",
+	})
+	permission := relayPermission(websocketOperation)
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry, Values: map[string]json.RawMessage{"target": values},
+		Permissions: map[string][]plugin.Permission{"websocket": {permission}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
+	value, contract, provider, revision, err := mounted.Export("http")
+	if err != nil || contract != presentation.HTTPHandlerContract || provider != "router" {
+		t.Fatalf("host HTTP export = %T %+v %q %d, %v", value, contract, provider, revision, err)
+	}
+	handler, ok := value.(http.Handler)
+	if !ok {
+		t.Fatalf("host HTTP export value = %T", value)
+	}
+	hostServer := httptest.NewServer(handler)
+	defer hostServer.Close()
+	relayURL := "ws" + strings.TrimPrefix(hostServer.URL, "http") + "/client/v1/realtime"
+
+	dial := func(wantGreeting string) *websocket.Conn {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		connection, _, err := websocket.Dial(ctx, relayURL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, greeting, err := connection.Read(ctx)
+		if err != nil || string(greeting) != wantGreeting {
+			connection.CloseNow()
+			t.Fatalf("relay greeting = %q, %v; want %q", greeting, err, wantGreeting)
+		}
+		return connection
+	}
+	echo := func(connection *websocket.Conn, payload string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := connection.Write(ctx, websocket.MessageText, []byte(payload)); err != nil {
+			t.Fatal(err)
+		}
+		_, echoed, err := connection.Read(ctx)
+		if err != nil || string(echoed) != payload {
+			t.Fatalf("relay echo = %q, %v; want %q", echoed, err, payload)
+		}
+	}
+	waitForActive := func(want int32) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for backendActive.Load() != want && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		if got := backendActive.Load(); got != want {
+			t.Fatalf("active backend relay sessions = %d, want %d", got, want)
+		}
+	}
+
+	predecessor := dial("backend-1")
+	waitForActive(1)
+	before := mounted.Live()
+	if before.Entries["websocket"].Workers != 1 || before.Entries["websocket"].Effects != 1 {
+		t.Fatalf("active predecessor relay ownership = %+v", before.Entries["websocket"])
+	}
+	if receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: before.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "websocket", SetImplementation: true, Implementation: candidateImplementation,
+			SetPermissions: true,
+		}},
+	}); err == nil || !strings.Contains(err.Error(), "network-connect grant") ||
+		receipt.FormatVersion != 0 {
+		t.Fatalf("permissionless relay candidate receipt/error = %#v, %v", receipt, err)
+	}
+	afterRefusal := mounted.Live()
+	if afterRefusal.Sequence != before.Sequence ||
+		afterRefusal.Entries["websocket"].Implementation != relayV1.Descriptor().Name ||
+		afterRefusal.Entries["websocket"].Workers != 1 {
+		t.Fatalf("refused relay candidate disturbed predecessor = %+v", afterRefusal)
+	}
+	echo(predecessor, "still-v1")
+
+	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: afterRefusal.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "websocket", SetImplementation: true, Implementation: candidateImplementation,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForActive(0)
+	readContext, cancelRead := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelRead()
+	if _, _, err := predecessor.Read(readContext); err == nil {
+		predecessor.CloseNow()
+		t.Fatal("retired WebSocket relay left its predecessor client connected")
+	}
+	predecessor.CloseNow()
+	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
+		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
+		receipt.AfterSequence <= before.Sequence || len(receipt.Transitions) != 1 ||
+		receipt.Transitions[0].Entry != "websocket" ||
+		receipt.Transitions[0].BeforeRuntime != originalArtifacts[relayV1.Descriptor().Name] ||
+		receipt.Transitions[0].AfterRuntime != candidateArtifact || len(receipt.Retirements) != 1 {
+		t.Fatalf("WebSocket relay replacement receipt = %#v", receipt)
+	}
+	retirement := receipt.Retirements[0]
+	if retirement.Entry != "websocket" || retirement.RetiredScopes == 0 ||
+		retirement.ClosedScopes != retirement.RetiredScopes || retirement.RemainingWorkers != 0 ||
+		retirement.RemainingEffects != 0 || retirement.RemainingChildScopes != 0 ||
+		retirement.RemainingServices != 0 {
+		t.Fatalf("WebSocket relay retirement retained ownership: %#v", retirement)
+	}
+	after := mounted.Live()
+	if after.Sequence != receipt.AfterSequence ||
+		after.Entries["websocket"].Implementation != candidateImplementation ||
+		after.Entries["websocket"].Runtime != candidateArtifact ||
+		after.Entries["websocket"].Workers != 0 || after.Entries["websocket"].Effects != 1 ||
+		after.Entries["router"].Runtime != originalArtifacts[router.Descriptor().Name] {
+		t.Fatalf("replacement relay live evidence = %+v", after)
+	}
+	afterValue, afterContract, afterProvider, afterRevision, err := mounted.Export("http")
+	if err != nil || afterValue != value || afterContract != contract || afterProvider != provider ||
+		afterRevision != revision {
+		t.Fatalf("stable host export changed across relay replacement: %T/%+v/%s/%d, %v",
+			afterValue, afterContract, afterProvider, afterRevision, err)
+	}
+
+	replacement := dial("backend-2")
+	waitForActive(1)
+	echo(replacement, "running-v2")
+	if live := mounted.Live(); live.Entries["websocket"].Workers != 1 {
+		t.Fatalf("replacement relay session is not lifecycle-owned: %+v", live.Entries["websocket"])
+	}
+	if err := replacement.Close(websocket.StatusNormalClosure, "done"); err != nil {
+		t.Fatal(err)
+	}
+	waitForActive(0)
+	deadline := time.Now().Add(2 * time.Second)
+	for mounted.Live().Entries["websocket"].Workers != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if live := mounted.Live(); live.Entries["websocket"].Workers != 0 {
+		t.Fatalf("closed replacement relay retained a worker: %+v", live.Entries["websocket"])
+	}
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
+}
+
 func TestWebRTCRelayRefusesCredentialBearingRedirect(t *testing.T) {
 	var captured atomic.Bool
 	backend := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
