@@ -63,21 +63,53 @@ func (factory *ListenerFactory) ValidateConfig(raw json.RawMessage) error {
 }
 
 func (factory *ListenerFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	if !mount.Permissions.Allows(listenPermissionKind, listenPermissionResource, listenPermissionOperation) {
-		return errors.New("presentation listener lacks its deployment loopback-listen grant")
-	}
-	config, err := parseListenerConfig(mount.Config)
+	candidate, err := factory.prepareListener(mount.Config, mount.Services, mount.Permissions)
 	if err != nil {
 		return err
 	}
-	value, contract, _, _, found := mount.Services.Lookup(presentation.HTTPHandlerContract.Name)
+	return candidate.activate(mount)
+}
+
+func (factory *ListenerFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return factory.prepareListener(candidate.Config, candidate.Services, candidate.Permissions)
+}
+
+func (factory *ListenerFactory) prepareListener(
+	raw json.RawMessage, services pluginruntime.Services, permissions pluginruntime.Permissions,
+) (listenerCandidate, error) {
+	if !permissions.Allows(listenPermissionKind, listenPermissionResource, listenPermissionOperation) {
+		return listenerCandidate{}, errors.New("presentation listener lacks its deployment loopback-listen grant")
+	}
+	config, err := parseListenerConfig(raw)
+	if err != nil {
+		return listenerCandidate{}, err
+	}
+	value, contract, _, _, found := services.Lookup(presentation.HTTPHandlerContract.Name)
 	if !found || contract != presentation.HTTPHandlerContract {
-		return errors.New("presentation HTTP handler is unavailable")
+		return listenerCandidate{}, errors.New("presentation HTTP handler is unavailable")
 	}
 	handler, ok := value.(http.Handler)
 	if !ok || handler == nil {
-		return errors.New("presentation HTTP handler has the wrong Go type")
+		return listenerCandidate{}, errors.New("presentation HTTP handler has the wrong Go type")
 	}
+	return listenerCandidate{config: config, handler: handler}, nil
+}
+
+type listenerCandidate struct {
+	config  listenerConfig
+	handler http.Handler
+}
+
+func (candidate listenerCandidate) Activate(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.activate(mount)
+}
+
+func (candidate listenerCandidate) activate(mount pluginruntime.MountContext) error {
+	config, handler := candidate.config, candidate.handler
 	listener, err := net.Listen("tcp", config.Address)
 	if err != nil {
 		return fmt.Errorf("listen for presentation host: %w", err)
@@ -176,3 +208,7 @@ func validateLoopbackAddress(address string) error {
 	}
 	return nil
 }
+
+var _ pluginruntime.Factory = (*ListenerFactory)(nil)
+var _ pluginruntime.ConfigValidator = (*ListenerFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*ListenerFactory)(nil)
