@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -74,6 +75,199 @@ func TestSemanticRecentBeforeDoesNotEchoCurrentUtterance(t *testing.T) {
 	if len(lines) != 1 || lines[0] != "user: the earlier clause" {
 		t.Fatalf("recent extraction context = %v", lines)
 	}
+}
+
+func TestSemanticHeardSinceUsesOnlyCompletedSpeechAfterTheLastAudibleBoundary(t *testing.T) {
+	endpoint := func(id, source, text string) trajectory.Item {
+		return trajectory.Item{
+			ID: id, Kind: trajectory.KindObservation, Content: text,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+			Observation: &trajectory.ObservationMeta{
+				Observer: "asr", Source: source, Authority: trajectory.AuthorityUser,
+			},
+			Event: &trajectory.EventMetadata{
+				EventID: "event-" + id, Type: "asr.endpoint", Source: "asr", Channel: source,
+			},
+		}
+	}
+	voice := func(id, text string, visibility trajectory.Visibility) trajectory.Item {
+		return trajectory.Item{
+			ID: id, Kind: trajectory.KindAssistant, Content: text, Visibility: visibility,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseFast, SpeechAuthority: "voice"},
+		}
+	}
+	played := func(id, target string) trajectory.Item {
+		return trajectory.Item{
+			ID: id, Kind: trajectory.KindAssistantState,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+			AssistantState: &trajectory.AssistantState{
+				AssistantItemID: target, Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 100,
+			},
+		}
+	}
+	canceled := func(id, target string) trajectory.Item {
+		return trajectory.Item{
+			ID: id, Kind: trajectory.KindAssistantState,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+			AssistantState: &trajectory.AssistantState{
+				AssistantItemID: target, Visibility: trajectory.VisibilityCancelled,
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		items   []trajectory.Item
+		current string
+		speaker string
+		maximum int
+		want    string
+	}{
+		{
+			name: "split endpoints and silent cognition remain new",
+			items: []trajectory.Item{
+				endpoint("old", "microphone", "old speech"),
+				voice("count-one", "One.", trajectory.VisibilityPrepared), played("played-one", "count-one"),
+				endpoint("heron", "microphone", "Then, a heron."),
+				{ID: "background", Kind: trajectory.KindAssistant, Content: "internal state",
+					Visibility: trajectory.VisibilityPlayed,
+					Producer:   trajectory.Producer{Phase: trajectory.PhaseSlow, SpeechAuthority: "silent"}},
+				endpoint("landed", "microphone", "Landed on the far bank."),
+			},
+			current: "landed", speaker: "user", maximum: 12,
+			want: "Then, a heron. Landed on the far bank.",
+		},
+		{
+			name: "played transition excludes speech that preceded playback",
+			items: []trajectory.Item{
+				voice("answer", "An answer.", trajectory.VisibilityPrepared),
+				endpoint("during", "microphone", "speech before playback ended"),
+				played("played-answer", "answer"),
+				endpoint("after", "microphone", "speech after playback"),
+			},
+			current: "after", speaker: "user", maximum: 12, want: "speech after playback",
+		},
+		{
+			name: "canceled prepared voice does not claim a turn",
+			items: []trajectory.Item{
+				endpoint("first", "microphone", "first clause"),
+				voice("unheard", "unheard answer", trajectory.VisibilityPrepared), canceled("canceled", "unheard"),
+				endpoint("second", "microphone", "second clause"),
+			},
+			current: "second", speaker: "user", maximum: 12, want: "first clause second clause",
+		},
+		{
+			name: "another speaker bounds the evidence",
+			items: []trajectory.Item{
+				endpoint("user-before", "microphone", "user before"),
+				endpoint("waiter", "recorded-menu", "another speaker"),
+				endpoint("user-after", "microphone", "user after"),
+			},
+			current: "user-after", speaker: "user", maximum: 12, want: "user after",
+		},
+		{
+			name: "recent-line bound is exact",
+			items: []trajectory.Item{
+				endpoint("one", "microphone", "one"), endpoint("two", "microphone", "two"),
+				endpoint("three", "microphone", "three"),
+			},
+			current: "three", speaker: "user", maximum: 2, want: "two three",
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := semanticHeardSince(
+				testCase.items, testCase.current, testCase.speaker, testCase.maximum,
+			); got != testCase.want {
+				t.Fatalf("heard since = %q, want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestSemanticVoiceActivationReceivesExactVisualEvidenceWithoutMutableBytes(t *testing.T) {
+	imageBytes := []byte("sealed current frame")
+	wantImage := append([]byte(nil), imageBytes...)
+	decider := &semanticCaptureDecider{answer: semanticVoiceConditionMet, mutateImages: true}
+	runner := semanticAdmissionRunner{decider: decider}
+	situation := interaction.Situation{
+		Contract: "Tell the user when the build finishes.",
+		Pins:     []string{"until revoked: say only when the build has finished"},
+		Seeing:   []interaction.Image{{MIMEType: "image/png", Bytes: imageBytes}},
+		AllowedActs: []interaction.Act{
+			interaction.ActStaySilent, interaction.ActAnswer,
+		},
+	}
+	outcome, err := runner.verifyVoiceActivation(context.Background(), situation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Option != semanticVoiceConditionMet || len(decider.decisions) != 1 {
+		t.Fatalf("visual activation = %+v decisions=%+v", outcome, decider.decisions)
+	}
+	decision := decider.decisions[0]
+	if !strings.Contains(decision.Evidence, "build has finished") || len(decision.Images) != 1 ||
+		decision.Images[0].MIMEType != "image/png" || !reflect.DeepEqual(decision.Images[0].Bytes, wantImage) {
+		t.Fatalf("visual activation evidence = %+v", decision)
+	}
+	if !reflect.DeepEqual(imageBytes, wantImage) {
+		t.Fatal("visual activation retained mutable Situation bytes")
+	}
+}
+
+func TestSemanticActivationEvidenceAdmitsOnlyTypedCurrentConditionInputs(t *testing.T) {
+	tests := []struct {
+		name      string
+		situation interaction.Situation
+		want      bool
+	}{
+		{name: "empty"},
+		{name: "partial transcript", situation: interaction.Situation{TranscriptEvent: interaction.TranscriptPartial}},
+		{name: "final transcript", situation: interaction.Situation{TranscriptEvent: interaction.TranscriptFinal}, want: true},
+		{name: "textual visual observation", situation: interaction.Situation{Seen: "build complete"}, want: true},
+		{name: "direct visual observation", situation: interaction.Situation{
+			Seeing: []interaction.Image{{MIMEType: "image/png", Bytes: []byte("pixels")}},
+		}, want: true},
+		{name: "due quiet policy", situation: interaction.Situation{Quiet: true}, want: true},
+		{name: "elapsed but unreserved silence", situation: interaction.Situation{Silence: "15s"}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := semanticActivationEvidence(testCase.situation); got != testCase.want {
+				t.Fatalf("activation evidence = %v, want %v", got, testCase.want)
+			}
+		})
+	}
+}
+
+type semanticCaptureDecider struct {
+	answer       string
+	mutateImages bool
+	decisions    []interaction.Decision
+}
+
+func (*semanticCaptureDecider) Name() string { return "semantic-capture" }
+
+func (*semanticCaptureDecider) Descriptor() SemanticDeciderDescriptor {
+	return SemanticDeciderDescriptor{}
+}
+
+func (decider *semanticCaptureDecider) Decide(
+	_ context.Context, decision interaction.Decision,
+) (interaction.Outcome, error) {
+	captured := decision
+	captured.Options = append([]string(nil), decision.Options...)
+	captured.Images = cloneSemanticImages(decision.Images)
+	decider.decisions = append(decider.decisions, captured)
+	if decider.mutateImages && len(decision.Images) > 0 && len(decision.Images[0].Bytes) > 0 {
+		decision.Images[0].Bytes[0] ^= 0xff
+	}
+	for index, option := range decision.Options {
+		if option == decider.answer {
+			return interaction.Outcome{Index: index, Option: option}, nil
+		}
+	}
+	return interaction.Outcome{}, errors.New("answer is not an available option")
 }
 
 type semanticVariadicTestInput struct {
