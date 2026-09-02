@@ -617,9 +617,15 @@ tau2/τ-Voice matrix defined by the parent plan.
   a bounded 256-event resumable delta page beside live/static evidence, rejects
   session, graph, fingerprint, cursor, baseline, and event-sequence
   substitution, and passes isolated JavaScript plus complete real-Chromium
-  developer/observer profile coverage. Reconciliation E2E, cross-owner
-  provider-state migration, and replacement of every presentation consumer
-  remain open.
+  developer/observer profile coverage. Reconciliation candidates now cross a
+  shared strict Go request validator, the server and headless client, an exact
+  POST-only host relay, and the descriptor-locked browser management transport.
+  The host independently validates the request-bound receipt before emitting
+  non-secret identity evidence; the browser independently rebinds that evidence
+  and receipt. This transport/API coverage does not provide a production
+  session reconciler or prove a graph-routing safe-point swap. Reconciliation
+  E2E, cross-owner provider-state migration, and replacement of every
+  presentation consumer remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

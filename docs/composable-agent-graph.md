@@ -3664,6 +3664,19 @@ and does not claim statistical parity with the historical 165-attempt sample.
     adversarial permission/config/typed-nil coverage is green.
 - [ ] Add candidate validation, pre-mount, safe-point swap, state migration,
   rollback/refusal, and leak detection.
+  - [x] Carry a complete immutable reconciliation candidate and request-bound
+    receipt through the UI-independent management server/client, presentation
+    host, and descriptor-locked browser transport. One shared Go validator
+    binds the session, predecessor, candidate, values, deployment, and bounded
+    state-migration identity; receipts additionally require canonical state and
+    rollback evidence. The POST-only host relay enforces strict JSON and
+    separate 64-MiB request/1-MiB receipt ceilings, forwards only the operator
+    capability header, and emits identity evidence only after validation. The
+    browser uses a distinct endpoint/grant and independently rebinds the exact
+    receipt. Normal, adversarial, JavaScript, focused race, full presentation,
+    real-Chromium profile, and vet gates are green. This closes the transport
+    contract, not the still-missing production session reconciler or graph-
+    routing safe-point E2E.
   - [x] Validate immutable-plan implementation, canonical config, and narrowed
     permission candidates completely before teardown; bind them to the exact
     plan fingerprint and observed lifecycle sequence; refuse stale, no-op,
