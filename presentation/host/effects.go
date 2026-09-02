@@ -261,6 +261,20 @@ func (factory *DenyEffectAuthorityFactory) Descriptor() plugin.Descriptor {
 }
 
 func (factory *DenyEffectAuthorityFactory) Mount(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return (denyEffectAuthorityCandidate{}).Activate(ctx, mount)
+}
+
+func (factory *DenyEffectAuthorityFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return denyEffectAuthorityCandidate{}, nil
+}
+
+type denyEffectAuthorityCandidate struct{}
+
+func (denyEffectAuthorityCandidate) Activate(
 	_ context.Context, mount pluginruntime.MountContext,
 ) error {
 	return mount.Publisher.Provide(presentation.EffectAuthorityContract, EffectAuthority(denyEffectAuthority{}))
@@ -2010,6 +2024,8 @@ func (session *effectSession) respondDirectFailure(
 	})
 }
 
+var _ pluginruntime.Factory = (*DenyEffectAuthorityFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*DenyEffectAuthorityFactory)(nil)
 var _ pluginruntime.Factory = (*EffectsFactory)(nil)
 var _ pluginruntime.ConfigValidator = (*EffectsFactory)(nil)
 var _ Effects = (*effectsHub)(nil)
