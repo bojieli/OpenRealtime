@@ -553,8 +553,8 @@ tau2/τ-Voice matrix defined by the parent plan.
   shuffled race gates cover the shared host, reducer, and realtime client.
   The shipped effects and artifact-reference providers now pass an atomic
   real-Chromium replacement, signed-catalog renegotiation, real artifact
-  execution, and exact two-started/zero-active-socket plus zero-scoped-effect
-  final cleanup. The shipped WebSocket, WebRTC, and management relays also pass
+  execution, and zero-active-socket plus zero-scoped-effect final cleanup. The
+  shipped WebSocket, WebRTC, and management relays also pass
   pre-mount refusal and active-session/request replacement with exact
   zero-worker retirement under a stable router/export. The immutable module
   store, client manifest, and browser shell now pass an atomic three-row swap
@@ -581,24 +581,32 @@ tau2/τ-Voice matrix defined by the parent plan.
   media, transport, video protocol, debug, effects, artifact references,
   inspection, video controls, and transport diagnostics. It retires the active
   media/transport dependency closure, restores the unchanged durable workspace
-  through a byte-free state transfer, remounts the reducer disconnected, and
-  then establishes a fresh offer before restoring inspection, effect
-  negotiation, camera capture, response audio, and sealed-artifact execution.
+  and reducer through two byte-free state transfers, remounts the reducer
+  disconnected, and then establishes a fresh offer before restoring inspection,
+  effect negotiation, camera capture, response audio, and sealed-artifact
+  execution.
   Every shipped browser view consumer now has selected-
   implementation replacement evidence; the replacement slots and session-
   configuration providers reconstruct their DOM/contribution state, the
   replacement inspection/static clients reload exact live/catalog evidence,
-  and two digest-bound state transfers preserve the private operator capability
-  plus authoring document while invalidating derived authoring results.
+  and three digest-bound state transfers preserve the reducer, private operator
+  capability, and authoring document while invalidating derived authoring
+  results.
+  A separate authenticated reducer-only replacement migrates its bounded
+  canonical machine/outbound/cursor/local-item state and private expiring
+  inspection lease through an exact schema, retains the connected WebSocket
+  session without another realtime handshake, and remounts all dependents with
+  no capability bytes in evidence. It refuses snapshots during reconnect,
+  response, playout, pending-tool, or unsent-command work.
   The same transition replaces the active WebSocket transport at a safe point,
   observes a disconnected remounted reducer, and establishes exactly one fresh
   protocol session before resuming inspection, effects, and conversation.
   Reversible management-operator loss privately suspends both declared states,
   omits their bytes from live evidence, restores them across the remounted
   dependency closure, and remains retryable after an intentionally failed
-  stateful remount. The stateful reducer, deployment-host topology, server-
-  sealed authority rotation, and signed native lifecycle/leak evidence keep
-  this parent open.
+  stateful remount. Deployment-host topology, server-sealed authority rotation,
+  topology/state-schema-changing client replacement, and signed native
+  lifecycle/leak evidence keep this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
@@ -652,8 +660,8 @@ tau2/τ-Voice matrix defined by the parent plan.
   non-secret identity evidence; the browser independently rebinds that evidence
   and receipt. This transport/API coverage does not provide a production
   session reconciler or prove a graph-routing safe-point swap. Reconciliation
-  E2E, cross-owner provider-state migration, and replacement of remaining
-  non-view client providers remain open.
+  E2E, cross-owner provider-state migration, and topology-changing client
+  replacement remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,
