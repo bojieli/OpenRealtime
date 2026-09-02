@@ -3257,7 +3257,7 @@ and does not claim statistical parity with the historical 165-attempt sample.
     The replacement serves a fresh bidirectional socket and final host close
     retains no ownership. Ten shuffled focused runs, focused and package-wide
     host/browser race and integration gates, full repository tests, and vet
-    are green. Management-relay replacement remains open.
+    are green.
   - [x] Reconcile the shipped WebRTC presentation-host relay while a real SDP
     request is blocked at its declared backend. Candidate pre-mount resolves
     the exact endpoint and credential dependencies and refuses a missing HTTP
@@ -3271,7 +3271,21 @@ and does not claim statistical parity with the historical 165-attempt sample.
     serves a fresh bounded SDP offer and finishes with no retained request.
     Both relay replacements pass ten shuffled focused runs, focused and
     package-wide host/browser race and integration gates, full repository
-    tests, and vet. Management-relay replacement remains open.
+    tests, and vet.
+  - [x] Reconcile the shipped management presentation-host relay while a real
+    capability-bearing request is blocked at its declared backend. Candidate
+    pre-mount resolves the exact management endpoint and refuses a missing
+    network grant before changing the live sequence, implementation, request,
+    or route. Every admitted request across all six management route families
+    is a lifecycle worker; lifecycle cancellation closes its inbound body and
+    cancels the outbound backend request. A valid replacement cancels and joins
+    the predecessor request before activation, preserves the stable
+    router/export identity, advances exact implementation and runtime-artifact
+    evidence, and emits a zero-worker/effect/child/service retirement audit.
+    The candidate serves a fresh capability-bearing request with no retained
+    worker, and final close reaches zero realm ownership. All three shipped
+    relay replacements pass ten shuffled focused runs, focused and package-wide
+    host/browser race and integration gates, full repository tests, and vet.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3907,11 +3921,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     execution, and zero-active-socket final cleanup.
     Host route capabilities likewise have atomic multi-row and stateful
     migration/rollback evidence over the stable router and export, and the
-    shipped WebSocket and WebRTC relays now pass real active-session/request
-    replacement with exact zero-ownership retirement audits. Complete
-    topology-changing, management-relay, and remaining capability-specific
-    host/client replacement plus signed-native lifecycle/leak evidence remain
-    open.
+    shipped WebSocket, WebRTC, and management relays now pass real active-
+    session/request replacement with exact zero-ownership retirement audits.
+    Complete topology-changing and remaining capability-specific host/client
+    replacement plus signed-native lifecycle/leak evidence remain open.
 
 ## References
 
