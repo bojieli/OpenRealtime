@@ -568,9 +568,15 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement on one real address, with exact retirement and inert predecessor
   handlers. The fail-closed effect-authority provider likewise replaces through
   its active effects-socket closure with a stable router/export, exact two-row
-  retirement, and a fresh deny-by-default socket. Remaining deployment-host
-  topology, stateful/capability-specific, server-sealed authority rotation, and
-  signed native lifecycle/leak evidence keeps this parent open.
+  retirement, and a fresh deny-by-default socket. One authenticated eleven-row
+  real-Chromium transition now selects exact candidates for the effects and
+  artifact-reference providers plus all nine effects-enabled WebSocket-profile
+  view consumers; every text, confirmation, artifact, inspection, trace,
+  operator, editor, configuration, and canvas surface rebinds its retained
+  services and final disposal reaches zero client ownership. The two
+  WebRTC-specific views, remaining non-view client providers, deployment-host
+  topology, stateful/capability-specific replacement, server-sealed authority
+  rotation, and signed native lifecycle/leak evidence keep this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
@@ -624,8 +630,8 @@ tau2/τ-Voice matrix defined by the parent plan.
   non-secret identity evidence; the browser independently rebinds that evidence
   and receipt. This transport/API coverage does not provide a production
   session reconciler or prove a graph-routing safe-point swap. Reconciliation
-  E2E, cross-owner provider-state migration, and replacement of every
-  presentation consumer remain open.
+  E2E, cross-owner provider-state migration, and replacement of the two
+  WebRTC-specific views plus remaining non-view client providers remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

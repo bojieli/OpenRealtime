@@ -3577,6 +3577,21 @@ and does not claim statistical parity with the historical 165-attempt sample.
     effects and exactly two started/zero active effect sockets. The focused
     test passes five shuffled repetitions; the complete browser package, its
     race gate, full repository tests, JavaScript syntax, and vet are green.
+  - [x] Select all nine shipped effects-enabled WebSocket-profile browser view
+    consumers in that authenticated real-client transition rather than
+    counting an incidental dependent remount as implementation replacement.
+    The text, confirmation, artifact, inspection, trace, management-operator,
+    authoring-editor, configuration, and canvas views each move from their exact
+    shipped content-addressed module to an admitted candidate in the same
+    eleven-row atomic receipt as the effects and artifact-reference providers.
+    The remounted views rebind
+    retained realtime, inspection, effect, operator, and workspace services;
+    all DOM surfaces remain present, the signed effect catalog renegotiates,
+    the replacement executes a sealed artifact, and final disposal retains no
+    client ownership or effect socket. Three focused race-enabled real-Chromium
+    runs, the complete browser suite, and vet are green. The two WebRTC-specific
+    views, remaining non-view client providers, and topology-changing
+    replacement stay open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
