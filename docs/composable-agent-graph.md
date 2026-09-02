@@ -3184,6 +3184,16 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     and metrics. The focused real-browser cross-client gate is green. Host and
     client replacement plus the signed native lifecycle/leak matrix remain
     open.
+  - [x] Replace and remove a descriptor-locked presentation-host route
+    capability without replacing its router or HTTP export. A conflicting
+    implementation is atomically refused and the prior route is restored; a
+    valid implementation advances only the selected entry's implementation
+    and runtime evidence while the stable router, independent route, and export
+    identity remain unchanged. Explicit removal withdraws only the selected
+    routes, and final idempotent close leaves every host entry with zero
+    workers, effects, and services and no available export. Focused normal,
+    race, and vet coverage is green. Replacement of the remaining host and
+    client capabilities remains under the open parent.
   - [x] Complete the browser presentation server and browser client as
     manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
@@ -3711,8 +3721,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     effects, artifacts, inspection, trace, and authoring providers under exact
     permission ceilings and scoped disposal. Complete server-realm assembly and
     its replacement/rollback are covered, and the unchanged-server cross-client
-    gate proves zero-ownership host/server shutdown. Complete host/client
-    replacement and signed-native lifecycle/leak evidence remain open.
+    gate proves zero-ownership host/server shutdown. A host-route replacement,
+    rollback, and removal now preserves the stable host router and export.
+    Complete replacement of the remaining host/client capabilities and
+    signed-native lifecycle/leak evidence remain open.
 
 ## References
 

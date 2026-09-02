@@ -112,6 +112,120 @@ func TestComposedHostServesExactManifestAndModulesAndUnmountsCleanly(t *testing.
 	assertStatus(t, server.URL+"/client/v1/manifest", http.StatusNotFound)
 }
 
+func TestStableHostRouterSurvivesRouteReplacementRollbackAndRemoval(t *testing.T) {
+	routerFactory := NewRouterFactory()
+	stableFactory := &stableTestRouteFactory{}
+	originalFactory := &testRouteFactory{}
+	descriptor := originalFactory.Descriptor()
+	validReplacement := &replacementTestRouteFactory{
+		descriptor: descriptor,
+		routes: []Route{
+			{Pattern: "GET /healthz", Handler: statusHandler(218)},
+			{Pattern: "GET /readyz", Handler: statusHandler(219)},
+		},
+	}
+	conflictingReplacement := &replacementTestRouteFactory{
+		descriptor: descriptor,
+		routes:     []Route{{Pattern: "GET /stable", Handler: statusHandler(http.StatusTeapot)}},
+	}
+	plan := makeHostPlan(t, []pluginruntime.Factory{
+		routerFactory, stableFactory, originalFactory,
+	})
+	registry := pluginruntime.NewRegistry()
+	originalArtifact := hostTestArtifact("go://openrealtime/presentation/host-routes", "build-1", "a")
+	for _, factory := range []pluginruntime.Factory{
+		routerFactory, stableFactory, originalFactory,
+	} {
+		if err := registry.RegisterArtifact(
+			factory.Descriptor().Name, originalArtifact, factory,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	validArtifact := hostTestArtifact(
+		"go://openrealtime/presentation/host-routes-v2", "build-2", "b",
+	)
+	if err := registry.RegisterArtifact(
+		"test/host-route-v2", validArtifact, validReplacement,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterArtifact(
+		"test/host-route-conflict",
+		hostTestArtifact("go://openrealtime/presentation/host-routes-conflict", "build-2", "c"),
+		conflictingReplacement,
+	); err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, contract, provider, revision, err := mounted.Export("http")
+	if err != nil || contract != presentation.HTTPHandlerContract || provider != "router" {
+		t.Fatalf("host HTTP export = %T %+v %q %d, %v", value, contract, provider, revision, err)
+	}
+	handler, ok := value.(http.Handler)
+	if !ok {
+		t.Fatalf("host HTTP export value = %T", value)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	assertStatus(t, server.URL+"/healthz", http.StatusNoContent)
+	assertStatus(t, server.URL+"/stable", http.StatusNoContent)
+
+	if err := mounted.Replace(
+		context.Background(), "test_route", "test/host-route-conflict",
+	); err == nil || !strings.Contains(err.Error(), "previous implementation was restored") ||
+		!strings.Contains(err.Error(), `HTTP route "GET /stable" is already owned by stable_route`) {
+		t.Fatalf("conflicting host-route replacement error = %v", err)
+	}
+	assertStatus(t, server.URL+"/healthz", http.StatusNoContent)
+	assertStatus(t, server.URL+"/stable", http.StatusNoContent)
+	if live := mounted.Live(); live.Entries["test_route"].Implementation != descriptor.Name ||
+		live.Entries["test_route"].Runtime != originalArtifact {
+		t.Fatalf("failed host replacement was not rolled back: %+v", live.Entries["test_route"])
+	}
+
+	if err := mounted.Replace(
+		context.Background(), "test_route", "test/host-route-v2",
+	); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(t, server.URL+"/healthz", 218)
+	assertStatus(t, server.URL+"/readyz", 219)
+	assertStatus(t, server.URL+"/stable", http.StatusNoContent)
+	afterValue, afterContract, afterProvider, afterRevision, err := mounted.Export("http")
+	if err != nil || afterValue != value || afterContract != contract || afterProvider != provider ||
+		afterRevision != revision {
+		t.Fatalf("stable host export changed across route replacement: before=%T/%+v/%s/%d after=%T/%+v/%s/%d error=%v",
+			value, contract, provider, revision,
+			afterValue, afterContract, afterProvider, afterRevision, err)
+	}
+	if live := mounted.Live(); live.Entries["test_route"].Implementation != "test/host-route-v2" ||
+		live.Entries["test_route"].Runtime != validArtifact ||
+		live.Entries["router"].Runtime != originalArtifact {
+		t.Fatalf("host replacement live evidence = %+v", live)
+	}
+
+	if err := mounted.Unmount(context.Background(), "test_route"); err != nil {
+		t.Fatal(err)
+	}
+	assertStatus(t, server.URL+"/healthz", http.StatusNotFound)
+	assertStatus(t, server.URL+"/readyz", http.StatusNotFound)
+	assertStatus(t, server.URL+"/stable", http.StatusNoContent)
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
+	assertStatus(t, server.URL+"/stable", http.StatusNotFound)
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatalf("idempotent host close: %v", err)
+	}
+}
+
 func TestRouterRegistrationIsAtomicAndConcurrentRequestsSeeCompleteMuxes(t *testing.T) {
 	router := newRouter()
 	dispose, err := router.Register("first", []Route{{
@@ -414,6 +528,69 @@ func (*testRouteFactory) Mount(_ context.Context, mount pluginruntime.MountConte
 	}})
 }
 
+type stableTestRouteFactory struct{}
+
+func (*stableTestRouteFactory) Descriptor() plugin.Descriptor {
+	return plugin.Descriptor{
+		FormatVersion: plugin.DescriptorFormatVersion,
+		Name:          "openrealtime.presentation.host.test-stable-route", Revision: 1,
+		Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
+		Requires: []plugin.Requirement{{Contract: presentation.HTTPRoutesContract}},
+	}
+}
+
+func (*stableTestRouteFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
+	return registerRoutes(mount, []Route{{
+		Pattern: "GET /stable", Handler: statusHandler(http.StatusNoContent),
+	}})
+}
+
+type replacementTestRouteFactory struct {
+	descriptor plugin.Descriptor
+	routes     []Route
+}
+
+func (factory *replacementTestRouteFactory) Descriptor() plugin.Descriptor {
+	return factory.descriptor.Clone()
+}
+
+func (factory *replacementTestRouteFactory) Mount(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	return registerRoutes(mount, factory.routes)
+}
+
+func statusHandler(status int) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(status)
+	})
+}
+
+func hostTestArtifact(id, revision, digestDigit string) inspect.ArtifactIdentity {
+	return inspect.ArtifactIdentity{
+		ID: id, Revision: revision, Digest: "sha256:" + strings.Repeat(digestDigit, 64),
+	}
+}
+
+func assertHostRealmClosed(t *testing.T, live pluginruntime.Live, fingerprint string) {
+	t.Helper()
+	if live.State != "closed" || live.Realm != plugin.PresentationHostRealm ||
+		live.Fingerprint != fingerprint || len(live.Entries) == 0 {
+		t.Fatalf("closed host realm evidence = %+v", live)
+	}
+	for id, entry := range live.Entries {
+		if entry.State != "closed" || entry.Workers != 0 || entry.Effects != 0 ||
+			len(entry.Services) != 0 || entry.Error != "" {
+			t.Fatalf("closed host entry %s retained ownership: %+v", id, entry)
+		}
+	}
+	for name, exported := range live.Exports {
+		if exported.Available {
+			t.Fatalf("closed host export %s remained available: %+v", name, exported)
+		}
+	}
+}
+
 func makeClientPlan(t *testing.T, asset plugin.Asset) plugin.Plan {
 	t.Helper()
 	descriptor := plugin.Descriptor{
@@ -477,6 +654,8 @@ func makeHostPlan(t *testing.T, factories []pluginruntime.Factory) plugin.Plan {
 			id = "listener"
 		case "openrealtime.presentation.host.test-route":
 			id = "test_route"
+		case "openrealtime.presentation.host.test-stable-route":
+			id = "stable_route"
 		default:
 			t.Fatalf("unknown test factory %s", descriptor.Name)
 		}
