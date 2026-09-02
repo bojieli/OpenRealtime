@@ -3589,9 +3589,20 @@ and does not claim statistical parity with the historical 165-attempt sample.
     all DOM surfaces remain present, the signed effect catalog renegotiates,
     the replacement executes a sealed artifact, and final disposal retains no
     client ownership or effect socket. Three focused race-enabled real-Chromium
-    runs, the complete browser suite, and vet are green. The two WebRTC-specific
-    views, remaining non-view client providers, and topology-changing
-    replacement stay open.
+    runs, the complete browser suite, and vet are green. Remaining non-view
+    client providers and topology-changing replacement stay open.
+  - [x] Select the two WebRTC-specific view consumers in a separate exact
+    two-row real-profile transition. A media-enabled composition constructor
+    admits deterministic alternatives without changing the selected topology,
+    endpoints, grants, or implementations. Real Chromium replaces video
+    controls and transport diagnostics together, binds every before/after
+    content-addressed artifact in the receipt, preserves all 28 desired rows,
+    rebinds both retained services, and captures another camera frame through
+    the replacement controls. Ten repeated constructor runs, three focused
+    race-enabled Chromium runs, the complete browser and presentation suites,
+    and vet are green. Every shipped browser view consumer now has selected-
+    implementation replacement evidence; remaining non-view providers stay
+    open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
