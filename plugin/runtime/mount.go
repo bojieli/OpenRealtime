@@ -37,6 +37,7 @@ type mountedEntry struct {
 	config         json.RawMessage
 	permissions    permissionSet
 	scope          *lifecycleScope
+	snapshot       StateSnapshotter
 	desired        bool
 	active         bool
 	state          string
@@ -162,8 +163,20 @@ func (mounted *Mounted) mountEntryLocked(ctx context.Context, entry *mountedEntr
 func (mounted *Mounted) mountEntryWithCandidateLocked(
 	ctx context.Context, entry *mountedEntry, candidate *preparedCandidateMount,
 ) error {
+	return mounted.mountEntryWithCandidateAndStateLocked(ctx, entry, candidate, nil)
+}
+
+func (mounted *Mounted) mountEntryWithCandidateAndStateLocked(
+	ctx context.Context,
+	entry *mountedEntry,
+	candidate *preparedCandidateMount,
+	restored json.RawMessage,
+) error {
 	if entry.active {
 		return nil
+	}
+	if len(restored) > 0 && entry.plan.Descriptor.StateSchema == nil {
+		return fmt.Errorf("mount plugin %s received state without a state schema", entry.plan.Entry.ID)
 	}
 	bindings := make(map[string]plugin.DependencyBinding, len(entry.plan.Dependencies))
 	services := boundServices{store: mounted.store, bindings: bindings}
@@ -188,10 +201,14 @@ func (mounted *Mounted) mountEntryWithCandidateLocked(
 		entry: entry.plan.Entry.ID, descriptor: entry.plan.Descriptor,
 		store: mounted.store, scope: scope,
 	}
+	var state *stateLifecycle
+	if entry.plan.Descriptor.StateSchema != nil {
+		state = newStateLifecycle(entry.plan.Descriptor, restored)
+	}
 	mount := MountContext{
 		EntryID: entry.plan.Entry.ID, Identity: entry.plan.Identity,
 		Config: slices.Clone(entry.config), Services: services,
-		Publisher: publisher, Lifecycle: scope, Permissions: entry.permissions.Clone(),
+		Publisher: publisher, Lifecycle: scope, State: state, Permissions: entry.permissions.Clone(),
 		Descriptor: entry.plan.Descriptor.Clone(),
 	}
 	var err error
@@ -212,17 +229,23 @@ func (mounted *Mounted) mountEntryWithCandidateLocked(
 			}
 		}
 	}
+	var snapshot StateSnapshotter
+	if err == nil && state != nil {
+		snapshot, err = state.seal()
+	}
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), mounted.timeout)
 		defer cancel()
 		cleanupErr := scope.close(cleanup, err)
 		entry.scope = nil
+		entry.snapshot = nil
 		entry.active = false
 		entry.state = "failed"
 		entry.err = err.Error()
 		return errors.Join(fmt.Errorf("mount plugin %s: %w", entry.plan.Entry.ID, err), cleanupErr)
 	}
 	entry.scope = scope
+	entry.snapshot = snapshot
 	entry.active = true
 	entry.state = "active"
 	entry.err = ""
@@ -244,6 +267,7 @@ func (mounted *Mounted) unmountEntryLocked(
 	err := entry.scope.close(shutdown, cause)
 	cancel()
 	entry.scope = nil
+	entry.snapshot = nil
 	entry.active = false
 	if final {
 		entry.state = "closed"
@@ -370,6 +394,16 @@ func (mounted *Mounted) Replace(ctx context.Context, entryID, implementation str
 		}
 	}
 	affected := mounted.dependentClosureLocked(entryID)
+	for _, entry := range mounted.entries {
+		if _, selected := affected[entry.plan.Entry.ID]; selected &&
+			entry.plan.Descriptor.StateSchema != nil {
+			return fmt.Errorf(
+				"%w: replace plugin %s affects stateful entry %s schema %s; use Reconcile",
+				ErrStateMigrationNeeded, entryID, entry.plan.Entry.ID,
+				entry.plan.Descriptor.StateSchema.Name,
+			)
+		}
+	}
 	if err := mounted.unmountSetLocked(
 		ctx, affected, errors.New("plugin implementation replacement"),
 	); err != nil {
@@ -476,6 +510,15 @@ func (mounted *Mounted) mountEligibleLocked(ctx context.Context, allowed map[str
 func (mounted *Mounted) mountEligibleWithCandidatesLocked(
 	ctx context.Context, allowed map[string]struct{}, candidates map[string]*preparedCandidateMount,
 ) error {
+	return mounted.mountEligibleWithCandidatesAndStateLocked(ctx, allowed, candidates, nil)
+}
+
+func (mounted *Mounted) mountEligibleWithCandidatesAndStateLocked(
+	ctx context.Context,
+	allowed map[string]struct{},
+	candidates map[string]*preparedCandidateMount,
+	restored map[string]json.RawMessage,
+) error {
 	var failures []error
 	for _, entry := range mounted.entries {
 		if entry.active || !entry.desired {
@@ -500,7 +543,9 @@ func (mounted *Mounted) mountEligibleWithCandidatesLocked(
 		if !ready {
 			continue
 		}
-		if err := mounted.mountEntryWithCandidateLocked(ctx, entry, candidates[entry.plan.Entry.ID]); err != nil {
+		if err := mounted.mountEntryWithCandidateAndStateLocked(
+			ctx, entry, candidates[entry.plan.Entry.ID], restored[entry.plan.Entry.ID],
+		); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -566,8 +611,19 @@ func (mounted *Mounted) mountEligibleForOperationLocked(
 func (mounted *Mounted) mountEligibleWithCandidatesForOperationLocked(
 	ctx context.Context, allowed map[string]struct{}, candidates map[string]*preparedCandidateMount,
 ) error {
+	return mounted.mountEligibleWithCandidatesAndStateForOperationLocked(
+		ctx, allowed, candidates, nil,
+	)
+}
+
+func (mounted *Mounted) mountEligibleWithCandidatesAndStateForOperationLocked(
+	ctx context.Context,
+	allowed map[string]struct{},
+	candidates map[string]*preparedCandidateMount,
+	restored map[string]json.RawMessage,
+) error {
 	return mounted.mountForOperationLocked(ctx, func(parent context.Context) error {
-		return mounted.mountEligibleWithCandidatesLocked(parent, allowed, candidates)
+		return mounted.mountEligibleWithCandidatesAndStateLocked(parent, allowed, candidates, restored)
 	})
 }
 

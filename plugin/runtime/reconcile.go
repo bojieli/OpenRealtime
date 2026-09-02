@@ -19,11 +19,11 @@ var (
 	ErrReconcileStale               = errors.New("plugin reconciliation candidate is stale")
 	ErrReconcileNoChanges           = errors.New("plugin reconciliation candidate has no changes")
 	ErrCandidatePreMountUnsupported = errors.New("plugin reconciliation candidate cannot be pre-mounted")
-	ErrStateMigrationNeeded         = errors.New("plugin reconciliation requires unsupported state migration")
+	ErrStateMigrationNeeded         = errors.New("plugin reconciliation requires explicit state migration")
 	ErrReconcileLeakDetected        = errors.New("plugin reconciliation detected retained ownership")
 )
 
-const ReconcileReceiptFormatVersion = 2
+const ReconcileReceiptFormatVersion = 3
 
 // EntryUpdate is one explicit row replacement. Set fields distinguish an
 // omitted plane from selecting its zero value (for example, the descriptor's
@@ -72,13 +72,26 @@ type EntryRetirement struct {
 	RemainingServices    int    `json:"remaining_services"`
 }
 
+// EntryStateTransfer is payload-free evidence that one affected stateful row
+// was restored. MigratorImplementation is present only for a changed row that
+// ran an explicit candidate migrator; an unchanged dependent retains the same
+// canonical snapshot digest without claiming a migration.
+type EntryStateTransfer struct {
+	Entry                  string          `json:"entry"`
+	Schema                 plugin.Contract `json:"schema"`
+	BeforeStateDigest      string          `json:"before_state_digest"`
+	AfterStateDigest       string          `json:"after_state_digest"`
+	MigratorImplementation string          `json:"migrator_implementation,omitempty"`
+}
+
 type ReconcileReceipt struct {
-	FormatVersion   uint64            `json:"format_version"`
-	PlanFingerprint string            `json:"plan_fingerprint"`
-	BeforeSequence  uint64            `json:"before_sequence"`
-	AfterSequence   uint64            `json:"after_sequence"`
-	Transitions     []EntryTransition `json:"transitions"`
-	Retirements     []EntryRetirement `json:"retirements"`
+	FormatVersion   uint64               `json:"format_version"`
+	PlanFingerprint string               `json:"plan_fingerprint"`
+	BeforeSequence  uint64               `json:"before_sequence"`
+	AfterSequence   uint64               `json:"after_sequence"`
+	Transitions     []EntryTransition    `json:"transitions"`
+	Retirements     []EntryRetirement    `json:"retirements"`
+	StateTransfers  []EntryStateTransfer `json:"state_transfers,omitempty"`
 }
 
 type preparedUpdate struct {
@@ -120,11 +133,20 @@ type retirementCapture struct {
 	scopes []*lifecycleScope
 }
 
+type entryStateCapture struct {
+	entry                *mountedEntry
+	schema               plugin.Contract
+	snapshot             json.RawMessage
+	digest               string
+	sourceImplementation string
+}
+
 // Reconcile atomically applies implementation, values, and permission changes
 // under the same immutable plan. It validates and effect-restricted pre-mounts
 // every changed row before quiescing the affected dependency closure, rolls the
-// complete set back on an activation failure, and refuses stateful rows until
-// an explicit state-migration service exists. Topology/descriptor changes
+// complete set back on an activation failure, and transfers every affected
+// stateful row only through its exact schema and explicit lifecycle contract.
+// Topology/descriptor changes
 // require a future plan-level reconciliation API and cannot be smuggled through
 // this method.
 func (mounted *Mounted) Reconcile(
@@ -164,8 +186,29 @@ func (mounted *Mounted) Reconcile(
 	if len(prepared) == 0 {
 		return ReconcileReceipt{}, ErrReconcileNoChanges
 	}
+	affected := make(map[string]struct{})
+	previous := make(map[string]previousEntry, len(prepared))
+	for _, update := range prepared {
+		for id := range mounted.dependentClosureLocked(update.entry.plan.Entry.ID) {
+			affected[id] = struct{}{}
+		}
+		previous[update.entry.plan.Entry.ID] = previousEntry{
+			factory: update.entry.factory, implementation: update.entry.implementation,
+			artifact: update.entry.artifact, config: slices.Clone(update.entry.config),
+			permissions: update.entry.permissions.Clone(),
+		}
+	}
+	if err := mounted.validateStateTransferLocked(affected); err != nil {
+		return ReconcileReceipt{}, err
+	}
 	if err := mounted.preMountReconciliationLocked(ctx, prepared); err != nil {
 		return ReconcileReceipt{}, err
+	}
+	if err := mounted.validateCandidateStateMigratorsLocked(prepared); err != nil {
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation state migration is unsupported"),
+		)
+		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
 	}
 	if err := ctx.Err(); err != nil {
 		cleanupErr := mounted.disposePreparedCandidatesLocked(
@@ -181,18 +224,14 @@ func (mounted *Mounted) Reconcile(
 		)
 		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
 	}
-	affected := make(map[string]struct{})
-	previous := make(map[string]previousEntry, len(prepared))
-	for _, update := range prepared {
-		for id := range mounted.dependentClosureLocked(update.entry.plan.Entry.ID) {
-			affected[id] = struct{}{}
-		}
-		previous[update.entry.plan.Entry.ID] = previousEntry{
-			factory: update.entry.factory, implementation: update.entry.implementation,
-			artifact: update.entry.artifact, config: slices.Clone(update.entry.config),
-			permissions: update.entry.permissions.Clone(),
-		}
+	stateCaptures, err := mounted.captureStateLocked(ctx, affected)
+	if err != nil {
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation state snapshot failed"),
+		)
+		return ReconcileReceipt{}, errors.Join(err, cleanupErr)
 	}
+	previousState := restoredState(stateCaptures)
 	retired := mounted.captureRetirementsLocked(affected)
 	quiesceErr := mounted.unmountSetLocked(ctx, affected, errors.New("plugin reconciliation safe point"))
 	retirements, retirementErr := mounted.auditRetirementsLocked(retired)
@@ -203,12 +242,30 @@ func (mounted *Mounted) Reconcile(
 		cleanupErr := mounted.disposePreparedCandidatesLocked(
 			prepared, errors.New("plugin reconciliation did not reach its safe point"),
 		)
-		restoreErr := mounted.mountEligibleForOperationLocked(mounted.realm, affected)
+		restoreErr := mounted.mountEligibleWithCandidatesAndStateForOperationLocked(
+			mounted.realm, affected, nil, previousState,
+		)
 		return ReconcileReceipt{}, errors.Join(
 			fmt.Errorf("reconcile plugin plan could not quiesce affected entries: %w",
 				errors.Join(quiesceErr, retirementErr)),
 			wrapOptional("restore after quiesce failure", restoreErr),
 			wrapOptional("dispose pre-mounted candidate", cleanupErr),
+		)
+	}
+	candidateState, stateTransfers, migrationErr := mounted.migrateStateLocked(
+		ctx, prepared, stateCaptures,
+	)
+	if migrationErr != nil {
+		cleanupErr := mounted.disposePreparedCandidatesLocked(
+			prepared, errors.New("plugin reconciliation state migration failed"),
+		)
+		rollbackErr := mounted.mountEligibleWithCandidatesAndStateForOperationLocked(
+			mounted.realm, affected, nil, previousState,
+		)
+		return ReconcileReceipt{}, errors.Join(
+			migrationErr,
+			wrapOptional("dispose pre-mounted candidate", cleanupErr),
+			wrapOptional("restore after state migration failure", rollbackErr),
 		)
 	}
 	for _, update := range prepared {
@@ -226,7 +283,9 @@ func (mounted *Mounted) Reconcile(
 	for index := range prepared {
 		candidates[prepared[index].entry.plan.Entry.ID] = prepared[index].candidate
 	}
-	candidateErr := mounted.mountEligibleWithCandidatesForOperationLocked(ctx, affected, candidates)
+	candidateErr := mounted.mountEligibleWithCandidatesAndStateForOperationLocked(
+		ctx, affected, candidates, candidateState,
+	)
 	if candidateErr == nil {
 		for index := range prepared {
 			if !prepared[index].entry.active || !prepared[index].candidate.adopted {
@@ -254,7 +313,9 @@ func (mounted *Mounted) Reconcile(
 			entry.permissions = value.permissions.Clone()
 		}
 		mounted.sequence.Add(1)
-		rollbackErr := mounted.mountEligibleForOperationLocked(recoveryContext, affected)
+		rollbackErr := mounted.mountEligibleWithCandidatesAndStateForOperationLocked(
+			recoveryContext, affected, nil, previousState,
+		)
 		if rollbackErr != nil || cleanupErr != nil || preMountCleanupErr != nil {
 			return ReconcileReceipt{}, errors.Join(
 				fmt.Errorf("reconcile plugin candidate failed: %w", candidateErr),
@@ -275,8 +336,159 @@ func (mounted *Mounted) Reconcile(
 	return ReconcileReceipt{
 		FormatVersion: ReconcileReceiptFormatVersion, PlanFingerprint: mounted.plan.Fingerprint,
 		BeforeSequence: before, AfterSequence: mounted.sequence.Load(), Transitions: transitions,
-		Retirements: retirements,
+		Retirements: retirements, StateTransfers: stateTransfers,
 	}, nil
+}
+
+func (mounted *Mounted) validateStateTransferLocked(affected map[string]struct{}) error {
+	for _, entry := range mounted.entries {
+		if _, selected := affected[entry.plan.Entry.ID]; !selected ||
+			entry.plan.Descriptor.StateSchema == nil {
+			continue
+		}
+		descriptor := entry.plan.Descriptor
+		if !descriptor.Lifecycle.Snapshot || !descriptor.Lifecycle.Restore {
+			return fmt.Errorf(
+				"%w: affected entry %s schema %s does not declare snapshot and restore",
+				ErrStateMigrationNeeded, entry.plan.Entry.ID, descriptor.StateSchema.Name,
+			)
+		}
+		if entry.snapshot == nil {
+			return fmt.Errorf(
+				"%w: affected entry %s schema %s has no live snapshot callback",
+				ErrStateMigrationNeeded, entry.plan.Entry.ID, descriptor.StateSchema.Name,
+			)
+		}
+	}
+	return nil
+}
+
+func (mounted *Mounted) validateCandidateStateMigratorsLocked(prepared []preparedUpdate) error {
+	for index := range prepared {
+		update := &prepared[index]
+		if update.entry.plan.Descriptor.StateSchema == nil {
+			continue
+		}
+		migrator, supported := update.candidate.mount.(CandidateStateMigrator)
+		if !supported || nilServiceValue(migrator) {
+			return fmt.Errorf(
+				"%w: changed entry %s schema %s candidate %q has no migrator",
+				ErrStateMigrationNeeded, update.entry.plan.Entry.ID,
+				update.entry.plan.Descriptor.StateSchema.Name, update.implementation,
+			)
+		}
+	}
+	return nil
+}
+
+func (mounted *Mounted) captureStateLocked(
+	operation context.Context, affected map[string]struct{},
+) ([]entryStateCapture, error) {
+	var captures []entryStateCapture
+	for _, entry := range mounted.entries {
+		if _, selected := affected[entry.plan.Entry.ID]; !selected ||
+			entry.plan.Descriptor.StateSchema == nil {
+			continue
+		}
+		snapshotContext, cancel := context.WithTimeout(operation, mounted.timeout)
+		raw, snapshotErr := entry.snapshot(snapshotContext)
+		contextErr := context.Cause(snapshotContext)
+		cancel()
+		if contextErr != nil {
+			snapshotErr = errors.Join(snapshotErr, contextErr)
+		}
+		if snapshotErr != nil {
+			return nil, fmt.Errorf(
+				"snapshot plugin state for entry %s schema %s: %w",
+				entry.plan.Entry.ID, entry.plan.Descriptor.StateSchema.Name, snapshotErr,
+			)
+		}
+		canonical, digest, err := canonicalStateSnapshot(raw)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"snapshot plugin state for entry %s schema %s: %w",
+				entry.plan.Entry.ID, entry.plan.Descriptor.StateSchema.Name, err,
+			)
+		}
+		captures = append(captures, entryStateCapture{
+			entry: entry, schema: *entry.plan.Descriptor.StateSchema,
+			snapshot: canonical, digest: digest,
+			sourceImplementation: entry.implementation,
+		})
+	}
+	return captures, nil
+}
+
+func restoredState(captures []entryStateCapture) map[string]json.RawMessage {
+	if len(captures) == 0 {
+		return nil
+	}
+	result := make(map[string]json.RawMessage, len(captures))
+	for _, capture := range captures {
+		result[capture.entry.plan.Entry.ID] = slices.Clone(capture.snapshot)
+	}
+	return result
+}
+
+func (mounted *Mounted) migrateStateLocked(
+	operation context.Context,
+	prepared []preparedUpdate,
+	captures []entryStateCapture,
+) (map[string]json.RawMessage, []EntryStateTransfer, error) {
+	if len(captures) == 0 {
+		return nil, nil, nil
+	}
+	updates := make(map[string]*preparedUpdate, len(prepared))
+	for index := range prepared {
+		updates[prepared[index].entry.plan.Entry.ID] = &prepared[index]
+	}
+	restored := make(map[string]json.RawMessage, len(captures))
+	transfers := make([]EntryStateTransfer, 0, len(captures))
+	for _, capture := range captures {
+		entryID := capture.entry.plan.Entry.ID
+		after := slices.Clone(capture.snapshot)
+		afterDigest := capture.digest
+		migratorImplementation := ""
+		if update := updates[entryID]; update != nil {
+			migrator := update.candidate.mount.(CandidateStateMigrator)
+			migrationContext, cancel := context.WithTimeout(operation, mounted.timeout)
+			raw, migrationErr := migrator.MigrateState(migrationContext, StateMigration{
+				EntryID: entryID, Schema: capture.schema,
+				SourceImplementation: capture.sourceImplementation,
+				Snapshot:             slices.Clone(capture.snapshot),
+			})
+			contextErr := context.Cause(migrationContext)
+			cancel()
+			if contextErr != nil {
+				migrationErr = errors.Join(migrationErr, contextErr)
+			}
+			if migrationErr != nil {
+				return nil, nil, fmt.Errorf(
+					"migrate plugin state for entry %s schema %s with %s: %w",
+					entryID, capture.schema.Name, update.implementation, migrationErr,
+				)
+			}
+			var err error
+			after, afterDigest, err = canonicalStateSnapshot(raw)
+			if err != nil {
+				return nil, nil, fmt.Errorf(
+					"migrate plugin state for entry %s schema %s with %s: %w",
+					entryID, capture.schema.Name, update.implementation, err,
+				)
+			}
+			migratorImplementation = update.implementation
+		}
+		restored[entryID] = slices.Clone(after)
+		transfers = append(transfers, EntryStateTransfer{
+			Entry: entryID, Schema: capture.schema,
+			BeforeStateDigest: capture.digest, AfterStateDigest: afterDigest,
+			MigratorImplementation: migratorImplementation,
+		})
+	}
+	sort.Slice(transfers, func(left, right int) bool {
+		return transfers[left].Entry < transfers[right].Entry
+	})
+	return restored, transfers, nil
 }
 
 func (mounted *Mounted) captureRetirementsLocked(affected map[string]struct{}) []retirementCapture {
@@ -397,10 +609,6 @@ func (mounted *Mounted) prepareReconciliationLocked(updates []EntryUpdate) ([]pr
 			!permissionSetsEqual(permissions, entry.permissions)
 		if !changed {
 			continue
-		}
-		if entry.plan.Descriptor.StateSchema != nil {
-			return nil, fmt.Errorf("%w: entry %s has state schema %s",
-				ErrStateMigrationNeeded, update.Entry, entry.plan.Descriptor.StateSchema.Name)
 		}
 		_, beforeDigest, _ := graphvalues.Digest(entry.config)
 		_, afterDigest, _ := graphvalues.Digest(config)

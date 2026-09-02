@@ -39,6 +39,21 @@ type CandidateLifecycle interface {
 	Defer(name string, dispose func(context.Context) error) error
 }
 
+// StateSnapshotter returns one bounded strict-JSON object representing the
+// complete restorable state of a mounted entry. The callback must take an
+// internally consistent snapshot when invoked; payload bytes never leave the
+// runtime reconciliation boundary.
+type StateSnapshotter func(context.Context) (json.RawMessage, error)
+
+// StateLifecycle is the state-transfer boundary available only to descriptors
+// that declare a StateSchema. A restoring mount must consume Restored before it
+// publishes services, and every snapshot-capable mount must register exactly
+// one callback before Mount or Activate returns.
+type StateLifecycle interface {
+	Restored() (snapshot json.RawMessage, available bool, err error)
+	Snapshot(StateSnapshotter) error
+}
+
 // Permissions is the deployment grant selected for one plugin instance. It is
 // always a subset of the immutable descriptor ceiling. A plugin must check the
 // grant at the effect boundary in addition to consuming any declared authority
@@ -56,6 +71,7 @@ type MountContext struct {
 	Services    Services
 	Publisher   Publisher
 	Lifecycle   Lifecycle
+	State       StateLifecycle
 	Permissions Permissions
 	Descriptor  plugin.Descriptor
 }
@@ -93,6 +109,25 @@ type CandidateMount interface {
 // changed factory that lacks this contract before it tears down live work.
 type CandidatePreMounter interface {
 	PreMount(context.Context, CandidateContext) (CandidateMount, error)
+}
+
+// StateMigration is the exact predecessor state presented to an explicit
+// candidate migrator after the affected live dependency closure has retired.
+// Snapshot is independently cloned and remains private to the runtime and the
+// selected migrator.
+type StateMigration struct {
+	EntryID              string
+	Schema               plugin.Contract
+	SourceImplementation string
+	Snapshot             json.RawMessage
+}
+
+// CandidateStateMigrator explicitly converts a predecessor snapshot for one
+// changed stateful row. The returned strict-JSON object is validated and then
+// supplied through MountContext.State when the prepared candidate activates.
+type CandidateStateMigrator interface {
+	CandidateMount
+	MigrateState(context.Context, StateMigration) (json.RawMessage, error)
 }
 
 // ConfigValidator proves one separate values document before any plugin is
