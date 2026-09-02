@@ -607,9 +607,15 @@ tau2/τ-Voice matrix defined by the parent plan.
   runtime and later mutations without transferring registry ownership to the
   plugin realm. The same continuity now covers deployment-owned operator
   capabilities across authorizer replacement, including live revocation and
-  fresh scoped issue. Production launch-profile selection of operator
-  authority, full delta/reconciliation E2E, cross-owner provider-state
-  migration, and replacement of every presentation consumer remain open.
+  fresh scoped issue. Strict production launch profiles can now opt into a
+  separate environment-delivered `mgmt_` operator capability: startup retains
+  only its hash, rejects both environment and resolved-value aliasing with the
+  gateway bearer, and overlays the exact graph/schema/descriptor catalog plus
+  pure in-memory authoring while excluding session inspection, source I/O, and
+  reconciliation. Scenario, Meeting Assistant, and Realtime-CU profile
+  generators expose that same selection. Full delta/reconciliation E2E,
+  cross-owner provider-state migration, and replacement of every presentation
+  consumer remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

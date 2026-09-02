@@ -4164,7 +4164,12 @@ checked from foundation work alone; each requires end-to-end release evidence.
     drains and joins a blocked source read while preserving the router/export.
     A separate eight-request transition concurrently blocks and drains every
     operator API family, including live/model/trace requests in one scope,
-    before replacing all six routes.
+    before replacing all six routes. Production launch profiles can now select
+    a distinct environment-delivered `mgmt_` operator capability. The launcher
+    hashes it, refuses gateway-capability aliasing by both environment and
+    resolved value, and mounts only the exact graph/schema/descriptor catalog
+    plus pure in-memory authoring; session inspection, source I/O, and
+    reconciliation remain outside that authority.
     Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain
