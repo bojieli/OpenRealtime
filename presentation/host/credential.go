@@ -65,16 +65,40 @@ func newCredentialFactory(name string, source CredentialSource, protected bool) 
 
 func (factory *CredentialFactory) Descriptor() plugin.Descriptor { return factory.descriptor.Clone() }
 
-func (factory *CredentialFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	if factory.source == nil {
-		return errors.New("realtime credential source is nil")
+func (factory *CredentialFactory) Mount(ctx context.Context, mount pluginruntime.MountContext) error {
+	candidate, err := factory.prepareCredential(mount.Permissions)
+	if err != nil {
+		return err
 	}
-	if factory.protected && !mount.Permissions.Allows(
+	return candidate.Activate(ctx, mount)
+}
+
+func (factory *CredentialFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return factory.prepareCredential(candidate.Permissions)
+}
+
+func (factory *CredentialFactory) prepareCredential(
+	permissions pluginruntime.Permissions,
+) (credentialCandidate, error) {
+	if factory.source == nil {
+		return credentialCandidate{}, errors.New("realtime credential source is nil")
+	}
+	if factory.protected && !permissions.Allows(
 		credentialPermissionKind, credentialPermissionResource, credentialPermissionOperation,
 	) {
-		return errors.New("realtime credential plugin lacks its deployment secret-read grant")
+		return credentialCandidate{}, errors.New("realtime credential plugin lacks its deployment secret-read grant")
 	}
-	return mount.Publisher.Provide(presentation.CredentialContract, factory.source)
+	return credentialCandidate{source: factory.source}, nil
+}
+
+type credentialCandidate struct{ source CredentialSource }
+
+func (candidate credentialCandidate) Activate(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	return mount.Publisher.Provide(presentation.CredentialContract, candidate.source)
 }
 
 func lookupCredential(services pluginruntime.Services) (CredentialSource, error) {
@@ -88,3 +112,6 @@ func lookupCredential(services pluginruntime.Services) (CredentialSource, error)
 	}
 	return source, nil
 }
+
+var _ pluginruntime.Factory = (*CredentialFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*CredentialFactory)(nil)

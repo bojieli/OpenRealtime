@@ -90,12 +90,30 @@ func (factory *TargetFactory) ValidateConfig(raw json.RawMessage) error {
 	return err
 }
 
-func (factory *TargetFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
+func (factory *TargetFactory) Mount(ctx context.Context, mount pluginruntime.MountContext) error {
 	target, err := factory.parse(mount.Config)
 	if err != nil {
 		return err
 	}
-	return mount.Publisher.Provide(presentation.EndpointDirectoryContract, target)
+	return (targetCandidate{target: target}).Activate(ctx, mount)
+}
+
+func (factory *TargetFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	target, err := factory.parse(candidate.Config)
+	if err != nil {
+		return nil, err
+	}
+	return targetCandidate{target: target}, nil
+}
+
+type targetCandidate struct{ target EndpointTarget }
+
+func (candidate targetCandidate) Activate(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	return mount.Publisher.Provide(presentation.EndpointDirectoryContract, candidate.target)
 }
 
 func (factory *TargetFactory) parse(raw []byte) (EndpointTarget, error) {
@@ -186,6 +204,10 @@ func lookupTargetEndpoint(
 	}
 	return projection, endpoint, nil
 }
+
+var _ pluginruntime.Factory = (*TargetFactory)(nil)
+var _ pluginruntime.ConfigValidator = (*TargetFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*TargetFactory)(nil)
 
 func projectRelayTarget(target EndpointTarget) (relayTarget, error) {
 	result := relayTarget{
