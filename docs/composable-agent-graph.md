@@ -3257,7 +3257,21 @@ and does not claim statistical parity with the historical 165-attempt sample.
     The replacement serves a fresh bidirectional socket and final host close
     retains no ownership. Ten shuffled focused runs, focused and package-wide
     host/browser race and integration gates, full repository tests, and vet
-    are green. WebRTC and management-relay replacement remain open.
+    are green. Management-relay replacement remains open.
+  - [x] Reconcile the shipped WebRTC presentation-host relay while a real SDP
+    request is blocked at its declared backend. Candidate pre-mount resolves
+    the exact endpoint and credential dependencies and refuses a missing HTTP
+    network grant without changing the sequence, implementation, active
+    request, or route. Each admitted HTTP exchange is a lifecycle worker, and
+    lifecycle cancellation also closes an in-progress offer body and the
+    outbound adapter request. A valid replacement cancels and joins the
+    predecessor request before activating, preserves the router/export
+    identity, advances exact implementation/runtime evidence, and emits a
+    zero-worker/effect/child/service retirement audit. The candidate then
+    serves a fresh bounded SDP offer and finishes with no retained request.
+    Both relay replacements pass ten shuffled focused runs, focused and
+    package-wide host/browser race and integration gates, full repository
+    tests, and vet. Management-relay replacement remains open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3893,10 +3907,11 @@ checked from foundation work alone; each requires end-to-end release evidence.
     execution, and zero-active-socket final cleanup.
     Host route capabilities likewise have atomic multi-row and stateful
     migration/rollback evidence over the stable router and export, and the
-    shipped WebSocket relay now passes real active-session replacement with an
-    exact zero-ownership retirement audit. Complete topology-changing, WebRTC/
-    management-relay, and remaining capability-specific host/client replacement
-    plus signed-native lifecycle/leak evidence remain open.
+    shipped WebSocket and WebRTC relays now pass real active-session/request
+    replacement with exact zero-ownership retirement audits. Complete
+    topology-changing, management-relay, and remaining capability-specific
+    host/client replacement plus signed-native lifecycle/leak evidence remain
+    open.
 
 ## References
 
