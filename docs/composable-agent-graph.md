@@ -3216,6 +3216,18 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     workers, effects, and services and no available export. Focused normal,
     race, and vet coverage is green. Replacement of the remaining host and
     client capabilities remains under the open parent.
+  - [x] Reconcile multiple descriptor-locked presentation-host route
+    capabilities as one candidate while preserving the stable router and HTTP
+    export. Both candidate rows complete effect-free pre-mount before the old
+    routes retire; a cross-candidate route collision activates neither final
+    row, returns no receipt, removes the candidate surface, and restores both
+    predecessor implementations and endpoints. A valid two-row transition
+    returns sorted implementation/artifact evidence plus exact retirement
+    audits with every worker, effect, child scope, and service count at zero.
+    The unchanged router/export identity survives both rollback and success,
+    and final host close removes every route with zero realm ownership. Ten
+    shuffled focused runs, focused and package-wide race, full repository
+    tests, and vet are green.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
