@@ -96,6 +96,20 @@ func (factory *AuthoringAPIFactory) Mount(_ context.Context, mount pluginruntime
 	})
 }
 
+func (factory *AuthoringAPIFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return prepareAPIRouteCandidate(candidate.Services, factory.Mount, func(services pluginruntime.Services) error {
+		if _, err := lookupService[management.Authorizer](services, management.AuthorizerContract); err != nil {
+			return err
+		}
+		_, err := lookupService[management.Authoring](services, management.AuthoringContract)
+		return err
+	})
+}
+
+var _ pluginruntime.CandidatePreMounter = (*AuthoringAPIFactory)(nil)
+
 func authoringCreateEdgeHandler(authorizer management.Authorizer, authoring management.Authoring) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if err := validateQuery(request); err != nil {

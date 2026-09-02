@@ -93,3 +93,17 @@ func (factory *SourcePublicationAPIFactory) Mount(
 		}),
 	}})
 }
+
+func (factory *SourcePublicationAPIFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return prepareAPIRouteCandidate(candidate.Services, factory.Mount, func(services pluginruntime.Services) error {
+		if _, err := lookupService[management.Authorizer](services, management.AuthorizerContract); err != nil {
+			return err
+		}
+		_, err := lookupService[management.SourcePublication](services, management.SourcePublicationContract)
+		return err
+	})
+}
+
+var _ pluginruntime.CandidatePreMounter = (*SourcePublicationAPIFactory)(nil)

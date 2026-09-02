@@ -80,3 +80,17 @@ func (factory *ReconciliationAPIFactory) Mount(_ context.Context, mount pluginru
 		}),
 	}})
 }
+
+func (factory *ReconciliationAPIFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return prepareAPIRouteCandidate(candidate.Services, factory.Mount, func(services pluginruntime.Services) error {
+		if _, err := lookupService[management.Authorizer](services, management.AuthorizerContract); err != nil {
+			return err
+		}
+		_, err := lookupService[management.Reconciliation](services, management.ReconciliationContract)
+		return err
+	})
+}
+
+var _ pluginruntime.CandidatePreMounter = (*ReconciliationAPIFactory)(nil)

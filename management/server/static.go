@@ -148,6 +148,20 @@ func (factory *StaticAPIFactory) Mount(_ context.Context, mount pluginruntime.Mo
 	})
 }
 
+func (factory *StaticAPIFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return prepareAPIRouteCandidate(candidate.Services, factory.Mount, func(services pluginruntime.Services) error {
+		if _, err := lookupService[management.Authorizer](services, management.AuthorizerContract); err != nil {
+			return err
+		}
+		_, err := lookupService[management.StaticCatalog](services, management.StaticCatalogContract)
+		return err
+	})
+}
+
+var _ pluginruntime.CandidatePreMounter = (*StaticAPIFactory)(nil)
+
 func elementIdentity(request *http.Request) (element.Identity, error) {
 	revision, err := strconv.ParseUint(request.PathValue("revision"), 10, 64)
 	if err != nil {
