@@ -3,10 +3,12 @@ package host
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -354,6 +356,143 @@ func TestHostReconcilesMultipleRouteCapabilitiesAtomically(t *testing.T) {
 	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
 	assertStatus(t, server.URL+"/healthz", http.StatusNotFound)
 	assertStatus(t, server.URL+"/stable", http.StatusNotFound)
+}
+
+func TestHostReconcilesStatefulRouteWithMigrationAndRollback(t *testing.T) {
+	routerFactory := NewRouterFactory()
+	descriptor := statefulTestRouteDescriptor()
+	v1State := newStatefulTestRouteState(7)
+	missingState := newStatefulTestRouteState(0)
+	failingState := newStatefulTestRouteState(0)
+	v2State := newStatefulTestRouteState(0)
+	v1 := &statefulTestRouteFactory{descriptor: descriptor, label: "v1", state: v1State}
+	missingMigrator := &statefulTestRouteFactory{
+		descriptor: descriptor, label: "missing", state: missingState,
+	}
+	failing := &statefulTestRouteFactory{
+		descriptor: descriptor, label: "failure", state: failingState,
+		supportsMigration: true, migrationDelta: 100, fail: errors.New("intentional stateful route failure"),
+	}
+	v2 := &statefulTestRouteFactory{
+		descriptor: descriptor, label: "v2", state: v2State,
+		supportsMigration: true, migrationDelta: 1,
+	}
+	plan := makeHostPlan(t, []pluginruntime.Factory{routerFactory, v1})
+	registry := pluginruntime.NewRegistry()
+	for _, row := range []struct {
+		implementation string
+		artifact       inspect.ArtifactIdentity
+		factory        pluginruntime.Factory
+	}{
+		{routerFactory.Descriptor().Name, hostTestArtifact("go://host-router", "build-1", "1"), routerFactory},
+		{descriptor.Name, hostTestArtifact("go://host-stateful-v1", "build-1", "2"), v1},
+		{"test/host-stateful-no-migrator", hostTestArtifact("go://host-stateful-no-migrator", "build-2", "3"), missingMigrator},
+		{"test/host-stateful-failure", hostTestArtifact("go://host-stateful-failure", "build-2", "4"), failing},
+		{"test/host-stateful-v2", hostTestArtifact("go://host-stateful-v2", "build-2", "5"), v2},
+	} {
+		if err := registry.RegisterArtifact(row.implementation, row.artifact, row.factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
+	value, _, _, _, err := mounted.Export("http")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, ok := value.(http.Handler)
+	if !ok {
+		t.Fatalf("host HTTP export value = %T", value)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	assertBody(t, server.URL+"/stateful", "v1:7")
+
+	before := mounted.Live()
+	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: before.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "stateful_route", SetImplementation: true,
+			Implementation: "test/host-stateful-no-migrator",
+		}},
+	})
+	if !errors.Is(err, pluginruntime.ErrStateMigrationNeeded) ||
+		!strings.Contains(err.Error(), "has no migrator") {
+		t.Fatalf("missing host state migrator error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) ||
+		mounted.Live().Sequence != before.Sequence || v1State.snapshotCalls() != 0 ||
+		v1State.disposeCalls() != 0 || missingState.preMountDisposeCalls() != 1 {
+		t.Fatalf("missing migrator crossed safe point: receipt=%#v live=%+v v1=%+v missing=%+v",
+			receipt, mounted.Live(), v1State.counts(), missingState.counts())
+	}
+	assertBody(t, server.URL+"/stateful", "v1:7")
+
+	receipt, err = mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: mounted.Live().Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "stateful_route", SetImplementation: true,
+			Implementation: "test/host-stateful-failure",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "intentional stateful route failure") ||
+		!strings.Contains(err.Error(), "previous composition was restored") {
+		t.Fatalf("failed stateful host activation error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("failed stateful host activation returned receipt %#v", receipt)
+	}
+	assertBody(t, server.URL+"/stateful", "v1:7")
+	if live := mounted.Live(); live.Entries["stateful_route"].Implementation != descriptor.Name ||
+		v1State.snapshotCalls() != 1 || v1State.disposeCalls() != 1 ||
+		v1State.restoreCalls() != 1 || failingState.migrationCalls() != 1 ||
+		failingState.mountCalls() != 1 || failingState.disposeCalls() != 1 ||
+		failingState.preMountDisposeCalls() != 1 {
+		t.Fatalf("stateful host rollback evidence live=%+v v1=%+v candidate=%+v",
+			live, v1State.counts(), failingState.counts())
+	}
+
+	beforeSuccess := mounted.Live()
+	receipt, err = mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: beforeSuccess.Sequence,
+		Updates: []pluginruntime.EntryUpdate{{
+			Entry: "stateful_route", SetImplementation: true, Implementation: "test/host-stateful-v2",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBody(t, server.URL+"/stateful", "v2:8")
+	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
+		receipt.BeforeSequence != beforeSuccess.Sequence || receipt.AfterSequence != mounted.Live().Sequence ||
+		len(receipt.Transitions) != 1 || receipt.Transitions[0].Entry != "stateful_route" ||
+		len(receipt.StateTransfers) != 1 || receipt.StateTransfers[0].Entry != "stateful_route" ||
+		receipt.StateTransfers[0].Schema != *descriptor.StateSchema ||
+		receipt.StateTransfers[0].BeforeStateDigest == receipt.StateTransfers[0].AfterStateDigest ||
+		receipt.StateTransfers[0].MigratorImplementation != "test/host-stateful-v2" {
+		t.Fatalf("stateful host receipt = %#v", receipt)
+	}
+	encoded, err := json.Marshal(receipt)
+	if err != nil || strings.Contains(string(encoded), "counter") || strings.Contains(string(encoded), "v1:7") {
+		t.Fatalf("stateful host receipt exposed payload: %s, %v", encoded, err)
+	}
+	if v1State.snapshotCalls() != 2 || v1State.disposeCalls() != 2 ||
+		v2State.migrationCalls() != 1 || v2State.mountCalls() != 1 || v2State.restoreCalls() != 1 {
+		t.Fatalf("stateful host success counts v1=%+v v2=%+v", v1State.counts(), v2State.counts())
+	}
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
+	assertStatus(t, server.URL+"/stateful", http.StatusNotFound)
+	if v2State.disposeCalls() != 1 || v2State.preMountDisposeCalls() != 1 {
+		t.Fatalf("stateful host final disposal counts = %+v", v2State.counts())
+	}
 }
 
 func TestRouterRegistrationIsAtomicAndConcurrentRequestsSeeCompleteMuxes(t *testing.T) {
@@ -704,6 +843,212 @@ func (candidate replacementTestRouteCandidate) Activate(
 	return candidate.factory.Mount(ctx, mount)
 }
 
+type statefulTestRouteFactory struct {
+	descriptor        plugin.Descriptor
+	label             string
+	state             *statefulTestRouteState
+	supportsMigration bool
+	migrationDelta    int
+	fail              error
+}
+
+func statefulTestRouteDescriptor() plugin.Descriptor {
+	schema := plugin.Contract{
+		Name: "presentation.host.test_stateful_route.state", Revision: 1,
+		Digest: "sha256:" + strings.Repeat("8", 64),
+	}
+	return plugin.Descriptor{
+		FormatVersion: plugin.DescriptorFormatVersion,
+		Name:          "openrealtime.presentation.host.test-stateful-route", Revision: 1,
+		Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
+		Requires:    []plugin.Requirement{{Contract: presentation.HTTPRoutesContract}},
+		StateSchema: &schema, Lifecycle: plugin.Lifecycle{Snapshot: true, Restore: true},
+	}
+}
+
+func (factory *statefulTestRouteFactory) Descriptor() plugin.Descriptor {
+	return factory.descriptor.Clone()
+}
+
+func (factory *statefulTestRouteFactory) Mount(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	restored, available, err := mount.State.Restored()
+	if err != nil {
+		return err
+	}
+	if available {
+		if err := factory.state.restore(restored); err != nil {
+			return err
+		}
+	}
+	if err := mount.State.Snapshot(func(context.Context) (json.RawMessage, error) {
+		return factory.state.snapshot()
+	}); err != nil {
+		return err
+	}
+	factory.state.noteMount()
+	if err := registerRoutes(mount, []Route{{
+		Pattern: "GET /stateful",
+		Handler: http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(writer, factory.label+":"+factory.state.counterString())
+		}),
+	}}); err != nil {
+		return err
+	}
+	if err := mount.Lifecycle.Defer("stateful-test-route", func(context.Context) error {
+		factory.state.noteDispose()
+		return nil
+	}); err != nil {
+		return err
+	}
+	return factory.fail
+}
+
+func (factory *statefulTestRouteFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if err := candidate.Lifecycle.Defer("stateful-test-route-candidate", func(context.Context) error {
+		factory.state.notePreMountDispose()
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if factory.supportsMigration {
+		return statefulTestRouteMigratingCandidate{factory: factory}, nil
+	}
+	return statefulTestRouteCandidate{factory: factory}, nil
+}
+
+type statefulTestRouteCandidate struct{ factory *statefulTestRouteFactory }
+
+func (candidate statefulTestRouteCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
+type statefulTestRouteMigratingCandidate struct{ factory *statefulTestRouteFactory }
+
+func (candidate statefulTestRouteMigratingCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
+func (candidate statefulTestRouteMigratingCandidate) MigrateState(
+	_ context.Context, migration pluginruntime.StateMigration,
+) (json.RawMessage, error) {
+	return candidate.factory.state.migrate(migration, candidate.factory.migrationDelta)
+}
+
+type statefulTestRouteState struct {
+	mu sync.Mutex
+
+	counter          int
+	mounts           int
+	snapshots        int
+	restores         int
+	migrations       int
+	disposals        int
+	preMountDisposes int
+}
+
+func newStatefulTestRouteState(counter int) *statefulTestRouteState {
+	return &statefulTestRouteState{counter: counter}
+}
+
+func (state *statefulTestRouteState) snapshot() (json.RawMessage, error) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.snapshots++
+	return json.Marshal(struct {
+		Counter int `json:"counter"`
+	}{Counter: state.counter})
+}
+
+func (state *statefulTestRouteState) restore(raw json.RawMessage) error {
+	var snapshot struct {
+		Counter int `json:"counter"`
+	}
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return err
+	}
+	state.mu.Lock()
+	state.counter = snapshot.Counter
+	state.restores++
+	state.mu.Unlock()
+	return nil
+}
+
+func (state *statefulTestRouteState) migrate(
+	migration pluginruntime.StateMigration, delta int,
+) (json.RawMessage, error) {
+	state.mu.Lock()
+	state.migrations++
+	state.mu.Unlock()
+	var snapshot struct {
+		Counter int `json:"counter"`
+	}
+	if err := json.Unmarshal(migration.Snapshot, &snapshot); err != nil {
+		return nil, err
+	}
+	snapshot.Counter += delta
+	return json.Marshal(snapshot)
+}
+
+func (state *statefulTestRouteState) noteMount() {
+	state.mu.Lock()
+	state.mounts++
+	state.mu.Unlock()
+}
+
+func (state *statefulTestRouteState) noteDispose() {
+	state.mu.Lock()
+	state.disposals++
+	state.mu.Unlock()
+}
+
+func (state *statefulTestRouteState) notePreMountDispose() {
+	state.mu.Lock()
+	state.preMountDisposes++
+	state.mu.Unlock()
+}
+
+func (state *statefulTestRouteState) counterString() string {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return strconv.Itoa(state.counter)
+}
+
+func (state *statefulTestRouteState) counts() statefulTestRouteCounts {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return statefulTestRouteCounts{
+		mounts: state.mounts, snapshots: state.snapshots, restores: state.restores,
+		migrations: state.migrations, disposals: state.disposals,
+		preMountDisposes: state.preMountDisposes,
+	}
+}
+
+func (state *statefulTestRouteState) mountCalls() int     { return state.counts().mounts }
+func (state *statefulTestRouteState) snapshotCalls() int  { return state.counts().snapshots }
+func (state *statefulTestRouteState) restoreCalls() int   { return state.counts().restores }
+func (state *statefulTestRouteState) migrationCalls() int { return state.counts().migrations }
+func (state *statefulTestRouteState) disposeCalls() int   { return state.counts().disposals }
+func (state *statefulTestRouteState) preMountDisposeCalls() int {
+	return state.counts().preMountDisposes
+}
+
+type statefulTestRouteCounts struct {
+	mounts           int
+	snapshots        int
+	restores         int
+	migrations       int
+	disposals        int
+	preMountDisposes int
+}
+
 func statusHandler(status int) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(status)
@@ -800,6 +1145,8 @@ func makeHostPlan(t *testing.T, factories []pluginruntime.Factory) plugin.Plan {
 			id = "test_route"
 		case "openrealtime.presentation.host.test-stable-route":
 			id = "stable_route"
+		case "openrealtime.presentation.host.test-stateful-route":
+			id = "stateful_route"
 		default:
 			t.Fatalf("unknown test factory %s", descriptor.Name)
 		}
@@ -845,5 +1192,19 @@ func assertStatus(t *testing.T, target string, want int) {
 	response.Body.Close()
 	if response.StatusCode != want {
 		t.Fatalf("GET %s status = %d, want %d", target, response.StatusCode, want)
+	}
+}
+
+func assertBody(t *testing.T, target, want string) {
+	t.Helper()
+	response, err := http.Get(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, readErr := io.ReadAll(response.Body)
+	response.Body.Close()
+	if readErr != nil || response.StatusCode != http.StatusOK || string(payload) != want {
+		t.Fatalf("GET %s status=%d body=%q, want status=200 body=%q, error=%v",
+			target, response.StatusCode, payload, want, readErr)
 	}
 }
