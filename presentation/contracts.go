@@ -40,6 +40,10 @@ var (
 		"presentation.host.download_store",
 		"openrealtime/presentation/host/download-store/v1:bounded-publish-lookup-list-stats-attachment-resource",
 	)
+	DownloadStoreStateContract = semanticContract(
+		"presentation.host.download_store.state",
+		"openrealtime/presentation/host/download-store-state/v1:bounded-ordered-versioned-base64-entries-evictions",
+	)
 	EffectsContract = semanticContract(
 		"presentation.host.effects",
 		"openrealtime/presentation/host/effects/v1:descriptor-locked-declarations-scoped-websocket-admission-authority-confirmation-target-idempotency-audit",

@@ -40,6 +40,7 @@ func TestResourceStoreDescriptorsAreExactHostPlugins(t *testing.T) {
 		{
 			name: "downloads", factory: NewDownloadStoreFactory(),
 			service: presentation.DownloadStoreContract, config: presentation.DownloadStoreConfigContract,
+			state:    &presentation.DownloadStoreStateContract,
 			resource: downloadStorageResource, pluginName: "openrealtime.presentation.host.download-store",
 		},
 	}
