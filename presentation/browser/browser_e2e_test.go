@@ -103,6 +103,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		entry, source, candidate string
 	}{
 		{"slots", "slots.js", "slots-v2.js"},
+		{"transport", "transport-websocket.js", "transport-websocket-v2.js"},
 		{"session-configuration", "session-configuration.js", "session-configuration-v2.js"},
 		{"effects", "effects-client.js", "effects-client-v2.js"},
 		{"artifact-references", "artifact-references.js", "artifact-references-v2.js"},
@@ -217,6 +218,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	const replacementPath = "/test/developer-shipped-consumers-replacement.json"
 	var effectConnectionStarts atomic.Int32
 	var activeEffectConnections atomic.Int32
+	var realtimeConnectionStarts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == replacementPath {
 			writer.Header().Set("Content-Type", "application/json")
@@ -230,6 +232,9 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 			effectConnectionStarts.Add(1)
 			activeEffectConnections.Add(1)
 			defer activeEffectConnections.Add(-1)
+		}
+		if request.URL.Path == "/client/v1/realtime" {
+			realtimeConnectionStarts.Add(1)
 		}
 		handler.ServeHTTP(writer, request)
 	}))
@@ -266,6 +271,9 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	}
 	if starts, active := effectConnectionStarts.Load(), activeEffectConnections.Load(); starts != 2 || active != 0 {
 		t.Fatalf("effects replacement connections started/active = %d/%d, want 2/0", starts, active)
+	}
+	if starts := realtimeConnectionStarts.Load(); starts != 2 {
+		t.Fatalf("realtime WebSocket connections started = %d, want 2", starts)
 	}
 	published, err := os.ReadFile(filepath.Join(sourceRoot, "browser-authoring.ortg"))
 	if err != nil || string(published) != stack.AuthoringSource+"\n" {

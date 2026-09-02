@@ -20,6 +20,7 @@ const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
 const RETAINED_WORKSPACE_PATH = "replacement-retained.ortg";
 const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "slots": "browser-esm:slots-v2.js",
+  "transport": "browser-esm:transport-websocket-v2.js",
   "session-configuration": "browser-esm:session-configuration-v2.js",
   "effects": "browser-esm:effects-client-v2.js",
   "artifact-references": "browser-esm:artifact-references-v2.js",
@@ -44,6 +45,7 @@ const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
 });
 const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
   "slots": "browser-esm:slots.js",
+  "transport": "browser-esm:transport-websocket.js",
   "session-configuration": "browser-esm:session-configuration.js",
   "effects": "browser-esm:effects-client.js",
   "artifact-references": "browser-esm:artifact-references.js",
@@ -853,6 +855,7 @@ try {
         candidatePlanFingerprint: candidate.plan.fingerprint,
         manifestFingerprint: window.__openrealtime.manifest.fingerprint,
         mounted: window.__openrealtime.mounted,
+        connectionState: document.getElementById("state")?.textContent ?? "",
         changed: Object.keys(after.entries).filter((entry) =>
           before.entries[entry].implementation !== after.entries[entry].implementation),
       };
@@ -914,6 +917,12 @@ try {
         '[data-view="authoring-editor"]', '[data-view="authoring-configuration"]',
         '[data-view="authoring-canvas"]',
       ].every((selector) => document.querySelector(selector) !== null))()`));
+    check("replacement WebSocket transport retires the active session at its safe point",
+      replacement.connectionState === "disconnected");
+    await evaluate(`document.getElementById("connect").click()`);
+    check("replacement WebSocket transport establishes a fresh protocol session", await waitFor(
+      "replacement WebSocket connection", () => evaluate(
+        `document.getElementById("state")?.textContent === "connected"`)));
     check("replacement inspection client rejoins the retained live session", await waitFor(
       "replacement inspection client", () => evaluate(
         `document.querySelector('[data-view=inspection] #availability')?.textContent === "live"`)));
