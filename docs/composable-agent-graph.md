@@ -1810,7 +1810,7 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 219 of 267 explicit tracker boxes are checked (82.0%)
+At this reconciliation, 221 of 269 explicit tracker boxes are checked (82.2%)
 and 48 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -2044,8 +2044,10 @@ it has been reviewed, tested, and committed with its evidence):
     populations remain separately tracked below and are not claimed by this
     wiring checkpoint.
   - [ ] Run the provisioned live 165-attempt scenario candidate comparison
-    against the accepted historical trail. The sealed 11×1 diagnostic remains
-    diagnostic-only and does not close this exact 11×15 population gate.
+    against the accepted historical trail. The newest sealed 11×1 diagnostic
+    passed 8/11 with all eleven attempts and exact-model evaluations
+    credential-free reopened, but remains diagnostic-only and does not close
+    this exact 11×15 population gate.
   - [x] Run and independently reopen the live four-case Meeting Assistant
     review. Candidate-21 retained 4/4 reportable graph-native attempts and four
     exact-model evaluations behind the source/evaluation/aggregate receipts
@@ -2368,23 +2370,43 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
 - [ ] Re-run and compare all eleven interaction scenarios with at least fifteen
   repetitions per scenario (at least 165 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
-  advisory transport are implemented. The latest sealed 11×1 deterministic
-  diagnostic passed 3/11: `ordering-from-a-waiter`,
-  `translating-as-they-speak`, and `ordinary-question`; six cases failed
-  behaviorally and two were infrastructure failures, leaving 9/11 reportable.
-  Its complete exact `google/gemini-3.7-flash` advisory attempt retained and
-  reopened 11/11 evaluations and all media, agreed with the deterministic
-  outcome on 10/11, and disagreed on `ordering-from-a-waiter`. A later distinct
-  advisory attempt correctly remained nonreportable when the new validator
-  rejected a finding timestamp beyond the sealed WAV duration; no aggregate
-  receipt was published. The provider-neutral per-request media-time bound now
-  passes its boundary and pre-publication adversarial gates, and the Gemini
-  adapter derives the exact per-request bound, removes only its redundant
-  optional timestamp fields, and fails closed on schema drift. The next
-  immutable diagnostic is technically gate-ready; the 165-attempt run has not
-  started. This box and every case below remain open until the full candidate
-  meets or improves on 140/165 without a significant case, safety, or latency
-  regression.
+  advisory transport are implemented. The newest sealed 11×1 deterministic
+  diagnostic, candidate run 18 at `85b6479`, passed 8/11 with all eleven
+  attempts behaviorally reportable: asked-not-to-be-interrupted, recorded-menu,
+  correction interruption, waiter, live translation, third-party conversation,
+  acknowledgement, and ordinary-question passed. Its remaining failures are
+  exact and retained: count-as-they-go said `One` only after split recognition
+  of the first animal and never said `Two`; the silence timer fired at the
+  requested time but asked whether the user was still reading instead of still
+  there; and the second submitted build-complete image produced no answer.
+  The complete exact `google/gemini-3.7-flash` advisory attempt retained usable
+  media and evaluations for 11/11, agreed with 10/11 deterministic outcomes,
+  and disagreed only on the waiter because its audio exposed invented future
+  menu turns despite satisfying the narrow deterministic check. The immutable
+  candidate binary credential-free reopened the source receipt
+  `sha256:fa5e0a5e5d210de6d55486c82f273c5ddf9d6fd34830130725fc754fe2b1ff59`,
+  all eleven source/media/evaluation bundles, and aggregate evaluation receipt
+  `sha256:b91951da8b4f18a27b7af105e6eb5517d3aebc357e7d1ab035cb4365a6f3c1d8`.
+  A distinct advisory attempt correctly remained nonreportable when the
+  validator rejected a finding timestamp beyond the sealed WAV duration; no
+  aggregate receipt was published. The current main branch now contains the
+  model-independent evidence and continuation repairs below, but they have not
+  yet been exercised by a new immutable live candidate. The 165-attempt run has
+  not started. This box and every case below remain open until the full
+  candidate meets or improves on 140/165 without a significant case, safety,
+  or latency regression.
+  - [x] Preserve split same-speaker endpoints after the last actually played
+    assistant boundary and pass exact typed transcript, quiet, and direct-image
+    condition evidence through the activation guard. Commit `0e13305` covers
+    second-clause animal evidence, canceled/unheard speech, current-image byte
+    isolation, and visual condition recovery with normal, ten repeated, ten
+    shuffled, race, and vet gates.
+  - [x] Pin a bounded profile-owned continuation policy that forbids invented
+    future turns and stage directions and preserves the requested action,
+    subject, and wording for time- or event-deferred work. Commit `f872d38`
+    carries the exact policy through immutable application configuration into
+    each continuation invocation and passes focused repeated/shuffled/race,
+    full-repository test, and vet gates.
   - [ ] `count-as-they-go`
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
@@ -2481,7 +2503,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 923/6,147 at 2026-09-02 00:38 UTC. This dated progress checkpoint is
+  attempt 976/6,147 at 2026-09-02 01:48 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
