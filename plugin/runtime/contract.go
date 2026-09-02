@@ -28,6 +28,9 @@ type Publisher interface {
 // Lifecycle owns every runtime effect started by a plugin.
 type Lifecycle interface {
 	Defer(name string, dispose func(context.Context) error) error
+	// Do executes caller-blocking work in the current goroutine while owning it
+	// as a cancellable lifecycle worker. Close waits for Do to return.
+	Do(name string, work func(context.Context) error) error
 	Go(name string, worker func(context.Context) error) error
 }
 

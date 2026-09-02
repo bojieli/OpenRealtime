@@ -14,9 +14,10 @@ import (
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 )
 
-func TestManagementRouteReplacementCancelsAndJoinsActiveRequest(t *testing.T) {
+func TestManagementRouteReplacementDrainsAndJoinsActiveRequest(t *testing.T) {
 	reader := &lifecycleSourceReader{
-		started: make(chan struct{}), canceled: make(chan struct{}),
+		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+		source: "graph predecessor {\n}\n",
 	}
 	bundle, err := NewBundle(BundleConfig{
 		Authorizer: sourceReadAuthorizer{}, SourceReading: reader,
@@ -69,20 +70,28 @@ func TestManagementRouteReplacementCancelsAndJoinsActiveRequest(t *testing.T) {
 	}
 
 	before := mounted.Live()
-	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
-		ExpectedPlanFingerprint: bundle.Plan.Fingerprint, ExpectedSequence: before.Sequence,
-		Updates: []pluginruntime.EntryUpdate{{
-			Entry: "source-reading-api", SetImplementation: true,
-			Implementation: candidateImplementation,
-		}},
-	})
+	reconciled := make(chan managementReconcileResult, 1)
+	go func() {
+		receipt, reconcileErr := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+			ExpectedPlanFingerprint: bundle.Plan.Fingerprint, ExpectedSequence: before.Sequence,
+			Updates: []pluginruntime.EntryUpdate{{
+				Entry: "source-reading-api", SetImplementation: true,
+				Implementation: candidateImplementation,
+			}},
+		})
+		reconciled <- managementReconcileResult{receipt: receipt, err: reconcileErr}
+	}()
+	assertManagementReconcilePending(t, reconciled)
+	close(reader.release)
+	reconcileResult := waitManagementReconcileResult(t, reconciled)
+	receipt, err := reconcileResult.receipt, reconcileResult.err
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitManagementRequestSignal(t, reader.canceled, "retired request context was not canceled")
+	waitManagementRequestSignal(t, reader.finished, "predecessor provider request did not finish")
 	waitManagementRequestSignal(t, served, "retired request handler was not joined")
-	if response.Code == http.StatusOK {
-		t.Fatalf("canceled predecessor request status = %d, want failure", response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("drained predecessor request status = %d: %s", response.Code, response.Body.String())
 	}
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
 		receipt.PlanFingerprint != bundle.Plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||
@@ -148,7 +157,9 @@ func (sourceReadAuthorizer) Authorize(
 type lifecycleSourceReader struct {
 	calls    atomic.Uint64
 	started  chan struct{}
-	canceled chan struct{}
+	release  chan struct{}
+	finished chan struct{}
+	source   string
 }
 
 func (reader *lifecycleSourceReader) Read(
@@ -156,11 +167,14 @@ func (reader *lifecycleSourceReader) Read(
 ) (management.SourceReadResult, error) {
 	if reader.calls.Add(1) == 1 {
 		close(reader.started)
-		<-ctx.Done()
-		close(reader.canceled)
-		return management.SourceReadResult{}, ctx.Err()
+		select {
+		case <-reader.release:
+			close(reader.finished)
+		case <-ctx.Done():
+			return management.SourceReadResult{}, ctx.Err()
+		}
 	}
-	return management.NewSourceReadResult(request, "graph agent {\n}\n")
+	return management.NewSourceReadResult(request, reader.source)
 }
 
 func sourceReadHTTPRequest(t *testing.T, input management.SourceReadRequest) *http.Request {
@@ -183,6 +197,34 @@ func waitManagementRequestSignal(t *testing.T, signal <-chan struct{}, failure s
 	case <-signal:
 	case <-time.After(2 * time.Second):
 		t.Fatal(failure)
+	}
+}
+
+type managementReconcileResult struct {
+	receipt pluginruntime.ReconcileReceipt
+	err     error
+}
+
+func assertManagementReconcilePending(t *testing.T, result <-chan managementReconcileResult) {
+	t.Helper()
+	select {
+	case completed := <-result:
+		t.Fatalf("reconciliation completed before active requests drained: %#v, %v",
+			completed.receipt, completed.err)
+	case <-time.After(25 * time.Millisecond):
+	}
+}
+
+func waitManagementReconcileResult(
+	t *testing.T, result <-chan managementReconcileResult,
+) managementReconcileResult {
+	t.Helper()
+	select {
+	case completed := <-result:
+		return completed
+	case <-time.After(2 * time.Second):
+		t.Fatal("reconciliation did not finish after active requests drained")
+		return managementReconcileResult{}
 	}
 }
 

@@ -84,6 +84,25 @@ func (scope *lifecycleScope) adopt(child *lifecycleScope) error {
 }
 
 func (scope *lifecycleScope) Go(name string, worker func(context.Context) error) error {
+	if err := scope.beginWorker(name, worker); err != nil {
+		return err
+	}
+	go func() {
+		scope.finishWorker(name, worker(scope.ctx))
+	}()
+	return nil
+}
+
+func (scope *lifecycleScope) Do(name string, work func(context.Context) error) error {
+	if err := scope.beginWorker(name, work); err != nil {
+		return err
+	}
+	err := work(scope.ctx)
+	scope.finishWorker(name, err)
+	return err
+}
+
+func (scope *lifecycleScope) beginWorker(name string, worker func(context.Context) error) error {
 	if name == "" || worker == nil {
 		return fmt.Errorf("plugin %s lifecycle worker requires a name and function", scope.entry)
 	}
@@ -101,26 +120,25 @@ func (scope *lifecycleScope) Go(name string, worker func(context.Context) error)
 	}
 	scope.workers[name] = struct{}{}
 	scope.mu.Unlock()
-	go func() {
-		var failure error
-		if err := worker(scope.ctx); err != nil && !errors.Is(err, context.Canceled) {
-			scope.mu.Lock()
-			scope.workerErr[name] = err
-			scope.mu.Unlock()
-			failure = fmt.Errorf("worker %s: %w", name, err)
-		}
-		scope.mu.Lock()
-		delete(scope.workers, name)
-		if len(scope.workers) == 0 && scope.workersDone != nil {
-			close(scope.workersDone)
-			scope.workersDone = nil
-		}
-		scope.mu.Unlock()
-		if failure != nil && scope.onFailure != nil {
-			scope.failOnce.Do(func() { scope.onFailure(failure) })
-		}
-	}()
 	return nil
+}
+
+func (scope *lifecycleScope) finishWorker(name string, err error) {
+	var failure error
+	scope.mu.Lock()
+	if err != nil && !errors.Is(err, context.Canceled) {
+		scope.workerErr[name] = err
+		failure = fmt.Errorf("worker %s: %w", name, err)
+	}
+	delete(scope.workers, name)
+	if len(scope.workers) == 0 && scope.workersDone != nil {
+		close(scope.workersDone)
+		scope.workersDone = nil
+	}
+	scope.mu.Unlock()
+	if failure != nil && scope.onFailure != nil {
+		scope.failOnce.Do(func() { scope.onFailure(failure) })
+	}
 }
 
 func (scope *lifecycleScope) close(ctx context.Context, cause error) error {

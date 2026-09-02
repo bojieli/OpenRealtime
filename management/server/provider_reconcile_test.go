@@ -16,7 +16,8 @@ import (
 func TestAllOperatorProvidersReconcileAfterJoiningActiveRequest(t *testing.T) {
 	graph := testGraph(t)
 	oldReader := &lifecycleSourceReader{
-		started: make(chan struct{}), canceled: make(chan struct{}),
+		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+		source: "graph predecessor {\n}\n",
 	}
 	sourceBoundary := routeTestSourceBoundary{}
 	bundle, err := NewBundle(BundleConfig{
@@ -111,17 +112,26 @@ func TestAllOperatorProvidersReconcileAfterJoiningActiveRequest(t *testing.T) {
 			Entry: candidate.entry, SetImplementation: true, Implementation: candidate.implementation,
 		})
 	}
-	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
-		ExpectedPlanFingerprint: bundle.Plan.Fingerprint, ExpectedSequence: before.Sequence,
-		Updates: updates,
-	})
+	reconciled := make(chan managementReconcileResult, 1)
+	go func() {
+		receipt, reconcileErr := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+			ExpectedPlanFingerprint: bundle.Plan.Fingerprint, ExpectedSequence: before.Sequence,
+			Updates: updates,
+		})
+		reconciled <- managementReconcileResult{receipt: receipt, err: reconcileErr}
+	}()
+	assertManagementReconcilePending(t, reconciled)
+	close(oldReader.release)
+	reconcileResult := waitManagementReconcileResult(t, reconciled)
+	receipt, err := reconcileResult.receipt, reconcileResult.err
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitManagementRequestSignal(t, oldReader.canceled, "predecessor provider request was not canceled")
+	waitManagementRequestSignal(t, oldReader.finished, "predecessor provider request did not finish")
 	waitManagementRequestSignal(t, served, "predecessor provider request was not joined")
-	if response.Code == http.StatusOK {
-		t.Fatalf("canceled predecessor provider request status = %d, want failure", response.Code)
+	if response.Code != http.StatusOK {
+		t.Fatalf("drained predecessor provider request status = %d: %s",
+			response.Code, response.Body.String())
 	}
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
 		receipt.PlanFingerprint != bundle.Plan.Fingerprint || receipt.BeforeSequence != before.Sequence ||

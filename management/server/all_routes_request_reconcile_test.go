@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/graph/inspect"
@@ -15,14 +16,18 @@ import (
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 )
 
-func TestAllOperatorRouteFamiliesCancelAndJoinActiveRequests(t *testing.T) {
+func TestAllOperatorRouteFamiliesDrainAndJoinActiveRequests(t *testing.T) {
 	graph := testGraph(t)
-	staticBlocker := newManagementRequestBlocker()
-	sessionBlocker := newManagementRequestBlocker()
-	authoringBlocker := newManagementRequestBlocker()
-	readingBlocker := newManagementRequestBlocker()
-	publicationBlocker := newManagementRequestBlocker()
-	reconciliationBlocker := newManagementRequestBlocker()
+	staticBlocker := newManagementRequestBlocker(1)
+	sessionBlocker := newManagementRequestBlocker(3)
+	authoringBlocker := newManagementRequestBlocker(1)
+	readingBlocker := newManagementRequestBlocker(1)
+	publicationBlocker := newManagementRequestBlocker(1)
+	reconciliationBlocker := newManagementRequestBlocker(1)
+	blockers := []*managementRequestBlocker{
+		staticBlocker, sessionBlocker, authoringBlocker,
+		readingBlocker, publicationBlocker, reconciliationBlocker,
+	}
 	bundle, err := NewBundle(BundleConfig{
 		Authorizer: allFamilyAuthorizer{},
 		StaticCatalog: blockingStaticCatalog{
@@ -101,6 +106,16 @@ func TestAllOperatorRouteFamiliesCancelAndJoinActiveRequests(t *testing.T) {
 				management.APIPrefix+"/sessions/sess-test/live", nil),
 		},
 		{
+			entry: "session-api", blocker: sessionBlocker,
+			request: managementHTTPRequest(t, http.MethodGet,
+				management.APIPrefix+"/sessions/sess-test/model", nil),
+		},
+		{
+			entry: "session-api", blocker: sessionBlocker,
+			request: managementHTTPRequest(t, http.MethodGet,
+				management.APIPrefix+"/sessions/sess-test/trace", nil),
+		},
+		{
 			entry: "authoring-api", blocker: authoringBlocker,
 			request: managementHTTPRequest(t, http.MethodPost,
 				management.APIPrefix+"/authoring/analyze", management.AuthoringDocument{
@@ -149,9 +164,13 @@ func TestAllOperatorRouteFamiliesCancelAndJoinActiveRequests(t *testing.T) {
 		)
 	}
 	liveWithRequests := mounted.Live()
+	expectedWorkers := make(map[string]int)
 	for _, request := range active {
-		if workers := liveWithRequests.Entries[request.entry].Workers; workers != 1 {
-			t.Fatalf("active %s workers = %d, want 1", request.entry, workers)
+		expectedWorkers[request.entry]++
+	}
+	for entryID, want := range expectedWorkers {
+		if workers := liveWithRequests.Entries[entryID].Workers; workers != want {
+			t.Fatalf("active %s workers = %d, want %d", entryID, workers, want)
 		}
 	}
 
@@ -162,19 +181,30 @@ func TestAllOperatorRouteFamiliesCancelAndJoinActiveRequests(t *testing.T) {
 		})
 	}
 	before := mounted.Live()
-	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
-		ExpectedPlanFingerprint: bundle.Plan.Fingerprint, ExpectedSequence: before.Sequence,
-		Updates: updates,
-	})
+	reconciled := make(chan managementReconcileResult, 1)
+	go func() {
+		receipt, reconcileErr := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+			ExpectedPlanFingerprint: bundle.Plan.Fingerprint, ExpectedSequence: before.Sequence,
+			Updates: updates,
+		})
+		reconciled <- managementReconcileResult{receipt: receipt, err: reconcileErr}
+	}()
+	assertManagementReconcilePending(t, reconciled)
+	for _, blocker := range blockers {
+		close(blocker.release)
+	}
+	reconcileResult := waitManagementReconcileResult(t, reconciled)
+	receipt, err := reconcileResult.receipt, reconcileResult.err
 	if err != nil {
 		t.Fatal(err)
 	}
 	for index := range active {
 		request := &active[index]
-		waitManagementRequestSignal(t, request.blocker.canceled, request.entry+" was not canceled")
+		waitManagementRequestSignal(t, request.blocker.finished, request.entry+" did not finish")
 		waitManagementRequestSignal(t, request.served, request.entry+" was not joined")
 		if request.response.Code == http.StatusOK {
-			t.Fatalf("canceled %s response status = %d, want failure", request.entry, request.response.Code)
+			t.Fatalf("drained %s response status = %d, want provider failure",
+				request.entry, request.response.Code)
 		}
 	}
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
@@ -253,19 +283,34 @@ type activeManagementRequest struct {
 }
 
 type managementRequestBlocker struct {
-	started  chan struct{}
-	canceled chan struct{}
+	want          uint64
+	startedCount  atomic.Uint64
+	finishedCount atomic.Uint64
+	started       chan struct{}
+	release       chan struct{}
+	finished      chan struct{}
 }
 
-func newManagementRequestBlocker() *managementRequestBlocker {
-	return &managementRequestBlocker{started: make(chan struct{}), canceled: make(chan struct{})}
+func newManagementRequestBlocker(want uint64) *managementRequestBlocker {
+	return &managementRequestBlocker{
+		want:    want,
+		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
+	}
 }
 
 func (blocker *managementRequestBlocker) wait(ctx context.Context) error {
-	close(blocker.started)
-	<-ctx.Done()
-	close(blocker.canceled)
-	return ctx.Err()
+	if blocker.startedCount.Add(1) == blocker.want {
+		close(blocker.started)
+	}
+	select {
+	case <-blocker.release:
+		if blocker.finishedCount.Add(1) == blocker.want {
+			close(blocker.finished)
+		}
+		return management.ErrUnavailable
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 type allFamilyAuthorizer struct{}
@@ -295,6 +340,12 @@ type blockingSessionInspection struct {
 
 func (source blockingSessionInspection) Snapshot(ctx context.Context, _ string) (inspect.Live, error) {
 	return inspect.Live{}, source.blocker.wait(ctx)
+}
+
+func (source blockingSessionInspection) Trace(
+	ctx context.Context, _ string,
+) (inspect.LiveTrace, error) {
+	return inspect.LiveTrace{}, source.blocker.wait(ctx)
 }
 
 type blockingAuthoring struct {

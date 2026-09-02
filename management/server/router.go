@@ -61,42 +61,31 @@ func (candidate routerCandidate) Activate(
 
 func registerRoutes(mount pluginruntime.MountContext, routes []Route) error {
 	owned := make([]Route, len(routes))
+	var nextWorker atomic.Uint64
 	for index, route := range routes {
 		owned[index] = route
 		owned[index].Handler = lifecycleHTTPHandler(
-			mount.Lifecycle, mount.EntryID+"-request", route.Handler,
+			mount.Lifecycle, mount.EntryID+"-request", &nextWorker, route.Handler,
 		)
 	}
 	return httpservice.RegisterRoutes(mount, management.HTTPRoutesContract, owned)
 }
 
 func lifecycleHTTPHandler(
-	lifecycle pluginruntime.Lifecycle, workerPrefix string, handler http.Handler,
+	lifecycle pluginruntime.Lifecycle,
+	workerPrefix string,
+	nextWorker *atomic.Uint64,
+	handler http.Handler,
 ) http.Handler {
-	var nextWorker atomic.Uint64
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		done := make(chan struct{})
 		workerName := fmt.Sprintf("%s-%d", workerPrefix, nextWorker.Add(1))
-		if err := lifecycle.Go(workerName, func(lifecycleContext context.Context) error {
-			defer close(done)
-			requestContext, cancel := context.WithCancel(lifecycleContext)
-			stopRequest := context.AfterFunc(request.Context(), cancel)
-			stopBody := func() bool { return false }
-			if request.Body != nil {
-				stopBody = context.AfterFunc(requestContext, func() { _ = request.Body.Close() })
-			}
-			defer func() {
-				stopBody()
-				stopRequest()
-				cancel()
-			}()
-			handler.ServeHTTP(writer, request.WithContext(requestContext))
+		if err := lifecycle.Do(workerName, func(context.Context) error {
+			handler.ServeHTTP(writer, request)
 			return nil
 		}); err != nil {
 			http.Error(writer, "the management route lifecycle is unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		<-done
 	})
 }
 
