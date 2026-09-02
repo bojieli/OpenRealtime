@@ -18,6 +18,8 @@ import (
 
 	effectauthority "github.com/bojieli/OpenRealtime/authority"
 	clientreducer "github.com/bojieli/OpenRealtime/client/reducer"
+	"github.com/bojieli/OpenRealtime/graph/manifest"
+	"github.com/bojieli/OpenRealtime/graph/syntax"
 	"github.com/bojieli/OpenRealtime/internal/testserver"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
@@ -177,6 +179,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	authoringYAML, authoringJSON := normalizedAuthoringSources(t, stack.AuthoringSource)
 	command := exec.CommandContext(ctx, node, driver, server.URL)
 	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t),
 		"EXPECT_EFFECTS=1", "CLIENT_TRANSPORT=websocket",
@@ -184,6 +187,8 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		"OPERATOR_CAPABILITY_ROTATED="+operatorTwo.Token,
 		"AUTHORING_SOURCE="+stack.AuthoringSource,
 		"AUTHORING_UPDATED_SOURCE="+stack.AuthoringSource+"\n",
+		"AUTHORING_YAML_SOURCE="+authoringYAML,
+		"AUTHORING_JSON_SOURCE="+authoringJSON,
 		"SOURCE_ROOT_IDENTITY="+sourceRootIdentity,
 		"STATIC_GRAPH_FINGERPRINT="+stack.Graph.Fingerprint,
 	)
@@ -312,12 +317,15 @@ func TestObserverDeveloperProfilesExerciseManagementWithoutEffectsInChromium(t *
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
+			authoringYAML, authoringJSON := normalizedAuthoringSources(t, stack.AuthoringSource)
 			command := exec.CommandContext(ctx, node, driver, server.URL)
 			command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t),
 				"EXPECT_EFFECTS=0", "CLIENT_TRANSPORT="+test.transport,
 				"OPERATOR_CAPABILITY="+operatorOne.Token,
 				"OPERATOR_CAPABILITY_ROTATED="+operatorTwo.Token,
 				"AUTHORING_SOURCE="+stack.AuthoringSource,
+				"AUTHORING_YAML_SOURCE="+authoringYAML,
+				"AUTHORING_JSON_SOURCE="+authoringJSON,
 				"STATIC_GRAPH_FINGERPRINT="+stack.Graph.Fingerprint,
 			)
 			output, err := command.CombinedOutput()
@@ -712,6 +720,24 @@ func managementTarget(t *testing.T, websocket string) string {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String()
+}
+
+func normalizedAuthoringSources(t testing.TB, source string) (string, string) {
+	t.Helper()
+	file, err := syntax.Parse("browser-authoring.ortg", []byte(source))
+	if err != nil {
+		t.Fatalf("parse browser authoring source for normalized fixtures: %v", err)
+	}
+	document := manifest.FromSyntax(file)
+	yamlSource, err := manifest.MarshalYAML(document)
+	if err != nil {
+		t.Fatalf("marshal browser authoring YAML fixture: %v", err)
+	}
+	jsonSource, err := manifest.MarshalJSON(document)
+	if err != nil {
+		t.Fatalf("marshal browser authoring JSON fixture: %v", err)
+	}
+	return string(yamlSource), string(jsonSource)
 }
 
 func freePort(t *testing.T) string {

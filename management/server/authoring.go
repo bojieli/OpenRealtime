@@ -15,7 +15,7 @@ type AuthoringAPIFactory struct{ descriptor plugin.Descriptor }
 func NewAuthoringAPIFactory() *AuthoringAPIFactory {
 	return &AuthoringAPIFactory{descriptor: plugin.Descriptor{
 		FormatVersion: plugin.DescriptorFormatVersion,
-		Name:          "openrealtime.management.server.authoring-api", Revision: 5,
+		Name:          "openrealtime.management.server.authoring-api", Revision: 6,
 		Realm: plugin.ServerRealm, Platforms: []string{"go"},
 		Requires: []plugin.Requirement{
 			{Contract: management.HTTPRoutesContract},

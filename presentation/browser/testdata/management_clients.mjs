@@ -647,6 +647,172 @@ if (requests.length !== beforeInvalidCreation) {
   throw new Error("invalid edge creation reached the network");
 }
 
+const normalizedYAML = `apiVersion: openrealtime.ai/graph/v1alpha1
+graph:
+  name: normalized
+  nodes:
+    - id: source
+      element: test.Element
+    - id: sink
+      element: test.Element
+  edges:
+    - id: optional
+      from: source.out
+      to: sink.in
+      delivery: lossless
+`;
+const normalizedRenamedYAML = normalizedYAML
+  .replace("    - id: source\n", "    - id: camera\n")
+  .replace("      from: source.out\n", "      from: camera.out\n");
+const normalizedRemovedYAML = `apiVersion: openrealtime.ai/graph/v1alpha1
+graph:
+  name: normalized
+  nodes:
+    - id: source
+      element: test.Element
+    - id: sink
+      element: test.Element
+`;
+const normalizedCreatedYAML = `${normalizedRemovedYAML}  edges:
+    - id: restored
+      from: source.out
+      to: sink.in
+      delivery: lossless
+`;
+const normalizedJSONValue = {
+  apiVersion: "openrealtime.ai/graph/v1alpha1",
+  graph: {
+    name: "normalized",
+    nodes: [
+      { id: "source", element: "test.Element" },
+      { id: "sink", element: "test.Element" },
+    ],
+    edges: [{ id: "optional", from: "source.out", to: "sink.in", delivery: "lossless" }],
+  },
+};
+const normalizedJSON = `${JSON.stringify(normalizedJSONValue, null, 2)}\n`;
+const normalizedRenamedJSONValue = structuredClone(normalizedJSONValue);
+normalizedRenamedJSONValue.graph.nodes[0].id = "camera";
+normalizedRenamedJSONValue.graph.edges[0].from = "camera.out";
+const normalizedRenamedJSON = `${JSON.stringify(normalizedRenamedJSONValue, null, 2)}\n`;
+const normalizedRemovedJSONValue = structuredClone(normalizedJSONValue);
+delete normalizedRemovedJSONValue.graph.edges;
+const normalizedRemovedJSON = `${JSON.stringify(normalizedRemovedJSONValue, null, 2)}\n`;
+const normalizedCreatedJSONValue = structuredClone(normalizedRemovedJSONValue);
+normalizedCreatedJSONValue.graph.edges = [
+  { id: "restored", from: "source.out", to: "sink.in", delivery: "lossless" },
+];
+const normalizedCreatedJSON = `${JSON.stringify(normalizedCreatedJSONValue, null, 2)}\n`;
+
+for (const [index, fixture] of [
+  { name: "YAML", path: "normalized.yaml", source: normalizedYAML,
+    renamed: normalizedRenamedYAML, removed: normalizedRemovedYAML, created: normalizedCreatedYAML },
+  { name: "JSON", path: "normalized.json", source: normalizedJSON,
+    renamed: normalizedRenamedJSON, removed: normalizedRemovedJSON, created: normalizedCreatedJSON },
+].entries()) {
+  const sourceDigest = await sha256(bytes(fixture.source));
+  const rename = {
+    node: "source", new_name: "camera",
+    edits: { path: fixture.path, source_digest: sourceDigest, edits: [{
+      span: { start: { offset: 0, line: 1, column: 1 }, end: endPosition(fixture.source) },
+      old_text: fixture.source, new_text: fixture.renamed,
+    }] },
+  };
+  handlers.push(() => response(rename, `authoring:rename:${sourceDigest}`));
+  const exactRename = await editing.rename(
+    { path: fixture.path, source: fixture.source, revision: 20 }, "source", "camera",
+  );
+  const renamed = await editing.applyEdits(
+    { path: fixture.path, source: fixture.source, revision: 20 }, exactRename.edits,
+  );
+  if (renamed !== fixture.renamed || exactRename.edits.edits.length !== 1) {
+    throw new Error(`normalized ${fixture.name} rename was not one exact document replacement`);
+  }
+
+  const noOp = {
+    node: "source", new_name: "source",
+    edits: { path: fixture.path, source_digest: sourceDigest, edits: [] },
+  };
+  handlers.push(() => response(noOp, `authoring:rename:${sourceDigest}`));
+  const exactNoOp = await editing.rename(
+    { path: fixture.path, source: fixture.source, revision: 20 }, "source", "source",
+  );
+  if (await editing.applyEdits(
+    { path: fixture.path, source: fixture.source, revision: 20 }, exactNoOp.edits,
+  ) !== fixture.source) {
+    throw new Error(`normalized ${fixture.name} no-op rename changed source`);
+  }
+
+  const remove = {
+    edge: "optional", edits: { path: fixture.path, source_digest: sourceDigest, edits: [{
+      span: { start: { offset: 0, line: 1, column: 1 }, end: endPosition(fixture.source) },
+      old_text: fixture.source, new_text: fixture.removed,
+    }] },
+  };
+  handlers.push(() => response(remove, `authoring:edge.remove:${sourceDigest}`));
+  const exactRemove = await editing.removeEdge(
+    { path: fixture.path, source: fixture.source, revision: 20 }, "optional",
+  );
+  if (await editing.applyEdits(
+    { path: fixture.path, source: fixture.source, revision: 20 }, exactRemove.edits,
+  ) !== fixture.removed) {
+    throw new Error(`normalized ${fixture.name} edge removal changed another source byte`);
+  }
+
+  const removedDigest = await sha256(bytes(fixture.removed));
+  const predecessor = `sha256:${String(2 + index).repeat(64)}`;
+  const candidate = `sha256:${String(4 + index).repeat(64)}`;
+  const create = {
+    edge: "restored", previous_fingerprint: predecessor, candidate_fingerprint: candidate,
+    edits: { path: fixture.path, source_digest: removedDigest, edits: [{
+      span: { start: { offset: 0, line: 1, column: 1 }, end: endPosition(fixture.removed) },
+      old_text: fixture.removed, new_text: fixture.created,
+    }] },
+  };
+  handlers.push(() => response(create,
+    `authoring:edge.create:${predecessor}:${candidate}:${removedDigest}`));
+  const exactCreate = await editing.createEdge(
+    { path: fixture.path, source: fixture.removed, revision: 21 }, predecessor, "restored",
+    { node: "source", port: "out" }, { node: "sink", port: "in" }, "lossless",
+  );
+  if (await editing.applyEdits(
+    { path: fixture.path, source: fixture.removed, revision: 21 }, exactCreate.edits,
+  ) !== fixture.created) {
+    throw new Error(`normalized ${fixture.name} edge creation changed another source byte`);
+  }
+
+  const forged = structuredClone(rename);
+  forged.edits.edits[0].new_text += "\n";
+  handlers.push(() => response(forged, `authoring:rename:${sourceDigest}`));
+  await editing.rename(
+    { path: fixture.path, source: fixture.source, revision: 20 }, "source", "camera",
+  ).then(
+    () => { throw new Error(`forged normalized ${fixture.name} rename was accepted`); },
+    () => {},
+  );
+}
+
+const beforeInvalidNormalized = requests.length;
+for (const invalid of [
+  { path: "normalized.yaml", source: `${normalizedYAML}\n`, revision: 20 },
+  { path: "normalized.yaml", source: normalizedYAML.replace("  nodes:\n", "  nodes:\n  nodes:\n"), revision: 20 },
+  { path: "normalized.json", source: JSON.stringify(normalizedJSONValue), revision: 20 },
+  { path: "normalized.json", source: `${JSON.stringify({
+    ...normalizedRemovedJSONValue,
+    graph: { ...normalizedRemovedJSONValue.graph, edges: [] },
+  }, null, 2)}\n`, revision: 20 },
+  { path: "normalized.json", source: normalizedJSON.replace(
+    '    "name": "normalized",', '    "name": "normalized",\n    "name": "forged",'), revision: 20 },
+]) {
+  await editing.rename(invalid, "source", "camera").then(
+    () => { throw new Error("noncanonical normalized topology was accepted for mutation"); },
+    () => {},
+  );
+}
+if (requests.length !== beforeInvalidNormalized) {
+  throw new Error("invalid normalized topology mutation reached the network");
+}
+
 const renameGraphDigest = `sha256:${"9".repeat(64)}`;
 const renamedGraphDigest = `sha256:${"8".repeat(64)}`;
 const renameGraph = structuredClone(graph);

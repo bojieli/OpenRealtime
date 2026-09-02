@@ -10,6 +10,8 @@ const OPERATOR_CAPABILITY = process.env.OPERATOR_CAPABILITY ?? "";
 const OPERATOR_CAPABILITY_ROTATED = process.env.OPERATOR_CAPABILITY_ROTATED ?? "";
 const AUTHORING_SOURCE = process.env.AUTHORING_SOURCE ?? "";
 const AUTHORING_UPDATED_SOURCE = process.env.AUTHORING_UPDATED_SOURCE ?? "";
+const AUTHORING_YAML_SOURCE = process.env.AUTHORING_YAML_SOURCE ?? "";
+const AUTHORING_JSON_SOURCE = process.env.AUTHORING_JSON_SOURCE ?? "";
 const SOURCE_ROOT_IDENTITY = process.env.SOURCE_ROOT_IDENTITY ?? "";
 const STATIC_GRAPH_FINGERPRINT = process.env.STATIC_GRAPH_FINGERPRINT ?? "";
 const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
@@ -18,6 +20,7 @@ if (!new Set(["websocket", "webrtc"]).has(CLIENT_TRANSPORT)) {
   throw new Error("developer client transport fixture is invalid");
 }
 if (!OPERATOR_CAPABILITY || !OPERATOR_CAPABILITY_ROTATED || !AUTHORING_SOURCE ||
+    !AUTHORING_YAML_SOURCE || !AUTHORING_JSON_SOURCE ||
     !/^sha256:[0-9a-f]{64}$/.test(STATIC_GRAPH_FINGERPRINT) ||
     (EFFECTS_ENABLED && (!AUTHORING_UPDATED_SOURCE ||
       !/^sha256:[0-9a-f]{64}$/.test(SOURCE_ROOT_IDENTITY)))) {
@@ -540,6 +543,109 @@ try {
       /^sha256:[0-9a-f]{64}$/.test(loadedSource.result.result_digest));
   }
 
+  const exerciseNormalizedCanvas = async (label, path, source) => {
+    const started = performance.now();
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      view.querySelector('input[name=authoring-path]').value = ${JSON.stringify(path)};
+      view.querySelector('textarea[name=authoring-source]').value = ${JSON.stringify(source)};
+      view.querySelector('button[data-action=compile]').click();
+    })()`);
+    await waitFor(`${label} normalized compile`, () => evaluate(`(() => {
+      const editor = document.querySelector('[data-view=authoring-editor]');
+      const canvas = document.querySelector('[data-view=authoring-canvas]');
+      return editor?.querySelector('[data-role=status]')?.textContent === "compiled" &&
+        canvas?.querySelector('button[data-action=select-node][data-node=runtime]');
+    })()`));
+
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-canvas]');
+      const selected = view.querySelector('button[data-action=select-node][data-node=runtime]');
+      const replacement = view.querySelector('input[name=authoring-node-name]');
+      selected.click();
+      replacement.value = ${JSON.stringify(`${label}_runtime`)};
+      view.querySelector('button[data-action=rename-node]').click();
+    })()`);
+    await waitFor(`${label} normalized rename`, () => evaluate(
+      `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "renamed"`));
+    await evaluate(
+      `document.querySelector('[data-view=authoring-editor] button[data-action=compile]').click()`);
+    await waitFor(`${label} renamed normalized compile`, () => evaluate(`(() => {
+      const editor = document.querySelector('[data-view=authoring-editor]');
+      const canvas = document.querySelector('[data-view=authoring-canvas]');
+      return editor?.querySelector('[data-role=status]')?.textContent === "compiled" &&
+        canvas?.querySelector('button[data-action=select-edge][data-edge=optional]');
+    })()`));
+
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-canvas]');
+      view.querySelector('button[data-action=select-edge][data-edge=optional]').click();
+      view.querySelector('button[data-action=remove-edge]').click();
+    })()`);
+    await waitFor(`${label} normalized edge removal`, () => evaluate(
+      `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "edge-removed"`));
+    await evaluate(
+      `document.querySelector('[data-view=authoring-editor] button[data-action=compile]').click()`);
+    await waitFor(`${label} edge-less normalized compile`, () => evaluate(`(() => {
+      const editor = document.querySelector('[data-view=authoring-editor]');
+      const canvas = document.querySelector('[data-view=authoring-canvas]');
+      return editor?.querySelector('[data-role=status]')?.textContent === "compiled" &&
+        canvas?.querySelector('button[data-action=select-edge-from][data-endpoint="producer.out"]') &&
+        canvas?.querySelector('button[data-action=select-edge-to][data-endpoint="sink.in"]');
+    })()`));
+
+    await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-canvas]');
+      view.querySelector('button[data-action=select-edge-from][data-endpoint="producer.out"]').click();
+      view.querySelector('button[data-action=select-edge-to][data-endpoint="sink.in"]').click();
+      const name = view.querySelector('input[name=authoring-edge-name]');
+      name.value = ${JSON.stringify(`restored_${label}`)};
+      name.dispatchEvent(new Event("input", { bubbles: true }));
+      view.querySelector('button[data-action=create-edge]').click();
+    })()`);
+    await waitFor(`${label} normalized edge creation`, () => evaluate(
+      `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "edge-created"`));
+    await evaluate(
+      `document.querySelector('[data-view=authoring-editor] button[data-action=compile]').click()`);
+    await waitFor(`${label} edge-created normalized compile`, () => evaluate(`(() => {
+      const editor = document.querySelector('[data-view=authoring-editor]');
+      const canvas = document.querySelector('[data-view=authoring-canvas]');
+      return editor?.querySelector('[data-role=status]')?.textContent === "compiled" &&
+        canvas?.querySelector('button[data-action=select-edge][data-edge=${`restored_${label}`}]');
+    })()`));
+    const result = await evaluate(`(() => {
+      const editor = document.querySelector('[data-view=authoring-editor]');
+      const canvas = document.querySelector('[data-view=authoring-canvas]');
+      return { path: editor.querySelector('input[name=authoring-path]').value,
+        source: editor.querySelector('textarea[name=authoring-source]').value,
+        fingerprint: canvas.querySelector(
+          'button[data-action=select-edge][data-edge=${`restored_${label}`}]')?.dataset.fingerprint ?? "" };
+    })()`);
+    return { ...result, elapsed: performance.now() - started };
+  };
+
+  const normalizedYAML = await exerciseNormalizedCanvas("yaml", "browser-authoring.yaml", AUTHORING_YAML_SOURCE);
+  const normalizedJSON = await exerciseNormalizedCanvas("json", "browser-authoring.json", AUTHORING_JSON_SOURCE);
+  const yamlExact = normalizedYAML.source.includes("    - id: yaml_runtime\n") &&
+    normalizedYAML.source.includes("      endpoint: yaml_runtime.") &&
+    normalizedYAML.source.includes("    - id: restored_yaml\n") &&
+    !normalizedYAML.source.includes("    - id: runtime\n") &&
+    !normalizedYAML.source.includes("    - id: optional\n");
+  let jsonExact = false;
+  try {
+    const value = JSON.parse(normalizedJSON.source);
+    jsonExact = value.graph.nodes.some((node) => node.id === "json_runtime") &&
+      !value.graph.nodes.some((node) => node.id === "runtime") &&
+      value.graph.boundaries.filter((boundary) => boundary.endpoint.startsWith("json_runtime.")).length > 0 &&
+      value.graph.edges.length === 1 && value.graph.edges[0].id === "restored_json";
+  } catch {}
+  check("real canvas mutates and recompiles canonical normalized YAML",
+    normalizedYAML.path === "browser-authoring.yaml" && yamlExact &&
+      /^sha256:[0-9a-f]{64}$/.test(normalizedYAML.fingerprint));
+  check("real canvas mutates and recompiles canonical normalized JSON",
+    normalizedJSON.path === "browser-authoring.json" && jsonExact &&
+      /^sha256:[0-9a-f]{64}$/.test(normalizedJSON.fingerprint));
+
   const rotated = await configureOperator(OPERATOR_CAPABILITY_ROTATED);
   await loadStatic();
   await waitFor("rotated operator catalog read", async () => (await staticStatus()) === "loaded");
@@ -602,14 +708,15 @@ try {
     staticMS < 5000 && analyzeMS < 10000 && formatMS < 5000 && compileMS < 10000 &&
     renameMS < 10000 && renamedCompileMS < 10000 && renderMS < 5000 &&
     edgeRemovalMS < 10000 && edgeCompileMS < 10000 && edgeCreationMS < 10000 &&
-    edgeCreatedCompileMS < 10000 &&
+    edgeCreatedCompileMS < 10000 && normalizedYAML.elapsed < 20000 && normalizedJSON.elapsed < 20000 &&
     authorityLossMS < 2000 && authorityRestoreMS < 2000,
     `static=${staticMS.toFixed(1)}ms analyze=${analyzeMS.toFixed(1)}ms format=${formatMS.toFixed(1)}ms ` +
       `compile=${compileMS.toFixed(1)}ms rename=${renameMS.toFixed(1)}ms ` +
       `renamed-compile=${renamedCompileMS.toFixed(1)}ms ` +
       `render=${renderMS.toFixed(1)}ms edge-remove=${edgeRemovalMS.toFixed(1)}ms ` +
       `edge-compile=${edgeCompileMS.toFixed(1)}ms edge-create=${edgeCreationMS.toFixed(1)}ms ` +
-      `edge-created-compile=${edgeCreatedCompileMS.toFixed(1)}ms loss=${authorityLossMS.toFixed(1)}ms ` +
+      `edge-created-compile=${edgeCreatedCompileMS.toFixed(1)}ms normalized-yaml=${normalizedYAML.elapsed.toFixed(1)}ms ` +
+      `normalized-json=${normalizedJSON.elapsed.toFixed(1)}ms loss=${authorityLossMS.toFixed(1)}ms ` +
       `restore=${authorityRestoreMS.toFixed(1)}ms`);
 
   const lossStarted = performance.now();

@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/editor"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/graph/manifest"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
@@ -304,6 +305,88 @@ func TestClientExercisesTheCompleteMountedManagementAPI(t *testing.T) {
 	if err != nil || renamedCompile.Graph.Revision != 8 ||
 		!graphHasNode(renamedCompile.Graph, "camera") || graphHasNode(renamedCompile.Graph, "source") {
 		t.Fatalf("remote renamed compile = %+v, %v", renamedCompile, err)
+	}
+	clientFile, err := syntax.Parse("agent.ortg", []byte(clientSource))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientManifest := manifest.FromSyntax(clientFile)
+	for _, normalized := range []struct {
+		name, path string
+		marshal    func(manifest.Document) ([]byte, error)
+	}{
+		{name: "yaml", path: "agent.yaml", marshal: manifest.MarshalYAML},
+		{name: "json", path: "agent.json", marshal: manifest.MarshalJSON},
+	} {
+		t.Run("normalized-"+normalized.name, func(t *testing.T) {
+			source, err := normalized.marshal(clientManifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			document := management.AuthoringDocument{
+				Path: normalized.path, Source: string(source), Revision: 10,
+			}
+			renameRequest := management.RenameDocumentRequest{
+				Document: document, Node: "source", NewName: "camera",
+			}
+			renameResult, err := remote.Rename(context.Background(), renameRequest)
+			if err != nil || management.ValidateRenameDocumentResult(renameRequest, renameResult) != nil ||
+				len(renameResult.Edits.Edits) != 1 {
+				t.Fatalf("remote normalized rename = %+v, %v", renameResult, err)
+			}
+			renamed, err := editor.ApplyEdits(source, renameResult.Edits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			renamedCompile, err := remote.Compile(context.Background(), management.AuthoringDocument{
+				Path: document.Path, Source: string(renamed), Revision: document.Revision + 1,
+			})
+			if err != nil || !graphHasNode(renamedCompile.Graph, "camera") ||
+				graphHasNode(renamedCompile.Graph, "source") || renamedCompile.Graph.Edges[0].From.Node != "camera" {
+				t.Fatalf("remote normalized renamed compile = %+v, %v", renamedCompile, err)
+			}
+
+			removeRequest := management.RemoveDocumentEdgeRequest{
+				Document: document, Edge: "source.out->sink.in",
+			}
+			removeResult, err := remote.RemoveEdge(context.Background(), removeRequest)
+			if err != nil || management.ValidateRemoveDocumentEdgeResult(removeRequest, removeResult) != nil ||
+				len(removeResult.Edits.Edits) != 1 {
+				t.Fatalf("remote normalized removal = %+v, %v", removeResult, err)
+			}
+			removed, err := editor.ApplyEdits(source, removeResult.Edits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			predecessorDocument := management.AuthoringDocument{
+				Path: document.Path, Source: string(removed), Revision: document.Revision + 1,
+			}
+			predecessor, err := remote.Compile(context.Background(), predecessorDocument)
+			if err != nil || len(predecessor.Graph.Edges) != 0 {
+				t.Fatalf("remote normalized edge-less compile = %+v, %v", predecessor, err)
+			}
+			createRequest := management.CreateDocumentEdgeRequest{
+				Document: predecessorDocument, ExpectedFingerprint: predecessor.Graph.Fingerprint,
+				Edge: "restored", From: management.AuthoringEdgeEndpoint{Node: "source", Port: "out"},
+				To: management.AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
+			}
+			createResult, err := remote.CreateEdge(context.Background(), createRequest)
+			if err != nil || management.ValidateCreateDocumentEdgeResult(createRequest, createResult) != nil ||
+				len(createResult.Edits.Edits) != 1 {
+				t.Fatalf("remote normalized creation = %+v, %v", createResult, err)
+			}
+			created, err := editor.ApplyEdits(removed, createResult.Edits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := remote.Compile(context.Background(), management.AuthoringDocument{
+				Path: document.Path, Source: string(created), Revision: predecessorDocument.Revision + 1,
+			})
+			if err != nil || candidate.Graph.Fingerprint != createResult.CandidateFingerprint ||
+				len(candidate.Graph.Edges) != 1 || candidate.Graph.Edges[0].ID != "restored" {
+				t.Fatalf("remote normalized candidate = %+v, %v", candidate, err)
+			}
+		})
 	}
 	partial := management.AuthoringDocument{
 		Path: "partial.ortg",

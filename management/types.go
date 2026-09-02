@@ -114,9 +114,10 @@ type CompileResult struct {
 	Lock  resolve.Lock `json:"lock"`
 }
 
-// RenameDocumentRequest identifies one node in an exact canonical .ortg
-// document. Node is the currently compiled identifier; NewName is its desired
-// replacement. The operation returns edits only and performs no I/O.
+// RenameDocumentRequest identifies one node in an exact canonical .ortg or
+// normalized YAML/JSON document. Node is the currently compiled identifier;
+// NewName is its desired replacement. The operation returns edits only and
+// performs no I/O.
 type RenameDocumentRequest struct {
 	Document AuthoringDocument `json:"document"`
 	Node     string            `json:"node"`
@@ -129,9 +130,9 @@ type RenameDocumentResult struct {
 	Edits   editor.EditSet `json:"edits"`
 }
 
-// RemoveDocumentEdgeRequest identifies one edge in an exact canonical .ortg
-// document. Edge is the same stable identity emitted into compiled Graph IR.
-// The operation returns edits only and performs no I/O.
+// RemoveDocumentEdgeRequest identifies one edge in an exact canonical .ortg or
+// normalized YAML/JSON document. Edge is the same stable identity emitted into
+// compiled Graph IR. The operation returns edits only and performs no I/O.
 type RemoveDocumentEdgeRequest struct {
 	Document AuthoringDocument `json:"document"`
 	Edge     string            `json:"edge"`
@@ -147,9 +148,10 @@ type AuthoringEdgeEndpoint struct {
 	Port string `json:"port"`
 }
 
-// CreateDocumentEdgeRequest appends one named edge to exact canonical .ortg
-// source currently compiled under ExpectedFingerprint. The engine recompiles
-// the candidate at the next revision before returning its edit set.
+// CreateDocumentEdgeRequest appends one named edge to exact canonical .ortg or
+// normalized YAML/JSON source currently compiled under ExpectedFingerprint.
+// The engine recompiles the candidate at the next revision before returning
+// its edit set.
 type CreateDocumentEdgeRequest struct {
 	Document            AuthoringDocument     `json:"document"`
 	ExpectedFingerprint string                `json:"expected_fingerprint"`

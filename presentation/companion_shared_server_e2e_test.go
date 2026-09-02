@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/graph/manifest"
+	"github.com/bojieli/OpenRealtime/graph/syntax"
 	"github.com/bojieli/OpenRealtime/internal/testserver"
 	"github.com/bojieli/OpenRealtime/macos"
 	"github.com/bojieli/OpenRealtime/management"
@@ -92,6 +94,7 @@ func TestCompanionHostServesBrowserWebRTCAndNativeWebSocketOnOneServer(t *testin
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
+	authoringYAML, authoringJSON := companionNormalizedAuthoringSources(t, stack.AuthoringSource)
 	command := exec.CommandContext(ctx, node, driver, hostHTTP.URL)
 	command.Env = append(os.Environ(),
 		"CHROMIUM="+chromium,
@@ -101,6 +104,8 @@ func TestCompanionHostServesBrowserWebRTCAndNativeWebSocketOnOneServer(t *testin
 		"OPERATOR_CAPABILITY="+operatorOne.Token,
 		"OPERATOR_CAPABILITY_ROTATED="+operatorTwo.Token,
 		"AUTHORING_SOURCE="+stack.AuthoringSource,
+		"AUTHORING_YAML_SOURCE="+authoringYAML,
+		"AUTHORING_JSON_SOURCE="+authoringJSON,
 		"STATIC_GRAPH_FINGERPRINT="+stack.Graph.Fingerprint,
 	)
 	output, err := command.CombinedOutput()
@@ -115,6 +120,24 @@ func TestCompanionHostServesBrowserWebRTCAndNativeWebSocketOnOneServer(t *testin
 
 	runCompanionNativeInspectionProbe(t, nativeBundle, stack.Graph.Fingerprint)
 	assertSameRuntimeSelections(t, "companion host after native WebSocket", hostBefore, mounted.Live())
+}
+
+func companionNormalizedAuthoringSources(t testing.TB, source string) (string, string) {
+	t.Helper()
+	file, err := syntax.Parse("browser-authoring.ortg", []byte(source))
+	if err != nil {
+		t.Fatalf("parse companion normalized authoring fixture: %v", err)
+	}
+	document := manifest.FromSyntax(file)
+	yamlSource, err := manifest.MarshalYAML(document)
+	if err != nil {
+		t.Fatalf("marshal companion YAML authoring fixture: %v", err)
+	}
+	jsonSource, err := manifest.MarshalJSON(document)
+	if err != nil {
+		t.Fatalf("marshal companion JSON authoring fixture: %v", err)
+	}
+	return string(yamlSource), string(jsonSource)
 }
 
 func mountCompanionDualRelayHost(

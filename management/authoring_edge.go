@@ -13,10 +13,11 @@ import (
 )
 
 // ValidateRemoveDocumentEdgeRequest admits one unique edge from canonical,
-// in-memory .ortg source. Resolution, channel overrides, filesystem roots, and
-// deployment state are deliberately outside this pure syntax mutation.
+// in-memory .ortg or normalized YAML/JSON source. Resolution, channel
+// overrides, filesystem roots, and deployment state are deliberately outside
+// this pure topology mutation.
 func ValidateRemoveDocumentEdgeRequest(input RemoveDocumentEdgeRequest) error {
-	if err := validateDocument(input.Document, true); err != nil {
+	if err := validateDocument(input.Document, false); err != nil {
 		return err
 	}
 	if input.Document.Lock != nil || len(input.Document.ChannelDepth) != 0 {
@@ -25,11 +26,11 @@ func ValidateRemoveDocumentEdgeRequest(input RemoveDocumentEdgeRequest) error {
 	maximum := 4*editor.DefaultLimits().MaxIdentifierBytes + 4
 	if input.Edge == "" || input.Edge != strings.TrimSpace(input.Edge) ||
 		len(input.Edge) > maximum || strings.ContainsAny(input.Edge, "\x00\r\n") {
-		return fmt.Errorf("%w: invalid .ortg edge identity", ErrInvalid)
+		return fmt.Errorf("%w: invalid topology edge identity", ErrInvalid)
 	}
-	file, err := syntax.Parse(input.Document.Path, []byte(input.Document.Source))
-	if err != nil || syntax.Format(file) != input.Document.Source {
-		return fmt.Errorf("%w: edge removal requires canonical parsed .ortg source", ErrInvalid)
+	file, err := canonicalAuthoringTopology(input.Document)
+	if err != nil {
+		return fmt.Errorf("%w: edge removal requires canonical parsed topology source", ErrInvalid)
 	}
 	if countSyntaxEdges(file, input.Edge) != 1 {
 		return fmt.Errorf("%w: edge removal source does not contain exactly one edge %q", ErrInvalid, input.Edge)
@@ -59,17 +60,25 @@ func ValidateRemoveDocumentEdgeResult(
 	if err != nil || len(removed) == 0 || len(removed) > maxManagedSourceBytes {
 		return fmt.Errorf("%w: edge removal edit is invalid or exceeds the source bound", ErrConflict)
 	}
-	file, _ := syntax.Parse(input.Document.Path, []byte(input.Document.Source))
+	file, _ := canonicalAuthoringTopology(input.Document)
 	if removeSyntaxEdge(&file, input.Edge) != 1 {
 		return fmt.Errorf("%w: edge removal source identity changed", ErrConflict)
 	}
-	want := []byte(syntax.Format(file))
+	want, err := formatAuthoringTopology(input.Document.Path, file)
+	if err != nil {
+		return fmt.Errorf("%w: format expected edge removal", ErrConflict)
+	}
+	if result.Edits.Edits[0].OldText != input.Document.Source ||
+		result.Edits.Edits[0].NewText != string(want) {
+		return fmt.Errorf("%w: edge removal is not one exact document replacement", ErrConflict)
+	}
 	if !bytes.Equal(removed, want) {
 		return fmt.Errorf("%w: edge removal changes more or less than the selected edge", ErrConflict)
 	}
-	parsed, err := syntax.Parse(input.Document.Path, removed)
-	if err != nil || !bytes.Equal(removed, []byte(syntax.Format(parsed))) {
-		return fmt.Errorf("%w: edge removal result is not canonical .ortg", ErrConflict)
+	updated := input.Document
+	updated.Source = string(removed)
+	if _, err := canonicalAuthoringTopology(updated); err != nil {
+		return fmt.Errorf("%w: edge removal result is not canonical topology", ErrConflict)
 	}
 	return nil
 }
@@ -103,10 +112,11 @@ func removeSyntaxEdge(file *syntax.File, identity string) int {
 }
 
 // ValidateCreateDocumentEdgeRequest admits one named connection between exact
-// declared nodes in a canonical in-memory .ortg predecessor. The immutable
-// predecessor fingerprint is recompiled and checked by AuthoringEngine.
+// declared nodes in a canonical in-memory .ortg or normalized YAML/JSON
+// predecessor. The immutable predecessor fingerprint is recompiled and checked
+// by AuthoringEngine.
 func ValidateCreateDocumentEdgeRequest(input CreateDocumentEdgeRequest) error {
-	if err := validateDocument(input.Document, true); err != nil {
+	if err := validateDocument(input.Document, false); err != nil {
 		return err
 	}
 	if input.Document.Lock != nil || len(input.Document.ChannelDepth) != 0 {
@@ -123,11 +133,11 @@ func ValidateCreateDocumentEdgeRequest(input CreateDocumentEdgeRequest) error {
 		!validIdentifier(input.From.Port) || !validIdentifier(input.To.Node) ||
 		!validIdentifier(input.To.Port) ||
 		(input.Delivery != string(syntax.Lossless) && input.Delivery != string(syntax.Lossy)) {
-		return fmt.Errorf("%w: invalid .ortg edge creation", ErrInvalid)
+		return fmt.Errorf("%w: invalid topology edge creation", ErrInvalid)
 	}
-	file, err := syntax.Parse(input.Document.Path, []byte(input.Document.Source))
-	if err != nil || syntax.Format(file) != input.Document.Source {
-		return fmt.Errorf("%w: edge creation requires canonical parsed .ortg source", ErrInvalid)
+	file, err := canonicalAuthoringTopology(input.Document)
+	if err != nil {
+		return fmt.Errorf("%w: edge creation requires canonical parsed topology source", ErrInvalid)
 	}
 	if countSyntaxEdges(file, input.Edge) != 0 {
 		return fmt.Errorf("%w: edge creation identity already exists", ErrInvalid)
@@ -169,20 +179,28 @@ func ValidateCreateDocumentEdgeResult(
 	if err != nil || len(created) == 0 || len(created) > maxManagedSourceBytes {
 		return fmt.Errorf("%w: edge creation edit is invalid or exceeds the source bound", ErrConflict)
 	}
-	file, _ := syntax.Parse(input.Document.Path, []byte(input.Document.Source))
+	file, _ := canonicalAuthoringTopology(input.Document)
 	file.Graph.Statements = append(file.Graph.Statements, syntax.Statement{Edge: &syntax.Edge{
 		Name:     input.Edge,
 		From:     syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
 		To:       syntax.Endpoint{Node: input.To.Node, Port: input.To.Port},
 		Delivery: syntax.Delivery(input.Delivery),
 	}})
-	want := []byte(syntax.Format(file))
+	want, err := formatAuthoringTopology(input.Document.Path, file)
+	if err != nil {
+		return fmt.Errorf("%w: format expected edge creation", ErrConflict)
+	}
+	if result.Edits.Edits[0].OldText != input.Document.Source ||
+		result.Edits.Edits[0].NewText != string(want) {
+		return fmt.Errorf("%w: edge creation is not one exact document replacement", ErrConflict)
+	}
 	if !bytes.Equal(created, want) {
 		return fmt.Errorf("%w: edge creation changes more or less than the requested edge", ErrConflict)
 	}
-	parsed, err := syntax.Parse(input.Document.Path, created)
-	if err != nil || !bytes.Equal(created, []byte(syntax.Format(parsed))) {
-		return fmt.Errorf("%w: edge creation result is not canonical .ortg", ErrConflict)
+	updated := input.Document
+	updated.Source = string(created)
+	if _, err := canonicalAuthoringTopology(updated); err != nil {
+		return fmt.Errorf("%w: edge creation result is not canonical topology", ErrConflict)
 	}
 	return nil
 }

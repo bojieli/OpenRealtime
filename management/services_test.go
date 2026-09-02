@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/editor"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/graph/manifest"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
@@ -245,21 +247,7 @@ func TestAuthoringEdgeRemovalIsExactAndIndependentlyValidated(t *testing.T) {
 }
 
 func TestAuthoringEdgeCreationIsCompilerBoundExactAndIndependentlyValidated(t *testing.T) {
-	base := managedElementCatalog(t)
-	catalog := resolve.NewCatalog()
-	for _, name := range base.Names() {
-		descriptor, found := base.Latest(name)
-		if !found {
-			t.Fatalf("missing managed descriptor %q", name)
-		}
-		descriptor.Ports = slices.Clone(descriptor.Ports)
-		if name == "test.ManagedSink" {
-			descriptor.Ports[0].Required = false
-		}
-		if err := catalog.Register(descriptor); err != nil {
-			t.Fatal(err)
-		}
-	}
+	catalog := managedOptionalSinkCatalog(t)
 	engine, err := NewAuthoringEngine(AuthoringOptions{Catalog: catalog})
 	if err != nil {
 		t.Fatal(err)
@@ -367,6 +355,172 @@ func TestAuthoringEdgeCreationIsCompilerBoundExactAndIndependentlyValidated(t *t
 	cancel()
 	if _, err := engine.CreateEdge(canceled, request); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("canceled edge creation = %v", err)
+	}
+}
+
+func TestAuthoringNormalizedYAMLJSONMutationsCrossManagementBoundary(t *testing.T) {
+	file, err := syntax.Parse("agent.ortg", []byte(`graph managed {
+    test.ManagedSource :: source;
+    test.ManagedSink :: sink;
+    edge optional = source.out -> sink.in;
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := manifest.FromSyntax(file)
+	encodings := []struct {
+		name, path string
+		marshal    func(manifest.Document) ([]byte, error)
+	}{
+		{name: "yaml", path: "agent.yaml", marshal: manifest.MarshalYAML},
+		{name: "json", path: "agent.json", marshal: manifest.MarshalJSON},
+	}
+	for _, encoding := range encodings {
+		t.Run(encoding.name, func(t *testing.T) {
+			engine, err := NewAuthoringEngine(AuthoringOptions{Catalog: managedOptionalSinkCatalog(t)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			source, err := encoding.marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input := AuthoringDocument{Path: encoding.path, Source: string(source), Revision: 7}
+
+			renameRequest := RenameDocumentRequest{Document: input, Node: "source", NewName: "camera"}
+			rename, err := engine.Rename(context.Background(), renameRequest)
+			if err != nil || ValidateRenameDocumentResult(renameRequest, rename) != nil ||
+				len(rename.Edits.Edits) != 1 || rename.Edits.Edits[0].OldText != input.Source {
+				t.Fatalf("normalized rename = %+v, %v", rename, err)
+			}
+			renamed, err := editor.ApplyEdits(source, rename.Edits)
+			if err != nil || rename.Edits.Edits[0].NewText != string(renamed) {
+				t.Fatalf("apply normalized rename = %q, %v", renamed, err)
+			}
+			renamedCompile, err := engine.Compile(context.Background(), AuthoringDocument{
+				Path: input.Path, Source: string(renamed), Revision: input.Revision + 1,
+			})
+			if err != nil || len(renamedCompile.Graph.Nodes) != 2 ||
+				renamedCompile.Graph.Nodes[0].ID != "camera" || renamedCompile.Graph.Edges[0].From.Node != "camera" {
+				t.Fatalf("compile normalized rename = %+v, %v", renamedCompile, err)
+			}
+			noOpRequest := renameRequest
+			noOpRequest.NewName = noOpRequest.Node
+			noOp, err := engine.Rename(context.Background(), noOpRequest)
+			if err != nil || len(noOp.Edits.Edits) != 0 || ValidateRenameDocumentResult(noOpRequest, noOp) != nil {
+				t.Fatalf("normalized no-op rename = %+v, %v", noOp, err)
+			}
+
+			removeRequest := RemoveDocumentEdgeRequest{Document: input, Edge: "optional"}
+			removedResult, err := engine.RemoveEdge(context.Background(), removeRequest)
+			if err != nil || ValidateRemoveDocumentEdgeResult(removeRequest, removedResult) != nil ||
+				len(removedResult.Edits.Edits) != 1 || removedResult.Edits.Edits[0].OldText != input.Source {
+				t.Fatalf("normalized removal = %+v, %v", removedResult, err)
+			}
+			removed, err := editor.ApplyEdits(source, removedResult.Edits)
+			if err != nil || removedResult.Edits.Edits[0].NewText != string(removed) {
+				t.Fatalf("apply normalized removal = %q, %v", removed, err)
+			}
+			predecessorDocument := AuthoringDocument{
+				Path: input.Path, Source: string(removed), Revision: input.Revision + 1,
+			}
+			predecessor, err := engine.Compile(context.Background(), predecessorDocument)
+			if err != nil || len(predecessor.Graph.Edges) != 0 {
+				t.Fatalf("compile normalized removal = %+v, %v", predecessor, err)
+			}
+
+			createRequest := CreateDocumentEdgeRequest{
+				Document: predecessorDocument, ExpectedFingerprint: predecessor.Graph.Fingerprint,
+				Edge: "restored", From: AuthoringEdgeEndpoint{Node: "source", Port: "out"},
+				To: AuthoringEdgeEndpoint{Node: "sink", Port: "in"}, Delivery: string(syntax.Lossless),
+			}
+			createdResult, err := engine.CreateEdge(context.Background(), createRequest)
+			if err != nil || ValidateCreateDocumentEdgeResult(createRequest, createdResult) != nil ||
+				len(createdResult.Edits.Edits) != 1 ||
+				createdResult.Edits.Edits[0].OldText != predecessorDocument.Source {
+				t.Fatalf("normalized creation = %+v, %v", createdResult, err)
+			}
+			created, err := editor.ApplyEdits(removed, createdResult.Edits)
+			if err != nil || createdResult.Edits.Edits[0].NewText != string(created) {
+				t.Fatalf("apply normalized creation = %q, %v", created, err)
+			}
+			candidate, err := engine.Compile(context.Background(), AuthoringDocument{
+				Path: input.Path, Source: string(created), Revision: predecessorDocument.Revision + 1,
+			})
+			if err != nil || candidate.Graph.Fingerprint != createdResult.CandidateFingerprint ||
+				len(candidate.Graph.Edges) != 1 || candidate.Graph.Edges[0].ID != "restored" ||
+				candidate.Graph.Edges[0].Delivery != ir.Lossless {
+				t.Fatalf("compile normalized creation = %+v, %v", candidate, err)
+			}
+
+			forgedRename := rename
+			forgedRename.Edits.Edits = slices.Clone(rename.Edits.Edits)
+			forgedRename.Edits.Edits[0].NewText += "\n"
+			if err := ValidateRenameDocumentResult(renameRequest, forgedRename); !errors.Is(err, ErrConflict) {
+				t.Fatalf("forged normalized rename = %v", err)
+			}
+			forgedRemove := removedResult
+			forgedRemove.Edits.Edits = slices.Clone(removedResult.Edits.Edits)
+			forgedRemove.Edits.Edits[0].OldText += "\n"
+			if err := ValidateRemoveDocumentEdgeResult(removeRequest, forgedRemove); !errors.Is(err, ErrConflict) {
+				t.Fatalf("forged normalized removal = %v", err)
+			}
+			forgedCreate := createdResult
+			forgedCreate.Edits.Edits = slices.Clone(createdResult.Edits.Edits)
+			forgedCreate.Edits.Edits[0].NewText += "\n"
+			if err := ValidateCreateDocumentEdgeResult(createRequest, forgedCreate); !errors.Is(err, ErrConflict) {
+				t.Fatalf("forged normalized creation = %v", err)
+			}
+
+			noncanonical := input
+			noncanonical.Source += "\n"
+			if _, err := engine.Rename(context.Background(), RenameDocumentRequest{
+				Document: noncanonical, Node: "source", NewName: "camera",
+			}); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("noncanonical normalized mutation = %v", err)
+			}
+		})
+	}
+}
+
+func TestNormalizedRenameResultRejectsReferencePopulationBeyondEditorBound(t *testing.T) {
+	limit := editor.DefaultLimits().MaxRenameEdits
+	document := manifest.Document{
+		APIVersion: manifest.APIVersion,
+		Graph: manifest.Graph{
+			Name:  "bounded",
+			Nodes: []manifest.Node{{ID: "source", Element: "test.ManagedSource"}},
+		},
+	}
+	for index := 0; index < limit; index++ {
+		document.Graph.Boundaries = append(document.Graph.Boundaries, manifest.Boundary{
+			Name: fmt.Sprintf("boundary_%d", index), Direction: string(syntax.BoundaryInput),
+			Endpoint: "source.out",
+		})
+	}
+	source, err := manifest.MarshalJSON(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := editor.AnalyzeNormalized("bounded.json", source, editor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := RenameDocumentRequest{
+		Document: AuthoringDocument{Path: "bounded.json", Source: string(source)},
+		Node:     "source", NewName: "camera",
+	}
+	result := RenameDocumentResult{
+		Node: "source", NewName: "camera",
+		Edits: editor.EditSet{
+			Path: "bounded.json", SourceDigest: snapshot.SourceDigest(),
+			Edits: []editor.TextEdit{{}},
+		},
+	}
+	if err := ValidateRenameDocumentResult(request, result); !errors.Is(err, ErrConflict) ||
+		!strings.Contains(err.Error(), "reference count") {
+		t.Fatalf("oversized normalized rename validation = %v", err)
 	}
 }
 
@@ -864,6 +1018,26 @@ func managedElementCatalog(t testing.TB) *resolve.Catalog {
 			}},
 		},
 	} {
+		if err := catalog.Register(descriptor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return catalog
+}
+
+func managedOptionalSinkCatalog(t testing.TB) *resolve.Catalog {
+	t.Helper()
+	base := managedElementCatalog(t)
+	catalog := resolve.NewCatalog()
+	for _, name := range base.Names() {
+		descriptor, found := base.Latest(name)
+		if !found {
+			t.Fatalf("missing managed descriptor %q", name)
+		}
+		descriptor.Ports = slices.Clone(descriptor.Ports)
+		if name == "test.ManagedSink" {
+			descriptor.Ports[0].Required = false
+		}
 		if err := catalog.Register(descriptor); err != nil {
 			t.Fatal(err)
 		}

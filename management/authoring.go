@@ -88,15 +88,28 @@ func (engine *AuthoringEngine) Rename(
 	if err := ValidateRenameDocumentRequest(input); err != nil {
 		return RenameDocumentResult{}, err
 	}
-	document, err := editor.AnalyzeWithOptions(
-		ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
-			Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
-		},
+	var (
+		edits editor.EditSet
+		err   error
 	)
-	if err != nil {
-		return RenameDocumentResult{}, fmt.Errorf("%w: analyze topology for rename: %v", ErrInvalid, err)
+	if authoringTopologyIsORTG(input.Document.Path) {
+		document, analyzeErr := editor.AnalyzeWithOptions(
+			ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
+				Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
+			},
+		)
+		if analyzeErr != nil {
+			return RenameDocumentResult{}, fmt.Errorf("%w: analyze topology for rename: %v", ErrInvalid, analyzeErr)
+		}
+		edits, err = document.RenameNodeID(input.Node, input.NewName)
+	} else {
+		document, analyzeErr := normalizedAuthoringDocument(input.Document, engine.limits)
+		if analyzeErr != nil {
+			return RenameDocumentResult{}, fmt.Errorf("%w: analyze normalized topology for rename: %v",
+				ErrInvalid, analyzeErr)
+		}
+		edits, err = document.RenameNodeID(input.Node, input.NewName)
 	}
-	edits, err := document.RenameNodeID(input.Node, input.NewName)
 	if err != nil {
 		return RenameDocumentResult{}, fmt.Errorf("%w: rename topology node: %v", ErrInvalid, err)
 	}
@@ -116,15 +129,29 @@ func (engine *AuthoringEngine) RemoveEdge(
 	if err := ValidateRemoveDocumentEdgeRequest(input); err != nil {
 		return RemoveDocumentEdgeResult{}, err
 	}
-	document, err := editor.AnalyzeWithOptions(
-		ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
-			Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
-		},
+	var (
+		edits editor.EditSet
+		err   error
 	)
-	if err != nil {
-		return RemoveDocumentEdgeResult{}, fmt.Errorf("%w: analyze topology for edge removal: %v", ErrInvalid, err)
+	if authoringTopologyIsORTG(input.Document.Path) {
+		document, analyzeErr := editor.AnalyzeWithOptions(
+			ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
+				Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
+			},
+		)
+		if analyzeErr != nil {
+			return RemoveDocumentEdgeResult{}, fmt.Errorf("%w: analyze topology for edge removal: %v",
+				ErrInvalid, analyzeErr)
+		}
+		edits, err = document.RemoveEdgeID(input.Edge)
+	} else {
+		document, analyzeErr := normalizedAuthoringDocument(input.Document, engine.limits)
+		if analyzeErr != nil {
+			return RemoveDocumentEdgeResult{}, fmt.Errorf("%w: analyze normalized topology for edge removal: %v",
+				ErrInvalid, analyzeErr)
+		}
+		edits, err = document.RemoveEdgeID(input.Edge)
 	}
-	edits, err := document.RemoveEdgeID(input.Edge)
 	if err != nil {
 		return RemoveDocumentEdgeResult{}, fmt.Errorf("%w: remove topology edge: %v", ErrInvalid, err)
 	}
@@ -151,20 +178,36 @@ func (engine *AuthoringEngine) CreateEdge(
 	if current.Graph.Fingerprint != input.ExpectedFingerprint {
 		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: edge-creation predecessor fingerprint changed", ErrConflict)
 	}
-	document, err := editor.AnalyzeWithOptions(
-		ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
-			Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
-		},
-	)
-	if err != nil {
-		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: analyze topology for edge creation: %v", ErrInvalid, err)
+	var edits editor.EditSet
+	if authoringTopologyIsORTG(input.Document.Path) {
+		document, analyzeErr := editor.AnalyzeWithOptions(
+			ctx, input.Document.Path, []byte(input.Document.Source), engine.catalog, editor.Options{
+				Limits: engine.limits, SchemaResolver: engine.schemaResolver, SchemaLimits: engine.schemaLimits,
+			},
+		)
+		if analyzeErr != nil {
+			return CreateDocumentEdgeResult{}, fmt.Errorf("%w: analyze topology for edge creation: %v",
+				ErrInvalid, analyzeErr)
+		}
+		edits, err = document.CreateEdgeID(
+			input.Edge,
+			syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
+			syntax.Endpoint{Node: input.To.Node, Port: input.To.Port},
+			syntax.Delivery(input.Delivery),
+		)
+	} else {
+		document, analyzeErr := normalizedAuthoringDocument(input.Document, engine.limits)
+		if analyzeErr != nil {
+			return CreateDocumentEdgeResult{}, fmt.Errorf("%w: analyze normalized topology for edge creation: %v",
+				ErrInvalid, analyzeErr)
+		}
+		edits, err = document.CreateEdgeID(
+			input.Edge,
+			syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
+			syntax.Endpoint{Node: input.To.Node, Port: input.To.Port},
+			syntax.Delivery(input.Delivery),
+		)
 	}
-	edits, err := document.CreateEdgeID(
-		input.Edge,
-		syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
-		syntax.Endpoint{Node: input.To.Node, Port: input.To.Port},
-		syntax.Delivery(input.Delivery),
-	)
 	if err != nil {
 		return CreateDocumentEdgeResult{}, fmt.Errorf("%w: create topology edge: %v", ErrInvalid, err)
 	}

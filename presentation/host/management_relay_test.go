@@ -21,6 +21,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/editor"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/ir"
+	"github.com/bojieli/OpenRealtime/graph/manifest"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	"github.com/bojieli/OpenRealtime/graph/schema"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
@@ -252,7 +253,8 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 	}
 	renameInput := management.RenameDocumentRequest{
 		Document: management.AuthoringDocument{
-			Path: "relay.ortg", Source: "graph relay {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n",
+			Path: "relay.yaml", Source: managementRelayNormalizedSource(t, "relay.yaml",
+				"graph relay {\n    test.Managed :: source;\n    source.out -> source.in;\n}\n"),
 		},
 		Node: "source", NewName: "camera",
 	}
@@ -263,8 +265,9 @@ func TestManagementRelayWhitelistsAndRebindsStaticAndAuthoringResources(t *testi
 	removeResult := managementRelayEdgeRemovalResult(t, removeInput)
 	createInput := management.CreateDocumentEdgeRequest{
 		Document: management.AuthoringDocument{
-			Path:     "relay.ortg",
-			Source:   "graph relay {\n    test.Managed :: source;\n    test.Managed :: sink;\n}\n",
+			Path: "relay.json",
+			Source: managementRelayNormalizedSource(t, "relay.json",
+				"graph relay {\n    test.Managed :: source;\n    test.Managed :: sink;\n}\n"),
 			Revision: 4,
 		},
 		ExpectedFingerprint: "sha256:" + strings.Repeat("a", 64), Edge: "restored",
@@ -796,12 +799,23 @@ func managementRelayRenameResult(
 	t testing.TB, input management.RenameDocumentRequest,
 ) management.RenameDocumentResult {
 	t.Helper()
-	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
-		resolve.NewCatalog(), editor.DefaultLimits())
-	if err != nil {
-		t.Fatal(err)
+	var edits editor.EditSet
+	var err error
+	if strings.HasSuffix(input.Document.Path, ".ortg") {
+		document, analyzeErr := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+			resolve.NewCatalog(), editor.DefaultLimits())
+		if analyzeErr != nil {
+			t.Fatal(analyzeErr)
+		}
+		edits, err = document.RenameNodeID(input.Node, input.NewName)
+	} else {
+		document, analyzeErr := editor.AnalyzeNormalized(input.Document.Path,
+			[]byte(input.Document.Source), editor.DefaultLimits())
+		if analyzeErr != nil {
+			t.Fatal(analyzeErr)
+		}
+		edits, err = document.RenameNodeID(input.Node, input.NewName)
 	}
-	edits, err := document.RenameNodeID(input.Node, input.NewName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -818,12 +832,23 @@ func managementRelayEdgeRemovalResult(
 	t testing.TB, input management.RemoveDocumentEdgeRequest,
 ) management.RemoveDocumentEdgeResult {
 	t.Helper()
-	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
-		resolve.NewCatalog(), editor.DefaultLimits())
-	if err != nil {
-		t.Fatal(err)
+	var edits editor.EditSet
+	var err error
+	if strings.HasSuffix(input.Document.Path, ".ortg") {
+		document, analyzeErr := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+			resolve.NewCatalog(), editor.DefaultLimits())
+		if analyzeErr != nil {
+			t.Fatal(analyzeErr)
+		}
+		edits, err = document.RemoveEdgeID(input.Edge)
+	} else {
+		document, analyzeErr := editor.AnalyzeNormalized(input.Document.Path,
+			[]byte(input.Document.Source), editor.DefaultLimits())
+		if analyzeErr != nil {
+			t.Fatal(analyzeErr)
+		}
+		edits, err = document.RemoveEdgeID(input.Edge)
 	}
-	edits, err := document.RemoveEdgeID(input.Edge)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -838,14 +863,27 @@ func managementRelayEdgeCreationResult(
 	t testing.TB, input management.CreateDocumentEdgeRequest,
 ) management.CreateDocumentEdgeResult {
 	t.Helper()
-	document, err := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
-		resolve.NewCatalog(), editor.DefaultLimits())
-	if err != nil {
-		t.Fatal(err)
+	var edits editor.EditSet
+	var err error
+	if strings.HasSuffix(input.Document.Path, ".ortg") {
+		document, analyzeErr := editor.Analyze(input.Document.Path, []byte(input.Document.Source),
+			resolve.NewCatalog(), editor.DefaultLimits())
+		if analyzeErr != nil {
+			t.Fatal(analyzeErr)
+		}
+		edits, err = document.CreateEdgeID(input.Edge,
+			syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
+			syntax.Endpoint{Node: input.To.Node, Port: input.To.Port}, syntax.Delivery(input.Delivery))
+	} else {
+		document, analyzeErr := editor.AnalyzeNormalized(input.Document.Path,
+			[]byte(input.Document.Source), editor.DefaultLimits())
+		if analyzeErr != nil {
+			t.Fatal(analyzeErr)
+		}
+		edits, err = document.CreateEdgeID(input.Edge,
+			syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
+			syntax.Endpoint{Node: input.To.Node, Port: input.To.Port}, syntax.Delivery(input.Delivery))
 	}
-	edits, err := document.CreateEdgeID(input.Edge,
-		syntax.Endpoint{Node: input.From.Node, Port: input.From.Port},
-		syntax.Endpoint{Node: input.To.Node, Port: input.To.Port}, syntax.Delivery(input.Delivery))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,6 +896,25 @@ func managementRelayEdgeCreationResult(
 		t.Fatal(err)
 	}
 	return result
+}
+
+func managementRelayNormalizedSource(t testing.TB, path, source string) string {
+	t.Helper()
+	file, err := syntax.Parse("relay.ortg", []byte(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := manifest.FromSyntax(file)
+	var encoded []byte
+	if strings.HasSuffix(path, ".json") {
+		encoded, err = manifest.MarshalJSON(document)
+	} else {
+		encoded, err = manifest.MarshalYAML(document)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
 }
 
 func TestManagementRelayRejectsForgedSourcePublicationReceipt(t *testing.T) {

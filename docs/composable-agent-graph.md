@@ -1810,8 +1810,8 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 210 of 259 explicit tracker boxes are checked (81.1%)
-and 49 remain open. The percentage records completed reviewable slices; it does
+At this reconciliation, 212 of 260 explicit tracker boxes are checked (81.5%)
+and 48 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -1823,7 +1823,7 @@ of-done requirement.
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
-| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Normalized YAML/JSON canvas mutation and complete server/native presentation lifecycle gates |
+| 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, and a compiler-backed language-service core exposed through the UI-independent management API | Complete server/native presentation lifecycle gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission reconciliation with effect-restricted candidate pre-mount, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, explicit state migration, bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
@@ -1875,9 +1875,18 @@ Current checkpoint notes:
   now create one named edge against that exact predecessor fingerprint; the
   compiler validates the candidate at the next revision before any edit set or
   candidate fingerprint is returned, and every API, relay, client, and browser
-  boundary revalidates the exact canonical source mutation. Normalized
-  YAML/JSON canvas mutation and the remaining phase gates stay unchecked until
-  their independent slices are complete.
+  boundary revalidates the exact canonical source mutation. The same immutable
+  editing boundary now admits exact canonical normalized YAML/YML and JSON. It
+  regenerates one source-digest-bound full-document replacement for node rename,
+  edge removal, or edge creation, while the compiler remains the single Graph IR
+  and candidate-fingerprint authority. The API, headless client, server, host
+  relay, browser client, and workspace independently reparse or reconstruct the
+  requested mutation; browser JSON rejects duplicate keys and reproduces Go's
+  canonical field/escaping order, while browser YAML admits only the canonical
+  manifest layout. Go, adversarial JavaScript, repository-wide test/vet,
+  targeted race, every real-Chromium profile, and the shared browser/native
+  companion gate are green. The remaining phase gates concern complete
+  server/native presentation lifecycle evidence rather than visual mutation.
 - Seven of the fifteen project-level definition-of-done outcomes are proven end
   to end. The remaining eight have named completed subgates, but direct
   benchmark execution, production inspection, reconciliation, native-client
@@ -2472,7 +2481,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
   The immutable candidate-04 run was healthy in the background and had reached
-  attempt 879/6,147 at 2026-09-01 23:43 UTC. This dated progress checkpoint is
+  attempt 912/6,147 at 2026-09-02 00:22 UTC. This dated progress checkpoint is
   not a partial-condition aggregate and does not satisfy the box.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
@@ -2865,7 +2874,7 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   exact configuration/runtime/capability evidence, session-keyed correlation
   pseudonyms, explicit dropped-record evidence, deterministic export, and key
   erasure on shutdown.
-- [ ] Add a visual editor that reads and writes canonical `.ortg` or normalized
+- [x] Add a visual editor that reads and writes canonical `.ortg` or normalized
   YAML/JSON using the same descriptors and validator.
   - [x] Complete the effects-profile browser source cycle over separately
     authorized rooted read and publication boundaries. `SourceReading` requires
@@ -2927,9 +2936,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     effects Chromium, both observer transports, and the shared browser/native
     companion gate compile the original `runtime`, rename it graph-wide to
     `renamed_runtime`, recompile revision 2 under a changed fingerprint, and
-    render the renamed node. Edge removal and creation are covered by the
-    following independently evidenced slices; normalized YAML/JSON canvas
-    mutation remains open under the parent.
+    render the renamed node. Edge removal, creation, and normalized YAML/JSON
+    mutation are covered by the following independently evidenced slices.
   - [x] Remove one selected canonical `.ortg` edge from the compiled canvas
     without granting filesystem, effects, or hidden source authority. The
     syntax AST now owns the exact named-or-endpoint-derived edge identity used
@@ -2948,8 +2956,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     WebRTC observer, and shared browser/native-companion Chromium gates select
     `optional`, remove it after the node rename, recompile revision 3 without
     that edge under a changed fingerprint, and preserve the renamed runtime.
-    Edge creation is covered by the next independent slice; normalized
-    YAML/JSON canvas mutation remains open.
+    Edge creation and normalized YAML/JSON mutation are covered by the next
+    independently evidenced slices.
   - [x] Create one selected named canonical `.ortg` edge from deterministic
     compiled output/input port controls without granting filesystem, effects,
     or hidden source authority. The request binds the canonical source,
@@ -2973,6 +2981,26 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     browser/native-companion gate recreate `producer.out -> sink.in` as
     `restored` after removal, recompile revision 4 under the server-produced
     candidate fingerprint, and preserve `renamed_runtime`.
+  - [x] Extend the same compiled-fingerprint-bound canvas mutations to exact
+    canonical normalized YAML/YML and JSON without adding another graph model or
+    authority plane. An immutable normalized editor parses through the strict
+    manifest frontend, rejects noncanonical bytes, ambiguous declarations,
+    collisions, missing edges/endpoints, stale source identity, invalid delivery,
+    and bounds violations, then regenerates exactly one full-document edit for
+    graph-wide node rename, named or endpoint-derived edge removal, and named edge
+    creation. The management engine recompiles edge-creation predecessors and
+    candidates through the same compiler and resolution lock; request/result
+    validators, strict HTTP server, headless client, host relay, browser client,
+    and workspace independently rebind the exact path, source digest, canonical
+    result, predecessor/candidate fingerprints, and response evidence. Browser
+    JSON uses the duplicate-key-checking codec and reproduces Go field order and
+    escaping; browser YAML accepts only the deterministic manifest layout and
+    structurally updates nodes, endpoints, edges, and boundaries. YAML, YML, and
+    JSON editor tests; YAML/JSON engine and mounted HTTP sequences; normalized
+    relay requests; adversarial JavaScript; repository-wide test/vet; targeted
+    race; all real-Chromium profiles; and the shared browser/native companion are
+    green. Real canvas runs compile, rename, recompile, remove, recompile, create,
+    and finally recompile both YAML and JSON under distinct server fingerprints.
 - [x] Add an immutable, pure language-service snapshot with compiler-backed,
   source-mapped diagnostics, stable source-digest cursors, bounded results, and
   recursively independent metadata for concurrent readers.
@@ -3529,9 +3557,9 @@ checked from foundation work alone; each requires end-to-end release evidence.
     the common factory registry. The browser workspace also applies exact
     compiler-produced canonical formatter edits and compiler-backed,
     fingerprint-CAS canvas node renames plus exact edge removal and
-    compiler-validated, predecessor-fingerprint-bound edge creation without
-    file authority. Normalized YAML/JSON canvas mutation and complete
-    arbitrary-remote release evidence remain requirements of the parent gate.
+    compiler-validated, predecessor-fingerprint-bound edge creation across
+    canonical `.ortg` and normalized YAML/JSON without file authority. Complete
+    arbitrary-remote release evidence remains a requirement of the parent gate.
 - [x] The graph can expose any supported combination of text, audio, video,
   images, files, tools, computer use, and control ports; audio is optional. The
   common descriptor and typed-port model admits those capabilities

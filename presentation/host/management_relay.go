@@ -63,7 +63,7 @@ func NewManagementRelayFactory(client *http.Client, logger *slog.Logger) *Manage
 	return &ManagementRelayFactory{
 		descriptor: plugin.Descriptor{
 			FormatVersion: plugin.DescriptorFormatVersion,
-			Name:          "openrealtime.presentation.host.management-relay", Revision: 9,
+			Name:          "openrealtime.presentation.host.management-relay", Revision: 10,
 			Realm: plugin.PresentationHostRealm, Platforms: []string{"go"},
 			Requires: []plugin.Requirement{
 				{Contract: presentation.HTTPRoutesContract},

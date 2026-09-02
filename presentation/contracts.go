@@ -151,8 +151,8 @@ var (
 	)
 	ClientManagementEditingContract = semanticContractRevision(
 		"presentation.client.management_editing",
-		3,
-		"openrealtime/presentation/client/management-editing/v3:exact-node-rename-edge-removal-creation-validated-local-edit-application",
+		4,
+		"openrealtime/presentation/client/management-editing/v4:canonical-ortg-yaml-json-exact-node-rename-edge-removal-creation-validated-local-edit-application",
 	)
 	ClientSourceReadingContract = semanticContract(
 		"presentation.client.source_reading",
@@ -164,8 +164,8 @@ var (
 	)
 	ClientAuthoringWorkspaceContract = semanticContractRevision(
 		"presentation.client.authoring_workspace",
-		3,
-		"openrealtime/presentation/client/authoring-workspace/v3:bounded-document-optional-rooted-read-analysis-compile-render-graph-node-rename-edge-removal-creation-cas-optional-publication-immutable-snapshot-subscribe",
+		4,
+		"openrealtime/presentation/client/authoring-workspace/v4:bounded-ortg-yaml-json-document-optional-rooted-read-analysis-compile-render-graph-node-rename-edge-removal-creation-cas-optional-publication-immutable-snapshot-subscribe",
 	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",

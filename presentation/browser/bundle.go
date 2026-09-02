@@ -300,7 +300,10 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 				presentation.ClientManagementAuthoringContract,
 				presentation.ClientManagementEditingContract,
 			},
-			requires:   []plugin.Requirement{{Contract: presentation.ClientManagementTransportContract}},
+			requires: []plugin.Requirement{
+				{Contract: presentation.ClientManagementTransportContract},
+				{Contract: presentation.ClientCodecContract},
+			},
 		},
 	}
 	if sourceAccess {

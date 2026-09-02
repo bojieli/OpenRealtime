@@ -14,6 +14,8 @@ const decoder = new TextDecoder("utf-8", { fatal: true });
 const SCHEMA_TYPES = new Set(["array", "boolean", "integer", "null", "number", "object", "string"]);
 const TOPOLOGY_WHITESPACE = new Set([" ", "\t", "\r", "\n"]);
 const ENDPOINT_TAIL = new Set(["->", "=>", ";"]);
+const MANIFEST_API_VERSION = "openrealtime.ai/graph/v1alpha1";
+const MANIFEST_ELEMENT = /^[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$/;
 
 function object(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} is not an object`);
@@ -193,6 +195,367 @@ function edgeName(value, label) {
     throw new Error(`${label} is not a canonical edge identity`);
   }
   return value;
+}
+
+function topologyKind(path) {
+  if (/\.ortg$/i.test(path)) return "ortg";
+  if (/\.ya?ml$/i.test(path)) return "yaml";
+  if (/\.json$/i.test(path)) return "json";
+  throw new Error("authoring topology extension is unsupported");
+}
+
+function manifestString(value, label, required = true) {
+  if (typeof value !== "string" || (required && value.length === 0)) {
+    throw new Error(`${label} is invalid`);
+  }
+  for (const character of value) {
+    const point = character.codePointAt(0);
+    if (character.length === 1 && point >= 0xd800 && point <= 0xdfff) {
+      throw new Error(`${label} contains invalid Unicode`);
+    }
+  }
+  return value;
+}
+
+function manifestEndpoint(value, label) {
+  manifestString(value, label);
+  const match = value.match(/^([A-Za-z_][A-Za-z0-9_-]*)\.([A-Za-z_][A-Za-z0-9_-]*)$/);
+  if (!match) throw new Error(`${label} is not a canonical instance.port endpoint`);
+  nodeName(match[1], `${label} node`);
+  nodeName(match[2], `${label} port`);
+  return Object.freeze({ value, node: match[1], port: match[2] });
+}
+
+function canonicalManifest(value) {
+  only(value, ["apiVersion", "graph"], "normalized manifest");
+  if (value.apiVersion !== MANIFEST_API_VERSION) {
+    throw new Error("normalized manifest API version is invalid");
+  }
+  const graph = object(value.graph, "normalized graph");
+  only(graph, ["name", "imports", "nodes", "edges", "boundaries"], "normalized graph");
+  const normalized = { apiVersion: MANIFEST_API_VERSION, graph: { name: nodeName(graph.name, "graph name") } };
+
+  if (graph.imports !== undefined) {
+    const imports = rows(graph.imports, "normalized imports");
+    const values = imports.map((entry) => {
+      only(entry, ["path", "alias"], "normalized import");
+      const imported = { path: manifestString(entry.path, "normalized import path") };
+      if (entry.path.trim() === "") throw new Error("normalized import path is empty");
+      if (entry.alias !== undefined && entry.alias !== "") {
+        imported.alias = nodeName(entry.alias, "normalized import alias");
+      }
+      return imported;
+    });
+    if (values.length !== 0) normalized.graph.imports = values;
+  }
+
+  const nodes = rows(graph.nodes, "normalized nodes");
+  if (nodes.length === 0) throw new Error("normalized graph has no nodes");
+  normalized.graph.nodes = nodes.map((entry) => {
+    only(entry, ["id", "element"], "normalized node");
+    const id = nodeName(entry.id, "normalized node ID");
+    const element = manifestString(entry.element, "normalized node element");
+    if (!MANIFEST_ELEMENT.test(element)) throw new Error("normalized node element is invalid");
+    return { id, element };
+  });
+
+  if (graph.edges !== undefined) {
+    const edges = rows(graph.edges, "normalized edges");
+    const values = edges.map((entry) => {
+      only(entry, ["id", "from", "to", "delivery"], "normalized edge");
+      const edge = {};
+      if (entry.id !== undefined && entry.id !== "") edge.id = nodeName(entry.id, "normalized edge ID");
+      edge.from = manifestEndpoint(entry.from, "normalized edge source").value;
+      edge.to = manifestEndpoint(entry.to, "normalized edge target").value;
+      if (entry.delivery !== "lossless" && entry.delivery !== "lossy") {
+        throw new Error("normalized edge delivery is invalid");
+      }
+      edge.delivery = entry.delivery;
+      return edge;
+    });
+    if (values.length !== 0) normalized.graph.edges = values;
+  }
+
+  if (graph.boundaries !== undefined) {
+    const boundaries = rows(graph.boundaries, "normalized boundaries");
+    const values = boundaries.map((entry) => {
+      only(entry, ["name", "direction", "endpoint"], "normalized boundary");
+      const boundary = { name: nodeName(entry.name, "normalized boundary name") };
+      if (entry.direction !== "input" && entry.direction !== "output") {
+        throw new Error("normalized boundary direction is invalid");
+      }
+      boundary.direction = entry.direction;
+      boundary.endpoint = manifestEndpoint(entry.endpoint, "normalized boundary endpoint").value;
+      return boundary;
+    });
+    if (values.length !== 0) normalized.graph.boundaries = values;
+  }
+  const statements = (normalized.graph.imports?.length ?? 0) + normalized.graph.nodes.length +
+    (normalized.graph.edges?.length ?? 0) + (normalized.graph.boundaries?.length ?? 0);
+  if (statements > MAX_ITEMS) throw new Error("normalized graph exceeds its statement bound");
+  return normalized;
+}
+
+// Match encoding/json's deterministic indented output, including its default
+// HTML and JavaScript line-separator escaping.
+function canonicalManifestJSON(value) {
+  const canonical = canonicalManifest(value);
+  return `${JSON.stringify(canonical, null, 2).replace(/[<>&\u2028\u2029]/g, (character) => ({
+    "<": "\\u003c", ">": "\\u003e", "&": "\\u0026",
+    "\u2028": "\\u2028", "\u2029": "\\u2029",
+  })[character])}\n`;
+}
+
+function parseCanonicalJSONManifest(source, codec) {
+  const value = canonicalManifest(codec.parse(source));
+  if (canonicalManifestJSON(value) !== source) {
+    throw new Error("authoring normalized JSON is not canonical");
+  }
+  return value;
+}
+
+function parseCanonicalYAMLManifest(source) {
+  if (source.includes("\r")) throw new Error("authoring normalized YAML is not canonical");
+  const lines = source.split("\n");
+  if (lines.length < 6 || lines.at(-1) !== "" ||
+      lines[0] !== `apiVersion: ${MANIFEST_API_VERSION}` || lines[1] !== "graph:") {
+    throw new Error("authoring normalized YAML is not canonical");
+  }
+  const graphMatch = lines[2].match(/^  name: ([A-Za-z_][A-Za-z0-9_-]*)$/);
+  if (!graphMatch) throw new Error("authoring normalized YAML graph name is invalid");
+  nodeName(graphMatch[1], "normalized YAML graph name");
+  const end = lines.length - 1;
+  let cursor = 3;
+  let items = 0;
+
+  if (lines[cursor] === "  imports:") {
+    cursor++;
+    let count = 0;
+    while (cursor < end && lines[cursor].startsWith("    - path: ")) {
+      const path = lines[cursor].slice("    - path: ".length);
+      if (!path || new Set(["''", "\"\"", "null", "~", "|", ">"]).has(path)) {
+        throw new Error("normalized YAML import path is invalid");
+      }
+      cursor++;
+      if (cursor < end && lines[cursor].startsWith("      alias: ")) {
+        nodeName(lines[cursor].slice("      alias: ".length), "normalized YAML import alias");
+        cursor++;
+      }
+      count++;
+    }
+    if (count === 0) throw new Error("normalized YAML has an empty imports section");
+    items += count;
+  }
+
+  if (lines[cursor] !== "  nodes:") throw new Error("normalized YAML omitted its canonical nodes section");
+  cursor++;
+  const nodes = [];
+  while (cursor < end) {
+    const id = lines[cursor].match(/^    - id: ([A-Za-z_][A-Za-z0-9_-]*)$/);
+    if (!id) break;
+    const start = cursor;
+    const element = lines[cursor + 1]?.match(/^      element: (.+)$/);
+    if (!element || !MANIFEST_ELEMENT.test(element[1])) {
+      throw new Error("normalized YAML node element is invalid");
+    }
+    nodes.push({ id: nodeName(id[1], "normalized YAML node ID"), idLine: start });
+    cursor += 2;
+  }
+  if (nodes.length === 0) throw new Error("normalized YAML graph has no nodes");
+  items += nodes.length;
+  const nodesEnd = cursor;
+
+  let edgesHeader = null;
+  let edgesEnd = cursor;
+  const edges = [];
+  if (lines[cursor] === "  edges:") {
+    edgesHeader = cursor++;
+    while (cursor < end && (lines[cursor].startsWith("    - id: ") ||
+        lines[cursor].startsWith("    - from: "))) {
+      const start = cursor;
+      let id = "";
+      let fromPrefix = "    - from: ";
+      const idMatch = lines[cursor].match(/^    - id: ([A-Za-z_][A-Za-z0-9_-]*)$/);
+      if (idMatch) {
+        id = nodeName(idMatch[1], "normalized YAML edge ID");
+        cursor++;
+        fromPrefix = "      from: ";
+      }
+      if (!lines[cursor]?.startsWith(fromPrefix)) throw new Error("normalized YAML edge source is invalid");
+      const fromLine = cursor;
+      const from = manifestEndpoint(lines[cursor].slice(fromPrefix.length), "normalized YAML edge source");
+      cursor++;
+      const toPrefix = "      to: ";
+      if (!lines[cursor]?.startsWith(toPrefix)) throw new Error("normalized YAML edge target is invalid");
+      const toLine = cursor;
+      const to = manifestEndpoint(lines[cursor].slice(toPrefix.length), "normalized YAML edge target");
+      cursor++;
+      const delivery = lines[cursor]?.match(/^      delivery: (lossless|lossy)$/);
+      if (!delivery) throw new Error("normalized YAML edge delivery is invalid");
+      cursor++;
+      edges.push({
+        id, identity: id || `${from.value}->${to.value}`, from, to, start, end: cursor,
+        fromLine, fromPrefix, toLine, toPrefix,
+      });
+    }
+    if (edges.length === 0) throw new Error("normalized YAML has an empty edges section");
+    items += edges.length;
+    edgesEnd = cursor;
+  }
+
+  const boundaries = [];
+  if (lines[cursor] === "  boundaries:") {
+    cursor++;
+    while (cursor < end && lines[cursor].startsWith("    - name: ")) {
+      const name = lines[cursor].match(/^    - name: ([A-Za-z_][A-Za-z0-9_-]*)$/);
+      const direction = lines[cursor + 1]?.match(/^      direction: (input|output)$/);
+      const endpointPrefix = "      endpoint: ";
+      if (!name || !direction || !lines[cursor + 2]?.startsWith(endpointPrefix)) {
+        throw new Error("normalized YAML boundary is invalid");
+      }
+      nodeName(name[1], "normalized YAML boundary name");
+      const endpointLine = cursor + 2;
+      const endpoint = manifestEndpoint(lines[endpointLine].slice(endpointPrefix.length),
+        "normalized YAML boundary endpoint");
+      boundaries.push({ endpoint, endpointLine, endpointPrefix });
+      cursor += 3;
+    }
+    if (boundaries.length === 0) throw new Error("normalized YAML has an empty boundaries section");
+    items += boundaries.length;
+  }
+  if (cursor !== end || items > MAX_ITEMS) {
+    throw new Error("authoring normalized YAML has noncanonical or excessive content");
+  }
+  return { lines, nodes, nodesEnd, edges, edgesHeader, edgesEnd, boundaries };
+}
+
+function renamedEndpoint(value, selected, replacement) {
+  return value.node === selected ? `${replacement}.${value.port}` : value.value;
+}
+
+function normalizedRenameSource(input, selected, replacement, codec) {
+  if (topologyKind(input.path) === "json") {
+    const value = parseCanonicalJSONManifest(input.source, codec);
+    const matches = value.graph.nodes.filter((entry) => entry.id === selected).length;
+    if (matches !== 1) throw new Error("normalized rename source is missing or ambiguous");
+    if (replacement !== selected && value.graph.nodes.some((entry) => entry.id === replacement)) {
+      throw new Error("normalized rename target already exists");
+    }
+    if (replacement === selected) return input.source;
+    let references = 0;
+    for (const node of value.graph.nodes) {
+      if (node.id === selected) { node.id = replacement; references++; }
+    }
+    for (const edge of value.graph.edges ?? []) {
+      const from = renamedEndpoint(manifestEndpoint(edge.from, "normalized edge source"), selected, replacement);
+      const to = renamedEndpoint(manifestEndpoint(edge.to, "normalized edge target"), selected, replacement);
+      if (from !== edge.from) { edge.from = from; references++; }
+      if (to !== edge.to) { edge.to = to; references++; }
+    }
+    for (const boundary of value.graph.boundaries ?? []) {
+      const endpoint = renamedEndpoint(manifestEndpoint(boundary.endpoint,
+        "normalized boundary endpoint"), selected, replacement);
+      if (endpoint !== boundary.endpoint) { boundary.endpoint = endpoint; references++; }
+    }
+    if (references < 1 || references > MAX_RENAME_EDITS) {
+      throw new Error("normalized rename reference count is invalid");
+    }
+    return canonicalManifestJSON(value);
+  }
+  const value = parseCanonicalYAMLManifest(input.source);
+  const matches = value.nodes.filter((entry) => entry.id === selected).length;
+  if (matches !== 1) throw new Error("normalized rename source is missing or ambiguous");
+  if (replacement !== selected && value.nodes.some((entry) => entry.id === replacement)) {
+    throw new Error("normalized rename target already exists");
+  }
+  if (replacement === selected) return input.source;
+  let references = 0;
+  const lines = [...value.lines];
+  for (const node of value.nodes) {
+    if (node.id === selected) {
+      lines[node.idLine] = `    - id: ${replacement}`;
+      references++;
+    }
+  }
+  for (const edge of value.edges) {
+    const from = renamedEndpoint(edge.from, selected, replacement);
+    const to = renamedEndpoint(edge.to, selected, replacement);
+    if (from !== edge.from.value) { lines[edge.fromLine] = edge.fromPrefix + from; references++; }
+    if (to !== edge.to.value) { lines[edge.toLine] = edge.toPrefix + to; references++; }
+  }
+  for (const boundary of value.boundaries) {
+    const endpoint = renamedEndpoint(boundary.endpoint, selected, replacement);
+    if (endpoint !== boundary.endpoint.value) {
+      lines[boundary.endpointLine] = boundary.endpointPrefix + endpoint;
+      references++;
+    }
+  }
+  if (references < 1 || references > MAX_RENAME_EDITS) {
+    throw new Error("normalized rename reference count is invalid");
+  }
+  return lines.join("\n");
+}
+
+function normalizedEdgeRemovalSource(input, selected, codec) {
+  if (topologyKind(input.path) === "json") {
+    const value = parseCanonicalJSONManifest(input.source, codec);
+    const edges = value.graph.edges ?? [];
+    const matches = edges.map((edge, index) => ({
+      identity: edge.id || `${edge.from}->${edge.to}`, index,
+    })).filter((entry) => entry.identity === selected);
+    if (matches.length !== 1) throw new Error("normalized edge removal is missing or ambiguous");
+    edges.splice(matches[0].index, 1);
+    if (edges.length === 0) delete value.graph.edges;
+    return canonicalManifestJSON(value);
+  }
+  const value = parseCanonicalYAMLManifest(input.source);
+  const matches = value.edges.filter((edge) => edge.identity === selected);
+  if (matches.length !== 1) throw new Error("normalized edge removal is missing or ambiguous");
+  const lines = [...value.lines];
+  const edge = matches[0];
+  if (value.edges.length === 1) {
+    lines.splice(value.edgesHeader, edge.end - value.edgesHeader);
+  } else {
+    lines.splice(edge.start, edge.end - edge.start);
+  }
+  return lines.join("\n");
+}
+
+function normalizedEdgeCreationSource(input, edge, from, to, delivery, codec) {
+  if (topologyKind(input.path) === "json") {
+    const value = parseCanonicalJSONManifest(input.source, codec);
+    for (const endpoint of [from, to]) {
+      if (value.graph.nodes.filter((entry) => entry.id === endpoint.node).length !== 1) {
+        throw new Error("normalized edge creation endpoint is missing or ambiguous");
+      }
+    }
+    if ((value.graph.edges ?? []).some((entry) => (entry.id || `${entry.from}->${entry.to}`) === edge)) {
+      throw new Error("normalized edge creation identity already exists");
+    }
+    value.graph.edges = [...(value.graph.edges ?? []), {
+      id: edge, from: `${from.node}.${from.port}`, to: `${to.node}.${to.port}`, delivery,
+    }];
+    return canonicalManifestJSON(value);
+  }
+  const value = parseCanonicalYAMLManifest(input.source);
+  for (const endpoint of [from, to]) {
+    if (value.nodes.filter((entry) => entry.id === endpoint.node).length !== 1) {
+      throw new Error("normalized edge creation endpoint is missing or ambiguous");
+    }
+  }
+  if (value.edges.some((entry) => entry.identity === edge)) {
+    throw new Error("normalized edge creation identity already exists");
+  }
+  const lines = [...value.lines];
+  const block = [
+    `    - id: ${edge}`,
+    `      from: ${from.node}.${from.port}`,
+    `      to: ${to.node}.${to.port}`,
+    `      delivery: ${delivery}`,
+  ];
+  if (value.edgesHeader === null) block.unshift("  edges:");
+  lines.splice(value.edgesHeader === null ? value.nodesEnd : value.edgesEnd, 0, ...block);
+  return lines.join("\n");
 }
 
 // Canonical formatting places every edge statement on one ASCII line. This
@@ -420,57 +783,76 @@ function checkedEditSet(value, input, expectedDigest) {
   return Object.freeze({ editSet: frozen(value), source: decoder.decode(output) });
 }
 
-function validateRename(value, input, selected, replacement, requestedDigest, evidence) {
+function validateRename(value, input, selected, replacement, requestedDigest, evidence, codec) {
   only(value, ["node", "new_name", "edits"], "authoring rename result");
   if (nodeName(value.node, "authoring rename result node") !== selected ||
       nodeName(value.new_name, "authoring rename result replacement") !== replacement ||
       evidence !== `authoring:rename:${requestedDigest}`) {
     throw new Error("authoring rename result changed request identity");
   }
-  const references = renameReferenceSpans(input.source, selected, replacement);
   const applied = checkedEditSet(value.edits, input, requestedDigest);
   if (applied.editSet.edits.length > MAX_RENAME_EDITS) {
     throw new Error("authoring rename edit set exceeds its bound");
   }
-  for (const edit of applied.editSet.edits) {
-    if (edit.old_text !== selected || edit.new_text !== replacement) {
-      throw new Error("authoring rename result contains another text mutation");
+  if (topologyKind(input.path) === "ortg") {
+    const references = renameReferenceSpans(input.source, selected, replacement);
+    for (const edit of applied.editSet.edits) {
+      if (edit.old_text !== selected || edit.new_text !== replacement) {
+        throw new Error("authoring rename result contains another text mutation");
+      }
     }
-  }
-  if (selected === replacement) {
-    if (applied.editSet.edits.length !== 0 || applied.source !== input.source) {
-      throw new Error("authoring no-op rename returned edits");
+    if (selected === replacement) {
+      if (applied.editSet.edits.length !== 0 || applied.source !== input.source) {
+        throw new Error("authoring no-op rename returned edits");
+      }
+    } else {
+      if (applied.editSet.edits.length !== references.length || applied.source === input.source) {
+        throw new Error("authoring rename result omitted a node reference");
+      }
+      const expected = new Set(references.map(({ start, end }) => `${start}:${end}`));
+      for (const edit of applied.editSet.edits) {
+        const key = `${edit.span.start.offset}:${edit.span.end.offset}`;
+        if (!expected.delete(key)) throw new Error("authoring rename result edits another source span");
+      }
+      if (expected.size !== 0) throw new Error("authoring rename result omitted a node reference");
     }
   } else {
-    if (applied.editSet.edits.length !== references.length || applied.source === input.source) {
-      throw new Error("authoring rename result omitted a node reference");
+    const expected = normalizedRenameSource(input, selected, replacement, codec);
+    if (selected === replacement) {
+      if (applied.editSet.edits.length !== 0 || applied.source !== input.source) {
+        throw new Error("authoring normalized no-op rename returned edits");
+      }
+    } else {
+      const edit = applied.editSet.edits[0];
+      if (applied.editSet.edits.length !== 1 || edit.old_text !== input.source ||
+          edit.new_text !== expected || applied.source !== expected) {
+        throw new Error("authoring normalized rename is not one exact document replacement");
+      }
     }
-    const expected = new Set(references.map(({ start, end }) => `${start}:${end}`));
-    for (const edit of applied.editSet.edits) {
-      const key = `${edit.span.start.offset}:${edit.span.end.offset}`;
-      if (!expected.delete(key)) throw new Error("authoring rename result edits another source span");
-    }
-    if (expected.size !== 0) throw new Error("authoring rename result omitted a node reference");
   }
   return frozen(value);
 }
 
-function validateEdgeRemoval(value, input, selected, requestedDigest, evidence) {
+function validateEdgeRemoval(value, input, selected, requestedDigest, evidence, codec) {
   only(value, ["edge", "edits"], "authoring edge-removal result");
   if (edgeName(value.edge, "authoring edge-removal result edge") !== selected ||
       evidence !== `authoring:edge.remove:${requestedDigest}`) {
     throw new Error("authoring edge-removal result changed request identity");
   }
-  const expected = edgeRemovalSource(input.source, selected);
+  const expected = topologyKind(input.path) === "ortg"
+    ? edgeRemovalSource(input.source, selected)
+    : normalizedEdgeRemovalSource(input, selected, codec);
   const applied = checkedEditSet(value.edits, input, requestedDigest);
-  if (applied.editSet.edits.length !== 1 || applied.source !== expected) {
+  const edit = applied.editSet.edits[0];
+  if (applied.editSet.edits.length !== 1 || edit.old_text !== input.source ||
+      edit.new_text !== expected || applied.source !== expected) {
     throw new Error("authoring edge-removal result changes more or less than the selected edge");
   }
   return frozen(value);
 }
 
 function validateEdgeCreation(value, input, expectedFingerprint, edge, from, to, delivery,
-  requestedDigest, evidence) {
+  requestedDigest, evidence, codec) {
   only(value, ["edge", "previous_fingerprint", "candidate_fingerprint", "edits"],
     "authoring edge-creation result");
   const candidate = digest(value.candidate_fingerprint, "authoring edge-creation candidate fingerprint");
@@ -479,9 +861,13 @@ function validateEdgeCreation(value, input, expectedFingerprint, edge, from, to,
       evidence !== `authoring:edge.create:${expectedFingerprint}:${candidate}:${requestedDigest}`) {
     throw new Error("authoring edge-creation result changed request identity");
   }
-  const expected = edgeCreationSource(input.source, edge, from, to, delivery);
+  const expected = topologyKind(input.path) === "ortg"
+    ? edgeCreationSource(input.source, edge, from, to, delivery)
+    : normalizedEdgeCreationSource(input, edge, from, to, delivery, codec);
   const applied = checkedEditSet(value.edits, input, requestedDigest);
-  if (applied.editSet.edits.length !== 1 || applied.source !== expected) {
+  const edit = applied.editSet.edits[0];
+  if (applied.editSet.edits.length !== 1 || edit.old_text !== input.source ||
+      edit.new_text !== expected || applied.source !== expected) {
     throw new Error("authoring edge-creation result changes more or less than the requested edge");
   }
   return frozen(value);
@@ -679,7 +1065,8 @@ export default {
   revision: 1,
   async mount(context) {
     const transport = context.services.get("presentation.client.management_transport");
-    if (!transport) throw new Error("authoring management transport is unavailable");
+    const codec = context.services.get("presentation.client.strict_json");
+    if (!transport || !codec) throw new Error("authoring management transport or strict JSON codec is unavailable");
     let disposed = false;
     const ready = () => {
       if (disposed) throw new Error("authoring management client is disposed");
@@ -712,38 +1099,40 @@ export default {
     context.publish("presentation.client.management_editing", Object.freeze({
       async rename(input, selected, replacement) {
         ready();
-        const exact = document(input, true);
+        const exact = document(input, false);
         if ((exact.lock !== undefined && exact.lock !== null) ||
             (exact.channel_depth !== undefined && Object.keys(exact.channel_depth).length !== 0)) {
           throw new Error("authoring rename does not accept resolution or channel-depth planes");
         }
         const node = nodeName(selected, "authoring rename node");
         const newName = nodeName(replacement, "authoring rename replacement");
-        renameReferenceSpans(exact.source, node, newName);
+        if (topologyKind(exact.path) === "ortg") renameReferenceSpans(exact.source, node, newName);
+        else normalizedRenameSource(exact, node, newName, codec);
         const fingerprint = await sourceDigest(exact.source);
         const response = await transport.authoring("rename", {
           document: exact, node, new_name: newName,
         });
         ready();
-        return validateRename(response.value, exact, node, newName, fingerprint, response.identity);
+        return validateRename(response.value, exact, node, newName, fingerprint, response.identity, codec);
       },
       async removeEdge(input, selected) {
         ready();
-        const exact = document(input, true);
+        const exact = document(input, false);
         if ((exact.lock !== undefined && exact.lock !== null) ||
             (exact.channel_depth !== undefined && Object.keys(exact.channel_depth).length !== 0)) {
           throw new Error("authoring edge removal does not accept resolution or channel-depth planes");
         }
         const edge = edgeName(selected, "authoring edge-removal edge");
-        edgeRemovalSource(exact.source, edge);
+        if (topologyKind(exact.path) === "ortg") edgeRemovalSource(exact.source, edge);
+        else normalizedEdgeRemovalSource(exact, edge, codec);
         const fingerprint = await sourceDigest(exact.source);
         const response = await transport.authoring("remove-edge", { document: exact, edge });
         ready();
-        return validateEdgeRemoval(response.value, exact, edge, fingerprint, response.identity);
+        return validateEdgeRemoval(response.value, exact, edge, fingerprint, response.identity, codec);
       },
       async createEdge(input, expectedFingerprint, selected, fromValue, toValue, deliveryValue = "lossless") {
         ready();
-        const exact = document(input, true);
+        const exact = document(input, false);
         if ((exact.lock !== undefined && exact.lock !== null) ||
             (exact.channel_depth !== undefined && Object.keys(exact.channel_depth).length !== 0)) {
           throw new Error("authoring edge creation does not accept resolution or channel-depth planes");
@@ -755,7 +1144,8 @@ export default {
         if (!new Set(["lossless", "lossy"]).has(deliveryValue)) {
           throw new Error("authoring edge-creation delivery is invalid");
         }
-        edgeCreationSource(exact.source, edge, from, to, deliveryValue);
+        if (topologyKind(exact.path) === "ortg") edgeCreationSource(exact.source, edge, from, to, deliveryValue);
+        else normalizedEdgeCreationSource(exact, edge, from, to, deliveryValue, codec);
         const fingerprint = await sourceDigest(exact.source);
         const response = await transport.authoring("create-edge", {
           document: exact, expected_fingerprint: predecessor,
@@ -763,11 +1153,11 @@ export default {
         });
         ready();
         return validateEdgeCreation(response.value, exact, predecessor, edge, from, to, deliveryValue,
-          fingerprint, response.identity);
+          fingerprint, response.identity, codec);
       },
       async applyEdits(input, editSet) {
         ready();
-        const exact = document(input, true);
+        const exact = document(input, false);
         const fingerprint = await sourceDigest(exact.source);
         ready();
         return checkedEditSet(editSet, exact, fingerprint).source;
