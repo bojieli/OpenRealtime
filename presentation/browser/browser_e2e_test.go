@@ -444,6 +444,8 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 		entry, source, candidate string
 	}{
 		{"slots", "slots.js", "slots-v2.js"},
+		{"media", "media-webrtc.js", "media-webrtc-v2.js"},
+		{"transport", "transport-webrtc.js", "transport-webrtc-v2.js"},
 		{"session-configuration", "session-configuration.js", "session-configuration-v2.js"},
 		{"video", "video-protocol.js", "video-protocol-v2.js"},
 		{"debug-session", "debug-session.js", "debug-session-v2.js"},
@@ -545,6 +547,7 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 		t.Fatal(err)
 	}
 	const clientReplacementPath = "/test/developer-webrtc-client-replacement.json"
+	var realtimeOfferStarts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == clientReplacementPath {
 			writer.Header().Set("Content-Type", "application/json")
@@ -553,6 +556,9 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 				t.Errorf("encode WebRTC client replacement manifest: %v", err)
 			}
 			return
+		}
+		if request.URL.Path == "/client/v1/realtime/calls" {
+			realtimeOfferStarts.Add(1)
 		}
 		handler.ServeHTTP(writer, request)
 	}))
@@ -571,6 +577,9 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 	t.Log("\n" + string(output))
 	if err != nil {
 		t.Fatalf("developer WebRTC browser profile failed: %v", err)
+	}
+	if starts := realtimeOfferStarts.Load(); starts != 3 {
+		t.Fatalf("realtime WebRTC offers started = %d, want 3", starts)
 	}
 }
 

@@ -7,8 +7,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 const PAGE_URL = process.argv[2];
 const PORT = Number(process.env.CDP_PORT ?? 19312);
 const CLIENT_REPLACEMENT_PATH = process.env.CLIENT_REPLACEMENT_PATH ?? "";
+const RETAINED_WORKSPACE_PATH = "webrtc-replacement-retained.ortg";
+const RETAINED_WORKSPACE_SOURCE = "graph webrtc_replacement_retained {\n}\n";
 const REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "slots": "browser-esm:slots-v2.js",
+  "media": "browser-esm:media-webrtc-v2.js",
+  "transport": "browser-esm:transport-webrtc-v2.js",
   "session-configuration": "browser-esm:session-configuration-v2.js",
   "video": "browser-esm:video-protocol-v2.js",
   "debug-session": "browser-esm:debug-session-v2.js",
@@ -20,6 +24,8 @@ const REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
 });
 const PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
   "slots": "browser-esm:slots.js",
+  "media": "browser-esm:media-webrtc.js",
+  "transport": "browser-esm:transport-webrtc.js",
   "session-configuration": "browser-esm:session-configuration.js",
   "video": "browser-esm:video-protocol.js",
   "debug-session": "browser-esm:debug-session.js",
@@ -205,6 +211,25 @@ try {
     await evaluate(`document.getElementById("video-state")?.textContent ?? ""`));
   await evaluate(`document.getElementById("video-stop").click()`);
 
+  const workspacePrepared = await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    const path = view?.querySelector('input[name=authoring-path]');
+    const source = view?.querySelector('textarea[name=authoring-source]');
+    const analyze = view?.querySelector('button[data-action=analyze]');
+    if (!path || !source || !analyze) return false;
+    path.value = ${JSON.stringify(RETAINED_WORKSPACE_PATH)};
+    source.value = ${JSON.stringify(RETAINED_WORKSPACE_SOURCE)};
+    analyze.click();
+    return true;
+  })()`);
+  check("WebRTC workspace prepared durable transport-replacement state", workspacePrepared && await waitFor(
+    "WebRTC workspace commit", () => evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      const status = view?.querySelector('[data-role=status]')?.textContent ?? "";
+      return view?.querySelector('input[name=authoring-path]')?.value ===
+          ${JSON.stringify(RETAINED_WORKSPACE_PATH)} && status !== "analyzing";
+    })()`)));
+
   const replacementStarted = performance.now();
   const clientReplacement = await evaluate(`(async () => {
     const before = window.__openrealtime.live();
@@ -217,6 +242,7 @@ try {
       before, after, receipt, candidateFingerprint: candidate.fingerprint,
       manifestFingerprint: window.__openrealtime.manifest.fingerprint,
       mounted: window.__openrealtime.mounted,
+      connectionState: document.getElementById("state")?.textContent ?? "",
       changed: Object.keys(after.entries).filter((entry) =>
         before.entries[entry].implementation !== after.entries[entry].implementation),
     };
@@ -224,12 +250,14 @@ try {
   const replacementMS = performance.now() - replacementStarted;
   const transitions = clientReplacement.receipt.transitions ?? [];
   const replacementEntries = Object.keys(REPLACEMENT_IMPLEMENTATIONS).sort();
+  const workspaceTransfer = (clientReplacement.receipt.state_transfers ?? []).find(
+    (row) => row.entry === "authoring-workspace");
   check("WebRTC reconstructible client implementations replace atomically",
     clientReplacement.after.sequence === clientReplacement.before.sequence + 1 &&
     clientReplacement.after.fingerprint === clientReplacement.before.fingerprint &&
     clientReplacement.after.manifest_fingerprint === clientReplacement.candidateFingerprint &&
     clientReplacement.manifestFingerprint === clientReplacement.candidateFingerprint &&
-    clientReplacement.receipt.format_version === 2 &&
+    clientReplacement.receipt.format_version === 3 &&
     clientReplacement.receipt.plan_fingerprint === clientReplacement.before.fingerprint &&
     clientReplacement.receipt.before_manifest_fingerprint === clientReplacement.before.manifest_fingerprint &&
     clientReplacement.receipt.after_manifest_fingerprint === clientReplacement.candidateFingerprint &&
@@ -238,7 +266,15 @@ try {
     transitions.every((row) => row.before_implementation.implementation ===
       PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
       row.after_implementation.implementation === REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
-    !Object.hasOwn(clientReplacement.receipt, "state_transfers") &&
+    clientReplacement.receipt.state_transfers?.length === 1 &&
+    workspaceTransfer?.schema?.name === "presentation.client.authoring_workspace.state" &&
+    workspaceTransfer.schema.revision === 1 &&
+    workspaceTransfer.schema.digest ===
+      "sha256:8dcc2b5181390a1a61b50a3bb07390326bc60e6839a22f9667e3d40247147b78" &&
+    workspaceTransfer.before_state_digest === workspaceTransfer.after_state_digest &&
+    workspaceTransfer.migrator_implementation === "" &&
+    !JSON.stringify(clientReplacement.receipt).includes(RETAINED_WORKSPACE_PATH) &&
+    !JSON.stringify(clientReplacement.receipt).includes(RETAINED_WORKSPACE_SOURCE) &&
     !JSON.stringify(clientReplacement.receipt).includes("authority") &&
     replacementEntries.every((entry) => clientReplacement.after.entries[entry].state === "active") &&
     clientReplacement.mounted.length === 28);
@@ -248,6 +284,24 @@ try {
     '[data-view="authoring-editor"]', '[data-view="authoring-configuration"]',
     '[data-view="authoring-canvas"]', "#video-camera", "#transport-stats",
   ].every((selector) => document.querySelector(selector) !== null))()`));
+  const restoredWorkspace = await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    return {
+      path: view?.querySelector('input[name=authoring-path]')?.value ?? "",
+      source: view?.querySelector('textarea[name=authoring-source]')?.value ?? "",
+      status: view?.querySelector('[data-role=status]')?.textContent ?? "",
+    };
+  })()`);
+  check("WebRTC media/transport replacement preserves only durable workspace state",
+    clientReplacement.connectionState === "disconnected" &&
+    restoredWorkspace.path === RETAINED_WORKSPACE_PATH &&
+    restoredWorkspace.source === RETAINED_WORKSPACE_SOURCE && restoredWorkspace.status === "idle",
+    JSON.stringify({connection: clientReplacement.connectionState,
+      path: restoredWorkspace.path, status: restoredWorkspace.status}));
+  await evaluate(`document.getElementById("connect").click()`);
+  check("replacement WebRTC media and transport establish a fresh protocol session", await waitFor(
+    "replacement WebRTC connection", () => evaluate(
+      `document.getElementById("state")?.textContent === "connected"`)));
   check("replacement session configuration restores scoped inspection", await waitFor(
     "replacement WebRTC inspection", () => evaluate(
       `document.querySelector('[data-view=inspection] #availability')?.textContent === "live"`)));
