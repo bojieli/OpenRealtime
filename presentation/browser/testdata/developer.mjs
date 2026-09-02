@@ -15,6 +15,7 @@ const AUTHORING_JSON_SOURCE = process.env.AUTHORING_JSON_SOURCE ?? "";
 const SOURCE_ROOT_IDENTITY = process.env.SOURCE_ROOT_IDENTITY ?? "";
 const STATIC_GRAPH_FINGERPRINT = process.env.STATIC_GRAPH_FINGERPRINT ?? "";
 const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
+const EFFECTS_REPLACEMENT_PATH = process.env.EFFECTS_REPLACEMENT_PATH ?? "";
 const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
 if (!new Set(["websocket", "webrtc"]).has(CLIENT_TRANSPORT)) {
   throw new Error("developer client transport fixture is invalid");
@@ -25,6 +26,10 @@ if (!OPERATOR_CAPABILITY || !OPERATOR_CAPABILITY_ROTATED || !AUTHORING_SOURCE ||
     (EFFECTS_ENABLED && (!AUTHORING_UPDATED_SOURCE ||
       !/^sha256:[0-9a-f]{64}$/.test(SOURCE_ROOT_IDENTITY)))) {
   throw new Error("developer management E2E fixture is incomplete");
+}
+if (EFFECTS_REPLACEMENT_PATH && (!EFFECTS_ENABLED || CLIENT_TRANSPORT !== "websocket" ||
+    !EFFECTS_REPLACEMENT_PATH.startsWith("/test/"))) {
+  throw new Error("developer effects replacement fixture is invalid");
 }
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-developer-client-"));
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
@@ -739,6 +744,69 @@ try {
     afterRestore.entries["inspection-view"].state === "active");
   check("payload-free lifecycle state cannot expose the capability", !JSON.stringify(afterRestore).includes("mgmt_"));
 
+  let capabilityReplacementSequence = 0;
+  if (EFFECTS_REPLACEMENT_PATH) {
+    await waitFor("initial effect negotiation", () => evaluate(
+      `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated === "true"`));
+    const replacement = await evaluate(`(async () => {
+      const before = window.__openrealtime.live();
+      const candidate = await fetch(${JSON.stringify(EFFECTS_REPLACEMENT_PATH)}, {cache:"no-store"})
+        .then((response) => response.json());
+      const receipt = await window.__openrealtime.replaceMany(
+        ["effects", "artifact-references"], candidate);
+      const after = window.__openrealtime.live();
+      return {
+        before, receipt, after, candidateFingerprint: candidate.fingerprint,
+        candidatePlanFingerprint: candidate.plan.fingerprint,
+        manifestFingerprint: window.__openrealtime.manifest.fingerprint,
+        mounted: window.__openrealtime.mounted,
+        changed: Object.keys(after.entries).filter((entry) =>
+          before.entries[entry].implementation !== after.entries[entry].implementation),
+      };
+    })()`);
+    const transitions = replacement.receipt.transitions ?? [];
+    const transitionEntries = transitions.map((row) => row.entry).sort();
+    capabilityReplacementSequence = replacement.after.sequence;
+    check("atomic replacement selected the two shipped capability implementations",
+      replacement.after.sequence === replacement.before.sequence + 1 &&
+      replacement.after.fingerprint === replacement.before.fingerprint &&
+      replacement.candidatePlanFingerprint === replacement.before.fingerprint &&
+      replacement.after.manifest_fingerprint === replacement.candidateFingerprint &&
+      replacement.manifestFingerprint === replacement.candidateFingerprint &&
+      JSON.stringify(replacement.changed.sort()) ===
+        JSON.stringify(["artifact-references", "effects"]) &&
+      replacement.after.entries.effects.implementation === "browser-esm:effects-client-v2.js" &&
+      replacement.after.entries["artifact-references"].implementation ===
+        "browser-esm:artifact-references-v2.js");
+    check("capability replacement receipt is exact and payload-free",
+      replacement.receipt.format_version === 2 &&
+      replacement.receipt.plan_fingerprint === replacement.before.fingerprint &&
+      replacement.receipt.before_manifest_fingerprint === replacement.before.manifest_fingerprint &&
+      replacement.receipt.after_manifest_fingerprint === replacement.candidateFingerprint &&
+      replacement.receipt.before_sequence === replacement.before.sequence &&
+      replacement.receipt.after_sequence === replacement.after.sequence &&
+      JSON.stringify(transitionEntries) === JSON.stringify(["artifact-references", "effects"]) &&
+      transitions.some((row) => row.entry === "effects" &&
+        row.before_implementation.implementation === "browser-esm:effects-client.js" &&
+        row.after_implementation.implementation === "browser-esm:effects-client-v2.js") &&
+      transitions.some((row) => row.entry === "artifact-references" &&
+        row.before_implementation.implementation === "browser-esm:artifact-references.js" &&
+        row.after_implementation.implementation === "browser-esm:artifact-references-v2.js") &&
+      !Object.hasOwn(replacement.receipt, "state_transfers") &&
+      !JSON.stringify(replacement.receipt).includes("authority"));
+    check("effects/artifact union closure remounted without disturbing unrelated plugins",
+      JSON.stringify(replacement.mounted) === JSON.stringify(expectedMounted) &&
+      ["effects", "artifact-references", "confirmation-view", "artifact-view"]
+        .every((entry) => replacement.after.entries[entry].state === "active") &&
+      Object.entries(replacement.after.entries).every(([, entry]) => entry.desired));
+    await waitFor("replacement effect negotiation", () => evaluate(
+      `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated === "true"`));
+    check("replacement effect provider renegotiated its signed catalog",
+      await evaluate(`document.querySelector('[data-view=effect-confirmations] p')?.dataset.providerPhase`) ===
+        "ready" && await evaluate(
+          `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated`) === "true");
+  }
+
   await evaluate(`(() => {
     const input = document.getElementById("text"); input.value = "inspect this session";
     input.form.dispatchEvent(new Event("submit", {bubbles:true, cancelable:true}));
@@ -783,7 +851,8 @@ try {
         manifest: JSON.stringify(window.__openrealtime.manifest),
       };
     })()`);
-    check("server-authorized client effect rendered an artifact", artifact?.status === 200 &&
+    check(`${EFFECTS_REPLACEMENT_PATH ? "replacement s" : "s"}erver-authorized client effect rendered an artifact`,
+      artifact?.status === 200 &&
       artifact.content.includes("sealed browser artifact"), artifact?.source ?? "missing artifact");
     check("artifact view pins an exact immutable revision", artifact?.version === "1" &&
       /^sha256:[0-9a-f]{64}$/.test(artifact?.digest ?? "") && artifact.digest === artifact.responseDigest &&
@@ -797,6 +866,16 @@ try {
     check("opaque effect authority is absent from UI, manifest, and browser logs",
       !artifact.rendered.includes("ore1.") && !artifact.manifest.includes("ore1.") &&
       !browserConsole.some((row) => row.includes("ore1.")));
+    if (EFFECTS_REPLACEMENT_PATH) {
+      const afterArtifact = await evaluate(`window.__openrealtime.live()`);
+      check("replaced effects/artifact implementations remained active after real execution",
+        afterArtifact.sequence === capabilityReplacementSequence &&
+        afterArtifact.entries.effects.state === "active" &&
+        afterArtifact.entries.effects.implementation === "browser-esm:effects-client-v2.js" &&
+        afterArtifact.entries["artifact-references"].state === "active" &&
+        afterArtifact.entries["artifact-references"].implementation ===
+          "browser-esm:artifact-references-v2.js");
+    }
   } else {
     check("observer conversation cannot surface an artifact or confirmation view", await evaluate(
       `document.querySelector('[data-view=artifacts], [data-view=confirmations]') === null`));
@@ -812,6 +891,13 @@ try {
     `document.getElementById("openrealtime-root").dataset.state`) === "disposed");
   check("all developer view slots were cleared", await evaluate(
     `document.getElementById("openrealtime-root").childElementCount`) === 0);
+  if (EFFECTS_REPLACEMENT_PATH) {
+    const disposed = await evaluate(`({live:window.__openrealtime.live(),
+      mounted:window.__openrealtime.mounted})`);
+    check("replaced capability lifecycle released every browser-owned effect",
+      disposed.live.state === "closed" && disposed.mounted.length === 0 &&
+      Object.values(disposed.live.entries).every((entry) => entry.state === "inactive" && entry.effects === 0));
+  }
   check("inspection lifecycle performance stays inside release ceilings",
     bootMS < 5000 && inspectMS < 10000 && lossMS < 2000 && restoreMS < 2000 && disposeMS < 2000,
     `boot=${bootMS.toFixed(1)}ms inspect=${inspectMS.toFixed(1)}ms loss=${lossMS.toFixed(1)}ms ` +

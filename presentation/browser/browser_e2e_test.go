@@ -99,10 +99,43 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(revokeTwo)
-	bundle, err := presentationbrowser.DeveloperBundleWithEffectsCatalog(effects.CatalogDigest())
+	effectsSource, err := os.ReadFile(filepath.Join("assets", "effects-client.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	artifactReferencesSource, err := os.ReadFile(filepath.Join("assets", "artifact-references.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	effectsAlternative := append(
+		append([]byte(nil), effectsSource...), []byte("\n// shipped effects replacement candidate\n")...,
+	)
+	artifactReferencesAlternative := append(
+		append([]byte(nil), artifactReferencesSource...),
+		[]byte("\n// shipped artifact-references replacement candidate\n")...,
+	)
+	bundle, err := presentationbrowser.ComposeDeveloperBundle(
+		"openrealtime.browser.developer", effects.CatalogDigest(),
+		[]presentationbrowser.DeveloperImplementationAlternative{
+			{
+				Entry: "effects", Entrypoint: "effects-client-v2.js",
+				Source: effectsAlternative,
+			},
+			{
+				Entry: "artifact-references", Entrypoint: "artifact-references-v2.js",
+				Source: artifactReferencesAlternative,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := replacementBrowserManifest(
+		t, bundle.Manifest, "effects", "effects-client-v2.js",
+	)
+	replacement = replacementBrowserManifest(
+		t, replacement, "artifact-references", "artifact-references-v2.js",
+	)
 	router := host.NewRouterFactory()
 	target := host.NewEndpointDirectoryFactory()
 	credential := host.NewAnonymousCredentialFactory()
@@ -170,7 +203,25 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
+	const replacementPath = "/test/developer-effects-artifacts-replacement.json"
+	var effectConnectionStarts atomic.Int32
+	var activeEffectConnections atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == replacementPath {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Header().Set("Cache-Control", "no-store")
+			if err := json.NewEncoder(writer).Encode(replacement); err != nil {
+				t.Errorf("encode effects/artifacts replacement manifest: %v", err)
+			}
+			return
+		}
+		if request.URL.Path == "/client/v1/effects" {
+			effectConnectionStarts.Add(1)
+			activeEffectConnections.Add(1)
+			defer activeEffectConnections.Add(-1)
+		}
+		handler.ServeHTTP(writer, request)
+	}))
 	defer server.Close()
 
 	driver, err := filepath.Abs(filepath.Join("testdata", "developer.mjs"))
@@ -183,6 +234,7 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	command := exec.CommandContext(ctx, node, driver, server.URL)
 	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t),
 		"EXPECT_EFFECTS=1", "CLIENT_TRANSPORT=websocket",
+		"EFFECTS_REPLACEMENT_PATH="+replacementPath,
 		"OPERATOR_CAPABILITY="+operatorOne.Token,
 		"OPERATOR_CAPABILITY_ROTATED="+operatorTwo.Token,
 		"AUTHORING_SOURCE="+stack.AuthoringSource,
@@ -196,6 +248,13 @@ func TestDeveloperBrowserProfileUsesCanonicalManagementAPIInChromium(t *testing.
 	t.Log("\n" + string(output))
 	if err != nil {
 		t.Fatalf("developer browser profile failed: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for activeEffectConnections.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if starts, active := effectConnectionStarts.Load(), activeEffectConnections.Load(); starts != 2 || active != 0 {
+		t.Fatalf("effects replacement connections started/active = %d/%d, want 2/0", starts, active)
 	}
 	published, err := os.ReadFile(filepath.Join(sourceRoot, "browser-authoring.ortg"))
 	if err != nil || string(published) != stack.AuthoringSource+"\n" {

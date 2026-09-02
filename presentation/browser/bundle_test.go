@@ -152,6 +152,162 @@ func TestComposeTextBundlePinsCallerModuleAndItsExactDependencies(t *testing.T) 
 	}
 }
 
+func TestComposeDeveloperBundlePinsShippedEntryAlternativesWithoutWideningAuthority(t *testing.T) {
+	effectsSource, err := browserModule("effects-client.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactsSource, err := browserModule("artifact-references.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	effectsAlternative := append(slices.Clone(effectsSource), []byte("\n// effects replacement fixture\n")...)
+	artifactsAlternative := append(
+		slices.Clone(artifactsSource), []byte("\n// artifact replacement fixture\n")...,
+	)
+	catalogDigest := "sha256:" + strings.Repeat("c", 64)
+	alternatives := []DeveloperImplementationAlternative{
+		{Entry: "effects", Entrypoint: "effects-client-v2.js", Source: effectsAlternative},
+		{
+			Entry: "artifact-references", Entrypoint: "artifact-references-v2.js",
+			Source: artifactsAlternative,
+		},
+	}
+	bundle, err := ComposeDeveloperBundle(
+		"openrealtime.browser.developer", catalogDigest, slices.Clone(alternatives),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, validate := range map[string]func() error{
+		"profile": bundle.Profile.Validate, "lock": bundle.Lock.Validate,
+		"plan": bundle.Plan.Validate, "manifest": bundle.Manifest.Validate,
+	} {
+		if err := validate(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+
+	reversed, err := ComposeDeveloperBundle(
+		"openrealtime.browser.developer", catalogDigest,
+		[]DeveloperImplementationAlternative{alternatives[1], alternatives[0]},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reversed.Manifest.Fingerprint != bundle.Manifest.Fingerprint ||
+		reversed.Plan.Fingerprint != bundle.Plan.Fingerprint {
+		t.Fatal("developer alternative input order changed a frozen identity")
+	}
+
+	base, err := DeveloperBundleWithEffectsCatalog(catalogDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutAlternatives, err := ComposeDeveloperBundle(
+		"openrealtime.browser.developer", catalogDigest, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutAlternatives.Manifest.Fingerprint != base.Manifest.Fingerprint ||
+		withoutAlternatives.Plan.Fingerprint != base.Plan.Fingerprint {
+		t.Fatal("empty developer composition changed the shipped bundle identity")
+	}
+	if !reflect.DeepEqual(bundle.Manifest.Endpoints, base.Manifest.Endpoints) ||
+		!reflect.DeepEqual(bundle.Manifest.Grants, base.Manifest.Grants) ||
+		!reflect.DeepEqual(bundle.Manifest.Implementations, base.Manifest.Implementations) {
+		t.Fatal("developer alternatives changed endpoints, grants, or selected implementations")
+	}
+
+	wantAssets := map[string]string{}
+	for entry, source := range map[string][]byte{
+		"effects": effectsAlternative, "artifact-references": artifactsAlternative,
+	} {
+		digestBytes := sha256.Sum256(source)
+		wantAssets[entry] = "sha256:" + hex.EncodeToString(digestBytes[:])
+	}
+	for _, asset := range bundle.Manifest.Assets {
+		switch asset.Name {
+		case "effects-client-v2.js":
+			if asset.Entry != "effects" || asset.Digest != wantAssets["effects"] {
+				t.Fatalf("effects alternative asset = %#v", asset)
+			}
+			delete(wantAssets, "effects")
+		case "artifact-references-v2.js":
+			if asset.Entry != "artifact-references" ||
+				asset.Digest != wantAssets["artifact-references"] {
+				t.Fatalf("artifact alternative asset = %#v", asset)
+			}
+			delete(wantAssets, "artifact-references")
+		}
+	}
+	if len(wantAssets) != 0 {
+		t.Fatalf("developer manifest omitted alternative assets: %v", wantAssets)
+	}
+	effectsAlternative[0] = 'X'
+	artifactsAlternative[0] = 'X'
+	if err := bundle.Manifest.Validate(); err != nil {
+		t.Fatalf("caller source mutation invalidated developer bundle: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		alternatives []DeveloperImplementationAlternative
+		want         string
+	}{
+		{
+			name: "unknown entry",
+			alternatives: []DeveloperImplementationAlternative{{
+				Entry: "unknown", Entrypoint: "unknown-v2.js", Source: []byte("export {}"),
+			}},
+			want: "unknown entry",
+		},
+		{
+			name: "empty source",
+			alternatives: []DeveloperImplementationAlternative{{
+				Entry: "effects", Entrypoint: "effects-v2.js",
+			}},
+			want: "empty source",
+		},
+		{
+			name: "invalid entrypoint",
+			alternatives: []DeveloperImplementationAlternative{{
+				Entry: "effects", Entrypoint: "../effects-v2.js", Source: []byte("export {}"),
+			}},
+			want: "invalid alternative entrypoint",
+		},
+		{
+			name: "primary collision",
+			alternatives: []DeveloperImplementationAlternative{{
+				Entry: "effects", Entrypoint: "artifact-references.js", Source: []byte("export {}"),
+			}},
+			want: "duplicates entry",
+		},
+		{
+			name: "alternative collision",
+			alternatives: []DeveloperImplementationAlternative{
+				{Entry: "effects", Entrypoint: "shared-v2.js", Source: []byte("export const a=1")},
+				{
+					Entry: "artifact-references", Entrypoint: "shared-v2.js",
+					Source: []byte("export const b=2"),
+				},
+			},
+			want: "duplicates entry",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := ComposeDeveloperBundle(
+				"openrealtime.browser.developer", catalogDigest, test.alternatives,
+			)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("developer alternative error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func manifestImplementationDigest(manifest presentation.ClientManifest, entry string) string {
 	for _, implementation := range manifest.Implementations {
 		if implementation.Entry == entry {

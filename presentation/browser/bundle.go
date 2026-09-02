@@ -60,6 +60,17 @@ type ClientModuleAlternative struct {
 	Source     []byte
 }
 
+// DeveloperImplementationAlternative is another immutable browser module
+// admitted for one existing entry in a composed developer profile. The entry's
+// descriptor, dependencies, lifecycle declaration, permission ceiling, and
+// grants remain those of the shipped profile; only exact implementation bytes
+// and their content-addressed identity can differ.
+type DeveloperImplementationAlternative struct {
+	Entry      string
+	Entrypoint string
+	Source     []byte
+}
+
 type moduleAlternative struct {
 	file    string
 	content []byte
@@ -447,7 +458,75 @@ func DeveloperBundleWithEffectsCatalog(catalogDigest string) (*Bundle, error) {
 	return buildDeveloperBundle(catalogDigest)
 }
 
+// ComposeDeveloperBundle constructs the shipped WebSocket developer profile
+// with caller-supplied, content-addressed implementation alternatives for its
+// existing entries. Alternatives are declared in the immutable descriptor and
+// manifest but remain unloaded until an authenticated replacement manifest
+// selects them. This API cannot add entries or widen contracts, endpoints,
+// permissions, or grants.
+func ComposeDeveloperBundle(
+	profileName, catalogDigest string,
+	alternatives []DeveloperImplementationAlternative,
+) (*Bundle, error) {
+	definitions := developerBundleDefinitions()
+	entryIndexes := make(map[string]int, len(definitions))
+	usedEntrypoints := make(map[string]string, len(definitions)+len(alternatives))
+	for index, definition := range definitions {
+		entryIndexes[definition.entry] = index
+		usedEntrypoints[definition.file] = definition.entry
+	}
+
+	ordered := slices.Clone(alternatives)
+	slices.SortFunc(ordered, func(left, right DeveloperImplementationAlternative) int {
+		if compared := strings.Compare(left.Entry, right.Entry); compared != 0 {
+			return compared
+		}
+		return strings.Compare(left.Entrypoint, right.Entrypoint)
+	})
+	for _, alternative := range ordered {
+		index, found := entryIndexes[alternative.Entry]
+		if !found {
+			return nil, fmt.Errorf(
+				"browser developer alternative names unknown entry %q", alternative.Entry,
+			)
+		}
+		if len(alternative.Source) == 0 {
+			return nil, fmt.Errorf(
+				"browser developer entry %q alternative %q has empty source",
+				alternative.Entry, alternative.Entrypoint,
+			)
+		}
+		if alternative.Entrypoint == "" ||
+			alternative.Entrypoint != strings.TrimSpace(alternative.Entrypoint) ||
+			strings.Contains(alternative.Entrypoint, "..") {
+			return nil, fmt.Errorf(
+				"browser developer entry %q has invalid alternative entrypoint %q",
+				alternative.Entry, alternative.Entrypoint,
+			)
+		}
+		if owner, duplicate := usedEntrypoints[alternative.Entrypoint]; duplicate {
+			return nil, fmt.Errorf(
+				"browser developer alternative entrypoint %q duplicates entry %q",
+				alternative.Entrypoint, owner,
+			)
+		}
+		usedEntrypoints[alternative.Entrypoint] = alternative.Entry
+		definitions[index].alternatives = append(definitions[index].alternatives, moduleAlternative{
+			file: alternative.Entrypoint, content: slices.Clone(alternative.Source),
+		})
+	}
+	return buildBundle(profileName, definitions, developerBundleEndpoints(catalogDigest))
+}
+
 func buildDeveloperBundle(catalogDigest string) (*Bundle, error) {
+	return buildBundle(
+		"openrealtime.browser.developer",
+		developerBundleDefinitions(),
+		developerBundleEndpoints(catalogDigest),
+	)
+}
+
+func developerBundleDefinitions() []moduleDefinition {
 	websocketPermission := plugin.Permission{
 		Kind: "network.connect", Resource: "host-realtime", Operations: []string{"websocket"},
 	}
@@ -552,7 +631,11 @@ func buildDeveloperBundle(catalogDigest string) (*Bundle, error) {
 		},
 	}
 	definitions = append(definitions, developerManagementDefinitions(true)...)
-	return buildBundle("openrealtime.browser.developer", definitions, []presentation.ManifestEndpoint{
+	return definitions
+}
+
+func developerBundleEndpoints(catalogDigest string) []presentation.ManifestEndpoint {
+	return []presentation.ManifestEndpoint{
 		{Name: "effects.local", Method: "GET", Path: "/client/v1/effects",
 			Protocol: clientEffectsProtocol, CatalogDigest: catalogDigest},
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
@@ -562,7 +645,7 @@ func buildDeveloperBundle(catalogDigest string) (*Bundle, error) {
 		{Name: "management.static", Method: "GET", Path: "/client/v1/management",
 			Protocol: managementProtocol},
 		{Name: "realtime.websocket", Method: "GET", Path: "/client/v1/realtime"},
-	})
+	}
 }
 
 // ObserverDeveloperWebRTCBundle is the media-enabled observer composition.
