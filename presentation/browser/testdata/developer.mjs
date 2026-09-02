@@ -17,6 +17,7 @@ const STATIC_GRAPH_FINGERPRINT = process.env.STATIC_GRAPH_FINGERPRINT ?? "";
 const EFFECTS_ENABLED = (process.env.EXPECT_EFFECTS ?? "1") === "1";
 const EFFECTS_REPLACEMENT_PATH = process.env.EFFECTS_REPLACEMENT_PATH ?? "";
 const CLIENT_TRANSPORT = process.env.CLIENT_TRANSPORT ?? "websocket";
+const RETAINED_WORKSPACE_PATH = "replacement-retained.ortg";
 const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "slots": "browser-esm:slots-v2.js",
   "session-configuration": "browser-esm:session-configuration-v2.js",
@@ -24,7 +25,12 @@ const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "artifact-references": "browser-esm:artifact-references-v2.js",
   "debug-session": "browser-esm:debug-session-v2.js",
   "inspection": "browser-esm:inspection-client-v2.js",
+  "management-transport": "browser-esm:management-transport-v2.js",
   "management-static": "browser-esm:management-static-v2.js",
+  "management-authoring": "browser-esm:management-authoring-v2.js",
+  "management-source-reading": "browser-esm:management-source-reading-v2.js",
+  "management-source-publication": "browser-esm:management-source-publication-v2.js",
+  "authoring-workspace": "browser-esm:authoring-workspace-v2.js",
   "view": "browser-esm:text-view-v2.js",
   "confirmation-view": "browser-esm:confirmation-view-v2.js",
   "artifact-view": "browser-esm:artifact-view-v2.js",
@@ -42,7 +48,12 @@ const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
   "artifact-references": "browser-esm:artifact-references.js",
   "debug-session": "browser-esm:debug-session.js",
   "inspection": "browser-esm:inspection-client.js",
+  "management-transport": "browser-esm:management-transport.js",
   "management-static": "browser-esm:management-static.js",
+  "management-authoring": "browser-esm:management-authoring.js",
+  "management-source-reading": "browser-esm:management-source-reading.js",
+  "management-source-publication": "browser-esm:management-source-publication.js",
+  "authoring-workspace": "browser-esm:authoring-workspace.js",
   "view": "browser-esm:text-view.js",
   "confirmation-view": "browser-esm:confirmation-view.js",
   "artifact-view": "browser-esm:artifact-view.js",
@@ -791,6 +802,21 @@ try {
     afterRestore.entries["inspection-view"].state === "active");
   check("payload-free lifecycle state cannot expose the capability", !JSON.stringify(afterRestore).includes("mgmt_"));
 
+  const retainedWorkspacePrepared = await evaluate(`(() => {
+    const view = document.querySelector('[data-view=authoring-editor]');
+    const path = view?.querySelector('input[name=authoring-path]');
+    const source = view?.querySelector('textarea[name=authoring-source]');
+    const compile = view?.querySelector('button[data-action=compile]');
+    if (!path || !source || !compile) return false;
+    path.value = ${JSON.stringify(RETAINED_WORKSPACE_PATH)};
+    source.value = ${JSON.stringify(AUTHORING_SOURCE)};
+    compile.click();
+    return true;
+  })()`);
+  check("authoring workspace prepared durable replacement state", retainedWorkspacePrepared && await waitFor(
+    "durable workspace compile", () => evaluate(
+      `document.querySelector('[data-view=authoring-editor] [data-role=status]')?.textContent === "compiled"`)));
+
   let capabilityReplacementSequence = 0;
   if (EFFECTS_REPLACEMENT_PATH) {
     await waitFor("initial effect negotiation", () => evaluate(
@@ -824,8 +850,10 @@ try {
       JSON.stringify(replacement.changed.sort()) === JSON.stringify(expectedReplacementEntries) &&
       expectedReplacementEntries.every((entry) => replacement.after.entries[entry].implementation ===
         SHIPPED_REPLACEMENT_IMPLEMENTATIONS[entry]));
+    const workspaceTransfer = (replacement.receipt.state_transfers ?? []).find(
+      (row) => row.entry === "authoring-workspace");
     check("shipped consumer replacement receipt is exact and payload-free",
-      replacement.receipt.format_version === 2 &&
+      replacement.receipt.format_version === 3 &&
       replacement.receipt.plan_fingerprint === replacement.before.fingerprint &&
       replacement.receipt.before_manifest_fingerprint === replacement.before.manifest_fingerprint &&
       replacement.receipt.after_manifest_fingerprint === replacement.candidateFingerprint &&
@@ -835,7 +863,15 @@ try {
       transitions.every((row) => row.before_implementation.implementation ===
         SHIPPED_PREDECESSOR_IMPLEMENTATIONS[row.entry] &&
         row.after_implementation.implementation === SHIPPED_REPLACEMENT_IMPLEMENTATIONS[row.entry]) &&
-      !Object.hasOwn(replacement.receipt, "state_transfers") &&
+      replacement.receipt.state_transfers?.length === 1 &&
+      workspaceTransfer?.schema?.name === "presentation.client.authoring_workspace.state" &&
+      workspaceTransfer.schema.revision === 1 &&
+      workspaceTransfer.schema.digest ===
+        "sha256:8dcc2b5181390a1a61b50a3bb07390326bc60e6839a22f9667e3d40247147b78" &&
+      workspaceTransfer.before_state_digest === workspaceTransfer.after_state_digest &&
+      workspaceTransfer.migrator_implementation ===
+        SHIPPED_REPLACEMENT_IMPLEMENTATIONS["authoring-workspace"] &&
+      !JSON.stringify(replacement.receipt).includes(RETAINED_WORKSPACE_PATH) &&
       !JSON.stringify(replacement.receipt).includes("authority"));
     check("shipped consumer union closure remounted without disturbing unrelated plugins",
       JSON.stringify(replacement.mounted) === JSON.stringify(expectedMounted) &&
@@ -855,6 +891,18 @@ try {
     await waitFor("replacement static management client", async () => (await staticStatus()) === "loaded");
     check("replacement static management client rebinds operator authority",
       (await staticStatus()) === "loaded");
+    const restoredWorkspace = await evaluate(`(() => {
+      const view = document.querySelector('[data-view=authoring-editor]');
+      return {
+        path: view?.querySelector('input[name=authoring-path]')?.value ?? "",
+        source: view?.querySelector('textarea[name=authoring-source]')?.value ?? "",
+        status: view?.querySelector('[data-role=status]')?.textContent ?? "",
+      };
+    })()`);
+    check("replacement management clients preserve the durable authoring document",
+      restoredWorkspace.path === RETAINED_WORKSPACE_PATH &&
+      restoredWorkspace.source === AUTHORING_SOURCE && restoredWorkspace.status === "idle",
+      JSON.stringify({path: restoredWorkspace.path, status: restoredWorkspace.status}));
     await waitFor("replacement effect negotiation", () => evaluate(
       `document.querySelector('[data-view=effect-confirmations] p')?.dataset.negotiated === "true"`));
     check("replacement effect provider renegotiated its signed catalog",

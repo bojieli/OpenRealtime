@@ -167,6 +167,10 @@ var (
 		4,
 		"openrealtime/presentation/client/authoring-workspace/v4:bounded-ortg-yaml-json-document-optional-rooted-read-analysis-compile-render-graph-node-rename-edge-removal-creation-cas-optional-publication-immutable-snapshot-subscribe",
 	)
+	ClientAuthoringWorkspaceStateContract = semanticContract(
+		"presentation.client.authoring_workspace.state",
+		"openrealtime/presentation/client/authoring-workspace-state/v1:bounded-durable-document-path-source-revision-derived-state-invalidated",
+	)
 	ClientViewContract = semanticContract(
 		"presentation.client.view",
 		"openrealtime/presentation/client/view/v1:native-slots-state-media-effects-inspection-authoring",

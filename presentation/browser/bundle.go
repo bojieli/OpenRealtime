@@ -379,8 +379,10 @@ func developerManagementDefinitions(sourceAccess bool) []moduleDefinition {
 	definitions = append(definitions, []moduleDefinition{
 		{
 			entry: "authoring-workspace", file: "authoring-workspace.js",
-			pluginName: "openrealtime.presentation.client.authoring-workspace",
-			provides:   []plugin.Contract{presentation.ClientAuthoringWorkspaceContract},
+			pluginName:  "openrealtime.presentation.client.authoring-workspace",
+			provides:    []plugin.Contract{presentation.ClientAuthoringWorkspaceContract},
+			stateSchema: &presentation.ClientAuthoringWorkspaceStateContract,
+			lifecycle:   plugin.Lifecycle{Snapshot: true, Restore: true},
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientManagementAuthoringContract},
 				{Contract: presentation.ClientManagementEditingContract},

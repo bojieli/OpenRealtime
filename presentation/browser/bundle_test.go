@@ -770,8 +770,13 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 		t.Fatal(err)
 	}
 	var order []string
+	var workspaceDescriptor *plugin.Descriptor
 	for _, entry := range bundle.Plan.Entries {
 		order = append(order, entry.Entry.ID)
+		if entry.Entry.ID == "authoring-workspace" {
+			descriptor := entry.Descriptor
+			workspaceDescriptor = &descriptor
+		}
 	}
 	want := []string{
 		"slots", "transport", "reducer", "session-configuration", "debug-session", "effects",
@@ -784,6 +789,11 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 	}
 	if !reflect.DeepEqual(order, want) {
 		t.Fatalf("developer client mount order = %v, want %v", order, want)
+	}
+	if workspaceDescriptor == nil || workspaceDescriptor.StateSchema == nil ||
+		*workspaceDescriptor.StateSchema != presentation.ClientAuthoringWorkspaceStateContract ||
+		!workspaceDescriptor.Lifecycle.Snapshot || !workspaceDescriptor.Lifecycle.Restore {
+		t.Fatalf("authoring workspace state lifecycle = %#v", workspaceDescriptor)
 	}
 	if len(bundle.Manifest.Grants) != 5 ||
 		bundle.Manifest.Grants[0].Entry != "effects" ||

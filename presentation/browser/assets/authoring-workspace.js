@@ -2,6 +2,10 @@ const encoder = new TextEncoder();
 const MAX_SOURCE_BYTES = 1 << 20;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const NODE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+const STATE_SCHEMA_NAME = "presentation.client.authoring_workspace.state";
+const STATE_SCHEMA_REVISION = 1;
+const STATE_SCHEMA_DIGEST =
+  "sha256:8dcc2b5181390a1a61b50a3bb07390326bc60e6839a22f9667e3d40247147b78";
 
 function frozen(value) {
   const copy = structuredClone(value);
@@ -24,20 +28,54 @@ function checkedDocument(path, source, revision = 1) {
   return Object.freeze({ path, source, revision });
 }
 
+function workspaceState(value, label = "authoring workspace state") {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      Object.keys(value).length !== 1 || !Object.hasOwn(value, "document")) {
+    throw new Error(`${label} is invalid`);
+  }
+  const document = value.document;
+  if (!document || typeof document !== "object" || Array.isArray(document) ||
+      Object.keys(document).length !== 3 ||
+      !["path", "source", "revision"].every((field) => Object.hasOwn(document, field))) {
+    throw new Error(`${label} document is invalid`);
+  }
+  return Object.freeze({
+    document: checkedDocument(document.path, document.source, document.revision),
+  });
+}
+
 export default {
   name: "openrealtime.presentation.client.authoring-workspace",
   revision: 1,
+  async migrateState(input) {
+    if (!input || typeof input !== "object" || Array.isArray(input) ||
+        Object.keys(input).length !== 4 ||
+        !["entry", "schema", "source_implementation", "snapshot"].every(
+          (field) => Object.hasOwn(input, field)) ||
+        input.entry !== "authoring-workspace" ||
+        typeof input.source_implementation !== "string" || !input.source_implementation ||
+        input.source_implementation.trim() !== input.source_implementation ||
+        input.schema?.name !== STATE_SCHEMA_NAME || input.schema?.revision !== STATE_SCHEMA_REVISION ||
+        input.schema?.digest !== STATE_SCHEMA_DIGEST) {
+      throw new Error("authoring workspace migration input is invalid");
+    }
+    return workspaceState(input.snapshot, "authoring workspace migration snapshot");
+  },
   async mount(context) {
     const authoring = context.services.get("presentation.client.management_authoring");
     const editing = context.services.get("presentation.client.management_editing");
     const sourceReading = context.services.get("presentation.client.source_reading");
     const sourcePublication = context.services.get("presentation.client.source_publication");
     if (!authoring || !editing) throw new Error("authoring workspace services are unavailable");
+    const restored = context.state.restored();
+    const document = restored === undefined
+      ? checkedDocument("agent.ortg", "graph agent {\n}\n")
+      : workspaceState(restored, "restored authoring workspace state").document;
     let disposed = false;
     let epoch = 0;
     let request = 0;
     let state = {
-      document: checkedDocument("agent.ortg", "graph agent {\n}\n"),
+      document,
       phase: "idle", error: "", sourceRead: null,
       analysis: null, compiled: null, rendering: null, publication: null,
     };
@@ -77,6 +115,7 @@ export default {
       }
     };
 
+    context.state.snapshot(() => ({ document: state.document }));
     context.publish("presentation.client.authoring_workspace", Object.freeze({
       snapshot,
       canRead: () => !disposed && Boolean(sourceReading),

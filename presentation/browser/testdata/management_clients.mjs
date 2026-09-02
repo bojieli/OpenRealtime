@@ -31,15 +31,30 @@ const services = new Map([
 ]);
 const mounted = [];
 
-async function mount(path, permissions = []) {
+async function mount(path, permissions = [], restoredState) {
   const published = [];
   const disposers = [];
+  let stateSnapshot;
+  let restoredConsumed = false;
   const plugin = (await import(pathToFileURL(path))).default;
   await plugin.mount({
     manifest,
     permissions: { allows: (kind, resource, operation) => permissions.some((permission) =>
       permission.kind === kind && permission.resource === resource && permission.operations.includes(operation)) },
     services: { get: (name) => services.get(name) },
+    state: {
+      restored() {
+        if (restoredConsumed) throw new Error("restored state was consumed twice");
+        restoredConsumed = true;
+        return restoredState === undefined ? undefined : structuredClone(restoredState);
+      },
+      snapshot(callback) {
+        if (stateSnapshot || typeof callback !== "function") {
+          throw new Error("state snapshot callback is invalid or duplicated");
+        }
+        stateSnapshot = callback;
+      },
+    },
     publish(name, value) { services.set(name, value); published.push(name); },
     lifecycle: { defer(_name, dispose) { disposers.push(dispose); } },
   });
@@ -48,7 +63,10 @@ async function mount(path, permissions = []) {
     for (const name of published) services.delete(name);
   };
   mounted.push(dispose);
-  return { plugin, dispose };
+  return {
+    plugin, dispose,
+    snapshot: () => stateSnapshot === undefined ? undefined : structuredClone(stateSnapshot()),
+  };
 }
 
 const operatorMount = await mount(operatorPath, [{
@@ -62,7 +80,7 @@ await mount(staticPath);
 await mount(authoringPath);
 await mount(readingPath);
 await mount(publicationPath);
-await mount(workspacePath);
+const workspaceMount = await mount(workspacePath);
 
 const control = services.get("presentation.client.management_operator_control");
 const transport = services.get("presentation.client.management_transport");
@@ -75,6 +93,9 @@ const workspace = services.get("presentation.client.authoring_workspace");
 if (!control || !transport || !catalog || !authoring || !editing || !reading || !publication || !workspace ||
     !workspace.canRead() || !workspace.canPublish()) {
   throw new Error("management services were not published");
+}
+if (typeof workspaceMount.plugin.migrateState !== "function" || workspaceMount.snapshot() === undefined) {
+  throw new Error("authoring workspace omitted its state lifecycle");
 }
 
 const operatorOne = "operator_secret_one";
@@ -1246,6 +1267,32 @@ const canceled = await pending;
 if (canceled?.name !== "AbortError" || JSON.stringify(control.status()).includes(operatorTwo)) {
   throw new Error("operator capability rotation did not cancel reads without disclosure");
 }
+
+const durableWorkspace = workspaceMount.snapshot();
+if (!durableWorkspace || Object.keys(durableWorkspace).length !== 1 ||
+    Object.keys(durableWorkspace.document ?? {}).sort().join(",") !== "path,revision,source" ||
+    Object.hasOwn(durableWorkspace, "compiled") || Object.hasOwn(durableWorkspace, "publication")) {
+  throw new Error("authoring workspace snapshot was not the exact durable document boundary");
+}
+const migrationInput = {
+  entry: "authoring-workspace",
+  schema: {
+    name: "presentation.client.authoring_workspace.state", revision: 1,
+    digest: "sha256:8dcc2b5181390a1a61b50a3bb07390326bc60e6839a22f9667e3d40247147b78",
+  },
+  source_implementation: "browser-esm:authoring-workspace.js",
+  snapshot: durableWorkspace,
+};
+const migratedWorkspace = await workspaceMount.plugin.migrateState(migrationInput);
+if (JSON.stringify(migratedWorkspace) !== JSON.stringify(durableWorkspace)) {
+  throw new Error("authoring workspace migration changed the durable document");
+}
+await workspaceMount.plugin.migrateState({
+  ...migrationInput, snapshot: { ...durableWorkspace, compiled: {} },
+}).then(
+  () => { throw new Error("authoring workspace migration accepted derived state"); },
+  () => {},
+);
 
 handlers.push((_url, options) => new Promise((_resolve, reject) => {
   options.signal.addEventListener("abort", () => reject(options.signal.reason ??
