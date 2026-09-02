@@ -3204,6 +3204,15 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     effects, services, or lifecycle errors. The focused real-Chromium gate is
     green. Loading different client implementation bytes into the live plan
     remains under the open parent.
+  - [x] Remove and recover providers through the portable native client
+    composition. Media loss and effect loss quiesce only their exact transitive
+    consumers in reverse order, preserve unrelated services, and remount in
+    manifest order; a failed remount restores the same degraded service set and
+    remains retryable. Final shutdown after recovery disposes the complete
+    provider set exactly once in reverse dependency order, makes every service
+    unavailable, is idempotent, and refuses a later remount.
+    Strict-concurrency Swift conformance is green. The signed Darwin
+    application lifecycle remains a separate open gate.
   - [x] Complete the browser presentation server and browser client as
     manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
@@ -3734,9 +3743,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     gate proves zero-ownership host/server shutdown. A host-route replacement,
     rollback, and removal preserves the stable host router and export; real
     Chromium client-provider removal/recovery proves exact dependent cleanup
-    and a zero-ownership close. Complete live implementation replacement of the
-    remaining host/client capabilities and signed-native lifecycle/leak
-    evidence remain open.
+    and a zero-ownership close, while the portable native composition proves
+    exact provider-loss/remount and idempotent reverse-order shutdown. Complete
+    live implementation replacement of the remaining host/client capabilities
+    and signed-native lifecycle/leak evidence remain open.
 
 ## References
 

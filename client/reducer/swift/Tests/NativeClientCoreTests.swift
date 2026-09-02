@@ -452,7 +452,34 @@ final class NativeClientCoreTests: XCTestCase {
             lifecycle.removeAll()
             try composition.remount()
             XCTAssertEqual(lifecycle, ["start:effects", "start:artifacts", "start:view"])
+            XCTAssertEqual(composition.state, .active)
+            lifecycle.removeAll()
             try composition.stop()
+            XCTAssertEqual(composition.state, .stopped)
+            let stopped = lifecycle.map { String($0.dropFirst("stop:".count)) }
+            XCTAssertEqual(stopped.count, manifest.providers.count)
+            XCTAssertEqual(Set(stopped), Set(manifest.providers.map(\.id)))
+            let stopIndex = Dictionary(
+                uniqueKeysWithValues: stopped.enumerated().map { ($0.element, $0.offset) }
+            )
+            let providerID = Dictionary(
+                uniqueKeysWithValues: manifest.providers.map { ($0.service, $0.id) }
+            )
+            for row in manifest.providers {
+                for dependency in row.requires {
+                    XCTAssertLessThan(
+                        try XCTUnwrap(stopIndex[row.id]),
+                        try XCTUnwrap(stopIndex[try XCTUnwrap(providerID[dependency])])
+                    )
+                }
+            }
+            for row in manifest.providers {
+                XCTAssertThrowsError(try composition.service(row.service))
+            }
+            let afterStop = lifecycle
+            try composition.stop()
+            XCTAssertEqual(lifecycle, afterStop)
+            XCTAssertThrowsError(try composition.remount())
         }
     }
 
