@@ -263,6 +263,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 	specialIDs = append(specialIDs,
 		"external.benchmark.dynacu",
 		"external.benchmark.meeting.omni",
+		"external.benchmark.validation.behavioral",
 		"external.macos.signed-e2e",
 		"external.model.live-presentation",
 		"external.model.scenario-review",
@@ -571,6 +572,99 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 
 }
 
+func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
+	root := repositoryRoot(t)
+	matrix, err := Load(filepath.Join(root, "scripts", "release-matrix.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]Gate, len(matrix.Gates))
+	position := make(map[string]int, len(matrix.Gates))
+	for index, gate := range matrix.Gates {
+		byID[gate.ID] = gate
+		position[gate.ID] = index
+	}
+	const gateID = "external.benchmark.validation.behavioral"
+	gate, found := byID[gateID]
+	if !found {
+		t.Fatal("candidate-only behavioral acceptance gate is missing")
+	}
+	if !gate.Required || gate.Availability != AvailabilityProvisioned ||
+		gate.Selection != SelectionOptIn || gate.SkipPolicy != SkipForbid {
+		t.Fatalf("behavioral acceptance gate was weakened: %+v", gate)
+	}
+	if !gateHasPrerequisite(gate, "file", "{root}/scripts/behavioral-acceptance-targets.json") ||
+		!gateHasPrerequisite(gate, "env_file", "OPENREALTIME_BEHAVIORAL_CANDIDATE") {
+		t.Fatalf("behavioral gate omits its checked targets or frozen candidate: %+v", gate.Prerequisites)
+	}
+
+	results := map[string]string{
+		"fd-bench":        "{artifacts}/candidate-fdbench6147.json",
+		"fdb-v1.5":        "{artifacts}/candidate-fdb15.json",
+		"fdb-v3":          "{artifacts}/candidate-fdb3.json",
+		"meeting-cascade": "{artifacts}/candidate-meeting-cascade.json",
+		"meeting-omni":    "{artifacts}/meeting-omni.json",
+		"realtime-cu":     "{artifacts}/candidate-realtime-cu.json",
+		"scenario":        "{artifacts}/candidate-scenario.json",
+		"tau-control":     "{artifacts}/candidate-tau-control.json",
+		"tau-regular":     "{artifacts}/candidate-tau-regular.json",
+	}
+	if countArgument(gate.Command, "-result") != len(results) {
+		t.Fatalf("behavioral gate has %d result flags, want %d: %v",
+			countArgument(gate.Command, "-result"), len(results), gate.Command)
+	}
+	for id, path := range results {
+		argument := id + "=" + path
+		if countArgument(gate.Command, argument) != 1 {
+			t.Errorf("behavioral gate must consume %q exactly once: %v", argument, gate.Command)
+		}
+		count := 0
+		for _, prerequisite := range gate.Prerequisites {
+			if prerequisite.Kind == "file" && prerequisite.Value == path {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("behavioral gate must require result %q exactly once; got %d", path, count)
+		}
+	}
+	for _, exact := range []string{
+		"./internal/releasevalidation/cmd/behavioracceptance",
+		"{root}/scripts/behavioral-acceptance-targets.json",
+		"{env:OPENREALTIME_BEHAVIORAL_CANDIDATE}",
+		"{artifacts}/behavioral-acceptance.json",
+	} {
+		if countArgument(gate.Command, exact) != 1 {
+			t.Errorf("behavioral gate command must contain %q exactly once: %v", exact, gate.Command)
+		}
+	}
+	if !gateHasAssertion(gate, "file_nonempty", "{artifacts}/behavioral-acceptance.json") ||
+		!gateHasAssertion(gate, "stdout_regex", `(?m)^behavioral acceptance: passed$`) {
+		t.Fatalf("behavioral gate lacks a retained report or exact success assertion: %+v", gate.Assertions)
+	}
+	for _, producer := range []string{
+		"external.benchmark.candidate.fdb15",
+		"external.benchmark.candidate.fdb3",
+		"external.benchmark.candidate.fdbench",
+		"external.benchmark.meeting.cascade",
+		"external.benchmark.meeting.omni",
+		"external.benchmark.realtime-cu",
+		"external.benchmark.scenario",
+		"external.benchmark.tau.control",
+		"external.benchmark.tau.regular",
+	} {
+		if producerPosition, exists := position[producer]; !exists || producerPosition >= position[gateID] {
+			t.Errorf("behavioral gate must run after candidate producer %s", producer)
+		}
+	}
+	for _, argument := range gate.Command {
+		lower := strings.ToLower(argument)
+		if strings.Contains(lower, "baseline") || strings.Contains(lower, "migration") {
+			t.Errorf("candidate-only gate executes forbidden historical path %q", argument)
+		}
+	}
+}
+
 func TestMarshalReportIsStableIndentedJSON(t *testing.T) {
 	report := Report{Version: 1, MatrixVersion: 1, Mode: ModePlan, Scope: ScopeAll,
 		StartedAt: time.Unix(0, 0).UTC(), FinishedAt: time.Unix(1, 0).UTC(),
@@ -736,4 +830,14 @@ func gateHasPrerequisite(gate Gate, kind, value string) bool {
 	return slices.ContainsFunc(gate.Prerequisites, func(prerequisite Prerequisite) bool {
 		return prerequisite.Kind == kind && prerequisite.Value == value
 	})
+}
+
+func countArgument(command []string, value string) int {
+	count := 0
+	for _, argument := range command {
+		if argument == value {
+			count++
+		}
+	}
+	return count
 }

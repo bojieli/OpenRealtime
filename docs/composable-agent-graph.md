@@ -6,6 +6,12 @@
 - **Audience:** runtime authors, element and model-adapter authors, deployment
   authors, benchmark authors, and UI/tooling authors
 
+> [!IMPORTANT]
+> This is an accepted design proposal and living implementation tracker. It may
+> describe target behavior ahead of the current release. New users should read
+> the [current architecture](architecture.md) and
+> [graph-native assembly guide](graph-native-assembly.md) first.
+
 This document proposes a thorough refactoring of OpenRealtime from a set of
 binding-shaped realtime voice architectures into a typed, inspectable element
 graph for general real-time agents. It is intentionally broader than audio. A
@@ -1810,8 +1816,17 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-At this reconciliation, 261 of 309 explicit tracker boxes are checked (84.5%)
-and 48 remain open. The percentage records completed reviewable slices; it does
+Unit, integration, race, protocol-conformance, and synthetic end-to-end tests
+may close only their specifically named implementation slices. They cannot
+close a benchmark, phase-exit, or project-completion gate. Final completion
+requires the entire prescribed benchmark matrix on the final clean candidate
+and its exact graph, values, deployment, model, and policy artifacts. A later
+behavior-affecting code or artifact change invalidates the affected final-run
+evidence even when an earlier campaign remains useful as a checked historical
+execution milestone.
+
+At this reconciliation, 263 of 313 explicit tracker boxes are checked (84.0%)
+and 50 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -2370,10 +2385,10 @@ The historical scenario trail includes the accepted 140/165 total at fifteen
 repetitions: 15/15 each for asked-not-to-be-interrupted, recorded-menu,
 requested-silence, acknowledgement, ordinary-question, and count-as-they-go;
 14/15 third-party conversation; 13/15 correction interruption; 11/15 each for
-translation and visual description; and 8/15 waiter. Those totals remain useful
-comparison context, but the 2026-09-02 operator-scoped checkpoint is exactly one
-new retained attempt for each of the eleven cases. It is reported descriptively
-and does not claim statistical parity with the historical 165-attempt sample.
+translation and visual description; and 8/15 waiter. A one-attempt-per-case
+operator checkpoint may be retained as diagnostic evidence, but it is not the
+release population and cannot claim statistical parity with or substitute for
+the required new 165-attempt sample.
 
 - [x] Bind the shared benchmark/session evidence path to exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
@@ -2381,8 +2396,8 @@ and does not claim statistical parity with the historical 165-attempt sample.
 - [x] Wire the scenario CLI to that authenticated graph-native evidence path,
   with exact per-attempt scopes for all eleven cases and explicit refusal of
   unattested execution behavior.
-- [ ] Re-run and compare all eleven interaction scenarios once (eleven newly
-  retained candidate attempts, one per case):
+- [ ] Re-run and compare all eleven interaction scenarios at least fifteen
+  times each (at least 165 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
   advisory transport are implemented. The newest sealed 11×1 deterministic
   diagnostic, candidate run 18 at `85b6479`, passed 8/11 with all eleven
@@ -2405,11 +2420,12 @@ and does not claim statistical parity with the historical 165-attempt sample.
   validator rejected a finding timestamp beyond the sealed WAV duration; no
   aggregate receipt was published. The current main branch now contains the
   model-independent evidence and continuation repairs below, but they have not
-  yet been exercised by a new immutable live candidate. The requested one-pass
-  eleven-attempt run has not started. This box remains open until those eleven
-  attempts run once, are retained and reviewed/reopened, and receive an honest
-  case-by-case report. A failure is recorded as a remaining behavior gap; it
-  does not automatically trigger another complete scenario run.
+  yet been exercised by a new immutable live candidate. The required
+  fifteen-repetition campaign has not started. This box remains open until all
+  165 attempts are retained and reviewed/reopened and receive an honest
+  case-by-case and aggregate comparison. Each regression keeps the box open:
+  retain it, repair its traced cause, rerun the focused affected cases, and
+  then rerun the complete 165-attempt scenario suite.
   - [x] Preserve split same-speaker endpoints after the last actually played
     assistant boundary and pass exact typed transcript, quiet, and direct-image
     condition evidence through the activation guard. Commit `0e13305` covers
@@ -2550,6 +2566,17 @@ and does not claim statistical parity with the historical 165-attempt sample.
   the trusted original numbers in aggregate pass rate and per-case behavior, with
   no safety regression and no material deadline or latency-distribution
   regression.
+  - [x] Implement a machine-enforced, candidate-only behavioral acceptance
+    report that refuses incomplete populations, unregistered trusted aggregate
+    or per-case targets, missing safety/deadline/latency evidence, mismatched
+    final graph/config/runtime identity, and diagnostic-only rerun lineage. This
+    is a release-evidence gate over graph-native results, not a resurrected
+    legacy execution or migration-comparison path. The strict checked target
+    registry, pre-run frozen-candidate declaration, create-only report command,
+    focused-to-full repair lineage, and required release-matrix gate are now
+    implemented and tested. The current registry honestly marks unavailable
+    historical targets as blockers, so this implementation checkpoint closes
+    no benchmark-population, final-candidate, or behavioral non-regression box.
 - [ ] For every failed non-regression gate, retain the artifact, trace the
   changed outcome through exact graph/config/runtime evidence, fix the cause,
   rerun the affected cases, and then rerun the complete suite. Repeat until the
@@ -2569,6 +2596,17 @@ and does not claim statistical parity with the historical 165-attempt sample.
     slice and then all 498 tasks still require immutable reruns after the active
     FD-Bench campaign releases the shared model deployments; this subgate does
     not close the parent quality gate.
+- [ ] After all implementation and configuration work is frozen, build one
+  clean final candidate, pin its exact graph/values/deployment/model/policy and
+  machine identities, and run the complete required matrix from that candidate.
+  Earlier complete campaigns remain diagnostic and historical evidence; they
+  do not certify later code or configuration.
+- [ ] If any final-candidate aggregate, per-case behavior, safety result,
+  deadline result, or latency distribution materially regresses, preserve the
+  failed campaign and repeat diagnosis, repair, focused validation, and the
+  complete affected-suite rerun until it meets or improves on the accepted
+  baseline. Re-freeze and rerun every affected final suite after each relevant
+  code, graph, values, deployment, model, or policy change.
 
 ### Phase 0: accept contracts and terminology
 
@@ -3858,6 +3896,18 @@ and does not claim statistical parity with the historical 165-attempt sample.
 
 - [ ] Implement scoped dependencies and reversible lifecycle effects across
   graph/session reconciliation; that wider ownership is incomplete.
+  - [x] Establish graph-element mount-generation ownership primitives without
+    claiming a live swap: each node now sees only its descriptor-declared live
+    services and node-scoped secrets; named caller work, background workers,
+    and reverse disposers share one cancellable lifecycle; worker, factory,
+    runnable, state-callback, and disposer panics fail as bounded errors; and
+    mount rollback includes the currently failing scope. Stateful mounts have
+    a private, strict, one-MiB restore/snapshot/quiesce boundary whose capture
+    refuses missing callbacks and resumes all admitted quiescers on failure.
+    Focused normal, vet, and ten repeated race runs are green. No production
+    graph element declares transfer support yet, and candidate migration,
+    stable boundary routing, queue-terminal accounting, publication, rollback,
+    and cross-system leak proof remain open.
   - [x] Compile exact required and optional service dependencies through nested
     visibility/isolation scopes, expose only descriptor-bound services and
     deployment grants, and own every publication, supervised worker, and
@@ -4098,18 +4148,20 @@ Each required comparison must follow this protocol:
    comparable gates, at least the accepted historical quality target. A
    merely non-significant difference is not proof of parity, and remaining
    above 80% is not acceptable when the trusted result was materially higher.
-   The current operator-scoped scenario checkpoint uses one retained attempt
-   per case and reports it descriptively, without a statistical parity claim;
-   it is not automatically repeated after code changes. Other suites declare
-   their own complete candidate population before the run.
+   The interaction-scenario release population is at least fifteen retained
+   attempts per case (at least 165 total). Any one-attempt-per-case checkpoint
+   is descriptive diagnostic evidence only. Other suites declare their own
+   complete candidate population before the run.
 5. Treat any material correctness, interaction, safety, deadline, or latency
    regression as an implementation blocker. Preserve the failed artifact, use
    graph diff plus runtime/trace evidence to locate the changed path, fix it,
-   rerun only the smallest affected diagnostic slice when explicitly requested.
-   Do not start another complete eleven-scenario run automatically.
+   rerun the smallest affected diagnostic slice, and then rerun the complete
+   affected suite. Repeat this focused-then-complete cycle until the complete
+   immutable candidate passes; a locally repaired slice never closes the gate.
 
-The required final matrix is one retained attempt for each of the eleven
-interaction scenarios, all four Meeting Assistant v1 tasks, all sixteen
+The required final matrix is at least fifteen retained attempts for each of the
+eleven interaction scenarios (at least 165 attempts), all four Meeting
+Assistant v1 tasks, all sixteen
 Realtime-CU v1 cases, all 498 FDB v1.5 tasks, all 100 FDB v3 examples, all
 6,147 FD-Bench conversations in all 21 conditions, and all 278 tau2-bench/
 tau-Voice tasks in both control and regular conditions. DynaCU-Bench remains an
@@ -4295,18 +4347,19 @@ checked from foundation work alone; each requires end-to-end release evidence.
     Realtime-CU campaign supplies live release evidence for the silent action
     composition; reference safe-point/protocol parity and the remaining live
     benchmark evidence keep the parent gate open.
-- [ ] Every required benchmark has complete, clean, exactly attested
-    pre-refactor and graph-native candidate artifacts; the candidate satisfies
-    the predeclared aggregate and per-case non-regression gates, and every
-    discovered regression has been fixed and followed by a complete-suite
-    rerun.
+- [ ] Every required benchmark has accepted, preregistered historical quality
+    targets plus complete, clean, exactly attested graph-native final-candidate
+    artifacts; the candidate satisfies the aggregate and per-case non-
+    regression gates, and every discovered regression has been fixed and
+    followed by a complete-suite rerun. Historical per-attempt artifacts are
+    not reconstructed or required.
   - [x] Complete, independently reopened graph-native candidate populations now
     exist for Meeting Assistant (4/4), Realtime-CU (16/16), and FDB v3
     (100/100), with exact live graph evidence, retained media, deterministic
     outcomes, exact-model advisory review, and create-only source/evaluation
-    receipts. The one-pass scenario 11×1, FD-Bench, both tau-Voice conditions,
-    and the resulting full non-regression cycle keep the universal parent gate
-    open.
+    receipts. The final scenario 11×15 population, FD-Bench, both tau-Voice
+    conditions, and the resulting full non-regression cycle keep the universal
+    parent gate open.
 - [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
   - [x] Leaf and bounded multi-entry implementation, configuration, and

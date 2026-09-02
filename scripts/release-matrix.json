@@ -318,6 +318,34 @@
       ]
     },
     {
+      "id": "external.benchmark.validation.behavioral",
+      "description": "Refuse release unless every complete graph-native suite belongs to one frozen clean candidate and clears every preregistered behavioral, safety, deadline, latency, and repair-lineage target",
+      "availability": "provisioned",
+      "selection": "opt_in",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./internal/releasevalidation/cmd/behavioracceptance", "-targets", "{root}/scripts/behavioral-acceptance-targets.json", "-candidate", "{env:OPENREALTIME_BEHAVIORAL_CANDIDATE}", "-result", "fd-bench={artifacts}/candidate-fdbench6147.json", "-result", "fdb-v1.5={artifacts}/candidate-fdb15.json", "-result", "fdb-v3={artifacts}/candidate-fdb3.json", "-result", "meeting-cascade={artifacts}/candidate-meeting-cascade.json", "-result", "meeting-omni={artifacts}/meeting-omni.json", "-result", "realtime-cu={artifacts}/candidate-realtime-cu.json", "-result", "scenario={artifacts}/candidate-scenario.json", "-result", "tau-control={artifacts}/candidate-tau-control.json", "-result", "tau-regular={artifacts}/candidate-tau-regular.json", "-report", "{artifacts}/behavioral-acceptance.json"],
+      "timeout": "10m",
+      "skip_policy": "forbid",
+      "prerequisites": [
+        {"kind": "file", "value": "{root}/scripts/behavioral-acceptance-targets.json", "description": "the checked preregistered behavioral target registry is present"},
+        {"kind": "env_file", "value": "OPENREALTIME_BEHAVIORAL_CANDIDATE", "description": "the pre-run frozen clean candidate declaration is supplied as an absolute path"},
+        {"kind": "file", "value": "{artifacts}/candidate-fdbench6147.json", "description": "the complete 6,147-conversation FD-Bench final result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-fdb15.json", "description": "the complete 498-recording FDB v1.5 final result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-fdb3.json", "description": "the complete 100-example FDB v3 final result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-meeting-cascade.json", "description": "the complete four-case cascade Meeting Assistant final result is present"},
+        {"kind": "file", "value": "{artifacts}/meeting-omni.json", "description": "the complete four-case native-audio Meeting Assistant final result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-realtime-cu.json", "description": "the complete sixteen-case Realtime-CU final result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-scenario.json", "description": "the complete 165-attempt scenario architecture result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-tau-control.json", "description": "the complete 278-task tau control final result is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-tau-regular.json", "description": "the complete 278-task tau regular final result is present"}
+      ],
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/behavioral-acceptance.json"},
+        {"kind": "stdout_regex", "value": "(?m)^behavioral acceptance: passed$"}
+      ]
+    },
+    {
       "id": "external.macos.signed-e2e",
       "description": "Verify a nonce-bound browser-then-signed-native run against one exact gate-built server and retain its strict contract and receipt",
       "availability": "provisioned",

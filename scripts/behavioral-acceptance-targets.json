@@ -1,0 +1,364 @@
+{
+  "format_version": 1,
+  "suites": [
+    {
+      "id": "fd-bench",
+      "result_kind": "bench_result",
+      "suite": "fd-bench",
+      "expected_population": 6147,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not yet accepted a preregistered aggregate quality threshold for the pinned 6,147-conversation population."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted historical per-conversation or per-condition target table has been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "A zero-tolerance safety-failure metric and threshold have not been registered for every conversation."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The accepted missed-turn, premature-turn, and overrun deadline limits have not been registered."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted response-latency median and tail limits for every required condition have not been registered."
+        }
+      }
+    },
+    {
+      "id": "fdb-v1.5",
+      "result_kind": "bench_result",
+      "suite": "fdb-v1.5",
+      "expected_population": 498,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not yet registered the accepted aggregate overlap target for all 498 recordings."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted 498-row historical target table has been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Zero-tolerance unsafe-interruption and unintended-response evidence has not been registered as an every-recording metric."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted yield and hold deadline thresholds have not been registered."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted interruption-latency median and tail limits have not been registered."
+        }
+      }
+    },
+    {
+      "id": "fdb-v3",
+      "result_kind": "bench_result",
+      "suite": "fdb-v3",
+      "expected_population": 100,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not yet registered the accepted exact-tool-call target for the released 100-example population."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted 100-row historical tool and argument target table has been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Zero-tolerance unintended-call and tool-markup speech evidence has not been registered as an every-example metric."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "An accepted tool-call deadline metric and threshold have not been registered."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted tool-call latency median and tail limits have not been registered."
+        }
+      }
+    },
+    {
+      "id": "meeting-cascade",
+      "result_kind": "bench_result",
+      "suite": "openrealtime-meeting-assistant-v1",
+      "expected_population": 4,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The four-case retained candidate is not itself a preregistered historical quality target."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted historical targets for each of the four Meeting Assistant cases have not been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not registered the every-case zero-tolerance invalid-action and authority-failure contract."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not registered accepted per-case deadline limits."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted median and tail limits for every relevant Meeting Assistant latency have not been registered."
+        }
+      }
+    },
+    {
+      "id": "meeting-omni",
+      "result_kind": "bench_result",
+      "suite": "openrealtime-meeting-assistant-v1",
+      "expected_population": 4,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted aggregate historical target has been registered for the native-audio foreground."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted historical targets for each of the four native-audio Meeting Assistant cases have not been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not registered an every-case zero-tolerance safety metric."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not registered accepted native-audio deadline limits."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted native-audio median and tail latency limits have not been registered."
+        }
+      }
+    },
+    {
+      "id": "realtime-cu",
+      "result_kind": "bench_result",
+      "suite": "openrealtime-realtime-cu-v1",
+      "expected_population": 16,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "registered",
+          "source": "docs/measurement.md, Realtime-CU F10 result, 2026-08-25: slow-only overall correct 6/16"
+        },
+        "minimum_passed": 6
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The accepted write-up retained aggregate grounding splits but no preregistered exact sixteen-case target table."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The benchmark owner has not registered which refusal and authority metrics constitute the zero-tolerance safety boundary."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "registered",
+          "source": "docs/measurement.md, Realtime-CU F10 result, 2026-08-25: slow-only 5/16 correct within deadline"
+        },
+        "rules": [
+          {
+            "name": "deadline-misses",
+            "metric": "deadline_miss_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 11,
+            "minimum_samples": 16,
+            "require_every_task": true
+          }
+        ]
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The trusted result records cue-to-action median/tail and observation medians, but accepted tail limits and an explicit disposition for every current latency metric are still missing."
+        }
+      }
+    },
+    {
+      "id": "scenario",
+      "result_kind": "architecture_result",
+      "suite": "scenario",
+      "expected_population": 165,
+      "case_key": "before_final_hash",
+      "aggregate": {
+        "registration": {
+          "status": "registered",
+          "source": "docs/measurement.md, F63: accepted fifteen-repeat baseline 140/165"
+        },
+        "minimum_passed": 140
+      },
+      "cases": {
+        "registration": {
+          "status": "registered",
+          "source": "docs/measurement.md, F63: accepted fifteen-repeat per-scenario baseline"
+        },
+        "targets": [
+          {"case": "a recorded menu", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "an acknowledgement is not an interruption", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "an ordinary question", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "asked not to be interrupted", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "count-as-they-go", "expected_attempts": 15, "minimum_passed": 8},
+          {"case": "cutting in on something wrong", "expected_attempts": 15, "minimum_passed": 13},
+          {"case": "ordering from a waiter", "expected_attempts": 15, "minimum_passed": 8},
+          {"case": "somebody else's conversation", "expected_attempts": 15, "minimum_passed": 14},
+          {"case": "telling them what it saw", "expected_attempts": 15, "minimum_passed": 11},
+          {"case": "translating as they speak", "expected_attempts": 15, "minimum_passed": 11},
+          {"case": "waiting out a silence they asked for", "expected_attempts": 15, "minimum_passed": 15}
+        ]
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The accepted baseline does not separately register an every-attempt zero-tolerance safety-failure metric."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Deadline failures are present inside scenario checks, but no separate accepted deadline target table is registered."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The accepted fifteen-repeat baseline does not register median and tail thresholds for every relevant scenario latency."
+        }
+      }
+    },
+    {
+      "id": "tau-control",
+      "result_kind": "bench_result",
+      "suite": "tau-voice",
+      "expected_population": 278,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "The older 160/278 control run is diagnostic, predates graph-native evidence, and is not an accepted final-candidate target."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted 278-task control target table has been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "A zero-tolerance per-task safety metric has not been registered for the control condition."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted task and interaction deadline limits have not been registered for the control condition."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted response/yield latency median and tail limits have not been registered for the control condition."
+        }
+      }
+    },
+    {
+      "id": "tau-regular",
+      "result_kind": "bench_result",
+      "suite": "tau-voice",
+      "expected_population": 278,
+      "case_key": "exact",
+      "aggregate": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted aggregate historical target has been registered for the regular-speech condition."
+        }
+      },
+      "cases": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "No accepted 278-task regular-speech target table has been registered."
+        }
+      },
+      "safety": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "A zero-tolerance per-task safety metric has not been registered for the regular condition."
+        }
+      },
+      "deadline": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted task and interaction deadline limits have not been registered for the regular condition."
+        }
+      },
+      "latency": {
+        "registration": {
+          "status": "unavailable",
+          "reason": "Accepted response/yield latency median and tail limits have not been registered for the regular condition."
+        }
+      }
+    }
+  ]
+}

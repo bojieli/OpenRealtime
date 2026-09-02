@@ -102,6 +102,13 @@ shared Realtime API with an exact execution requirement and authenticated live
 graph inspection. Diagnostic subsets remain useful for iteration but cannot
 satisfy a release gate.
 
+All required populations must come from one frozen final candidate: the exact
+commit and executable, Graph IR, values, deployment, model revisions, policies,
+dataset/scorer revisions, and machine class are part of that candidate's
+identity. A behavior-affecting change after a run invalidates the affected
+final-candidate evidence. An older complete campaign can remain useful
+diagnostic history, but it cannot certify the changed candidate.
+
 Every new attempt must retain its deterministic result and the media needed to
 review what happened. Audio cases retain playable audio; visual cases retain
 the exact submitted images; computer-use and other audiovisual cases retain
@@ -115,7 +122,136 @@ failures, and latency distributions beside the trusted historical numbers. It
 does not fabricate historical attempts or require historical media. A material
 regression remains a blocker: retain the failed new run, diagnose it with the
 new graph/runtime evidence, rerun the affected diagnostic slice, and then rerun
-the complete candidate population.
+the complete candidate population. Repeat that focused-then-complete loop until
+the full affected suite passes. A repaired diagnostic slice never becomes the
+release result, an aggregate cannot hide a severe per-case or safety regression,
+and an absolute pass rate above 80% does not excuse a material fall from a
+higher trusted result.
+
+The per-benchmark matrix gates enforce complete execution and sealed evidence.
+They are not, by themselves, behavioral acceptance. The required
+`external.benchmark.validation.behavioral` gate consumes all nine final result
+files, one pre-run frozen-candidate declaration, and the checked behavioral
+target registry. It refuses incomplete populations, mixed candidates,
+unregistered targets, material regressions, and a repair history that ends in a
+diagnostic subset. The checked registry still records several unavailable
+trusted targets, so the gate correctly remains blocked until benchmark owners
+register them; implementing the gate does not close a benchmark or
+non-regression checklist item.
+
+### Behavioral acceptance control artifacts
+
+`scripts/behavioral-acceptance-targets.json` is the only comparison authority.
+Candidate files are observed behavior, never a source from which a target is
+inferred. Historical result JSON is deliberately not an input. Every suite has
+an exact result kind, suite name, final population, case-key rule, and five
+independent registrations: aggregate, per-case, safety, deadline, and latency.
+Each registration is one of:
+
+- `registered`, with a bounded source citation and explicit checked thresholds;
+- `unavailable`, with a reason, which makes acceptance `blocked`; or
+- `not_applicable`, only for an evidence domain and with a rationale.
+
+A registered aggregate supplies `minimum_passed`. Registered per-case targets
+must enumerate and account for the complete population. Safety rules are
+zero-tolerance, at-most-zero failure bounds with one sample for every task.
+Latency requires both a median and a tail bound; every observed `*_ms` metric
+must be targeted or explicitly excluded with a rationale. Deadline-named
+metrics receive the same inventory check. Missing required samples are
+failures, not zeroes. A candidate therefore cannot replace a stronger checked
+target with a generic 80% floor or use an aggregate pass to hide a severe
+case-level, safety, deadline, or latency regression.
+
+The second control artifact is supplied through the absolute path in
+`OPENREALTIME_BEHAVIORAL_CANDIDATE`. It must exist before the final campaigns
+start and is strict JSON of this shape (abbreviated to one suite here):
+
+```json
+{
+  "format_version": 1,
+  "candidate_id": "final-2026-09-02-01",
+  "revision": "0123456789abcdef0123456789abcdef01234567",
+  "executable_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "machine": {
+    "cpu": "pinned CPU identity",
+    "cores": 32,
+    "gpu": "pinned GPU identity",
+    "os": "linux",
+    "arch": "amd64",
+    "go_version": "go1.25.0",
+    "hostname": "release-runner-01"
+  },
+  "suites": [
+    {
+      "id": "fdb-v1.5",
+      "execution_requirement_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "lineage": [
+        {
+          "campaign_id": "fdb15-failed-full-01",
+          "kind": "failed_full",
+          "population": 498,
+          "artifact_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        {
+          "campaign_id": "fdb15-focused-fix-01",
+          "kind": "focused_diagnostic",
+          "population": 24,
+          "artifact_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        {
+          "campaign_id": "fdb15-final-full-02",
+          "kind": "final_full",
+          "population": 498
+        }
+      ]
+    }
+  ]
+}
+```
+
+The real declaration must contain all nine uniquely sorted suite IDs. Its one
+global revision, executable digest, and exact machine identity must match every
+result. Each suite pins the SHA-256 of the canonical bytes emitted by
+`bench.MarshalExecutionRequirement`, which binds Graph IR, values,
+deployment, and live element/runtime identities; it is not a digest of an
+arbitrarily formatted source file.
+
+Lineage is chronological. A suite with no observed regression has only its
+unsealed final `final_full` row. Every `failed_full` row retains the failed
+artifact digest and requires a later retained `focused_diagnostic`; the last
+row must then be a new complete `final_full` result. A focused population must
+remain smaller than the suite population, and every row labelled as a full run
+must have the exact complete population. The acceptance report seals the final
+result digest, so the last declaration row intentionally has no artifact
+digest. A focused pass without the subsequent complete affected-suite rerun is
+rejected.
+
+Run the acceptance command directly only after all final result paths exist:
+
+```sh
+go run ./internal/releasevalidation/cmd/behavioracceptance \
+  -targets scripts/behavioral-acceptance-targets.json \
+  -candidate "$OPENREALTIME_BEHAVIORAL_CANDIDATE" \
+  -result fd-bench=.runtime/release/final/candidate-fdbench6147.json \
+  -result fdb-v1.5=.runtime/release/final/candidate-fdb15.json \
+  -result fdb-v3=.runtime/release/final/candidate-fdb3.json \
+  -result meeting-cascade=.runtime/release/final/candidate-meeting-cascade.json \
+  -result meeting-omni=.runtime/release/final/meeting-omni.json \
+  -result realtime-cu=.runtime/release/final/candidate-realtime-cu.json \
+  -result scenario=.runtime/release/final/candidate-scenario.json \
+  -result tau-control=.runtime/release/final/candidate-tau-control.json \
+  -result tau-regular=.runtime/release/final/candidate-tau-regular.json \
+  -report .runtime/release/final/behavioral-acceptance.json
+```
+
+The report is create-only and has three outcomes. `passed` means every suite
+has the exact population and identity and clears every registered target;
+`failed` means candidate evidence or an observed value violates the contract;
+`blocked` means required trusted target data is honestly unavailable. Both
+`failed` and `blocked` exit 1. Malformed control artifacts, invocation errors,
+or an existing report path exit 2. Passing unit and integration tests merely
+verify this machinery; only the complete frozen campaigns and a `passed`
+report can close the behavioral benchmark gates.
 
 The graph-native scenario candidate also owns a create-only human/media review
 directory and an external source receipt. The source manifest is published
@@ -160,6 +296,8 @@ variables are:
 - `OPENREALTIME_TAU_USER_MODEL_ENDPOINT` and
   `OPENREALTIME_TAU_SYNTHESIS_ENDPOINT` for both complete 278-task tau2 speech
   conditions;
+- `OPENREALTIME_BEHAVIORAL_CANDIDATE` for the absolute path to the strict
+  pre-run candidate declaration shared by all final behavioral suites;
 - `OPENREALTIME_PRESENTATION_LIVE_ENDPOINT` for the descriptor-locked,
   real-Chromium browser composition test;
 - `OPENREALTIME_SIGNED_APP`, `OPENREALTIME_MACOS_E2E_RUNNER`, the exact
