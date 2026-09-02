@@ -3239,8 +3239,20 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     re-sealed payload-bearing candidates fail before disposal. Repeated real-
     Chromium rollback/success and final zero-effect/service/DOM ownership,
     focused race, broader presentation, full repository test/vet, and exact
-    Go/JavaScript manifest checks are green. Stateful, multi-row, and topology-
-    changing client replacement remains under the open parent.
+    Go/JavaScript manifest checks are green. Stateful and topology-changing
+    client replacement remains under the open parent.
+  - [x] Replace multiple authenticated stateless browser client implementations
+    as one atomic transition. The browser validates that requested entries are
+    distinct, active, desired, and stateless; verifies that the sealed candidate
+    changes exactly that set; and authenticates every selected module before
+    teardown. It then quiesces the union of their dependency closures and either
+    activates the complete set or disposes the candidate closure and restores
+    every predecessor implementation without advancing live identity. A
+    payload-free format-v2 receipt binds the exact per-entry transitions on
+    success. Real-Chromium activation failure, rollback, success, exact
+    disposal/remount ownership, and final zero-ownership checks pass under ten
+    shuffled repetitions, focused and package-wide race coverage, full
+    repository tests, and vet.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
