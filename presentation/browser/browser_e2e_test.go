@@ -595,6 +595,17 @@ export default {name:"example.client.replaceable",revision:1,async mount(context
     if (context.root.dataset.replaceableProvider === "v2") delete context.root.dataset.replaceableProvider;
   });
 }};`)
+	providerV3 := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable",revision:1,async mount(context){
+  increment(context.root, "providerV3Mounts");
+  context.root.dataset.replaceableProvider = "v3";
+  context.publish("presentation.client.artifacts", Object.freeze({version:"v3"}));
+  context.lifecycle.defer("replaceable-v3", () => {
+    increment(context.root, "providerV3Disposals");
+    if (context.root.dataset.replaceableProvider === "v3") delete context.root.dataset.replaceableProvider;
+  });
+}};`)
 	providerFailure := []byte(`
 const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
 export default {name:"example.client.replaceable",revision:1,async mount(context){
@@ -623,6 +634,29 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
     if (context.root.dataset.replaceableConsumer === provider.version) delete context.root.dataset.replaceableConsumer;
   });
 }};`)
+	consumerV2 := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable-view",revision:1,async mount(context){
+  const provider = context.services.get("presentation.client.artifacts");
+  if (!provider?.version) throw new Error("replaceable provider is unavailable");
+  increment(context.root, "multiConsumerMounts");
+  context.root.dataset.replaceableConsumer = "view2-" + provider.version;
+  context.lifecycle.defer("replaceable-consumer-v2", () => {
+    increment(context.root, "multiConsumerDisposals");
+    if (context.root.dataset.replaceableConsumer === "view2-" + provider.version) {
+      delete context.root.dataset.replaceableConsumer;
+    }
+  });
+}};`)
+	consumerFailure := []byte(`
+const increment = (root, name) => { root.dataset[name] = String(Number(root.dataset[name] || "0") + 1); };
+export default {name:"example.client.replaceable-view",revision:1,async mount(context){
+  increment(context.root, "multiFailedConsumerMounts");
+  context.lifecycle.defer("replaceable-consumer-failure", () => {
+    increment(context.root, "multiFailedConsumerDisposals");
+  });
+  throw new Error("intentional multi-row consumer activation failure");
+}};`)
 	bundle, err := presentationbrowser.ComposeTextBundle(
 		"openrealtime.browser.replacement-test", []presentationbrowser.ClientModule{
 			{
@@ -630,6 +664,7 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 				PluginName: "example.client.replaceable", Source: providerV1,
 				Alternatives: []presentationbrowser.ClientModuleAlternative{
 					{Entrypoint: "replaceable-v2.js", Source: providerV2},
+					{Entrypoint: "replaceable-v3.js", Source: providerV3},
 					{Entrypoint: "replaceable-failure.js", Source: providerFailure},
 					{Entrypoint: "replaceable-wrong-identity.js", Source: providerWrongIdentity},
 				},
@@ -638,6 +673,10 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 			{
 				Entry: "replaceable-view", Entrypoint: "replaceable-view.js",
 				PluginName: "example.client.replaceable-view", Source: consumer,
+				Alternatives: []presentationbrowser.ClientModuleAlternative{
+					{Entrypoint: "replaceable-view-v2.js", Source: consumerV2},
+					{Entrypoint: "replaceable-view-failure.js", Source: consumerFailure},
+				},
 				Requires: []plugin.Requirement{{Contract: presentation.ClientArtifactsContract}},
 			},
 		},
@@ -649,6 +688,12 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 	failing := replacementBrowserManifest(t, bundle.Manifest, "replaceable", "replaceable-failure.js")
 	wrongIdentity := replacementBrowserManifest(
 		t, bundle.Manifest, "replaceable", "replaceable-wrong-identity.js",
+	)
+	multi := replacementBrowserManifest(t, v2, "replaceable", "replaceable-v3.js")
+	multi = replacementBrowserManifest(t, multi, "replaceable-view", "replaceable-view-v2.js")
+	multiFailure := replacementBrowserManifest(t, v2, "replaceable", "replaceable-v3.js")
+	multiFailure = replacementBrowserManifest(
+		t, multiFailure, "replaceable-view", "replaceable-view-failure.js",
 	)
 
 	router := host.NewRouterFactory()
@@ -700,6 +745,10 @@ export default {name:"example.client.replaceable-view",revision:1,async mount(co
 			candidate = &failing
 		case "/test/replacement-wrong-identity.json":
 			candidate = &wrongIdentity
+		case "/test/replacement-multi.json":
+			candidate = &multi
+		case "/test/replacement-multi-failure.json":
+			candidate = &multiFailure
 		}
 		if candidate != nil {
 			writer.Header().Set("Content-Type", "application/json")

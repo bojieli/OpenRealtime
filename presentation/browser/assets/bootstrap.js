@@ -338,15 +338,25 @@ async function boot() {
     sequence++;
     return live();
   });
-  const replace = (id, value) => serialized(async () => {
+  const replaceLocked = async (requestedIDs, value, single) => {
     if (disposed) throw new Error("client composition is disposed");
-    const planned = entriesByID.get(id);
-    if (!planned) throw new Error(`unknown client plugin ${id}`);
-    if (!desired.has(id) || !mounted.has(id)) {
-      throw new Error(`client plugin ${id} is not active and desired`);
+    if (!Array.isArray(requestedIDs) || requestedIDs.length === 0) {
+      throw new Error("client replacement requires at least one entry");
     }
-    if (planned.descriptor.state_schema) {
-      throw new Error(`client plugin ${id} requires explicit state migration`);
+    const requested = new Set();
+    for (const id of requestedIDs) {
+      if (typeof id !== "string" || !id || id.trim() !== id || requested.has(id)) {
+        throw new Error("client replacement entries must be distinct canonical strings");
+      }
+      const planned = entriesByID.get(id);
+      if (!planned) throw new Error(`unknown client plugin ${id}`);
+      if (!desired.has(id) || !mounted.has(id)) {
+        throw new Error(`client plugin ${id} is not active and desired`);
+      }
+      if (planned.descriptor.state_schema) {
+        throw new Error(`client plugin ${id} requires explicit state migration`);
+      }
+      requested.add(id);
     }
 
     const candidate = await verifiedManifest(value);
@@ -361,67 +371,91 @@ async function boot() {
       const after = candidate.implementations.get(entryID);
       if (JSON.stringify(before) !== JSON.stringify(after)) changed.push(entryID);
     }
-    if (changed.length !== 1 || changed[0] !== id || candidate.manifest.fingerprint === manifest.fingerprint) {
-      throw new Error(`client replacement must change exactly implementation ${id}`);
+    if (changed.length !== requested.size || changed.some((id) => !requested.has(id)) ||
+        candidate.manifest.fingerprint === manifest.fingerprint) {
+      throw new Error("client replacement must change exactly the requested implementations");
     }
-    const nextImplementation = candidate.implementations.get(id);
-    const nextAsset = candidate.assets.get(`${id}\0${nextImplementation.entrypoint}`);
-    const loaded = await loadModule(nextAsset);
-    const nextPlugin = loaded.default;
-    if (!nextPlugin || nextPlugin.name !== planned.identity.name ||
-        nextPlugin.revision !== planned.identity.revision || typeof nextPlugin.mount !== "function") {
-      throw new Error(`replacement module identity mismatch for ${id}`);
+    const nextPlugins = new Map();
+    for (const id of changed) {
+      const planned = entriesByID.get(id);
+      const nextImplementation = candidate.implementations.get(id);
+      const nextAsset = candidate.assets.get(`${id}\0${nextImplementation.entrypoint}`);
+      const loaded = await loadModule(nextAsset);
+      const nextPlugin = loaded.default;
+      if (!nextPlugin || nextPlugin.name !== planned.identity.name ||
+          nextPlugin.revision !== planned.identity.revision || typeof nextPlugin.mount !== "function") {
+        throw new Error(`replacement module identity mismatch for ${id}`);
+      }
+      nextPlugins.set(id, nextPlugin);
     }
 
-    const affected = dependentClosure(id);
+    const affected = new Set();
+    for (const id of changed) {
+      for (const affectedID of dependentClosure(id)) affected.add(affectedID);
+    }
     const beforeManifest = manifest;
     const beforeImplementations = implementations;
-    const beforePlugin = modules.get(id);
-    const beforeImplementation = structuredClone(beforeImplementations.get(id));
+    const beforePlugins = new Map(changed.map((id) => [id, modules.get(id)]));
+    const transitions = changed.map((id) => ({
+      entry: id,
+      before_implementation: structuredClone(beforeImplementations.get(id)),
+      after_implementation: structuredClone(candidate.implementations.get(id)),
+    }));
     const beforeSequence = sequence;
     try {
-      await stopAffected(affected, `client plugin ${id} replacement quiescence failed`);
+      await stopAffected(affected, "client replacement quiescence failed");
     } catch (error) {
       try { await mountDesired(); }
       catch (restoreError) {
-        throw new AggregateError([error, restoreError], `client plugin ${id} replacement could not restore`);
+        throw new AggregateError([error, restoreError], "client replacement could not restore");
       }
       throw error;
     }
 
     manifest = candidate.manifest;
     implementations = candidate.implementations;
-    modules.set(id, nextPlugin);
+    for (const [id, plugin] of nextPlugins) modules.set(id, plugin);
     root.dataset.clientManifestFingerprint = manifest.fingerprint;
     try {
       await mountDesired();
-      if (!mounted.has(id)) throw new Error(`replacement client plugin ${id} did not activate`);
+      for (const id of changed) {
+        if (!mounted.has(id)) throw new Error(`replacement client plugin ${id} did not activate`);
+      }
     } catch (error) {
       const failures = [error];
-      try { await stopAffected(affected, `client plugin ${id} candidate cleanup failed`); }
+      try { await stopAffected(affected, "client replacement candidate cleanup failed"); }
       catch (cleanupError) { failures.push(cleanupError); }
       manifest = beforeManifest;
       implementations = beforeImplementations;
-      modules.set(id, beforePlugin);
+      for (const [id, plugin] of beforePlugins) modules.set(id, plugin);
       root.dataset.clientManifestFingerprint = manifest.fingerprint;
       try { await mountDesired(); }
       catch (restoreError) { failures.push(restoreError); }
-      if (!mounted.has(id)) failures.push(new Error(`previous client plugin ${id} was not restored`));
-      throw new AggregateError(failures, `client plugin ${id} replacement failed and was rolled back`);
+      for (const id of changed) {
+        if (!mounted.has(id)) failures.push(new Error(`previous client plugin ${id} was not restored`));
+      }
+      throw new AggregateError(failures, "client replacement failed and was rolled back");
     }
     sequence++;
-    return Object.freeze({
+    const receipt = {
       format_version: 1,
       plan_fingerprint: manifest.plan.fingerprint,
       before_manifest_fingerprint: beforeManifest.fingerprint,
       after_manifest_fingerprint: manifest.fingerprint,
       before_sequence: beforeSequence,
       after_sequence: sequence,
-      entry: id,
-      before_implementation: beforeImplementation,
-      after_implementation: structuredClone(implementations.get(id)),
+    };
+    if (single) {
+      return Object.freeze({ ...receipt, ...transitions[0] });
+    }
+    return Object.freeze({
+      ...receipt,
+      format_version: 2,
+      transitions: Object.freeze(transitions.map((row) => Object.freeze(row))),
     });
-  });
+  };
+  const replace = (id, value) => serialized(() => replaceLocked([id], value, true));
+  const replaceMany = (ids, value) => serialized(() => replaceLocked(ids, value, false));
   const live = () => Object.freeze({
     format_version: 1,
     fingerprint: manifest.plan.fingerprint,
@@ -454,7 +488,7 @@ async function boot() {
   window.__openrealtime = Object.freeze({
     get manifest() { return structuredClone(manifest); },
     get mounted() { return manifest.plan.entries.map((row) => row.entry.id).filter((id) => mounted.has(id)); },
-    live, activate, deactivate, replace, dispose,
+    live, activate, deactivate, replace, replaceMany, dispose,
   });
   addEventListener("beforeunload", () => { dispose().catch(() => {}); }, { once: true });
 }

@@ -221,6 +221,101 @@ try {
     replaced.manifest.fingerprint === replaced.candidate.fingerprint &&
     replaced.manifest.implementations.find((row) => row.entry === "replaceable").implementation ===
       "browser-esm:replaceable-v2.js");
+
+  const duplicateMulti = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-multi.json", {cache:"no-store"})
+      .then((value) => value.json());
+    let error = "";
+    try { await window.__openrealtime.replaceMany(["replaceable", "replaceable"], candidate); }
+    catch (failure) { error = failure?.message ?? String(failure); }
+    const root = document.getElementById("openrealtime-root");
+    return {error, live: window.__openrealtime.live(),
+      provider: root.dataset.replaceableProvider, consumer: root.dataset.replaceableConsumer,
+      v2Disposals: Number(root.dataset.providerV2Disposals || "0"),
+      consumerDisposals: Number(root.dataset.replaceableConsumerDisposals || "0")};
+  })()`);
+  check("multi-row replacement refuses duplicate requests before teardown",
+    duplicateMulti.error.includes("distinct canonical strings") && duplicateMulti.live.sequence === 2 &&
+    duplicateMulti.provider === "v2" && duplicateMulti.consumer === "v2" &&
+    duplicateMulti.v2Disposals === 0 && duplicateMulti.consumerDisposals === 2,
+    duplicateMulti.error);
+
+  const failedMulti = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-multi-failure.json", {cache:"no-store"})
+      .then((value) => value.json());
+    let error = "";
+    try { await window.__openrealtime.replaceMany(["replaceable-view", "replaceable"], candidate); }
+    catch (failure) { error = failure?.message ?? String(failure); }
+    const root = document.getElementById("openrealtime-root");
+    return {error, live: window.__openrealtime.live(), manifest: window.__openrealtime.manifest,
+      provider: root.dataset.replaceableProvider, consumer: root.dataset.replaceableConsumer,
+      v2Mounts: Number(root.dataset.providerV2Mounts || "0"),
+      v2Disposals: Number(root.dataset.providerV2Disposals || "0"),
+      v3Mounts: Number(root.dataset.providerV3Mounts || "0"),
+      v3Disposals: Number(root.dataset.providerV3Disposals || "0"),
+      consumerMounts: Number(root.dataset.replaceableConsumerMounts || "0"),
+      consumerDisposals: Number(root.dataset.replaceableConsumerDisposals || "0"),
+      failedConsumerMounts: Number(root.dataset.multiFailedConsumerMounts || "0"),
+      failedConsumerDisposals: Number(root.dataset.multiFailedConsumerDisposals || "0")};
+  })()`);
+  check("failed two-row activation atomically restores both predecessor implementations",
+    failedMulti.error.includes("rolled back") && failedMulti.live.sequence === 2 &&
+    failedMulti.live.manifest_fingerprint === replaced.candidate.fingerprint &&
+    failedMulti.manifest.fingerprint === replaced.candidate.fingerprint &&
+    failedMulti.provider === "v2" && failedMulti.consumer === "v2" &&
+    failedMulti.live.entries.replaceable.implementation === "browser-esm:replaceable-v2.js" &&
+    failedMulti.live.entries["replaceable-view"].implementation === "browser-esm:replaceable-view.js",
+    failedMulti.error);
+  check("failed two-row candidate and restored closure have exact disposal counts",
+    failedMulti.v2Mounts === 2 && failedMulti.v2Disposals === 1 &&
+    failedMulti.v3Mounts === 1 && failedMulti.v3Disposals === 1 &&
+    failedMulti.consumerMounts === 4 && failedMulti.consumerDisposals === 3 &&
+    failedMulti.failedConsumerMounts === 1 && failedMulti.failedConsumerDisposals === 1,
+    JSON.stringify(failedMulti));
+
+  const replacedMulti = await evaluate(`(async () => {
+    const candidate = await fetch("/test/replacement-multi.json", {cache:"no-store"})
+      .then((value) => value.json());
+    const receipt = await window.__openrealtime.replaceMany(
+      ["replaceable-view", "replaceable"], candidate);
+    const root = document.getElementById("openrealtime-root");
+    return {candidate, receipt, live: window.__openrealtime.live(),
+      manifest: window.__openrealtime.manifest,
+      provider: root.dataset.replaceableProvider, consumer: root.dataset.replaceableConsumer,
+      v2Disposals: Number(root.dataset.providerV2Disposals || "0"),
+      v3Mounts: Number(root.dataset.providerV3Mounts || "0"),
+      consumerDisposals: Number(root.dataset.replaceableConsumerDisposals || "0"),
+      multiConsumerMounts: Number(root.dataset.multiConsumerMounts || "0")};
+  })()`);
+  check("authenticated two-row bytes replace the exact requested implementation set",
+    replacedMulti.provider === "v3" && replacedMulti.consumer === "view2-v3" &&
+    replacedMulti.live.sequence === 3 && replacedMulti.live.fingerprint === initial.state.fingerprint &&
+    replacedMulti.live.manifest_fingerprint === replacedMulti.candidate.fingerprint &&
+    replacedMulti.live.entries.replaceable.implementation === "browser-esm:replaceable-v3.js" &&
+    replacedMulti.live.entries["replaceable-view"].implementation ===
+      "browser-esm:replaceable-view-v2.js");
+  const transitionEntries = replacedMulti.receipt.transitions?.map((row) => row.entry).sort();
+  check("multi-row replacement receipt is exact and payload-free",
+    replacedMulti.receipt.format_version === 2 &&
+    replacedMulti.receipt.plan_fingerprint === initial.state.fingerprint &&
+    replacedMulti.receipt.before_manifest_fingerprint === replaced.candidate.fingerprint &&
+    replacedMulti.receipt.after_manifest_fingerprint === replacedMulti.candidate.fingerprint &&
+    replacedMulti.receipt.before_sequence === 2 && replacedMulti.receipt.after_sequence === 3 &&
+    JSON.stringify(transitionEntries) === JSON.stringify(["replaceable", "replaceable-view"]) &&
+    replacedMulti.receipt.transitions.every((row) =>
+      row.before_implementation.artifact.digest.startsWith("sha256:") &&
+      row.after_implementation.artifact.digest.startsWith("sha256:")) &&
+    !JSON.stringify(replacedMulti.receipt).includes("replaceableProvider"));
+  check("successful two-row replacement remounts the union closure exactly once",
+    replacedMulti.v2Disposals === 2 && replacedMulti.v3Mounts === 2 &&
+    replacedMulti.consumerDisposals === 4 && replacedMulti.multiConsumerMounts === 1,
+    JSON.stringify(replacedMulti));
+  check("manifest getter advances after the atomic two-row commit",
+    replacedMulti.manifest.fingerprint === replacedMulti.candidate.fingerprint &&
+    replacedMulti.manifest.implementations.find((row) => row.entry === "replaceable").implementation ===
+      "browser-esm:replaceable-v3.js" &&
+    replacedMulti.manifest.implementations.find((row) => row.entry === "replaceable-view").implementation ===
+      "browser-esm:replaceable-view-v2.js");
   check("no uncaught browser exception", exceptions.length === 0, exceptions.join("; "));
 
   await evaluate(`window.__openrealtime.dispose()`);
