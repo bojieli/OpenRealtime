@@ -308,6 +308,68 @@ func TestComposeDeveloperBundlePinsShippedEntryAlternativesWithoutWideningAuthor
 	}
 }
 
+func TestComposeDeveloperWebRTCBundlePinsViewAlternativesWithoutWideningAuthority(t *testing.T) {
+	video, err := browserModule("video-controls.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics, err := browserModule("transport-diagnostics-view.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alternatives := []DeveloperImplementationAlternative{
+		{Entry: "video-controls", Entrypoint: "video-controls-v2.js",
+			Source: append(slices.Clone(video), []byte("\n// candidate\n")...)},
+		{Entry: "transport-diagnostics", Entrypoint: "transport-diagnostics-view-v2.js",
+			Source: append(slices.Clone(diagnostics), []byte("\n// candidate\n")...)},
+	}
+	catalogDigest := "sha256:" + strings.Repeat("d", 64)
+	bundle, err := ComposeDeveloperWebRTCBundle(
+		"openrealtime.browser.developer-webrtc", catalogDigest, alternatives,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := DeveloperWebRTCBundleWithEffectsCatalog(catalogDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.Manifest.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(bundle.Manifest.Endpoints, base.Manifest.Endpoints) ||
+		!reflect.DeepEqual(bundle.Manifest.Grants, base.Manifest.Grants) ||
+		!reflect.DeepEqual(bundle.Manifest.Implementations, base.Manifest.Implementations) {
+		t.Fatal("WebRTC view alternatives changed endpoints, grants, or selected implementations")
+	}
+	want := map[string]string{
+		"video-controls-v2.js":             "video-controls",
+		"transport-diagnostics-view-v2.js": "transport-diagnostics",
+	}
+	for _, asset := range bundle.Manifest.Assets {
+		if entry, found := want[asset.Name]; found {
+			if asset.Entry != entry {
+				t.Fatalf("WebRTC view alternative asset = %#v", asset)
+			}
+			delete(want, asset.Name)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("WebRTC manifest omitted view alternatives: %v", want)
+	}
+	reversed, err := ComposeDeveloperWebRTCBundle(
+		"openrealtime.browser.developer-webrtc", catalogDigest,
+		[]DeveloperImplementationAlternative{alternatives[1], alternatives[0]},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reversed.Manifest.Fingerprint != bundle.Manifest.Fingerprint ||
+		reversed.Plan.Fingerprint != bundle.Plan.Fingerprint {
+		t.Fatal("WebRTC alternative input order changed a frozen identity")
+	}
+}
+
 func manifestImplementationDigest(manifest presentation.ClientManifest, entry string) string {
 	for _, implementation := range manifest.Implementations {
 		if implementation.Entry == entry {

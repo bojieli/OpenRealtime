@@ -421,9 +421,35 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 			`"html":"<!doctype html><html><body><main>sealed WebRTC artifact</main></body></html>"}`,
 		ClientEffectIssuer: receipts,
 	})
-	bundle, err := presentationbrowser.DeveloperWebRTCBundleWithEffectsCatalog(effects.CatalogDigest())
+	webrtcViewModules := []struct {
+		entry, source, candidate string
+	}{
+		{"video-controls", "video-controls.js", "video-controls-v2.js"},
+		{"transport-diagnostics", "transport-diagnostics-view.js", "transport-diagnostics-view-v2.js"},
+	}
+	webrtcViewAlternatives := make([]presentationbrowser.DeveloperImplementationAlternative, 0,
+		len(webrtcViewModules))
+	for _, module := range webrtcViewModules {
+		source, readErr := os.ReadFile(filepath.Join("assets", module.source))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		candidate := append(append([]byte(nil), source...),
+			[]byte("\n// shipped "+module.entry+" replacement candidate\n")...)
+		webrtcViewAlternatives = append(webrtcViewAlternatives,
+			presentationbrowser.DeveloperImplementationAlternative{
+				Entry: module.entry, Entrypoint: module.candidate, Source: candidate,
+			})
+	}
+	bundle, err := presentationbrowser.ComposeDeveloperWebRTCBundle(
+		"openrealtime.browser.developer-webrtc", effects.CatalogDigest(), webrtcViewAlternatives,
+	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	viewReplacement := bundle.Manifest
+	for _, module := range webrtcViewModules {
+		viewReplacement = replacementBrowserManifest(t, viewReplacement, module.entry, module.candidate)
 	}
 	router := host.NewRouterFactory()
 	target := host.NewEndpointDirectoryFactory()
@@ -492,7 +518,18 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
+	const viewReplacementPath = "/test/developer-webrtc-views-replacement.json"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == viewReplacementPath {
+			writer.Header().Set("Content-Type", "application/json")
+			writer.Header().Set("Cache-Control", "no-store")
+			if err := json.NewEncoder(writer).Encode(viewReplacement); err != nil {
+				t.Errorf("encode WebRTC-view replacement manifest: %v", err)
+			}
+			return
+		}
+		handler.ServeHTTP(writer, request)
+	}))
 	defer server.Close()
 
 	driver, err := filepath.Abs(filepath.Join("testdata", "webrtc.mjs"))
@@ -502,7 +539,8 @@ func TestDeveloperWebRTCProfileUsesSameServerAPIsAndRecoversMediaInChromium(t *t
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, node, driver, server.URL)
-	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t))
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+freePort(t),
+		"VIEWS_REPLACEMENT_PATH="+viewReplacementPath)
 	output, err := command.CombinedOutput()
 	t.Log("\n" + string(output))
 	if err != nil {

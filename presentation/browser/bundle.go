@@ -470,7 +470,17 @@ func ComposeDeveloperBundle(
 	profileName, catalogDigest string,
 	alternatives []DeveloperImplementationAlternative,
 ) (*Bundle, error) {
-	definitions := developerBundleDefinitions()
+	return composeDeveloperBundle(
+		profileName, developerBundleDefinitions(), developerBundleEndpoints(catalogDigest), alternatives,
+	)
+}
+
+func composeDeveloperBundle(
+	profileName string,
+	definitions []moduleDefinition,
+	endpoints []presentation.ManifestEndpoint,
+	alternatives []DeveloperImplementationAlternative,
+) (*Bundle, error) {
 	entryIndexes := make(map[string]int, len(definitions))
 	usedEntrypoints := make(map[string]string, len(definitions)+len(alternatives))
 	for index, definition := range definitions {
@@ -517,7 +527,7 @@ func ComposeDeveloperBundle(
 			file: alternative.Entrypoint, content: slices.Clone(alternative.Source),
 		})
 	}
-	return buildBundle(profileName, definitions, developerBundleEndpoints(catalogDigest))
+	return buildBundle(profileName, definitions, endpoints)
 }
 
 func buildDeveloperBundle(catalogDigest string) (*Bundle, error) {
@@ -806,7 +816,27 @@ func DeveloperWebRTCBundleWithEffectsCatalog(catalogDigest string) (*Bundle, err
 	return buildDeveloperWebRTCBundle(catalogDigest)
 }
 
+// ComposeDeveloperWebRTCBundle is the media-enabled counterpart to
+// ComposeDeveloperBundle. It admits alternatives only for existing entries
+// and cannot widen the locked WebRTC profile's topology or authority.
+func ComposeDeveloperWebRTCBundle(
+	profileName, catalogDigest string,
+	alternatives []DeveloperImplementationAlternative,
+) (*Bundle, error) {
+	return composeDeveloperBundle(
+		profileName, developerWebRTCBundleDefinitions(), developerWebRTCBundleEndpoints(catalogDigest), alternatives,
+	)
+}
+
 func buildDeveloperWebRTCBundle(catalogDigest string) (*Bundle, error) {
+	return buildBundle(
+		"openrealtime.browser.developer-webrtc",
+		developerWebRTCBundleDefinitions(),
+		developerWebRTCBundleEndpoints(catalogDigest),
+	)
+}
+
+func developerWebRTCBundleDefinitions() []moduleDefinition {
 	audioPermission := plugin.Permission{
 		Kind: "device.media", Resource: "browser-audio", Operations: []string{"microphone", "playout"},
 	}
@@ -952,7 +982,11 @@ func buildDeveloperWebRTCBundle(catalogDigest string) (*Bundle, error) {
 		},
 	}
 	definitions = append(definitions, developerManagementDefinitions(true)...)
-	return buildBundle("openrealtime.browser.developer-webrtc", definitions, []presentation.ManifestEndpoint{
+	return definitions
+}
+
+func developerWebRTCBundleEndpoints(catalogDigest string) []presentation.ManifestEndpoint {
+	return []presentation.ManifestEndpoint{
 		{Name: "effects.local", Method: "GET", Path: "/client/v1/effects",
 			Protocol: clientEffectsProtocol, CatalogDigest: catalogDigest},
 		{Name: "management.authoring", Method: "POST", Path: "/client/v1/management/authoring",
@@ -964,7 +998,7 @@ func buildDeveloperWebRTCBundle(catalogDigest string) (*Bundle, error) {
 		{Name: "management.static", Method: "GET", Path: "/client/v1/management",
 			Protocol: managementProtocol},
 		{Name: "realtime.webrtc", Method: "POST", Path: "/client/v1/realtime/calls"},
-	})
+	}
 }
 
 func buildBundle(

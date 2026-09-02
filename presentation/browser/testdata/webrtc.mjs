@@ -6,6 +6,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const PAGE_URL = process.argv[2];
 const PORT = Number(process.env.CDP_PORT ?? 19312);
+const VIEWS_REPLACEMENT_PATH = process.env.VIEWS_REPLACEMENT_PATH ?? "";
+if (!VIEWS_REPLACEMENT_PATH.startsWith("/test/")) {
+  throw new Error("WebRTC view replacement fixture is invalid");
+}
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-webrtc-client-"));
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   "--headless=new", `--remote-debugging-port=${PORT}`, "--no-sandbox", "--disable-gpu",
@@ -179,6 +183,53 @@ try {
     await evaluate(`document.getElementById("video-state")?.textContent ?? ""`));
   await evaluate(`document.getElementById("video-stop").click()`);
 
+  const replacementStarted = performance.now();
+  const viewReplacement = await evaluate(`(async () => {
+    const before = window.__openrealtime.live();
+    const candidate = await fetch(${JSON.stringify(VIEWS_REPLACEMENT_PATH)}, {cache:"no-store"})
+      .then((response) => response.json());
+    const receipt = await window.__openrealtime.replaceMany(
+      ["video-controls", "transport-diagnostics"], candidate);
+    const after = window.__openrealtime.live();
+    return {
+      before, after, receipt, candidateFingerprint: candidate.fingerprint,
+      manifestFingerprint: window.__openrealtime.manifest.fingerprint,
+      mounted: window.__openrealtime.mounted,
+    };
+  })()`);
+  const replacementMS = performance.now() - replacementStarted;
+  const viewTransitions = viewReplacement.receipt.transitions ?? [];
+  check("WebRTC-only view implementations replace atomically",
+    viewReplacement.after.sequence === viewReplacement.before.sequence + 1 &&
+    viewReplacement.after.fingerprint === viewReplacement.before.fingerprint &&
+    viewReplacement.after.manifest_fingerprint === viewReplacement.candidateFingerprint &&
+    viewReplacement.manifestFingerprint === viewReplacement.candidateFingerprint &&
+    viewReplacement.receipt.format_version === 2 &&
+    viewReplacement.receipt.plan_fingerprint === viewReplacement.before.fingerprint &&
+    viewReplacement.receipt.before_manifest_fingerprint === viewReplacement.before.manifest_fingerprint &&
+    viewReplacement.receipt.after_manifest_fingerprint === viewReplacement.candidateFingerprint &&
+    JSON.stringify(viewTransitions.map((row) => row.entry).sort()) ===
+      JSON.stringify(["transport-diagnostics", "video-controls"]) &&
+    viewTransitions.some((row) => row.entry === "video-controls" &&
+      row.before_implementation.implementation === "browser-esm:video-controls.js" &&
+      row.after_implementation.implementation === "browser-esm:video-controls-v2.js") &&
+    viewTransitions.some((row) => row.entry === "transport-diagnostics" &&
+      row.before_implementation.implementation === "browser-esm:transport-diagnostics-view.js" &&
+      row.after_implementation.implementation === "browser-esm:transport-diagnostics-view-v2.js") &&
+    !Object.hasOwn(viewReplacement.receipt, "state_transfers") &&
+    viewReplacement.after.entries["video-controls"].state === "active" &&
+    viewReplacement.after.entries["transport-diagnostics"].state === "active" &&
+    viewReplacement.mounted.length === 28);
+  check("replacement WebRTC views rebind live media and diagnostics services", await evaluate(`(() =>
+    document.getElementById("video-camera")?.disabled === false &&
+    document.getElementById("video-screen")?.disabled === false &&
+    document.getElementById("transport-stats") !== null)()`));
+  await evaluate(`document.getElementById("video-camera").click()`);
+  const replacementCaptured = await waitFor("replacement camera frame publication", () => evaluate(
+    `/camera: [1-9][0-9]* frames/.test(document.getElementById("video-state")?.textContent ?? "")`));
+  check("replacement video controls execute through the retained provider", replacementCaptured);
+  await evaluate(`document.getElementById("video-stop").click()`);
+
   await waitFor("transport diagnostics", () => evaluate(
     `document.getElementById("transport-stats")?.dataset.audioBytes !== undefined`));
   const audioBefore = Number(await evaluate(
@@ -283,9 +334,11 @@ try {
     Object.values(finalLive.entries).every((entry) => entry.state === "inactive" && !entry.desired &&
       entry.error === "" && entry.effects === 0 && entry.services.length === 0));
   check("client lifecycle performance stays inside release ceilings",
-    bootMS < 5000 && connectMS < 15000 && firstVideoMS < 5000 && firstScreenMS < 5000 && firstAudioReceiptMS < 5000 &&
+    bootMS < 5000 && connectMS < 15000 && firstVideoMS < 5000 && firstScreenMS < 5000 &&
+      replacementMS < 2000 && firstAudioReceiptMS < 5000 &&
       lossMS < 2000 && restoreMS < 2000 && disposeMS < 2000,
-    `boot=${bootMS.toFixed(1)}ms connect=${connectMS.toFixed(1)}ms first-video=${firstVideoMS.toFixed(1)}ms first-screen=${firstScreenMS.toFixed(1)}ms first-audio-receipt=${firstAudioReceiptMS.toFixed(1)}ms loss=${lossMS.toFixed(1)}ms ` +
+    `boot=${bootMS.toFixed(1)}ms connect=${connectMS.toFixed(1)}ms first-video=${firstVideoMS.toFixed(1)}ms first-screen=${firstScreenMS.toFixed(1)}ms ` +
+      `view-replacement=${replacementMS.toFixed(1)}ms first-audio-receipt=${firstAudioReceiptMS.toFixed(1)}ms loss=${lossMS.toFixed(1)}ms ` +
       `restore=${restoreMS.toFixed(1)}ms dispose=${disposeMS.toFixed(1)}ms`);
 } catch (error) {
   check("run completed", false, error.stack ?? error.message);
