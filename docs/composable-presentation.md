@@ -613,9 +613,13 @@ tau2/τ-Voice matrix defined by the parent plan.
   gateway bearer, and overlays the exact graph/schema/descriptor catalog plus
   pure in-memory authoring while excluding session inspection, source I/O, and
   reconciliation. Scenario, Meeting Assistant, and Realtime-CU profile
-  generators expose that same selection. Full delta/reconciliation E2E,
-  cross-owner provider-state migration, and replacement of every presentation
-  consumer remain open.
+  generators expose that same selection. The shipped inspection view now reads
+  a bounded 256-event resumable delta page beside live/static evidence, rejects
+  session, graph, fingerprint, cursor, baseline, and event-sequence
+  substitution, and passes isolated JavaScript plus complete real-Chromium
+  developer/observer profile coverage. Reconciliation E2E, cross-owner
+  provider-state migration, and replacement of every presentation consumer
+  remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

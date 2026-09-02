@@ -2905,6 +2905,13 @@ and does not claim statistical parity with the historical 165-attempt sample.
     text-only browser operator view. Identity drift, unredacted identifiers,
     and markup-shaped metadata fail closed; legacy live-only sessions are
     labeled rather than promoted to a fabricated contract view.
+  - [x] Consume the bounded resumable session-delta API in the shipped browser
+    inspector. Each refresh requests at most 256 events from cursor zero, joins
+    the returned session and immutable graph identity to the simultaneous live
+    snapshot, validates monotonic baseline/event/next cursors, and renders only
+    page metadata. Resource substitution and excess or regressing event pages
+    fail closed; isolated JavaScript, real Chromium, focused race, the complete
+    presentation subtree, and vet gates are green.
 - [x] Add deterministic semantic graph diff plus bounded, fingerprinted,
   payload-free trace artifacts and exact Graph IR replay validation.
 - [x] Integrate opt-in runtime recording with nonblocking coalesced capture,
