@@ -3591,14 +3591,14 @@ and does not claim statistical parity with the historical 165-attempt sample.
     The text, confirmation, artifact, inspection, trace, management-operator,
     authoring-editor, configuration, and canvas views each move from their exact
     shipped content-addressed module to an admitted candidate in the same
-    twenty-two-row atomic receipt as the selected non-view providers and
+    twenty-three-row atomic receipt as the selected non-view providers and
     clients. The remounted views rebind retained realtime, inspection, effect,
     operator, and workspace services; all DOM surfaces remain present, the
     signed effect catalog renegotiates,
     the replacement executes a sealed artifact, and final disposal retains no
     client ownership or effect socket. Three focused race-enabled real-Chromium
-    runs, the complete browser suite, and vet are green. Remaining non-view
-    client providers and topology-changing replacement stay open.
+    runs, the complete browser suite, and vet are green. The reducer and WebRTC-
+    specific non-view providers plus topology-changing replacement stay open.
   - [x] Select the two WebRTC-specific view consumers plus the shipped slots,
     session-configuration, video-protocol, debug-session, effects, artifact-
     reference, and inspection implementations in a separate exact nine-row
@@ -3625,20 +3625,20 @@ and does not claim statistical parity with the historical 165-attempt sample.
     selected implementation and runtime-artifact identities are receipt-bound,
     unrelated services stay active, and no capability enters the receipt,
     manifest, DOM, logs, or live projection. Three focused race-enabled
-    Chromium runs, the complete browser suite, and vet are green. Realtime
-    transport/reducer providers remain open.
+    Chromium runs, the complete browser suite, and vet are green. The reducer
+    and WebRTC transport providers remain open.
   - [x] Replace the shipped slots and session-configuration providers in that
     authenticated transition. Replacing slots remounts every dependent view
     into a fresh service and reconstructs the complete ordered DOM surface;
     replacing session configuration remounts its contributors, republishes the
     bounded debug/effect declarations, and renegotiates the signed effect
     catalog through the retained session. They participate in the exact twenty-
-    two-row payload-free receipt; every desired entry returns active, and final
+    three-row payload-free receipt; every desired entry returns active, and final
     disposal reaches zero browser-owned effects and services. Three focused
     race-enabled real-Chromium repetitions, the complete browser suite,
     JavaScript syntax, and
-    vet are green. Stateful realtime transport, reducer, and media
-    implementations remain open.
+    vet are green. Stateful reducer and WebRTC transport/media implementations
+    remain open.
   - [x] Preserve the shipped authoring workspace through management-client and
     workspace implementation replacement. Its descriptor now declares an exact
     digest-bound state schema plus snapshot/restore lifecycle; the module
@@ -3647,21 +3647,22 @@ and does not claim statistical parity with the historical 165-attempt sample.
     compile, render, and publication state on restore. One real-Chromium
     transition selects management transport, authoring, source reading, source
     publication, and the workspace alongside the prior sixteen rows, then adds
-    the stateful operator provider, and returns a format-v3 twenty-two-row
-    receipt with two byte-free state transfers whose before/after digests
-    match. The exact editor document survives while every desired row remounts.
+    the stateful operator provider plus WebSocket transport, and returns a
+    format-v3 twenty-three-row receipt with two byte-free state transfers whose
+    before/after digests match. The exact editor document survives while every
+    desired row remounts.
     The same durable document also survives management-operator deactivation
     and recovery without exposing suspended bytes, while derived state resets
     to idle. JavaScript adversarial tests, three focused race-enabled Chromium
     runs, the complete presentation suite, vet, and the low-parallelism full
-    repository gate are green. Realtime transport/reducer implementation
+    repository gate are green. Reducer and WebRTC transport implementation
     replacement remains open.
   - [x] Migrate the secret-bearing browser operator authority across provider
     recovery and authenticated implementation replacement. Its descriptor now
     declares an exact digest-bound state schema for the private canonical
     capability, expiry, and generation; its snapshot and candidate migrator
     strictly validate that bounded state. Provider loss restores authorized
-    catalog access without operator re-entry, and the twenty-two-row transition
+    catalog access without operator re-entry, and the twenty-three-row transition
     replaces the provider plus its complete management dependency closure while
     preserving the active capability. The format-v3 receipt contains only the
     schema, before/after digests, and migrator identity; capability bytes remain
@@ -3670,6 +3671,19 @@ and does not claim statistical parity with the historical 165-attempt sample.
     real-Chromium developer variants, three focused race-enabled repetitions,
     the presentation suite, vet, and the low-parallelism full repository gate
     are green. Server-sealed authority rotation remains open.
+  - [x] Replace the shipped browser WebSocket transport through its active
+    protocol dependency closure. At an idle safe point the authenticated
+    twenty-three-row transition retires the live predecessor socket before
+    candidate activation, selects the exact content-addressed transport bytes,
+    remounts the reducer and every dependent client, and exposes the expected
+    disconnected protocol state. An explicit reconnect then establishes a
+    fresh session, restores inspection and signed-effect negotiation, retains
+    private operator/workspace state, and executes the next conversation and
+    sealed artifact. The real server observes exactly two WebSocket handshakes,
+    and final disposal leaves no active transport or effect socket. Three
+    focused race-enabled Chromium repetitions, the presentation suite, and vet
+    are green. Stateful reducer continuity and WebRTC transport replacement
+    remain open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in

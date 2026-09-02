@@ -568,7 +568,7 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement on one real address, with exact retirement and inert predecessor
   handlers. The fail-closed effect-authority provider likewise replaces through
   its active effects-socket closure with a stable router/export, exact two-row
-  retirement, and a fresh deny-by-default socket. One authenticated twenty-two-
+  retirement, and a fresh deny-by-default socket. One authenticated twenty-three-
   row real-Chromium transition now selects exact candidates for slots, session
   configuration, effects, artifact references, debug, inspection, the stateful
   management-operator authority, management transport/static/authoring/source-
@@ -588,12 +588,15 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement inspection/static clients reload exact live/catalog evidence,
   and two digest-bound state transfers preserve the private operator capability
   plus authoring document while invalidating derived authoring results.
+  The same transition replaces the active WebSocket transport at a safe point,
+  observes a disconnected remounted reducer, and establishes exactly one fresh
+  protocol session before resuming inspection, effects, and conversation.
   Reversible management-operator loss privately suspends both declared states,
   omits their bytes from live evidence, restores them across the remounted
   dependency closure, and remains retryable after an intentionally failed
-  stateful remount. Remaining realtime transport/reducer/media client
-  providers, deployment-host topology, server-sealed authority rotation, and
-  signed native lifecycle/leak evidence keep this parent open.
+  stateful remount. The reducer plus WebRTC transport/media client providers,
+  deployment-host topology, server-sealed authority rotation, and signed native
+  lifecycle/leak evidence keep this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
