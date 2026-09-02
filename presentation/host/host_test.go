@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -224,6 +225,135 @@ func TestStableHostRouterSurvivesRouteReplacementRollbackAndRemoval(t *testing.T
 	if err := mounted.Close(context.Background()); err != nil {
 		t.Fatalf("idempotent host close: %v", err)
 	}
+}
+
+func TestHostReconcilesMultipleRouteCapabilitiesAtomically(t *testing.T) {
+	routerFactory := NewRouterFactory()
+	stableFactory := &stableTestRouteFactory{}
+	routeFactory := &testRouteFactory{}
+	stableDescriptor := stableFactory.Descriptor()
+	routeDescriptor := routeFactory.Descriptor()
+	validStable := &replacementTestRouteFactory{
+		descriptor: stableDescriptor,
+		routes:     []Route{{Pattern: "GET /stable", Handler: statusHandler(220)}},
+	}
+	validRoute := &replacementTestRouteFactory{
+		descriptor: routeDescriptor,
+		routes: []Route{
+			{Pattern: "GET /healthz", Handler: statusHandler(218)},
+			{Pattern: "GET /readyz", Handler: statusHandler(219)},
+		},
+	}
+	conflictingStable := &replacementTestRouteFactory{
+		descriptor: stableDescriptor,
+		routes:     []Route{{Pattern: "GET /candidate-shared", Handler: statusHandler(221)}},
+	}
+	conflictingRoute := &replacementTestRouteFactory{
+		descriptor: routeDescriptor,
+		routes:     []Route{{Pattern: "GET /candidate-shared", Handler: statusHandler(222)}},
+	}
+	plan := makeHostPlan(t, []pluginruntime.Factory{routerFactory, stableFactory, routeFactory})
+	registry := pluginruntime.NewRegistry()
+	for _, row := range []struct {
+		implementation string
+		artifact       inspect.ArtifactIdentity
+		factory        pluginruntime.Factory
+	}{
+		{routerFactory.Descriptor().Name, hostTestArtifact("go://host-router", "build-1", "1"), routerFactory},
+		{stableDescriptor.Name, hostTestArtifact("go://host-stable-v1", "build-1", "2"), stableFactory},
+		{routeDescriptor.Name, hostTestArtifact("go://host-route-v1", "build-1", "3"), routeFactory},
+		{"test/host-stable-v2", hostTestArtifact("go://host-stable-v2", "build-2", "4"), validStable},
+		{"test/host-route-v2-multi", hostTestArtifact("go://host-route-v2-multi", "build-2", "5"), validRoute},
+		{"test/host-stable-conflict", hostTestArtifact("go://host-stable-conflict", "build-2", "6"), conflictingStable},
+		{"test/host-route-conflict-multi", hostTestArtifact("go://host-route-conflict-multi", "build-2", "7"), conflictingRoute},
+	} {
+		if err := registry.RegisterArtifact(row.implementation, row.artifact, row.factory); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounted, err := pluginruntime.Mount(context.Background(), pluginruntime.Config{
+		Plan: plan, Registry: registry,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mounted.Close(context.Background()) })
+	value, contract, provider, revision, err := mounted.Export("http")
+	if err != nil || contract != presentation.HTTPHandlerContract || provider != "router" {
+		t.Fatalf("host HTTP export = %T %+v %q %d, %v", value, contract, provider, revision, err)
+	}
+	handler, ok := value.(http.Handler)
+	if !ok {
+		t.Fatalf("host HTTP export value = %T", value)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	assertStatus(t, server.URL+"/healthz", http.StatusNoContent)
+	assertStatus(t, server.URL+"/stable", http.StatusNoContent)
+
+	before := mounted.Live()
+	receipt, err := mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: before.Sequence,
+		Updates: []pluginruntime.EntryUpdate{
+			{Entry: "test_route", SetImplementation: true, Implementation: "test/host-route-conflict-multi"},
+			{Entry: "stable_route", SetImplementation: true, Implementation: "test/host-stable-conflict"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "previous composition was restored") ||
+		!strings.Contains(err.Error(), "candidate-shared") {
+		t.Fatalf("multi-route conflict error = %v", err)
+	}
+	if !reflect.DeepEqual(receipt, pluginruntime.ReconcileReceipt{}) {
+		t.Fatalf("failed multi-route reconciliation returned receipt %#v", receipt)
+	}
+	assertStatus(t, server.URL+"/healthz", http.StatusNoContent)
+	assertStatus(t, server.URL+"/stable", http.StatusNoContent)
+	assertStatus(t, server.URL+"/candidate-shared", http.StatusNotFound)
+	afterFailure := mounted.Live()
+	if afterFailure.Entries["stable_route"].Implementation != stableDescriptor.Name ||
+		afterFailure.Entries["test_route"].Implementation != routeDescriptor.Name {
+		t.Fatalf("multi-route rollback live evidence = %+v", afterFailure.Entries)
+	}
+
+	receipt, err = mounted.Reconcile(context.Background(), pluginruntime.ReconcileCandidate{
+		ExpectedPlanFingerprint: plan.Fingerprint, ExpectedSequence: afterFailure.Sequence,
+		Updates: []pluginruntime.EntryUpdate{
+			{Entry: "test_route", SetImplementation: true, Implementation: "test/host-route-v2-multi"},
+			{Entry: "stable_route", SetImplementation: true, Implementation: "test/host-stable-v2"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
+		receipt.PlanFingerprint != plan.Fingerprint || receipt.BeforeSequence != afterFailure.Sequence ||
+		receipt.AfterSequence <= afterFailure.Sequence ||
+		receipt.AfterSequence != mounted.Live().Sequence || len(receipt.Transitions) != 2 ||
+		receipt.Transitions[0].Entry != "stable_route" ||
+		receipt.Transitions[1].Entry != "test_route" || len(receipt.Retirements) != 2 {
+		t.Fatalf("multi-route reconciliation receipt = %#v", receipt)
+	}
+	for _, retirement := range receipt.Retirements {
+		if retirement.ClosedScopes != retirement.RetiredScopes || retirement.RemainingWorkers != 0 ||
+			retirement.RemainingEffects != 0 || retirement.RemainingChildScopes != 0 ||
+			retirement.RemainingServices != 0 {
+			t.Fatalf("multi-route retirement retained ownership: %#v", retirement)
+		}
+	}
+	assertStatus(t, server.URL+"/healthz", 218)
+	assertStatus(t, server.URL+"/readyz", 219)
+	assertStatus(t, server.URL+"/stable", 220)
+	afterValue, afterContract, afterProvider, afterRevision, err := mounted.Export("http")
+	if err != nil || afterValue != value || afterContract != contract || afterProvider != provider ||
+		afterRevision != revision {
+		t.Fatalf("stable host export changed across multi-route reconciliation")
+	}
+	if err := mounted.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	assertHostRealmClosed(t, mounted.Live(), plan.Fingerprint)
+	assertStatus(t, server.URL+"/healthz", http.StatusNotFound)
+	assertStatus(t, server.URL+"/stable", http.StatusNotFound)
 }
 
 func TestRouterRegistrationIsAtomicAndConcurrentRequestsSeeCompleteMuxes(t *testing.T) {
@@ -558,6 +688,20 @@ func (factory *replacementTestRouteFactory) Mount(
 	_ context.Context, mount pluginruntime.MountContext,
 ) error {
 	return registerRoutes(mount, factory.routes)
+}
+
+func (factory *replacementTestRouteFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	return replacementTestRouteCandidate{factory: factory}, nil
+}
+
+type replacementTestRouteCandidate struct{ factory *replacementTestRouteFactory }
+
+func (candidate replacementTestRouteCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
 }
 
 func statusHandler(status int) http.Handler {
