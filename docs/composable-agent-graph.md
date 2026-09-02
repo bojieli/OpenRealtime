@@ -6,12 +6,6 @@
 - **Audience:** runtime authors, element and model-adapter authors, deployment
   authors, benchmark authors, and UI/tooling authors
 
-> [!IMPORTANT]
-> This is an accepted design proposal and living implementation tracker. It may
-> describe target behavior ahead of the current release. New users should read
-> the [current architecture](architecture.md) and
-> [graph-native assembly guide](graph-native-assembly.md) first.
-
 This document proposes a thorough refactoring of OpenRealtime from a set of
 binding-shaped realtime voice architectures into a typed, inspectable element
 graph for general real-time agents. It is intentionally broader than audio. A
