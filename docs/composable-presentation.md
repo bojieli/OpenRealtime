@@ -568,12 +568,12 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement on one real address, with exact retirement and inert predecessor
   handlers. The fail-closed effect-authority provider likewise replaces through
   its active effects-socket closure with a stable router/export, exact two-row
-  retirement, and a fresh deny-by-default socket. One authenticated sixteen-
-  row real-Chromium transition now selects exact candidates for the slots,
-  session-configuration, effects, and artifact-reference providers, the debug-
-  session, inspection, and management-static clients, plus all nine effects-
-  enabled WebSocket-profile view consumers; every text, confirmation, artifact,
-  inspection, trace,
+  retirement, and a fresh deny-by-default socket. One authenticated twenty-one-
+  row real-Chromium transition now selects exact candidates for slots, session
+  configuration, effects, artifact references, debug, inspection, management
+  transport/static/authoring/source-read/source-publication, the stateful
+  authoring workspace, and all nine effects-enabled WebSocket-profile view
+  consumers; every text, confirmation, artifact, inspection, trace,
   operator, editor, configuration, and canvas surface rebinds its retained
   services and final disposal reaches zero client ownership. A separate nine-
   row real-Chromium WebRTC transition selects slots, session configuration,
@@ -583,12 +583,13 @@ tau2/τ-Voice matrix defined by the parent plan.
   and effect negotiation, captures a new camera frame, and executes a sealed
   artifact. Every shipped browser view consumer now has selected-
   implementation replacement evidence; the replacement slots and session-
-  configuration providers reconstruct their DOM/contribution state, and the
-  replacement inspection/static clients reload exact live and catalog
-  evidence. Remaining non-view client providers, deployment-host topology,
-  stateful/capability-specific
-  replacement, server-sealed authority rotation, and signed native lifecycle/
-  leak evidence keep this parent open.
+  configuration providers reconstruct their DOM/contribution state, the
+  replacement inspection/static clients reload exact live/catalog evidence,
+  and an exact digest-bound state transfer preserves the authoring document
+  while invalidating derived results. Remaining non-view client providers,
+  deployment-host topology, stateful/capability-specific replacement, server-
+  sealed authority rotation, and signed native lifecycle/leak evidence keep
+  this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
