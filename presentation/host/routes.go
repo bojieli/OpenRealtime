@@ -4,6 +4,7 @@ package host
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/bojieli/OpenRealtime/plugin"
@@ -55,6 +56,23 @@ func (factory *RouterFactory) Mount(ctx context.Context, mount pluginruntime.Mou
 	return factory.delegate.Mount(ctx, mount)
 }
 
+func (factory *RouterFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if factory == nil || factory.delegate == nil {
+		return nil, errors.New("presentation host router factory is nil")
+	}
+	return routerCandidate{factory: factory}, nil
+}
+
+type routerCandidate struct{ factory *RouterFactory }
+
+func (candidate routerCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
 func lookupRoutes(services pluginruntime.Services) (RouteRegistry, error) {
 	return httpservice.LookupRegistry(services, presentation.HTTPRoutesContract)
 }
@@ -68,3 +86,6 @@ func registerRoutes(mount pluginruntime.MountContext, routes []Route) error {
 func HTTPHandler(mounted *pluginruntime.Mounted, export string) (http.Handler, error) {
 	return httpservice.Handler(mounted, export, presentation.HTTPHandlerContract)
 }
+
+var _ pluginruntime.Factory = (*RouterFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*RouterFactory)(nil)
