@@ -3210,18 +3210,20 @@ and does not claim statistical parity with the historical 165-attempt sample.
     replacement/rollback, and close-ownership tests are green; topology/session
     resources outside this realm and cross-realm leak evidence remain under the
     open parent.
-  - [x] Atomically reconcile the shipped public Realtime and observability
-    server routes at the effect-restricted safe point. Candidate pre-mount
+  - [x] Atomically reconcile the shipped public Realtime, observability, and
+    canonical session-management server routes at the effect-restricted safe
+    point. Candidate pre-mount
     validates the exact current route registry and endpoint services without
-    publishing a handler. A two-row replacement advances both implementation
-    and runtime-artifact identities, retires both predecessor route scopes with
-    exact zero ownership, and preserves the router, HTTP export, gateway, and
-    session provider. The same real Realtime WebSocket completes a
-    `session.update` exchange before and after the swap, while health and
-    metrics remain available; final realm close removes every route, service,
-    worker, and effect. Twenty focused runs, five focused race runs, package and
-    package-race tests, and vet are green. Gateway/provider and topology
-    replacement remain open.
+    publishing a handler. A three-row replacement advances every implementation
+    and runtime-artifact identity, retires all three predecessor route scopes
+    with exact zero ownership, and preserves the router, HTTP export, gateway,
+    inspection plane, and session provider. The same real Realtime WebSocket
+    completes a `session.update` exchange before and after the swap, while
+    health, metrics, and the canonical missing-session response remain
+    available; final realm close removes every route, service, worker, and
+    effect. Twenty focused runs,
+    five focused race runs, both affected packages and their race gates, and
+    vet are green. Gateway/provider and topology replacement remain open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
@@ -4007,9 +4009,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     retirement and verified target/authorization rebinding. The stateless host
     router passes activation rollback and successful full route-and-listener
     closure replacement on one real address, with retired handlers inert and
-    exact zero ownership. The shipped server Realtime and observability routes
-    also pass an atomic two-row safe-point replacement without dropping the
-    live session or changing the gateway/router export. Topology-changing
+    exact zero ownership. The shipped server Realtime, observability, and
+    canonical session-management routes also pass an atomic three-row
+    safe-point replacement without dropping the live session or changing the
+    gateway/router export. Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain
     open.
