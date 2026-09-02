@@ -3223,7 +3223,21 @@ and does not claim statistical parity with the historical 165-attempt sample.
     available; final realm close removes every route, service, worker, and
     effect. Twenty focused runs,
     five focused race runs, both affected packages and their race gates, and
-    vet are green. Gateway/provider and topology replacement remain open.
+    vet are green. Gateway and topology replacement remain open; session-
+    provider replacement is covered immediately below.
+  - [x] Reconcile the clean server session-provider implementation through its
+    real gateway and public-route dependency closure. Effect-free candidate
+    pre-mount revalidates the complete immutable binding and refuses a drifted
+    provider name without advancing the realm sequence or disturbing the live
+    WebSocket. A valid replacement closes the predecessor session, retires the
+    session provider, gateway, Realtime route, and observability route with
+    exact zero ownership, and preserves the outer router/export, inspection
+    plane, and canonical session API. Health reports the replacement binding
+    and a fresh Realtime WebSocket completes a `session.update`; final close
+    removes every realm-owned resource and route. Twenty focused runs, five
+    focused race runs, the complete server package and its race gate, and vet
+    are green. Inspection-plane, gateway, and topology replacement remain
+    open.
   - [x] Atomically reconcile all six shipped operator-management API route
     families: static graph/catalog, session, authoring, source reading, source
     publication, and reconciliation. Shared effect-restricted candidate
