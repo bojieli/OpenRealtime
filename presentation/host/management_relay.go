@@ -82,56 +82,114 @@ func (factory *ManagementRelayFactory) Descriptor() plugin.Descriptor {
 	return factory.descriptor.Clone()
 }
 
-func (factory *ManagementRelayFactory) Mount(_ context.Context, mount pluginruntime.MountContext) error {
-	if !mount.Permissions.Allows(connectPermissionKind, connectPermissionResource, managementOperation) {
-		return errors.New("management relay lacks its deployment network-connect grant")
+func (factory *ManagementRelayFactory) Mount(
+	_ context.Context, mount pluginruntime.MountContext,
+) error {
+	base, target, err := factory.prepareManagementRelay(mount.Services, mount.Permissions)
+	if err != nil {
+		return err
+	}
+	return factory.mountManagementRelay(mount, base, target)
+}
+
+func (factory *ManagementRelayFactory) PreMount(
+	_ context.Context, candidate pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if _, _, err := factory.prepareManagementRelay(
+		candidate.Services, candidate.Permissions,
+	); err != nil {
+		return nil, err
+	}
+	return managementRelayCandidate{factory: factory}, nil
+}
+
+func (factory *ManagementRelayFactory) prepareManagementRelay(
+	services pluginruntime.Services, permissions pluginruntime.Permissions,
+) (*url.URL, relayTarget, error) {
+	if !permissions.Allows(connectPermissionKind, connectPermissionResource, managementOperation) {
+		return nil, relayTarget{}, errors.New("management relay lacks its deployment network-connect grant")
 	}
 	target, endpoint, err := lookupTargetEndpoint(
-		mount.Services,
+		services,
 		presentation.EndpointManagement,
 		presentation.ProtocolManagement,
 	)
 	if err != nil {
-		return err
+		return nil, relayTarget{}, err
 	}
 	base, parseErr := url.Parse(endpoint.URL)
 	if parseErr != nil {
 		// EndpointDirectory validation already made this impossible. Keep the
 		// mount fail-closed if a substituted service violates its Go contract.
-		return errors.New("management relay received an invalid declared endpoint")
+		return nil, relayTarget{}, errors.New("management relay received an invalid declared endpoint")
+	}
+	return base, target, nil
+}
+
+func (factory *ManagementRelayFactory) mountManagementRelay(
+	mount pluginruntime.MountContext,
+	base *url.URL,
+	target relayTarget,
+) error {
+	owned := func(
+		workerPrefix string,
+		serve func(http.ResponseWriter, *http.Request),
+	) http.Handler {
+		return lifecycleHTTPHandler(
+			mount.Lifecycle, workerPrefix,
+			func(ctx context.Context, writer http.ResponseWriter, request *http.Request) {
+				stopBody := context.AfterFunc(ctx, func() { _ = request.Body.Close() })
+				defer stopBody()
+				serve(writer, request.WithContext(ctx))
+			},
+		)
 	}
 	return registerRoutes(mount, []Route{
-		{Pattern: "GET /client/v1/management/sessions/{session}/{resource}", Handler: http.HandlerFunc(
+		{Pattern: "GET /client/v1/management/sessions/{session}/{resource}", Handler: owned(
+			"management-session-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relaySession(base, target, writer, request)
 			},
 		)},
-		{Pattern: "GET /client/v1/management/graphs/{fingerprint}", Handler: http.HandlerFunc(
+		{Pattern: "GET /client/v1/management/graphs/{fingerprint}", Handler: owned(
+			"management-graph-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relayGraph(base, target, writer, request)
 			},
 		)},
-		{Pattern: "GET /client/v1/management/descriptors/elements/{name}/{revision}/{digest}", Handler: http.HandlerFunc(
+		{Pattern: "GET /client/v1/management/descriptors/elements/{name}/{revision}/{digest}", Handler: owned(
+			"management-element-descriptor-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relayElementDescriptor(base, target, writer, request)
 			},
 		)},
-		{Pattern: "GET /client/v1/management/descriptors/plugins/{name}/{revision}/{digest}", Handler: http.HandlerFunc(
+		{Pattern: "GET /client/v1/management/descriptors/plugins/{name}/{revision}/{digest}", Handler: owned(
+			"management-plugin-descriptor-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relayPluginDescriptor(base, target, writer, request)
 			},
 		)},
-		{Pattern: "GET /client/v1/management/schemas/values/{fingerprint}", Handler: http.HandlerFunc(
+		{Pattern: "GET /client/v1/management/schemas/values/{fingerprint}", Handler: owned(
+			"management-values-schema-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relayValuesSchema(base, target, writer, request)
 			},
 		)},
-		{Pattern: "POST /client/v1/management/authoring/{action}", Handler: http.HandlerFunc(
+		{Pattern: "POST /client/v1/management/authoring/{action}", Handler: owned(
+			"management-authoring-request",
 			func(writer http.ResponseWriter, request *http.Request) {
 				factory.relayAuthoring(base, target, writer, request)
 			},
 		)},
 	})
+}
+
+type managementRelayCandidate struct{ factory *ManagementRelayFactory }
+
+func (candidate managementRelayCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
 }
 
 func (factory *ManagementRelayFactory) relaySession(
@@ -637,3 +695,4 @@ func boundedManagementQuery(input url.Values) (url.Values, error) {
 }
 
 var _ pluginruntime.Factory = (*ManagementRelayFactory)(nil)
+var _ pluginruntime.CandidatePreMounter = (*ManagementRelayFactory)(nil)
