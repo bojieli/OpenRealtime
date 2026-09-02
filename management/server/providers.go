@@ -49,6 +49,23 @@ func (factory *providerFactory) Mount(_ context.Context, mount pluginruntime.Mou
 	return mount.Publisher.Provide(factory.contract, factory.value)
 }
 
+func (factory *providerFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if factory == nil || nilInterface(factory.value) {
+		return nil, errors.New("pre-mount management service provider: nil factory or value")
+	}
+	return providerCandidate{factory: factory}, nil
+}
+
+type providerCandidate struct{ factory *providerFactory }
+
+func (candidate providerCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
 func NewAuthorizerProvider(authorizer management.Authorizer) (pluginruntime.Factory, error) {
 	return newProviderFactory(
 		"openrealtime.management.server.authorizer-provider", management.AuthorizerContract, authorizer,
@@ -96,3 +113,5 @@ func NewReconciliationProvider(reconciliation management.Reconciliation) (plugin
 		management.ReconciliationContract, reconciliation,
 	)
 }
+
+var _ pluginruntime.CandidatePreMounter = (*providerFactory)(nil)
