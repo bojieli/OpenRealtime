@@ -1825,8 +1825,8 @@ behavior-affecting code or artifact change invalidates the affected final-run
 evidence even when an earlier campaign remains useful as a checked historical
 execution milestone.
 
-At this reconciliation, 264 of 314 explicit tracker boxes are checked (84.1%)
-and 50 remain open. The percentage records completed reviewable slices; it does
+At this reconciliation, 266 of 317 explicit tracker boxes are checked (83.9%)
+and 51 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -2606,6 +2606,33 @@ the required new 165-attempt sample.
     slice and then all 498 tasks still require immutable reruns after the active
     FD-Bench campaign releases the shared model deployments; this subgate does
     not close the parent quality gate.
+  - [x] Preserve and diagnose the first concrete FDB v3 argument regression
+    without overwriting either failed attempt. The retained 100-task campaign
+    established the blocking 9/100 exact result. A fresh graph-attested rerun
+    of `ecommerce_04_6998abd731d2ec50d067d5bd` selected the correct
+    `track_order` tool but proposed `{"order_id":"X Y Z88"}` instead of the
+    required compact `{"order_id":"XYZ88"}`. Adding the standard
+    `^[A-Za-z0-9]+$` schema pattern alone made a second retained attempt omit
+    the call, proving that prompt/schema guidance is not a deterministic
+    repair. Exact execution, graph, values, policy-request, result, and candidate
+    binary evidence is preserved under
+    `artifacts/fdbv3-diagnostic-spaced-id-20260902` and
+    `artifacts/fdbv3-diagnostic-pattern-no-call-20260902`; the result digests
+    are respectively
+    `sha256:dfb0aa36a650d8874baab9822fbb49e39776ab5218b2e3b014c0e88b6a4aac10`
+    and
+    `sha256:4d3454e4780bbd20c9bf57802821a6f58fa05ffdafe3ed25cae8b9b61d177ab2`.
+    This closes diagnosis only, not the focused, full-suite, quality, or
+    release gates.
+  - [ ] Complete the FDB v3 repair through an explicit opt-in graph element,
+    immutable deployment-owned tool-declaration metadata kept out of provider
+    schemas, auditable proposal-to-effective-call
+    derivation, final authority re-attestation, provider-portable continuation,
+    and speech-control suppression. Then rerun the exact failed task, a
+    preregistered representative slice, and all 100 released tasks from one
+    frozen graph-native candidate. Preserve every failed rerun and repeat the
+    focused-then-complete cycle until the accepted baseline is met or improved;
+    implementation tests alone cannot check this box.
 - [ ] After all implementation and configuration work is frozen, build one
   clean final candidate, pin its exact graph/values/deployment/model/policy and
   machine identities, and run the complete required matrix from that candidate.
@@ -3929,6 +3956,20 @@ the required new 165-attempt sample.
     adversarial permission/config/typed-nil coverage is green.
 - [ ] Add candidate validation, pre-mount, safe-point swap, state migration,
   rollback/refusal, and leak detection.
+  - [x] Interpose session-stable, generation-indirected typed boundary handles
+    over mounted graph ingress and egress. A private whole-generation routing
+    transaction now freezes names, directions, types, cardinalities, lane IDs,
+    and lane order; closes ingress admission; uses acquire-versus-retire leases
+    to distinguish committed operations from retryable work; leaves predecessor
+    egress drainable until cutover; and publishes both direction tables
+    atomically. Shutdown retains buffered terminal egress, wakes blocked calls,
+    closes queues deterministically, and does not duplicate queue telemetry.
+    Focused normal and race checks, the exact client-result terminal regression,
+    repeated runtime/binding suites, graph tests, and vet are green. The
+    replacement primitive remains private: generation-aware transfer of mounted
+    queue/lifecycle/live-inspection ownership, reconciliation wiring, trace
+    generation identity, topology publication, and the cross-system leak proof
+    remain open and keep this parent unchecked.
   - [x] Carry a complete immutable reconciliation candidate and request-bound
     receipt through the UI-independent management server/client, presentation
     host, and descriptor-locked browser transport. One shared Go validator

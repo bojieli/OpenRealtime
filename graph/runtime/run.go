@@ -197,16 +197,33 @@ func (mounted *Mounted) shutdownResources() error {
 		ctx, cancel := context.WithTimeout(context.Background(), mounted.timeout)
 		defer cancel()
 		var failures []error
+		// Close ingress routing admission first so cached senders cannot remain
+		// blocked while lifecycle-owned producers stop. Egress stays drainable
+		// until terminal output queues close below.
+		if err := mounted.boundaries.beginQueueShutdown(ctx); err != nil {
+			failures = append(failures, fmt.Errorf("close graph boundaries: %w", err))
+		}
 		for index := len(mounted.nodes) - 1; index >= 0; index-- {
 			if err := mounted.nodes[index].scope.close(ctx); err != nil {
 				failures = append(failures, err)
 			}
 		}
+		if err := mounted.boundaries.waitIngressShutdown(ctx); err != nil {
+			failures = append(failures, fmt.Errorf("wait for graph boundary ingress shutdown: %w", err))
+		}
 		// Elements own producers. Dispose them while output queues remain
 		// drainable, then close channels so consumers can observe EOF after the
 		// final lifecycle event rather than losing it.
-		for _, queue := range mounted.queues {
-			queue.close()
+		queueIDs := make([]string, 0, len(mounted.queues))
+		for id := range mounted.queues {
+			queueIDs = append(queueIDs, id)
+		}
+		sortStrings(queueIDs)
+		for _, id := range queueIDs {
+			mounted.queues[id].close()
+		}
+		if err := mounted.boundaries.finishQueueShutdown(ctx, true); err != nil {
+			failures = append(failures, fmt.Errorf("finish graph boundary shutdown: %w", err))
 		}
 		mounted.mu.Lock()
 		mounted.shutdownErr = errors.Join(failures...)

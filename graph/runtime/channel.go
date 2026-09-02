@@ -67,6 +67,12 @@ func newQueue(
 }
 
 func (queue *queue) send(ctx context.Context, envelope element.Envelope) (element.DeliveryResult, error) {
+	return queue.sendWithLease(ctx, envelope, nil)
+}
+
+func (queue *queue) sendWithLease(
+	ctx context.Context, envelope element.Envelope, lease *routeLease,
+) (element.DeliveryResult, error) {
 	if ctx == nil {
 		return "", fmt.Errorf("send on %s: nil context", queue.id)
 	}
@@ -77,22 +83,37 @@ func (queue *queue) send(ctx context.Context, envelope element.Envelope) (elemen
 	for {
 		queue.mu.Lock()
 		if queue.closed {
+			if !lease.beginCommit() {
+				queue.mu.Unlock()
+				return "", errBoundaryGenerationRetired
+			}
 			queue.mu.Unlock()
+			lease.endCommit()
 			return "", ErrChannelClosed
 		}
 		if queue.size < queue.depth {
+			if !lease.beginCommit() {
+				queue.mu.Unlock()
+				return "", errBoundaryGenerationRetired
+			}
 			queue.enqueueLocked(envelope)
 			occupancy := queue.size
 			queue.mu.Unlock()
+			lease.endCommit()
 			queue.changed.signal()
 			queue.emit(TraceEnqueue, envelope, occupancy)
 			return element.Delivered, nil
 		}
 		if queue.delivery == ir.Lossy {
+			if !lease.beginCommit() {
+				queue.mu.Unlock()
+				return "", errBoundaryGenerationRetired
+			}
 			queue.dropped++
 			queue.lastID = envelope.ItemID
 			occupancy := queue.size
 			queue.mu.Unlock()
+			lease.endCommit()
 			queue.emit(TraceDrop, envelope, occupancy)
 			return element.Dropped, nil
 		}
@@ -106,55 +127,108 @@ func (queue *queue) send(ctx context.Context, envelope element.Envelope) (elemen
 		if reportedBackpressure {
 			queue.emit(TraceBackpressure, envelope, occupancy)
 		}
-		select {
-		case <-ctx.Done():
-			return "", context.Cause(ctx)
-		case <-wait:
+		if err := waitForQueueChange(ctx, wait, lease); err != nil {
+			return "", err
 		}
 	}
 }
 
 func (queue *queue) receive(ctx context.Context) (element.Envelope, error) {
+	return queue.receiveWithLease(ctx, nil)
+}
+
+func (queue *queue) receiveWithLease(
+	ctx context.Context, lease *routeLease,
+) (element.Envelope, error) {
 	if ctx == nil {
 		return element.Envelope{}, fmt.Errorf("receive on %s: nil context", queue.id)
 	}
 	for {
 		queue.mu.Lock()
 		if queue.size > 0 {
+			if !lease.beginCommit() {
+				queue.mu.Unlock()
+				return element.Envelope{}, errBoundaryGenerationRetired
+			}
 			envelope := queue.dequeueLocked()
 			occupancy := queue.size
 			queue.mu.Unlock()
+			lease.endCommit()
 			queue.changed.signal()
 			queue.emit(TraceDequeue, envelope, occupancy)
 			return envelope, nil
 		}
 		if queue.closed {
+			if !lease.beginCommit() {
+				queue.mu.Unlock()
+				return element.Envelope{}, errBoundaryGenerationRetired
+			}
 			queue.mu.Unlock()
+			lease.endCommit()
 			return element.Envelope{}, ErrChannelClosed
 		}
 		wait := queue.changed.current()
 		queue.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return element.Envelope{}, context.Cause(ctx)
-		case <-wait:
+		if err := waitForQueueChange(ctx, wait, lease); err != nil {
+			return element.Envelope{}, err
 		}
 	}
 }
 
 func (queue *queue) tryReceive() (element.Envelope, bool, bool) {
+	envelope, received, closed, _ := queue.tryReceiveWithLease(nil)
+	return envelope, received, closed
+}
+
+func (queue *queue) tryReceiveWithLease(
+	lease *routeLease,
+) (element.Envelope, bool, bool, bool) {
 	queue.mu.Lock()
 	if queue.size > 0 {
+		if !lease.beginCommit() {
+			queue.mu.Unlock()
+			return element.Envelope{}, false, false, true
+		}
 		envelope := queue.dequeueLocked()
 		occupancy := queue.size
 		queue.mu.Unlock()
+		lease.endCommit()
 		queue.changed.signal()
 		queue.emit(TraceDequeue, envelope, occupancy)
-		return envelope, true, false
+		return envelope, true, false, false
 	}
 	closed := queue.closed
 	queue.mu.Unlock()
-	return element.Envelope{}, false, closed
+	return element.Envelope{}, false, closed, false
+}
+
+func waitForQueueChange(ctx context.Context, changed <-chan struct{}, lease *routeLease) error {
+	var retired <-chan struct{}
+	if lease != nil {
+		retired = lease.retiredSignal()
+	}
+	if err := routeWaitError(ctx, lease); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+	case <-retired:
+	case <-changed:
+	}
+	// A queue close/capacity signal may race retirement. Recheck with stable
+	// priority so a retired, provably-uncommitted operation never leaks a
+	// generation-local ErrChannelClosed through the public stable wrapper.
+	return routeWaitError(ctx, lease)
+}
+
+func routeWaitError(ctx context.Context, lease *routeLease) error {
+	if err := context.Cause(ctx); err != nil {
+		return err
+	}
+	if lease.retired() {
+		return errBoundaryGenerationRetired
+	}
+	return nil
 }
 
 func (queue *queue) enqueueLocked(envelope element.Envelope) {
@@ -225,7 +299,13 @@ type sender struct {
 func (sender *sender) ID() string         { return sender.queue.id }
 func (sender *sender) Type() element.Type { return sender.queue.valueType.Clone() }
 func (sender *sender) Send(ctx context.Context, envelope element.Envelope) (element.DeliveryResult, error) {
-	result, err := sender.queue.send(ctx, envelope)
+	return sender.sendWithLease(ctx, envelope, nil)
+}
+
+func (sender *sender) sendWithLease(
+	ctx context.Context, envelope element.Envelope, lease *routeLease,
+) (element.DeliveryResult, error) {
+	result, err := sender.queue.sendWithLease(ctx, envelope, lease)
 	if err == nil && sender.observe != nil {
 		sender.observe(envelope)
 	}
@@ -240,7 +320,13 @@ type receiver struct {
 func (receiver *receiver) ID() string         { return receiver.queue.id }
 func (receiver *receiver) Type() element.Type { return receiver.queue.valueType.Clone() }
 func (receiver *receiver) Receive(ctx context.Context) (element.Envelope, error) {
-	envelope, err := receiver.queue.receive(ctx)
+	return receiver.receiveWithLease(ctx, nil)
+}
+
+func (receiver *receiver) receiveWithLease(
+	ctx context.Context, lease *routeLease,
+) (element.Envelope, error) {
+	envelope, err := receiver.queue.receiveWithLease(ctx, lease)
 	if err == nil && receiver.observe != nil {
 		receiver.observe(envelope)
 	}
@@ -266,6 +352,12 @@ func (port *outputPort) Lanes() []element.Sender {
 }
 
 func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope) (element.SendResult, error) {
+	return port.broadcastWithLease(ctx, envelope, nil)
+}
+
+func (port *outputPort) broadcastWithLease(
+	ctx context.Context, envelope element.Envelope, lease *routeLease,
+) (element.SendResult, error) {
 	if ctx == nil {
 		return element.SendResult{}, fmt.Errorf("broadcast on %s: nil context", port.name)
 	}
@@ -273,9 +365,13 @@ func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope
 		return element.SendResult{}, err
 	}
 	if len(port.queues) == 0 {
+		if !lease.beginCommit() {
+			return element.SendResult{}, errBoundaryGenerationRetired
+		}
 		if port.observe != nil {
 			port.observe(envelope)
 		}
+		lease.endCommit()
 		return element.SendResult{}, nil
 	}
 	queues := append([]*queue(nil), port.queues...)
@@ -288,7 +384,12 @@ func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope
 		var fullLossless []*queue
 		for _, queue := range queues {
 			if queue.closed {
+				if !lease.beginCommit() {
+					unlockQueues(queues)
+					return element.SendResult{}, errBoundaryGenerationRetired
+				}
 				unlockQueues(queues)
+				lease.endCommit()
 				return element.SendResult{}, fmt.Errorf("broadcast on %s lane %s: %w", port.name, queue.id, ErrChannelClosed)
 			}
 			if queue.delivery == ir.Lossless && queue.size == queue.depth {
@@ -311,14 +412,16 @@ func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope
 					queue.emit(TraceBackpressure, envelope, occupancies[queue])
 				}
 			}
-			select {
-			case <-ctx.Done():
-				return element.SendResult{}, context.Cause(ctx)
-			case <-wait:
-				continue
+			if err := waitForQueueChange(ctx, wait, lease); err != nil {
+				return element.SendResult{}, err
 			}
+			continue
 		}
 
+		if !lease.beginCommit() {
+			unlockQueues(queues)
+			return element.SendResult{}, errBoundaryGenerationRetired
+		}
 		result := element.SendResult{}
 		type emitted struct {
 			queue     *queue
@@ -339,6 +442,7 @@ func (port *outputPort) Broadcast(ctx context.Context, envelope element.Envelope
 			emittedEvents = append(emittedEvents, emitted{queue: queue, kind: TraceEnqueue, occupancy: queue.size})
 		}
 		unlockQueues(queues)
+		lease.endCommit()
 		port.changed.signal()
 		for _, event := range emittedEvents {
 			event.queue.emit(event.kind, envelope, event.occupancy)
@@ -378,13 +482,19 @@ func (port *inputPort) Lanes() []element.Receiver {
 }
 
 func (port *inputPort) Receive(ctx context.Context) (element.Envelope, error) {
+	return port.receiveWithLease(ctx, nil)
+}
+
+func (port *inputPort) receiveWithLease(
+	ctx context.Context, lease *routeLease,
+) (element.Envelope, error) {
 	if len(port.queues) == 0 {
 		return element.Envelope{}, fmt.Errorf("input %s: %w", port.name, ErrPortUnbound)
 	}
 	if len(port.queues) != 1 {
 		return element.Envelope{}, fmt.Errorf("input %s has %d lanes: %w", port.name, len(port.queues), ErrPortCardinality)
 	}
-	envelope, err := port.queues[0].receive(ctx)
+	envelope, err := port.queues[0].receiveWithLease(ctx, lease)
 	if err == nil && port.observe != nil {
 		port.observe(envelope)
 	}
@@ -392,6 +502,12 @@ func (port *inputPort) Receive(ctx context.Context) (element.Envelope, error) {
 }
 
 func (port *inputPort) ReceiveAny(ctx context.Context) (element.Envelope, string, error) {
+	return port.receiveAnyWithLease(ctx, nil)
+}
+
+func (port *inputPort) receiveAnyWithLease(
+	ctx context.Context, lease *routeLease,
+) (element.Envelope, string, error) {
 	if ctx == nil {
 		return element.Envelope{}, "", fmt.Errorf("receive on %s: nil context", port.name)
 	}
@@ -405,7 +521,11 @@ func (port *inputPort) ReceiveAny(ctx context.Context) (element.Envelope, string
 		allClosed := true
 		for offset := range port.queues {
 			index := (start + offset) % len(port.queues)
-			envelope, received, closed := port.queues[index].tryReceive()
+			envelope, received, closed, retired := port.queues[index].tryReceiveWithLease(lease)
+			if retired {
+				port.mu.Unlock()
+				return element.Envelope{}, "", errBoundaryGenerationRetired
+			}
 			if !closed {
 				allClosed = false
 			}
@@ -421,12 +541,14 @@ func (port *inputPort) ReceiveAny(ctx context.Context) (element.Envelope, string
 		}
 		port.mu.Unlock()
 		if allClosed {
+			if !lease.beginCommit() {
+				return element.Envelope{}, "", errBoundaryGenerationRetired
+			}
+			lease.endCommit()
 			return element.Envelope{}, "", ErrChannelClosed
 		}
-		select {
-		case <-ctx.Done():
-			return element.Envelope{}, "", context.Cause(ctx)
-		case <-wait:
+		if err := waitForQueueChange(ctx, wait, lease); err != nil {
+			return element.Envelope{}, "", err
 		}
 	}
 }

@@ -101,8 +101,11 @@ type Mounted struct {
 	queues  map[string]*queue
 	ingress map[string]*outputPort
 	egress  map[string]*inputPort
-	changed *condition
-	timeout time.Duration
+	// boundaries owns the session-long public handles. ingress and egress are
+	// the concrete first generation retained for runtime inspection/ownership.
+	boundaries *boundaryRouter
+	changed    *condition
+	timeout    time.Duration
 	// lifecycleFailures carries at most one supervised-worker failure per node.
 	// It is provisioned before any factory mounts so work started during Mount
 	// cannot fail outside the graph supervisor.
@@ -485,6 +488,11 @@ func mount(
 			snapshot:      snapshot, quiesce: quiesce,
 		})
 	}
+	boundaries, err := newBoundaryRouter(mounted.ingress, mounted.egress)
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("mount graph boundaries: %w", err), abortMount(nil))
+	}
+	mounted.boundaries = boundaries
 	mounted.recorder.start(mounted)
 	return mounted, nil
 }
@@ -511,7 +519,7 @@ func (mounted *Mounted) now() uint64 {
 }
 
 func (mounted *Mounted) Ingress(name string) (element.OutputPort, error) {
-	port, found := mounted.ingress[name]
+	port, found := mounted.boundaries.input(name)
 	if !found {
 		return nil, fmt.Errorf("graph %s has no input boundary %q", mounted.graph.ID, name)
 	}
@@ -519,7 +527,7 @@ func (mounted *Mounted) Ingress(name string) (element.OutputPort, error) {
 }
 
 func (mounted *Mounted) Egress(name string) (element.InputPort, error) {
-	port, found := mounted.egress[name]
+	port, found := mounted.boundaries.output(name)
 	if !found {
 		return nil, fmt.Errorf("graph %s has no output boundary %q", mounted.graph.ID, name)
 	}
