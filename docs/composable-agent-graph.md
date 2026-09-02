@@ -3323,6 +3323,20 @@ and does not claim statistical parity with the historical 165-attempt sample.
     focused runs, five focused race runs, package and package-race tests, full
     repository tests, and vet are green. Broader deployment-host composition
     replacement remains open.
+  - [x] Atomically reconcile the shipped endpoint directory and secret
+    credential through their real relay dependency closure. Effect-restricted
+    pre-mount freezes the exact target and validates the narrowed secret-read
+    grant without publishing either candidate. A permissionless credential
+    candidate returns no receipt while the active predecessor socket keeps
+    relaying with the original target and credential. A valid two-row
+    implementation/config replacement cancels and joins that socket, retires
+    the target, credential, and unchanged relay with exact zero ownership,
+    preserves the router and HTTP export identity, advances both runtime
+    artifacts, and reconnects only to the new endpoint with the new model and
+    authorization. Final close reaches zero realm ownership. Twenty focused
+    runs, five focused race runs, package and package-race tests, and vet are
+    green. Remaining deployment providers and topology-changing host
+    replacement stay open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3963,9 +3977,11 @@ checked from foundation work alone; each requires end-to-end release evidence.
     relays pass real active-session/request replacement; every retirement audit
     reaches exact zero ownership. The shipped loopback listener likewise passes
     permission refusal, real-port replacement, exact retirement, and final
-    zero-ownership evidence. Topology-changing deployment-host replacement,
-    remaining capability-specific host/client replacement, and signed-native
-    lifecycle/leak evidence remain open.
+    zero-ownership evidence. The endpoint directory and secret credential also
+    pass atomic replacement through an active relay with exact dependency
+    retirement and verified target/authorization rebinding. Topology-changing
+    deployment-host replacement, remaining capability-specific host/client
+    replacement, and signed-native lifecycle/leak evidence remain open.
 
 ## References
 
