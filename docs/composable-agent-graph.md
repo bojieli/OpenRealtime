@@ -3583,10 +3583,10 @@ and does not claim statistical parity with the historical 165-attempt sample.
     The text, confirmation, artifact, inspection, trace, management-operator,
     authoring-editor, configuration, and canvas views each move from their exact
     shipped content-addressed module to an admitted candidate in the same
-    fourteen-row atomic receipt as the effects and artifact-reference providers
-    plus three stateless non-view clients. The remounted views rebind retained
-    realtime, inspection, effect, operator, and workspace services;
-    all DOM surfaces remain present, the signed effect catalog renegotiates,
+    sixteen-row atomic receipt as the effects and artifact-reference providers
+    plus five reconstructible non-view providers and clients. The remounted
+    views rebind retained realtime, inspection, effect, operator, and workspace
+    services; all DOM surfaces remain present, the signed effect catalog renegotiates,
     the replacement executes a sealed artifact, and final disposal retains no
     client ownership or effect socket. Three focused race-enabled real-Chromium
     runs, the complete browser suite, and vet are green. Remaining non-view
@@ -3609,12 +3609,23 @@ and does not claim statistical parity with the historical 165-attempt sample.
     client reacquires only the reducer's current narrow session capability and
     reloads exact live/static/delta evidence; the static client rebinds the
     retained operator lease and reloads the exact graph catalog; the debug
-    contributor republishes its bounded session configuration. All fourteen
+    contributor republishes its bounded session configuration. Those three
     selected implementation and runtime-artifact identities are receipt-bound,
     unrelated services stay active, and no capability enters the receipt,
     manifest, DOM, logs, or live projection. Three focused race-enabled
     Chromium runs, the complete browser suite, and vet are green. Stateful
     workspace/transport providers remain open.
+  - [x] Replace the shipped slots and session-configuration providers in that
+    authenticated transition. Replacing slots remounts every dependent view
+    into a fresh service and reconstructs the complete ordered DOM surface;
+    replacing session configuration remounts its contributors, republishes the
+    bounded debug/effect declarations, and renegotiates the signed effect
+    catalog through the retained session. The exact sixteen-row receipt is
+    payload-free, every desired entry returns active, final disposal reaches
+    zero browser-owned effects and services, three focused race-enabled real-
+    Chromium repetitions, the complete browser suite, JavaScript syntax, and
+    vet are green. Stateful transport, reducer, workspace, media, and
+    capability owners remain open.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in

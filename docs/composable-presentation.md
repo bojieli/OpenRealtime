@@ -568,19 +568,22 @@ tau2/τ-Voice matrix defined by the parent plan.
   replacement on one real address, with exact retirement and inert predecessor
   handlers. The fail-closed effect-authority provider likewise replaces through
   its active effects-socket closure with a stable router/export, exact two-row
-  retirement, and a fresh deny-by-default socket. One authenticated fourteen-
-  row real-Chromium transition now selects exact candidates for the effects and
-  artifact-reference providers, the debug-session, inspection, and management-
-  static clients, plus all nine effects-enabled WebSocket-profile view
-  consumers; every text, confirmation, artifact, inspection, trace,
+  retirement, and a fresh deny-by-default socket. One authenticated sixteen-
+  row real-Chromium transition now selects exact candidates for the slots,
+  session-configuration, effects, and artifact-reference providers, the debug-
+  session, inspection, and management-static clients, plus all nine effects-
+  enabled WebSocket-profile view consumers; every text, confirmation, artifact,
+  inspection, trace,
   operator, editor, configuration, and canvas surface rebinds its retained
   services and final disposal reaches zero client ownership. A separate
   two-row real-Chromium WebRTC transition selects video-control and transport-
   diagnostics candidates, rebinds their retained services, and captures a new
   camera frame. Every shipped browser view consumer now has selected-
-  implementation replacement evidence, and the replacement inspection/static
-  clients successfully reload exact live and catalog evidence. Remaining non-
-  view client providers, deployment-host topology, stateful/capability-specific
+  implementation replacement evidence; the replacement slots and session-
+  configuration providers reconstruct their DOM/contribution state, and the
+  replacement inspection/static clients reload exact live and catalog
+  evidence. Remaining non-view client providers, deployment-host topology,
+  stateful/capability-specific
   replacement, server-sealed authority rotation, and signed native lifecycle/
   leak evidence keep this parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
