@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/bojieli/OpenRealtime/management"
@@ -39,6 +40,23 @@ func (factory *RouterFactory) Mount(ctx context.Context, mount pluginruntime.Mou
 	return factory.delegate.Mount(ctx, mount)
 }
 
+func (factory *RouterFactory) PreMount(
+	_ context.Context, _ pluginruntime.CandidateContext,
+) (pluginruntime.CandidateMount, error) {
+	if factory == nil || factory.delegate == nil {
+		return nil, errors.New("management server router factory is nil")
+	}
+	return routerCandidate{factory: factory}, nil
+}
+
+type routerCandidate struct{ factory *RouterFactory }
+
+func (candidate routerCandidate) Activate(
+	ctx context.Context, mount pluginruntime.MountContext,
+) error {
+	return candidate.factory.Mount(ctx, mount)
+}
+
 func registerRoutes(mount pluginruntime.MountContext, routes []Route) error {
 	return httpservice.RegisterRoutes(mount, management.HTTPRoutesContract, routes)
 }
@@ -46,3 +64,5 @@ func registerRoutes(mount pluginruntime.MountContext, routes []Route) error {
 func HTTPHandler(mounted *pluginruntime.Mounted, export string) (http.Handler, error) {
 	return httpservice.Handler(mounted, export, management.HTTPHandlerContract)
 }
+
+var _ pluginruntime.CandidatePreMounter = (*RouterFactory)(nil)
