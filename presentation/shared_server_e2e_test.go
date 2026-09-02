@@ -153,6 +153,26 @@ func TestBrowserAndMacOSProfilesUseOneUnchangedCleanServerAPI(t *testing.T) {
 	assertActiveRealm(t, "server after both clients", realm.Live(), plugin.ServerRealm, serverLive.Fingerprint)
 	assertSameRuntimeSelections(t, "server after both clients", serverLive, realm.Live())
 	assertSameRuntimeSelections(t, "host after both clients", hostBefore, hostRealm.Live())
+
+	closeSharedRealm(t, "presentation host", hostRealm.Close)
+	assertClosedRealm(
+		t, "presentation host", hostRealm.Live(), plugin.PresentationHostRealm,
+		hostRealm.Plan().Fingerprint,
+	)
+	assertSharedHTTPStatus(t, hostHTTP.URL+"/client/v1/manifest", http.StatusNotFound)
+	assertSharedHTTPStatus(t, hostHTTP.URL+"/client/v1/realtime", http.StatusNotFound)
+	serverAfterHostClose := readSharedObservability(t, serverHTTP.URL)
+	assertSharedServerHealth(t, serverAfterHostClose.health, serverBundle.Plan.Fingerprint)
+	assertSharedMetrics(t, serverAfterHostClose.metrics, 2, 0)
+	assertActiveRealm(
+		t, "server after presentation-host close", realm.Live(), plugin.ServerRealm,
+		serverBundle.Plan.Fingerprint,
+	)
+
+	closeSharedRealm(t, "server", realm.Close)
+	assertClosedRealm(t, "server", realm.Live(), plugin.ServerRealm, serverBundle.Plan.Fingerprint)
+	assertSharedHTTPStatus(t, serverHTTP.URL+"/healthz", http.StatusNotFound)
+	assertSharedHTTPStatus(t, serverHTTP.URL+"/metrics", http.StatusNotFound)
 }
 
 type sharedMountedHost struct {
@@ -860,6 +880,27 @@ func assertSameRuntimeSelections(
 	}
 }
 
+func assertClosedRealm(
+	t *testing.T, label string, live pluginruntime.Live, realm plugin.Realm, fingerprint string,
+) {
+	t.Helper()
+	if live.FormatVersion != pluginruntime.LiveFormatVersion || live.Realm != realm ||
+		live.Fingerprint != fingerprint || live.State != "closed" || len(live.Entries) == 0 {
+		t.Fatalf("%s closed evidence = %+v", label, live)
+	}
+	for id, entry := range live.Entries {
+		if entry.State != "closed" || entry.Workers != 0 || entry.Effects != 0 ||
+			len(entry.Services) != 0 || entry.Error != "" {
+			t.Fatalf("%s entry %s retained ownership: %+v", label, id, entry)
+		}
+	}
+	for name, exported := range live.Exports {
+		if exported.Available {
+			t.Fatalf("%s export %s remained available after close: %+v", label, name, exported)
+		}
+	}
+}
+
 func assertRuntimeLifecycle(t *testing.T, label string, operations []string) {
 	t.Helper()
 	assertEventSubsequence(t, label+" provider", operations, []string{
@@ -888,6 +929,19 @@ func closeSharedRealm(
 	defer cancel()
 	if err := close(ctx); err != nil {
 		t.Errorf("close %s: %v", label, err)
+	}
+}
+
+func assertSharedHTTPStatus(t *testing.T, target string, want int) {
+	t.Helper()
+	response, err := http.Get(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, response.Body)
+	if response.StatusCode != want {
+		t.Fatalf("GET %s status = %d, want %d", target, response.StatusCode, want)
 	}
 }
 

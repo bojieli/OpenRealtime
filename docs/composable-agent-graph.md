@@ -3155,8 +3155,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     independently inspectable runtime identities. The common descriptor/lock,
     host mount, permission, scoped-service, and browser lifecycle foundations
     exist; the exact server-realm assembly is covered by the following subgate,
-    while complete cross-realm replacement/rollback and leak evidence remain
-    open.
+    while complete host/client replacement and signed-native lifecycle/leak
+    evidence remain open.
   - [x] Assemble the clean Realtime server as an exact descriptor-locked server
     realm before opening a listener. The immutable profile, lock, plan, runtime
     artifact identities, dependency graph, permission-free server scope, and
@@ -3173,6 +3173,17 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     replacement/rollback, and close-ownership tests are green; topology/session
     resources outside this realm and cross-realm leak evidence remain under the
     open parent.
+  - [x] Prove dependency-ordered cleanup across the unchanged clean-server
+    browser/macOS-profile composition. After the real Chromium client and the
+    shipped native-manifest wire probe each close their provider session, the
+    eight-entry presentation-host realm closes first with zero workers,
+    effects, and services, makes every export unavailable, and removes its
+    manifest and realtime routes. The independently mounted seven-entry server
+    remains exact, active, healthy, and metric-stable through that host loss;
+    its later close reaches the same zero-ownership state and removes health
+    and metrics. The focused real-browser cross-client gate is green. Host and
+    client replacement plus the signed native lifecycle/leak matrix remain
+    open.
   - [x] Complete the browser presentation server and browser client as
     manifest-composed plugins over the public server APIs. Locked
     minimal, observer, developer-WebSocket, and developer-WebRTC profiles now
@@ -3186,8 +3197,9 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
   - [ ] Compose the macOS application from the same logical client services and
     public server APIs with native implementations. Native manifests,
     provider registry/factory seams, reducer, transport, media, effects,
-    artifact, inspection, and view boundaries exist; a signed Darwin run and
-    unchanged-server browser-to-macOS comparison are still required.
+    artifact, inspection, and view boundaries exist. The unchanged-server
+    browser-to-macOS-profile comparison passes; a signed Darwin application run
+    remains required.
   - [ ] Pass the shared browser/macOS/headless protocol, media, tools,
     inspection, reconnect, reconciliation, leak, and performance gates. Real
     Chromium developer/observer WebSocket and WebRTC profiles, the unchanged
@@ -3199,8 +3211,11 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     strict-concurrency Swift-Linux conformance under
     `.runtime/release-validation/*-candidate-01`; focused normal, three
     shuffled runs, race, vet, and presentation/client benchmarks also passed.
-    A signed native Darwin application run, full lifecycle/leak evidence, and
-    the complete release-matrix rerun remain open.
+    The unchanged-server cross-client gate now also proves dependency-ordered
+    presentation-host/server shutdown with zero retained plugin ownership and
+    independently disappearing HTTP surfaces. A signed native Darwin
+    application run, complete host/client replacement and native lifecycle/leak
+    evidence, and the complete release-matrix rerun remain open.
 
 - [x] **Exit gate:** an operator can understand a running graph and trace an
   output to its causes without reading binding source.
@@ -3684,17 +3699,20 @@ checked from foundation work alone; each requires end-to-end release evidence.
   - [x] The standalone browser host/client is manifest-composed over the clean
     public APIs, the gateway-owned UI and duplicate standalone forks are
     deleted, and real Chromium plus the unchanged-server macOS-profile probe
-    pass. Native manifests and shared Swift services exist; the signed Darwin
-    application run and complete cross-client lifecycle/leak matrix keep the
-    parent open.
+    pass. Native manifests and shared Swift services exist; cross-realm
+    host/server shutdown now has zero-ownership evidence. The signed Darwin
+    application run and complete host/client replacement and native lifecycle
+    matrix keep the parent open.
 - [ ] Every server, host, and client presentation capability can be replaced or
     removed through a descriptor-locked plugin composition with scoped cleanup,
     explicit permissions, and no implicit effect authority.
   - [x] Descriptor-locked minimal, observer, developer-WebSocket, and
     developer-WebRTC browser profiles independently compose or omit media,
     effects, artifacts, inspection, trace, and authoring providers under exact
-    permission ceilings and scoped disposal. Complete server-realm assembly,
-    replacement/rollback, and full host/native leak evidence remain open.
+    permission ceilings and scoped disposal. Complete server-realm assembly and
+    its replacement/rollback are covered, and the unchanged-server cross-client
+    gate proves zero-ownership host/server shutdown. Complete host/client
+    replacement and signed-native lifecycle/leak evidence remain open.
 
 ## References
 
