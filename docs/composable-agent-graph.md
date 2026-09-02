@@ -3239,8 +3239,8 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     re-sealed payload-bearing candidates fail before disposal. Repeated real-
     Chromium rollback/success and final zero-effect/service/DOM ownership,
     focused race, broader presentation, full repository test/vet, and exact
-    Go/JavaScript manifest checks are green. Stateful and topology-changing
-    client replacement remains under the open parent.
+    Go/JavaScript manifest checks are green. Topology-changing client
+    replacement remains under the open parent.
   - [x] Replace multiple authenticated stateless browser client implementations
     as one atomic transition. The browser validates that requested entries are
     distinct, active, desired, and stateless; verifies that the sealed candidate
@@ -3253,6 +3253,21 @@ eleven cases by fifteen repetitions. Smaller runs are diagnosis only.
     disposal/remount ownership, and final zero-ownership checks pass under ten
     shuffled repetitions, focused and package-wide race coverage, full
     repository tests, and vet.
+  - [x] Migrate stateful browser client implementations through an explicit
+    descriptor-locked state lifecycle. Opted-in modules must register one live
+    snapshot callback, consume restored state before publishing services, and
+    provide an explicit candidate migrator for every changed stateful row. The
+    browser captures and canonicalizes bounded strict-JSON object state before
+    teardown, retires the dependency closure, migrates changed rows, and passes
+    unchanged stateful dependents their exact predecessor snapshots. Missing
+    migration support and snapshot failure refuse before teardown; invalid
+    migrated state and candidate activation failure restore every predecessor
+    state, implementation, manifest identity, and sequence. A payload-free
+    format-v3 receipt records only schemas, state digests, migrator identities,
+    implementation transitions, and sequences. Real-Chromium refusal,
+    migration, rollback, unchanged-dependent preservation, exact disposal, and
+    final zero-ownership checks pass under ten shuffled repetitions, focused
+    and package-wide race coverage, full repository tests, and vet.
   - [x] Remove and recover providers through the portable native client
     composition. Media loss and effect loss quiesce only their exact transitive
     consumers in reverse order, preserve unrelated services, and remount in
