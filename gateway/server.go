@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -128,7 +129,16 @@ type Config struct {
 type Server struct {
 	config     Config
 	management *gatewayManagement
+
+	lifecycleMu sync.Mutex
+	sessions    map[*session]struct{}
+	sessionWait sync.WaitGroup
+	closeOnce   sync.Once
+	drained     chan struct{}
+	closing     bool
 }
+
+var errGatewayClosed = errors.New("gateway is closed")
 
 // New validates the configuration and creates a server.
 func New(config Config) (*Server, error) {
@@ -196,7 +206,10 @@ func New(config Config) (*Server, error) {
 	}
 	config.management = managementPlane
 	config.Token = strings.TrimSpace(config.Token)
-	return &Server{config: config, management: managementPlane}, nil
+	return &Server{
+		config: config, management: managementPlane,
+		sessions: make(map[*session]struct{}), drained: make(chan struct{}),
+	}, nil
 }
 
 func nilInterface(value any) bool {
@@ -249,11 +262,35 @@ func (server *Server) ManagementHandler() http.Handler {
 	return server.management.handler
 }
 
-// Close releases the mounted management route realm. Active realtime sessions
-// retain ownership of their own runtimes and unregister on session shutdown.
+// Close stops admission, terminates every admitted realtime session, waits for
+// its runtime and inspection authority to retire, and releases the mounted
+// management route realm. This makes a gateway a complete lifecycle resource:
+// replacing its plugin cannot leave a session using retired dependencies.
 func (server *Server) Close(ctx context.Context) error {
 	if server == nil || ctx == nil {
 		return errors.New("close gateway: nil server or context")
+	}
+	server.closeOnce.Do(func() {
+		server.lifecycleMu.Lock()
+		server.closing = true
+		active := make([]*session, 0, len(server.sessions))
+		for current := range server.sessions {
+			active = append(active, current)
+		}
+		server.lifecycleMu.Unlock()
+		for _, current := range active {
+			current.cancel(errGatewayClosed)
+			_ = current.connection.CloseNow()
+		}
+		go func() {
+			server.sessionWait.Wait()
+			close(server.drained)
+		}()
+	})
+	select {
+	case <-server.drained:
+	case <-ctx.Done():
+		return fmt.Errorf("close gateway sessions: %w", ctx.Err())
 	}
 	return server.management.close(ctx)
 }
@@ -362,6 +399,12 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if !server.beginSession() {
+		http.Error(writer, "gateway closed", http.StatusServiceUnavailable)
+		return
+	}
+	var admitted *session
+	defer func() { server.finishSession(admitted) }()
 	connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{
 		CompressionMode: websocket.CompressionDisabled,
 	})
@@ -379,9 +422,22 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		_ = connection.Close(websocket.StatusInternalError, "session initialisation failed")
 		return
 	}
+	if !server.admitSession(session) {
+		session.closeInspection()
+		_ = session.runtime.Close(context.Background(), errGatewayClosed)
+		session.cancel(errGatewayClosed)
+		_ = connection.Close(websocket.StatusGoingAway, "gateway closed")
+		return
+	}
+	admitted = session
 	server.config.Logger.Info("session started",
 		"session", session.id, "binding", server.config.Binding.Name(), "model", session.model)
 	if err := session.Run(); err != nil {
+		if errors.Is(context.Cause(session.ctx), errGatewayClosed) {
+			server.config.Logger.Info("session stopped with gateway",
+				"session", session.id, "duration", time.Since(started))
+			return
+		}
 		server.config.Metrics.sessionsFailed.Add(1)
 		server.config.Logger.Error("session failed",
 			"session", session.id, "duration", time.Since(started), "error", err)
@@ -392,6 +448,35 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	server.config.Logger.Info("session completed",
 		"session", session.id, "duration", time.Since(started))
 	_ = connection.Close(websocket.StatusNormalClosure, "session closed")
+}
+
+func (server *Server) beginSession() bool {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	if server.closing {
+		return false
+	}
+	server.sessionWait.Add(1)
+	return true
+}
+
+func (server *Server) admitSession(current *session) bool {
+	server.lifecycleMu.Lock()
+	defer server.lifecycleMu.Unlock()
+	if server.closing {
+		return false
+	}
+	server.sessions[current] = struct{}{}
+	return true
+}
+
+func (server *Server) finishSession(current *session) {
+	if current != nil {
+		server.lifecycleMu.Lock()
+		delete(server.sessions, current)
+		server.lifecycleMu.Unlock()
+	}
+	server.sessionWait.Done()
 }
 
 func (server *Server) authorized(request *http.Request) bool {

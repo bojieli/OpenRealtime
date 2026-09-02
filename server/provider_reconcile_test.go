@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -111,9 +112,14 @@ func TestSessionProviderReconcilesThroughLiveServerClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	readContext, cancelRead := context.WithTimeout(context.Background(), 2*time.Second)
-	if _, _, err := predecessor.Read(readContext); err == nil {
-		cancelRead()
-		t.Fatal("session-provider replacement left the predecessor connection active")
+	for {
+		if _, _, err := predecessor.Read(readContext); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				cancelRead()
+				t.Fatal("session-provider replacement left the predecessor connection active")
+			}
+			break
+		}
 	}
 	cancelRead()
 	if receipt.FormatVersion != pluginruntime.ReconcileReceiptFormatVersion ||
