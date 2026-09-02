@@ -6,7 +6,9 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
@@ -58,7 +60,44 @@ func (candidate routerCandidate) Activate(
 }
 
 func registerRoutes(mount pluginruntime.MountContext, routes []Route) error {
-	return httpservice.RegisterRoutes(mount, management.HTTPRoutesContract, routes)
+	owned := make([]Route, len(routes))
+	for index, route := range routes {
+		owned[index] = route
+		owned[index].Handler = lifecycleHTTPHandler(
+			mount.Lifecycle, mount.EntryID+"-request", route.Handler,
+		)
+	}
+	return httpservice.RegisterRoutes(mount, management.HTTPRoutesContract, owned)
+}
+
+func lifecycleHTTPHandler(
+	lifecycle pluginruntime.Lifecycle, workerPrefix string, handler http.Handler,
+) http.Handler {
+	var nextWorker atomic.Uint64
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		done := make(chan struct{})
+		workerName := fmt.Sprintf("%s-%d", workerPrefix, nextWorker.Add(1))
+		if err := lifecycle.Go(workerName, func(lifecycleContext context.Context) error {
+			defer close(done)
+			requestContext, cancel := context.WithCancel(lifecycleContext)
+			stopRequest := context.AfterFunc(request.Context(), cancel)
+			stopBody := func() bool { return false }
+			if request.Body != nil {
+				stopBody = context.AfterFunc(requestContext, func() { _ = request.Body.Close() })
+			}
+			defer func() {
+				stopBody()
+				stopRequest()
+				cancel()
+			}()
+			handler.ServeHTTP(writer, request.WithContext(requestContext))
+			return nil
+		}); err != nil {
+			http.Error(writer, "the management route lifecycle is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		<-done
+	})
 }
 
 func HTTPHandler(mounted *pluginruntime.Mounted, export string) (http.Handler, error) {
