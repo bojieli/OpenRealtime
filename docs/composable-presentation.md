@@ -594,9 +594,12 @@ tau2/τ-Voice matrix defined by the parent plan.
   method admission, and exact zero-ownership retirement. Their stateless root
   router also passes activation rollback and successful full six-API closure
   replacement while all providers stay active and retired handlers become
-  inert. Deployment-provided operator authority, provider replacement, full
-  delta/reconciliation E2E, and replacement of every presentation consumer
-  remain open.
+  inert. Every operator request is now lifecycle-owned, and all seven provider
+  bindings pass one atomic thirteen-row provider/API closure replacement after
+  canceling and joining a blocked source read while the router/export stays
+  exact. Deployment-provided operator authority, all-family active-request and
+  full delta/reconciliation E2E, external provider-state migration, and
+  replacement of every presentation consumer remain open.
 - [x] View plugins have no implicit effect authority; the authority host still
   proves admission, target, confirmation, ledger, dispatch, and audit. The
   descriptor-locked observer WebSocket and WebRTC profiles omit the effects,

@@ -3234,8 +3234,9 @@ and does not claim statistical parity with the historical 165-attempt sample.
     retirement audits, preserves the router/export and every provider, and
     retains identical method admission. Final close removes every route and
     realm-owned resource. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green. Provider replacement and full
-    request-level reconciliation E2E remain open.
+    package-race, and vet gates are green. All-family active-request
+    reconciliation E2E remains open; provider binding replacement is covered
+    below.
   - [x] Reconcile the stateless operator router across its complete six-API
     dependency closure. Effect-restricted pre-mount acquires no route or
     publication authority. A candidate activation failure returns no receipt,
@@ -3246,8 +3247,31 @@ and does not claim statistical parity with the historical 165-attempt sample.
     provider artifacts active, and serves every method-admission surface through
     a fresh export. Final close makes that handler inert and removes every
     realm-owned resource. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green. Provider and topology replacement
+    package-race, and vet gates are green. Provider binding replacement is
+    covered below; external provider-state migration and topology replacement
     remain open.
+  - [x] Own every shipped operator-management HTTP request through its route
+    lifecycle. The shared wrapper registers each admitted request as a uniquely
+    named worker, propagates caller and route retirement cancellation into its
+    context, closes a blocked request body, and joins the handler before route
+    retirement can pass. A real source-read blocked inside its provider reports
+    one live worker; route replacement cancels and joins it, emits a
+    zero-worker retirement, and serves a validated second request through the
+    replacement. Twenty focused runs, five focused race runs, package,
+    package-race, and vet gates are green. Simultaneous active-request E2E across
+    all six API families remains open.
+  - [x] Atomically reconcile all seven shipped operator service bindings:
+    authorizer, static catalog, session inspection, authoring, source reading,
+    source publication, and reconciliation. Effect-free provider candidate
+    pre-mount publishes nothing. A seven-row replacement with a blocked real
+    source-read cancels and joins the predecessor request, retires the complete
+    thirteen-row provider/API closure with zero ownership, advances every exact
+    provider implementation/runtime identity, remounts all six route families,
+    preserves the router/export object and revision, and serves the next read
+    from the new provider. Final close reaches zero realm ownership. Twenty
+    focused runs, five focused race runs, package, package-race, and vet gates
+    are green. External provider-resource state migration and all-family
+    active-request E2E remain open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
@@ -4041,7 +4065,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     router/export and provider identities, unchanged method admission, and
     exact zero-ownership retirements. Their stateless root router also passes
     activation rollback and successful full six-API closure replacement, with
-    retired handlers inert and all providers continuously active.
+    retired handlers inert and all providers continuously active. Every
+    management request is now lifecycle-owned, and all seven operator provider
+    bindings pass one atomic thirteen-row provider/API closure replacement that
+    cancels and joins a blocked source read while preserving the router/export.
     Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain
