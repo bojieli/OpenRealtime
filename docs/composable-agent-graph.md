@@ -3234,9 +3234,8 @@ and does not claim statistical parity with the historical 165-attempt sample.
     retirement audits, preserves the router/export and every provider, and
     retains identical method admission. Final close removes every route and
     realm-owned resource. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green. All-family active-request
-    reconciliation E2E remains open; provider binding replacement is covered
-    below.
+    package-race, and vet gates are green. Active-request reconciliation and
+    provider binding replacement are covered below.
   - [x] Reconcile the stateless operator router across its complete six-API
     dependency closure. Effect-restricted pre-mount acquires no route or
     publication authority. A candidate activation failure returns no receipt,
@@ -3258,8 +3257,17 @@ and does not claim statistical parity with the historical 165-attempt sample.
     one live worker; route replacement cancels and joins it, emits a
     zero-worker retirement, and serves a validated second request through the
     replacement. Twenty focused runs, five focused race runs, package,
-    package-race, and vet gates are green. Simultaneous active-request E2E across
-    all six API families remains open.
+    package-race, and vet gates are green.
+  - [x] Reconcile all six operator API route families while each owns one real
+    blocked request. Static catalog, session snapshot, authoring analysis,
+    source read, source publication, and reconciliation calls concurrently
+    report one live worker in their respective route scopes. One atomic six-row
+    replacement cancels and joins all six provider calls before returning,
+    advances every exact route implementation/runtime identity, emits six
+    zero-worker/effect/service retirement audits, preserves the router/export
+    object and revision, restores every method-admission surface, and reaches
+    zero ownership on final close. Twenty focused runs, five focused race runs,
+    package, package-race, and vet gates are green.
   - [x] Atomically reconcile all seven shipped operator service bindings:
     authorizer, static catalog, session inspection, authoring, source reading,
     source publication, and reconciliation. Effect-free provider candidate
@@ -3270,8 +3278,7 @@ and does not claim statistical parity with the historical 165-attempt sample.
     preserves the router/export object and revision, and serves the next read
     from the new provider. Final close reaches zero realm ownership. Twenty
     focused runs, five focused race runs, package, package-race, and vet gates
-    are green. External provider-resource state migration and all-family
-    active-request E2E remain open.
+    are green. External provider-resource state migration remains open.
   - [x] Prove dependency-ordered cleanup across the unchanged clean-server
     browser/macOS-profile composition. After the real Chromium client and the
     shipped native-manifest wire probe each close their provider session, the
@@ -4069,6 +4076,8 @@ checked from foundation work alone; each requires end-to-end release evidence.
     management request is now lifecycle-owned, and all seven operator provider
     bindings pass one atomic thirteen-row provider/API closure replacement that
     cancels and joins a blocked source read while preserving the router/export.
+    A separate six-request transition concurrently blocks, cancels, and joins
+    one request in every operator API family before replacing all six routes.
     Topology-changing
     server/deployment-host replacement, remaining stateful/capability-specific
     host/client replacement, and signed-native lifecycle/leak evidence remain
