@@ -3251,7 +3251,21 @@ and does not claim statistical parity with the historical 165-attempt sample.
     plane retirement cannot leave a hidden runtime using retired dependencies.
     Twenty focused integration and lifecycle runs, five focused race runs,
     both affected packages and their race gates, and vet are green. Gateway-
-    implementation and topology replacement remain open.
+    implementation replacement is covered immediately below; topology
+    replacement remains open.
+  - [x] Reconcile the clean server gateway implementation through its public
+    Realtime and observability route closure. Effect-free pre-mount constructs
+    a complete validation probe against the exact current session provider,
+    inspection plane, and canonical management handler; a drifted provider is
+    refused without a receipt, sequence change, or live-socket disturbance.
+    Activation resolves the post-safe-point dependencies again rather than
+    retaining the probe's predecessor objects. A valid replacement drains the
+    old WebSocket, retires exactly the gateway and its two route consumers with
+    zero remaining ownership, preserves the outer router/export, provider,
+    inspection plane, and session API, and serves a fresh session whose model
+    proves the new gateway configuration is live. Twenty focused runs, five
+    focused race runs, the complete server package and race gate, and vet are
+    green. Bounded topology replacement remains open.
   - [x] Atomically reconcile all six shipped operator-management API route
     families: static graph/catalog, session, authoring, source reading, source
     publication, and reconciliation. Shared effect-restricted candidate
