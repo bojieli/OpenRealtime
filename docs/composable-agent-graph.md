@@ -3238,6 +3238,20 @@ and does not claim statistical parity with the historical 165-attempt sample.
     focused race runs, the complete server package and its race gate, and vet
     are green. Inspection-plane, gateway, and topology replacement remain
     open.
+  - [x] Reconcile the clean server session-inspection plane through both of its
+    real dependency branches: the gateway with Realtime/observability routes,
+    and the canonical session-management API. Effect-free candidate pre-mount
+    validates the complete plane and freezes its exact authorizer and session
+    projections before teardown. Replacement drains the predecessor WebSocket,
+    invalidates its scoped inspection capability, retires exactly the plane and
+    four consumers with zero remaining ownership, preserves the outer router,
+    HTTP export, and session provider, and gives a fresh session independently
+    valid inspection authority. The gateway lifecycle now stops admission,
+    cancels and joins every admitted session, and is idempotent, so provider or
+    plane retirement cannot leave a hidden runtime using retired dependencies.
+    Twenty focused integration and lifecycle runs, five focused race runs,
+    both affected packages and their race gates, and vet are green. Gateway-
+    implementation and topology replacement remain open.
   - [x] Atomically reconcile all six shipped operator-management API route
     families: static graph/catalog, session, authoring, source reading, source
     publication, and reconciliation. Shared effect-restricted candidate
