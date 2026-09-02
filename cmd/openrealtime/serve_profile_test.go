@@ -237,7 +237,7 @@ func TestProfiledServePreflightIsLazyAndKeepsRealtimeEndpoint(t *testing.T) {
 	})
 	client := &serveProfileWireClient{t: t, connection: connection}
 	client.awaitType(5*time.Second, "session.created")
-	assertServeProfileFactories(t, counters, 1)
+	awaitServeProfileFactories(t, counters, 1, 5*time.Second)
 
 	client.send(map[string]any{
 		"type": "session.update", "event_id": "profile_update",
@@ -1071,16 +1071,36 @@ func assertServeProfileFactories(
 	t testing.TB, counters *serveProfileFactoryCounters, want int32,
 ) {
 	t.Helper()
+	if serveProfileFactoriesMatch(counters, want) {
+		return
+	}
 	modelWant, policyWant := want, want
 	if want > 0 {
 		modelWant = 2 * want
 	}
-	if counters.asr.Load() != want || counters.policy.Load() != policyWant || counters.model.Load() != modelWant ||
-		counters.tts.Load() != want {
-		t.Fatalf("profile provider factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
-			counters.asr.Load(), counters.policy.Load(), counters.model.Load(), counters.tts.Load(),
-			want, policyWant, modelWant, want)
+	t.Fatalf("profile provider factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
+		counters.asr.Load(), counters.policy.Load(), counters.model.Load(), counters.tts.Load(),
+		want, policyWant, modelWant, want)
+}
+
+func awaitServeProfileFactories(
+	t testing.TB, counters *serveProfileFactoryCounters, want int32, timeout time.Duration,
+) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !serveProfileFactoriesMatch(counters, want) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
 	}
+	assertServeProfileFactories(t, counters, want)
+}
+
+func serveProfileFactoriesMatch(counters *serveProfileFactoryCounters, want int32) bool {
+	modelWant, policyWant := want, want
+	if want > 0 {
+		modelWant = 2 * want
+	}
+	return counters.asr.Load() == want && counters.policy.Load() == policyWant &&
+		counters.model.Load() == modelWant && counters.tts.Load() == want
 }
 
 func assertServeProviderRegistrationIdentities(
