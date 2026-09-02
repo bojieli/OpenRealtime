@@ -53,7 +53,8 @@ type Matrix struct {
 // Gate is one independently runnable release claim. Required means that the
 // complete matrix cannot be green without a passing result for this gate.
 // Selection controls only the convenient local default; it never changes the
-// completeness calculation.
+// completeness calculation. Optional validation gates must be opt-in so they
+// cannot silently become part of the default developer workflow.
 type Gate struct {
 	ID            string            `json:"id"`
 	Description   string            `json:"description"`
@@ -187,8 +188,8 @@ func (gate Gate) validate() error {
 	if gate.Availability == AvailabilityProvisioned && gate.Selection != SelectionOptIn {
 		return fmt.Errorf("provisioned gate %q must be opt-in", gate.ID)
 	}
-	if !gate.Required {
-		return fmt.Errorf("gate %q is not required; diagnostics do not belong in the release matrix", gate.ID)
+	if !gate.Required && gate.Selection != SelectionOptIn {
+		return fmt.Errorf("optional gate %q must be opt-in", gate.ID)
 	}
 	if gate.WorkingDir == "" {
 		return fmt.Errorf("gate %q has no working directory", gate.ID)

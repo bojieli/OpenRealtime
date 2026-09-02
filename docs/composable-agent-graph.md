@@ -1825,7 +1825,7 @@ behavior-affecting code or artifact change invalidates the affected final-run
 evidence even when an earlier campaign remains useful as a checked historical
 execution milestone.
 
-At this reconciliation, 263 of 313 explicit tracker boxes are checked (84.0%)
+At this reconciliation, 264 of 314 explicit tracker boxes are checked (84.1%)
 and 50 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
@@ -2396,8 +2396,8 @@ the required new 165-attempt sample.
 - [x] Wire the scenario CLI to that authenticated graph-native evidence path,
   with exact per-attempt scopes for all eleven cases and explicit refusal of
   unattested execution behavior.
-- [ ] Re-run and compare all eleven interaction scenarios at least fifteen
-  times each (at least 165 newly retained candidate attempts):
+- [ ] Re-run and compare all eleven interaction scenarios fifteen times each
+  (exactly 165 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
   advisory transport are implemented. The newest sealed 11×1 deterministic
   diagnostic, candidate run 18 at `85b6479`, passed 8/11 with all eleven
@@ -2557,8 +2557,9 @@ the required new 165-attempt sample.
   `3c9f452aca697ee61de87a4907f0937d6c486a99`, requires the complete 100
   dynamic plus 50 static task inventory for a complete report, and remains an
   opt-in provisioned release-matrix entry with its own preparation script,
-  driver, report boundary, tests, and documentation. It is not substituted for
-  the repository-owned Realtime-CU release gate.
+  driver, report boundary, tests, and documentation. Its matrix gate is
+  explicitly optional and cannot enter `release_complete`; it is not
+  substituted for the repository-owned Realtime-CU release gate.
 - [ ] Produce clean-worktree new-architecture artifacts for every required suite and
   compare them with the benchmark owner's accepted original numbers;
   investigate differences instead of accepting a merely runnable graph.
@@ -2577,6 +2578,15 @@ the required new 165-attempt sample.
     implemented and tested. The current registry honestly marks unavailable
     historical targets as blockers, so this implementation checkpoint closes
     no benchmark-population, final-candidate, or behavioral non-regression box.
+  - [x] Make the machine-enforced required matrix exact: eight suite identities
+    and 7,486 attempts comprising scenario 165, cascade Meeting Assistant 4,
+    Realtime-CU 16, FDB v1.5 498, FDB v3 100, FD-Bench 6,147, tau control 278,
+    and tau regular 278. The alternate omni Meeting composition and DynaCU are
+    retained as independently runnable opt-in validation gates with
+    `required: false`; neither can block, satisfy, or enter behavioral
+    acceptance or `release_complete`. Checked matrix tests pin the required
+    population and optional-gate semantics. This closes no benchmark run or
+    behavioral non-regression gate.
 - [ ] For every failed non-regression gate, retain the artifact, trace the
   changed outcome through exact graph/config/runtime evidence, fix the cause,
   rerun the affected cases, and then rerun the complete suite. Repeat until the
@@ -4148,8 +4158,8 @@ Each required comparison must follow this protocol:
    comparable gates, at least the accepted historical quality target. A
    merely non-significant difference is not proof of parity, and remaining
    above 80% is not acceptable when the trusted result was materially higher.
-   The interaction-scenario release population is at least fifteen retained
-   attempts per case (at least 165 total). Any one-attempt-per-case checkpoint
+   The interaction-scenario release population is fifteen retained attempts
+   per case (exactly 165 total). Any one-attempt-per-case checkpoint
    is descriptive diagnostic evidence only. Other suites declare their own
    complete candidate population before the run.
 5. Treat any material correctness, interaction, safety, deadline, or latency
@@ -4159,15 +4169,17 @@ Each required comparison must follow this protocol:
    affected suite. Repeat this focused-then-complete cycle until the complete
    immutable candidate passes; a locally repaired slice never closes the gate.
 
-The required final matrix is at least fifteen retained attempts for each of the
-eleven interaction scenarios (at least 165 attempts), all four Meeting
-Assistant v1 tasks, all sixteen
+The required final matrix contains exactly 7,486 attempts: fifteen retained
+attempts for each of the eleven interaction scenarios (165 attempts),
+all four Meeting Assistant v1 tasks through the cascade reference, all sixteen
 Realtime-CU v1 cases, all 498 FDB v1.5 tasks, all 100 FDB v3 examples, all
 6,147 FD-Bench conversations in all 21 conditions, and all 278 tau2-bench/
 tau-Voice tasks in both control and regular conditions. DynaCU-Bench remains an
-independent optional validation. No phase exit gate or project-level completion
-claim may substitute a test suite, protocol-conformance run, or synthetic
-integration test for this matrix.
+independent optional validation; the alternate omni Meeting composition is an
+optional architecture/provider-quality validation. Neither optional run enters
+behavioral acceptance or `release_complete`. No phase exit gate or project-
+level completion claim may substitute a test suite, protocol-conformance run,
+or synthetic integration test for this matrix.
 
 ## 27. Compatibility and versioning
 

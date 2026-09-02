@@ -269,7 +269,6 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 		"fdb-v1.5":        {ResultKindBench, "fdb-v1.5", 498},
 		"fdb-v3":          {ResultKindBench, "fdb-v3", 100},
 		"meeting-cascade": {ResultKindBench, "openrealtime-meeting-assistant-v1", 4},
-		"meeting-omni":    {ResultKindBench, "openrealtime-meeting-assistant-v1", 4},
 		"realtime-cu":     {ResultKindBench, "openrealtime-realtime-cu-v1", 16},
 		"scenario":        {ResultKindArchitecture, "scenario", 165},
 		"tau-control":     {ResultKindBench, "tau-voice", 278},
@@ -278,6 +277,7 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 	if len(targets.Suites) != len(want) {
 		t.Fatalf("checked target suite count = %d, want %d", len(targets.Suites), len(want))
 	}
+	population := 0
 	for _, suite := range targets.Suites {
 		expected, found := want[suite.ID]
 		if !found {
@@ -290,9 +290,13 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 			t.Errorf("checked target %s = kind %q, suite %q, population %d; want %+v",
 				suite.ID, suite.ResultKind, suite.Suite, suite.ExpectedPopulation, expected)
 		}
+		population += suite.ExpectedPopulation
 	}
 	if len(want) != 0 {
 		t.Fatalf("checked targets omit final suites: %+v", want)
+	}
+	if population != 7486 {
+		t.Fatalf("checked final population = %d, want 7486", population)
 	}
 }
 

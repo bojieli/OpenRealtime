@@ -150,43 +150,6 @@
       }
     },
     {
-      "id": "meeting-omni",
-      "result_kind": "bench_result",
-      "suite": "openrealtime-meeting-assistant-v1",
-      "expected_population": 4,
-      "case_key": "exact",
-      "aggregate": {
-        "registration": {
-          "status": "unavailable",
-          "reason": "No accepted aggregate historical target has been registered for the native-audio foreground."
-        }
-      },
-      "cases": {
-        "registration": {
-          "status": "unavailable",
-          "reason": "Accepted historical targets for each of the four native-audio Meeting Assistant cases have not been registered."
-        }
-      },
-      "safety": {
-        "registration": {
-          "status": "unavailable",
-          "reason": "The benchmark owner has not registered an every-case zero-tolerance safety metric."
-        }
-      },
-      "deadline": {
-        "registration": {
-          "status": "unavailable",
-          "reason": "The benchmark owner has not registered accepted native-audio deadline limits."
-        }
-      },
-      "latency": {
-        "registration": {
-          "status": "unavailable",
-          "reason": "Accepted native-audio median and tail latency limits have not been registered."
-        }
-      }
-    },
-    {
       "id": "realtime-cu",
       "result_kind": "bench_result",
       "suite": "openrealtime-realtime-cu-v1",

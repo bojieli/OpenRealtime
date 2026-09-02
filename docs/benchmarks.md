@@ -374,6 +374,12 @@ intrinsically better. Report the task-level traces and latency distributions;
 do not turn a partial, filtered, dirty-tree, or unavailable-provider run into a
 ranking.
 
+The cascade four-case cell is the required Meeting Assistant result in the
+7,486-attempt behavioral acceptance matrix. The Omni cell is independent,
+opt-in architecture/provider-quality validation; when selected it still must
+run all four cases, but it does not enter behavioral acceptance or
+`release_complete`.
+
 The checked-in launcher passes `-reference-levels` derived from its active
 `MEETING_ASR_*`, `MEETING_POLICY_*`, `MEETING_SLOW_*`, and foreground-model
 configuration. This is part of measurement validity: a diagnostic run using

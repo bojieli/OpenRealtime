@@ -20,6 +20,12 @@ func TestStrictMatrixValidation(t *testing.T) {
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid matrix: %v", err)
 	}
+	optional := testGate("local.optional", []string{"/bin/sh", "-c", "true"})
+	optional.Required = false
+	optional.Selection = SelectionOptIn
+	if err := testMatrix(optional).Validate(); err != nil {
+		t.Fatalf("valid optional gate: %v", err)
+	}
 
 	mutations := map[string]func(*Matrix){
 		"version": func(matrix *Matrix) { matrix.Version++ },
@@ -28,7 +34,7 @@ func TestStrictMatrixValidation(t *testing.T) {
 		},
 		"duplicate ID":      func(matrix *Matrix) { matrix.Gates = append(matrix.Gates, matrix.Gates[0]) },
 		"unknown selection": func(matrix *Matrix) { matrix.Gates[0].Selection = "maybe" },
-		"unrequired":        func(matrix *Matrix) { matrix.Gates[0].Required = false },
+		"optional default":  func(matrix *Matrix) { matrix.Gates[0].Required = false },
 		"unsafe workdir":    func(matrix *Matrix) { matrix.Gates[0].WorkingDir = "../outside" },
 		"unknown token":     func(matrix *Matrix) { matrix.Gates[0].Command = []string{"{mystery}"} },
 		"undeclared environment": func(matrix *Matrix) {
@@ -44,6 +50,35 @@ func TestStrictMatrixValidation(t *testing.T) {
 				t.Fatal("invalid matrix was accepted")
 			}
 		})
+	}
+}
+
+func TestExecuteDoesNotMakeOptionalValidationPartOfReleaseCompleteness(t *testing.T) {
+	optional := testGate("external.optional", []string{"/bin/sh", "-c", "exit 99"})
+	optional.Availability = AvailabilityProvisioned
+	optional.Selection = SelectionOptIn
+	optional.Required = false
+	optional.Prerequisites = []Prerequisite{{
+		Kind: "env", Value: "OPENREALTIME_TEST_OPTIONAL_ENDPOINT",
+		Description: "optional external validation",
+	}}
+	required := testGate("local.required", []string{"/bin/sh", "-c", "true"})
+
+	report := executeTestMatrix(t, testMatrix(optional, required), Options{Mode: ModeRun, Scope: ScopeLocal})
+	if report.SelectedOutcome != "passed" || !report.ReleaseComplete {
+		t.Fatalf("report outcome=%s complete=%t", report.SelectedOutcome, report.ReleaseComplete)
+	}
+	if len(report.MissingRequiredGates) != 0 {
+		t.Fatalf("optional gate entered missing required gates: %v", report.MissingRequiredGates)
+	}
+	if report.Gates[0].Required || report.Gates[0].Selected || report.Gates[0].Status != StatusBlocked {
+		t.Fatalf("optional result = %+v", report.Gates[0])
+	}
+	if !report.Gates[1].Required || !report.Gates[1].Selected || report.Gates[1].Status != StatusPassed {
+		t.Fatalf("required result = %+v", report.Gates[1])
+	}
+	if got := RequiredGateIDs(testMatrix(optional, required)); !slices.Equal(got, []string{"local.required"}) {
+		t.Fatalf("required gate IDs = %v", got)
 	}
 }
 
@@ -259,10 +294,8 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.benchmark.tau.control",
 		"external.benchmark.tau.regular",
 	}
-	specialIDs := append([]string{}, candidateIDs...)
-	specialIDs = append(specialIDs,
-		"external.benchmark.dynacu",
-		"external.benchmark.meeting.omni",
+	requiredSpecialIDs := append([]string{}, candidateIDs...)
+	requiredSpecialIDs = append(requiredSpecialIDs,
 		"external.benchmark.validation.behavioral",
 		"external.macos.signed-e2e",
 		"external.model.live-presentation",
@@ -276,10 +309,19 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"local.sdk.official",
 		"performance.review-bundles",
 	)
-	for _, id := range specialIDs {
+	for _, id := range requiredSpecialIDs {
 		gate, exists := byID[id]
 		if !exists || !gate.Required {
 			t.Errorf("required special gate is missing: %s", id)
+		}
+	}
+	for _, id := range []string{
+		"external.benchmark.dynacu",
+		"external.benchmark.meeting.omni",
+	} {
+		gate, exists := byID[id]
+		if !exists || gate.Required || gate.Selection != SelectionOptIn {
+			t.Errorf("optional validation gate is missing or required: %s: %+v", id, gate)
 		}
 	}
 	livePresentation := byID["external.model.live-presentation"]
@@ -603,7 +645,6 @@ func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
 		"fdb-v1.5":        "{artifacts}/candidate-fdb15.json",
 		"fdb-v3":          "{artifacts}/candidate-fdb3.json",
 		"meeting-cascade": "{artifacts}/candidate-meeting-cascade.json",
-		"meeting-omni":    "{artifacts}/meeting-omni.json",
 		"realtime-cu":     "{artifacts}/candidate-realtime-cu.json",
 		"scenario":        "{artifacts}/candidate-scenario.json",
 		"tau-control":     "{artifacts}/candidate-tau-control.json",
@@ -647,7 +688,6 @@ func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
 		"external.benchmark.candidate.fdb3",
 		"external.benchmark.candidate.fdbench",
 		"external.benchmark.meeting.cascade",
-		"external.benchmark.meeting.omni",
 		"external.benchmark.realtime-cu",
 		"external.benchmark.scenario",
 		"external.benchmark.tau.control",

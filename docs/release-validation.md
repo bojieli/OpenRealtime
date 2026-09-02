@@ -65,7 +65,7 @@ cleanup. Portable receipt-verifier tests do not satisfy this gate.
 invocation passed. `release_complete` is stricter: it is true only when every
 required ID in the entire matrix passed in that invocation. A local-only run
 therefore says `release_complete: false` and lists the unrun or blocked
-performance and provisioned gates under `missing_required_gates`. This is
+required performance and provisioned gates under `missing_required_gates`. This is
 deliberate; local CI success is not model, dataset, or signed-native evidence.
 
 ## Checked performance protocol
@@ -97,10 +97,13 @@ production arm, command, registry, or runtime dependency.
 
 The required direct candidates are FDB v1.5, FDB v3, FD-Bench, Meeting
 Assistant cascade, Realtime-CU, the eleven-scenario profile, tau control, and
-tau regular. Each gate must run its complete declared population against the
-shared Realtime API with an exact execution requirement and authenticated live
-graph inspection. Diagnostic subsets remain useful for iteration but cannot
-satisfy a release gate.
+tau regular. Together they contain exactly 7,486 required attempts. Each gate
+must run its complete declared population against the shared Realtime API with
+an exact execution requirement and authenticated live graph inspection.
+Diagnostic subsets remain useful for iteration but cannot satisfy a release
+gate. Meeting Assistant omni and DynaCU remain independently runnable opt-in
+validations; they are marked `required: false`, do not enter behavioral
+acceptance, and do not affect `release_complete`.
 
 All required populations must come from one frozen final candidate: the exact
 commit and executable, Graph IR, values, deployment, model revisions, policies,
@@ -130,7 +133,7 @@ higher trusted result.
 
 The per-benchmark matrix gates enforce complete execution and sealed evidence.
 They are not, by themselves, behavioral acceptance. The required
-`external.benchmark.validation.behavioral` gate consumes all nine final result
+`external.benchmark.validation.behavioral` gate consumes all eight final result
 files, one pre-run frozen-candidate declaration, and the checked behavioral
 target registry. It refuses incomplete populations, mixed candidates,
 unregistered targets, material regressions, and a repair history that ends in a
@@ -209,7 +212,7 @@ start and is strict JSON of this shape (abbreviated to one suite here):
 }
 ```
 
-The real declaration must contain all nine uniquely sorted suite IDs. Its one
+The real declaration must contain all eight uniquely sorted suite IDs. Its one
 global revision, executable digest, and exact machine identity must match every
 result. Each suite pins the SHA-256 of the canonical bytes emitted by
 `bench.MarshalExecutionRequirement`, which binds Graph IR, values,
@@ -236,7 +239,6 @@ go run ./internal/releasevalidation/cmd/behavioracceptance \
   -result fdb-v1.5=.runtime/release/final/candidate-fdb15.json \
   -result fdb-v3=.runtime/release/final/candidate-fdb3.json \
   -result meeting-cascade=.runtime/release/final/candidate-meeting-cascade.json \
-  -result meeting-omni=.runtime/release/final/meeting-omni.json \
   -result realtime-cu=.runtime/release/final/candidate-realtime-cu.json \
   -result scenario=.runtime/release/final/candidate-scenario.json \
   -result tau-control=.runtime/release/final/candidate-tau-control.json \
@@ -287,8 +289,9 @@ variables are:
 
 - `OPENREALTIME_BENCH_ENDPOINT`, `OPENREALTIME_BENCH_EXECUTION`, and
   `OPENREALTIME_BENCH_INSPECTION_GRAPH` for dataset and owned benchmark runs;
-- `OPENREALTIME_MEETING_CASCADE_ENDPOINT` and
-  `OPENREALTIME_MEETING_OMNI_ENDPOINT` for the two Meeting Assistant clients;
+- `OPENREALTIME_MEETING_CASCADE_ENDPOINT` for the required Meeting Assistant
+  reference and `OPENREALTIME_MEETING_OMNI_ENDPOINT` only when selecting its
+  optional native-audio validation;
 - `OPENREALTIME_SPEECH_ENDPOINT`,
   `OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST`, and
   `OPENREALTIME_SCENARIO_ARCHITECTURE_CELL` for all 11 scenarios at 15
@@ -329,8 +332,10 @@ external checkout are not offline repository inputs.
 
 ## Fail-closed rules
 
-- Every gate is required. Diagnostics and smoke subsets do not belong in this
-  matrix.
+- Every gate is either a required release claim or an explicitly opt-in,
+  `required: false` independent validation. Diagnostic and smoke subsets do
+  not belong in this matrix. Optional validation never enters
+  `release_complete` or behavioral acceptance.
 - Default local gates may record skips in the broad root/module sweeps because
   the skipped claims have dedicated gates. Dedicated release gates forbid any
   `--- SKIP:` result.
@@ -338,10 +343,12 @@ external checkout are not offline repository inputs.
   that exits zero after printing `NOT REPORTABLE` does not pass the matrix.
 - FDB v1.5 requires 498 completed recordings, FDB v3 requires 100, FD-Bench
   requires all 6,147 across the checked 21 partitions, Realtime-CU requires 16,
-  Meeting Assistant requires four per foreground, tau2 requires 278 in each of
-  control and regular, DynaCU requires 150, and the owned scenario run requires
-  165/165 attempts plus its externally anchored, reopenable source/media
-  receipt.
+  the cascade Meeting Assistant reference requires four, tau2 requires 278 in
+  each of control and regular, and the owned scenario run requires 165/165
+  attempts plus its externally anchored, reopenable source/media receipt. The
+  optional omni Meeting run still requires all four cases when selected, and
+  the optional DynaCU run still requires all 150 tasks when selected; neither
+  enters the required 7,486-attempt acceptance population.
 - Tests discover every `Fuzz*` function and every non-runtime Go module and
   compare them with matrix coverage. Adding one without a normal/race/vet or
   exact fuzz gate breaks `go test ./internal/releasevalidation`.
