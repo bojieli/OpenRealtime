@@ -3244,6 +3244,20 @@ and does not claim statistical parity with the historical 165-attempt sample.
     close removes the route and disposes the adopted pre-mount scope exactly
     once. Ten shuffled focused runs, focused and package-wide race, full
     repository tests, and vet are green.
+  - [x] Reconcile the shipped WebSocket presentation-host relay while a real
+    proxied session is active. The candidate pre-mount resolves the exact
+    endpoint and credential services and requires its network grant before any
+    live teardown; a permissionless implementation candidate returns no
+    receipt, leaves the predecessor sequence and implementation unchanged, and
+    continues relaying on the original socket. Every admitted session is now a
+    named plugin-lifecycle worker. A valid replacement cancels and joins the
+    active predecessor before candidate activation, advances exact runtime
+    artifact evidence, preserves the stable router/export identity, and emits
+    a retirement audit with zero workers, effects, child scopes, and services.
+    The replacement serves a fresh bidirectional socket and final host close
+    retains no ownership. Ten shuffled focused runs, focused and package-wide
+    host/browser race and integration gates, full repository tests, and vet
+    are green. WebRTC and management-relay replacement remain open.
   - [x] Remove and recover a descriptor-locked browser client provider through
     its real dependency closure. In the 28-entry WebRTC developer profile,
     deactivating media quiesces transport, reducer, session, authoring, effect,
@@ -3878,8 +3892,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     atomic real-Chromium swap, signed-catalog renegotiation, real artifact
     execution, and zero-active-socket final cleanup.
     Host route capabilities likewise have atomic multi-row and stateful
-    migration/rollback evidence over the stable router and export. Complete
-    topology-changing and remaining capability-specific host/client replacement
+    migration/rollback evidence over the stable router and export, and the
+    shipped WebSocket relay now passes real active-session replacement with an
+    exact zero-ownership retirement audit. Complete topology-changing, WebRTC/
+    management-relay, and remaining capability-specific host/client replacement
     plus signed-native lifecycle/leak evidence remain open.
 
 ## References

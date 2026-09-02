@@ -554,8 +554,11 @@ tau2/τ-Voice matrix defined by the parent plan.
   The shipped effects and artifact-reference providers now pass an atomic
   real-Chromium replacement, signed-catalog renegotiation, real artifact
   execution, and exact two-started/zero-active-socket plus zero-scoped-effect
-  final cleanup. Remaining hosting, relay, capability-specific, and signed
-  native lifecycle/leak evidence keeps this parent open.
+  final cleanup. The shipped WebSocket relay also passes pre-mount refusal and
+  active-session replacement with exact zero-worker retirement under a stable
+  router/export. Remaining hosting, WebRTC/management-relay,
+  capability-specific, and signed native lifecycle/leak evidence keeps this
+  parent open.
 - [ ] The browser and macOS applications connect to the same unchanged server
   APIs and pass the shared protocol/client conformance corpus. The public
   `companion` command now supervises the real server and host while real
