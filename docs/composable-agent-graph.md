@@ -1849,8 +1849,8 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this reconciliation, 297 of 362 explicit tracker boxes are checked (82.0%)
-and 65 remain open. The percentage records completed reviewable slices; it does
+At this reconciliation, 297 of 368 explicit tracker boxes are checked (80.7%)
+and 71 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -1864,7 +1864,7 @@ is rerun against that exact candidate. The current critical path is:
 | --- | --- | --- |
 | Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns | Exercise the landed continuation/admission repairs, fix any remaining behavior, then run 11 cases x 15 |
 | Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
-| Realtime-CU (16) | Clean `b535b15` campaign executed and reviewed 16/16 but scored 14/16; both camera tasks acted before fresh hazard evidence, and moving-target/transient cases exposed post-success continuation. Production now timestamps durable intent, routes observation commit through typed temporal admission into activation, re-attests evidence at the consumer, and applies cancellation floors. Focused normal/race/mounted/endpoint tests are green, but no live repaired-camera or settlement benchmark has run | Add graph-visible bounded post-effect settlement, run both camera and both moving-target cases, diagnose and repair any failures, then rerun all 16 from one frozen candidate |
+| Realtime-CU (16) | Clean `b535b15` campaign executed and reviewed 16/16 but scored 14/16; both camera tasks acted before fresh hazard evidence, and moving-target/transient cases exposed post-success continuation. Production now timestamps durable intent, routes observation commit through typed temporal admission into activation, re-attests evidence at the consumer, and applies cancellation floors. Focused normal/race/mounted/endpoint tests are green, but no live repaired-camera or settlement benchmark has run | Add graph-visible bounded post-effect settlement, register enforceable behavioral targets, run both camera, both moving-target, and both transient cases, diagnose and repair any failures, then rerun all 16 from one frozen candidate |
 | FDB v1.5 (498) | Earlier diagnostic completed 498/498 and passed 355; interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
 | FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result. A full mounted endpoint regression now proves deployment-owned spoken-ID normalization without changing raw proposals, provider schemas, or speech | Run the exact failed task, preregister and run a representative slice, then rerun all 100 from one frozen candidate |
 | FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete; its obsolete executable rejected resume and cannot be mixed with a later candidate | Finish restartable, independently rescored retention and rerun all 21 conditions from one candidate |
@@ -3277,12 +3277,55 @@ the required new 165-attempt sample.
       stops reactivation after the task's success evidence while preserving
       legitimate multi-step intents such as focus, type, and submit. Exercise
       moving-target and transient-alert continuations without introducing a
-      blanket one-action-per-intent restriction.
-    - [ ] Run both camera and both moving-target variants as focused evidence
-      from the repaired immutable candidate. Require no precondition-violating
-      effect, no post-success proposal loop, no session timeout, and the
-      accepted correctness, deadline, safety, and latency outcomes before the
-      complete-suite rerun.
+      blanket one-action-per-intent restriction. A planner's no-proposal result,
+      repetition suppression, elapsed quiet time, and the benchmark fixture's
+      private page-success state are not generic proof that the durable user
+      intent succeeded.
+      - [ ] Define and register producer-neutral typed settlement probe and
+        `IntentDisposition` contracts. The closed disposition space must make
+        `continue`, `succeeded`, `failed`, and `indeterminate` explicit and bind
+        each decision to the exact session, durable intent, canonical prefix,
+        successful result/call/invocation, result-linked observation, detector
+        identity/configuration, and positive decision timing.
+      - [ ] Implement a deterministic, bounded `policy.IntentSettlement` gate
+        that independently reopens and verifies the canonical evidence, holds
+        only the exact candidate post-effect observation, releases it on
+        `continue`, latches same-intent quiescence on a verified terminal
+        disposition, and fails closed without claiming success on malformed,
+        stale, conflicting, or indeterminate evidence. New durable intent and
+        exactly addressed cancellation/reset must have explicit race-safe
+        semantics; capacity exhaustion must not evict a live safety latch.
+      - [ ] Implement and lock the replaceable reference disposition producer.
+        Prefer an application-authoritative completion producer where one
+        exists; the general Realtime-CU reference uses a narrow enum/vision
+        decision over the exact retained result-linked frame. Even if it reuses
+        the continuation model deployment, it owns a separate semantic-decider
+        client, selection, descriptor/configuration digest, lifecycle, and
+        measured decision latency. A no-proposal heuristic may exist only as an
+        explicitly selected, documented alternative.
+      - [ ] Wire the producer and settlement gate as replaceable nodes in the
+        Realtime-CU reference subgraph, including explicit channels, values,
+        descriptors, lock, Graph IR/profile fingerprints, inspection metadata,
+        service ownership, and addressed cognition/activation cancellation.
+        Activation must clear the completed effect for both continuation and
+        terminal decisions without admitting a terminal consequence as new
+        work.
+      - [ ] Execute deterministic descriptor/schema/runtime, forged-evidence,
+        exact-media, duplicate/reordered-decision, cancellation/replacement,
+        bounded-state, failed-effect, indeterminate, asynchronous-wait,
+        focus-type-submit, continuous-cadence, mounted graph, race, and stable
+        WebSocket endpoint tests. These checks close only their implementation
+        slices, never the live behavioral gate.
+      - [ ] Register machine-enforceable Realtime-CU aggregate, per-case,
+        safety, deadline, and latency targets in
+        `scripts/behavioral-acceptance-targets.json`. Its current
+        `unavailable` registrations cannot accept a candidate even when all
+        attempts execute.
+    - [ ] Run both camera, both moving-target, and both transient-alert variants
+      as focused evidence from the repaired immutable candidate. Require no
+      precondition-violating effect, no post-success proposal loop, no session
+      timeout, and the accepted correctness, deadline, safety, and latency
+      outcomes before the complete-suite rerun.
     - [ ] Run and independently reopen all sixteen Realtime-CU cases from one
       subsequently frozen candidate. If any aggregate or case materially
       regresses, retain it and repeat diagnosis, focused repair, and the exact

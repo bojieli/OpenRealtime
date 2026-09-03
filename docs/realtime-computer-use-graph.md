@@ -292,8 +292,53 @@ result artifact passes the repository's release validation.
 The latest retained live diagnostic predates this production wiring: it ran all
 16 cases and scored 14/16, with both camera cases acting before fresh hazard
 evidence and moving-target/transient cases exposing post-success continuation.
-No live case has yet validated this temporal repair. The remaining behavioral
-sequence is to add graph-visible post-effect settlement/quiescence, run both
-camera and both moving-target variants, diagnose and repair any failures, and
-then rerun all 16 from one frozen candidate. Nothing in the implementation
-checks above advances the project-wide 0/7,486 final-candidate attempt ledger.
+No live case has yet validated this temporal repair.
+
+Production also does not yet have an authoritative typed fact that the durable
+user intent itself has succeeded. A planner returning no proposal can mean
+"wait for later evidence," and repetition admission proves only that one exact
+effect already succeeded. Neither fact, elapsed quiet time, nor the evaluator's
+private `PageResult` is a sound generic settlement oracle. In particular,
+moving-target retries can use different coordinates and evade exact repetition
+identity, while treating no-proposal as success would break asynchronous and
+multi-step tasks.
+
+The planned repair therefore keeps two graph-visible, replaceable elements:
+
+```text
+successful result-linked post-effect evidence
+  -> disposition producer
+  -> typed IntentDisposition
+  -> deterministic IntentSettlement gate
+  -> activation continuation or same-intent quiescence
+```
+
+The producer classifies a closed `continue | succeeded | failed |
+indeterminate` disposition and binds it to the exact session, durable intent,
+canonical prefix, successful result and invocation, result-linked observation,
+producer identity/configuration, and measured decision time. An
+application-authoritative producer is preferred when available. The reference
+generic producer will instead use a separately locked narrow semantic/vision
+decision over the exact retained post-effect frame. It may share the Qwen/VLM
+deployment with continuation, but it must own a distinct semantic-decider
+client, selection, digest, and lifecycle so its policy and latency remain
+independently inspectable.
+
+The settlement gate is deterministic rather than model-owned. It independently
+revalidates the typed admission and canonical causal chain, holds a bounded
+candidate consequence until the matching disposition arrives, releases it for
+`continue`, and latches the exact intent on a verified terminal disposition.
+Ordinary and failed-effect visual evidence remains reactive. Invalid, stale,
+conflicting, or indeterminate evidence fails closed without being mislabeled as
+success; a genuinely newer durable intent or exactly addressed cancellation
+starts a new epoch. The reference graph will package producer plus gate for easy
+authoring while retaining both nodes and all timing, state, interrupt, and
+terminal paths in static and live inspection.
+
+The remaining behavioral sequence is to implement and adversarially test those
+contracts, wire and lock the reference subgraph, register machine-enforceable
+Realtime-CU acceptance targets, and then run both camera, both moving-target,
+and both transient-alert variants from one repaired immutable candidate. Any
+failure is retained and repaired before all 16 cases are rerun from a newly
+frozen candidate. Nothing in the implementation checks above advances the
+project-wide 0/7,486 final-candidate attempt ledger.
