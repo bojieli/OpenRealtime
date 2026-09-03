@@ -252,7 +252,9 @@ func newSessionBundle(
 			return continuation.Media{MIMEType: resolved.Ref.MIMEType, Bytes: resolved.Bytes}, nil
 		}),
 		cognitionelements.ProviderRegistryService: providers,
-		stateelements.TrajectoryStoreService:      &stateelements.TrajectoryStoreServiceValue{Store: store},
+		stateelements.TrajectoryStoreService: &stateelements.TrajectoryStoreServiceValue{
+			Store: store, SessionID: options.SessionID,
+		},
 	}
 	return &sessionBundle{bridge: bridge, store: store, media: media, services: services}, nil
 }

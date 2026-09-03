@@ -260,7 +260,9 @@ func newSessionBundle(
 		speechelements.IrreversibilityLedgerService:      speechLedger,
 		speechelements.PlaybackSinkRegistryService:       playback,
 		speechelements.TTSProviderRegistryService:        ttsProviders,
-		stateelements.TrajectoryStoreService:             &stateelements.TrajectoryStoreServiceValue{Store: store},
+		stateelements.TrajectoryStoreService: &stateelements.TrajectoryStoreServiceValue{
+			Store: store, SessionID: options.SessionID,
+		},
 	}
 	return &sessionBundle{
 		bridge: bridge, media: mediaBridge, presentation: presentation,

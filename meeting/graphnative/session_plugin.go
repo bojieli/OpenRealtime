@@ -295,7 +295,9 @@ func (plugin *SessionPlugin) mountService(
 		if err != nil {
 			return nil, err
 		}
-		return &stateelements.TrajectoryStoreServiceValue{Store: store}, nil
+		return &stateelements.TrajectoryStoreServiceValue{
+			Store: store, SessionID: options.SessionID,
+		}, nil
 	default:
 		return nil, fmt.Errorf("meeting session dependency %q is not declared", name)
 	}

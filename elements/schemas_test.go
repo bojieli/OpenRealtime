@@ -47,8 +47,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 38 {
-		t.Fatalf("standard config schema count = %d, want 38", len(references))
+	if len(references) != 39 {
+		t.Fatalf("standard config schema count = %d, want 39", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -200,6 +200,56 @@ func TestRealtimeCUActivationSchemaDoesNotWidenGenericGeneration(t *testing.T) {
 	}
 }
 
+func TestIntentSettlementSchemaMatchesItsStrictFactoryContract(t *testing.T) {
+	const reference = "schema://openrealtime/policy/intent-settlement-config/v1"
+	catalog, err := elements.StandardConfigSchemaCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := catalog.ResolveConfigSchema(context.Background(), reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled := compileStandardSchema(t, resolved)
+	validator := standardValidatorsBySchema(t)[reference]
+	tests := []struct {
+		name   string
+		valid  bool
+		source string
+	}{
+		{"explicit", true, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"observed", true, `{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"immediate", false, `{"expected_admission":{"mode":"immediate"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"explicit missing required", false, `{"expected_admission":{"mode":"after_intent","source_set":"explicit"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"explicit empty source set", false, `{"expected_admission":{"mode":"after_intent","source_set":"","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"observed with required", false, `{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"observed with null required", false, `{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent","required":null},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"duplicate expected source", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"},{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"duplicate candidate", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"},{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"unknown nested field", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen","unknown":true}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"whitespace identifier", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision model","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"control identifier", false, "{\"expected_admission\":{\"mode\":\"after_intent\",\"required\":[{\"observer\":\"vision\\u0001\",\"source\":\"screen\"}]},\"candidate_sources\":[{\"observer\":\"vision\",\"source\":\"screen\"}],\"detector\":{\"reference\":\"settlement-primary\",\"revision\":\"v1\",\"configuration_digest\":\"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"}}"},
+		{"multibyte identifier", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"视觉","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`},
+		{"malformed digest", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:ABCDEF"}}`},
+		{"tracking bound", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},"max_tracked_intents":4097}`},
+		{"tracking null", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},"max_tracked_intents":null}`},
+		{"cancellation bound", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},"cancel_memory":0}`},
+		{"cancellation null", false, `{"expected_admission":{"mode":"after_intent","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},"cancel_memory":null}`},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			schemaErr := compiled.Validate(decodeSchemaValue(t, testCase.source))
+			factoryErr := validator.ValidateConfig(json.RawMessage(testCase.source))
+			if testCase.valid && (schemaErr != nil || factoryErr != nil) {
+				t.Fatalf("valid config: schema=%v factory=%v", schemaErr, factoryErr)
+			}
+			if !testCase.valid && (schemaErr == nil || factoryErr == nil) {
+				t.Fatalf("invalid config accepted: schema=%v factory=%v", schemaErr, factoryErr)
+			}
+		})
+	}
+}
+
 func TestStandardConfigSchemaResolverIsFailClosedCanceledAndSnapshotIsolated(t *testing.T) {
 	catalog, err := elements.StandardConfigSchemaCatalog()
 	if err != nil {
@@ -275,7 +325,7 @@ func BenchmarkStandardConfigSchemaCatalog(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(catalog.References()) != 37 {
+		if len(catalog.References()) != len(standardValidConfigSamples()) {
 			b.Fatal("incomplete standard config schema catalog")
 		}
 	}
@@ -362,6 +412,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                               `{"provider":"asr"}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":                   `{"provider":"vision","source":"screen"}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":               `{"role":"fast","invocation":{"instruction":"Answer briefly."}}`,
+		"schema://openrealtime/policy/intent-settlement-config/v1":                     `{"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`,
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{"decider":"semantic-primary","direct_visual_input":true,"standing_extraction":true,"verify_voice_activation":true,"verify_silent_action":true,"minimum_activation_confidence":0.75}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{"role":"fast"}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}`,
@@ -405,6 +456,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/perception/asr-config/v1":                               `{}`,
 		"schema://openrealtime/perception/visual-observer-config/v1":                   `{}`,
 		"schema://openrealtime/policy/generate-on-observation-config/v1":               `{}`,
+		"schema://openrealtime/policy/intent-settlement-config/v1":                     `{"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`,
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"eventually"}`,

@@ -137,9 +137,12 @@ var (
 )
 
 // TrajectoryStoreServiceValue optionally supplies an existing session store.
-// It is a coeffect and never enters Graph IR or configuration artifacts.
+// SessionID is the trusted owner of that store when a consumer must reject
+// cross-session control before any envelope can select runtime state. It is a
+// coeffect and never enters Graph IR or configuration artifacts.
 type TrajectoryStoreServiceValue struct {
-	Store *trajectory.Store
+	Store     *trajectory.Store
+	SessionID string
 }
 
 type trajectoryStoreFactory struct{}

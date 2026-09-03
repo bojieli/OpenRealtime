@@ -214,6 +214,30 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		}, "observer", "source"), 0, 32),
 	}
 	temporalEvidenceConfig := objectSchema(temporalEvidenceConfigProperties, "mode")
+	settlementIdentifier := identifier(256)
+	settlementIdentifier["pattern"] = `^[!-~]+$`
+	settlementRequirement := objectSchema(schemaObject{
+		"observer": settlementIdentifier, "source": settlementIdentifier,
+	}, "observer", "source")
+	settlementExpectedRequired := arraySchema(settlementRequirement, 0, 32)
+	settlementExpectedRequired["uniqueItems"] = true
+	settlementExpectedAdmission := objectSchema(schemaObject{
+		"mode":       schemaObject{"type": "string", "const": "after_intent"},
+		"source_set": enumSchema("explicit", "observed_before_intent"),
+		"required":   settlementExpectedRequired,
+	}, "mode")
+	explicitRequired := arraySchema(settlementRequirement, 1, 32)
+	explicitRequired["uniqueItems"] = true
+	observedRequired := arraySchema(settlementRequirement, 0, 0)
+	observedRequired["uniqueItems"] = true
+	settlementExpectedAdmission["allOf"] = []any{conditional(
+		propertyEquals("source_set", "observed_before_intent"),
+		schemaObject{"properties": schemaObject{"required": observedRequired}},
+		schemaObject{
+			"required":   []string{"required"},
+			"properties": schemaObject{"required": explicitRequired},
+		},
+	)}
 	documents := map[string]schemaObject{
 		"schema://openrealtime/acoustic/admission-config/v1": standardObject(
 			"schema://openrealtime/acoustic/admission-config/v1",
@@ -433,6 +457,25 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1": standardObject(
 			"schema://openrealtime/policy/temporal-evidence-admission-config/v1",
 			temporalEvidenceConfigProperties, "mode",
+		),
+		"schema://openrealtime/policy/intent-settlement-config/v1": standardObject(
+			"schema://openrealtime/policy/intent-settlement-config/v1",
+			schemaObject{
+				"expected_admission": settlementExpectedAdmission,
+				"candidate_sources": func() schemaObject {
+					result := arraySchema(settlementRequirement, 1, 32)
+					result["uniqueItems"] = true
+					return result
+				}(),
+				"detector": objectSchema(schemaObject{
+					"reference": settlementIdentifier, "revision": settlementIdentifier,
+					"configuration_digest": schemaObject{
+						"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`,
+					},
+				}, "reference", "revision", "configuration_digest"),
+				"max_tracked_intents": integerSchema(1, 4096),
+				"cancel_memory":       integerSchema(1, 4096),
+			}, "expected_admission", "candidate_sources", "detector",
 		),
 		"schema://openrealtime/realtime-cu/activation-config/v1": standardObject(
 			"schema://openrealtime/realtime-cu/activation-config/v1",

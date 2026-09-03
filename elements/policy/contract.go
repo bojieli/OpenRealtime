@@ -249,18 +249,18 @@ func cloneInvocation(invocation continuation.Invocation) continuation.Invocation
 }
 
 func validatePolicyIdentifier(label, value string, required bool) error {
+	if len(value) > maximumPolicyIdentifierBytes {
+		return fmt.Errorf("%s exceeds %d bytes", label, maximumPolicyIdentifierBytes)
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("%s is not valid UTF-8", label)
+	}
 	trimmed := strings.TrimSpace(value)
 	if required && trimmed == "" {
 		return fmt.Errorf("%s is required", label)
 	}
 	if value != trimmed {
 		return fmt.Errorf("%s must not have surrounding whitespace", label)
-	}
-	if len(value) > maximumPolicyIdentifierBytes {
-		return fmt.Errorf("%s exceeds %d bytes", label, maximumPolicyIdentifierBytes)
-	}
-	if !utf8.ValidString(value) {
-		return fmt.Errorf("%s is not valid UTF-8", label)
 	}
 	for _, character := range value {
 		if unicode.IsSpace(character) || unicode.IsControl(character) {
@@ -288,7 +288,7 @@ func boundedPolicyReason(value string) string {
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
 		GenerateOnObservationDescriptor(), SessionInvocationDescriptor(), SemanticAdmissionDescriptor(),
-		TemporalEvidenceAdmissionDescriptor(),
+		TemporalEvidenceAdmissionDescriptor(), IntentSettlementDescriptor(),
 	}
 }
 
