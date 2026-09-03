@@ -1216,6 +1216,7 @@ func assertServeProfileFactories(
 	modelWant, policyWant := want, want
 	if want > 0 {
 		modelWant = 2 * want
+		policyWant = 2 * want
 	}
 	t.Fatalf("profile provider factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
 		counters.asr.Load(), counters.policy.Load(), counters.model.Load(), counters.tts.Load(),
@@ -1237,6 +1238,7 @@ func serveProfileFactoriesMatch(counters *serveProfileFactoryCounters, want int3
 	modelWant, policyWant := want, want
 	if want > 0 {
 		modelWant = 2 * want
+		policyWant = 2 * want
 	}
 	return counters.asr.Load() == want && counters.policy.Load() == policyWant &&
 		counters.model.Load() == modelWant && counters.tts.Load() == want

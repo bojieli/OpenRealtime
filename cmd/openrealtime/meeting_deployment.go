@@ -130,7 +130,13 @@ func (verifier *composedMeetingDeploymentVerifier) Verify(
 func (verifier *composedMeetingDeploymentVerifier) VerifyForeground(
 	ctx context.Context, expected meetingDeploymentIdentities,
 ) error {
-	return verifier.verifyComponents(ctx, expected, true, true, true, false)
+	return verifier.verifyComponents(ctx, expected, true, true, false, false)
+}
+
+func (verifier *composedMeetingDeploymentVerifier) VerifyTTS(
+	ctx context.Context, expected meetingDeploymentIdentities,
+) error {
+	return verifier.verifyComponents(ctx, expected, false, false, true, false)
 }
 
 func (verifier *composedMeetingDeploymentVerifier) VerifyVision(

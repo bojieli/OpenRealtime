@@ -141,12 +141,13 @@ type TTSPlugin struct {
 // profile. Dispatcher is deliberately absent: each mounted session installs
 // its own graph-authorized client rendezvous.
 type ToolDeclaration struct {
-	Name        string               `json:"name"`
-	Description string               `json:"description"`
-	Parameters  json.RawMessage      `json:"parameters"`
-	Confirm     legacyaction.Confirm `json:"confirm,omitempty"`
-	Background  bool                 `json:"background,omitempty"`
-	Target      string               `json:"target,omitempty"`
+	Name                string                                `json:"name"`
+	Description         string                                `json:"description"`
+	Parameters          json.RawMessage                       `json:"parameters"`
+	ArgumentNormalizers []legacyaction.ToolArgumentNormalizer `json:"argument_normalizers,omitempty"`
+	Confirm             legacyaction.Confirm                  `json:"confirm,omitempty"`
+	Background          bool                                  `json:"background,omitempty"`
+	Target              string                                `json:"target,omitempty"`
 }
 
 // SemanticAdmissionSelection pins the provider-neutral control-plane policy
@@ -471,10 +472,13 @@ func normalizeToolDeclarations(source []ToolDeclaration) ([]ToolDeclaration, err
 		if err := registry.Declare(legacyaction.ToolSpec{
 			Name: declaration.Name, Description: declaration.Description,
 			Parameters: declaration.Parameters, Confirm: declaration.Confirm,
-			Background: declaration.Background, Target: declaration.Target,
+			ArgumentNormalizers: declaration.ArgumentNormalizers,
+			Background:          declaration.Background, Target: declaration.Target,
 		}); err != nil {
 			return nil, fmt.Errorf("scenario conversation tool %q: %w", declaration.Name, err)
 		}
+		normalized, _ := registry.Lookup(declaration.Name)
+		declaration.ArgumentNormalizers = slices.Clone(normalized.ArgumentNormalizers)
 	}
 	return result, nil
 }
@@ -484,10 +488,15 @@ func cloneToolDeclarations(source []ToolDeclaration) []ToolDeclaration {
 	for index, declaration := range source {
 		result[index] = declaration
 		result[index].Parameters = slices.Clone(declaration.Parameters)
+		result[index].ArgumentNormalizers = slices.Clone(declaration.ArgumentNormalizers)
 	}
 	return result
 }
 
+// sameToolDeclaration compares only the client-visible provider declaration.
+// ArgumentNormalizers is deployment-owned action policy: clients neither need
+// to know it nor gain authority to replace it through session settings. The
+// invocation and mounted action registry are always projected from right.
 func sameToolDeclaration(left legacyaction.ToolSpec, right ToolDeclaration) bool {
 	leftConfirm, leftErr := legacyaction.ParseConfirm(string(left.Confirm))
 	rightConfirm, rightErr := legacyaction.ParseConfirm(string(right.Confirm))

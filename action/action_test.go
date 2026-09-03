@@ -421,6 +421,44 @@ func seedCall(t *testing.T, store *trajectory.Store, callID, name string) {
 	}
 }
 
+func seedDerivedCall(t *testing.T, store *trajectory.Store, callID, name string) trajectory.ToolCall {
+	t.Helper()
+	original := json.RawMessage(`{"order_id":"X Y Z88"}`)
+	effective := trajectory.ToolCall{
+		CallID: callID, Name: name, Arguments: json.RawMessage(`{"order_id":"XYZ88"}`),
+	}
+	digest := "sha256:" + strings.Repeat("0", 64)
+	if err := store.AppendBatch([]trajectory.Item{
+		{
+			ID: "obs-" + callID, Kind: trajectory.KindObservation, MonotonicNS: 1, SourceRevision: 1,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "do it",
+		},
+		{
+			ID: "proposal-" + callID, Kind: trajectory.KindToolProposal, MonotonicNS: 2,
+			CausalParentIDs: []string{"obs-" + callID}, SourceRevision: 1, InvocationID: "inv-1",
+			Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+			ToolCall: &trajectory.ToolCall{CallID: callID, Name: name, Arguments: original},
+		},
+		{
+			ID: "call-" + callID, Kind: trajectory.KindToolCall, MonotonicNS: 3,
+			CausalParentIDs: []string{"proposal-" + callID}, SourceRevision: 1, InvocationID: "inv-1",
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: &effective,
+			ToolCallDerivation: &trajectory.ToolCallDerivation{
+				Kind:                     trajectory.ToolCallDerivationSchemaNormalizationV1,
+				SourceArgumentsDigest:    trajectory.ToolCallArgumentsDigest(original),
+				EffectiveArgumentsDigest: trajectory.ToolCallArgumentsDigest(effective.Arguments),
+				RegistryReference:        "tools", RegistryDigest: digest, DeclarationDigest: digest,
+				Rewrites: []trajectory.ToolCallArgumentRewrite{{
+					Argument: "order_id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+				}},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("seed derived call: %v", err)
+	}
+	return effective
+}
+
 func newTools(t *testing.T, store *trajectory.Store, spec action.ToolSpec, confirmer action.Confirmer) *action.Tools {
 	t.Helper()
 	registry := action.NewRegistry()
@@ -474,6 +512,98 @@ func TestDispatchRefusesCallsWithoutTrajectoryAuthority(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatal("a proposal must never reach a dispatcher")
+	}
+}
+
+func TestDispatchRefusesArgumentsDifferentFromCanonicalTrajectoryCall(t *testing.T) {
+	store := trajectory.NewStore()
+	seedCall(t, store, "c1", "pay")
+	calls := 0
+	tools := newTools(t, store, action.ToolSpec{
+		Name: "pay", Description: "pay", Parameters: json.RawMessage(`{"type":"object"}`),
+		Dispatcher: echoDispatcher(&calls),
+	}, nil)
+
+	_, err := tools.Dispatch(context.Background(), trajectory.ToolCall{
+		CallID: "c1", Name: "pay", Arguments: json.RawMessage(`{"a":2}`),
+	})
+	if !errors.Is(err, action.ErrNoAuthority) {
+		t.Fatalf("changed arguments crossed the canonical authority boundary: %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("changed arguments reached the dispatcher %d time(s)", calls)
+	}
+}
+
+func TestLegacyDispatchRefusesGraphDerivedTrajectoryAuthority(t *testing.T) {
+	store := trajectory.NewStore()
+	call := seedDerivedCall(t, store, "c-derived-dispatch", "pay")
+	dispatches := 0
+	tools := newTools(t, store, action.ToolSpec{
+		Name: "pay", Description: "pay", Parameters: json.RawMessage(`{"type":"object"}`),
+		Dispatcher: echoDispatcher(&dispatches),
+	}, nil)
+
+	_, err := tools.Dispatch(context.Background(), call)
+	if !errors.Is(err, action.ErrNoAuthority) {
+		t.Fatalf("legacy Dispatch accepted graph-derived authority: %v", err)
+	}
+	if dispatches != 0 {
+		t.Fatalf("graph-derived call reached legacy dispatcher %d time(s)", dispatches)
+	}
+}
+
+func TestLegacyEmitRemoteRefusesGraphDerivedTrajectoryAuthority(t *testing.T) {
+	store := trajectory.NewStore()
+	call := seedDerivedCall(t, store, "c-derived-remote", "remote")
+	registry := action.NewRegistry()
+	if err := registry.Declare(action.ToolSpec{
+		Name: "remote", Description: "remote", Parameters: json.RawMessage(`{"type":"object"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ledger := action.NewLedger()
+	tools, err := action.NewTools(action.ToolsConfig{
+		Registry: registry, Ledger: ledger, Store: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := tools.EmitRemote(context.Background(), call); !errors.Is(err, action.ErrNoAuthority) {
+		t.Fatalf("legacy EmitRemote accepted graph-derived authority: %v", err)
+	}
+	if _, found := ledger.Lookup("action_" + call.CallID); found {
+		t.Fatal("refused graph-derived remote call crossed the legacy ledger")
+	}
+}
+
+func TestLegacyEmitRemoteKeepsExactDerivationFreeAuthority(t *testing.T) {
+	store := trajectory.NewStore()
+	seedCall(t, store, "c-remote", "remote")
+	registry := action.NewRegistry()
+	if err := registry.Declare(action.ToolSpec{
+		Name: "remote", Description: "remote", Parameters: json.RawMessage(`{"type":"object"}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ledger := action.NewLedger()
+	tools, err := action.NewTools(action.ToolsConfig{
+		Registry: registry, Ledger: ledger, Store: store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := trajectory.ToolCall{
+		CallID: "c-remote", Name: "remote", Arguments: json.RawMessage(`{"a":1}`),
+	}
+
+	if err := tools.EmitRemote(context.Background(), call); err != nil {
+		t.Fatalf("exact derivation-free remote authority was rejected: %v", err)
+	}
+	commitment, found := ledger.Lookup("action_" + call.CallID)
+	if !found || commitment.State != action.StateEmitting {
+		t.Fatalf("derivation-free remote call did not cross the ledger: %+v, found=%t", commitment, found)
 	}
 }
 
@@ -614,6 +744,83 @@ func TestRegistryReplaceDropsWithdrawnTools(t *testing.T) {
 	}
 	if specs := registry.Specs(); len(specs) != 1 || specs[0].Name != "b" {
 		t.Fatalf("unexpected registry contents %+v", specs)
+	}
+}
+
+func TestRegistryOwnsAndValidatesRuntimeArgumentNormalizers(t *testing.T) {
+	registry := action.NewRegistry()
+	normalizers := []action.ToolArgumentNormalizer{{
+		Argument: "order_id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+	}}
+	if err := registry.Declare(action.ToolSpec{
+		Name: "track", Description: "track",
+		Parameters:          json.RawMessage(`{"type":"object","properties":{"order_id":{"type":"string"}}}`),
+		ArgumentNormalizers: normalizers,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	normalizers[0].Argument = "mutated"
+	first, found := registry.Lookup("track")
+	if !found || len(first.ArgumentNormalizers) != 1 || first.ArgumentNormalizers[0].Argument != "order_id" {
+		t.Fatalf("registry did not own normalizers: %+v", first)
+	}
+	first.ArgumentNormalizers[0].Argument = "also-mutated"
+	second, _ := registry.Lookup("track")
+	if second.ArgumentNormalizers[0].Argument != "order_id" {
+		t.Fatalf("lookup exposed registry normalizers: %+v", second)
+	}
+
+	for _, testCase := range []struct {
+		name        string
+		normalizers []action.ToolArgumentNormalizer
+		want        string
+	}{
+		{name: "unknown", normalizers: []action.ToolArgumentNormalizer{{Argument: "id", Normalizer: "unknown"}}, want: "unsupported"},
+		{name: "duplicate", normalizers: []action.ToolArgumentNormalizer{
+			{Argument: "id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1},
+			{Argument: "id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1},
+		}, want: "repeats"},
+		{name: "noncanonical", normalizers: []action.ToolArgumentNormalizer{{
+			Argument: " id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+		}}, want: "non-canonical"},
+		{name: "undeclared property", normalizers: []action.ToolArgumentNormalizer{{
+			Argument: "id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+		}}, want: "object schema with properties"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			parameters := json.RawMessage(`{"type":"object"}`)
+			if testCase.name != "undeclared property" {
+				parameters = json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`)
+			}
+			err := action.NewRegistry().Declare(action.ToolSpec{
+				Name: "tool", Description: "tool", Parameters: parameters,
+				ArgumentNormalizers: testCase.normalizers,
+			})
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("Declare error = %v, want %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func TestLegacyToolsRefusesGraphNativeArgumentNormalizationContract(t *testing.T) {
+	registry := action.NewRegistry()
+	if err := registry.Declare(action.ToolSpec{
+		Name: "track", Description: "track",
+		Parameters: json.RawMessage(
+			`{"type":"object","properties":{"order_id":{"type":"string"}}}`,
+		),
+		ArgumentNormalizers: []action.ToolArgumentNormalizer{{
+			Argument: "order_id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := action.NewTools(action.ToolsConfig{
+		Registry: registry, Ledger: action.NewLedger(), Store: trajectory.NewStore(),
+	})
+	if !errors.Is(err, action.ErrGraphNativeNormalizationRequired) {
+		t.Fatalf("legacy Tools accepted an unenforced normalization contract: %v", err)
 	}
 }
 

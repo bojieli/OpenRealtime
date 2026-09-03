@@ -442,9 +442,9 @@ func (runner InteractionRunner) Observe(ctx context.Context, item Case) Observat
 //
 // A boundary measured under different settings is a different boundary, and
 // these two paths differ in ways that matter: the shipping path constrains
-// decoding to the enumerated acts, allows four tokens, and turns reasoning off
-// at the endpoint. Measuring free generation instead would score a prompt
-// nobody runs.
+// decoding to the enumerated acts, sizes the output budget to the longest exact
+// label, and turns reasoning off at the endpoint. Measuring free generation
+// instead would score a prompt nobody runs.
 type PolicyInteractionRunner struct {
 	Model *interaction.InteractionModel
 	Label string

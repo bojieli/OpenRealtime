@@ -73,6 +73,12 @@ nodes:
     cancel_memory: 256
   post_commit_silence:
     delay_ms: 15000
+  overlap_barge_in:
+    decider: deployment.scenario-conversation.semantic-policy
+    hold_ms: 800
+    unclassified: cancel
+    max_active_runs: 256
+    max_utterances: 512
   voice_model:
     provider: deployment.scenario-conversation.model
     retain_reasoning: false
@@ -85,6 +91,14 @@ nodes:
     max_output_bytes: 4194304
     max_events: 65536
     max_tool_proposals: 1024
+  control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
+  silent_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
   model_result_commit: {}
   segment:
     minimum_runes: 1
@@ -97,6 +111,7 @@ nodes:
     allow_system: false
   tool_lookup:
     registry: deployment.scenario-conversation.tools
+  normalize_arguments: {}
   confirmation:
     provider: deployment.scenario-conversation.confirmation
   target_fence:

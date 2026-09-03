@@ -854,7 +854,49 @@ func (runner *semanticAdmissionRunner) decide(
 	var coverageOutcome coreinteraction.Outcome
 	standingAfter := slices.Clone(standing)
 	standingPinned, standingRevoked := 0, 0
-	if err == nil && runner.extractor != nil && request.operation == "committed" {
+	if err == nil {
+		err = validateSemanticSituation(situation)
+		if err != nil {
+			failure = "invalid_evidence"
+		}
+	}
+	// A completed utterance can arrive after every prior voice run is already
+	// terminal, so the overlap policy has no active work to classify or cancel.
+	// Screen addressing before the utterance can acquire either generation or
+	// tool authority, and before an extractor can mutate durable policy memory.
+	// A distinct result is required: ordinary wait also describes legitimate
+	// policy setup and cannot safely prove that the words belong to somebody
+	// else's conversation.
+	activationChecked := false
+	skipStandingMutation := false
+	if err == nil && request.operation == "committed" &&
+		runner.config.VerifyVoiceActivation && semanticActivationEvidence(situation) {
+		current := currentSemanticItem(request, prefix)
+		if semanticExtractableObservation(current) {
+			activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
+			if err != nil {
+				failure = "voice_activation_failed"
+			} else {
+				activationChecked = true
+				activation = strings.TrimSpace(activationOutcome.Option)
+				confident := semanticActivationConfident(
+					activationOutcome, runner.config.MinimumActivationConfidence,
+				)
+				if activation == semanticVoiceAddressedElsewhere {
+					// Even an uncertain other-addressee verdict cannot authorize a
+					// durable pin or revocation. Confidence only decides whether this
+					// guard may also veto an otherwise strong immediate answer.
+					skipStandingMutation = true
+					if confident {
+						act = coreinteraction.ActStaySilent
+						stage = "voice_addressing"
+					}
+				}
+			}
+		}
+	}
+	if err == nil && stage == "primary" && !skipStandingMutation &&
+		runner.extractor != nil && request.operation == "committed" {
 		current := currentSemanticItem(request, prefix)
 		if semanticExtractableObservation(current) {
 			var extraction coreinteraction.Extraction
@@ -888,12 +930,6 @@ func (runner *semanticAdmissionRunner) decide(
 			}
 		}
 	}
-	if err == nil {
-		err = validateSemanticSituation(situation)
-		if err != nil {
-			failure = "invalid_evidence"
-		}
-	}
 	if err == nil && stage == "primary" {
 		act, outcome, err = runner.decideAct(decisionCtx, request.operation, situation)
 		if err == nil {
@@ -909,15 +945,26 @@ func (runner *semanticAdmissionRunner) decide(
 		verify := act == coreinteraction.ActAnswer ||
 			act == coreinteraction.ActStaySilent && len(standing) > 0 && answerAvailable
 		if verify && semanticActivationEvidence(situation) {
-			activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
-			if err != nil {
-				failure = "voice_activation_failed"
-			} else {
+			if !activationChecked {
+				activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
+				if err != nil {
+					failure = "voice_activation_failed"
+				} else {
+					activationChecked = true
+					activation = strings.TrimSpace(activationOutcome.Option)
+				}
+			}
+			if err == nil {
 				activation = strings.TrimSpace(activationOutcome.Option)
-				confident := !activationOutcome.Measured || runner.config.MinimumActivationConfidence == 0 ||
-					activationOutcome.Confidence >= runner.config.MinimumActivationConfidence
+				confident := semanticActivationConfident(
+					activationOutcome, runner.config.MinimumActivationConfidence,
+				)
 				switch {
-				case activation == semanticVoiceWait && act == coreinteraction.ActAnswer:
+				case activation == semanticVoiceAddressedElsewhere && confident &&
+					act == coreinteraction.ActAnswer:
+					act = coreinteraction.ActStaySilent
+					stage = "voice_addressing"
+				case activation == semanticVoiceWait && confident && act == coreinteraction.ActAnswer:
 					act = coreinteraction.ActStaySilent
 					stage = "voice_activation"
 				case activation == semanticVoiceConditionMet && confident &&
@@ -941,8 +988,9 @@ func (runner *semanticAdmissionRunner) decide(
 				failure = "silent_action_activation_failed"
 			} else {
 				activation = strings.TrimSpace(activationOutcome.Option)
-				confident := !activationOutcome.Measured || runner.config.MinimumActivationConfidence == 0 ||
-					activationOutcome.Confidence >= runner.config.MinimumActivationConfidence
+				confident := semanticActivationConfident(
+					activationOutcome, runner.config.MinimumActivationConfidence,
+				)
 				if activation != semanticSilentActionReady || !confident {
 					act = coreinteraction.ActStaySilent
 					stage = "silent_action_activation"
@@ -1069,14 +1117,19 @@ func validateSemanticOutcome(outcome coreinteraction.Outcome, options []string) 
 	return nil
 }
 
+func semanticActivationConfident(outcome coreinteraction.Outcome, minimum float64) bool {
+	return !outcome.Measured || minimum == 0 || outcome.Confidence >= minimum
+}
+
 const (
-	semanticStandingCovered    = "covered"
-	semanticStandingAdditional = "additional-work"
-	semanticVoiceConditionMet  = "condition-met"
-	semanticVoiceDirectRequest = "direct-request"
-	semanticVoiceWait          = "wait"
-	semanticSilentActionReady  = "action-ready"
-	semanticSilentActionWait   = "wait"
+	semanticStandingCovered         = "covered"
+	semanticStandingAdditional      = "additional-work"
+	semanticVoiceConditionMet       = "condition-met"
+	semanticVoiceDirectRequest      = "direct-request"
+	semanticVoiceAddressedElsewhere = "addressed-elsewhere"
+	semanticVoiceWait               = "wait"
+	semanticSilentActionReady       = "action-ready"
+	semanticSilentActionWait        = "wait"
 )
 
 const semanticStandingCoverageInstruction = "The policy extractor listed the standing policies established by one utterance. " +
@@ -1092,13 +1145,24 @@ const semanticVoiceActivationInstruction = "You are an activation guard, not a c
 	"Current evidence may be a completed utterance, an image or visual observation, or elapsed silence explicitly named by a standing policy. " +
 	"condition-met means the contract or a standing policy says to answer when some fact occurs, and the current evidence proves that fact now. " +
 	"direct-request means the current evidence directly asks a complete question or requests work that should start now, not later. " +
-	"wait means neither: a future condition is merely being described or requested, an applicable condition has not occurred, the evidence is narration, " +
-	"or the current evidence only continues or refines the setup of a standing policy without satisfying it. " +
+	"addressed-elsewhere means the current speech is explicitly addressed to another person by name, title, or other vocative, whether it is a question, " +
+	"request, answer, or statement. A role or title used as a vocative, especially at the start of an utterance, identifies its recipient just as a personal name does; " +
+	"do not reinterpret that person's question as addressed to the assistant. Before choosing addressed-elsewhere, inspect the AGENT CONTRACT for the assistant's explicit identity. " +
+	"If it says 'You are X' or otherwise names the assistant as X, speech addressed to X is addressed to this assistant and a complete request is direct-request; " +
+	"this explicit identity rule takes precedence over the name or title vocative rule. Otherwise choose addressed-elsewhere unless recent conversation establishes that addressee as this assistant. " +
+	"A vocative directly calls to a recipient and is often a name, role, or title phrase set off by a comma at the beginning: 'Officer, ...' and 'Doctor Smith, ...' are addressed-elsewhere when the contract does not identify the assistant that way, even though a question follows. " +
+	"Merely mentioning a person is not a vocative. A name used as the object of a verb remains part of a request to the current assistant: 'Can you tell Tim the printer is jammed?' is direct-request. " +
+	"Never assume or adopt a named person's identity merely because " +
+	"the current utterance addresses them. wait means neither of the other labels: a future condition is merely being described or requested, an applicable " +
+	"condition has not occurred, the evidence is narration, or the current evidence only continues or refines the setup of a standing policy without satisfying it. " +
+	"A direct topic change with no other addressee remains direct-request. " +
 	"Reply with one label only. Examples: contract 'correct a date that contradicts the third'; current 'we do design review next week' is wait; " +
 	"the same contract with current 'ship by the thirteenth' is condition-met. Standing policy 'count animals as they are mentioned'; " +
 	"current 'say the count out loud' is wait, while current 'a heron landed' is condition-met. Standing policy 'tell me when the build finishes'; " +
 	"an image still showing the build in progress is wait, while an image proving it finished is condition-met. Contract 'answer briefly'; " +
-	"current 'what is the capital of France' is direct-request."
+	"current 'what is the capital of France' is direct-request. Contract 'You are Alex, a support assistant'; current 'Alex, please help with the printer' is direct-request. " +
+	"Current 'Tim, the printer is jammed again - help?', 'Officer, is this the right form?', and 'Doctor Smith, could you check this?' are addressed-elsewhere when those are other people; " +
+	"current 'Can we talk about something else?' is direct-request."
 
 const semanticSilentActionInstruction = "You are a silent-action activation guard, not an agent and not a tool chooser. " +
 	"Decide whether the CURRENT instant fully grounds some action using an AVAILABLE SILENT TOOL now. " +
@@ -1137,7 +1201,10 @@ func (runner *semanticAdmissionRunner) verifyStandingCoverage(
 func (runner *semanticAdmissionRunner) verifyVoiceActivation(
 	ctx context.Context, situation coreinteraction.Situation,
 ) (coreinteraction.Outcome, error) {
-	options := []string{semanticVoiceConditionMet, semanticVoiceDirectRequest, semanticVoiceWait}
+	options := []string{
+		semanticVoiceConditionMet, semanticVoiceDirectRequest,
+		semanticVoiceAddressedElsewhere, semanticVoiceWait,
+	}
 	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
 		Prompt: semanticVoiceActivationInstruction, Options: options,
 		Evidence: situation.Render(), Images: cloneSemanticImages(situation.Seeing),
@@ -1524,7 +1591,8 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	confidence := result.outcome
 	if result.stage == "standing_coverage" {
 		confidence = result.coverageOutcome
-	} else if result.stage == "voice_activation" || result.stage == "silent_action_activation" {
+	} else if result.stage == "voice_activation" || result.stage == "voice_addressing" ||
+		result.stage == "silent_action_activation" {
 		confidence = result.activationOutcome
 	}
 	decision := SemanticDecision{
@@ -1558,10 +1626,17 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	switch result.act {
 	case coreinteraction.ActStaySilent:
 		runner.state.Suppressed++
+		code := "listen"
+		message := "semantic policy selected no generation"
+		if result.stage == "voice_addressing" &&
+			result.activation == semanticVoiceAddressedElsewhere {
+			code = "addressed_elsewhere"
+			message = "current evidence is addressed to another person"
+		}
 		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
 			Kind: SemanticAdmissionSuppressed, Operation: request.operation, Act: result.act,
 			StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
-			DecisionItemID: decisionItemID, Code: "listen", Message: "semantic policy selected no generation",
+			DecisionItemID: decisionItemID, Code: code, Message: message,
 		})
 	case coreinteraction.ActActSilently:
 		if request.operation == "committed" {
@@ -1741,6 +1816,11 @@ func cloneSemanticSnapshot(source trajectory.Snapshot) trajectory.Snapshot {
 			copy := *item.ToolCall
 			copy.Arguments = slices.Clone(item.ToolCall.Arguments)
 			item.ToolCall = &copy
+		}
+		if item.ToolCallDerivation != nil {
+			copy := *item.ToolCallDerivation
+			copy.Rewrites = slices.Clone(item.ToolCallDerivation.Rewrites)
+			item.ToolCallDerivation = &copy
 		}
 		if item.ToolResult != nil {
 			copy := *item.ToolResult

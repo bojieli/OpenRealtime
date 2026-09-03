@@ -6,6 +6,11 @@
 graph meeting_assistant {
     meeting.ScreenFork :: screen_fork;
     model.External :: foreground;
+    interaction.ControlSerializationQuarantine :: foreground_control_quarantine;
+    flow.Tee :: foreground_safe_text_copy;
+    interaction.SegmentPreparedText :: foreground_segment;
+    speech.TTS :: foreground_tts;
+    flow.Tee :: foreground_cancel_copy;
     video.FrameIngress :: screen_ingress;
     video.AdaptiveObservation :: screen_policy;
     perception.VisualObserver :: screen_observer;
@@ -21,6 +26,7 @@ graph meeting_assistant {
     flow.Tee :: observation_outcome_copy;
     policy.GenerateOnObservation :: background_activation;
     cognition.TextModel :: background_model;
+    interaction.ControlSerializationQuarantine :: background_control_quarantine;
     interaction.ModelResultCommit :: background_result_commit;
     interaction.ModelResultCommit :: foreground_result_commit;
     meeting.BackgroundInjection :: background_injection;
@@ -28,6 +34,11 @@ graph meeting_assistant {
     flow.Tee :: background_result_copy;
     flow.Tee :: background_outcome_copy;
     flow.Drop :: background_authority_drop;
+    flow.Drop :: foreground_control_quarantine_audit;
+    flow.Drop :: background_control_quarantine_audit;
+    flow.Drop :: foreground_native_audio_drop;
+    flow.Drop :: foreground_tts_status_audit;
+    flow.Drop :: foreground_tts_resolution_audit;
     flow.Drop :: foreground_commit_audit;
     flow.Drop :: background_tool_audit;
     flow.Drop :: background_model_outcome_audit;
@@ -92,21 +103,41 @@ graph meeting_assistant {
     observation_outcome_copy.out -> background_activation.committed;
     background_activation.trigger -> background_model.trigger;
     background_activation.authority -> background_authority_drop.in;
-    background_model.text -> background_injection.text;
+    background_model.text -> background_control_quarantine.text;
+    background_model.result -> background_control_quarantine.result;
+    background_control_quarantine.safe_text -> background_injection.text;
     background_injection.injection -> text_injection_mux.in;
     background_injection.trigger -> background_trigger_drop.in;
     background_injection.outcome -> background_outcome_copy.in;
     text_injection_mux.out -> foreground.text;
     foreground_trigger_mux.out -> foreground.trigger;
-    foreground.result -> foreground_result_copy.in;
+    foreground.text_out -> foreground_control_quarantine.text;
+    foreground.result -> foreground_control_quarantine.result;
+    foreground_control_quarantine.safe_text -> foreground_safe_text_copy.in;
+    foreground_safe_text_copy.out -> foreground_segment.text;
+    foreground_control_quarantine.safe_result -> foreground_result_copy.in;
     foreground_result_copy.out -> foreground_result_commit.result;
-    background_model.result -> background_result_copy.in;
+    background_control_quarantine.safe_result -> background_result_copy.in;
     background_result_copy.out -> background_result_commit.result;
     foreground.tool_proposal -> tool_proposal_copy.in;
     foreground.outcome -> foreground_outcome_copy.in;
+    foreground_outcome_copy.out -> foreground_segment.terminal;
+    foreground_segment.segments -> foreground_tts.text;
+    foreground_cancel_copy.out -> foreground.cancel;
+    foreground_cancel_copy.out -> foreground_segment.cancel;
+    foreground_segment.speech_cancel -> foreground_tts.cancel;
+    // Native model audio is deliberately retained as a composable
+    // model.External capability, but this deployment has no attested native
+    // audio/control-separation boundary. Only graph TTS fed by the nominal
+    // SafePreparedText stream can reach the Meeting adapter.
+    foreground.audio_out -> foreground_native_audio_drop.in;
+    foreground_tts.status -> foreground_tts_status_audit.in;
+    foreground_tts.resolved -> foreground_tts_resolution_audit.in;
     // Payload-free inspection already records every internal edge. Outputs
     // that are not part of the Realtime adapter contract terminate in named
     // drains so an absent debug consumer can never backpressure live work.
+    foreground_control_quarantine.quarantined -> foreground_control_quarantine_audit.in;
+    background_control_quarantine.quarantined -> background_control_quarantine_audit.in;
     foreground_result_commit.outcome -> foreground_commit_audit.in;
     background_model.tools -> background_tool_audit.in;
     background_model.outcome -> background_model_outcome_audit.in;
@@ -130,8 +161,9 @@ graph meeting_assistant {
     input tool_result = foreground.tool_result;
     input commit_audio = foreground.commit;
     input create_response = foreground_trigger_mux.in;
-    input cancel = foreground.cancel;
+    input cancel = foreground_cancel_copy.in;
     input truncate = foreground.truncate;
+    input speech_timeout = foreground_segment.timeout;
     input background_activation_cancel = background_activation.cancel;
     input background_model_cancel = background_model.cancel;
     // Rare video controls stay explicit without becoming hidden adapter
@@ -142,9 +174,19 @@ graph meeting_assistant {
     output transcript = transcript_copy.out;
     output observations = visual_observation_copy.out;
     output activity = foreground.activity;
-    output prepared_text = foreground.text_out;
-    output prepared_audio = foreground.audio_out;
+    output prepared_text = foreground_safe_text_copy.out;
+    output prepared_audio = foreground_tts.audio;
     output tool_proposals = tool_proposal_copy.out;
+    // These typed terminal boundaries are drained by the Meeting adapter's
+    // bounded response coordinator. They are not gateway operations.
+    output foreground_safe_result = foreground_result_copy.out;
+    // SegmentPreparedText cannot feed foreground.cancel directly without a
+    // causal cycle through foreground.text_out. The Meeting adapter drains
+    // this request and re-enters it through the existing addressed cancel
+    // ingress, which is the explicit causal break.
+    output foreground_model_cancel_request = foreground_segment.model_cancel;
+    output foreground_segmentation_outcome = foreground_segment.outcome;
+    output foreground_synthesis_outcome = foreground_tts.outcome;
     output foreground_outcome = foreground_outcome_copy.out;
     output background_outcome = background_outcome_copy.out;
 }

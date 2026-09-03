@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
@@ -34,6 +36,7 @@ const (
 	maximumMeetingAdapterRunIDs    = 65_536
 	maximumMeetingResponseEvents   = 1 << 20
 	maximumMeetingResponsePending  = 512
+	maximumMeetingCoordinatedAudio = 64 << 20
 )
 
 // SessionAdapterConfig is the resource-free executable contribution for the
@@ -87,6 +90,9 @@ type meetingAdapterSpeech struct {
 	ready     chan struct{}
 	beginErr  error
 	done      chan struct{}
+	textOpen  bool
+	textEnd   bool
+	textNext  uint64
 }
 
 // meetingAdapterTurn is one open Realtime response group. A graph may finish
@@ -109,9 +115,35 @@ type meetingAdapterResponseEvent struct {
 	envelope element.Envelope
 }
 
-type meetingAdapterResponseOrder struct {
-	next    uint64
-	pending map[uint64]meetingAdapterResponseEvent
+type meetingAdapterCoordinatedRun struct {
+	textBegun  bool
+	textEnded  bool
+	textNext   uint64
+	text       strings.Builder
+	textFrames []element.Envelope
+
+	audioBegun       bool
+	audioEnded       bool
+	audioUtteranceID string
+	audioFrames      []element.Envelope
+	audioBytes       int
+	introPublished   bool
+	audioPublished   int
+
+	tools          []element.Envelope
+	toolsPublished bool
+	toolsRejected  bool
+	safeResult     *cognitionelements.Result
+
+	segmentation            *interactionelements.SegmentationOutcome
+	segmentationSourceSeen  bool
+	segmentationSuccessSeen bool
+	synthesis               *speechelements.SynthesisOutcome
+	foreground              *element.Envelope
+}
+
+type meetingAdapterResponseCoordinator struct {
+	runs map[string]*meetingAdapterCoordinatedRun
 }
 
 type meetingSessionAdapter struct {
@@ -130,7 +162,12 @@ type meetingSessionAdapter struct {
 	turn          *meetingAdapterTurn
 	activeSpeech  map[string]*meetingAdapterSpeech
 	completedRuns map[string]struct{}
-	closed        atomic.Bool
+	// segmentationCancellations are exact run tombstones established before
+	// an internal SegmentPreparedText model-cancel request is re-entered at the
+	// graph's cancel ingress. They prevent a non-cooperative foreground from
+	// publishing result or tool data after cancellation.
+	segmentationCancellations map[string]struct{}
+	closed                    atomic.Bool
 }
 
 func newMeetingSessionAdapter(
@@ -164,7 +201,7 @@ func newMeetingSessionAdapter(
 		ctx: ctx, sessionID: sessionID, sink: options.Sink, profile: profile.Clone(), ports: ports,
 		frameRate: config.FrameRateMilliHz, store: store,
 		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]*meetingAdapterSpeech),
-		completedRuns: make(map[string]struct{}),
+		completedRuns: make(map[string]struct{}), segmentationCancellations: make(map[string]struct{}),
 	}, nil
 }
 
@@ -202,6 +239,16 @@ func bindMeetingAdapterPorts(
 		if *target == nil {
 			return meetingAdapterPorts{}, fmt.Errorf("bind meeting adapter: profile omits required operation %s", operation)
 		}
+	}
+	for _, boundary := range []string{
+		"foreground_safe_result", "foreground_model_cancel_request", "foreground_segmentation_outcome",
+		"foreground_synthesis_outcome",
+	} {
+		port, err := mounted.Egress(boundary)
+		if err != nil {
+			return meetingAdapterPorts{}, fmt.Errorf("bind meeting adapter internal output %s: %w", boundary, err)
+		}
+		result.outputs[boundary] = port
 	}
 	return result, nil
 }
@@ -381,7 +428,7 @@ func (session *meetingSessionAdapter) Run(ctx context.Context) error {
 	wait.Add(1)
 	go func() {
 		defer wait.Done()
-		reportFailure(session.publishOrderedResponses(runCtx, responseEvents))
+		reportFailure(session.publishCoordinatedResponses(runCtx, responseEvents))
 	}()
 	for name, input := range session.ports.outputs {
 		name, input := name, input
@@ -416,6 +463,12 @@ func (session *meetingSessionAdapter) drain(
 		if envelope.SessionID != "" && envelope.SessionID != session.sessionID {
 			return fmt.Errorf("meeting graph output %s crossed session boundary", name)
 		}
+		if name == "foreground_model_cancel_request" {
+			if err := session.relayForegroundModelCancel(ctx, envelope); err != nil {
+				return err
+			}
+			continue
+		}
 		if meetingResponseBoundary(name) {
 			select {
 			case responseEvents <- meetingAdapterResponseEvent{name: name, envelope: envelope.Clone()}:
@@ -432,75 +485,536 @@ func (session *meetingSessionAdapter) drain(
 
 func meetingResponseBoundary(name string) bool {
 	switch name {
-	case "prepared_text", "prepared_audio", "tool_proposals", "foreground_outcome":
+	case "prepared_text", "prepared_audio", "tool_proposals", "foreground_safe_result",
+		"foreground_segmentation_outcome", "foreground_synthesis_outcome", "foreground_outcome":
 		return true
 	default:
 		return false
 	}
 }
 
-func (session *meetingSessionAdapter) publishOrderedResponses(
+func meetingBoundaryForbiddenAfterSegmentationCancellation(name string) bool {
+	switch name {
+	case "tool_proposals", "foreground_safe_result":
+		return true
+	default:
+		return false
+	}
+}
+
+func (session *meetingSessionAdapter) segmentationCancellationRequested(runID string) bool {
+	session.turnMu.Lock()
+	defer session.turnMu.Unlock()
+	_, found := session.segmentationCancellations[runID]
+	return found
+}
+
+// relayForegroundModelCancel is the explicit causal break between
+// SegmentPreparedText and model.External. Connecting those nodes directly
+// creates foreground.text_out -> quarantine -> segment -> foreground.cancel
+// feedback, which the graph compiler correctly refuses. Crossing the mounted
+// adapter boundary makes the asynchronous handoff inspectable while retaining
+// every bit of the segmenter's run address and causal provenance.
+func (session *meetingSessionAdapter) relayForegroundModelCancel(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	cancel, ok := meetingCognitionCancel(envelope.Payload)
+	runID := strings.TrimSpace(envelope.RunID)
+	if !ok || !canonicalText(runID) || len(runID) > sidecar.MaxElementIdentifierBytes ||
+		cancel.RunID != runID || strings.TrimSpace(envelope.CancellationScope) != runID {
+		return fmt.Errorf("meeting foreground model cancellation has inexact run address %q / %q / %q",
+			envelope.RunID, cancel.RunID, envelope.CancellationScope)
+	}
+	if envelope.SessionID != session.sessionID || !strings.HasSuffix(envelope.ItemID, ":model-cancel") {
+		return errors.New("meeting foreground model cancellation lacks exact session or item provenance")
+	}
+	if session.ports.cancel == nil || !envelope.Type.Equal(session.ports.cancel.Type()) {
+		return errors.New("meeting foreground model cancellation does not match the cancel ingress type")
+	}
+
+	session.turnMu.Lock()
+	if session.segmentationCancellations == nil {
+		session.segmentationCancellations = make(map[string]struct{})
+	}
+	if _, duplicate := session.segmentationCancellations[runID]; duplicate {
+		session.turnMu.Unlock()
+		return fmt.Errorf("meeting segmentation requested model cancellation twice for run %q", runID)
+	}
+	if len(session.segmentationCancellations) >= maximumMeetingAdapterRunIDs {
+		session.turnMu.Unlock()
+		return errors.New("meeting segmentation cancellation identity limit reached")
+	}
+	session.segmentationCancellations[runID] = struct{}{}
+	session.turnMu.Unlock()
+
+	relayed := envelope.Clone()
+	relayed.Payload = cancel
+	delivery, err := session.ports.cancel.Broadcast(ctx, relayed)
+	if err != nil {
+		return fmt.Errorf("relay Meeting foreground model cancellation: %w", err)
+	}
+	if delivery.Delivered != 1 || delivery.Dropped != 0 {
+		return fmt.Errorf("Meeting foreground model cancellation delivered %d and dropped %d lanes",
+			delivery.Delivered, delivery.Dropped)
+	}
+	return nil
+}
+
+func (session *meetingSessionAdapter) publishCoordinatedResponses(
 	ctx context.Context, events <-chan meetingAdapterResponseEvent,
 ) error {
-	order := meetingAdapterResponseOrder{
-		next: 1, pending: make(map[uint64]meetingAdapterResponseEvent),
+	coordinator := meetingAdapterResponseCoordinator{
+		runs: make(map[string]*meetingAdapterCoordinatedRun),
 	}
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case event := <-events:
-			if err := session.acceptOrderedResponse(ctx, &order, event); err != nil {
+			if err := session.acceptCoordinatedResponse(ctx, &coordinator, event); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-func (session *meetingSessionAdapter) acceptOrderedResponse(
-	ctx context.Context, order *meetingAdapterResponseOrder, event meetingAdapterResponseEvent,
+func (session *meetingSessionAdapter) acceptCoordinatedResponse(
+	ctx context.Context, coordinator *meetingAdapterResponseCoordinator,
+	event meetingAdapterResponseEvent,
 ) error {
-	if order == nil || order.next == 0 || order.pending == nil {
-		return errors.New("meeting response order is not initialized")
+	if coordinator == nil || coordinator.runs == nil {
+		return errors.New("meeting response coordinator is not initialized")
 	}
 	if !meetingResponseBoundary(event.name) {
-		return fmt.Errorf("meeting response order received non-response boundary %q", event.name)
+		return fmt.Errorf("meeting response coordinator received non-response boundary %q", event.name)
 	}
 	envelope := event.envelope
-	if envelope.SourceID != ForegroundDeploymentReference {
-		return fmt.Errorf("meeting response boundary %s has source %q, want %q",
-			event.name, envelope.SourceID, ForegroundDeploymentReference)
-	}
-	if !canonicalText(envelope.RunID) || len(envelope.RunID) > sidecar.MaxElementIdentifierBytes {
+	runID := strings.TrimSpace(envelope.RunID)
+	if !canonicalText(runID) || len(runID) > sidecar.MaxElementIdentifierBytes {
 		return fmt.Errorf("meeting response boundary %s has a non-canonical run ID", event.name)
 	}
-	sequence := envelope.Sequence
-	if sequence == 0 || sequence > maximumMeetingResponseEvents {
-		return fmt.Errorf("meeting response boundary %s has sequence %d outside [1,%d]",
-			event.name, sequence, maximumMeetingResponseEvents)
+	if meetingBoundaryForbiddenAfterSegmentationCancellation(event.name) &&
+		session.segmentationCancellationRequested(runID) {
+		return fmt.Errorf("meeting foreground emitted %s for run %q after segmentation cancellation",
+			event.name, runID)
 	}
-	if sequence < order.next {
-		return fmt.Errorf("meeting response sequence %d was replayed after %d", sequence, order.next-1)
+	session.turnMu.Lock()
+	_, completed := session.completedRuns[runID]
+	session.turnMu.Unlock()
+	if completed {
+		return session.acceptLateCoordinatedAudit(event)
 	}
-	if sequence-order.next >= maximumMeetingResponsePending ||
-		len(order.pending) >= maximumMeetingResponsePending {
-		return fmt.Errorf("meeting response sequence %d exceeds the pending reorder bound", sequence)
-	}
-	if _, duplicate := order.pending[sequence]; duplicate {
-		return fmt.Errorf("meeting response sequence %d was delivered twice", sequence)
-	}
-	order.pending[sequence] = meetingAdapterResponseEvent{name: event.name, envelope: envelope.Clone()}
-	for {
-		ready, found := order.pending[order.next]
-		if !found {
-			return nil
+	run := coordinator.runs[runID]
+	created := false
+	if run == nil {
+		if len(coordinator.runs) >= maximumMeetingAdapterRuns {
+			return errors.New("meeting response coordinator run limit reached")
 		}
-		delete(order.pending, order.next)
-		if err := session.publish(ctx, ready.name, ready.envelope); err != nil {
+		run = &meetingAdapterCoordinatedRun{}
+		coordinator.runs[runID] = run
+		created = true
+	}
+	if err := session.recordCoordinatedResponse(run, event); err != nil {
+		if created {
+			delete(coordinator.runs, runID)
+		}
+		return err
+	}
+	finished, err := session.flushCoordinatedResponse(ctx, runID, run)
+	if err != nil {
+		return err
+	}
+	if finished {
+		delete(coordinator.runs, runID)
+	}
+	return nil
+}
+
+func (session *meetingSessionAdapter) recordCoordinatedResponse(
+	run *meetingAdapterCoordinatedRun, event meetingAdapterResponseEvent,
+) error {
+	if run == nil {
+		return errors.New("meeting response coordinator has no run state")
+	}
+	envelope := event.envelope.Clone()
+	foregroundSource := func() error {
+		if envelope.SourceID != ForegroundDeploymentReference {
+			return fmt.Errorf("meeting response boundary %s has source %q, want %q",
+				event.name, envelope.SourceID, ForegroundDeploymentReference)
+		}
+		return nil
+	}
+	switch event.name {
+	case "prepared_text":
+		if err := foregroundSource(); err != nil {
 			return err
 		}
-		order.next++
+		delta, ok := meetingPreparedText(envelope.Payload)
+		if !ok {
+			return fmt.Errorf("meeting prepared text has payload %T", envelope.Payload)
+		}
+		switch delta.Boundary {
+		case cognitionelements.TextBegin:
+			if run.textBegun || run.textEnded || delta.Index != 0 || delta.Text != "" || delta.Interrupted {
+				return errors.New("meeting safe text begin must be empty, uninterrupted, and index zero")
+			}
+			run.textBegun, run.textNext = true, 1
+		case cognitionelements.TextChunk:
+			if !run.textBegun || run.textEnded || delta.Index != run.textNext || delta.Interrupted {
+				return errors.New("meeting safe text chunk is missing its exact active predecessor")
+			}
+			run.textNext++
+		case cognitionelements.TextEnd:
+			if !run.textBegun || run.textEnded || delta.Index != run.textNext {
+				return errors.New("meeting safe text end is missing its exact active predecessor")
+			}
+			run.textNext++
+			run.textEnded = true
+		default:
+			return fmt.Errorf("meeting safe text has unknown boundary %q", delta.Boundary)
+		}
+		if run.text.Len()+len(delta.Text) > maximumMeetingAdapterTextBytes {
+			return fmt.Errorf("meeting safe text exceeds %d bytes", maximumMeetingAdapterTextBytes)
+		}
+		run.text.WriteString(delta.Text)
+		envelope.Payload = delta
+		run.textFrames = append(run.textFrames, envelope)
+	case "prepared_audio":
+		frame, ok := meetingPreparedAudio(envelope.Payload)
+		if !ok {
+			return fmt.Errorf("meeting prepared audio has payload %T", envelope.Payload)
+		}
+		utteranceID := strings.TrimSpace(frame.UtteranceID)
+		if !canonicalText(utteranceID) || envelope.SourceID != utteranceID {
+			return errors.New("meeting graph TTS audio lacks its exact utterance source")
+		}
+		wantUtteranceID := "foreground_segment:" + envelope.RunID + ":speech:1"
+		if utteranceID != wantUtteranceID {
+			return fmt.Errorf("meeting graph TTS utterance %q, want %q", utteranceID, wantUtteranceID)
+		}
+		switch frame.Kind {
+		case speechelements.AudioBegin:
+			if run.audioBegun || run.audioEnded || frame.Utterance.ID != utteranceID ||
+				strings.TrimSpace(frame.Utterance.Text) == "" {
+				return errors.New("meeting graph TTS emitted an invalid or duplicate audio begin")
+			}
+			run.audioBegun, run.audioUtteranceID = true, utteranceID
+		case speechelements.AudioChunk:
+			if !run.audioBegun || run.audioEnded || utteranceID != run.audioUtteranceID {
+				return errors.New("meeting graph TTS emitted audio outside its exact utterance")
+			}
+			if err := frame.Chunk.Validate(); err != nil || frame.Chunk.CandidateID != utteranceID {
+				if err == nil {
+					err = errors.New("audio candidate does not match the graph utterance")
+				}
+				return fmt.Errorf("meeting graph TTS chunk: %w", err)
+			}
+			if len(frame.Chunk.PCM16LE) > maximumMeetingCoordinatedAudio-run.audioBytes {
+				return fmt.Errorf("meeting graph TTS audio exceeds %d buffered bytes", maximumMeetingCoordinatedAudio)
+			}
+			run.audioBytes += len(frame.Chunk.PCM16LE)
+			frame.Chunk.PCM16LE = slices.Clone(frame.Chunk.PCM16LE)
+		case speechelements.AudioEnd:
+			if !run.audioBegun || run.audioEnded || utteranceID != run.audioUtteranceID ||
+				frame.Terminal.UtteranceID != utteranceID {
+				return errors.New("meeting graph TTS emitted an invalid audio terminal")
+			}
+			run.audioEnded = true
+		default:
+			return fmt.Errorf("meeting graph TTS audio has unknown kind %q", frame.Kind)
+		}
+		envelope.Payload = frame
+		run.audioFrames = append(run.audioFrames, envelope)
+	case "tool_proposals":
+		if err := foregroundSource(); err != nil {
+			return err
+		}
+		proposal, ok := meetingToolProposal(envelope.Payload)
+		if !ok {
+			return fmt.Errorf("meeting tool proposal has payload %T", envelope.Payload)
+		}
+		if len(run.tools) >= maximumMeetingResponseEvents {
+			return errors.New("meeting response tool proposal limit reached")
+		}
+		proposal.Call.Arguments = slices.Clone(proposal.Call.Arguments)
+		envelope.Payload = proposal
+		run.tools = append(run.tools, envelope)
+	case "foreground_safe_result":
+		if err := foregroundSource(); err != nil {
+			return err
+		}
+		result, ok := meetingSafeResult(envelope.Payload)
+		if !ok {
+			return fmt.Errorf("meeting safe result has payload %T", envelope.Payload)
+		}
+		if run.safeResult != nil || result.RunID != envelope.RunID {
+			return errors.New("meeting safe result is duplicated or names a different run")
+		}
+		copy := result
+		copy.Outputs = clonePreparedOutputs(result.Outputs)
+		copy.ToolProposals = cloneForegroundProposals(result.ToolProposals)
+		run.safeResult = &copy
+	case "foreground_segmentation_outcome":
+		outcome, ok := meetingSegmentationOutcome(envelope.Payload)
+		if !ok || outcome.RunID != envelope.RunID {
+			return fmt.Errorf("meeting segmentation outcome has invalid payload %T", envelope.Payload)
+		}
+		if outcome.Kind == interactionelements.OutcomeIgnored {
+			if outcome.Code != "stream_end_authoritative" && outcome.Code != "already_terminal" {
+				return fmt.Errorf("meeting segmentation ignored source terminal with code %q", outcome.Code)
+			}
+			run.segmentationSourceSeen = true
+			if outcome.Code == "stream_end_authoritative" {
+				run.segmentationSuccessSeen = true
+			}
+			break
+		}
+		switch outcome.Kind {
+		case interactionelements.OutcomeCompleted, interactionelements.OutcomeCanceled,
+			interactionelements.OutcomeFailed, interactionelements.OutcomeRefused:
+		default:
+			return fmt.Errorf("meeting segmentation emitted unexpected outcome %q", outcome.Kind)
+		}
+		if run.segmentation != nil {
+			return errors.New("meeting segmentation emitted two terminal outcomes")
+		}
+		copy := outcome
+		run.segmentation = &copy
+		if outcome.Kind != interactionelements.OutcomeCompleted {
+			run.segmentationSourceSeen = true
+		}
+	case "foreground_synthesis_outcome":
+		outcome, ok := meetingSynthesisOutcome(envelope.Payload)
+		if !ok || !canonicalText(outcome.UtteranceID) || envelope.SourceID != outcome.UtteranceID {
+			return fmt.Errorf("meeting synthesis outcome has invalid payload %T", envelope.Payload)
+		}
+		if outcome.Kind == speechelements.OutcomeIgnored {
+			break
+		}
+		wantUtteranceID := "foreground_segment:" + envelope.RunID + ":speech:1"
+		if run.synthesis != nil || outcome.UtteranceID != wantUtteranceID ||
+			(run.audioUtteranceID != "" && outcome.UtteranceID != run.audioUtteranceID) {
+			return errors.New("meeting synthesis terminal is duplicate or names a different utterance")
+		}
+		copy := outcome
+		run.synthesis = &copy
+	case "foreground_outcome":
+		if err := foregroundSource(); err != nil {
+			return err
+		}
+		outcome, ok := meetingCognitionOutcome(envelope.Payload)
+		if !ok || outcome.RunID != envelope.RunID || outcome.Operation != "generate" ||
+			outcome.ProviderReference != ForegroundDeploymentReference {
+			return fmt.Errorf("meeting foreground terminal has invalid payload %T", envelope.Payload)
+		}
+		if run.foreground != nil {
+			return errors.New("meeting foreground emitted two terminal outcomes")
+		}
+		copy := envelope.Clone()
+		copy.Payload = outcome
+		run.foreground = &copy
+	default:
+		return fmt.Errorf("meeting response coordinator received undeclared boundary %q", event.name)
 	}
+	return nil
+}
+
+func (session *meetingSessionAdapter) flushCoordinatedResponse(
+	ctx context.Context, runID string, run *meetingAdapterCoordinatedRun,
+) (bool, error) {
+	if run.textEnded && run.audioBegun && !run.introPublished {
+		begin, ok := meetingPreparedAudio(run.audioFrames[0].Payload)
+		if !ok || strings.TrimSpace(run.text.String()) != begin.Utterance.Text {
+			return false, errors.New("meeting graph TTS utterance text differs from quarantined SafePreparedText")
+		}
+		if err := session.publishAudio(ctx, run.audioFrames[0]); err != nil {
+			return false, err
+		}
+		for _, text := range run.textFrames {
+			if err := session.publishText(ctx, text); err != nil {
+				return false, err
+			}
+		}
+		run.introPublished = true
+		run.audioPublished = 1
+	}
+	if run.introPublished {
+		for run.audioPublished < len(run.audioFrames) {
+			if err := session.publishAudio(ctx, run.audioFrames[run.audioPublished]); err != nil {
+				return false, err
+			}
+			run.audioPublished++
+		}
+	}
+
+	zeroSpeech := meetingSafeResultProvesNoSpeechWithoutTextStream(run)
+	if zeroSpeech && (run.audioBegun || run.audioEnded || len(run.audioFrames) != 0 || run.synthesis != nil) {
+		return false, errors.New("meeting zero-speech safe result nevertheless produced graph TTS output")
+	}
+	segmentationSucceeded := run.segmentation != nil &&
+		run.segmentation.Kind == interactionelements.OutcomeCompleted
+	if run.segmentation == nil && zeroSpeech && run.segmentationSuccessSeen {
+		segmentationSucceeded = true
+	}
+	segmentationFailed := run.segmentation != nil &&
+		run.segmentation.Kind != interactionelements.OutcomeCompleted
+	if segmentationFailed {
+		// A failed speech-safety boundary invalidates the entire response. Tool
+		// proposals remain quarantined even if they raced ahead on their
+		// independent foreground edge before model cancellation was relayed.
+		run.toolsRejected = true
+	}
+	resultReady := run.safeResult != nil && (run.textEnded || zeroSpeech)
+	if resultReady {
+		if run.safeResult.AssistantText != run.text.String() {
+			return false, errors.New("meeting safe result differs from quarantined SafePreparedText")
+		}
+		if len(run.tools) > len(run.safeResult.ToolProposals) {
+			return false, errors.New("meeting emitted more tool proposals than its safe result records")
+		}
+		for index, tool := range run.tools {
+			proposal, _ := meetingToolProposal(tool.Payload)
+			if !reflect.DeepEqual(proposal, run.safeResult.ToolProposals[index]) {
+				return false, fmt.Errorf("meeting tool proposal %d differs from its safe result", index)
+			}
+		}
+		if len(run.tools) == len(run.safeResult.ToolProposals) && segmentationSucceeded &&
+			!run.toolsPublished && !run.toolsRejected {
+			for _, tool := range run.tools {
+				if err := session.publishTool(ctx, tool); err != nil {
+					return false, err
+				}
+			}
+			run.toolsPublished = true
+		}
+	}
+
+	if run.foreground == nil {
+		return false, nil
+	}
+	foreground, _ := meetingCognitionOutcome(run.foreground.Payload)
+	if run.segmentation == nil {
+		// A tool-only foreground run opens no prepared-text stream. In that one
+		// case SegmentPreparedText can only acknowledge that the successful
+		// source terminal must not overtake a stream; it has no active stream to
+		// close and therefore emits no separate completed outcome. The
+		// quarantined safe result is the authoritative proof that there is no
+		// assistant text to synthesize.
+		if foreground.Kind != cognitionelements.OutcomeSucceeded || !zeroSpeech ||
+			!run.segmentationSuccessSeen {
+			return false, nil
+		}
+	} else if !run.segmentationSourceSeen {
+		return false, nil
+	}
+	if foreground.Kind == cognitionelements.OutcomeSucceeded {
+		if !segmentationFailed && (!resultReady || !run.toolsPublished) {
+			return false, nil
+		}
+	} else if !run.toolsPublished && !run.toolsRejected {
+		if run.safeResult != nil && !resultReady {
+			return false, nil
+		}
+		if !segmentationSucceeded {
+			return false, nil
+		}
+		for _, tool := range run.tools {
+			if err := session.publishTool(ctx, tool); err != nil {
+				return false, err
+			}
+		}
+		run.toolsPublished = true
+	}
+
+	internalCode, internalMessage := "", ""
+	if run.segmentation == nil {
+		// The zero-speech proof above is the terminal segmentation state.
+	} else {
+		switch run.segmentation.Kind {
+		case interactionelements.OutcomeCompleted:
+			safeText := strings.TrimSpace(run.text.String())
+			switch run.segmentation.Segments {
+			case 0:
+				if safeText != "" || run.audioBegun || run.synthesis != nil {
+					return false, errors.New("meeting empty segmentation produced text or graph TTS output")
+				}
+			case 1:
+				if safeText == "" || !run.audioEnded || run.synthesis == nil ||
+					!run.introPublished || run.audioPublished != len(run.audioFrames) {
+					return false, nil
+				}
+				end, ok := meetingPreparedAudio(run.audioFrames[len(run.audioFrames)-1].Payload)
+				if !ok || end.Kind != speechelements.AudioEnd ||
+					!reflect.DeepEqual(end.Terminal, *run.synthesis) {
+					return false, errors.New("meeting graph TTS audio and synthesis terminals differ")
+				}
+				if run.synthesis.Kind != speechelements.OutcomeSucceeded {
+					internalCode = firstNonemptyMeeting(run.synthesis.Code, "synthesis_failed")
+					internalMessage = firstNonemptyMeeting(run.synthesis.Message, "graph TTS did not complete")
+				}
+			default:
+				return false, fmt.Errorf("meeting segmentation produced %d speech segments, want at most one",
+					run.segmentation.Segments)
+			}
+		default:
+			if run.audioBegun || run.synthesis != nil {
+				return false, errors.New("meeting failed segmentation nevertheless produced graph TTS output")
+			}
+			internalCode = firstNonemptyMeeting(run.segmentation.Code, "segmentation_failed")
+			internalMessage = firstNonemptyMeeting(run.segmentation.Message, "safe speech segmentation failed")
+		}
+	}
+
+	terminal := run.foreground.Clone()
+	if foreground.Kind == cognitionelements.OutcomeSucceeded && internalCode != "" {
+		foreground.Kind = cognitionelements.OutcomeFailed
+		foreground.Code, foreground.Message = internalCode, internalMessage
+		terminal.Payload = foreground
+	}
+	if err := session.publishForegroundOutcome(ctx, terminal); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func meetingSafeResultProvesNoSpeechWithoutTextStream(run *meetingAdapterCoordinatedRun) bool {
+	if run == nil || run.safeResult == nil || run.safeResult.AssistantText != "" ||
+		run.textBegun || run.textEnded || len(run.textFrames) != 0 {
+		return false
+	}
+	for _, output := range run.safeResult.Outputs {
+		if output.Kind == cognitionelements.PreparedAssistant {
+			return false
+		}
+	}
+	return true
+}
+
+func (session *meetingSessionAdapter) acceptLateCoordinatedAudit(
+	event meetingAdapterResponseEvent,
+) error {
+	switch event.name {
+	case "foreground_segmentation_outcome":
+		outcome, ok := meetingSegmentationOutcome(event.envelope.Payload)
+		if ok && outcome.Kind == interactionelements.OutcomeIgnored {
+			return nil
+		}
+	case "foreground_synthesis_outcome":
+		outcome, ok := meetingSynthesisOutcome(event.envelope.Payload)
+		if ok && outcome.Kind == speechelements.OutcomeIgnored {
+			return nil
+		}
+	}
+	return fmt.Errorf("meeting graph emitted %s after run %q completed", event.name, event.envelope.RunID)
+}
+
+func firstNonemptyMeeting(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (session *meetingSessionAdapter) publish(
@@ -549,10 +1063,45 @@ func (session *meetingSessionAdapter) publishText(
 	if !ok {
 		return fmt.Errorf("meeting prepared text has payload %T", envelope.Payload)
 	}
-	if delta.Boundary != cognitionelements.TextChunk {
+	runID := envelope.RunID
+	session.turnMu.Lock()
+	state := session.activeSpeech[runID]
+	if state == nil {
+		session.turnMu.Unlock()
+		return errors.New("meeting prepared text arrived outside an active utterance")
+	}
+	switch delta.Boundary {
+	case cognitionelements.TextBegin:
+		if state.textOpen || state.textEnd || delta.Index != 0 || delta.Text != "" || delta.Interrupted {
+			session.turnMu.Unlock()
+			return errors.New("meeting safe text begin must be empty, uninterrupted, and index zero")
+		}
+		state.textOpen = true
+		state.textNext = 1
+		session.turnMu.Unlock()
+		return nil
+	case cognitionelements.TextChunk:
+		if !state.textOpen || state.textEnd || delta.Index != state.textNext || delta.Interrupted {
+			session.turnMu.Unlock()
+			return errors.New("meeting safe text chunk is missing its exact active predecessor")
+		}
+		state.textNext++
+	case cognitionelements.TextEnd:
+		if !state.textOpen || state.textEnd || delta.Index != state.textNext {
+			session.turnMu.Unlock()
+			return errors.New("meeting safe text end is missing its exact active predecessor")
+		}
+		state.textNext++
+		state.textEnd = true
+	default:
+		session.turnMu.Unlock()
+		return fmt.Errorf("meeting safe text has unknown boundary %q", delta.Boundary)
+	}
+	session.turnMu.Unlock()
+	if delta.Text == "" {
 		return nil
 	}
-	utterance, err := session.speech(ctx, envelope.RunID)
+	utterance, err := session.speech(ctx, runID)
 	if err != nil {
 		return fmt.Errorf("meeting prepared text arrived outside an active utterance: %w", err)
 	}
@@ -607,6 +1156,13 @@ func (session *meetingSessionAdapter) publishAudio(
 			Duration: duration, Final: frame.Chunk.Final,
 		})
 	case speechelements.AudioEnd:
+		session.turnMu.Lock()
+		textIncomplete := session.activeSpeech[runID] != nil &&
+			session.activeSpeech[runID].textOpen && !session.activeSpeech[runID].textEnd
+		session.turnMu.Unlock()
+		if textIncomplete {
+			return errors.New("meeting graph ended audio before its safe text terminal")
+		}
 		state, found := session.takeSpeech(runID)
 		if !found {
 			return errors.New("meeting graph ended unknown utterance")
@@ -1062,6 +1618,54 @@ func meetingToolProposal(payload any) (cognitionelements.ToolProposal, bool) {
 		}
 	}
 	return cognitionelements.ToolProposal{}, false
+}
+
+func meetingCognitionCancel(payload any) (cognitionelements.Cancel, bool) {
+	switch value := payload.(type) {
+	case cognitionelements.Cancel:
+		return value, true
+	case *cognitionelements.Cancel:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return cognitionelements.Cancel{}, false
+}
+
+func meetingSafeResult(payload any) (cognitionelements.Result, bool) {
+	switch value := payload.(type) {
+	case cognitionelements.Result:
+		return value, true
+	case *cognitionelements.Result:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return cognitionelements.Result{}, false
+}
+
+func meetingSegmentationOutcome(payload any) (interactionelements.SegmentationOutcome, bool) {
+	switch value := payload.(type) {
+	case interactionelements.SegmentationOutcome:
+		return value, true
+	case *interactionelements.SegmentationOutcome:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return interactionelements.SegmentationOutcome{}, false
+}
+
+func meetingSynthesisOutcome(payload any) (speechelements.SynthesisOutcome, bool) {
+	switch value := payload.(type) {
+	case speechelements.SynthesisOutcome:
+		return value, true
+	case *speechelements.SynthesisOutcome:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return speechelements.SynthesisOutcome{}, false
 }
 
 func meetingCognitionOutcome(payload any) (cognitionelements.Outcome, bool) {

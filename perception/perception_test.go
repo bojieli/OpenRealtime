@@ -328,6 +328,128 @@ func TestVideoObserverNarratesOnlyRealChange(t *testing.T) {
 	}
 }
 
+func TestVideoObserverAdmitsInitialScreenAndCameraIndependently(t *testing.T) {
+	t.Parallel()
+	simulated := clock.NewVirtual(uint64(time.Second))
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "visual state"},
+		Cadence:  time.Hour, Now: simulated.NowNS,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 0, 0))
+	frames := []perception.Frame{
+		imageFrame(payload, uint64(time.Second)),
+		imageFrame(payload, uint64(time.Second)),
+	}
+	frames[1].Source = "camera"
+	for _, frame := range frames {
+		if !observer.Gate(frame) {
+			t.Fatalf("initial %s frame was consumed by another source's cadence or baseline", frame.Source)
+		}
+		observations, observeErr := observer.Observe(context.Background(), []perception.Frame{frame})
+		if observeErr != nil || len(observations) != 1 || observations[0].Source != frame.Source {
+			t.Fatalf("initial %s observation = %+v, %v", frame.Source, observations, observeErr)
+		}
+	}
+	for _, frame := range frames {
+		if observer.Gate(frame) {
+			t.Fatalf("unchanged %s frame bypassed its own adaptive collapse", frame.Source)
+		}
+	}
+}
+
+func TestVideoObserverDoesNotCompareAlternatingSources(t *testing.T) {
+	t.Parallel()
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "visual state"}, ExternalCadence: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := imageFrame(encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 0, 0)), 1)
+	camera := imageFrame(encodeFrame(t, color.Gray{Y: 220}, image.Rect(0, 0, 0, 0)), 2)
+	camera.Source = "camera"
+	for _, frame := range []perception.Frame{screen, camera} {
+		if !observer.Gate(frame) {
+			t.Fatalf("initial %s frame was not admitted", frame.Source)
+		}
+		if observations, observeErr := observer.Observe(context.Background(), []perception.Frame{frame}); observeErr != nil || len(observations) != 1 {
+			t.Fatalf("initial %s observation = %+v, %v", frame.Source, observations, observeErr)
+		}
+	}
+	if observer.Gate(screen) {
+		t.Fatal("unchanged screen looked changed after a camera frame")
+	}
+	if observer.Gate(camera) {
+		t.Fatal("unchanged camera looked changed after a screen frame")
+	}
+}
+
+func TestVideoSourceRefreshCannotBeConsumedByAnotherSource(t *testing.T) {
+	t.Parallel()
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "visual state"}, ExternalCadence: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := imageFrame(encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 0, 0)), 1)
+	camera := imageFrame(encodeFrame(t, color.Gray{Y: 220}, image.Rect(0, 0, 0, 0)), 2)
+	camera.Source = "camera"
+	for _, frame := range []perception.Frame{screen, camera} {
+		if observations, observeErr := observer.Observe(context.Background(), []perception.Frame{frame}); observeErr != nil || len(observations) != 1 {
+			t.Fatalf("initial %s observation = %+v, %v", frame.Source, observations, observeErr)
+		}
+	}
+
+	observer.RefreshSource("screen")
+	if observer.Gate(camera) {
+		t.Fatal("camera frame consumed a screen-targeted post-effect refresh")
+	}
+	if !observer.Gate(screen) {
+		t.Fatal("screen-targeted post-effect refresh did not admit the screen")
+	}
+	if observations, observeErr := observer.Observe(context.Background(), []perception.Frame{screen}); observeErr != nil || len(observations) != 1 {
+		t.Fatalf("forced screen observation = %+v, %v", observations, observeErr)
+	}
+	if observer.Gate(screen) || observer.Gate(camera) {
+		t.Fatal("source refresh disabled adaptive collapse beyond one screen frame")
+	}
+}
+
+func TestVideoResetClearsEverySourceState(t *testing.T) {
+	t.Parallel()
+	observer, err := perception.NewVideoObserver(perception.VideoConfig{
+		Narrator: perception.StaticNarrator{Text: "visual state"}, ExternalCadence: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := imageFrame(encodeFrame(t, color.Gray{Y: 20}, image.Rect(0, 0, 0, 0)), 1)
+	camera := imageFrame(encodeFrame(t, color.Gray{Y: 220}, image.Rect(0, 0, 0, 0)), 2)
+	camera.Source = "camera"
+	for _, frame := range []perception.Frame{screen, camera} {
+		if observations, observeErr := observer.Observe(context.Background(), []perception.Frame{frame}); observeErr != nil || len(observations) != 1 {
+			t.Fatalf("initial %s observation = %+v, %v", frame.Source, observations, observeErr)
+		}
+	}
+	observer.RefreshSource("screen")
+	observer.Reset()
+	for _, frame := range []perception.Frame{screen, camera} {
+		if !observer.Gate(frame) {
+			t.Fatalf("reset retained %s comparison or cadence state", frame.Source)
+		}
+		if observations, observeErr := observer.Observe(context.Background(), []perception.Frame{frame}); observeErr != nil || len(observations) != 1 {
+			t.Fatalf("post-reset %s observation = %+v, %v", frame.Source, observations, observeErr)
+		}
+		if observer.Gate(frame) {
+			t.Fatalf("reset retained a pending %s refresh", frame.Source)
+		}
+	}
+}
+
 func TestVideoRefreshForcesExactlyOnePostActionObservation(t *testing.T) {
 	t.Parallel()
 	observer, err := perception.NewVideoObserver(perception.VideoConfig{

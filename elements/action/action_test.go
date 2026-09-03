@@ -1,6 +1,7 @@
 package action
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	flowelements "github.com/bojieli/OpenRealtime/elements/flow"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
@@ -625,7 +627,7 @@ func TestPolicyCandidateJoinsExactModelEvidenceThroughCanonicalEffectAndResult(t
 		ToolProposals: []cognitionelements.ToolProposal{proposal},
 	}
 	resultEnvelope := element.Envelope{
-		Type: cognitionelements.ResultType(), ItemID: "policy-model-result", RunID: triggerEnvelope.RunID,
+		Type: interactionelements.SafeModelResultType(), ItemID: "policy-model-result", RunID: triggerEnvelope.RunID,
 		SessionID: "action-test-session", CausalParents: slices.Clone(modelCauses), Payload: resultValue,
 	}
 	send(t, mustIngressAction(t, policyMounted, "proposal"), proposalEnvelope)
@@ -1221,6 +1223,139 @@ func TestCanonicalTrajectoryIdentityIsStableCollisionResistantAndFailsClosed(t *
 	}
 }
 
+func TestAuthorizedCommitRetainsSchemaNormalizationDerivation(t *testing.T) {
+	store, canonical := canonicalAttestationFixture(t, trajectory.PhaseRuntime)
+	prefix, err := store.Prefix(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := json.RawMessage(`{"source":"s c r e e n","x":1,"y":2}`)
+	effective := json.RawMessage(`{"source":"screen","x":1,"y":2}`)
+	prefix.Items[1].ToolCall.Arguments = slices.Clone(source)
+	controlled := trajectory.NewStore()
+	if err := controlled.AppendBatch(prefix.Items); err != nil {
+		t.Fatal(err)
+	}
+
+	declared := &canonical.Authorized.Confirmed.Declared
+	declared.Admitted.Proposal.Call.Arguments = slices.Clone(source)
+	effectiveCall := cloneToolCall(declared.Admitted.Proposal.Call)
+	effectiveCall.Arguments = slices.Clone(effective)
+	declared.EffectiveCall = &effectiveCall
+	declared.Normalization = &ArgumentNormalization{
+		Rewrites: []ArgumentRewrite{{
+			Argument: "source", Normalizer: legacyaction.ToolParameterCompactASCIIAlphanumericV1,
+		}},
+		OriginalArgumentsDigest:  argumentBytesDigest(source),
+		EffectiveArgumentsDigest: argumentBytesDigest(effective),
+		RegistryReference:        declared.RegistryReference,
+		RegistryDigest:           declared.RegistryDigest,
+		DeclarationDigest:        declared.DeclarationDigest,
+	}
+
+	mounted, done, cancel := mountGraph(t, authorizedCommitHarnessGraph,
+		map[string]json.RawMessage{"commit": json.RawMessage(`{}`)}, authorizedCommitServices(t))
+	defer stopMounted(t, mounted, done, cancel)
+	send(t, mustIngressAction(t, mounted, "context"), element.Envelope{
+		Type: stateelements.SnapshotType(), ItemID: "normalized-prefix", SessionID: "ledger-session",
+		Payload: controlled.Snapshot(),
+	})
+	send(t, mustIngressAction(t, mounted, "action"), element.Envelope{
+		Type: AuthorizedType(), ItemID: "normalized-action", SessionID: "ledger-session", RunID: "model-run",
+		Payload: canonical.Authorized,
+	})
+	request := receive(t, mustEgressAction(t, mounted, "append"))
+	appendRequest := request.Payload.(stateelements.Append)
+	if len(appendRequest.Items) != 1 || appendRequest.Items[0].ToolCall == nil ||
+		!bytes.Equal(appendRequest.Items[0].ToolCall.Arguments, effective) {
+		t.Fatalf("normalized promotion append = %+v", appendRequest)
+	}
+	wantDerivation := toolCallDerivationOfDeclared(*declared)
+	if !sameToolCallDerivation(appendRequest.Items[0].ToolCallDerivation, wantDerivation) {
+		t.Fatalf("promotion derivation = %+v, want %+v",
+			appendRequest.Items[0].ToolCallDerivation, wantDerivation)
+	}
+	commitAppendForTest(t, controlled, mounted, request, appendRequest)
+	committed := receive(t, mustEgressAction(t, mounted, "canonical")).Payload.(CanonicalAction)
+	if committed.ProposalItemID != "canonical-proposal" ||
+		committed.TrajectoryItemID != appendRequest.Items[0].ID ||
+		committed.StoreVersion != controlled.Snapshot().Version {
+		t.Fatalf("normalized canonical action = %+v", committed)
+	}
+	if _, found := trajectory.PromotedToolProposalIDs(controlled.Snapshot())["canonical-proposal"]; !found {
+		t.Fatal("normalized canonical call did not promote its source proposal")
+	}
+	outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	if outcome.Kind != OutcomeSucceeded || outcome.Operation != "committed" {
+		t.Fatalf("normalized promotion outcome = %+v", outcome)
+	}
+}
+
+func TestAuthorizedCommitRejectsForgedUnannotatedNormalizationBeforeCanonicalAppend(t *testing.T) {
+	store, canonical := canonicalAttestationFixture(t, trajectory.PhaseRuntime)
+	prefix, err := store.Prefix(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := json.RawMessage(`{"source":"s c r e e n","x":1,"y":2}`)
+	effective := json.RawMessage(`{"source":"screen","x":1,"y":2}`)
+	prefix.Items[1].ToolCall.Arguments = slices.Clone(source)
+	declared := &canonical.Authorized.Confirmed.Declared
+	declared.Admitted.Proposal.Call.Arguments = slices.Clone(source)
+	effectiveCall := cloneToolCall(declared.Admitted.Proposal.Call)
+	effectiveCall.Arguments = slices.Clone(effective)
+	declared.EffectiveCall = &effectiveCall
+	declared.Normalization = &ArgumentNormalization{
+		Rewrites: []ArgumentRewrite{{
+			Argument: "source", Normalizer: legacyaction.ToolParameterCompactASCIIAlphanumericV1,
+		}},
+		OriginalArgumentsDigest: argumentBytesDigest(source), EffectiveArgumentsDigest: argumentBytesDigest(effective),
+		RegistryReference: declared.RegistryReference,
+	}
+
+	// Resolve an otherwise identical deployment declaration that does not opt
+	// into argument normalization, then forge internally consistent digests in
+	// the action payload. The canonical commit must replay the real declaration
+	// and refuse before it emits state.Append.
+	tools := NewToolRegistries()
+	if err := tools.Register("tools", []legacyaction.ToolSpec{{
+		Name: computeruse.Click, Description: "click",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"source":{"type":"string"}}}`),
+		Confirm:    legacyaction.ConfirmNever, Target: "browser", Dispatcher: &testDispatcher{name: "computer:browser"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	set, err := tools.resolve("tools")
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared.RegistryDigest = set.digest
+	declared.DeclarationDigest = set.tools[computeruse.Click].digest
+	declared.Normalization.RegistryDigest = declared.RegistryDigest
+	declared.Normalization.DeclarationDigest = declared.DeclarationDigest
+	services := graphruntime.NewServiceSet()
+	if _, err := services.Set(ToolRegistryService, tools); err != nil {
+		t.Fatal(err)
+	}
+	mounted, done, cancel := mountGraph(t, authorizedCommitHarnessGraph,
+		map[string]json.RawMessage{"commit": json.RawMessage(`{}`)}, services)
+	defer stopMounted(t, mounted, done, cancel)
+	_ = receive(t, mustEgressAction(t, mounted, "resolved"))
+	send(t, mustIngressAction(t, mounted, "context"), element.Envelope{
+		Type: stateelements.SnapshotType(), ItemID: "forged-prefix", SessionID: "ledger-session", Payload: prefix,
+	})
+	send(t, mustIngressAction(t, mounted, "action"), element.Envelope{
+		Type: AuthorizedType(), ItemID: "forged-action", SessionID: "ledger-session", RunID: "model-run",
+		Payload: canonical.Authorized,
+	})
+	outcome := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	if outcome.Kind != OutcomeRejected || outcome.Code != "declaration_attestation_failed" ||
+		!strings.Contains(outcome.Message, "does not produce") {
+		t.Fatalf("forged normalization outcome = %+v", outcome)
+	}
+	assertNoEnvelope(t, mustEgressAction(t, mounted, "append"))
+}
+
 func TestCancellationDuringCanonicalAppendClosesPrefixWithoutLedgerPromotion(t *testing.T) {
 	store, canonical := canonicalAttestationFixture(t, trajectory.PhaseRuntime)
 	prefix, err := store.Prefix(2)
@@ -1232,7 +1367,7 @@ func TestCancellationDuringCanonicalAppendClosesPrefixWithoutLedgerPromotion(t *
 		t.Fatal(err)
 	}
 	mounted, done, cancel := mountGraph(t, authorizedCommitHarnessGraph,
-		map[string]json.RawMessage{"commit": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())
+		map[string]json.RawMessage{"commit": json.RawMessage(`{}`)}, authorizedCommitServices(t))
 	defer stopMounted(t, mounted, done, cancel)
 	send(t, mustIngressAction(t, mounted, "context"), element.Envelope{
 		Type: stateelements.SnapshotType(), ItemID: "context-prefix", SessionID: "ledger-session",
@@ -1286,7 +1421,7 @@ func TestCancellationPlaceholderRetriesAConcurrentVersionConflict(t *testing.T) 
 		t.Fatal(err)
 	}
 	mounted, done, cancel := mountGraph(t, authorizedCommitHarnessGraph,
-		map[string]json.RawMessage{"commit": json.RawMessage(`{}`)}, graphruntime.NewServiceSet())
+		map[string]json.RawMessage{"commit": json.RawMessage(`{}`)}, authorizedCommitServices(t))
 	defer stopMounted(t, mounted, done, cancel)
 	send(t, mustIngressAction(t, mounted, "context"), element.Envelope{
 		Type: stateelements.SnapshotType(), ItemID: "context-prefix", SessionID: "ledger-session",
@@ -1441,7 +1576,11 @@ func attestationAuthorityServices(
 	t.Helper()
 	tools := NewToolRegistries()
 	if err := tools.Register("tools", []legacyaction.ToolSpec{{
-		Name: computeruse.Click, Description: "click", Parameters: json.RawMessage(`{"type":"object"}`),
+		Name: computeruse.Click, Description: "click",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"source":{"type":"string"}}}`),
+		ArgumentNormalizers: []legacyaction.ToolArgumentNormalizer{{
+			Argument: "source", Normalizer: legacyaction.ToolParameterCompactASCIIAlphanumericV1,
+		}},
 		Confirm: legacyaction.ConfirmNever, Target: "browser", Dispatcher: &testDispatcher{name: "computer:browser"},
 	}}); err != nil {
 		t.Fatal(err)
@@ -1461,6 +1600,16 @@ func attestationAuthorityServices(
 		t.Fatal(err)
 	}
 	return tools, targets, NewConfirmationProviders(), set, target
+}
+
+func authorizedCommitServices(t *testing.T) *graphruntime.ServiceSet {
+	t.Helper()
+	tools, _, _, _, _ := attestationAuthorityServices(t)
+	services := graphruntime.NewServiceSet()
+	if _, err := services.Set(ToolRegistryService, tools); err != nil {
+		t.Fatal(err)
+	}
+	return services
 }
 
 func mountLedgerAttestation(
@@ -1704,24 +1853,28 @@ func provenanceJoinEvidence(runID, callID, sessionID string) (element.Envelope, 
 		ToolProposals: []cognitionelements.ToolProposal{proposalValue},
 	}
 	result := element.Envelope{
-		Type: cognitionelements.ResultType(), ItemID: "result-" + runID,
+		Type: interactionelements.SafeModelResultType(), ItemID: "result-" + runID,
 		RunID: runID, SessionID: sessionID, CausalParents: slices.Clone(modelCauses), Payload: resultValue,
 	}
 	return candidate, proposal, result
 }
 
-func TestDescriptorsExposeTwelveDistinctBoundariesAndOnlyDispatchIsExternal(t *testing.T) {
+func TestDescriptorsExposeFifteenDistinctBoundariesAndOnlyDispatchIsExternal(t *testing.T) {
 	descriptors := Descriptors()
-	if len(descriptors) != 12 {
-		t.Fatalf("descriptor count = %d, want 12", len(descriptors))
+	if len(descriptors) != 15 {
+		t.Fatalf("descriptor count = %d, want 15", len(descriptors))
 	}
 	existingRevisions := map[string]uint64{
 		"authority.ProposalAdmission":    2,
-		"authority.ActionArbiter":        1,
+		"authority.ActionArbiter":        2,
+		"authority.ProvenanceJoin":       2,
 		"action.ToolLookup":              2,
+		"action.NormalizeArguments":      1,
+		"action.ToolAdmission":           1,
+		"action.RepetitionAdmission":     1,
 		"authority.Confirmation":         2,
 		"authority.TargetFence":          2,
-		"action.AuthorizedCallCommit":    2,
+		"action.AuthorizedCallCommit":    3,
 		"action.ClientToolResultIngress": 2,
 		"action.ClientToolResultJoin":    1,
 		"action.LedgerCommit":            2,

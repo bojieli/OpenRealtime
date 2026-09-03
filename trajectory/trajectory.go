@@ -8,7 +8,6 @@
 package trajectory
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -43,8 +42,13 @@ const (
 	// authority. It lets a fast continuation express which capability it needs
 	// without creating a side effect or satisfying a later ToolResult.
 	KindToolProposal Kind = "tool_proposal"
-	KindToolCall     Kind = "tool_call"
-	KindToolResult   Kind = "tool_result"
+	// KindToolProposalDisposition is an append-only runtime decision that makes
+	// one earlier proposal terminal without promoting it into an executable
+	// call. The proposal remains the sole source of its arguments; disposition
+	// payloads carry only exact identity and a closed reason.
+	KindToolProposalDisposition Kind = "tool_proposal_disposition"
+	KindToolCall                Kind = "tool_call"
+	KindToolResult              Kind = "tool_result"
 	// KindToolPlaceholder marks an executable call that was in flight when the
 	// trajectory was interrupted. Its eventual result supersedes it, so an
 	// interrupted prefix stays well-formed instead of trailing off.
@@ -96,6 +100,61 @@ type ToolCall struct {
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
 }
+
+// ToolProposalDisposition makes one earlier non-executable proposal terminal.
+// It deliberately carries no arguments: the causally linked proposal remains
+// the canonical model output, while this runtime-authored item records only
+// why that proposal did not acquire execution authority.
+type ToolProposalDisposition struct {
+	ProposalItemID string                      `json:"proposal_item_id"`
+	CallID         string                      `json:"call_id"`
+	Name           string                      `json:"name"`
+	Kind           ToolProposalDispositionKind `json:"kind"`
+}
+
+// ToolProposalDispositionKind is closed so arbitrary runtime text cannot be
+// reinterpreted as authority or as evidence that an action did not occur.
+type ToolProposalDispositionKind string
+
+const (
+	ToolProposalToolPolicySuppressed ToolProposalDispositionKind = "tool_policy_suppressed"
+	ToolProposalRepetitionSuppressed ToolProposalDispositionKind = "repetition_suppressed"
+)
+
+// ToolCallDerivation is runtime-authored evidence for the exceptional case in
+// which an executable tool call is deterministically derived from, rather
+// than byte-identical to, its causally linked model proposal. The trajectory
+// recognizes only explicitly versioned derivations and verifies the exact
+// source and effective argument bytes before admitting the call.
+type ToolCallDerivation struct {
+	Kind                     ToolCallDerivationKind    `json:"kind"`
+	SourceArgumentsDigest    string                    `json:"source_arguments_digest"`
+	EffectiveArgumentsDigest string                    `json:"effective_arguments_digest"`
+	RegistryReference        string                    `json:"registry_reference"`
+	RegistryDigest           string                    `json:"registry_digest"`
+	DeclarationDigest        string                    `json:"declaration_digest"`
+	Rewrites                 []ToolCallArgumentRewrite `json:"rewrites"`
+}
+
+// ToolCallArgumentRewrite names every direct argument transformation covered
+// by a derivation. It is retained in sorted order so traces can explain what
+// changed without exposing the argument value itself.
+type ToolCallArgumentRewrite struct {
+	Argument   string `json:"argument"`
+	Normalizer string `json:"normalizer"`
+}
+
+// ToolCallDerivationKind identifies one closed, versioned derivation
+// contract. New kinds require an explicit trajectory validator; arbitrary
+// labels can never authorize changes to a canonical model proposal.
+type ToolCallDerivationKind string
+
+const (
+	// ToolCallDerivationSchemaNormalizationV1 records that a deployment-owned
+	// schema normalization element derived the effective arguments under the
+	// immutable registry and declaration named by the accompanying digests.
+	ToolCallDerivationSchemaNormalizationV1 ToolCallDerivationKind = "schema-normalization-v1"
+)
 
 // ToolResult is the terminal outcome of a prior ToolCall. Exactly one of Output
 // and Error must be present. Output may be any valid JSON value.
@@ -160,25 +219,27 @@ type EventMetadata struct {
 // default. ProviderStateType prevents one adapter from interpreting another
 // provider's state as native.
 type Item struct {
-	ID                string           `json:"id"`
-	Kind              Kind             `json:"kind"`
-	MonotonicNS       uint64           `json:"monotonic_ns"`
-	CausalParentIDs   []string         `json:"causal_parent_ids,omitempty"`
-	SourceRevision    uint64           `json:"source_revision,omitempty"`
-	InvocationID      string           `json:"invocation_id,omitempty"`
-	Producer          Producer         `json:"producer"`
-	Content           string           `json:"content,omitempty"`
-	Interrupted       bool             `json:"interrupted,omitempty"`
-	Visibility        Visibility       `json:"visibility,omitempty"`
-	ToolCall          *ToolCall        `json:"tool_call,omitempty"`
-	ToolResult        *ToolResult      `json:"tool_result,omitempty"`
-	ToolPlaceholder   *ToolPlaceholder `json:"tool_placeholder,omitempty"`
-	Observation       *ObservationMeta `json:"observation,omitempty"`
-	AssistantState    *AssistantState  `json:"assistant_state,omitempty"`
-	Repair            *RepairState     `json:"repair,omitempty"`
-	Event             *EventMetadata   `json:"event,omitempty"`
-	ProviderStateType string           `json:"provider_state_type,omitempty"`
-	ProviderState     json.RawMessage  `json:"provider_state,omitempty"`
+	ID                      string                   `json:"id"`
+	Kind                    Kind                     `json:"kind"`
+	MonotonicNS             uint64                   `json:"monotonic_ns"`
+	CausalParentIDs         []string                 `json:"causal_parent_ids,omitempty"`
+	SourceRevision          uint64                   `json:"source_revision,omitempty"`
+	InvocationID            string                   `json:"invocation_id,omitempty"`
+	Producer                Producer                 `json:"producer"`
+	Content                 string                   `json:"content,omitempty"`
+	Interrupted             bool                     `json:"interrupted,omitempty"`
+	Visibility              Visibility               `json:"visibility,omitempty"`
+	ToolCall                *ToolCall                `json:"tool_call,omitempty"`
+	ToolCallDerivation      *ToolCallDerivation      `json:"tool_call_derivation,omitempty"`
+	ToolProposalDisposition *ToolProposalDisposition `json:"tool_proposal_disposition,omitempty"`
+	ToolResult              *ToolResult              `json:"tool_result,omitempty"`
+	ToolPlaceholder         *ToolPlaceholder         `json:"tool_placeholder,omitempty"`
+	Observation             *ObservationMeta         `json:"observation,omitempty"`
+	AssistantState          *AssistantState          `json:"assistant_state,omitempty"`
+	Repair                  *RepairState             `json:"repair,omitempty"`
+	Event                   *EventMetadata           `json:"event,omitempty"`
+	ProviderStateType       string                   `json:"provider_state_type,omitempty"`
+	ProviderState           json.RawMessage          `json:"provider_state,omitempty"`
 }
 
 // Snapshot is an immutable copy of a trajectory prefix. Version is the number
@@ -405,18 +466,19 @@ func MatchToolResultBatch(snapshot Snapshot, invocationID string, results []Tool
 type Store struct {
 	mu sync.RWMutex
 
-	items            []Item
-	byID             map[string]int
-	toolProposals    map[toolIdentity]toolProposalRecord
-	toolCalls        map[toolIdentity]string
-	toolResults      map[toolIdentity]struct{}
-	toolPlaceholders map[toolIdentity]struct{}
-	assistantStates  map[string]Visibility
-	pendingRepairs   map[string]string
-	hasMonotonicTime bool
-	lastNS           uint64
-	prefixDigest     [sha256.Size]byte
-	prefixTracking   bool
+	items                    []Item
+	byID                     map[string]int
+	toolProposals            map[toolIdentity]toolProposalRecord
+	toolProposalDispositions map[toolIdentity]toolProposalDispositionRecord
+	toolCalls                map[toolIdentity]string
+	toolResults              map[toolIdentity]struct{}
+	toolPlaceholders         map[toolIdentity]struct{}
+	assistantStates          map[string]Visibility
+	pendingRepairs           map[string]string
+	hasMonotonicTime         bool
+	lastNS                   uint64
+	prefixDigest             [sha256.Size]byte
+	prefixTracking           bool
 }
 
 // toolProposalRecord retains the exact canonical proposal that may later be
@@ -428,6 +490,12 @@ type toolProposalRecord struct {
 	invocationID   string
 	sourceRevision uint64
 	call           ToolCall
+}
+
+type toolProposalDispositionRecord struct {
+	itemID         string
+	proposalItemID string
+	kind           ToolProposalDispositionKind
 }
 
 // toolIdentity scopes provider-local call IDs to the invocation that minted
@@ -442,13 +510,14 @@ type toolIdentity struct {
 // NewStore creates an empty trajectory.
 func NewStore() *Store {
 	return &Store{
-		byID:             make(map[string]int),
-		toolProposals:    make(map[toolIdentity]toolProposalRecord),
-		toolCalls:        make(map[toolIdentity]string),
-		toolResults:      make(map[toolIdentity]struct{}),
-		toolPlaceholders: make(map[toolIdentity]struct{}),
-		assistantStates:  make(map[string]Visibility),
-		pendingRepairs:   make(map[string]string),
+		byID:                     make(map[string]int),
+		toolProposals:            make(map[toolIdentity]toolProposalRecord),
+		toolProposalDispositions: make(map[toolIdentity]toolProposalDispositionRecord),
+		toolCalls:                make(map[toolIdentity]string),
+		toolResults:              make(map[toolIdentity]struct{}),
+		toolPlaceholders:         make(map[toolIdentity]struct{}),
+		assistantStates:          make(map[string]Visibility),
+		pendingRepairs:           make(map[string]string),
 	}
 }
 
@@ -529,6 +598,7 @@ func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	store.items = clone.items
 	store.byID = clone.byID
 	store.toolProposals = clone.toolProposals
+	store.toolProposalDispositions = clone.toolProposalDispositions
 	store.toolCalls = clone.toolCalls
 	store.toolResults = clone.toolResults
 	store.toolPlaceholders = clone.toolPlaceholders
@@ -670,8 +740,14 @@ func (store *Store) validateKindLocked(item Item) error {
 	if item.Kind != KindObservation && item.Observation != nil {
 		return fmt.Errorf("observation provenance is not valid on %s", item.Kind)
 	}
+	if item.Kind != KindToolCall && item.ToolCallDerivation != nil {
+		return fmt.Errorf("tool-call derivation is not valid on %s", item.Kind)
+	}
 	payloadCount := 0
 	if item.ToolCall != nil {
+		payloadCount++
+	}
+	if item.ToolProposalDisposition != nil {
 		payloadCount++
 	}
 	if item.ToolResult != nil {
@@ -753,6 +829,32 @@ func (store *Store) validateKindLocked(item Item) error {
 			sourceRevision: item.SourceRevision,
 			call:           cloneToolCall(*item.ToolCall),
 		}
+	case KindToolProposalDisposition:
+		if item.ToolProposalDisposition == nil || payloadCount != 1 || item.Content != "" ||
+			item.Visibility != "" || item.ProviderStateType != "" || len(item.ProviderState) != 0 {
+			return errors.New("tool_proposal_disposition requires exactly one disposition payload")
+		}
+		disposition := *item.ToolProposalDisposition
+		if err := validateToolProposalDispositionKind(disposition.Kind); err != nil {
+			return err
+		}
+		identity := toolIdentity{invocationID: item.InvocationID, callID: disposition.CallID}
+		proposal, exists := store.toolProposals[identity]
+		if !exists {
+			return fmt.Errorf("tool proposal disposition references unknown proposal %q", disposition.ProposalItemID)
+		}
+		if err := validateToolProposalDisposition(item, disposition, proposal); err != nil {
+			return err
+		}
+		if _, promoted := store.toolCalls[identity]; promoted {
+			return fmt.Errorf("tool proposal %q was already promoted", disposition.ProposalItemID)
+		}
+		if _, duplicate := store.toolProposalDispositions[identity]; duplicate {
+			return fmt.Errorf("tool proposal %q already has a terminal disposition", disposition.ProposalItemID)
+		}
+		store.toolProposalDispositions[identity] = toolProposalDispositionRecord{
+			itemID: item.ID, proposalItemID: disposition.ProposalItemID, kind: disposition.Kind,
+		}
 	case KindToolCall:
 		if item.ToolCall == nil || payloadCount != 1 || item.Content != "" || item.Visibility != "" {
 			return errors.New("tool_call requires exactly one call payload")
@@ -767,19 +869,18 @@ func (store *Store) validateKindLocked(item Item) error {
 		if _, exists := store.toolCalls[identity]; exists {
 			return fmt.Errorf("duplicate tool call ID %q", item.ToolCall.CallID)
 		}
+		if disposition, terminal := store.toolProposalDispositions[identity]; terminal {
+			return fmt.Errorf("tool proposal %q already has terminal disposition %q",
+				disposition.proposalItemID, disposition.kind)
+		}
 		if proposal, exists := store.toolProposals[identity]; exists {
-			if !slices.Contains(item.CausalParentIDs, proposal.itemID) {
-				return fmt.Errorf("tool call %q does not causally promote proposal item %q",
-					item.ToolCall.CallID, proposal.itemID)
-			}
-			if item.InvocationID != proposal.invocationID || item.SourceRevision != proposal.sourceRevision {
-				return fmt.Errorf("tool call %q changes proposal invocation or source revision", item.ToolCall.CallID)
-			}
-			if item.ToolCall.Name != proposal.call.Name ||
-				!bytes.Equal(item.ToolCall.Arguments, proposal.call.Arguments) {
-				return fmt.Errorf("tool call %q changes the canonical proposal", item.ToolCall.CallID)
+			if err := validateToolCallPromotion(item, proposal); err != nil {
+				return err
 			}
 		} else {
+			if item.ToolCallDerivation != nil {
+				return fmt.Errorf("tool call %q derivation has no matching canonical proposal", item.ToolCall.CallID)
+			}
 			for proposalIdentity, proposal := range store.toolProposals {
 				if proposalIdentity.callID == item.ToolCall.CallID &&
 					slices.Contains(item.CausalParentIDs, proposal.itemID) {
@@ -876,6 +977,41 @@ func validateToolCall(call ToolCall) error {
 func cloneToolCall(call ToolCall) ToolCall {
 	call.Arguments = slices.Clone(call.Arguments)
 	return call
+}
+
+func validateToolProposalDispositionKind(kind ToolProposalDispositionKind) error {
+	switch kind {
+	case ToolProposalToolPolicySuppressed, ToolProposalRepetitionSuppressed:
+		return nil
+	default:
+		return fmt.Errorf("unknown tool proposal disposition kind %q", kind)
+	}
+}
+
+func validateToolProposalDisposition(
+	item Item, disposition ToolProposalDisposition, proposal toolProposalRecord,
+) error {
+	if item.Producer.Phase != PhaseRuntime {
+		return errors.New("tool proposal disposition must be authored by the runtime")
+	}
+	if strings.TrimSpace(disposition.ProposalItemID) == "" ||
+		strings.TrimSpace(disposition.CallID) == "" || strings.TrimSpace(disposition.Name) == "" {
+		return errors.New("tool proposal disposition requires proposal item, call, and name identities")
+	}
+	if disposition.ProposalItemID != proposal.itemID {
+		return fmt.Errorf("tool proposal disposition item %q does not match proposal item %q",
+			disposition.ProposalItemID, proposal.itemID)
+	}
+	if item.InvocationID != proposal.invocationID || item.SourceRevision != proposal.sourceRevision {
+		return errors.New("tool proposal disposition changes proposal invocation or source revision")
+	}
+	if disposition.CallID != proposal.call.CallID || disposition.Name != proposal.call.Name {
+		return errors.New("tool proposal disposition changes proposal call or name")
+	}
+	if !slices.Contains(item.CausalParentIDs, proposal.itemID) {
+		return fmt.Errorf("tool proposal disposition does not causally reference proposal item %q", proposal.itemID)
+	}
+	return nil
 }
 
 func (store *Store) acceptToolResultLocked(item Item) error {
@@ -1006,46 +1142,67 @@ func (store *Store) transitionAssistantLocked(state AssistantState) error {
 }
 
 func (store *Store) validateSupersessionLocked(item Item) error {
+	_, err := ResolveObservationSupersession(store.items, item)
+	return err
+}
+
+// ResolveObservationSupersession returns the exact canonical-prefix item an
+// observation replaces, or -1 when the observation declares no replacement.
+// It is the single supersession-edge resolver used by both Store admission and
+// read-only projections: consumers must not independently approximate stream
+// identity, revision ordering, or causal linkage when deciding that prior user
+// input may be hidden.
+//
+// The prefix must contain only items preceding item. An error means the
+// claimed edge is not canonical and must not be used to rewrite a projection.
+func ResolveObservationSupersession(prefix []Item, item Item) (int, error) {
 	if item.Event == nil || item.Event.SupersedesRevision == 0 {
-		return nil
+		return -1, nil
+	}
+	if err := validateCommon(item); err != nil {
+		return -1, err
 	}
 	if item.Kind != KindObservation {
-		return errors.New("only an observation may supersede an observation revision")
+		return -1, errors.New("only an observation may supersede an observation revision")
 	}
 	if item.SourceRevision == 0 || item.Event.SupersedesRevision >= item.SourceRevision {
-		return errors.New("observation supersession must name an older positive source revision")
+		return -1, errors.New("observation supersession must name an older positive source revision")
 	}
-	supersededID := ""
+	supersededIndex := -1
 	var superseded Item
-	for index := len(store.items) - 1; index >= 0; index-- {
-		candidate := store.items[index]
+	for index := len(prefix) - 1; index >= 0; index-- {
+		candidate := prefix[index]
 		if candidate.Kind == KindObservation && candidate.SourceRevision == item.Event.SupersedesRevision {
-			supersededID = candidate.ID
+			supersededIndex = index
 			superseded = candidate
 			break
 		}
 	}
-	if supersededID == "" {
-		return fmt.Errorf("observation supersedes unknown source revision %d", item.Event.SupersedesRevision)
+	if supersededIndex < 0 {
+		return -1, fmt.Errorf("observation supersedes unknown source revision %d", item.Event.SupersedesRevision)
+	}
+	if err := validateCommon(superseded); err != nil {
+		return -1, fmt.Errorf("observation supersession target %d is not canonical: %w",
+			item.Event.SupersedesRevision, err)
 	}
 	if !sameObservationStream(superseded, item) {
-		return fmt.Errorf("observation supersession target %d belongs to a different source stream",
+		return -1, fmt.Errorf("observation supersession target %d belongs to a different source stream",
 			item.Event.SupersedesRevision)
 	}
-	for index := len(store.items) - 1; index >= 0; index-- {
-		candidate := store.items[index]
+	for index := len(prefix) - 1; index >= 0; index-- {
+		candidate := prefix[index]
 		if candidate.Kind != KindObservation || !sameObservationStream(candidate, item) {
 			continue
 		}
 		if candidate.SourceRevision != item.Event.SupersedesRevision {
-			return errors.New("observation supersession must name the latest canonical observation in its source stream")
+			return -1, errors.New("observation supersession must name the latest canonical observation in its source stream")
 		}
 		break
 	}
-	if !slices.Contains(item.CausalParentIDs, supersededID) {
-		return fmt.Errorf("observation supersession must causally reference item %q", supersededID)
+	if !slices.Contains(item.CausalParentIDs, superseded.ID) {
+		return -1, fmt.Errorf("observation supersession must causally reference item %q", superseded.ID)
 	}
-	return nil
+	return supersededIndex, nil
 }
 
 // sameObservationStream uses graph-native event provenance when both items
@@ -1153,18 +1310,19 @@ func (store *Store) hasObservationRevisionLocked(sourceRevision uint64) bool {
 
 func (store *Store) cloneLocked() *Store {
 	clone := &Store{
-		items:            cloneItems(store.items),
-		byID:             make(map[string]int, len(store.byID)),
-		toolProposals:    make(map[toolIdentity]toolProposalRecord, len(store.toolProposals)),
-		toolCalls:        make(map[toolIdentity]string, len(store.toolCalls)),
-		toolResults:      make(map[toolIdentity]struct{}, len(store.toolResults)),
-		toolPlaceholders: make(map[toolIdentity]struct{}, len(store.toolPlaceholders)),
-		assistantStates:  make(map[string]Visibility, len(store.assistantStates)),
-		pendingRepairs:   make(map[string]string, len(store.pendingRepairs)),
-		hasMonotonicTime: store.hasMonotonicTime,
-		lastNS:           store.lastNS,
-		prefixDigest:     store.prefixDigest,
-		prefixTracking:   store.prefixTracking,
+		items:                    cloneItems(store.items),
+		byID:                     make(map[string]int, len(store.byID)),
+		toolProposals:            make(map[toolIdentity]toolProposalRecord, len(store.toolProposals)),
+		toolProposalDispositions: make(map[toolIdentity]toolProposalDispositionRecord, len(store.toolProposalDispositions)),
+		toolCalls:                make(map[toolIdentity]string, len(store.toolCalls)),
+		toolResults:              make(map[toolIdentity]struct{}, len(store.toolResults)),
+		toolPlaceholders:         make(map[toolIdentity]struct{}, len(store.toolPlaceholders)),
+		assistantStates:          make(map[string]Visibility, len(store.assistantStates)),
+		pendingRepairs:           make(map[string]string, len(store.pendingRepairs)),
+		hasMonotonicTime:         store.hasMonotonicTime,
+		lastNS:                   store.lastNS,
+		prefixDigest:             store.prefixDigest,
+		prefixTracking:           store.prefixTracking,
 	}
 	for key, value := range store.byID {
 		clone.byID[key] = value
@@ -1172,6 +1330,9 @@ func (store *Store) cloneLocked() *Store {
 	for key, value := range store.toolProposals {
 		value.call = cloneToolCall(value.call)
 		clone.toolProposals[key] = value
+	}
+	for key, value := range store.toolProposalDispositions {
+		clone.toolProposalDispositions[key] = value
 	}
 	for key, value := range store.toolCalls {
 		clone.toolCalls[key] = value
@@ -1206,6 +1367,15 @@ func cloneItem(item Item) Item {
 		copy := *item.ToolCall
 		copy.Arguments = slices.Clone(item.ToolCall.Arguments)
 		item.ToolCall = &copy
+	}
+	if item.ToolCallDerivation != nil {
+		copy := *item.ToolCallDerivation
+		copy.Rewrites = slices.Clone(item.ToolCallDerivation.Rewrites)
+		item.ToolCallDerivation = &copy
+	}
+	if item.ToolProposalDisposition != nil {
+		copy := *item.ToolProposalDisposition
+		item.ToolProposalDisposition = &copy
 	}
 	if item.ToolResult != nil {
 		copy := *item.ToolResult

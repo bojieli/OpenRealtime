@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 // The two policies here are judgement calls about a live conversation, and
@@ -311,7 +312,7 @@ func (policy *modelOverlapClassifier) Classify(ctx context.Context, decision Con
 	}
 	policy.mu.Unlock()
 
-	outcome, err := policy.decider.Decide(ctx, Decision{
+	request := Decision{
 		Prompt: "An agent is speaking. The person has started speaking over it. Decide what they are doing.\n\n" +
 			"Answer directed_speech when they are addressing the agent - interrupting, correcting, or asking " +
 			"something new. Answer listener_backchannel for a short continuer that shows they are listening, " +
@@ -320,27 +321,139 @@ func (policy *modelOverlapClassifier) Classify(ctx context.Context, decision Con
 			"Who they are talking to is the first question, not the last. Speech aimed at somebody " +
 			"else is side speech however it is phrased - a request or a question put to another " +
 			"person is still put to another person, and answering it would be joining a " +
-			"conversation nobody invited the agent into. Look for a name, a reply to something the " +
-			"agent did not say, or a remark pitched across a room rather than into the microphone.\n\n" +
-			"A continuer is short, and being short is not enough to be one. A continuer is a word " +
-			"whose whole content is \"go on, I am still here\": it adds nothing, asks nothing and " +
-			"starts nothing. A short fragment that begins something - a word or two cut off before " +
-			"it has said what it is - has not shown itself to be a continuer, and there is not yet " +
-			"enough to tell.\n\n" +
-			"Anything addressed to the agent with a question or a new subject in it is directed " +
-			"speech.",
+			"conversation nobody invited the agent into. A name, role, or title used as a vocative, " +
+			"especially at the start of the utterance, identifies its recipient; a question beginning " +
+			"'Officer,' is side speech unless the agent contract explicitly identifies this agent as " +
+			"that officer. The explicit identity in the agent contract takes precedence over the " +
+			"vocative rule. Also look for a reply to something the " +
+			"agent did not say, or a bare declarative observation unrelated to what the agent is " +
+			"saying. Topical unrelatedness alone is not another addressee: people explicitly change " +
+			"the subject while continuing to address the same agent.\n\n" +
+			"Listener backchannel is a strict closed class. The entire utterance must be only one " +
+			"or two acknowledgement or continuer tokens such as mm-hm, uh-huh, yes, yeah, right, " +
+			"or okay. It has no subject, verb, proposition, new topic, request, or question. Never " +
+			"call I know, I think, it is, it is starting, that is, or another subject-plus-verb " +
+			"fragment a backchannel.\n\n" +
+			"Decide from the conversational function already established, not whether the sentence " +
+			"is grammatically complete. A turn-repair, floor-taking, or topic-shift opener such as " +
+			"actually, wait, no, sorry, hold on, hang on, just a minute, hold that thought, let's, " +
+			"by the way, before I forget, or you know what is directed speech unless an explicit " +
+			"addressee shows it is aimed elsewhere. A first-person proposal or request such as " +
+			"let's switch, can we, let me, or tell me is likewise addressed to the current " +
+			"interlocutor unless the words identify somebody else. A first-person conversational " +
+			"response such as 'I know' or 'I think so' also addresses the current interlocutor and " +
+			"takes the floor; it is directed speech, not side speech, unless an explicit addressee " +
+			"shows otherwise. A contrastive continuation " +
+			"beginning with but, or an acknowledgement followed by but, claims the floor to " +
+			"disagree or redirect; oh but, yeah but, and okay but are directed rather than " +
+			"backchannels unless they name another addressee. " +
+			"A question opener such as what, how, why, when, where, who, can, could, would, should, " +
+			"do, did, is, or are is directed as soon as it appears. A fragment is ambiguous only " +
+			"while it has established neither its addressee nor its conversational function.",
 		Options: []string{
 			string(OverlapDirected), string(OverlapBackchannel),
 			string(OverlapSide), string(OverlapAmbiguous),
 		},
-		Evidence: "What they have said so far: " + decision.Revision.Text(),
-	})
+		Evidence: overlapDecisionEvidence(decision),
+	}
+	outcome, err := policy.decider.Decide(ctx, request)
 	evidence := OverlapEvidence("")
 	if err == nil {
 		evidence = OverlapEvidence(outcome.Option)
+	}
+	if evidence == OverlapBackchannel {
+		evidence = policy.validateOverlapBackchannel(ctx, decision, request.Evidence)
 	}
 	policy.mu.Lock()
 	policy.lastRev, policy.last = decision.Revision.ID, evidence
 	policy.mu.Unlock()
 	return evidence
+}
+
+const (
+	overlapValidBackchannel   = "valid_backchannel"
+	overlapInvalidBackchannel = "not_backchannel"
+)
+
+// validateOverlapBackchannel enforces the semantic contract of the
+// listener_backchannel label. Enumerated decoding proves only that a provider
+// returned a member of the output vocabulary; it does not prove that the
+// evidence satisfies that member's meaning. In particular, a model can still
+// label a short proposition as a continuer even when the prompt forbids it.
+//
+// More than two lexical tokens is mechanically outside the declared closed
+// class. Shorter evidence remains language- and register-dependent, so a
+// second, deliberately binary policy decision validates it rather than baking
+// an English keyword list into the runtime. Anything rejected is classified
+// again with the impossible label removed. Provider failure stays
+// unclassified and therefore follows the graph's explicit bounded fallback.
+func (policy *modelOverlapClassifier) validateOverlapBackchannel(
+	ctx context.Context, decision Context, evidence string,
+) OverlapEvidence {
+	valid := overlapBackchannelLexicalShape(decision.Revision.Text())
+	if valid {
+		outcome, err := policy.decider.Decide(ctx, Decision{
+			Prompt: "Validate a proposed listener backchannel. A valid backchannel is only one or " +
+				"two acknowledgement or continuer tokens whose entire conversational content is " +
+				"keep going, I am listening. It contains no subject-plus-verb proposition, new " +
+				"observation, disagreement, question, request, topic shift, or floor-taking marker. " +
+				"I know, I think, it is starting, actually, wait, and by the way are not valid " +
+				"backchannels. Decide only whether the overlapping person's exact words satisfy " +
+				"that closed definition.",
+			Options:  []string{overlapValidBackchannel, overlapInvalidBackchannel},
+			Evidence: evidence,
+		})
+		if err != nil || outcome.Option == "" {
+			return ""
+		}
+		if outcome.Option == overlapValidBackchannel {
+			return OverlapBackchannel
+		}
+	}
+	outcome, err := policy.decider.Decide(ctx, Decision{
+		Prompt: "The overlapping person's words are not a pure listener backchannel. Classify " +
+			"the remaining conversational function. Answer directed_speech when they address the " +
+			"agent to interrupt, correct, ask, disagree, redirect, or take the floor. Answer " +
+			"side_speech when evidence shows they address somebody else, including by a name, role, " +
+			"or title used as a vocative, or make an unrelated " +
+			"room observation rather than address the agent. Answer ambiguous_speech when neither " +
+			"the addressee nor function is established. An explicit assistant identity in the agent " +
+			"contract takes precedence over the vocative rule. A first-person conversational response " +
+			"such as 'I know' or 'I think so' is directed_speech absent evidence of another addressee; " +
+			"do not treat it as an unrelated room observation merely because it is a proposition.",
+		Options: []string{
+			string(OverlapDirected), string(OverlapSide), string(OverlapAmbiguous),
+		},
+		Evidence: evidence,
+	})
+	if err != nil {
+		return ""
+	}
+	return OverlapEvidence(outcome.Option)
+}
+
+func overlapBackchannelLexicalShape(text string) bool {
+	tokens := strings.FieldsFunc(text, func(value rune) bool {
+		return !unicode.IsLetter(value) && !unicode.IsNumber(value)
+	})
+	return len(tokens) > 0 && len(tokens) <= 2
+}
+
+func overlapDecisionEvidence(decision Context) string {
+	var evidence strings.Builder
+	if decision.Situation != nil {
+		if contract := strings.TrimSpace(decision.Situation.Contract); contract != "" {
+			evidence.WriteString("Agent contract: ")
+			evidence.WriteString(contract)
+			evidence.WriteByte('\n')
+		}
+		if agent := strings.TrimSpace(decision.Situation.AgentSaying); agent != "" {
+			evidence.WriteString("What the agent is saying now: ")
+			evidence.WriteString(agent)
+			evidence.WriteByte('\n')
+		}
+	}
+	evidence.WriteString("What the overlapping person has said so far: ")
+	evidence.WriteString(decision.Revision.Text())
+	return evidence.String()
 }

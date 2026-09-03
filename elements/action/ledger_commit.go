@@ -350,19 +350,22 @@ func attestCanonicalAction(store *trajectory.Store, canonical CanonicalAction) (
 	}
 	call := callOfCanonical(canonical)
 	admitted := canonical.Authorized.Confirmed.Declared.Admitted
+	modelCall := admitted.Proposal.Call
 	if evidence.proposal.InvocationID != admitted.ModelRunID || evidence.call.InvocationID != admitted.ModelRunID ||
 		evidence.proposal.SourceRevision != admitted.SourceRevision || evidence.call.SourceRevision != admitted.SourceRevision ||
-		evidence.proposal.ToolCall.CallID != call.CallID || evidence.call.ToolCall.CallID != call.CallID ||
-		evidence.proposal.ToolCall.Name != call.Name || evidence.call.ToolCall.Name != call.Name ||
-		!bytes.Equal(evidence.proposal.ToolCall.Arguments, call.Arguments) ||
-		!bytes.Equal(evidence.call.ToolCall.Arguments, call.Arguments) {
-		return "canonical_payload_mismatch", errors.New("canonical proposal and call do not exactly attest the admitted invocation")
+		evidence.proposal.ToolCall.CallID != modelCall.CallID || evidence.call.ToolCall.CallID != call.CallID ||
+		evidence.proposal.ToolCall.Name != modelCall.Name || evidence.call.ToolCall.Name != call.Name ||
+		!bytes.Equal(evidence.proposal.ToolCall.Arguments, modelCall.Arguments) ||
+		!bytes.Equal(evidence.call.ToolCall.Arguments, call.Arguments) ||
+		!sameToolCallDerivation(evidence.call.ToolCallDerivation,
+			toolCallDerivationOfDeclared(canonical.Authorized.Confirmed.Declared)) {
+		return "canonical_payload_mismatch", errors.New("canonical proposal and effective call do not attest the admitted invocation")
 	}
 	if evidence.call.Producer.Phase != trajectory.PhaseRuntime {
 		return "canonical_producer_mismatch", fmt.Errorf("canonical tool call producer phase is %q, want runtime", evidence.call.Producer.Phase)
 	}
 	if !slices.Contains(evidence.call.CausalParentIDs, evidence.proposal.ID) {
-		return "canonical_promotion_mismatch", errors.New("canonical tool call does not causally promote the exact proposal")
+		return "canonical_promotion_mismatch", errors.New("canonical tool call does not causally derive from the exact proposal")
 	}
 	return "", nil
 }

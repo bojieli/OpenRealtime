@@ -7,14 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"reflect"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/bojieli/OpenRealtime/adapters/bysentence"
 	"github.com/bojieli/OpenRealtime/adapters/openaivision"
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/cascade"
@@ -80,8 +81,18 @@ type meetingDeploymentVerifier interface {
 
 type meetingDeploymentComponentVerifier interface {
 	VerifyForeground(context.Context, meetingDeploymentIdentities) error
+	VerifyTTS(context.Context, meetingDeploymentIdentities) error
 	VerifyVision(context.Context, meetingDeploymentIdentities) error
 	VerifyBackground(context.Context, meetingDeploymentIdentities) error
+}
+
+func verifyMeetingTTSDeployment(
+	ctx context.Context, verifier meetingDeploymentVerifier, expected meetingDeploymentIdentities,
+) error {
+	if components, ok := verifier.(meetingDeploymentComponentVerifier); ok {
+		return components.VerifyTTS(ctx, expected)
+	}
+	return verifier.Verify(ctx, expected)
 }
 
 func verifyMeetingForegroundDeployments(
@@ -288,6 +299,24 @@ func newServeMeetingRegistration(
 	if err != nil {
 		return serveMeetingRegistration{}, err
 	}
+	ttsArtifact, err := meetingConfigurationArtifact(
+		"profile://openrealtime/meeting-assistant/local-tts-composition/v1",
+		struct {
+			Provider   string                   `json:"provider"`
+			Model      string                   `json:"model"`
+			URL        string                   `json:"url"`
+			Voice      string                   `json:"voice"`
+			Deployment inspect.ArtifactIdentity `json:"deployment"`
+		}{
+			Provider: configuration.Foreground.TTSProvider,
+			Model:    configuration.Foreground.TTSModel, URL: configuration.Foreground.TTSURL,
+			Voice:      configuration.Foreground.TTSVoice,
+			Deployment: configuration.Foreground.TTSDeployment,
+		}, executable,
+	)
+	if err != nil {
+		return serveMeetingRegistration{}, err
+	}
 	visualArtifact, err := meetingConfigurationArtifact(
 		"profile://openrealtime/meeting-assistant/local-visual-composition/v1",
 		struct {
@@ -319,6 +348,10 @@ func newServeMeetingRegistration(
 	backgroundDescriptor, err := providers.DescribeLLM(meetingBackgroundLLMRequest(configuration.Background))
 	if err != nil {
 		return serveMeetingRegistration{}, fmt.Errorf("describe Meeting background model: %w", err)
+	}
+	ttsDescriptor, err := providers.DescribeTTS(meetingTTSRequest(configuration.Foreground))
+	if err != nil {
+		return serveMeetingRegistration{}, fmt.Errorf("describe Meeting graph TTS: %w", err)
 	}
 	visualDescriptor := perceptionelements.VisualProviderDescriptor{
 		Name: meetingVisualProviderName, Revision: deployments.Vision.Revision,
@@ -356,6 +389,14 @@ func newServeMeetingRegistration(
 		}
 		request := meetingBackgroundLLMRequest(configuration.Background)
 		return providers.NewLLM(request)
+	}
+	ttsFactory := func(ctx context.Context, _ legacy.Options) (v1.SpeechProvider, error) {
+		if err := verifyMeetingTTSDeployment(ctx, verifier, deployments); err != nil {
+			return nil, fmt.Errorf(
+				"verify Meeting Assistant graph TTS deployment at session open: %w", err,
+			)
+		}
+		return providers.NewTTS(meetingTTSRequest(configuration.Foreground))
 	}
 	readiness := []graphlaunch.ReadinessCheck{
 		{
@@ -412,6 +453,9 @@ func newServeMeetingRegistration(
 				Background: meetinggraph.BackgroundPlugin{
 					Artifact: backgroundArtifact, Descriptor: backgroundDescriptor,
 					Factory: backgroundFactory,
+				},
+				TTS: meetinggraph.TTSPlugin{
+					Artifact: ttsArtifact, Descriptor: ttsDescriptor, Factory: ttsFactory,
 				},
 			},
 			Readiness: readiness,
@@ -532,6 +576,28 @@ type meetingDormantProvider struct {
 	descriptor continuation.Descriptor
 }
 
+type meetingDormantSpeechProvider struct {
+	descriptor v1.Descriptor
+}
+
+func (provider meetingDormantSpeechProvider) Descriptor() v1.Descriptor {
+	descriptor := provider.descriptor
+	descriptor.Capabilities = maps.Clone(provider.descriptor.Capabilities)
+	return descriptor
+}
+
+func (meetingDormantSpeechProvider) Synthesize(
+	context.Context, v1.SpeechPlan,
+) ([]v1.SpeechChunk, error) {
+	return nil, errors.New("Meeting foreground synthesis is disabled; the graph owns TTS")
+}
+
+func (meetingDormantSpeechProvider) Stream(
+	context.Context, v1.SpeechPlan, func(v1.SpeechChunk) error,
+) error {
+	return errors.New("Meeting foreground synthesis is disabled; the graph owns TTS")
+}
+
 const meetingForegroundInstruction = "Assist with the live meeting. Ground every response in the shared transcript and screen observations, honor later corrections, and stay concise. " +
 	"Complete every explicitly requested client tool call and visible action before announcing completion; a claimed action without its successful tool result is not complete. " +
 	"For ordered visible actions, execute one action, use the next retained frame, and continue until the user's requested sequence is complete. " +
@@ -650,12 +716,13 @@ func newMeetingForegroundBinding(
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("describe Meeting foreground ASR: %w", err)
 	}
-	speech, err := providers.NewTTS(meetingTTSRequest(config))
+	speechDescriptor, err := providers.DescribeTTS(meetingTTSRequest(config))
 	if err != nil {
 		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
-		return nil, fmt.Errorf("create Meeting foreground TTS: %w", err)
+		return nil, fmt.Errorf("describe dormant Meeting foreground speech boundary: %w", err)
 	}
+	speech := meetingDormantSpeechProvider{descriptor: speechDescriptor}
 	vision, err := openaivision.New(openaivision.Config{
 		BaseURL: config.VisionURL, Model: config.VisionModel,
 		APIKey: os.Getenv("OPENREALTIME_LOCAL_API_KEY"), MaxOutputTokens: 2048,
@@ -663,7 +730,6 @@ func newMeetingForegroundBinding(
 		Temperature:    0,
 	})
 	if err != nil {
-		_ = closeReadinessResource(speech)
 		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("create Meeting foreground vision: %w", err)
@@ -672,7 +738,6 @@ func newMeetingForegroundBinding(
 		Vision: vision, Label: "meeting-foreground-dedicated",
 	})
 	if err != nil {
-		_ = closeReadinessResource(speech)
 		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, err
@@ -685,9 +750,7 @@ func newMeetingForegroundBinding(
 		PerceptionDescriptor: asrDescriptor,
 		Narrator:             narrator, DeciderSees: true,
 		Fast: fast, Slow: dormant, FastMaxTokens: config.MaxOutputTokens,
-		SlowMaxTokens: 1, Speech: bysentence.Provider{
-			Inner: speech, Minimum: config.SentenceMinRunes,
-		},
+		SlowMaxTokens: 1, Speech: speech,
 		Voice: config.TTSVoice,
 		// The Meeting profile deliberately gives its local, attested foreground
 		// provider only the two bounded client-declared action lanes. Standard
@@ -711,7 +774,6 @@ func newMeetingForegroundBinding(
 		AgentInstruction: meetingForegroundInstruction,
 	})
 	if err != nil {
-		_ = closeReadinessResource(speech)
 		_ = closeReadinessResource(visualReflex)
 		_ = closeReadinessResource(fast)
 		return nil, fmt.Errorf("compose Meeting foreground binding: %w", err)
@@ -740,6 +802,7 @@ func (binding *meetingForegroundBinding) Start(
 		return nil, errors.New("start Meeting foreground: nil binding")
 	}
 	options.Settings = legacy.CloneSettings(options.Settings)
+	options.Settings.Modalities = []string{"text"}
 	policies := binding.policies
 	options.Policies = &policies
 	runtime, err := binding.inner.Start(ctx, options)
@@ -754,6 +817,14 @@ func (binding *meetingForegroundBinding) Start(
 type meetingForegroundRuntime struct {
 	legacy.Runtime
 	capabilities legacy.Capabilities
+}
+
+func (runtime *meetingForegroundRuntime) Update(
+	ctx context.Context, settings legacy.Settings,
+) error {
+	settings = legacy.CloneSettings(settings)
+	settings.Modalities = []string{"text"}
+	return runtime.Runtime.Update(ctx, settings)
 }
 
 func (runtime *meetingForegroundRuntime) Status() legacy.Status {

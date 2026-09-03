@@ -12,6 +12,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	videograph "github.com/bojieli/OpenRealtime/elements/video"
 	"github.com/bojieli/OpenRealtime/perception"
@@ -195,7 +196,7 @@ func TestScreenForkRejectsClockRegressionBeforePublishingAnotherFrame(t *testing
 }
 
 func TestBackgroundInjectionPublishesOnlyCompleteBoundedText(t *testing.T) {
-	input := newTestInput("text", modelelements.PreparedTextType())
+	input := newTestInput("text", interactionelements.SafePreparedTextType())
 	outputs := map[string]element.OutputPort{
 		"injection": newTestOutput("injection", modelelements.TextInputType()),
 		"trigger":   newTestOutput("trigger", modelelements.GenerateType()),
@@ -215,8 +216,9 @@ func TestBackgroundInjectionPublishesOnlyCompleteBoundedText(t *testing.T) {
 
 	for index, delta := range []cognitionelements.PreparedTextDelta{
 		{Boundary: cognitionelements.TextBegin, Index: 0},
-		{Boundary: cognitionelements.TextChunk, Index: 1, Text: "grounded result"},
-		{Boundary: cognitionelements.TextEnd, Index: 2},
+		{Boundary: cognitionelements.TextChunk, Index: 1},
+		{Boundary: cognitionelements.TextChunk, Index: 2, Text: "grounded "},
+		{Boundary: cognitionelements.TextEnd, Index: 3, Text: "result"},
 	} {
 		input.send(t, preparedEnvelope("slow-run", index, delta))
 	}
@@ -287,7 +289,7 @@ func TestBackgroundInjectionWithholdsInterruptedAndOversizedStreams(t *testing.T
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			input := newTestInput("text", modelelements.PreparedTextType())
+			input := newTestInput("text", interactionelements.SafePreparedTextType())
 			outputs := map[string]element.OutputPort{
 				"injection": newTestOutput("injection", modelelements.TextInputType()),
 				"trigger":   newTestOutput("trigger", modelelements.GenerateType()),
@@ -328,7 +330,7 @@ func TestBackgroundInjectionWithholdsInterruptedAndOversizedStreams(t *testing.T
 }
 
 func TestBackgroundInjectionDoesNotReflectInvalidRunIDsOrMalformedText(t *testing.T) {
-	input := newTestInput("text", modelelements.PreparedTextType())
+	input := newTestInput("text", interactionelements.SafePreparedTextType())
 	outputs := map[string]element.OutputPort{
 		"injection": newTestOutput("injection", modelelements.TextInputType()),
 		"trigger":   newTestOutput("trigger", modelelements.GenerateType()),
@@ -444,7 +446,7 @@ func preparedEnvelope(
 	runID string, sequence int, delta cognitionelements.PreparedTextDelta,
 ) element.Envelope {
 	return element.Envelope{
-		Type: modelelements.PreparedTextType(), ItemID: fmt.Sprintf("%s-%d", runID, sequence),
+		Type: interactionelements.SafePreparedTextType(), ItemID: fmt.Sprintf("%s-%d", runID, sequence),
 		SessionID: "meeting-session", RunID: runID, Sequence: uint64(sequence + 1), Payload: delta,
 	}
 }

@@ -34,19 +34,35 @@
       }
     },
     {
+      "reference": "interaction.ControlSerializationQuarantine",
+      "identity": {
+        "name": "interaction.ControlSerializationQuarantine",
+        "revision": 2,
+        "digest": "sha256:f5d773fcdfe5fe831b37e853185bea03ef86276f5b30999532d8cecb33654f62"
+      }
+    },
+    {
       "reference": "interaction.ModelResultCommit",
       "identity": {
         "name": "interaction.ModelResultCommit",
-        "revision": 1,
-        "digest": "sha256:96459cc6718ecc2e23cba18861c79e9ade44157e788dbe8fd010cf9ef67c5010"
+        "revision": 2,
+        "digest": "sha256:a870b95caedde1348dfc3bf0950aa4379c5e70c556f395e32160faff23442d18"
+      }
+    },
+    {
+      "reference": "interaction.SegmentPreparedText",
+      "identity": {
+        "name": "interaction.SegmentPreparedText",
+        "revision": 2,
+        "digest": "sha256:ad7fdc3e85e47f1aa24e6f23745b47f708f358a0eac028b5711fb7c2e2dda480"
       }
     },
     {
       "reference": "meeting.BackgroundInjection",
       "identity": {
         "name": "meeting.BackgroundInjection",
-        "revision": 1,
-        "digest": "sha256:1655a7d525a1516792b2106cad5e7ace82eafb2371a5557e806a4d1e75b342d8"
+        "revision": 2,
+        "digest": "sha256:0e2eb357272a2c88131626aad67b96968518a7a48c72d4751d26f2d61604ead0"
       }
     },
     {
@@ -79,6 +95,14 @@
         "name": "policy.GenerateOnObservation",
         "revision": 3,
         "digest": "sha256:7c43ec6bd816082a56a62808573faac2e8949d3c2d594bd348a4d3464fcae5aa"
+      }
+    },
+    {
+      "reference": "speech.TTS",
+      "identity": {
+        "name": "speech.TTS",
+        "revision": 1,
+        "digest": "sha256:837f0b82530c0bf43db41eed92301c33908f360451bd2bb389e0161235256833"
       }
     },
     {

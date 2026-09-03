@@ -314,6 +314,9 @@ func validateCognitionResult(result cognitionelements.Result) error {
 	if assistant.String() != result.AssistantText || reasoning.String() != result.ReasoningText {
 		return errors.New("ordered outputs disagree with aggregate assistant or reasoning text")
 	}
+	if !result.ReasoningRetained && reasoning.Len() != 0 {
+		return errors.New("result claims unretained reasoning but contains reasoning output")
+	}
 	// Zero tool proposals have one semantic representation even though the
 	// producer's defensive clone materializes an empty slice. Nil-versus-empty
 	// is not an ordered-output disagreement.
@@ -698,6 +701,11 @@ func cloneTrajectoryItems(items []trajectory.Item) []trajectory.Item {
 		if item.ToolCall != nil {
 			copy := cloneTrajectoryToolCall(*item.ToolCall)
 			item.ToolCall = &copy
+		}
+		if item.ToolCallDerivation != nil {
+			copy := *item.ToolCallDerivation
+			copy.Rewrites = slices.Clone(item.ToolCallDerivation.Rewrites)
+			item.ToolCallDerivation = &copy
 		}
 		result[index] = item
 	}

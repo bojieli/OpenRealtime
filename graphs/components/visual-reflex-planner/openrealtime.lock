@@ -5,8 +5,8 @@
       "reference": "action.AuthorizedCallCommit",
       "identity": {
         "name": "action.AuthorizedCallCommit",
-        "revision": 2,
-        "digest": "sha256:97fe7318f637896959d0561081d1d9a50d9c0b26c0c0fb5c22825117a57a060c"
+        "revision": 3,
+        "digest": "sha256:89cea860e7881e2bfa669cb2573a7371cdc4731d1a438955f210a8364be90f28"
       }
     },
     {
@@ -45,8 +45,8 @@
       "reference": "authority.ActionArbiter",
       "identity": {
         "name": "authority.ActionArbiter",
-        "revision": 1,
-        "digest": "sha256:10c6fce93f85fdf6bfb2f6f8dd5c941857709cc91b0e256fe13aa9c6ac569f53"
+        "revision": 2,
+        "digest": "sha256:d27cd421c3bb043fc1431f4029af0171206683fd1211b9f49925678ee27ea38f"
       }
     },
     {
@@ -69,8 +69,8 @@
       "reference": "authority.ProvenanceJoin",
       "identity": {
         "name": "authority.ProvenanceJoin",
-        "revision": 1,
-        "digest": "sha256:4c6eb489dbeac31b3fbfc93ebd3e44cf4c3f992878b6cbf09acbe0686a672cac"
+        "revision": 2,
+        "digest": "sha256:43a1ac4dad1242b31225b6252b093f94fca6f32172d936877f9b468acc648bc3"
       }
     },
     {
@@ -106,11 +106,19 @@
       }
     },
     {
+      "reference": "interaction.ControlSerializationQuarantine",
+      "identity": {
+        "name": "interaction.ControlSerializationQuarantine",
+        "revision": 2,
+        "digest": "sha256:f5d773fcdfe5fe831b37e853185bea03ef86276f5b30999532d8cecb33654f62"
+      }
+    },
+    {
       "reference": "interaction.ModelResultCommit",
       "identity": {
         "name": "interaction.ModelResultCommit",
-        "revision": 1,
-        "digest": "sha256:96459cc6718ecc2e23cba18861c79e9ade44157e788dbe8fd010cf9ef67c5010"
+        "revision": 2,
+        "digest": "sha256:a870b95caedde1348dfc3bf0950aa4379c5e70c556f395e32160faff23442d18"
       }
     },
     {

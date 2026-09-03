@@ -147,6 +147,47 @@ type ToolPlaceholder struct {
 	Reason string `json:"reason"`
 }
 
+// PromotedToolProposalIDs returns proposal item IDs that have either an exact
+// promotion or a valid, causally linked schema-normalized promotion in the
+// same invocation scope.
+//
+// Provider call IDs are not globally unique: many providers reuse values such
+// as "call_0" for each invocation. Invocation, source revision, name,
+// canonical arguments, and the causal proposal edge are consequently all part
+// of the match. Similar, rejected, and unresolved proposals are not hidden.
+func PromotedToolProposalIDs(snapshot Snapshot) map[string]struct{} {
+	type identity struct {
+		invocationID string
+		callID       string
+	}
+	type indexedProposal struct {
+		index int
+		item  Item
+	}
+	proposals := make(map[identity][]indexedProposal)
+	for index, item := range snapshot.Items {
+		if item.Kind != KindToolProposal || item.ToolCall == nil {
+			continue
+		}
+		key := identity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		proposals[key] = append(proposals[key], indexedProposal{index: index, item: item})
+	}
+
+	promoted := make(map[string]struct{})
+	for index, item := range snapshot.Items {
+		if item.Kind != KindToolCall || item.ToolCall == nil {
+			continue
+		}
+		key := identity{invocationID: item.InvocationID, callID: item.ToolCall.CallID}
+		for _, proposal := range proposals[key] {
+			if proposal.index < index && isPromotedToolProposal(proposal.item, item) {
+				promoted[proposal.item.ID] = struct{}{}
+			}
+		}
+	}
+	return promoted
+}
+
 func (placeholder ToolPlaceholder) validate() error {
 	if strings.TrimSpace(placeholder.CallID) == "" || strings.TrimSpace(placeholder.Name) == "" {
 		return errors.New("tool placeholder call ID and name are required")

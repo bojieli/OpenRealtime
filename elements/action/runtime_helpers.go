@@ -16,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	"github.com/bojieli/OpenRealtime/internal/toolargs"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -472,6 +473,37 @@ func validateDeclaredAction(value DeclaredAction) error {
 		strings.TrimSpace(value.DeclarationDigest) == "" {
 		return errors.New("declared action has incomplete immutable registry resolution")
 	}
+	if (value.EffectiveCall == nil) != (value.Normalization == nil) {
+		return errors.New("declared action must carry both effective call and normalization evidence or neither")
+	}
+	if value.EffectiveCall != nil {
+		if err := validateToolCall(*value.EffectiveCall); err != nil {
+			return fmt.Errorf("effective call: %w", err)
+		}
+		original := value.Admitted.Proposal.Call
+		if value.EffectiveCall.CallID != original.CallID || value.EffectiveCall.Name != original.Name {
+			return errors.New("argument normalization cannot change tool or call identity")
+		}
+		evidence := value.Normalization
+		if len(evidence.Rewrites) == 0 || evidence.OriginalArgumentsDigest == "" ||
+			evidence.EffectiveArgumentsDigest == "" || evidence.RegistryReference != value.RegistryReference ||
+			evidence.RegistryDigest != value.RegistryDigest || evidence.DeclarationDigest != value.DeclarationDigest {
+			return errors.New("argument normalization evidence is incomplete or names another declaration")
+		}
+		if evidence.OriginalArgumentsDigest != argumentBytesDigest(original.Arguments) ||
+			evidence.EffectiveArgumentsDigest != argumentBytesDigest(value.EffectiveCall.Arguments) ||
+			evidence.OriginalArgumentsDigest == evidence.EffectiveArgumentsDigest {
+			return errors.New("argument normalization digests do not bind a changed effective call")
+		}
+		last := ""
+		for _, rewrite := range evidence.Rewrites {
+			if strings.TrimSpace(rewrite.Argument) == "" || rewrite.Argument <= last ||
+				!toolargs.Supported(rewrite.Normalizer) {
+				return errors.New("argument normalization rewrites must be unique, sorted, and supported")
+			}
+			last = rewrite.Argument
+		}
+	}
 	_, err := legacyaction.ParseConfirm(string(value.Confirmation))
 	return err
 }
@@ -525,25 +557,8 @@ func attestDeploymentAuthority(
 		return err
 	}
 	declared := authorized.Confirmed.Declared
-	call := callOfDeclared(declared)
-	set, err := tools.resolve(declared.RegistryReference)
-	if err != nil {
+	if err := attestToolDeclaration(tools, declared); err != nil {
 		return err
-	}
-	if set.digest != declared.RegistryDigest {
-		return errors.New("declared tool registry digest does not match deployment resolution")
-	}
-	tool, found, err := set.lookup(call.Name)
-	if err != nil {
-		return err
-	}
-	if !found {
-		return fmt.Errorf("tool %q is not declared by the resolved registry", call.Name)
-	}
-	if tool.digest != declared.DeclarationDigest || tool.dispatcherIdentity != declared.DispatcherIdentity ||
-		tool.spec.Confirm != declared.Confirmation || tool.spec.Target != declared.Target ||
-		tool.spec.Background != declared.Background {
-		return errors.New("declared action differs from the immutable deployment tool declaration")
 	}
 	target, err := targets.resolve(authorized.TargetReference)
 	if err != nil {
@@ -572,6 +587,44 @@ func attestDeploymentAuthority(
 	return nil
 }
 
+// attestToolDeclaration replays the immutable declaration and any argument
+// derivation before a tool call is allowed into canonical trajectory state.
+// Ledger and dispatch repeat this check, but neither may be the first boundary
+// to discover a forged normalization: later provider continuations already
+// consume canonical state.
+func attestToolDeclaration(tools *ToolRegistries, declared DeclaredAction) error {
+	if tools == nil {
+		return errors.New("tool registries service is nil")
+	}
+	if err := validateDeclaredAction(declared); err != nil {
+		return err
+	}
+	call := callOfDeclared(declared)
+	set, err := tools.resolve(declared.RegistryReference)
+	if err != nil {
+		return err
+	}
+	if set.digest != declared.RegistryDigest {
+		return errors.New("declared tool registry digest does not match deployment resolution")
+	}
+	tool, found, err := set.lookup(call.Name)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("tool %q is not declared by the resolved registry", call.Name)
+	}
+	if tool.digest != declared.DeclarationDigest || tool.dispatcherIdentity != declared.DispatcherIdentity ||
+		tool.spec.Confirm != declared.Confirmation || tool.spec.Target != declared.Target ||
+		tool.spec.Background != declared.Background {
+		return errors.New("declared action differs from the immutable deployment tool declaration")
+	}
+	if err := validateDeclaredNormalizationAgainstSpec(declared, tool.spec); err != nil {
+		return err
+	}
+	return nil
+}
+
 func cloneProposal(proposal cognitionelements.ToolProposal) cognitionelements.ToolProposal {
 	proposal.Call = cloneToolCall(proposal.Call)
 	return proposal
@@ -587,6 +640,40 @@ func cloneToolResult(result trajectory.ToolResult) trajectory.ToolResult {
 	return result
 }
 
+func toolCallDerivationOfDeclared(value DeclaredAction) *trajectory.ToolCallDerivation {
+	if value.Normalization == nil {
+		return nil
+	}
+	rewrites := make([]trajectory.ToolCallArgumentRewrite, len(value.Normalization.Rewrites))
+	for index, rewrite := range value.Normalization.Rewrites {
+		rewrites[index] = trajectory.ToolCallArgumentRewrite{
+			Argument: rewrite.Argument, Normalizer: rewrite.Normalizer,
+		}
+	}
+	return &trajectory.ToolCallDerivation{
+		Kind:                     trajectory.ToolCallDerivationSchemaNormalizationV1,
+		SourceArgumentsDigest:    value.Normalization.OriginalArgumentsDigest,
+		EffectiveArgumentsDigest: value.Normalization.EffectiveArgumentsDigest,
+		RegistryReference:        value.Normalization.RegistryReference,
+		RegistryDigest:           value.Normalization.RegistryDigest,
+		DeclarationDigest:        value.Normalization.DeclarationDigest,
+		Rewrites:                 rewrites,
+	}
+}
+
+func sameToolCallDerivation(left, right *trajectory.ToolCallDerivation) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Kind == right.Kind &&
+		left.SourceArgumentsDigest == right.SourceArgumentsDigest &&
+		left.EffectiveArgumentsDigest == right.EffectiveArgumentsDigest &&
+		left.RegistryReference == right.RegistryReference &&
+		left.RegistryDigest == right.RegistryDigest &&
+		left.DeclarationDigest == right.DeclarationDigest &&
+		slices.Equal(left.Rewrites, right.Rewrites)
+}
+
 func cloneAdmitted(value AdmittedProposal) AdmittedProposal {
 	value.Proposal = cloneProposal(value.Proposal)
 	return value
@@ -594,6 +681,15 @@ func cloneAdmitted(value AdmittedProposal) AdmittedProposal {
 
 func cloneDeclared(value DeclaredAction) DeclaredAction {
 	value.Admitted = cloneAdmitted(value.Admitted)
+	if value.EffectiveCall != nil {
+		copy := cloneToolCall(*value.EffectiveCall)
+		value.EffectiveCall = &copy
+	}
+	if value.Normalization != nil {
+		copy := *value.Normalization
+		copy.Rewrites = slices.Clone(value.Normalization.Rewrites)
+		value.Normalization = &copy
+	}
 	return value
 }
 
@@ -629,7 +725,7 @@ func cloneCanonicalResult(value CanonicalResult) CanonicalResult {
 }
 
 func callOfAdmitted(value AdmittedProposal) trajectory.ToolCall { return value.Proposal.Call }
-func callOfDeclared(value DeclaredAction) trajectory.ToolCall   { return value.Admitted.Proposal.Call }
+func callOfDeclared(value DeclaredAction) trajectory.ToolCall   { return normalizationCall(value) }
 func callOfConfirmed(value ConfirmedAction) trajectory.ToolCall {
 	return callOfDeclared(value.Declared)
 }

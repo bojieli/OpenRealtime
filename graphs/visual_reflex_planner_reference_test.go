@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
 	"github.com/bojieli/OpenRealtime/graph/ir"
@@ -42,18 +43,20 @@ func TestVisualReflexPlannerReferenceIsLockedAndHasOneArbitratedEffectPath(t *te
 		t.Fatalf("visual reflex/planner warnings-as-errors findings = %+v", findings)
 	}
 	wantNodes := map[string]string{
-		"reflex_activation":  "policy.GenerateOnObservation",
-		"planner_activation": "policy.GenerateOnObservation",
-		"reflex_model":       "cognition.TextModel",
-		"planner_model":      "cognition.TextModel",
-		"reflex_provenance":  "authority.ProvenanceJoin",
-		"planner_provenance": "authority.ProvenanceJoin",
-		"reflex_admission":   "authority.ProposalAdmission",
-		"planner_admission":  "authority.ProposalAdmission",
-		"action_arbiter":     "authority.ActionArbiter",
-		"tool_lookup":        "action.ToolLookup",
-		"dispatch":           "action.Dispatch",
-		"tool_result_commit": "action.ToolResultCommit",
+		"reflex_activation":          "policy.GenerateOnObservation",
+		"planner_activation":         "policy.GenerateOnObservation",
+		"reflex_model":               "cognition.TextModel",
+		"planner_model":              "cognition.TextModel",
+		"reflex_control_quarantine":  "interaction.ControlSerializationQuarantine",
+		"planner_control_quarantine": "interaction.ControlSerializationQuarantine",
+		"reflex_provenance":          "authority.ProvenanceJoin",
+		"planner_provenance":         "authority.ProvenanceJoin",
+		"reflex_admission":           "authority.ProposalAdmission",
+		"planner_admission":          "authority.ProposalAdmission",
+		"action_arbiter":             "authority.ActionArbiter",
+		"tool_lookup":                "action.ToolLookup",
+		"dispatch":                   "action.Dispatch",
+		"tool_result_commit":         "action.ToolResultCommit",
 	}
 	for id, want := range wantNodes {
 		if got := silentNodeElement(reference.graph, id); got != want {
@@ -61,6 +64,12 @@ func TestVisualReflexPlannerReferenceIsLockedAndHasOneArbitratedEffectPath(t *te
 		}
 	}
 	for _, edge := range []struct{ fromNode, fromPort, toNode, toPort string }{
+		{"reflex_model", "text", "reflex_control_quarantine", "text"},
+		{"reflex_model", "result", "reflex_control_quarantine", "result"},
+		{"planner_model", "text", "planner_control_quarantine", "text"},
+		{"planner_model", "result", "planner_control_quarantine", "result"},
+		{"reflex_control_quarantine", "safe_result", "reflex_result_copy", "in"},
+		{"planner_control_quarantine", "safe_result", "planner_result_copy", "in"},
 		{"reflex_candidate_copy", "out", "action_arbiter", "candidate"},
 		{"planner_candidate_copy", "out", "action_arbiter", "candidate"},
 		{"reflex_result_copy", "out", "action_arbiter", "result"},
@@ -106,6 +115,28 @@ func TestVisualReflexPlannerReferenceIsLockedAndHasOneArbitratedEffectPath(t *te
 		if strings.Contains(strings.ToLower(boundary.Name), "audio") ||
 			strings.Contains(strings.ToLower(boundary.Type.String()), "audio") {
 			t.Errorf("visual reflex/planner graph exports audio boundary %+v", boundary)
+		}
+	}
+	for name, wantType := range map[string]element.Type{
+		"reflex_text":    interactionelements.SafePreparedTextType(),
+		"planner_text":   interactionelements.SafePreparedTextType(),
+		"reflex_result":  interactionelements.SafeModelResultType(),
+		"planner_result": interactionelements.SafeModelResultType(),
+		"reflex_control_serialization_quarantine":  interactionelements.ControlSerializationQuarantineType(),
+		"planner_control_serialization_quarantine": interactionelements.ControlSerializationQuarantineType(),
+	} {
+		var found bool
+		for _, boundary := range reference.graph.Boundaries {
+			if boundary.Name == name && boundary.Direction == ir.OutputBoundary {
+				found = true
+				if !boundary.Type.Equal(wantType) {
+					t.Errorf("boundary %s type = %s, want %s",
+						name, boundary.Type.String(), wantType.String())
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing quarantined model output boundary %s", name)
 		}
 	}
 }

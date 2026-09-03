@@ -226,6 +226,15 @@ type RefreshableObserver interface {
 	RefreshNext()
 }
 
+// SourceRefreshableObserver is the unambiguous refresh boundary for observers
+// that accept more than one visual source. A screen effect must force a screen
+// observation, not whichever camera or screen frame happens to arrive first.
+// RefreshableObserver remains supported for single-source observers and older
+// bindings.
+type SourceRefreshableObserver interface {
+	RefreshSource(source string)
+}
+
 // Narrator turns admitted frames into the persistent text that survives after
 // the images themselves are pruned.
 //

@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphcompiler "github.com/bojieli/OpenRealtime/graph"
@@ -48,6 +49,7 @@ func TestSilentComputerUseReferenceIsLockedCompleteAndHasNoAuthorityBypass(t *te
 		"trajectory":               "state.TrajectoryStore",
 		"activation":               "policy.GenerateOnObservation",
 		"model":                    "cognition.TextModel",
+		"model_control_quarantine": "interaction.ControlSerializationQuarantine",
 		"model_result_commit":      "interaction.ModelResultCommit",
 		"provenance_join":          "authority.ProvenanceJoin",
 		"proposal_admission":       "authority.ProposalAdmission",
@@ -74,6 +76,9 @@ func TestSilentComputerUseReferenceIsLockedCompleteAndHasNoAuthorityBypass(t *te
 	for _, edge := range []struct{ fromNode, fromPort, toNode, toPort string }{
 		{"observation_outcome_copy", "out", "activation", "committed"},
 		{"activation", "authority", "provenance_join", "candidate"},
+		{"model", "text", "model_control_quarantine", "text"},
+		{"model", "result", "model_control_quarantine", "result"},
+		{"model_control_quarantine", "safe_result", "model_result_copy", "in"},
 		{"model_result_copy", "out", "model_result_commit", "result"},
 		{"model_result_commit", "append", "trajectory_append_mux", "in"},
 		{"model_proposal_copy", "out", "provenance_join", "proposal"},
@@ -151,6 +156,25 @@ func TestSilentComputerUseReferenceIsLockedCompleteAndHasNoAuthorityBypass(t *te
 		if strings.Contains(strings.ToLower(boundary.Name), "audio") ||
 			strings.Contains(strings.ToLower(boundary.Type.String()), "audio") {
 			t.Errorf("silent computer-use graph exports audio boundary %+v", boundary)
+		}
+	}
+	for name, wantType := range map[string]element.Type{
+		"prepared_text":                    interactionelements.SafePreparedTextType(),
+		"model_result":                     interactionelements.SafeModelResultType(),
+		"control_serialization_quarantine": interactionelements.ControlSerializationQuarantineType(),
+	} {
+		var found bool
+		for _, boundary := range reference.graph.Boundaries {
+			if boundary.Name == name && boundary.Direction == ir.OutputBoundary {
+				found = true
+				if !boundary.Type.Equal(wantType) {
+					t.Errorf("boundary %s type = %s, want %s",
+						name, boundary.Type.String(), wantType.String())
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing quarantined model output boundary %s", name)
 		}
 	}
 }

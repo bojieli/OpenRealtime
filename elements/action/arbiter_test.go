@@ -11,6 +11,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -259,7 +260,7 @@ func actionArbitrationEvidence(
 	}
 	modelCauses := []string{activationItem, activationCause, authorityItem, triggerID, contextEnvelope, contextTail}
 	resultEnvelope := element.Envelope{
-		Type: cognitionelements.ResultType(), ItemID: admitted.ResultItemID,
+		Type: interactionelements.SafeModelResultType(), ItemID: admitted.ResultItemID,
 		SessionID: sessionID, RunID: runID, CausalParents: modelCauses, Payload: resultValue,
 	}
 	return candidateEnvelope, proposalEnvelope, resultEnvelope

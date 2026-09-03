@@ -106,6 +106,35 @@ func TestVocabularyHasStrictSchemas(t *testing.T) {
 	}
 }
 
+func TestTypeToolDescribesFinalCharactersRatherThanVerbatimSpeech(t *testing.T) {
+	var typing computeruse.Definition
+	for _, definition := range computeruse.Definitions() {
+		if definition.Name == computeruse.Type {
+			typing = definition
+			break
+		}
+	}
+	if typing.Name == "" ||
+		!strings.Contains(typing.Description, "exact final character sequence") ||
+		!strings.Contains(typing.Description, "bravo dash nine becomes bravo-9") {
+		t.Fatalf("computer.type description does not define dictated-character semantics: %+v", typing)
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(typing.Parameters, &schema); err != nil {
+		t.Fatal(err)
+	}
+	text := schema.Properties["text"].Description
+	if !strings.Contains(text, "final characters") ||
+		!strings.Contains(text, "not a verbatim speech transcript") ||
+		!strings.Contains(text, "punctuation characters") {
+		t.Fatalf("computer.type text contract is ambiguous: %q", text)
+	}
+}
+
 func TestNormalizedClickMapsExplicitlyIntoTheTargetPixelSpace(t *testing.T) {
 	dispatcher, surface := newDispatcher(t)
 	result, err := dispatcher.Dispatch(context.Background(), call(

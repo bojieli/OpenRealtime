@@ -474,8 +474,17 @@ func (session *session) publishCall(ctx context.Context, envelope element.Envelo
 	if !ok {
 		return fmt.Errorf("realtime-CU dispatch commit has payload %T", envelope.Payload)
 	}
-	admitted := committed.Executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	declared := committed.Executable.Canonical.Authorized.Confirmed.Declared
+	admitted := declared.Admitted
 	call := cloneToolCall(admitted.Proposal.Call)
+	// A deployment-owned normalizer preserves the model's byte-exact proposal
+	// under Admitted while carrying the call that actually crossed Dispatch in
+	// EffectiveCall. The client boundary must render that effective call. The
+	// bridge still compares it with the independently registered dispatcher
+	// input, so this does not weaken the drift check.
+	if declared.EffectiveCall != nil {
+		call = cloneToolCall(*declared.EffectiveCall)
+	}
 	if err := validateClientCall(call); err != nil {
 		return err
 	}

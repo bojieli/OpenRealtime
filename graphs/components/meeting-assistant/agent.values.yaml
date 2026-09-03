@@ -45,6 +45,24 @@ nodes:
       - name: model.concurrent-io
       - name: model.causal-input-order
         contract: text.ContextInjection->cognition.Generate
+  foreground_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
+  foreground_segment:
+    # The foreground is capped at 512 output tokens. Keeping one bounded
+    # segment gives the adapter one exact text/audio lifecycle per graph run.
+    minimum_runes: 4096
+    max_segment_bytes: 4096
+    max_run_bytes: 4096
+    max_segments: 1
+    terminal_memory: 512
+  foreground_tts:
+    provider: meeting.tts
+    max_text_bytes: 4096
+    max_chunk_bytes: 1048576
+    max_audio_bytes: 67108864
+    cancel_memory: 512
   screen_policy:
     source: screen
     mode: adaptive
@@ -75,6 +93,10 @@ nodes:
   background_model:
     provider: meeting.background
     retain_reasoning: true
+  background_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
   background_injection:
     role: background
     instruction: Use retained grounded background context only when a later user-authorized turn requires it. Never repeat a completed response or speak merely because background work finished.

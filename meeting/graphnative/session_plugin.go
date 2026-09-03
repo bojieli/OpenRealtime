@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
 	"sync"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
@@ -35,6 +38,7 @@ var meetingSessionDependencyNames = []string{
 	modelelements.PayloadCodecService,
 	perceptionelements.VisualProviderRegistryService,
 	cognitionelements.ProviderRegistryService,
+	speechelements.TTSProviderRegistryService,
 	stateelements.TrajectoryStoreService,
 }
 
@@ -77,6 +81,16 @@ type BackgroundPlugin struct {
 	Factory    func(context.Context, legacy.Options) (continuation.Provider, error)
 }
 
+// TTSPlugin contributes the separately attested synthesizer used only by the
+// graph-owned SafePreparedText -> SegmentPreparedText -> speech.TTS path.
+// It is intentionally independent from the legacy foreground binding: native
+// model audio has no authority to cross the Meeting presentation boundary.
+type TTSPlugin struct {
+	Artifact   inspect.ArtifactIdentity
+	Descriptor v1.Descriptor
+	Factory    func(context.Context, legacy.Options) (v1.SpeechProvider, error)
+}
+
 // SessionPluginConfig is a resource-free executable inventory for one exact
 // Meeting Assistant deployment. Constructing the plugin validates and clones
 // metadata only; provider factories are called after a session graph mounts.
@@ -86,6 +100,7 @@ type SessionPluginConfig struct {
 	Foreground      ForegroundPlugin
 	Visual          VisualPlugin
 	Background      BackgroundPlugin
+	TTS             TTSPlugin
 }
 
 // SessionPlugin contributes the concrete Realtime adapter and all four exact
@@ -188,6 +203,7 @@ func (plugin *SessionPlugin) dependencyArtifacts() map[string]inspect.ArtifactId
 		modelelements.PayloadCodecService:                plugin.config.Foreground.WireAdapterArtifact,
 		perceptionelements.VisualProviderRegistryService: plugin.config.Visual.Artifact,
 		cognitionelements.ProviderRegistryService:        plugin.config.Background.Artifact,
+		speechelements.TTSProviderRegistryService:        plugin.config.TTS.Artifact,
 		stateelements.TrajectoryStoreService:             plugin.config.AdapterArtifact,
 	}
 }
@@ -257,6 +273,23 @@ func (plugin *SessionPlugin) mountService(
 			return nil, err
 		}
 		return registry, nil
+	case speechelements.TTSProviderRegistryService:
+		registry := speechelements.NewTTSProviderRegistry()
+		err := registry.Register(TTSProviderReference, plugin.config.TTS.Descriptor,
+			func() (v1.SpeechProvider, error) {
+				provider, err := plugin.config.TTS.Factory(ctx, cloneLegacyOptions(options))
+				if err != nil {
+					return nil, err
+				}
+				if reflectedMeetingNil(provider) {
+					return nil, errors.New("meeting TTS provider factory returned nil")
+				}
+				return provider, nil
+			})
+		if err != nil {
+			return nil, err
+		}
+		return registry, nil
 	case stateelements.TrajectoryStoreService:
 		store, err := plugin.coordinator.prepare(ctx, options.SessionID)
 		if err != nil {
@@ -277,6 +310,7 @@ func validateSessionPluginConfig(config SessionPluginConfig) error {
 		"foreground wire adapter": config.Foreground.WireAdapterArtifact,
 		"visual":                  config.Visual.Artifact,
 		"background":              config.Background.Artifact,
+		"TTS":                     config.TTS.Artifact,
 	} {
 		if err := artifact.Validate(); err != nil {
 			return fmt.Errorf("meeting %s artifact: %w", label, err)
@@ -322,6 +356,19 @@ func validateSessionPluginConfig(config SessionPluginConfig) error {
 	if config.Background.Factory == nil {
 		return errors.New("meeting background plugin requires a factory")
 	}
+	if config.TTS.Factory == nil {
+		return errors.New("meeting TTS plugin requires a factory")
+	}
+	ttsProbe := speechelements.NewTTSProviderRegistry()
+	if err := ttsProbe.Register(TTSProviderReference, config.TTS.Descriptor,
+		func() (v1.SpeechProvider, error) {
+			return nil, errors.New("metadata validation must not invoke the TTS factory")
+		}); err != nil {
+		return fmt.Errorf("meeting TTS descriptor: %w", err)
+	}
+	if !config.TTS.Descriptor.Capabilities.Has(v1.CapabilityPCM16Output) {
+		return errors.New("meeting TTS descriptor must provide PCM16 output")
+	}
 	if config.Adapter.FrameRateMilliHz < 0 || config.Adapter.FrameRateMilliHz > 1_000_000 {
 		return errors.New("meeting adapter frame rate must be zero or between 1 and 1000000 millihertz")
 	}
@@ -361,6 +408,7 @@ func validateForegroundCapabilities(capabilities legacy.Capabilities) error {
 func cloneSessionPluginConfig(source SessionPluginConfig) SessionPluginConfig {
 	result := source
 	result.Foreground.Capabilities.Observers = slices.Clone(source.Foreground.Capabilities.Observers)
+	result.TTS.Descriptor.Capabilities = maps.Clone(source.TTS.Descriptor.Capabilities)
 	return result
 }
 

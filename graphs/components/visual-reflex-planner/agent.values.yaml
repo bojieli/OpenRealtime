@@ -49,6 +49,14 @@ nodes:
     provider: deployment.visual-planner
     retain_reasoning: true
     max_tool_proposals: 1
+  reflex_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
+  planner_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
   model_result_commit: {}
   reflex_provenance: {}
   planner_provenance: {}

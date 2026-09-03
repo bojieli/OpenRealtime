@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -15,7 +16,9 @@ import (
 	"github.com/bojieli/OpenRealtime/authority"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
+	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -24,9 +27,10 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v3"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v7"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
+	maximumDispositionRetries = 8
 	maximumActivationMemory   = 1_000_000
 	maximumInstructionBytes   = 1 << 20
 )
@@ -43,7 +47,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      3,
+		Revision:      7,
 		Ports: []element.Port{
 			{Name: "committed", Direction: element.Input,
 				Type: stateelements.ObservationCommitOutcomeType(), Cardinality: element.One,
@@ -52,7 +56,16 @@ func ActivationDescriptor() element.Descriptor {
 				Type: policyelements.GenerationCancelType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
 			{Name: "result", Direction: element.Input,
-				Type: cognitionelements.ResultType(), Cardinality: element.One,
+				Type: interactionelements.SafeModelResultType(), Cardinality: element.One,
+				Required: true, DefaultDepth: 16},
+			{Name: "effect_terminal", Direction: element.Input,
+				Type: actionelements.PreEffectTerminalType(), Cardinality: element.One,
+				Required: true, DefaultDepth: 16},
+			{Name: "disposition_committed", Direction: element.Input,
+				Type: stateelements.CommitType(), Cardinality: element.One,
+				Required: true, DefaultDepth: 16},
+			{Name: "disposition_rejected", Direction: element.Input,
+				Type: stateelements.RejectionType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
 			{Name: "trigger", Direction: element.Output,
 				Type: cognitionelements.GenerateType(), Cardinality: element.One,
@@ -66,10 +79,18 @@ func ActivationDescriptor() element.Descriptor {
 			{Name: "outcome", Direction: element.Output,
 				Type: policyelements.GenerationOutcomeType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 32},
+			{Name: "disposition_append", Direction: element.Output,
+				Type: stateelements.AppendType(), Cardinality: element.One,
+				Required: true, DefaultDepth: 16},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"committed", "result"}, Interrupts: []string{"cancel"},
-			Outcomes:       []string{"trigger", "authority", "state", "outcome"},
+			Triggers: []string{
+				"committed", "result", "effect_terminal", "disposition_committed", "disposition_rejected",
+			},
+			Interrupts: []string{"cancel"},
+			Outcomes: []string{
+				"trigger", "authority", "state", "outcome", "disposition_append",
+			},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/realtime-cu/durable-activation-state/v1",
@@ -187,8 +208,9 @@ func decodeActivationConfig(source json.RawMessage) (policyelements.GenerateOnOb
 }
 
 type activationPorts struct {
-	committed, cancel, result          element.InputPort
-	trigger, candidate, state, outcome element.OutputPort
+	committed, cancel, result, effectTerminal             element.InputPort
+	dispositionCommitted, dispositionRejected             element.InputPort
+	trigger, candidate, state, outcome, dispositionAppend element.OutputPort
 }
 
 func activationPortsFrom(ports element.Ports) (activationPorts, error) {
@@ -199,7 +221,12 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 	for _, input := range []struct {
 		name string
 		set  *element.InputPort
-	}{{"committed", &result.committed}, {"cancel", &result.cancel}, {"result", &result.result}} {
+	}{
+		{"committed", &result.committed}, {"cancel", &result.cancel},
+		{"result", &result.result}, {"effect_terminal", &result.effectTerminal},
+		{"disposition_committed", &result.dispositionCommitted},
+		{"disposition_rejected", &result.dispositionRejected},
+	} {
 		port, err := ports.Input(input.name)
 		if err != nil {
 			return activationPorts{}, err
@@ -212,6 +239,7 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 	}{
 		{"trigger", &result.trigger}, {"authority", &result.candidate},
 		{"state", &result.state}, {"outcome", &result.outcome},
+		{"disposition_append", &result.dispositionAppend},
 	} {
 		port, err := ports.Output(output.name)
 		if err != nil {
@@ -233,6 +261,41 @@ type activeGeneration struct {
 	callID         string
 }
 
+// deferredVisualCommit is the newest committed observation that arrived while
+// cognition or a proposed effect was awaiting terminal disposition. It is
+// normally replaceable screen/camera state, but can briefly retain a newer
+// user intent behind an older proposal. Capacity is deliberately one so input
+// cadence cannot become an unbounded cognition queue.
+type deferredVisualCommit struct {
+	envelope element.Envelope
+	commit   stateelements.ObservationCommitOutcome
+}
+
+type pendingEffectTerminal struct {
+	envelope element.Envelope
+	terminal actionelements.PreEffectTerminal
+}
+
+// pendingProposalDisposition is the single graph-visible compare-and-append
+// transaction that must settle before activation releases the model run. The
+// canonical Store remains read-only to this element; all mutation travels over
+// dispositionAppend and is trusted only after the matching typed reply.
+type pendingProposalDisposition struct {
+	cause           element.Envelope
+	terminal        actionelements.PreEffectTerminal
+	requestID       string
+	expectedVersion uint64
+	expectedPrefix  trajectory.PrefixIdentity
+	item            trajectory.Item
+	retries         uint32
+}
+
+type activationContextOverride struct {
+	context stateelements.CommittedContext
+	version uint64
+	tailID  string
+}
+
 type activationRunner struct {
 	instance   string
 	config     policyelements.GenerateOnObservationConfig
@@ -242,12 +305,15 @@ type activationRunner struct {
 	resolution element.ResolutionReporter
 	ports      activationPorts
 
-	intent          *userIntentBasis
-	active          *activeGeneration
-	revokedSequence uint64
-	terminal        map[string]struct{}
-	terminalOrder   []string
-	state           policyelements.GenerationState
+	intent             *userIntentBasis
+	active             *activeGeneration
+	deferred           *deferredVisualCommit
+	pendingTerminal    *pendingEffectTerminal
+	pendingDisposition *pendingProposalDisposition
+	revokedSequence    uint64
+	terminal           map[string]struct{}
+	terminalOrder      []string
+	state              policyelements.GenerationState
 }
 
 type activationInput struct {
@@ -257,7 +323,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:3", ActivationDescriptor()); err != nil {
+		"implementation:7", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -266,16 +332,26 @@ func (runner *activationRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	inputs := make(chan activationInput)
-	failures := make(chan error, 3)
+	failures := make(chan error, 6)
 	var wait sync.WaitGroup
 	for _, source := range []struct {
 		kind string
 		port element.InputPort
-	}{{"committed", runner.ports.committed}, {"cancel", runner.ports.cancel}, {"result", runner.ports.result}} {
+	}{
+		{"committed", runner.ports.committed}, {"cancel", runner.ports.cancel},
+		{"result", runner.ports.result}, {"effect_terminal", runner.ports.effectTerminal},
+		{"disposition_committed", runner.ports.dispositionCommitted},
+		{"disposition_rejected", runner.ports.dispositionRejected},
+	} {
 		wait.Add(1)
 		go receiveActivationInputs(ctx, source.kind, source.port, inputs, failures, &wait)
 	}
 	defer func() {
+		// Retained payloads are useful only for this mounted session. Release the
+		// exact visual prefix even when shutdown races an in-flight generation.
+		runner.deferred = nil
+		runner.pendingTerminal = nil
+		runner.pendingDisposition = nil
 		cancel(nil)
 		wait.Wait()
 	}()
@@ -294,6 +370,12 @@ func (runner *activationRunner) Run(parent context.Context) error {
 				err = runner.acceptCancel(ctx, input.envelope)
 			case "result":
 				err = runner.acceptResult(ctx, input.envelope)
+			case "effect_terminal":
+				err = runner.acceptEffectTerminal(ctx, input.envelope)
+			case "disposition_committed":
+				err = runner.acceptDispositionCommit(ctx, input.envelope)
+			case "disposition_rejected":
+				err = runner.acceptDispositionRejection(ctx, input.envelope)
 			default:
 				err = fmt.Errorf("unknown Realtime-CU activation input %q", input.kind)
 			}
@@ -306,6 +388,17 @@ func (runner *activationRunner) Run(parent context.Context) error {
 
 func (runner *activationRunner) acceptCommit(
 	ctx context.Context, envelope element.Envelope,
+) error {
+	return runner.acceptCommitAtContext(ctx, envelope, nil)
+}
+
+// acceptCommitAtContext admits one exact committed observation. A disposition
+// replay keeps the original observation as the activation cause while sampling
+// the later acknowledged prefix whose actual tail is the disposition item.
+// This avoids relabelling runtime state as an observation merely to satisfy a
+// tail-shaped API.
+func (runner *activationRunner) acceptCommitAtContext(
+	ctx context.Context, envelope element.Envelope, override *activationContextOverride,
 ) error {
 	commit, ok := observationCommitOutcomePayload(envelope.Payload)
 	if !ok {
@@ -347,14 +440,40 @@ func (runner *activationRunner) acceptCommit(
 	if err := trajectory.VerifyPrefix(snapshot, commit.Context.Prefix); err != nil {
 		return runner.refuse(ctx, envelope, commit, "context_mismatch", err.Error())
 	}
-	prefix := snapshot.Items[:commit.StoreVersion]
-	current, found := trajectoryItem(trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix},
+	observationPrefix := snapshot.Items[:commit.StoreVersion]
+	current, found := trajectoryItem(trajectory.Snapshot{Version: commit.StoreVersion, Items: observationPrefix},
 		commit.TrajectoryItemID)
 	if !found || current.Kind != trajectory.KindObservation || current.Event == nil ||
 		current.SourceRevision != commit.SourceRevision || current.Event.EventID != commit.TriggerItemID ||
-		prefix[len(prefix)-1].ID != current.ID {
+		observationPrefix[len(observationPrefix)-1].ID != current.ID {
 		return runner.refuse(ctx, envelope, commit, "invalid_observation_basis",
 			"commit does not name the exact event-backed context tail")
+	}
+	effectiveCommit := commit
+	contextTailID := current.ID
+	prefix := observationPrefix
+	if override != nil {
+		if override.version == 0 || override.version != override.context.Prefix.Version ||
+			!canonical(override.context.StateItemID) || !canonical(override.tailID) {
+			return runner.refuse(ctx, envelope, commit, "invalid_replay_context",
+				"disposition replay omits canonical version, state, or tail identity")
+		}
+		if err := trajectory.VerifyPrefix(snapshot, override.context.Prefix); err != nil {
+			return runner.refuse(ctx, envelope, commit, "replay_context_mismatch", err.Error())
+		}
+		prefix = snapshot.Items[:override.version]
+		if len(prefix) == 0 || prefix[len(prefix)-1].ID != override.tailID ||
+			commit.StoreVersion > override.version {
+			return runner.refuse(ctx, envelope, commit, "invalid_replay_context",
+				"acknowledged disposition prefix does not contain the retained observation")
+		}
+		if !trajectoryCausalAncestor(prefix, current.ID, override.tailID) {
+			return runner.refuse(ctx, envelope, commit, "replay_observation_not_causal",
+				"acknowledged disposition is not causally linked to the retained observation")
+		}
+		effectiveCommit.StoreVersion = override.version
+		effectiveCommit.Context = override.context
+		contextTailID = override.tailID
 	}
 	authorityValue := trajectory.AuthorityOf(current)
 	if authorityValue == trajectory.AuthorityUser {
@@ -364,13 +483,28 @@ func (runner *activationRunner) acceptCommit(
 		// that older instruction as the participant is still speaking.
 		if current.Event.Type != current.Event.Source+".endpoint" {
 			runner.intent = nil
+			runner.deferred = nil
 			return runner.ignore(ctx, envelope, commit, "user_observation_not_final",
 				"a provisional user observation cannot activate computer effects")
 		}
-		runner.intent = &userIntentBasis{
+		nextIntent := userIntentBasis{
 			itemID: current.ID, triggerItemID: current.Event.EventID,
 			sourceRevision: current.SourceRevision,
 		}
+		if runner.intent == nil || *runner.intent != nextIntent {
+			// A visual retained under an older task can never become evidence for
+			// the new durable task, even if both happen to share a causal prefix.
+			runner.deferred = nil
+			if runner.pendingTerminal != nil && runner.pendingDisposition == nil {
+				// The action path has already made the older generation terminal
+				// without crossing an effect boundary. A replacement user intent may
+				// therefore release that generation even if its model-result copy is
+				// still queued; the eventual result is ignored as a terminal old run.
+				runner.active = nil
+				runner.pendingTerminal = nil
+			}
+		}
+		runner.intent = &nextIntent
 	} else if authorityValue != trajectory.AuthorityObserver {
 		return runner.refuse(ctx, envelope, commit, "invalid_authority",
 			fmt.Sprintf("current observation carries %q authority", authorityValue))
@@ -388,7 +522,7 @@ func (runner *activationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	basis, found := trajectoryItem(trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix},
+	basis, found := trajectoryItem(trajectory.Snapshot{Version: effectiveCommit.StoreVersion, Items: prefix},
 		runner.intent.itemID)
 	if !found || basis.Kind != trajectory.KindObservation || basis.Event == nil ||
 		trajectory.AuthorityOf(basis) != trajectory.AuthorityUser ||
@@ -424,14 +558,19 @@ func (runner *activationRunner) acceptCommit(
 	if runner.active != nil {
 		switch {
 		case runner.active.callID == "":
+			if authorityValue == trajectory.AuthorityObserver {
+				return runner.deferVisual(ctx, envelope, commit)
+			}
 			return runner.ignore(ctx, envelope, commit, "generation_pending",
 				"one exact cognition turn is still in flight")
 		case resultParent == "":
-			return runner.ignore(ctx, envelope, commit, "effect_pending",
-				"one proposed computer effect is waiting for its canonical visual consequence")
+			message := runner.retainDeferredVisual(envelope, commit,
+				"changed visual evidence is retained while the proposed effect awaits a terminal disposition",
+				"a newer changed visual prefix is already retained while the proposed effect awaits disposition")
+			return runner.ignore(ctx, envelope, commit, "effect_pending", message)
 		default:
 			resultItem, found := trajectoryItem(
-				trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix}, resultParent,
+				trajectory.Snapshot{Version: effectiveCommit.StoreVersion, Items: prefix}, resultParent,
 			)
 			if !found || resultItem.ToolResult == nil ||
 				resultItem.ToolResult.CallID != runner.active.callID {
@@ -439,15 +578,25 @@ func (runner *activationRunner) acceptCommit(
 					"visual consequence does not settle the one active computer effect")
 			}
 			runner.active = nil
+			runner.deferred = nil
+			runner.pendingTerminal = nil
+			if resultItem.ToolResult.Error != "" {
+				// The forced post-effect screen is evidence that the failed call
+				// settled, not new grounds for immediately proposing the same call.
+				// Keep the durable user intent so a later independent camera/screen
+				// change can retry, but consume this exact failed consequence.
+				return runner.ignore(ctx, envelope, commit, "effect_failed",
+					"failed computer effect is terminal until independent visual evidence arrives")
+			}
 		}
 	}
-	generationID := activationGenerationID(runner.config.Role, envelope.SessionID, commit, basis.ID)
+	generationID := activationGenerationID(runner.config.Role, envelope.SessionID, effectiveCommit, basis.ID)
 	if _, duplicate := runner.terminal[generationID]; duplicate {
 		runner.state.Ignored++
 		if err := runner.publishOutcome(ctx, envelope, commit, policyelements.GenerationOutcome{
 			Kind: policyelements.GenerationIgnored, GenerationID: generationID,
 			Role: runner.config.Role, StreamID: commit.StreamID,
-			SourceRevision: commit.SourceRevision, ContextVersion: commit.StoreVersion,
+			SourceRevision: commit.SourceRevision, ContextVersion: effectiveCommit.StoreVersion,
 			TriggerItemID: commit.TriggerItemID, Code: "duplicate_commit",
 			Message: "observation commit already reached a terminal activation decision",
 		}); err != nil {
@@ -455,18 +604,18 @@ func (runner *activationRunner) acceptCommit(
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	runner.active = &activeGeneration{id: generationID, contextVersion: commit.StoreVersion}
-	if err := runner.emit(ctx, envelope, generationID, commit, *runner.intent); err != nil {
+	runner.active = &activeGeneration{id: generationID, contextVersion: effectiveCommit.StoreVersion}
+	if err := runner.emit(ctx, envelope, generationID, effectiveCommit, *runner.intent, contextTailID); err != nil {
 		runner.active = nil
 		return err
 	}
 	runner.rememberTerminal(generationID)
-	runner.state.ContextVersion = commit.StoreVersion
+	runner.state.ContextVersion = effectiveCommit.StoreVersion
 	runner.state.Emitted++
 	if err := runner.publishOutcome(ctx, envelope, commit, policyelements.GenerationOutcome{
 		Kind: policyelements.GenerationEmitted, GenerationID: generationID,
 		Role: runner.config.Role, StreamID: commit.StreamID,
-		SourceRevision: commit.SourceRevision, ContextVersion: commit.StoreVersion,
+		SourceRevision: commit.SourceRevision, ContextVersion: effectiveCommit.StoreVersion,
 		TriggerItemID: commit.TriggerItemID,
 	}); err != nil {
 		return err
@@ -500,15 +649,504 @@ func (runner *activationRunner) acceptResult(
 			len(result.ToolProposals))
 	}
 	if len(result.ToolProposals) == 0 {
+		if runner.pendingTerminal != nil {
+			return errors.New("Realtime-CU activation received a pre-effect terminal for a model result with no proposal")
+		}
 		runner.active = nil
+		deferred := runner.deferred
+		runner.deferred = nil
+		if err := runner.publishState(ctx, envelope); err != nil {
+			return err
+		}
+		if deferred != nil {
+			// Re-enter the complete admission path. In particular this verifies
+			// the retained PrefixIdentity against the append-only store and checks
+			// that its exact durable intent is still a causal ancestor. Never
+			// rebuild a trigger from the store's newer tail.
+			return runner.acceptCommit(ctx, deferred.envelope)
+		}
+		return nil
 	} else {
 		callID := result.ToolProposals[0].Call.CallID
 		if !canonical(callID) {
 			return errors.New("Realtime-CU activation result proposal has a noncanonical call ID")
 		}
+		// Retain the latest changed visual prefix until the proposal reaches a
+		// terminal disposition. A real result-linked consequence discards it as
+		// pre-effect evidence; a pre-effect suppression replays it because no
+		// external action occurred.
 		runner.active.callID = callID
+		if runner.pendingTerminal != nil {
+			pending := runner.pendingTerminal
+			if pending.envelope.SessionID != envelope.SessionID ||
+				pending.envelope.RunID != envelope.RunID || pending.terminal.CallID != callID {
+				runner.pendingTerminal = nil
+				return errors.New("Realtime-CU activation pre-effect terminal contradicts the model result")
+			}
+			return runner.applyEffectTerminal(ctx, pending.envelope, pending.terminal)
+		}
 	}
 	return runner.publishState(ctx, envelope)
+}
+
+func (runner *activationRunner) acceptEffectTerminal(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	terminal, ok := preEffectTerminalPayload(envelope.Payload)
+	if !ok || !canonical(envelope.SessionID) || !canonical(envelope.RunID) ||
+		!canonical(terminal.CallID) || !supportedPreEffectTerminalKind(terminal.Kind) {
+		return runner.refuseEffectTerminal(ctx, envelope, terminal,
+			"invalid_effect_terminal", "pre-effect terminal requires canonical session, run, call, and kind")
+	}
+	if runner.active == nil || runner.active.id != envelope.RunID {
+		if _, known := runner.terminal[envelope.RunID]; known {
+			return runner.ignoreEffectTerminal(ctx, envelope, terminal, "late_effect_terminal",
+				"pre-effect terminal arrived after its generation was already released")
+		}
+		return runner.refuseEffectTerminal(ctx, envelope, terminal, "unknown_effect_terminal",
+			"pre-effect terminal does not address the active generation")
+	}
+	if runner.active.callID == "" {
+		if runner.pendingTerminal != nil {
+			if runner.pendingTerminal.envelope.SessionID == envelope.SessionID &&
+				runner.pendingTerminal.envelope.RunID == envelope.RunID &&
+				runner.pendingTerminal.terminal == terminal {
+				return runner.ignoreEffectTerminal(ctx, envelope, terminal, "duplicate_effect_terminal",
+					"the same pre-effect terminal is already pending model-result verification")
+			}
+			return runner.refuseEffectTerminal(ctx, envelope, terminal, "conflicting_effect_terminal",
+				"a different pre-effect terminal is already pending for this generation")
+		}
+		retained := envelope.Clone()
+		retained.Payload = terminal
+		runner.pendingTerminal = &pendingEffectTerminal{envelope: retained, terminal: terminal}
+		return nil
+	}
+	if runner.active.callID != terminal.CallID {
+		return runner.refuseEffectTerminal(ctx, envelope, terminal, "effect_terminal_call_mismatch",
+			"pre-effect terminal call does not match the active model proposal")
+	}
+	return runner.applyEffectTerminal(ctx, envelope, terminal)
+}
+
+func (runner *activationRunner) applyEffectTerminal(
+	ctx context.Context, envelope element.Envelope, terminal actionelements.PreEffectTerminal,
+) error {
+	active := runner.active
+	if active == nil || active.id != envelope.RunID || active.callID != terminal.CallID {
+		return errors.New("Realtime-CU activation cannot apply an unmatched pre-effect terminal")
+	}
+	if runner.pendingDisposition != nil {
+		if runner.pendingDisposition.cause.SessionID == envelope.SessionID &&
+			runner.pendingDisposition.cause.RunID == envelope.RunID &&
+			runner.pendingDisposition.terminal == terminal {
+			return runner.ignoreEffectTerminal(ctx, envelope, terminal, "duplicate_effect_terminal",
+				"the proposal disposition is already awaiting canonical commit")
+		}
+		return runner.refuseEffectTerminal(ctx, envelope, terminal, "conflicting_effect_terminal",
+			"a different proposal disposition is already awaiting canonical commit")
+	}
+	retained := envelope.Clone()
+	retained.Payload = terminal
+	runner.pendingDisposition = &pendingProposalDisposition{
+		cause: retained, terminal: terminal,
+	}
+	runner.pendingTerminal = nil
+	return runner.tryStartDisposition(ctx)
+}
+
+func (runner *activationRunner) tryStartDisposition(ctx context.Context) error {
+	pending := runner.pendingDisposition
+	if pending == nil || pending.requestID != "" {
+		return nil
+	}
+	if runner.active == nil || runner.active.id != pending.cause.RunID ||
+		runner.active.callID != pending.terminal.CallID {
+		return errors.New("Realtime-CU activation lost the generation awaiting proposal disposition")
+	}
+	snapshot, prefix, err := runner.store.SnapshotWithPrefixIdentity()
+	if err != nil {
+		return fmt.Errorf("identify proposal-disposition prefix: %w", err)
+	}
+	proposal, found, err := dispositionProposal(snapshot, runner.active.id, pending.terminal.CallID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		// Model-result commit and the action path use independent graph lanes.
+		// A terminal may reach activation first; a later store commit retries
+		// this lookup without granting any authority in the meantime.
+		return nil
+	}
+	kind, err := trajectoryDispositionKind(pending.terminal.Kind)
+	if err != nil {
+		return err
+	}
+	parents := []string{proposal.ID}
+	if runner.deferred != nil {
+		if err := attestDeferredObservation(snapshot, *runner.deferred); err != nil {
+			return fmt.Errorf("attest retained observation for proposal disposition: %w", err)
+		}
+		parents = appendUniqueString(parents, runner.deferred.commit.TrajectoryItemID)
+	}
+	item := trajectory.Item{
+		ID:              dispositionTrajectoryItemID(pending.cause.SessionID, runner.active.id, proposal.ID, kind),
+		Kind:            trajectory.KindToolProposalDisposition,
+		MonotonicNS:     monotonicTrajectoryNS(runner.clock.NowNS(), snapshot),
+		CausalParentIDs: parents,
+		SourceRevision:  proposal.SourceRevision,
+		InvocationID:    proposal.InvocationID,
+		Producer:        trajectory.Producer{Phase: trajectory.PhaseRuntime},
+		ToolProposalDisposition: &trajectory.ToolProposalDisposition{
+			ProposalItemID: proposal.ID, CallID: proposal.ToolCall.CallID,
+			Name: proposal.ToolCall.Name, Kind: kind,
+		},
+	}
+	if occupied, exists := trajectoryItem(snapshot, item.ID); exists {
+		return fmt.Errorf("proposal-disposition trajectory item ID %q is occupied by %q",
+			item.ID, occupied.Kind)
+	}
+	sequence, err := runner.sequences.Next(runner.instance + ".disposition-append")
+	if err != nil {
+		return err
+	}
+	requestID := fmt.Sprintf("%s-disposition-append-%d", runner.instance, sequence)
+	pending.requestID = requestID
+	pending.expectedVersion = snapshot.Version
+	pending.expectedPrefix = prefix
+	pending.item = cloneDispositionItem(item)
+	appendEnvelope := pending.cause.Clone()
+	appendEnvelope.Type = stateelements.AppendType()
+	appendEnvelope.ItemID = requestID
+	appendEnvelope.CausalParents = appendUniqueString(appendEnvelope.CausalParents, pending.cause.ItemID)
+	appendEnvelope.CausalParents = appendUniqueString(appendEnvelope.CausalParents, proposal.ID)
+	for _, parent := range parents[1:] {
+		appendEnvelope.CausalParents = appendUniqueString(appendEnvelope.CausalParents, parent)
+	}
+	appendEnvelope.Payload = stateelements.Append{
+		Compare: true, ExpectedVersion: snapshot.Version,
+		Items: []trajectory.Item{cloneDispositionItem(item)},
+	}
+	delivery, err := runner.ports.dispositionAppend.Broadcast(ctx, appendEnvelope)
+	if err != nil {
+		pending.requestID = ""
+		return err
+	}
+	if delivery.Delivered != 1 || delivery.Dropped != 0 {
+		pending.requestID = ""
+		return fmt.Errorf("proposal-disposition append delivered %d and dropped %d lanes",
+			delivery.Delivered, delivery.Dropped)
+	}
+	return nil
+}
+
+func (runner *activationRunner) acceptDispositionCommit(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	pending := runner.pendingDisposition
+	if pending == nil {
+		return nil
+	}
+	if pending.requestID == "" {
+		return runner.tryStartDisposition(ctx)
+	}
+	if !replyMatches(envelope, pending.requestID) {
+		return nil
+	}
+	if envelope.SessionID != pending.cause.SessionID || envelope.RunID != pending.cause.RunID {
+		return errors.New("proposal-disposition commit crossed the pending session or run")
+	}
+	commit, ok := stateCommitPayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("proposal-disposition commit %s has payload %T", envelope.ItemID, envelope.Payload)
+	}
+	if err := attestDispositionCommit(runner.store.Snapshot(), pending, commit); err != nil {
+		return fmt.Errorf("proposal-disposition commit %s: %w", envelope.ItemID, err)
+	}
+	active := runner.active
+	if active == nil || active.id != pending.cause.RunID || active.callID != pending.terminal.CallID {
+		return errors.New("proposal-disposition commit no longer matches the active generation")
+	}
+	deferred := runner.deferred
+	runner.active = nil
+	runner.deferred = nil
+	runner.pendingTerminal = nil
+	runner.pendingDisposition = nil
+	runner.state.Ignored++
+	runner.state.ContextVersion = commit.Version
+	code, message := preEffectTerminalOutcome(pending.terminal.Kind)
+	cause := pending.cause.Clone()
+	for _, parent := range []string{
+		pending.requestID, envelope.ItemID, pending.item.ID, commit.Context.StateItemID,
+	} {
+		cause.CausalParents = appendUniqueString(cause.CausalParents, parent)
+	}
+	if err := runner.publishOutcome(ctx, cause, stateelements.ObservationCommitOutcome{},
+		policyelements.GenerationOutcome{
+			Kind: policyelements.GenerationIgnored, GenerationID: active.id,
+			Role: runner.config.Role, ContextVersion: active.contextVersion,
+			Code: code, Message: message,
+		}); err != nil {
+		return err
+	}
+	if err := runner.publishState(ctx, cause); err != nil {
+		return err
+	}
+	if deferred == nil {
+		return nil
+	}
+	if deferred.commit.StoreVersion > commit.Version {
+		// This observation committed after the disposition and its own context
+		// therefore already contains that canonical fact with the observation as
+		// the real tail.
+		return runner.acceptCommit(ctx, deferred.envelope)
+	}
+	return runner.acceptCommitAtContext(ctx, deferred.envelope, &activationContextOverride{
+		context: commit.Context, version: commit.Version, tailID: pending.item.ID,
+	})
+}
+
+func (runner *activationRunner) acceptDispositionRejection(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	pending := runner.pendingDisposition
+	if pending == nil || pending.requestID == "" || !replyMatches(envelope, pending.requestID) {
+		return nil
+	}
+	if envelope.SessionID != pending.cause.SessionID || envelope.RunID != pending.cause.RunID {
+		return errors.New("proposal-disposition rejection crossed the pending session or run")
+	}
+	rejection, ok := stateRejectionPayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("proposal-disposition rejection %s has payload %T", envelope.ItemID, envelope.Payload)
+	}
+	if rejection.ExpectedVersion != pending.expectedVersion {
+		return fmt.Errorf("proposal-disposition rejection expects version %d, pending append used %d",
+			rejection.ExpectedVersion, pending.expectedVersion)
+	}
+	requestID := pending.requestID
+	pending.requestID = ""
+	if rejection.Code != "version_conflict" {
+		return fmt.Errorf("proposal-disposition append %s was rejected (%s): %s",
+			requestID, rejection.Code, rejection.Message)
+	}
+	if rejection.CurrentVersion <= pending.expectedVersion {
+		return fmt.Errorf("proposal-disposition version conflict moved from %d to invalid version %d",
+			pending.expectedVersion, rejection.CurrentVersion)
+	}
+	pending.retries++
+	if pending.retries > maximumDispositionRetries {
+		return fmt.Errorf("proposal-disposition append exceeded %d version-conflict retries",
+			maximumDispositionRetries)
+	}
+	// tryStartDisposition samples Store again and re-attests the exact proposal,
+	// any newly retained observation, and the complete fresh prefix.
+	return runner.tryStartDisposition(ctx)
+}
+
+func dispositionProposal(
+	snapshot trajectory.Snapshot, invocationID, callID string,
+) (trajectory.Item, bool, error) {
+	var proposal trajectory.Item
+	found := false
+	for _, item := range snapshot.Items {
+		if item.Kind != trajectory.KindToolProposal || item.ToolCall == nil ||
+			item.InvocationID != invocationID || item.ToolCall.CallID != callID {
+			continue
+		}
+		if found {
+			return trajectory.Item{}, false, fmt.Errorf(
+				"canonical trajectory has multiple proposals for run %q call %q", invocationID, callID)
+		}
+		proposal, found = item, true
+	}
+	if !found {
+		return trajectory.Item{}, false, nil
+	}
+	if _, promoted := trajectory.PromotedToolProposalIDs(snapshot)[proposal.ID]; promoted {
+		return trajectory.Item{}, false, fmt.Errorf("tool proposal %q was already promoted", proposal.ID)
+	}
+	terminal, _ := trajectory.TerminalToolProposalIDs(snapshot)
+	if _, disposed := terminal[proposal.ID]; disposed {
+		return trajectory.Item{}, false, fmt.Errorf("tool proposal %q already has a terminal disposition", proposal.ID)
+	}
+	return proposal, true, nil
+}
+
+func trajectoryDispositionKind(
+	kind actionelements.PreEffectTerminalKind,
+) (trajectory.ToolProposalDispositionKind, error) {
+	switch kind {
+	case actionelements.PreEffectRepetitionSuppressed:
+		return trajectory.ToolProposalRepetitionSuppressed, nil
+	case actionelements.PreEffectToolPolicySuppressed:
+		return trajectory.ToolProposalToolPolicySuppressed, nil
+	default:
+		return "", fmt.Errorf("unsupported pre-effect terminal kind %q", kind)
+	}
+}
+
+func attestDeferredObservation(snapshot trajectory.Snapshot, deferred deferredVisualCommit) error {
+	commit := deferred.commit
+	if commit.StoreVersion == 0 || commit.Context.Prefix.Version != commit.StoreVersion ||
+		commit.StoreVersion > snapshot.Version {
+		return errors.New("retained observation has an invalid canonical version")
+	}
+	if err := trajectory.VerifyPrefix(snapshot, commit.Context.Prefix); err != nil {
+		return err
+	}
+	prefix := snapshot.Items[:commit.StoreVersion]
+	item, found := trajectoryItem(trajectory.Snapshot{Version: commit.StoreVersion, Items: prefix},
+		commit.TrajectoryItemID)
+	if !found || item.Kind != trajectory.KindObservation || item.Event == nil ||
+		item.ID != prefix[len(prefix)-1].ID || item.Event.EventID != commit.TriggerItemID ||
+		item.SourceRevision != commit.SourceRevision {
+		return errors.New("retained observation no longer matches its exact canonical prefix")
+	}
+	return nil
+}
+
+func attestDispositionCommit(
+	storeSnapshot trajectory.Snapshot, pending *pendingProposalDisposition, commit stateelements.Commit,
+) error {
+	if pending == nil || pending.requestID == "" {
+		return errors.New("no proposal-disposition request is pending")
+	}
+	if !slices.Equal(commit.AppendedIDs, []string{pending.item.ID}) ||
+		commit.Version != pending.expectedVersion+1 ||
+		commit.Snapshot.Version != commit.Version || uint64(len(commit.Snapshot.Items)) != commit.Version {
+		return errors.New("commit does not attest the one expected disposition append")
+	}
+	if commit.Context.Prefix.Version != commit.Version || !canonical(commit.Context.StateItemID) {
+		return errors.New("commit omits the acknowledged disposition context")
+	}
+	if err := trajectory.VerifyPrefix(commit.Snapshot, pending.expectedPrefix); err != nil {
+		return fmt.Errorf("pre-append prefix changed: %w", err)
+	}
+	if err := trajectory.VerifyPrefix(commit.Snapshot, commit.Context.Prefix); err != nil {
+		return fmt.Errorf("commit prefix is invalid: %w", err)
+	}
+	if err := trajectory.VerifyPrefix(storeSnapshot, commit.Context.Prefix); err != nil {
+		return fmt.Errorf("commit prefix is not canonical: %w", err)
+	}
+	committed := commit.Snapshot.Items[pending.expectedVersion]
+	if !reflect.DeepEqual(committed, pending.item) {
+		return errors.New("commit changed the disposition item")
+	}
+	terminal, evidence := trajectory.TerminalToolProposalIDs(commit.Snapshot)
+	if _, ok := terminal[pending.item.ToolProposalDisposition.ProposalItemID]; !ok {
+		return errors.New("commit did not establish terminal proposal evidence")
+	}
+	if _, ok := evidence[pending.item.ID]; !ok {
+		return errors.New("commit did not validate the disposition item")
+	}
+	return nil
+}
+
+func cloneDispositionItem(item trajectory.Item) trajectory.Item {
+	item.CausalParentIDs = slices.Clone(item.CausalParentIDs)
+	if item.ToolProposalDisposition != nil {
+		copy := *item.ToolProposalDisposition
+		item.ToolProposalDisposition = &copy
+	}
+	return item
+}
+
+func monotonicTrajectoryNS(now uint64, snapshot trajectory.Snapshot) uint64 {
+	if len(snapshot.Items) != 0 && now < snapshot.Items[len(snapshot.Items)-1].MonotonicNS {
+		return snapshot.Items[len(snapshot.Items)-1].MonotonicNS
+	}
+	return now
+}
+
+func dispositionTrajectoryItemID(
+	sessionID, runID, proposalID string, kind trajectory.ToolProposalDispositionKind,
+) string {
+	hash := sha256.New()
+	for _, identity := range []string{sessionID, runID, proposalID, string(kind)} {
+		_, _ = fmt.Fprintf(hash, "%d:", len(identity))
+		_, _ = hash.Write([]byte(identity))
+	}
+	return "realtime-cu-proposal-disposition:sha256:" + hex.EncodeToString(hash.Sum(nil))
+}
+
+func supportedPreEffectTerminalKind(kind actionelements.PreEffectTerminalKind) bool {
+	switch kind {
+	case actionelements.PreEffectRepetitionSuppressed,
+		actionelements.PreEffectToolPolicySuppressed:
+		return true
+	default:
+		return false
+	}
+}
+
+func preEffectTerminalOutcome(kind actionelements.PreEffectTerminalKind) (string, string) {
+	switch kind {
+	case actionelements.PreEffectRepetitionSuppressed:
+		return "effect_repetition_suppressed",
+			"successful semantic effect replay was suppressed before dispatch"
+	case actionelements.PreEffectToolPolicySuppressed:
+		return "effect_tool_policy_suppressed",
+			"the graph tool policy suppressed the proposal before dispatch"
+	default:
+		return "invalid_effect_terminal", "an unknown pre-effect terminal was rejected"
+	}
+}
+
+func (runner *activationRunner) ignoreEffectTerminal(
+	ctx context.Context, envelope element.Envelope, _ actionelements.PreEffectTerminal, code, message string,
+) error {
+	runner.state.Ignored++
+	if err := runner.publishOutcome(ctx, envelope, stateelements.ObservationCommitOutcome{},
+		policyelements.GenerationOutcome{
+			Kind: policyelements.GenerationIgnored, GenerationID: envelope.RunID,
+			Role: runner.config.Role, Code: code, Message: message,
+		}); err != nil {
+		return err
+	}
+	return runner.publishState(ctx, envelope)
+}
+
+func (runner *activationRunner) refuseEffectTerminal(
+	ctx context.Context, envelope element.Envelope, _ actionelements.PreEffectTerminal, code, message string,
+) error {
+	runner.state.Refused++
+	if err := runner.publishOutcome(ctx, envelope, stateelements.ObservationCommitOutcome{},
+		policyelements.GenerationOutcome{
+			Kind: policyelements.GenerationRefused, GenerationID: envelope.RunID,
+			Role: runner.config.Role, Code: code, Message: message,
+		}); err != nil {
+		return err
+	}
+	return runner.publishState(ctx, envelope)
+}
+
+func (runner *activationRunner) deferVisual(
+	ctx context.Context, envelope element.Envelope,
+	commit stateelements.ObservationCommitOutcome,
+) error {
+	message := runner.retainDeferredVisual(envelope, commit,
+		"changed visual evidence is retained until the in-flight cognition turn settles",
+		"a newer changed visual prefix is already retained for the in-flight cognition turn")
+	return runner.ignore(ctx, envelope, commit, "generation_deferred", message)
+}
+
+func (runner *activationRunner) retainDeferredVisual(
+	envelope element.Envelope, commit stateelements.ObservationCommitOutcome,
+	retainedMessage, supersededMessage string,
+) string {
+	message := retainedMessage
+	if runner.deferred == nil || commit.StoreVersion > runner.deferred.commit.StoreVersion {
+		retained := envelope.Clone()
+		// Envelope.Clone intentionally shares immutable payloads. Pin this value
+		// copy anyway so replay cannot observe mutation through a caller-owned
+		// *ObservationCommitOutcome.
+		retained.Payload = commit
+		runner.deferred = &deferredVisualCommit{envelope: retained, commit: commit}
+	} else {
+		message = supersededMessage
+	}
+	return message
 }
 
 func (runner *activationRunner) ignore(
@@ -529,7 +1167,7 @@ func (runner *activationRunner) ignore(
 
 func (runner *activationRunner) emit(
 	ctx context.Context, cause element.Envelope, generationID string,
-	commit stateelements.ObservationCommitOutcome, basis userIntentBasis,
+	commit stateelements.ObservationCommitOutcome, basis userIntentBasis, contextTailID string,
 ) error {
 	invocation := cloneInvocation(runner.config.Invocation)
 	invocation.SourceRevision = basis.sourceRevision
@@ -546,7 +1184,7 @@ func (runner *activationRunner) emit(
 	trigger.CancellationScope = generationID
 	for _, parent := range []string{
 		cause.ItemID, commit.Context.StateItemID, commit.TrajectoryItemID,
-		commit.TriggerItemID, basis.itemID, basis.triggerItemID,
+		contextTailID, commit.TriggerItemID, basis.itemID, basis.triggerItemID,
 	} {
 		trigger.CausalParents = appendUniqueString(trigger.CausalParents, parent)
 	}
@@ -560,7 +1198,7 @@ func (runner *activationRunner) emit(
 		ObservationItemID: basis.itemID, ObservationTriggerItemID: basis.triggerItemID,
 		SourceRevision: basis.sourceRevision, ContextVersion: commit.StoreVersion,
 		ContextEnvelopeItemID: commit.Context.StateItemID,
-		ContextTailItem:       commit.TrajectoryItemID,
+		ContextTailItem:       contextTailID,
 	}
 	result, err := runner.ports.trigger.Broadcast(ctx, trigger)
 	if err != nil {
@@ -591,7 +1229,11 @@ func (runner *activationRunner) acceptCancel(
 			"invalid_cancel", "intent cancellation requires canonical session and address")
 	}
 	runner.intent = nil
-	runner.active = nil
+	runner.deferred = nil
+	runner.pendingTerminal = nil
+	if runner.pendingDisposition == nil {
+		runner.active = nil
+	}
 	if envelope.Sequence > runner.revokedSequence {
 		runner.revokedSequence = envelope.Sequence
 	}
@@ -738,6 +1380,18 @@ func cognitionResultPayload(payload any) (cognitionelements.Result, bool) {
 		}
 	}
 	return cognitionelements.Result{}, false
+}
+
+func preEffectTerminalPayload(payload any) (actionelements.PreEffectTerminal, bool) {
+	switch value := payload.(type) {
+	case actionelements.PreEffectTerminal:
+		return value, true
+	case *actionelements.PreEffectTerminal:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return actionelements.PreEffectTerminal{}, false
 }
 
 func activationGenerationID(

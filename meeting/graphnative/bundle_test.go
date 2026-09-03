@@ -21,13 +21,16 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/gateway"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
@@ -116,8 +119,8 @@ func TestMeetingProviderFailsClosedBeforeAdapterWhenDependencyServiceDrifts(t *t
 	if err == nil || !strings.Contains(err.Error(), "registry service has type struct {}") {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if fixture.mountFactories.Load() != 4 {
-		t.Fatalf("mount dependency factory calls = %d, want 4", fixture.mountFactories.Load())
+	if fixture.mountFactories.Load() != 5 {
+		t.Fatalf("mount dependency factory calls = %d, want 5", fixture.mountFactories.Load())
 	}
 	if fixture.adapterFactories.Load() != 0 {
 		t.Fatalf("adapter factory ran after dependency drift: %d", fixture.adapterFactories.Load())
@@ -152,7 +155,7 @@ func TestMeetingProviderMountsExactGraphAndCleansUpWhenAdapterRefuses(t *testing
 	if runtime != nil || !errors.Is(err, want) {
 		t.Fatalf("Start() = (%T, %v), want adapter refusal", runtime, err)
 	}
-	if fixture.mountFactories.Load() != 4 || fixture.adapterFactories.Load() != 1 {
+	if fixture.mountFactories.Load() != 5 || fixture.adapterFactories.Load() != 1 {
 		t.Fatalf("factory calls mount=%d adapter=%d",
 			fixture.mountFactories.Load(), fixture.adapterFactories.Load())
 	}
@@ -308,12 +311,595 @@ func TestMeetingProviderRunsAndReportsLiveGraphWithoutCredentials(t *testing.T) 
 	if err := runtime.Close(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.mountFactories.Load() != 4 || fixture.adapterFactories.Load() != 1 ||
+	if fixture.mountFactories.Load() != 5 || fixture.adapterFactories.Load() != 1 ||
 		modelDials.Load() != 1 || external.closes.Load() != 1 ||
 		visualFactories.Load() != 1 || visualCloses.Load() != 1 {
 		t.Fatalf("live lifecycle mount=%d adapter=%d dial=%d external-close=%d visual=%d/%d",
 			fixture.mountFactories.Load(), fixture.adapterFactories.Load(), modelDials.Load(),
 			external.closes.Load(), visualFactories.Load(), visualCloses.Load())
+	}
+}
+
+func TestMountedMeetingForegroundQuarantinePreservesOrderedSafeSpeech(t *testing.T) {
+	fixture := newProviderFixture(t)
+	var modelDials, visualFactories, visualCloses atomic.Int64
+	created := make(chan *fixtureExternalSession, 1)
+	ttsPlans := make(chan v1.SpeechPlan, 1)
+	ttsRelease := make(chan struct{})
+	graphPCM := []byte{9, 0, 8, 0, 7, 0}
+	_ = installValidMountServices(t, &fixture, &modelDials, &visualFactories, &visualCloses,
+		func(_ context.Context, hello sidecar.Message) (modelelements.Session, error) {
+			session := newFixtureExternalSession(hello)
+			created <- session
+			return session, nil
+		}, fixtureVisualConfig{ttsPlans: ttsPlans, ttsPCM: graphPCM, ttsRelease: ttsRelease})
+	realAdapter := meetinggraph.SessionAdapterFactory(meetinggraph.SessionAdapterConfig{})
+	fixture.config.Adapter.Factory = func(
+		ctx context.Context, mounted *graphruntime.Mounted, options legacy.Options,
+		profile graphbinding.SessionAdapterProfile,
+	) (graphbinding.SessionAdapter, error) {
+		fixture.adapterFactories.Add(1)
+		return realAdapter(ctx, mounted, options, profile)
+	}
+	provider, err := meetinggraph.NewProvider(context.Background(), fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &quarantineMeetingSink{done: make(chan struct{})}
+	const sessionID = "meeting-quarantine-mounted"
+	runtime, err := provider.Binding.Start(context.Background(), legacy.Options{
+		SessionID: sessionID, Sink: sink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, ok := runtime.(*graphbinding.NativeRuntime)
+	if !ok {
+		t.Fatalf("mounted Meeting runtime has type %T", runtime)
+	}
+	defer func() {
+		if closeErr := runtime.Close(context.Background(), errors.New("test complete")); closeErr != nil {
+			t.Errorf("close mounted Meeting runtime: %v", closeErr)
+		}
+	}()
+
+	var external *fixtureExternalSession
+	select {
+	case external = <-created:
+		external.leaveFramesOpen = true
+	case <-time.After(2 * time.Second):
+		t.Fatal("mounted Meeting foreground deployment was not dialed")
+	}
+	const runID = "foreground-quarantine-run"
+	utterance := action.Utterance{ID: "foreground-quarantine-speech"}
+	frames := []struct {
+		port     string
+		sequence uint64
+		payload  any
+	}{
+		{"audio_out", 1, speechelements.AudioFrame{
+			Kind: speechelements.AudioBegin, UtteranceID: utterance.ID, Utterance: utterance,
+		}},
+		{"text_out", 2, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextBegin, Index: 0,
+		}},
+		{"text_out", 3, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextChunk, Index: 1, Text: "Normal.\n",
+		}},
+		{"audio_out", 4, speechelements.AudioFrame{
+			Kind: speechelements.AudioChunk, UtteranceID: utterance.ID,
+			Chunk: v1.SpeechChunk{
+				ChunkID: "quarantine-audio-1", CandidateID: utterance.ID,
+				SampleRateHz: 24_000, PCM16LE: []byte{1, 0, 2, 0},
+			},
+		}},
+		{"text_out", 5, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextChunk, Index: 2, Text: toolCallOpenForMeetingTest,
+		}},
+		{"text_out", 6, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextChunk, Index: 3,
+			Text: `{"name":"hidden","arguments":{"secret":"never-speak"}}</tool_call>`,
+		}},
+		{"text_out", 7, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextChunk, Index: 4, Text: "Terminal ordinary <tool",
+		}},
+		{"audio_out", 8, speechelements.AudioFrame{
+			Kind: speechelements.AudioChunk, UtteranceID: utterance.ID,
+			Chunk: v1.SpeechChunk{
+				ChunkID: "quarantine-native-audio-2", CandidateID: utterance.ID,
+				SampleOffset: 2, SampleRateHz: 24_000, PCM16LE: []byte{3, 0, 4, 0}, Final: true,
+			},
+		}},
+	}
+	for index, frame := range frames {
+		pushMeetingForegroundFrame(t, external, native.Done(), sessionID, runID,
+			fmt.Sprintf("foreground-response-%d", index+1), frame.port, frame.sequence, frame.payload)
+	}
+
+	rawAssistant := "Normal.\n" + toolCallOpenForMeetingTest +
+		`{"name":"hidden","arguments":{"secret":"never-speak"}}</tool_call>` +
+		"Terminal ordinary <tool"
+	result := cognitionelements.Result{
+		RunID: runID, ProviderReference: meetinggraph.ForegroundDeploymentReference,
+		Descriptor: continuation.Descriptor{
+			Provider: "meeting-fixture", Model: "foreground", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+			ToolAuthority:   continuation.ToolAuthorityPropose,
+			SpeechAuthority: continuation.SpeechAuthorityVoice,
+			NativeStateType: "meeting-fixture/native.v1",
+		},
+		Invocation: continuation.Invocation{Instruction: "answer"},
+		Outputs: []cognitionelements.PreparedOutput{{
+			Kind: cognitionelements.PreparedAssistant, Text: rawAssistant,
+		}},
+		AssistantText: rawAssistant, ReasoningRetained: true,
+		Completion: continuation.Completion{
+			StopReason: "stop", ProviderStateType: "meeting-fixture/native.v1",
+			ProviderState: json.RawMessage(
+				`{"content":"portable differs","tool_calls":[{"name":"native-only"}]}`,
+			),
+		},
+	}
+	// Result deliberately overtakes the text terminal on its independent graph
+	// edge. The quarantine must retain it until the real TextEnd crosses safe_text.
+	pushMeetingForegroundFrame(t, external, native.Done(), sessionID, runID,
+		"foreground-result", "result", 0, result)
+	for _, frame := range []struct {
+		port     string
+		sequence uint64
+		payload  any
+	}{
+		{"text_out", 9, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextEnd, Index: 5,
+		}},
+		{"audio_out", 10, speechelements.AudioFrame{
+			Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
+			Terminal: speechelements.SynthesisOutcome{
+				UtteranceID: utterance.ID, Kind: speechelements.OutcomeSucceeded,
+			},
+		}},
+		{"outcome", 11, cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+			ProviderReference: meetinggraph.ForegroundDeploymentReference,
+		}},
+	} {
+		pushMeetingForegroundFrame(t, external, native.Done(), sessionID, runID,
+			fmt.Sprintf("foreground-response-%d", frame.sequence), frame.port, frame.sequence, frame.payload)
+	}
+
+	wantSafeText := "Normal.\nTerminal ordinary <tool"
+	var plan v1.SpeechPlan
+	select {
+	case plan = <-ttsPlans:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("mounted Meeting graph TTS received no safe plan; events=%v", sink.snapshot())
+	}
+	if plan.Text != wantSafeText || !strings.HasPrefix(plan.CandidateID,
+		"foreground_segment:"+runID+":speech:1") {
+		t.Fatalf("mounted Meeting graph TTS plan = %+v, want only %q", plan, wantSafeText)
+	}
+	awaitMeetingEdgeDequeued(t, native, "foreground.audio_out", "foreground_native_audio_drop.in")
+	for _, event := range sink.snapshot() {
+		if event == "audio" || event == "speech_end" || event == "turn_end" {
+			t.Fatalf("Meeting terminal escaped while graph TTS was blocked: %v", sink.snapshot())
+		}
+	}
+	close(ttsRelease)
+
+	select {
+	case <-sink.done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("mounted Meeting response did not terminalize; events=%v", sink.snapshot())
+	}
+	want := []string{
+		"turn_begin", "speech_begin", "text:Normal.\n",
+		"text:Terminal ordinary ", "text:<tool", "audio", "speech_end", "turn_end",
+	}
+	if events := sink.snapshot(); !slices.Equal(events, want) {
+		t.Fatalf("mounted Meeting safe events = %v, want %v", events, want)
+	}
+	if strings.Contains(strings.Join(sink.snapshot(), ""), "never-speak") ||
+		strings.Contains(strings.Join(sink.snapshot(), ""), "native-only") ||
+		strings.Contains(plan.Text, "never-speak") || strings.Contains(plan.Text, "native-only") {
+		t.Fatalf("serialized control crossed mounted Meeting adapter: %v", sink.snapshot())
+	}
+	if audio, utterances := sink.audioSnapshot(); len(audio) != 1 ||
+		!slices.Equal(audio[0], graphPCM) || slices.Equal(audio[0], []byte{1, 0, 2, 0}) ||
+		!slices.Equal(utterances, []string{wantSafeText}) {
+		t.Fatalf("Meeting sink audio/utterance = %v / %v, want graph TTS PCM / %q",
+			audio, utterances, wantSafeText)
+	}
+}
+
+func TestMountedMeetingToolOnlyForegroundCompletesWithoutSpeechFraming(t *testing.T) {
+	fixture := newProviderFixture(t)
+	var modelDials, visualFactories, visualCloses atomic.Int64
+	created := make(chan *fixtureExternalSession, 1)
+	ttsPlans := make(chan v1.SpeechPlan, 1)
+	_ = installValidMountServices(t, &fixture, &modelDials, &visualFactories, &visualCloses,
+		func(_ context.Context, hello sidecar.Message) (modelelements.Session, error) {
+			session := newFixtureExternalSession(hello)
+			created <- session
+			return session, nil
+		}, fixtureVisualConfig{ttsPlans: ttsPlans})
+	realAdapter := meetinggraph.SessionAdapterFactory(meetinggraph.SessionAdapterConfig{})
+	fixture.config.Adapter.Factory = func(
+		ctx context.Context, mounted *graphruntime.Mounted, options legacy.Options,
+		profile graphbinding.SessionAdapterProfile,
+	) (graphbinding.SessionAdapter, error) {
+		fixture.adapterFactories.Add(1)
+		return realAdapter(ctx, mounted, options, profile)
+	}
+	provider, err := meetinggraph.NewProvider(context.Background(), fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &quarantineMeetingSink{done: make(chan struct{})}
+	const sessionID = "meeting-tool-only-mounted"
+	runtime, err := provider.Binding.Start(context.Background(), legacy.Options{
+		SessionID: sessionID, Sink: sink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, ok := runtime.(*graphbinding.NativeRuntime)
+	if !ok {
+		t.Fatalf("mounted Meeting runtime has type %T", runtime)
+	}
+	defer func() {
+		if closeErr := runtime.Close(context.Background(), errors.New("test complete")); closeErr != nil {
+			t.Errorf("close mounted Meeting runtime: %v", closeErr)
+		}
+	}()
+
+	var external *fixtureExternalSession
+	select {
+	case external = <-created:
+		external.leaveFramesOpen = true
+	case <-time.After(2 * time.Second):
+		t.Fatal("mounted Meeting foreground deployment was not dialed")
+	}
+	const runID = "foreground-tool-only-run"
+	tool := continuation.ToolDefinition{
+		Name: "lookup", Description: "look up one record",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`),
+	}
+	proposal := cognitionelements.ToolProposal{
+		Call: trajectory.ToolCall{
+			CallID: "foreground-tool-only-call", Name: tool.Name,
+			Arguments: json.RawMessage(`{"id":"record-1"}`),
+		},
+		Declared: true, ProviderAuthority: continuation.ToolAuthorityPropose,
+	}
+	result := cognitionelements.Result{
+		RunID: runID, ProviderReference: meetinggraph.ForegroundDeploymentReference,
+		Descriptor: continuation.Descriptor{
+			Provider: "meeting-fixture", Model: "foreground", Phase: trajectory.PhaseFast,
+			Effort: continuation.EffortMinimal, Streaming: true,
+			ToolAuthority:   continuation.ToolAuthorityPropose,
+			SpeechAuthority: continuation.SpeechAuthorityVoice,
+		},
+		Invocation: continuation.Invocation{Instruction: "use the lookup", Tools: []continuation.ToolDefinition{tool}},
+		Outputs: []cognitionelements.PreparedOutput{{
+			Kind: cognitionelements.PreparedTool, Proposal: &proposal,
+		}},
+		ToolProposals: []cognitionelements.ToolProposal{proposal},
+		Completion:    continuation.Completion{StopReason: "tool_call"},
+	}
+	pushMeetingForegroundFrame(t, external, native.Done(), sessionID, runID,
+		"foreground-tool-only-proposal", "tool_proposal", 1, proposal)
+	pushMeetingForegroundFrame(t, external, native.Done(), sessionID, runID,
+		"foreground-tool-only-result", "result", 0, result)
+	pushMeetingForegroundFrame(t, external, native.Done(), sessionID, runID,
+		"foreground-tool-only-outcome", "outcome", 2, cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+			ProviderReference: meetinggraph.ForegroundDeploymentReference,
+		})
+
+	select {
+	case <-sink.done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("tool-only Meeting response did not terminalize; events=%v", sink.snapshot())
+	}
+	want := []string{"turn_begin", "tool:foreground-tool-only-call", "turn_end"}
+	if events := sink.snapshot(); !slices.Equal(events, want) {
+		t.Fatalf("tool-only Meeting events = %v, want %v", events, want)
+	}
+	select {
+	case plan := <-ttsPlans:
+		t.Fatalf("tool-only Meeting unexpectedly reached graph TTS: %+v", plan)
+	default:
+	}
+}
+
+type mountedMeetingCancellationHarness struct {
+	runtime   legacy.Runtime
+	native    *graphbinding.NativeRuntime
+	mounted   *graphruntime.Mounted
+	external  *fixtureExternalSession
+	sink      *quarantineMeetingSink
+	sessionID string
+}
+
+func mountMeetingCancellationHarness(
+	t *testing.T, sessionID string,
+) mountedMeetingCancellationHarness {
+	t.Helper()
+	fixture := newProviderFixture(t)
+	var modelDials, visualFactories, visualCloses atomic.Int64
+	created := make(chan *fixtureExternalSession, 1)
+	_ = installValidMountServices(t, &fixture, &modelDials, &visualFactories, &visualCloses,
+		func(_ context.Context, hello sidecar.Message) (modelelements.Session, error) {
+			session := newFixtureExternalSession(hello)
+			created <- session
+			return session, nil
+		}, fixtureVisualConfig{})
+	realAdapter := meetinggraph.SessionAdapterFactory(meetinggraph.SessionAdapterConfig{})
+	var mountedGraph *graphruntime.Mounted
+	fixture.config.Adapter.Factory = func(
+		ctx context.Context, mounted *graphruntime.Mounted, options legacy.Options,
+		profile graphbinding.SessionAdapterProfile,
+	) (graphbinding.SessionAdapter, error) {
+		fixture.adapterFactories.Add(1)
+		mountedGraph = mounted
+		return realAdapter(ctx, mounted, options, profile)
+	}
+	provider, err := meetinggraph.NewProvider(context.Background(), fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &quarantineMeetingSink{done: make(chan struct{})}
+	runtime, err := provider.Binding.Start(context.Background(), legacy.Options{
+		SessionID: sessionID, Sink: sink,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, ok := runtime.(*graphbinding.NativeRuntime)
+	if !ok || mountedGraph == nil {
+		t.Fatalf("mounted Meeting runtime = %T, graph = %p", runtime, mountedGraph)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = runtime.Close(ctx, errors.New("test complete"))
+	})
+	var external *fixtureExternalSession
+	select {
+	case external = <-created:
+		external.leaveFramesOpen = true
+	case <-time.After(2 * time.Second):
+		t.Fatal("mounted Meeting foreground deployment was not dialed")
+	}
+	return mountedMeetingCancellationHarness{
+		runtime: runtime, native: native, mounted: mountedGraph, external: external,
+		sink: sink, sessionID: sessionID,
+	}
+}
+
+func (harness mountedMeetingCancellationHarness) awaitExactForegroundCancel(
+	t *testing.T, runID, reason string,
+) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case message := <-harness.external.sent:
+			if message.Port != "cancel" {
+				continue
+			}
+			if message.Envelope == nil {
+				t.Fatal("Meeting foreground cancellation has no envelope")
+			}
+			var cancel cognitionelements.Cancel
+			if err := json.Unmarshal(message.Envelope.JSON, &cancel); err != nil {
+				t.Fatal(err)
+			}
+			if message.Envelope.RunID != runID || message.Envelope.CancellationScope != runID ||
+				cancel.RunID != runID || cancel.Reason != reason ||
+				!strings.HasSuffix(message.Envelope.ItemID, ":model-cancel") {
+				t.Fatalf("Meeting foreground cancellation lost exact addressing: message=%+v payload=%+v",
+					message, cancel)
+			}
+			return
+		case <-harness.native.Done():
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			err := harness.runtime.Close(ctx, errors.New("inspect premature stop"))
+			cancel()
+			t.Fatalf("mounted Meeting runtime stopped before canceling run %q: %v", runID, err)
+		case <-deadline:
+			t.Fatalf("segmentation failure did not cancel foreground run %q; live=%+v",
+				runID, harness.native.Live())
+		}
+	}
+}
+
+func (harness mountedMeetingCancellationHarness) timeoutSegmentation(
+	t *testing.T, runID, reason string,
+) {
+	t.Helper()
+	port, err := harness.mounted.Ingress("speech_timeout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery, err := port.Broadcast(context.Background(), element.Envelope{
+		Type: port.Type(), ItemID: "meeting-timeout:" + runID,
+		SessionID: harness.sessionID, SourceID: "meeting.timeout", RunID: runID,
+		CancellationScope: runID,
+		Payload:           interactionelements.Timeout{RunID: runID, Reason: reason},
+	})
+	if err != nil || delivery.Delivered != 1 || delivery.Dropped != 0 {
+		t.Fatalf("send Meeting segmentation timeout = %+v, %v", delivery, err)
+	}
+}
+
+func TestMountedMeetingSegmentationFailureCancelsExactForegroundRun(t *testing.T) {
+	t.Run("size", func(t *testing.T) {
+		harness := mountMeetingCancellationHarness(t, "meeting-segment-size-cancel")
+		const runID = "foreground-segment-size-run"
+		pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+			"foreground-segment-size-begin", "text_out", 1, cognitionelements.PreparedTextDelta{
+				Boundary: cognitionelements.TextBegin, Index: 0,
+			})
+		pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+			"foreground-segment-size-chunk", "text_out", 2, cognitionelements.PreparedTextDelta{
+				Boundary: cognitionelements.TextChunk, Index: 1, Text: strings.Repeat("x", 4097),
+			})
+		harness.awaitExactForegroundCancel(t, runID, "prepared run exceeds 4096 bytes")
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		harness := mountMeetingCancellationHarness(t, "meeting-segment-timeout-cancel")
+		const runID = "foreground-segment-timeout-run"
+		harness.timeoutSegmentation(t, runID, "foreground speech deadline")
+		harness.awaitExactForegroundCancel(t, runID, "foreground speech deadline")
+	})
+}
+
+func TestMountedMeetingSegmentationFailureRejectsBufferedForegroundProposal(t *testing.T) {
+	harness := mountMeetingCancellationHarness(t, "meeting-segment-buffered-proposal")
+	const runID = "foreground-segment-buffered-proposal-run"
+	pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+		"buffered-tool-proposal", "tool_proposal", 1, cognitionelements.ToolProposal{
+			Call: trajectory.ToolCall{
+				CallID: "buffered-call", Name: "lookup",
+				Arguments: json.RawMessage(`{"id":"must-stay-quarantined"}`),
+			},
+			Declared: true, ProviderAuthority: continuation.ToolAuthorityPropose,
+		})
+	pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+		"buffered-proposal-size-begin", "text_out", 2, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextBegin, Index: 0,
+		})
+	pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+		"buffered-proposal-size-chunk", "text_out", 3, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextChunk, Index: 1, Text: strings.Repeat("x", 4097),
+		})
+	harness.awaitExactForegroundCancel(t, runID, "prepared run exceeds 4096 bytes")
+	pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+		"buffered-proposal-canceled", "outcome", 4, cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeCanceled, Operation: "generate", RunID: runID,
+			ProviderReference: meetinggraph.ForegroundDeploymentReference,
+			Code:              "canceled", Message: "segmentation canceled foreground",
+		})
+
+	select {
+	case <-harness.sink.done:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("failed Meeting response did not terminalize; events=%v live=%+v",
+			harness.sink.snapshot(), harness.native.Live())
+	}
+	if events := harness.sink.snapshot(); !slices.Equal(events, []string{"turn_begin", "turn_end"}) {
+		t.Fatalf("buffered proposal escaped failed segmentation: %v", events)
+	}
+}
+
+func TestMountedMeetingRejectsForegroundOutputAfterSegmentationCancellation(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		push func(*testing.T, mountedMeetingCancellationHarness, string)
+	}{
+		{
+			name: "tool proposal",
+			push: func(t *testing.T, harness mountedMeetingCancellationHarness, runID string) {
+				pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+					"late-tool-proposal", "tool_proposal", 1, cognitionelements.ToolProposal{
+						Call: trajectory.ToolCall{
+							CallID: "late-call", Name: "lookup",
+							Arguments: json.RawMessage(`{"id":"must-not-escape"}`),
+						},
+						Declared: true, ProviderAuthority: continuation.ToolAuthorityPropose,
+					})
+			},
+		},
+		{
+			name: "safe result source",
+			push: func(t *testing.T, harness mountedMeetingCancellationHarness, runID string) {
+				pushMeetingForegroundFrame(t, harness.external, harness.native.Done(), harness.sessionID, runID,
+					"late-result", "result", 1, cognitionelements.Result{
+						RunID: runID, ProviderReference: meetinggraph.ForegroundDeploymentReference,
+						Descriptor: continuation.Descriptor{
+							Provider: "meeting-fixture", Model: "foreground", Phase: trajectory.PhaseFast,
+							Effort: continuation.EffortMinimal, Streaming: true,
+							ToolAuthority:   continuation.ToolAuthorityPropose,
+							SpeechAuthority: continuation.SpeechAuthorityVoice,
+						},
+						Invocation: continuation.Invocation{Instruction: "late output"},
+						Completion: continuation.Completion{StopReason: "ignored_cancel"},
+					})
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runID := "foreground-timeout-late-" + strings.ReplaceAll(test.name, " ", "-")
+			harness := mountMeetingCancellationHarness(t, "meeting-timeout-late-"+strings.ReplaceAll(test.name, " ", "-"))
+			harness.timeoutSegmentation(t, runID, "foreground speech deadline")
+			harness.awaitExactForegroundCancel(t, runID, "foreground speech deadline")
+			test.push(t, harness, runID)
+
+			select {
+			case <-harness.native.Done():
+			case <-time.After(2 * time.Second):
+				t.Fatalf("late %s was not rejected; events=%v live=%+v",
+					test.name, harness.sink.snapshot(), harness.native.Live())
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			err := harness.runtime.Close(ctx, errors.New("inspect expected rejection"))
+			if err == nil || !strings.Contains(err.Error(), "after segmentation cancellation") {
+				t.Fatalf("late %s rejection error = %v", test.name, err)
+			}
+			for _, event := range harness.sink.snapshot() {
+				if strings.HasPrefix(event, "tool:") || strings.HasPrefix(event, "text:") ||
+					event == "speech_begin" || event == "audio" {
+					t.Fatalf("late %s escaped the Meeting quarantine: %v", test.name, harness.sink.snapshot())
+				}
+			}
+		})
+	}
+}
+
+const toolCallOpenForMeetingTest = "<tool_call>"
+
+func pushMeetingForegroundFrame(
+	t *testing.T, session *fixtureExternalSession, runtimeDone <-chan struct{},
+	sessionID, runID, itemID, port string,
+	sequence uint64, payload any,
+) {
+	t.Helper()
+	valueType := modelelements.PreparedTextType()
+	switch port {
+	case "audio_out":
+		valueType = modelelements.PreparedAudioType()
+	case "tool_proposal":
+		valueType = modelelements.ToolProposalType()
+	case "result":
+		valueType = cognitionelements.ResultType()
+	case "outcome":
+		valueType = modelelements.OutcomeType()
+	case "text_out":
+	default:
+		t.Fatalf("unknown foreground fixture port %q", port)
+	}
+	encoded, err := modelelements.NewStandardJSONCodec().Encode(valueType, payload)
+	if err != nil {
+		t.Fatalf("encode foreground fixture %s: %v", port, err)
+	}
+	message := sidecar.Message{
+		Type: sidecar.TypeElementFrame, Port: port,
+		Envelope: &sidecar.WireEnvelope{
+			Type: valueType, ItemID: itemID, SessionID: sessionID,
+			SourceID: meetinggraph.ForegroundDeploymentReference, RunID: runID,
+			Sequence: sequence, JSON: encoded.JSON, Media: encoded.Media,
+		},
+		Payload: encoded.Binary, PayloadBytes: len(encoded.Binary),
+	}
+	select {
+	case session.frames <- message:
+	case <-runtimeDone:
+		t.Fatalf("mounted Meeting runtime stopped before foreground %s sequence %d", port, sequence)
+	case <-time.After(2 * time.Second):
+		t.Fatalf("mounted Meeting foreground %s sequence %d was not received", port, sequence)
 	}
 }
 
@@ -413,8 +999,8 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 	case <-time.After(5 * time.Second):
 		t.Fatal("meeting WebSocket did not start a graph-native session")
 	}
-	if fixture.mountFactories.Load() != 4 || fixture.adapterFactories.Load() != 1 {
-		t.Fatalf("meeting session Start acquired mount=%d adapter=%d, want 4/1",
+	if fixture.mountFactories.Load() != 5 || fixture.adapterFactories.Load() != 1 {
+		t.Fatalf("meeting session Start acquired mount=%d adapter=%d, want 5/1",
 			fixture.mountFactories.Load(), fixture.adapterFactories.Load())
 	}
 	var external *fixtureExternalSession
@@ -648,20 +1234,46 @@ func TestMeetingBundleLockIsExactAndMinimal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Plan.Lock().Entries) != 14 {
-		t.Fatalf("meeting lock entries = %d, want 14", len(result.Plan.Lock().Entries))
+	if len(result.Plan.Lock().Entries) != 17 {
+		t.Fatalf("meeting lock entries = %d, want 17", len(result.Plan.Lock().Entries))
 	}
 	for _, name := range []string{
 		"audio", "video", "text", "tools", "tool_result", "commit_audio",
 		"create_response", "cancel", "truncate", "transcript", "observations",
 		"prepared_text", "prepared_audio", "tool_proposals", "foreground_outcome",
-		"background_outcome",
+		"foreground_safe_result", "foreground_model_cancel_request", "foreground_segmentation_outcome",
+		"foreground_synthesis_outcome", "background_outcome",
 	} {
 		if !hasBoundary(result.Plan.Graph(), name) {
 			t.Fatalf("meeting graph has no boundary %q", name)
 		}
 	}
 	graph := result.Plan.Graph()
+	for _, boundary := range graph.Boundaries {
+		switch boundary.Name {
+		case "prepared_text":
+			if boundary.Direction != ir.OutputBoundary ||
+				!boundary.Type.Equal(interactionelements.SafePreparedTextType()) {
+				t.Fatalf("meeting prepared_text boundary = %s %s, want output %s",
+					boundary.Direction, boundary.Type.String(),
+					interactionelements.SafePreparedTextType().String())
+			}
+		case "prepared_audio":
+			if boundary.Direction != ir.OutputBoundary ||
+				!boundary.Type.Equal(speechelements.AudioType()) ||
+				boundary.Endpoint.Node != "foreground_tts" || boundary.Endpoint.Port != "audio" {
+				t.Fatalf("meeting prepared_audio boundary = %+v, want foreground_tts.audio %s",
+					boundary, speechelements.AudioType().String())
+			}
+		case "foreground_model_cancel_request":
+			if boundary.Direction != ir.OutputBoundary ||
+				!boundary.Type.Equal(interactionelements.ModelCancelType()) ||
+				boundary.Endpoint.Node != "foreground_segment" || boundary.Endpoint.Port != "model_cancel" {
+				t.Fatalf("meeting model-cancel boundary = %+v, want foreground_segment.model_cancel %s",
+					boundary, interactionelements.ModelCancelType().String())
+			}
+		}
+	}
 	for _, edge := range []struct {
 		from, to string
 		delivery ir.Delivery
@@ -669,8 +1281,21 @@ func TestMeetingBundleLockIsExactAndMinimal(t *testing.T) {
 		{"screen_fork.foreground", "foreground.video", ir.Lossy},
 		{"screen_fork.frame", "screen_ingress.frame_in", ir.Lossy},
 		{"screen_fork.tick", "screen_policy.tick", ir.Lossless},
+		{"background_model.text", "background_control_quarantine.text", ir.Lossless},
+		{"background_model.result", "background_control_quarantine.result", ir.Lossless},
+		{"background_control_quarantine.safe_text", "background_injection.text", ir.Lossless},
+		{"background_control_quarantine.safe_result", "background_result_copy.in", ir.Lossless},
 		{"background_injection.injection", "text_injection_mux.in", ir.Lossless},
 		{"background_injection.trigger", "background_trigger_drop.in", ir.Lossless},
+		{"foreground.text_out", "foreground_control_quarantine.text", ir.Lossless},
+		{"foreground.result", "foreground_control_quarantine.result", ir.Lossless},
+		{"foreground_control_quarantine.safe_text", "foreground_safe_text_copy.in", ir.Lossless},
+		{"foreground_safe_text_copy.out", "foreground_segment.text", ir.Lossless},
+		{"foreground_segment.segments", "foreground_tts.text", ir.Lossless},
+		{"foreground.audio_out", "foreground_native_audio_drop.in", ir.Lossless},
+		{"foreground_control_quarantine.safe_result", "foreground_result_copy.in", ir.Lossless},
+		{"foreground_control_quarantine.quarantined", "foreground_control_quarantine_audit.in", ir.Lossless},
+		{"background_control_quarantine.quarantined", "background_control_quarantine_audit.in", ir.Lossless},
 		{"foreground_result_commit.outcome", "foreground_commit_audit.in", ir.Lossless},
 		{"background_model.resolved", "background_model_resolution_audit.in", ir.Lossless},
 		{"screen_observer.metrics", "screen_visual_metrics_audit.in", ir.Lossless},
@@ -682,10 +1307,22 @@ func TestMeetingBundleLockIsExactAndMinimal(t *testing.T) {
 	if hasEdge(graph, "background_injection.trigger", "foreground_trigger_mux.in", ir.Lossless) {
 		t.Fatal("background completion can autonomously open a voiced foreground turn")
 	}
+	for _, bypass := range [][2]string{
+		{"background_model.text", "background_injection.text"},
+		{"background_model.result", "background_result_copy.in"},
+		{"foreground.result", "foreground_result_copy.in"},
+	} {
+		if hasEdge(graph, bypass[0], bypass[1], ir.Lossless) {
+			t.Fatalf("meeting graph bypasses control serialization quarantine: %s -> %s",
+				bypass[0], bypass[1])
+		}
+	}
 	allowedOutputs := map[string]struct{}{
 		"transcript": {}, "observations": {}, "activity": {}, "prepared_text": {},
 		"prepared_audio": {}, "tool_proposals": {}, "foreground_outcome": {},
-		"background_outcome": {},
+		"foreground_safe_result": {}, "foreground_model_cancel_request": {},
+		"foreground_segmentation_outcome": {},
+		"foreground_synthesis_outcome":    {}, "background_outcome": {},
 	}
 	for _, boundary := range graph.Boundaries {
 		if boundary.Direction == ir.OutputBoundary {
@@ -741,6 +1378,7 @@ func newProviderFixture(t testing.TB) providerFixture {
 		modelelements.PayloadCodecService,
 		perceptionelements.VisualProviderRegistryService,
 		cognitionelements.ProviderRegistryService,
+		speechelements.TTSProviderRegistryService,
 	} {
 		artifact := dependencyArtifact(name)
 		plugins.Assembly.Dependencies = append(plugins.Assembly.Dependencies,
@@ -850,11 +1488,23 @@ func installValidMountServices(
 		}); err != nil {
 		t.Fatal(err)
 	}
+	ttsDescriptor := fixtureTTSDescriptor()
+	ttsProviders := speechelements.NewTTSProviderRegistry()
+	if err := ttsProviders.Register(meetinggraph.TTSProviderReference, ttsDescriptor,
+		func() (v1.SpeechProvider, error) {
+			return &fixtureTTSProvider{
+				descriptor: ttsDescriptor, plans: visual.ttsPlans,
+				pcm: slices.Clone(visual.ttsPCM), release: visual.ttsRelease,
+			}, nil
+		}); err != nil {
+		t.Fatal(err)
+	}
 	services := map[string]any{
 		modelelements.DeploymentRegistryService:          deployments,
 		modelelements.PayloadCodecService:                modelelements.NewStandardJSONCodec(),
 		perceptionelements.VisualProviderRegistryService: visuals,
 		cognitionelements.ProviderRegistryService:        backgrounds,
+		speechelements.TTSProviderRegistryService:        ttsProviders,
 	}
 	for index := range fixture.config.Plugins.MountDependencies {
 		plugin := &fixture.config.Plugins.MountDependencies[index]
@@ -872,8 +1522,67 @@ func installValidMountServices(
 }
 
 type fixtureVisualConfig struct {
-	frames chan<- perception.Frame
-	text   string
+	frames     chan<- perception.Frame
+	text       string
+	ttsPlans   chan<- v1.SpeechPlan
+	ttsPCM     []byte
+	ttsRelease <-chan struct{}
+}
+
+func fixtureTTSDescriptor() v1.Descriptor {
+	return v1.Descriptor{
+		Name: "meeting-fixture-tts", Version: "fixture-1",
+		Capabilities: v1.Capabilities{
+			v1.CapabilityPCM16Output: true, v1.CapabilityStreamingOutput: true,
+		},
+	}
+}
+
+type fixtureTTSProvider struct {
+	descriptor v1.Descriptor
+	plans      chan<- v1.SpeechPlan
+	pcm        []byte
+	release    <-chan struct{}
+}
+
+func (provider *fixtureTTSProvider) Descriptor() v1.Descriptor { return provider.descriptor }
+
+func (provider *fixtureTTSProvider) Synthesize(
+	ctx context.Context, plan v1.SpeechPlan,
+) ([]v1.SpeechChunk, error) {
+	var chunks []v1.SpeechChunk
+	err := provider.Stream(ctx, plan, func(chunk v1.SpeechChunk) error {
+		chunks = append(chunks, chunk)
+		return nil
+	})
+	return chunks, err
+}
+
+func (provider *fixtureTTSProvider) Stream(
+	ctx context.Context, plan v1.SpeechPlan, emit func(v1.SpeechChunk) error,
+) error {
+	if provider.plans != nil {
+		select {
+		case provider.plans <- plan:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	if provider.release != nil {
+		select {
+		case <-provider.release:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+	pcm := slices.Clone(provider.pcm)
+	if len(pcm) == 0 {
+		pcm = []byte{9, 0, 8, 0}
+	}
+	return emit(v1.SpeechChunk{
+		ChunkID: plan.CandidateID + ":fixture-audio", CandidateID: plan.CandidateID,
+		SampleRateHz: 24_000, PCM16LE: pcm, Final: true,
+	})
 }
 
 type fixtureVisualProvider struct {
@@ -937,6 +1646,9 @@ type fixtureExternalSession struct {
 	sendMu    sync.Mutex
 	seen      map[string]struct{}
 	pending   []sidecar.Message
+	// A full-mount failure test may retain the producer side long enough to
+	// observe NativeRuntime.Done without racing a send against channel close.
+	leaveFramesOpen bool
 }
 
 func newFixtureExternalSession(hello sidecar.Message) *fixtureExternalSession {
@@ -1017,7 +1729,9 @@ func (session *fixtureExternalSession) parentsSeen(message sidecar.Message) bool
 func (session *fixtureExternalSession) Close() error {
 	session.closeOnce.Do(func() {
 		session.closes.Add(1)
-		close(session.frames)
+		if !session.leaveFramesOpen {
+			close(session.frames)
+		}
 	})
 	return nil
 }
@@ -1359,3 +2073,88 @@ func (meetingSink) SpeechAudio(context.Context, action.Utterance, action.Frame) 
 func (meetingSink) SpeechEnd(context.Context, action.Utterance, action.Outcome) error { return nil }
 func (meetingSink) ToolCalls(context.Context, legacy.ToolCallEvent) error             { return nil }
 func (meetingSink) Failed(context.Context, legacy.ErrorEvent)                         {}
+
+type quarantineMeetingSink struct {
+	mu         sync.Mutex
+	events     []string
+	audio      [][]byte
+	utterances []string
+	done       chan struct{}
+	doneOnce   sync.Once
+}
+
+func (sink *quarantineMeetingSink) record(event string) {
+	sink.mu.Lock()
+	sink.events = append(sink.events, event)
+	sink.mu.Unlock()
+}
+
+func (sink *quarantineMeetingSink) snapshot() []string {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	return slices.Clone(sink.events)
+}
+
+func (sink *quarantineMeetingSink) audioSnapshot() ([][]byte, []string) {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	audio := make([][]byte, len(sink.audio))
+	for index := range sink.audio {
+		audio[index] = slices.Clone(sink.audio[index])
+	}
+	return audio, slices.Clone(sink.utterances)
+}
+
+func (sink *quarantineMeetingSink) TurnBegin(context.Context) error {
+	sink.record("turn_begin")
+	return nil
+}
+func (sink *quarantineMeetingSink) TurnEnd(context.Context, legacy.TurnOutcome) error {
+	sink.record("turn_end")
+	sink.doneOnce.Do(func() { close(sink.done) })
+	return nil
+}
+func (*quarantineMeetingSink) Activity(context.Context, legacy.ActivityEvent) error { return nil }
+func (*quarantineMeetingSink) Transcript(context.Context, legacy.TranscriptEvent) error {
+	return nil
+}
+func (*quarantineMeetingSink) Observation(context.Context, perception.Observation) error {
+	return nil
+}
+func (sink *quarantineMeetingSink) SpeechBegin(_ context.Context, utterance action.Utterance) error {
+	sink.mu.Lock()
+	sink.events = append(sink.events, "speech_begin")
+	sink.utterances = append(sink.utterances, utterance.Text)
+	sink.mu.Unlock()
+	return nil
+}
+func (sink *quarantineMeetingSink) SpeechText(
+	_ context.Context, _ action.Utterance, text string,
+) error {
+	sink.record("text:" + text)
+	return nil
+}
+func (sink *quarantineMeetingSink) SpeechAudio(
+	_ context.Context, _ action.Utterance, frame action.Frame,
+) error {
+	sink.mu.Lock()
+	sink.events = append(sink.events, "audio")
+	sink.audio = append(sink.audio, slices.Clone(frame.PCM16LE))
+	sink.mu.Unlock()
+	return nil
+}
+func (sink *quarantineMeetingSink) SpeechEnd(
+	context.Context, action.Utterance, action.Outcome,
+) error {
+	sink.record("speech_end")
+	return nil
+}
+func (sink *quarantineMeetingSink) ToolCalls(_ context.Context, event legacy.ToolCallEvent) error {
+	for _, call := range event.Calls {
+		sink.record("tool:" + call.CallID)
+	}
+	return nil
+}
+func (*quarantineMeetingSink) Failed(context.Context, legacy.ErrorEvent) {}
+
+var _ legacy.Sink = (*quarantineMeetingSink)(nil)

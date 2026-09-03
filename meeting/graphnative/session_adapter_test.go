@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	flowelements "github.com/bojieli/OpenRealtime/elements/flow"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/graph/ir"
@@ -157,6 +159,13 @@ func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
 		})
 	}()
 	<-sink.beginEntered
+	if err := adapter.publishText(context.Background(), element.Envelope{
+		RunID: runID, Payload: cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextBegin, Index: 0,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	textDone := make(chan error, 1)
 	go func() {
 		textDone <- adapter.publishText(context.Background(), element.Envelope{
@@ -175,6 +184,13 @@ func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := <-textDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.publishText(context.Background(), element.Envelope{
+		RunID: runID, Payload: cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextEnd, Index: 2,
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -207,6 +223,38 @@ func TestMeetingSessionAdapterOrdersCrossPortSpeechLifecycle(t *testing.T) {
 	}
 	if !sink.turnEnded.Load() {
 		t.Fatal("foreground outcome did not close the turn after speech")
+	}
+}
+
+func TestMeetingSessionAdapterConsumesNoOpChunkAndTerminalText(t *testing.T) {
+	sink := &orderedMeetingSink{done: make(chan struct{})}
+	adapter := &meetingSessionAdapter{
+		ctx: context.Background(), sessionID: "meeting-terminal-text", sink: sink,
+		activeSpeech: make(map[string]*meetingAdapterSpeech), completedRuns: make(map[string]struct{}),
+	}
+	const runID = "terminal-text-run"
+	utterance := action.Utterance{ID: "terminal-text-speech"}
+	if err := adapter.publishAudio(context.Background(), element.Envelope{
+		RunID: runID, Payload: speechelements.AudioFrame{
+			Kind: speechelements.AudioBegin, UtteranceID: utterance.ID, Utterance: utterance,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, delta := range []cognitionelements.PreparedTextDelta{
+		{Boundary: cognitionelements.TextBegin, Index: 0},
+		{Boundary: cognitionelements.TextChunk, Index: 1},
+		{Boundary: cognitionelements.TextEnd, Index: 2, Text: "terminal text"},
+	} {
+		if err := adapter.publishText(context.Background(), element.Envelope{
+			RunID: runID, Payload: delta,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if events, _, _ := sink.snapshot(); !slices.Equal(events,
+		[]string{"turn_begin", "speech_begin", "text:terminal text"}) {
+		t.Fatalf("safe terminal text events = %v", events)
 	}
 }
 
@@ -468,97 +516,95 @@ func (input *gatedMeetingInput) ReceiveAny(ctx context.Context) (element.Envelop
 }
 
 func TestMeetingSessionAdapterDrainsPrequeuedCrossPortResponseInSourceOrder(t *testing.T) {
-	audio := newTestInput("prepared_audio", modelelements.PreparedAudioType())
-	text := newTestInput("prepared_text", modelelements.PreparedTextType())
-	tools := newTestInput("tool_proposals", modelelements.ToolProposalType())
-	outcomes := newTestInput("foreground_outcome", modelelements.OutcomeType())
-	audioGate := make(chan struct{})
-	textReceived, toolsReceived, outcomeReceived := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	sink := &orderedMeetingSink{done: make(chan struct{})}
 	adapter := &meetingSessionAdapter{
 		ctx: context.Background(), sessionID: "meeting-prequeued-order", sink: sink,
-		ports: meetingAdapterPorts{outputs: map[string]element.InputPort{
-			"prepared_audio": &gatedMeetingInput{InputPort: audio, gate: audioGate},
-			"prepared_text": &notifyingMeetingInput{
-				InputPort: text, received: textReceived,
-			},
-			"tool_proposals": &notifyingMeetingInput{
-				InputPort: tools, received: toolsReceived,
-			},
-			"foreground_outcome": &notifyingMeetingInput{
-				InputPort: outcomes, received: outcomeReceived,
-			},
-		}},
 		activeSpeech:  make(map[string]*meetingAdapterSpeech),
 		completedRuns: make(map[string]struct{}),
 	}
 	runID := "prequeued-run"
-	utterance := action.Utterance{ID: "prequeued-speech", Text: "Ordered."}
-	responseEnvelope := func(valueType element.Type, sequence uint64, payload any) element.Envelope {
-		return element.Envelope{
-			Type: valueType, ItemID: fmt.Sprintf("response-%d", sequence),
-			SessionID: adapter.sessionID, SourceID: ForegroundDeploymentReference,
-			RunID: runID, Sequence: sequence, Payload: payload,
+	utteranceID := "foreground_segment:" + runID + ":speech:1"
+	coordinator := &meetingAdapterResponseCoordinator{runs: make(map[string]*meetingAdapterCoordinatedRun)}
+	accept := func(name, source string, payload any) {
+		t.Helper()
+		envelope := element.Envelope{
+			ItemID: "coordinated-" + name, SessionID: adapter.sessionID,
+			SourceID: source, RunID: runID, Payload: payload,
+		}
+		if err := adapter.acceptCoordinatedResponse(context.Background(), coordinator,
+			meetingAdapterResponseEvent{name: name, envelope: envelope}); err != nil {
+			t.Fatalf("accept %s: %v", name, err)
 		}
 	}
-	// The provider emitted this exact sequence, but independent graph output
-	// drains are forced to expose terminal/text/tool before the gated audio
-	// boundary. No scheduler timing is used to establish the inversion.
-	audio.send(t, responseEnvelope(modelelements.PreparedAudioType(), 1, speechelements.AudioFrame{
-		Kind: speechelements.AudioBegin, UtteranceID: utterance.ID, Utterance: utterance,
-	}))
-	text.send(t, responseEnvelope(modelelements.PreparedTextType(), 2,
-		cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextBegin, Index: 0}))
-	text.send(t, responseEnvelope(modelelements.PreparedTextType(), 3,
-		cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: 1, Text: "Ordered."}))
-	audio.send(t, responseEnvelope(modelelements.PreparedAudioType(), 4, speechelements.AudioFrame{
-		Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
-		Terminal: speechelements.SynthesisOutcome{UtteranceID: utterance.ID, Kind: speechelements.OutcomeSucceeded},
-	}))
-	tools.send(t, responseEnvelope(modelelements.ToolProposalType(), 5,
-		cognitionelements.ToolProposal{Call: trajectory.ToolCall{CallID: "ordered-call", Name: "computer.click_normalized"}}))
-	outcomes.send(t, responseEnvelope(modelelements.OutcomeType(), 6,
-		cognitionelements.Outcome{
-			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
-			ProviderReference: ForegroundDeploymentReference,
-		}))
 
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- adapter.Run(ctx) }()
-	for name, received := range map[string]<-chan struct{}{
-		"text": textReceived, "tool": toolsReceived, "outcome": outcomeReceived,
+	// Every non-audio terminal overtakes the graph TTS boundary. None may close
+	// the response, and safe text remains buffered until AudioBegin proves that
+	// the independently synthesized utterance contains exactly those bytes.
+	accept("foreground_outcome", ForegroundDeploymentReference, cognitionelements.Outcome{
+		Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
+		ProviderReference: ForegroundDeploymentReference,
+	})
+	accept("foreground_segmentation_outcome", ForegroundDeploymentReference,
+		interactionelements.SegmentationOutcome{
+			Kind: interactionelements.OutcomeIgnored, RunID: runID, Code: "already_terminal",
+		})
+	accept("foreground_safe_result", ForegroundDeploymentReference, cognitionelements.Result{
+		RunID: runID, ProviderReference: ForegroundDeploymentReference,
+		AssistantText: "Ordered.",
+	})
+	accept("foreground_segmentation_outcome", ForegroundDeploymentReference,
+		interactionelements.SegmentationOutcome{
+			Kind: interactionelements.OutcomeCompleted, RunID: runID, Segments: 1,
+		})
+	synthesis := speechelements.SynthesisOutcome{
+		UtteranceID: utteranceID, Kind: speechelements.OutcomeSucceeded,
+		Chunks: 1, AudioBytes: 4,
+	}
+	accept("foreground_synthesis_outcome", utteranceID, synthesis)
+	for _, delta := range []cognitionelements.PreparedTextDelta{
+		{Boundary: cognitionelements.TextBegin, Index: 0},
+		{Boundary: cognitionelements.TextChunk, Index: 1, Text: "Ordered."},
+		{Boundary: cognitionelements.TextEnd, Index: 2},
 	} {
-		select {
-		case <-received:
-		case <-time.After(2 * time.Second):
-			t.Fatalf("%s graph boundary was not drained", name)
-		}
+		accept("prepared_text", ForegroundDeploymentReference, delta)
 	}
 	if events, _, _ := sink.snapshot(); len(events) != 0 {
-		t.Fatalf("later graph ports escaped before response sequence 1: %v", events)
+		t.Fatalf("graph terminals escaped before TTS audio: %v", events)
 	}
-	close(audioGate)
+	accept("prepared_audio", utteranceID, speechelements.AudioFrame{
+		Kind: speechelements.AudioBegin, UtteranceID: utteranceID,
+		Utterance: action.Utterance{ID: utteranceID, Text: "Ordered."},
+	})
+	accept("prepared_audio", utteranceID, speechelements.AudioFrame{
+		Kind: speechelements.AudioChunk, UtteranceID: utteranceID,
+		Chunk: v1.SpeechChunk{
+			ChunkID: "coordinated-audio", CandidateID: utteranceID,
+			SampleRateHz: 24_000, PCM16LE: []byte{9, 0, 8, 0}, Final: true,
+		},
+	})
+	accept("prepared_audio", utteranceID, speechelements.AudioFrame{
+		Kind: speechelements.AudioEnd, UtteranceID: utteranceID, Terminal: synthesis,
+	})
+
+	want := []string{"turn_begin", "speech_begin", "text:Ordered.", "speech_end", "turn_end"}
+	if events, _, _ := sink.snapshot(); !slices.Equal(events, want) {
+		t.Fatalf("coordinated response events = %v, want %v", events, want)
+	}
 	select {
 	case <-sink.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("ordered response did not reach its terminal boundary")
-	}
-	want := []string{"turn_begin", "speech_begin", "text:Ordered.", "speech_end", "tool:ordered-call", "turn_end"}
-	if events, _, _ := sink.snapshot(); !slices.Equal(events, want) {
-		t.Fatalf("ordered response events = %v, want %v", events, want)
-	}
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
+	default:
+		t.Fatal("coordinated graph TTS terminal did not close the turn")
 	}
 }
 
 func TestMountedMeetingSessionAdapterOrdersTypedGraphBoundariesBeforeTerminal(t *testing.T) {
 	types := map[string]element.Type{
-		"prepared_audio":     modelelements.PreparedAudioType(),
-		"prepared_text":      modelelements.PreparedTextType(),
-		"foreground_outcome": modelelements.OutcomeType(),
+		"prepared_audio":                  speechelements.AudioType(),
+		"prepared_text":                   interactionelements.SafePreparedTextType(),
+		"foreground_safe_result":          interactionelements.SafeModelResultType(),
+		"foreground_segmentation_outcome": interactionelements.SegmentationOutcomeType(),
+		"foreground_synthesis_outcome":    speechelements.SynthesisOutcomeType(),
+		"foreground_outcome":              modelelements.OutcomeType(),
 	}
 	descriptor := flowelements.TeeDescriptor()
 	identity, err := descriptor.Identity()
@@ -603,15 +649,20 @@ func TestMountedMeetingSessionAdapterOrdersTypedGraphBoundariesBeforeTerminal(t 
 	go func() { mountedDone <- mounted.Run(ctx) }()
 
 	runID := "mounted-response-run"
-	utterance := action.Utterance{ID: "mounted-speech", Text: "Mounted order."}
+	utteranceID := "foreground_segment:" + runID + ":speech:1"
+	utterance := action.Utterance{ID: utteranceID, Text: "Mounted order."}
 	send := func(boundary string, sequence uint64, payload any) {
 		port, portErr := mounted.Ingress("source_" + boundary)
 		if portErr != nil {
 			t.Fatal(portErr)
 		}
+		sourceID := ForegroundDeploymentReference
+		if boundary == "prepared_audio" || boundary == "foreground_synthesis_outcome" {
+			sourceID = utteranceID
+		}
 		result, sendErr := port.Broadcast(context.Background(), element.Envelope{
 			Type: types[boundary], ItemID: fmt.Sprintf("mounted-response-%d", sequence),
-			SessionID: "mounted-session", SourceID: ForegroundDeploymentReference,
+			SessionID: "mounted-session", SourceID: sourceID,
 			RunID: runID, Sequence: sequence, Payload: payload,
 		})
 		if sendErr != nil || result.Delivered != 1 || result.Dropped != 0 {
@@ -622,13 +673,34 @@ func TestMountedMeetingSessionAdapterOrdersTypedGraphBoundariesBeforeTerminal(t 
 		Kind: speechelements.AudioBegin, UtteranceID: utterance.ID, Utterance: utterance,
 	})
 	send("prepared_text", 2, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextBegin, Index: 0,
+	})
+	send("prepared_text", 3, cognitionelements.PreparedTextDelta{
 		Boundary: cognitionelements.TextChunk, Index: 1, Text: "Mounted order.",
 	})
-	send("prepared_audio", 3, speechelements.AudioFrame{
-		Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
-		Terminal: speechelements.SynthesisOutcome{UtteranceID: utterance.ID, Kind: speechelements.OutcomeSucceeded},
+	send("prepared_text", 4, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextEnd, Index: 2,
 	})
-	send("foreground_outcome", 4, cognitionelements.Outcome{
+	send("prepared_audio", 5, speechelements.AudioFrame{
+		Kind: speechelements.AudioEnd, UtteranceID: utterance.ID,
+		Terminal: speechelements.SynthesisOutcome{
+			UtteranceID: utterance.ID, Kind: speechelements.OutcomeSucceeded,
+		},
+	})
+	send("foreground_safe_result", 6, cognitionelements.Result{
+		RunID: runID, ProviderReference: ForegroundDeploymentReference,
+		AssistantText: "Mounted order.",
+	})
+	send("foreground_segmentation_outcome", 7, interactionelements.SegmentationOutcome{
+		Kind: interactionelements.OutcomeCompleted, RunID: runID, Segments: 1,
+	})
+	send("foreground_segmentation_outcome", 8, interactionelements.SegmentationOutcome{
+		Kind: interactionelements.OutcomeIgnored, RunID: runID, Code: "already_terminal",
+	})
+	send("foreground_synthesis_outcome", 9, speechelements.SynthesisOutcome{
+		UtteranceID: utteranceID, Kind: speechelements.OutcomeSucceeded,
+	})
+	send("foreground_outcome", 10, cognitionelements.Outcome{
 		Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: runID,
 		ProviderReference: ForegroundDeploymentReference,
 	})
@@ -645,14 +717,29 @@ func TestMountedMeetingSessionAdapterOrdersTypedGraphBoundariesBeforeTerminal(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	safeResult, err := mounted.Egress("foreground_safe_result")
+	if err != nil {
+		t.Fatal(err)
+	}
+	segmentation, err := mounted.Egress("foreground_segmentation_outcome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	synthesis, err := mounted.Egress("foreground_synthesis_outcome")
+	if err != nil {
+		t.Fatal(err)
+	}
 	audioGate, textReceived, outcomeReceived := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	sink := &orderedMeetingSink{done: make(chan struct{})}
 	adapter := &meetingSessionAdapter{
 		ctx: context.Background(), sessionID: "mounted-session", sink: sink,
 		ports: meetingAdapterPorts{outputs: map[string]element.InputPort{
-			"prepared_audio":     &gatedMeetingInput{InputPort: audio, gate: audioGate},
-			"prepared_text":      &notifyingMeetingInput{InputPort: text, received: textReceived},
-			"foreground_outcome": &notifyingMeetingInput{InputPort: outcome, received: outcomeReceived},
+			"prepared_audio":                  &gatedMeetingInput{InputPort: audio, gate: audioGate},
+			"prepared_text":                   &notifyingMeetingInput{InputPort: text, received: textReceived},
+			"foreground_safe_result":          safeResult,
+			"foreground_segmentation_outcome": segmentation,
+			"foreground_synthesis_outcome":    synthesis,
+			"foreground_outcome":              &notifyingMeetingInput{InputPort: outcome, received: outcomeReceived},
 		}},
 		activeSpeech: make(map[string]*meetingAdapterSpeech), completedRuns: make(map[string]struct{}),
 	}
@@ -928,7 +1015,7 @@ func TestMeetingSessionAdapterCancelTargetsSharedResponseWhileVoiceAndVisualRuns
 	}
 }
 
-func TestMeetingSessionAdapterResponseGapIsBoundedAndCancellationUnblocks(t *testing.T) {
+func TestMeetingSessionAdapterPartialCoordinatedRunCancellationAndSourceValidation(t *testing.T) {
 	adapter := &meetingSessionAdapter{
 		ctx: context.Background(), sessionID: "meeting-response-gap", sink: &orderedMeetingSink{},
 		activeSpeech: make(map[string]*meetingAdapterSpeech), completedRuns: make(map[string]struct{}),
@@ -936,7 +1023,7 @@ func TestMeetingSessionAdapterResponseGapIsBoundedAndCancellationUnblocks(t *tes
 	events := make(chan meetingAdapterResponseEvent, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- adapter.publishOrderedResponses(ctx, events) }()
+	go func() { done <- adapter.publishCoordinatedResponses(ctx, events) }()
 	events <- meetingAdapterResponseEvent{name: "foreground_outcome", envelope: element.Envelope{
 		Type: modelelements.OutcomeType(), ItemID: "gap-terminal", SessionID: adapter.sessionID,
 		SourceID: ForegroundDeploymentReference, RunID: "gap-run", Sequence: 2,
@@ -955,10 +1042,10 @@ func TestMeetingSessionAdapterResponseGapIsBoundedAndCancellationUnblocks(t *tes
 		t.Fatal("response gap did not unblock on session cancellation")
 	}
 	if observed, _, _ := adapter.sink.(*orderedMeetingSink).snapshot(); len(observed) != 0 {
-		t.Fatalf("gapped terminal crossed the sink: %v", observed)
+		t.Fatalf("partial terminal crossed the sink: %v", observed)
 	}
 
-	order := &meetingAdapterResponseOrder{next: 1, pending: make(map[uint64]meetingAdapterResponseEvent)}
+	coordinator := &meetingAdapterResponseCoordinator{runs: make(map[string]*meetingAdapterCoordinatedRun)}
 	bad := meetingAdapterResponseEvent{name: "foreground_outcome", envelope: element.Envelope{
 		Type: modelelements.OutcomeType(), ItemID: "foreign-source", SessionID: adapter.sessionID,
 		SourceID: "untrusted.foreground", RunID: "foreign-run", Sequence: 1,
@@ -967,12 +1054,14 @@ func TestMeetingSessionAdapterResponseGapIsBoundedAndCancellationUnblocks(t *tes
 			ProviderReference: ForegroundDeploymentReference,
 		},
 	}}
-	if err := adapter.acceptOrderedResponse(context.Background(), order, bad); err == nil {
-		t.Fatal("foreign response sequence authority was accepted")
+	if err := adapter.acceptCoordinatedResponse(context.Background(), coordinator, bad); err == nil {
+		t.Fatal("foreign response authority was accepted")
+	}
+	for index := 0; index < maximumMeetingAdapterRuns; index++ {
+		coordinator.runs[fmt.Sprintf("occupied-%d", index)] = &meetingAdapterCoordinatedRun{}
 	}
 	bad.envelope.SourceID = ForegroundDeploymentReference
-	bad.envelope.Sequence = maximumMeetingResponsePending + 1
-	if err := adapter.acceptOrderedResponse(context.Background(), order, bad); err == nil {
-		t.Fatal("response gap beyond pending bound was accepted")
+	if err := adapter.acceptCoordinatedResponse(context.Background(), coordinator, bad); err == nil {
+		t.Fatal("response coordinator admitted a run beyond its bound")
 	}
 }

@@ -85,15 +85,25 @@ type VideoConfig struct {
 type VideoObserver struct {
 	config VideoConfig
 
-	mu              sync.Mutex
+	mu          sync.Mutex
+	sources     map[string]*videoSourceState
+	frames      uint64
+	admitted    uint64
+	narrations  uint64
+	revision    uint64
+	refreshNext bool
+}
+
+// videoSourceState is deliberately keyed by Frame.Source. Screen and camera
+// can be active at the same time, but they are independent signals: comparing
+// alternating frames from those sources against one shared baseline makes
+// every frame look changed and lets one source consume the other's cadence or
+// post-effect refresh boundary.
+type videoSourceState struct {
 	lastFingerprint uint64
 	lastBytes       int
 	lastSignature   []uint8
 	lastAdmitNS     uint64
-	frames          uint64
-	admitted        uint64
-	narrations      uint64
-	revision        uint64
 	refreshNext     bool
 }
 
@@ -121,7 +131,7 @@ func NewVideoObserver(config VideoConfig) (*VideoObserver, error) {
 	if config.AttachKeyframes && config.Retainer == nil {
 		return nil, errors.New("attaching keyframes requires a media store to retain them")
 	}
-	return &VideoObserver{config: config}, nil
+	return &VideoObserver{config: config, sources: make(map[string]*videoSourceState)}, nil
 }
 
 func (observer *VideoObserver) Name() string { return observer.config.Name }
@@ -144,11 +154,12 @@ func (observer *VideoObserver) Gate(frame Frame) bool {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	observer.frames++
-	if observer.refreshNext {
+	state := observer.sourceStateLocked(frame.Source)
+	if observer.refreshNext || state.refreshNext {
 		return true
 	}
-	if !observer.config.ExternalCadence && observer.admitted != 0 &&
-		now-observer.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
+	if !observer.config.ExternalCadence && state.lastSignature != nil &&
+		now-state.lastAdmitNS < uint64(observer.config.Cadence.Nanoseconds()) {
 		return false
 	}
 	// A screen that has not changed usually re-encodes to identical bytes, so
@@ -156,7 +167,7 @@ func (observer *VideoObserver) Gate(frame Frame) bool {
 	// the bytes: comparing a 200 KB frame in full costs tens of microseconds
 	// and would make the idle path - the one that runs most of the time - the
 	// most expensive one in the system.
-	if observer.lastBytes == len(frame.Image) && observer.lastFingerprint == fingerprint(frame.Image) {
+	if state.lastBytes == len(frame.Image) && state.lastFingerprint == fingerprint(frame.Image) {
 		return false
 	}
 	return true
@@ -222,18 +233,20 @@ func (observer *VideoObserver) Observe(ctx context.Context, frames []Frame) ([]O
 	}
 
 	observer.mu.Lock()
-	previous := observer.lastSignature
-	forced := observer.refreshNext
+	state := observer.sourceStateLocked(frame.Source)
+	previous := state.lastSignature
+	forced := observer.refreshNext || state.refreshNext
 	observer.refreshNext = false
+	state.refreshNext = false
 	changed := changedFraction(previous, signature)
 	if !forced && previous != nil && changed < observer.config.ChangeThreshold {
-		observer.lastFingerprint, observer.lastBytes = fingerprint(frame.Image), len(frame.Image)
+		state.lastFingerprint, state.lastBytes = fingerprint(frame.Image), len(frame.Image)
 		observer.mu.Unlock()
 		return nil, nil
 	}
-	observer.lastSignature = signature
-	observer.lastFingerprint, observer.lastBytes = fingerprint(frame.Image), len(frame.Image)
-	observer.lastAdmitNS = observer.config.Now()
+	state.lastSignature = signature
+	state.lastFingerprint, state.lastBytes = fingerprint(frame.Image), len(frame.Image)
+	state.lastAdmitNS = observer.config.Now()
 	observer.admitted++
 	observer.revision++
 	revision := observer.revision
@@ -275,13 +288,13 @@ func (observer *VideoObserver) Observe(ctx context.Context, frames []Frame) ([]O
 // as it goes, and there is no in-flight state to finish.
 func (observer *VideoObserver) Flush(context.Context) ([]Observation, error) { return nil, nil }
 
-// Reset forgets what the screen looked like, so the next frame is treated as
-// new. A session boundary should not inherit a previous session's screen.
+// Reset forgets what every source looked like, so each source's next frame is
+// treated as new. A session boundary must not inherit a previous session's
+// screen, camera, cadence, or pending refresh state.
 func (observer *VideoObserver) Reset() {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
-	observer.lastFingerprint, observer.lastBytes = 0, 0
-	observer.lastSignature, observer.lastAdmitNS = nil, 0
+	observer.sources = make(map[string]*videoSourceState)
 	observer.refreshNext = false
 }
 
@@ -292,6 +305,29 @@ func (observer *VideoObserver) RefreshNext() {
 	observer.mu.Lock()
 	observer.refreshNext = true
 	observer.mu.Unlock()
+}
+
+// RefreshSource forces exactly one post-effect keyframe from source without
+// allowing a frame from another simultaneously active source to consume the
+// boundary. Realtime computer-use consequences target the screen even while a
+// camera stream is active, so this is the precise form of RefreshNext for a
+// multi-source observer.
+func (observer *VideoObserver) RefreshSource(source string) {
+	observer.mu.Lock()
+	observer.sourceStateLocked(source).refreshNext = true
+	observer.mu.Unlock()
+}
+
+func (observer *VideoObserver) sourceStateLocked(source string) *videoSourceState {
+	if observer.sources == nil {
+		observer.sources = make(map[string]*videoSourceState)
+	}
+	state := observer.sources[source]
+	if state == nil {
+		state = &videoSourceState{}
+		observer.sources[source] = state
+	}
+	return state
 }
 
 // VideoMetrics is what the efficiency gates measure.
@@ -364,6 +400,7 @@ func changedFraction(previous, current []uint8) float64 {
 
 var _ Observer = (*VideoObserver)(nil)
 var _ RefreshableObserver = (*VideoObserver)(nil)
+var _ SourceRefreshableObserver = (*VideoObserver)(nil)
 
 // controlPattern matches the control lines an actionable narration produces.
 var controlPattern = regexp.MustCompile(`(?i)CONTROL:\s*(.+?)\s+at\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)`)

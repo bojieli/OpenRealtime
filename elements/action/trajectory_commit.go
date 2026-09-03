@@ -39,6 +39,14 @@ func (authorizedCallCommitFactory) Mount(
 	if err != nil {
 		return nil, fmt.Errorf("action.AuthorizedCallCommit %s config: %w", mount.InstanceID, err)
 	}
+	toolService, toolServiceRevision, found := mount.Services.Lookup(ToolRegistryService)
+	if !found {
+		return nil, fmt.Errorf("action.AuthorizedCallCommit %s has no tool registries service", mount.InstanceID)
+	}
+	tools, ok := toolService.(*ToolRegistries)
+	if !ok || tools == nil {
+		return nil, fmt.Errorf("tool registries service has type %T", toolService)
+	}
 	dependencies, err := resolveRuntimeDependencies(mount.Services)
 	if err != nil {
 		return nil, err
@@ -84,7 +92,7 @@ func (authorizedCallCommitFactory) Mount(
 		return nil, err
 	}
 	return &authorizedCallCommitRunner{
-		config:      config,
+		config: config, tools: tools, toolServiceRevision: toolServiceRevision,
 		emit:        emitter{instance: mount.InstanceID, clock: dependencies.clock, sequences: dependencies.sequences},
 		actionInput: actionInput, contextInput: contextInput,
 		committedInput: committedInput, rejectedInput: rejectedInput,
@@ -119,8 +127,10 @@ type pendingAuthorizedCommit struct {
 }
 
 type authorizedCallCommitRunner struct {
-	config TrajectoryCommitConfig
-	emit   emitter
+	config              TrajectoryCommitConfig
+	emit                emitter
+	tools               *ToolRegistries
+	toolServiceRevision uint64
 
 	actionInput     element.InputPort
 	contextInput    element.InputPort
@@ -149,7 +159,11 @@ func (runner *authorizedCallCommitRunner) Run(parent context.Context) error {
 	}); err != nil {
 		return err
 	}
-	if err := reportActionResolution(runner.resolution, AuthorizedCallCommitDescriptor(), nil); err != nil {
+	if err := reportActionResolution(runner.resolution, AuthorizedCallCommitDescriptor(),
+		[]element.CapabilityResolution{actionCapability(
+			"tool-declarations", "action.ToolRegistry/v1", "registry://"+ToolRegistryService,
+			runner.toolServiceRevision, "",
+		)}); err != nil {
 		return err
 	}
 	inputs := make(chan receivedInput)
@@ -211,6 +225,10 @@ func (runner *authorizedCallCommitRunner) acceptAction(
 	if err := validateAuthorizedAction(action); err != nil {
 		return runner.publishOutcome(ctx, envelope, OutcomeRejected, "action", call.CallID,
 			"invalid_authority", err.Error())
+	}
+	if err := attestToolDeclaration(runner.tools, action.Confirmed.Declared); err != nil {
+		return runner.publishOutcome(ctx, envelope, OutcomeRejected, "action", call.CallID,
+			"declaration_attestation_failed", err.Error())
 	}
 	admitted := action.Confirmed.Declared.Admitted
 	if code, err := validateActionEnvelopeIdentity(envelope, admitted); err != nil {
@@ -320,6 +338,7 @@ func (runner *authorizedCallCommitRunner) tryStart(ctx context.Context, identity
 		// Promotion is a runtime authority decision. Model provenance remains
 		// on the exact proposal parent, invocation, and source revision.
 		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: &call,
+		ToolCallDerivation: toolCallDerivationOfDeclared(pending.action.Confirmed.Declared),
 	}
 	requestSequence, err := runner.emit.sequences.Next(runner.emit.instance + ".append")
 	if err != nil {
@@ -647,6 +666,7 @@ func authorizedPromotionEvidence(
 ) (promotionEvidence, string, error) {
 	call := callOfAuthorized(action)
 	admitted := action.Confirmed.Declared.Admitted
+	modelCall := admitted.Proposal.Call
 	if admitted.ContextVersion > snapshot.Version || admitted.ContextVersion > uint64(len(snapshot.Items)) {
 		return promotionEvidence{}, "context_not_committed", errors.New("authorized context exceeds canonical trajectory")
 	}
@@ -687,7 +707,8 @@ func authorizedPromotionEvidence(
 		return promotionEvidence{}, "proposal_not_committed", errors.New("model proposal is not yet canonical")
 	}
 	if proposal.InvocationID != admitted.ModelRunID || proposal.SourceRevision != admitted.SourceRevision ||
-		proposal.ToolCall.Name != call.Name || !bytes.Equal(proposal.ToolCall.Arguments, call.Arguments) {
+		proposal.ToolCall.CallID != modelCall.CallID || proposal.ToolCall.Name != modelCall.Name ||
+		!bytes.Equal(proposal.ToolCall.Arguments, modelCall.Arguments) {
 		return promotionEvidence{}, "canonical_proposal_mismatch", errors.New("canonical proposal differs from the authorized model proposal")
 	}
 	if proposal.Producer != admitted.ModelProducer {
@@ -700,10 +721,12 @@ func authorizedPromotionEvidence(
 	}
 	evidence := promotionEvidence{proposal: cloneTrajectoryItemForAction(*proposal)}
 	if committedCall != nil {
+		expectedDerivation := toolCallDerivationOfDeclared(action.Confirmed.Declared)
 		if committedCall.InvocationID != proposal.InvocationID || committedCall.SourceRevision != proposal.SourceRevision ||
 			committedCall.ToolCall.Name != call.Name || !bytes.Equal(committedCall.ToolCall.Arguments, call.Arguments) ||
-			!slices.Contains(committedCall.CausalParentIDs, proposal.ID) {
-			return promotionEvidence{}, "canonical_call_mismatch", errors.New("existing canonical tool call is not an exact proposal promotion")
+			!slices.Contains(committedCall.CausalParentIDs, proposal.ID) ||
+			!sameToolCallDerivation(committedCall.ToolCallDerivation, expectedDerivation) {
+			return promotionEvidence{}, "canonical_call_mismatch", errors.New("existing canonical tool call is not the authorized effective call")
 		}
 		copy := cloneTrajectoryItemForAction(*committedCall)
 		evidence.call = &copy
@@ -1265,7 +1288,11 @@ func (runner *toolResultCommitRunner) publishOutcome(
 func toolResultEvidence(
 	snapshot trajectory.Snapshot, execution ExecutionResult, envelopeRunID string,
 ) (trajectory.Item, *trajectory.Item, string, error) {
-	modelRunID := execution.Executable.Canonical.Authorized.Confirmed.Declared.Admitted.ModelRunID
+	canonical := execution.Executable.Canonical
+	declared := canonical.Authorized.Confirmed.Declared
+	modelRunID := declared.Admitted.ModelRunID
+	modelCall := declared.Admitted.Proposal.Call
+	effectiveCall := callOfCanonical(canonical)
 	var proposal *trajectory.Item
 	var call *trajectory.Item
 	var result *trajectory.Item
@@ -1297,11 +1324,13 @@ func toolResultEvidence(
 	}
 	if proposal == nil || !slices.Contains(call.CausalParentIDs, proposal.ID) ||
 		call.InvocationID != proposal.InvocationID || call.SourceRevision != proposal.SourceRevision ||
-		call.ToolCall.Name != proposal.ToolCall.Name ||
-		!bytes.Equal(call.ToolCall.Arguments, proposal.ToolCall.Arguments) {
-		return trajectory.Item{}, nil, "noncanonical_call", errors.New("tool call is not an exact canonical proposal promotion")
+		proposal.ToolCall.CallID != modelCall.CallID || proposal.ToolCall.Name != modelCall.Name ||
+		!bytes.Equal(proposal.ToolCall.Arguments, modelCall.Arguments) ||
+		call.ToolCall.CallID != effectiveCall.CallID || call.ToolCall.Name != effectiveCall.Name ||
+		!bytes.Equal(call.ToolCall.Arguments, effectiveCall.Arguments) ||
+		!sameToolCallDerivation(call.ToolCallDerivation, toolCallDerivationOfDeclared(declared)) {
+		return trajectory.Item{}, nil, "noncanonical_call", errors.New("tool call is not the attested effective form of its canonical proposal")
 	}
-	canonical := execution.Executable.Canonical
 	if proposal.ID != canonical.ProposalItemID || call.ID != canonical.TrajectoryItemID ||
 		call.Producer.Phase != trajectory.PhaseRuntime {
 		return trajectory.Item{}, nil, "canonical_action_mismatch",
@@ -1491,6 +1520,11 @@ func cloneTrajectoryItemForAction(item trajectory.Item) trajectory.Item {
 	if item.ToolCall != nil {
 		copy := cloneToolCall(*item.ToolCall)
 		item.ToolCall = &copy
+	}
+	if item.ToolCallDerivation != nil {
+		copy := *item.ToolCallDerivation
+		copy.Rewrites = slices.Clone(item.ToolCallDerivation.Rewrites)
+		item.ToolCallDerivation = &copy
 	}
 	if item.ToolResult != nil {
 		copy := cloneToolResult(*item.ToolResult)

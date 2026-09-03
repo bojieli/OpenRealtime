@@ -12,6 +12,7 @@ import (
 	"time"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
+	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
@@ -26,12 +27,14 @@ import (
 
 const clientBridgeDispatchGraph = `graph scenario_client_bridge_dispatch_test {
     action.ToolLookup :: lookup;
+    action.NormalizeArguments :: normalize;
     authority.TargetFence :: fence;
     action.LedgerCommit :: ledger;
     action.Dispatch :: dispatch;
 
     input admitted = lookup.proposal;
-    output declared = lookup.declared;
+    lookup.declared -> normalize.action;
+    output declared = normalize.normalized;
     input confirmed = fence.action;
     output authorized = fence.authorized;
     input canonical = ledger.action;
@@ -44,6 +47,8 @@ const clientBridgeDispatchGraph = `graph scenario_client_bridge_dispatch_test {
 
     output lookup_outcome = lookup.outcome;
     output lookup_resolved = lookup.resolved;
+    output normalization_outcome = normalize.outcome;
+    output normalization_resolved = normalize.resolved;
     output fence_outcome = fence.outcome;
     output fence_resolved = fence.resolved;
     output ledger_transition = ledger.transition;
@@ -56,6 +61,23 @@ const clientBridgeDispatchGraph = `graph scenario_client_bridge_dispatch_test {
     output dispatch_outcome = dispatch.outcome;
     output dispatch_resolved = dispatch.resolved;
 }`
+
+type toolCallCaptureSink struct {
+	playbackClientSink
+	calls []legacy.ToolCallEvent
+}
+
+func (sink *toolCallCaptureSink) ToolCalls(_ context.Context, event legacy.ToolCallEvent) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	copy := event
+	copy.Calls = make([]trajectory.ToolCall, len(event.Calls))
+	for index, call := range event.Calls {
+		copy.Calls[index] = cloneToolCall(call)
+	}
+	sink.calls = append(sink.calls, copy)
+	return nil
+}
 
 func TestClientBridgeRejectsDispatchWithoutExactGraphContext(t *testing.T) {
 	bridge := newClientBridge()
@@ -157,6 +179,159 @@ func TestClientBridgeAcceptsOnlyMountedActionDispatchAuthority(t *testing.T) {
 		t.Fatalf("mounted Dispatch execution = %#v", resultEnvelope.Payload)
 	}
 	bridge.remove(key, state)
+}
+
+func TestNormalizedClientCallKeepsProposalAndCompletesWithEffectiveArguments(t *testing.T) {
+	const sessionID, runID, callID = "session_normalized", "run_normalized", "call_normalized"
+	originalArguments := json.RawMessage(`{"order_id":"X Y Z88"}`)
+	effectiveArguments := json.RawMessage(`{"order_id":"XYZ88"}`)
+	proposalCall := trajectory.ToolCall{
+		CallID: callID, Name: "test_tool", Arguments: originalArguments,
+	}
+	bridge := newClientBridge()
+	store, admitted := clientBridgeProposalFixture(t, sessionID, runID, proposalCall)
+	mounted, graphCancel, graphDone := mountClientBridgeDispatchGraphWithSpec(
+		t, bridge, store, legacyaction.ToolSpec{
+			Name: "test_tool", Description: "normalize a spoken order identifier",
+			Parameters: json.RawMessage(
+				`{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}`,
+			),
+			ArgumentNormalizers: []legacyaction.ToolArgumentNormalizer{{
+				Argument: "order_id", Normalizer: legacyaction.ToolParameterCompactASCIIAlphanumericV1,
+			}},
+			Confirm: legacyaction.ConfirmNever,
+		},
+	)
+	defer stopClientBridgeDispatchGraph(t, graphCancel, graphDone)
+
+	sendClientBridgeEnvelope(t, mounted, "admitted", element.Envelope{
+		ItemID: "admitted_item", SessionID: sessionID, RunID: runID, Payload: admitted,
+	})
+	declaredEnvelope := receiveClientBridgeEnvelope(t, mounted, "declared")
+	declared, ok := declaredEnvelope.Payload.(actionelements.DeclaredAction)
+	if !ok {
+		t.Fatalf("normalized declaration payload type = %T", declaredEnvelope.Payload)
+	}
+	if string(declared.Admitted.Proposal.Call.Arguments) != string(originalArguments) {
+		t.Fatalf("normalization mutated proposal bytes: %s", declared.Admitted.Proposal.Call.Arguments)
+	}
+	if declared.EffectiveCall == nil ||
+		string(declared.EffectiveCall.Arguments) != string(effectiveArguments) ||
+		declared.Normalization == nil {
+		t.Fatalf("normalization did not produce the effective call and evidence: %+v", declared)
+	}
+	rewrites := make([]trajectory.ToolCallArgumentRewrite, len(declared.Normalization.Rewrites))
+	for index, rewrite := range declared.Normalization.Rewrites {
+		rewrites[index] = trajectory.ToolCallArgumentRewrite{
+			Argument: rewrite.Argument, Normalizer: rewrite.Normalizer,
+		}
+	}
+	effectiveCall := cloneToolCall(*declared.EffectiveCall)
+	if err := store.Append(trajectory.Item{
+		ID: "canonical_call", Kind: trajectory.KindToolCall, MonotonicNS: 3,
+		CausalParentIDs: []string{"canonical_proposal"}, SourceRevision: 1, InvocationID: runID,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: &effectiveCall,
+		ToolCallDerivation: &trajectory.ToolCallDerivation{
+			Kind:                     trajectory.ToolCallDerivationSchemaNormalizationV1,
+			SourceArgumentsDigest:    declared.Normalization.OriginalArgumentsDigest,
+			EffectiveArgumentsDigest: declared.Normalization.EffectiveArgumentsDigest,
+			RegistryReference:        declared.Normalization.RegistryReference,
+			RegistryDigest:           declared.Normalization.RegistryDigest,
+			DeclarationDigest:        declared.Normalization.DeclarationDigest,
+			Rewrites:                 rewrites,
+		},
+	}); err != nil {
+		t.Fatalf("append normalized canonical call: %v", err)
+	}
+
+	sendClientBridgeEnvelope(t, mounted, "confirmed", element.Envelope{
+		ItemID: "confirmed_item", SessionID: sessionID, RunID: runID,
+		CausalParents: []string{declaredEnvelope.ItemID},
+		Payload:       actionelements.ConfirmedAction{Declared: declared},
+	})
+	authorizedEnvelope := receiveClientBridgeEnvelope(t, mounted, "authorized")
+	authorized, ok := authorizedEnvelope.Payload.(actionelements.AuthorizedAction)
+	if !ok {
+		t.Fatalf("normalized authorized payload type = %T", authorizedEnvelope.Payload)
+	}
+	canonical := actionelements.CanonicalAction{
+		Authorized: authorized, ProposalItemID: "canonical_proposal",
+		TrajectoryItemID: "canonical_call", StoreVersion: store.Snapshot().Version,
+	}
+	sendClientBridgeEnvelope(t, mounted, "canonical", element.Envelope{
+		ItemID: "canonical_item", SessionID: sessionID, RunID: runID,
+		CausalParents: []string{authorizedEnvelope.ItemID}, Payload: canonical,
+	})
+	executableEnvelope := receiveClientBridgeEnvelope(t, mounted, "executable")
+	executable, ok := executableEnvelope.Payload.(actionelements.ExecutableAction)
+	if !ok {
+		t.Fatalf("normalized executable payload type = %T", executableEnvelope.Payload)
+	}
+	sendClientBridgeEnvelope(t, mounted, "execute", element.Envelope{
+		ItemID: "execute_item", SessionID: sessionID, RunID: runID,
+		CausalParents: []string{executableEnvelope.ItemID}, Payload: executable,
+	})
+	committedEnvelope := receiveClientBridgeEnvelope(t, mounted, "committed")
+	committed, ok := committedEnvelope.Payload.(actionelements.CommittedAction)
+	if !ok {
+		t.Fatalf("normalized committed payload type = %T", committedEnvelope.Payload)
+	}
+
+	sink := &toolCallCaptureSink{}
+	session := &session{
+		sessionID: sessionID, sink: sink, bundle: &sessionBundle{bridge: bridge},
+		calls: make(map[string]activeClientCall), terminalCalls: make(map[string]struct{}),
+	}
+	if err := session.publishCall(context.Background(), element.Envelope{
+		ItemID: "committed_envelope", SessionID: sessionID, RunID: runID, Payload: committed,
+	}); err != nil {
+		t.Fatalf("publish normalized client call: %v", err)
+	}
+	sink.mu.Lock()
+	if len(sink.calls) != 1 || len(sink.calls[0].Calls) != 1 {
+		sink.mu.Unlock()
+		t.Fatalf("normalized client emission count = %+v", sink.calls)
+	}
+	emitted := cloneToolCall(sink.calls[0].Calls[0])
+	sink.mu.Unlock()
+	if string(emitted.Arguments) != string(effectiveArguments) {
+		t.Fatalf("client received proposal rather than effective bytes: %s", emitted.Arguments)
+	}
+	if string(committed.Executable.Canonical.Authorized.Confirmed.Declared.Admitted.Proposal.Call.Arguments) !=
+		string(originalArguments) {
+		t.Fatal("client emission mutated the retained model proposal")
+	}
+
+	result := clientBridgeResult(callID, 17)
+	receipt, err := bridge.SubmitToolResult(context.Background(), sessionID, runID, result)
+	if err != nil {
+		t.Fatalf("submit result for normalized client call: %v", err)
+	}
+	resultEnvelope := receiveClientBridgeEnvelope(t, mounted, "result")
+	execution, ok := resultEnvelope.Payload.(actionelements.ExecutionResult)
+	if !ok || execution.CompletionOrigin != actionelements.CompletionReturned ||
+		!sameToolResult(execution.Result, result) {
+		t.Fatalf("normalized dispatch execution = %#v", resultEnvelope.Payload)
+	}
+	canonicalResult := actionelements.CanonicalResult{
+		Execution: execution, TrajectoryItemID: "canonical_result", StoreVersion: store.Snapshot().Version,
+	}
+	if err := session.acceptCanonicalResult(element.Envelope{
+		ItemID: "canonical_result_envelope", SessionID: sessionID, RunID: runID,
+		Payload: canonicalResult,
+	}); err != nil {
+		t.Fatalf("accept normalized canonical result: %v", err)
+	}
+	evidence, err := bridge.WaitToolResultCanonical(context.Background(), receipt)
+	if err != nil {
+		t.Fatalf("wait for normalized canonical result: %v", err)
+	}
+	if evidence.Receipt != receipt || evidence.CanonicalTrajectoryItemID != "canonical_result" {
+		t.Fatalf("normalized canonical evidence = %+v", evidence)
+	}
+	if _, active := session.calls[callID]; active {
+		t.Fatal("canonical result left the normalized client call active")
+	}
 }
 
 func TestClientBridgeReusesCallIDAcross513SequentialRuns(t *testing.T) {
@@ -608,6 +783,48 @@ func clientBridgeAuthorityFixture(t *testing.T, sessionID, runID, callID string,
 	}
 }
 
+func clientBridgeProposalFixture(t *testing.T, sessionID, runID string, call trajectory.ToolCall,
+) (*trajectory.Store, actionelements.AdmittedProposal) {
+	t.Helper()
+	producer := trajectory.Producer{
+		Phase: trajectory.PhaseFast, Provider: "bridge-test", Model: "bridge-test-model",
+		ReasoningEffort: string(continuation.EffortMinimal),
+		SpeechAuthority: string(continuation.SpeechAuthoritySilent),
+	}
+	store := trajectory.NewStore()
+	if err := store.AppendBatch([]trajectory.Item{
+		{
+			ID: "authority_observation", Kind: trajectory.KindObservation, MonotonicNS: 1,
+			SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+			Content: "run the mounted tool",
+			Event: &trajectory.EventMetadata{EventID: "authority_trigger", Type: "input_text",
+				Source: "user", Channel: "text", OccurredNS: 1},
+		},
+		{
+			ID: "canonical_proposal", Kind: trajectory.KindToolProposal, MonotonicNS: 2,
+			CausalParentIDs: []string{"authority_observation"}, SourceRevision: 1,
+			InvocationID: runID, Producer: producer, ToolCall: clientBridgeCallPointer(call),
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return store, actionelements.AdmittedProposal{
+		Proposal: cognitionelements.ToolProposal{
+			Call: cloneToolCall(call), Declared: true,
+			ProviderAuthority: continuation.ToolAuthorityPropose,
+		},
+		ProposalItemID: "proposal_envelope", CandidateItemID: "candidate_envelope",
+		ResultItemID: "result_envelope", ModelRunID: runID, SessionID: sessionID,
+		ActivationItemID: "activation_item", ActivationCauseItemID: "activation_cause",
+		Authority: trajectory.AuthorityUser, AuthorityItemID: "authority_observation",
+		ObservationTriggerItemID: "authority_trigger", SourceRevision: 1,
+		ContextVersion: 1, ContextEnvelopeItemID: "context_envelope",
+		ContextTailItem: "authority_observation", ProviderReference: "bridge-test",
+		ModelResultDigest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+		ModelProducer:     producer,
+	}
+}
+
 func clientBridgeCallPointer(call trajectory.ToolCall) *trajectory.ToolCall {
 	copy := cloneToolCall(call)
 	return &copy
@@ -615,13 +832,19 @@ func clientBridgeCallPointer(call trajectory.ToolCall) *trajectory.ToolCall {
 
 func mountClientBridgeDispatchGraph(t *testing.T, bridge *clientBridge, store *trajectory.Store,
 ) (*graphruntime.Mounted, context.CancelFunc, <-chan error) {
-	t.Helper()
-	tools := actionelements.NewToolRegistries()
-	if err := tools.Register("tools", []legacyaction.ToolSpec{{
+	return mountClientBridgeDispatchGraphWithSpec(t, bridge, store, legacyaction.ToolSpec{
 		Name: "test_tool", Description: "mounted bridge test tool",
 		Parameters: json.RawMessage(`{"type":"object"}`), Confirm: legacyaction.ConfirmNever,
-		Dispatcher: bridge,
-	}}); err != nil {
+	})
+}
+
+func mountClientBridgeDispatchGraphWithSpec(t *testing.T, bridge *clientBridge,
+	store *trajectory.Store, spec legacyaction.ToolSpec,
+) (*graphruntime.Mounted, context.CancelFunc, <-chan error) {
+	t.Helper()
+	tools := actionelements.NewToolRegistries()
+	spec.Dispatcher = bridge
+	if err := tools.Register("tools", []legacyaction.ToolSpec{spec}); err != nil {
 		t.Fatal(err)
 	}
 	targets := actionelements.NewTargetRegistries()

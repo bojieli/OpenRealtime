@@ -11,6 +11,8 @@ graph visual_reflex_planner {
     policy.GenerateOnObservation :: planner_activation;
     cognition.TextModel :: reflex_model;
     cognition.TextModel :: planner_model;
+    interaction.ControlSerializationQuarantine :: reflex_control_quarantine;
+    interaction.ControlSerializationQuarantine :: planner_control_quarantine;
     interaction.ModelResultCommit :: model_result_commit;
     authority.ProvenanceJoin :: reflex_provenance;
     authority.ProvenanceJoin :: planner_provenance;
@@ -80,8 +82,12 @@ graph visual_reflex_planner {
     planner_candidate_copy.out -> planner_provenance.candidate;
     planner_candidate_copy.out -> action_arbiter.candidate;
 
-    reflex_model.result -> reflex_result_copy.in;
-    planner_model.result -> planner_result_copy.in;
+    reflex_model.text -> reflex_control_quarantine.text;
+    reflex_model.result -> reflex_control_quarantine.result;
+    planner_model.text -> planner_control_quarantine.text;
+    planner_model.result -> planner_control_quarantine.result;
+    reflex_control_quarantine.safe_result -> reflex_result_copy.in;
+    planner_control_quarantine.safe_result -> planner_result_copy.in;
     reflex_result_copy.out -> model_result_mux.in;
     planner_result_copy.out -> model_result_mux.in;
     model_result_mux.out -> model_result_commit.result;
@@ -152,10 +158,12 @@ graph visual_reflex_planner {
     output reflex_activation_outcome = reflex_activation.outcome;
     output planner_activation_state = planner_activation.state;
     output planner_activation_outcome = planner_activation.outcome;
-    output reflex_text = reflex_model.text;
-    output planner_text = planner_model.text;
+    output reflex_text = reflex_control_quarantine.safe_text;
+    output planner_text = planner_control_quarantine.safe_text;
     output reflex_result = reflex_result_copy.out;
     output planner_result = planner_result_copy.out;
+    output reflex_control_serialization_quarantine = reflex_control_quarantine.quarantined;
+    output planner_control_serialization_quarantine = planner_control_quarantine.quarantined;
     output reflex_proposals = reflex_proposal_copy.out;
     output planner_proposals = planner_proposal_copy.out;
     output reflex_model_outcome = reflex_model.outcome;

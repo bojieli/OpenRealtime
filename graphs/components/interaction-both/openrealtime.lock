@@ -18,19 +18,27 @@
       }
     },
     {
+      "reference": "interaction.ControlSerializationQuarantine",
+      "identity": {
+        "name": "interaction.ControlSerializationQuarantine",
+        "revision": 2,
+        "digest": "sha256:f5d773fcdfe5fe831b37e853185bea03ef86276f5b30999532d8cecb33654f62"
+      }
+    },
+    {
       "reference": "interaction.SegmentPreparedText",
       "identity": {
         "name": "interaction.SegmentPreparedText",
-        "revision": 1,
-        "digest": "sha256:7985e9425b21408316c23b086ddb6c9af75f8ddbfb783f49b6606f15a7903fae"
+        "revision": 2,
+        "digest": "sha256:ad7fdc3e85e47f1aa24e6f23745b47f708f358a0eac028b5711fb7c2e2dda480"
       }
     },
     {
       "reference": "interaction.SpeechArbiter",
       "identity": {
         "name": "interaction.SpeechArbiter",
-        "revision": 1,
-        "digest": "sha256:f94b4b8b34c8996931461eb01c6e89d6a997e9fb1233fee0ac4806fa2096edc3"
+        "revision": 2,
+        "digest": "sha256:5c75681d5e217bf23ca2232da094bdc5cad85b65193d4211e92d42b2997072c6"
       }
     }
   ]

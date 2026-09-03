@@ -60,18 +60,24 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}
 	if !strings.Contains(string(config.Artifacts.Values.Data), `"enum":["screen"]`) ||
 		!strings.Contains(string(config.Artifacts.Values.Data), `"maximum":1279`) ||
-		!strings.Contains(string(config.Artifacts.Values.Data), `"max_tool_proposals":1`) {
-		t.Fatal("values artifact did not retain the exact screen target and one-proposal cognition bound")
+		!strings.Contains(string(config.Artifacts.Values.Data), `"max_tool_proposals":1`) ||
+		!strings.Contains(string(config.Artifacts.Values.Data),
+			"Preserve every ordinary spoken word's full spelling and every digit exactly") ||
+		!strings.Contains(string(config.Artifacts.Values.Data),
+			"Never type those punctuation names literally") ||
+		!strings.Contains(string(config.Artifacts.Values.Data),
+			"emit only the single tool call and no plan, narration, or assistant prose") {
+		t.Fatal("values artifact did not retain the exact screen target, cognition bound, and dictated-identifier rule")
 	}
 	launched, err := graphlaunch.New(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity := launched.Plan.Identity()
-	if identity.SourceDigest != "sha256:6cd6055326de6d9c3723eef2cafa272e8afdf588152e7875cd7ff0333913d20f" ||
-		identity.LockDigest != "sha256:cc99b91ea22a2a56f89573b9890693173eadd8be45b52d9a0bca4b2dd2de659e" ||
-		identity.GraphFingerprint != "sha256:78c91c1067bc6f91cb5563890004d817dc5871af9999982ae8d39b5cfbb9c7b6" ||
-		identity.PlanFingerprint != "sha256:310650ad7018c976a03323be5d043064d4fb676814837b40b3013cd2ef88b0f5" {
+	if identity.SourceDigest != "sha256:85b694e61756f9d93c418b8ec1bc6ccdfdcf9af0da9954e4b949e20e360642c7" ||
+		identity.LockDigest != "sha256:3a42050d9927ea8274c668f2d332aa765939013fb9f0b3c57ea708845d39940a" ||
+		identity.GraphFingerprint != "sha256:534a104ecb56a59b429f02a43b8ead58ca0295cabbaa05908fdd31b50fdf463b" ||
+		identity.PlanFingerprint != "sha256:77dc8418ad09f3c5fd1fd551a639e20ff919daf26e4a53044a369543a647f477" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -302,6 +308,307 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 	if settled.Number != 3 || settled.LastSource != realtimecu.SourceScreen || settled.ToolResults != 1 {
 		t.Fatalf("post-effect cognition = %+v", settled)
 	}
+	// A fresh provider call ID does not make the same successful semantic
+	// effect admissible under the same durable user intent. Suppression is a
+	// typed pre-effect terminal: it releases activation without fabricating a
+	// tool result, forcing a visual consequence, or reaching the client sink.
+	select {
+	case event := <-sink.calls:
+		t.Fatalf("successful effect replay reached the client boundary: %+v", event)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	// Suppression settles only that cognition run. A genuinely new camera
+	// observation may reconsider the still-durable intent, but another identical
+	// successful effect remains suppressed before the client boundary.
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceCamera, CapturedNS: 400,
+		Image: []byte{5}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	retried := receiveRealtimeCU(t, model.invocations, "independent-evidence retry")
+	if retried.Number != 4 || retried.LastSource != realtimecu.SourceCamera || retried.ToolResults != 1 {
+		t.Fatalf("independent-evidence retry = %+v", retried)
+	}
+	select {
+	case event := <-sink.calls:
+		t.Fatalf("successful effect replay after independent evidence reached the client: %+v", event)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestRealtimeComputerUseToolAdmissionSuppressesPlaceholderAndReleasesNextVisual(t *testing.T) {
+	target := computeruse.Target{
+		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
+	}
+	descriptor := testRealtimeCUDescriptor()
+	model := &placeholderThenClickRealtimeCUModel{
+		descriptor: descriptor, invocations: make(chan visualReactivationInvocation, 2),
+	}
+	observer := newTestRealtimeCUObserver("tool-admission-observer")
+	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
+		RuntimeArtifact: testRealtimeCUArtifact("tool-admission-runtime", "1"),
+		Model: realtimecu.ModelPlugin{
+			Reference: "go://test/realtime-cu/tool-admission-model/v1",
+			Artifact:  testRealtimeCUArtifact("tool-admission-model", "2"), Descriptor: descriptor,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return model, nil
+			},
+		},
+		Observer: realtimecu.ObserverPlugin{
+			Reference: "go://test/realtime-cu/tool-admission-observer/v1", Name: observer.name,
+			Artifact: testRealtimeCUArtifact("tool-admission-observer", "3"),
+			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
+			Factory:  func(context.Context, legacy.Options) (realtimecu.Observer, error) { return observer, nil },
+		},
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := newTestRealtimeCUSink()
+	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{
+		Sink: sink, SessionID: "realtime-cu-tool-admission",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if closeErr := runtime.Close(ctx, errors.New("test complete")); closeErr != nil {
+			t.Errorf("close tool-admission runtime: %v", closeErr)
+		}
+	})
+	if err := runtime.Update(context.Background(), legacy.Settings{
+		Instruction: "when the visual threshold appears, click it without placeholder actions",
+		Tools:       testRealtimeCUToolSpecs(t, target), Observers: []string{observer.name},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first := receiveRealtimeCU(t, model.invocations, "placeholder proposal cognition")
+	if first.Number != 1 || first.LastSource != realtimecu.SourceMicrophone {
+		t.Fatalf("first cognition = %+v", first)
+	}
+	for {
+		debug := receiveRealtimeCU(t, sink.debug, "tool-admission outcome")
+		if debug.Name == "tool_admission_outcome" {
+			break
+		}
+	}
+	select {
+	case event := <-sink.calls:
+		t.Fatalf("denied placeholder crossed the client boundary: %+v", event)
+	default:
+	}
+	select {
+	case consequence := <-observer.consequences:
+		t.Fatalf("denied placeholder requested a visual consequence: %+v", consequence)
+	default:
+	}
+
+	// The suppression is not merely an in-memory activation shortcut. Wait for
+	// the activation append to traverse the graph's trajectory Mux and for the
+	// exact commit acknowledgement to return through its Tee before presenting
+	// the next observation.
+	dispositionSnapshot, deniedProposal, disposition :=
+		waitForRealtimeCUToolPolicyDisposition(t, runtime, computeruse.Wait)
+	if disposition.ToolProposalDisposition.ProposalItemID != deniedProposal.ID ||
+		disposition.ToolProposalDisposition.CallID != deniedProposal.ToolCall.CallID ||
+		disposition.ToolProposalDisposition.Name != deniedProposal.ToolCall.Name ||
+		disposition.ToolProposalDisposition.Kind != trajectory.ToolProposalToolPolicySuppressed ||
+		disposition.InvocationID != deniedProposal.InvocationID ||
+		disposition.SourceRevision != deniedProposal.SourceRevision ||
+		disposition.Producer.Phase != trajectory.PhaseRuntime ||
+		!slices.Contains(disposition.CausalParentIDs, deniedProposal.ID) ||
+		disposition.ToolCall != nil || disposition.Content != "" {
+		t.Fatalf("canonical denied-proposal disposition mismatch: proposal=%+v disposition=%+v",
+			deniedProposal, disposition)
+	}
+	wireDisposition, err := json.Marshal(disposition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wireDisposition), `"arguments"`) ||
+		strings.Contains(string(wireDisposition), "duration_ms") {
+		t.Fatalf("canonical disposition copied denied proposal arguments: %s", wireDisposition)
+	}
+	terminalProposals, terminalEvidence := trajectory.TerminalToolProposalIDs(dispositionSnapshot)
+	if _, ok := terminalProposals[deniedProposal.ID]; !ok {
+		t.Fatalf("canonical disposition did not terminate proposal %q: %v",
+			deniedProposal.ID, terminalProposals)
+	}
+	if _, ok := terminalEvidence[disposition.ID]; !ok {
+		t.Fatalf("canonical disposition evidence %q was not validated: %v",
+			disposition.ID, terminalEvidence)
+	}
+	for _, item := range dispositionSnapshot.Items {
+		if item.ToolCall != nil && item.ToolCall.CallID == deniedProposal.ToolCall.CallID &&
+			item.Kind != trajectory.KindToolProposal {
+			t.Fatalf("denied proposal acquired executable authority: %+v", item)
+		}
+		if item.ToolResult != nil && item.ToolResult.CallID == deniedProposal.ToolCall.CallID {
+			t.Fatalf("denied proposal fabricated a canonical tool result: %+v", item)
+		}
+	}
+
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 200,
+		Image: []byte{84}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second := receiveRealtimeCU(t, model.invocations, "visual generation after placeholder suppression")
+	if second.Number != 2 || second.LastSource != realtimecu.SourceScreen || second.ToolResults != 0 {
+		t.Fatalf("post-suppression cognition = %+v", second)
+	}
+	callEvent := receiveRealtimeCU(t, sink.calls, "post-suppression click")
+	if len(callEvent.Calls) != 1 || callEvent.Calls[0].Name != computeruse.Click {
+		t.Fatalf("post-suppression client call = %+v", callEvent)
+	}
+	call := callEvent.Calls[0]
+	if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+		CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"clicked":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	consequence := receiveRealtimeCU(t, observer.consequences, "post-suppression click consequence")
+	if consequence.CallID != call.CallID || consequence.Name != computeruse.Click {
+		t.Fatalf("post-suppression consequence = %+v", consequence)
+	}
+}
+
+func TestRealtimeComputerUseGraphNormalizesOnlyTheDeclaredCoordinatePairShape(t *testing.T) {
+	target := computeruse.Target{
+		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 1280, Height: 720,
+	}
+	descriptor := testRealtimeCUDescriptor()
+	observer := newTestRealtimeCUObserver("coordinate-pair-observer")
+	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
+		RuntimeArtifact: testRealtimeCUArtifact("coordinate-pair-runtime", "1"),
+		Model: realtimecu.ModelPlugin{
+			Reference: "go://test/realtime-cu/coordinate-pair-model/v1",
+			Artifact:  testRealtimeCUArtifact("coordinate-pair-model", "2"), Descriptor: descriptor,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return &coordinatePairRealtimeCUModel{descriptor: descriptor}, nil
+			},
+		},
+		Observer: realtimecu.ObserverPlugin{
+			Reference: "go://test/realtime-cu/coordinate-pair-observer/v1", Name: observer.name,
+			Artifact: testRealtimeCUArtifact("coordinate-pair-observer", "3"),
+			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
+			Factory:  func(context.Context, legacy.Options) (realtimecu.Observer, error) { return observer, nil },
+		},
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := newTestRealtimeCUSink()
+	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{
+		Sink: sink, SessionID: "realtime-cu-coordinate-pair",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if closeErr := runtime.Close(ctx, errors.New("test complete")); closeErr != nil {
+			t.Errorf("close coordinate-pair runtime: %v", closeErr)
+		}
+	})
+	var click legacyaction.ToolSpec
+	for _, spec := range testRealtimeCUToolSpecs(t, target) {
+		if spec.Name == computeruse.ClickNormalized {
+			click = spec
+			break
+		}
+	}
+	if click.Name == "" || len(click.ArgumentNormalizers) != 0 {
+		t.Fatalf("provider-visible normalized-click declaration = %+v", click)
+	}
+	if err := runtime.Update(context.Background(), legacy.Settings{
+		Instruction: "click the incident field", Tools: []legacyaction.ToolSpec{click},
+		Observers: []string{observer.name},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	event := receiveRealtimeCU(t, sink.calls, "normalized coordinate call")
+	if len(event.Calls) != 1 {
+		t.Fatalf("normalized coordinate event = %+v", event)
+	}
+	call := event.Calls[0]
+	if call.Name != computeruse.ClickNormalized ||
+		string(call.Arguments) != `{"source":"screen","x":255,"y":566}` {
+		t.Fatalf("effective coordinate call = %+v", call)
+	}
+
+	var proposal, committed *trajectory.Item
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := runtime.Trajectory()
+		for index := range snapshot.Items {
+			item := &snapshot.Items[index]
+			if item.ToolCall == nil || item.ToolCall.CallID != call.CallID {
+				continue
+			}
+			switch item.Kind {
+			case trajectory.KindToolProposal:
+				proposal = item
+			case trajectory.KindToolCall:
+				committed = item
+			}
+		}
+		if proposal != nil && committed != nil {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if proposal == nil || string(proposal.ToolCall.Arguments) != `{"source":"screen","x":[255,566]}` {
+		t.Fatalf("canonical original proposal = %+v", proposal)
+	}
+	if committed == nil || committed.ToolCall == nil ||
+		string(committed.ToolCall.Arguments) != `{"source":"screen","x":255,"y":566}` ||
+		committed.ToolCallDerivation == nil ||
+		len(committed.ToolCallDerivation.Rewrites) != 1 ||
+		committed.ToolCallDerivation.Rewrites[0] != (trajectory.ToolCallArgumentRewrite{
+			Argument: "x", Normalizer: action.ToolParameterCoordinatePairXYV1,
+		}) {
+		t.Fatalf("committed coordinate derivation = %+v", committed)
+	}
+	if committed.ToolCallDerivation.SourceArgumentsDigest !=
+		trajectory.ToolCallArgumentsDigest(proposal.ToolCall.Arguments) ||
+		committed.ToolCallDerivation.EffectiveArgumentsDigest !=
+			trajectory.ToolCallArgumentsDigest(committed.ToolCall.Arguments) {
+		t.Fatalf("committed coordinate derivation digests = %+v", committed.ToolCallDerivation)
+	}
+	if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+		CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"clicked":true}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRealtimeComputerUseResourceAwareObserverSharesExactSessionMediaWithModel(t *testing.T) {
@@ -459,6 +766,25 @@ func (*testRealtimeCUModel) Continue(
 	return continuation.Completion{StopReason: "tool_call"}, nil
 }
 
+type coordinatePairRealtimeCUModel struct{ descriptor continuation.Descriptor }
+
+func (model *coordinatePairRealtimeCUModel) Descriptor() continuation.Descriptor {
+	return model.descriptor
+}
+
+func (*coordinatePairRealtimeCUModel) Continue(
+	_ context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	call := trajectory.ToolCall{
+		CallID: request.InvocationID + ":click", Name: computeruse.ClickNormalized,
+		Arguments: json.RawMessage(`{"source":"screen","x":[255,566]}`),
+	}
+	if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
+		return continuation.Completion{}, err
+	}
+	return continuation.Completion{StopReason: "tool_call"}, nil
+}
+
 type mediaInspectingRealtimeCUModel struct {
 	descriptor continuation.Descriptor
 	seen       chan []byte
@@ -474,6 +800,60 @@ type visualReactivationRealtimeCUModel struct {
 	descriptor  continuation.Descriptor
 	count       atomic.Int32
 	invocations chan visualReactivationInvocation
+}
+
+type placeholderThenClickRealtimeCUModel struct {
+	descriptor  continuation.Descriptor
+	count       atomic.Int32
+	invocations chan visualReactivationInvocation
+}
+
+func (model *placeholderThenClickRealtimeCUModel) Descriptor() continuation.Descriptor {
+	return model.descriptor
+}
+
+func (model *placeholderThenClickRealtimeCUModel) Continue(
+	_ context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	number := model.count.Add(1)
+	lastSource := ""
+	toolResults := 0
+	if items := request.Trajectory.Items; len(items) != 0 {
+		last := items[len(items)-1]
+		if last.Observation != nil {
+			lastSource = last.Observation.Source
+		} else if last.Event != nil {
+			lastSource = last.Event.Channel
+		}
+		for _, item := range items {
+			if item.Kind == trajectory.KindToolResult {
+				toolResults++
+			}
+		}
+	}
+	model.invocations <- visualReactivationInvocation{
+		Number: number, LastSource: lastSource, ToolResults: toolResults,
+	}
+	call := trajectory.ToolCall{CallID: request.InvocationID + ":proposal"}
+	switch number {
+	case 1:
+		if !slices.ContainsFunc(request.Invocation.Tools, func(tool continuation.ToolDefinition) bool {
+			return tool.Name == computeruse.Wait
+		}) {
+			return continuation.Completion{}, errors.New("test provider did not receive declared wait tool")
+		}
+		call.Name = computeruse.Wait
+		call.Arguments = json.RawMessage(`{"duration_ms":1000}`)
+	case 2:
+		call.Name = computeruse.Click
+		call.Arguments = json.RawMessage(`{"source":"screen","x":10,"y":20}`)
+	default:
+		return continuation.Completion{StopReason: "stop"}, nil
+	}
+	if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
+		return continuation.Completion{}, err
+	}
+	return continuation.Completion{StopReason: "tool_call"}, nil
 }
 
 func (model *visualReactivationRealtimeCUModel) Descriptor() continuation.Descriptor {
@@ -502,7 +882,7 @@ func (model *visualReactivationRealtimeCUModel) Continue(
 	model.invocations <- visualReactivationInvocation{
 		Number: number, LastSource: lastSource, ToolResults: toolResults,
 	}
-	if number != 2 {
+	if number != 2 && number != 3 && number != 4 {
 		return continuation.Completion{StopReason: "stop"}, nil
 	}
 	call := trajectory.ToolCall{
@@ -618,12 +998,13 @@ type testRealtimeCUSink struct {
 	calls        chan legacy.ToolCallEvent
 	observations chan perception.Observation
 	transcripts  chan legacy.TranscriptEvent
+	debug        chan legacy.DebugEvent
 }
 
 func newTestRealtimeCUSink() *testRealtimeCUSink {
 	return &testRealtimeCUSink{
 		calls: make(chan legacy.ToolCallEvent, 8), observations: make(chan perception.Observation, 16),
-		transcripts: make(chan legacy.TranscriptEvent, 8),
+		transcripts: make(chan legacy.TranscriptEvent, 8), debug: make(chan legacy.DebugEvent, 128),
 	}
 }
 
@@ -651,6 +1032,14 @@ func (sink *testRealtimeCUSink) ToolCalls(_ context.Context, event legacy.ToolCa
 	return nil
 }
 func (*testRealtimeCUSink) Failed(context.Context, legacy.ErrorEvent) {}
+func (sink *testRealtimeCUSink) Debug(ctx context.Context, event legacy.DebugEvent) error {
+	select {
+	case sink.debug <- event:
+		return nil
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+}
 
 type testRealtimeCUDispatcher struct{}
 
@@ -684,4 +1073,33 @@ func receiveRealtimeCU[T any](t *testing.T, source <-chan T, name string) T {
 		t.Fatalf("timed out waiting for %s", name)
 		return zero
 	}
+}
+
+func waitForRealtimeCUToolPolicyDisposition(
+	t *testing.T, runtime legacy.Runtime, toolName string,
+) (trajectory.Snapshot, trajectory.Item, trajectory.Item) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		snapshot := runtime.Trajectory()
+		var proposal, disposition trajectory.Item
+		for _, item := range snapshot.Items {
+			if item.Kind == trajectory.KindToolProposal && item.ToolCall != nil &&
+				item.ToolCall.Name == toolName {
+				proposal = item
+			}
+			if item.Kind == trajectory.KindToolProposalDisposition &&
+				item.ToolProposalDisposition != nil &&
+				item.ToolProposalDisposition.Name == toolName {
+				disposition = item
+			}
+		}
+		if proposal.ID != "" && disposition.ID != "" {
+			return snapshot, proposal, disposition
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for canonical %s proposal disposition; trajectory=%+v",
+		toolName, runtime.Trajectory())
+	return trajectory.Snapshot{}, trajectory.Item{}, trajectory.Item{}
 }

@@ -170,6 +170,61 @@ func (registry *SemanticDeciderRegistry) resolve(reference string) (semanticDeci
 	return entry, nil
 }
 
+// Describe returns the immutable deployment descriptor registered under
+// reference without opening a live policy client. Graph-native interaction
+// elements use this during Mount to validate their selected policy while
+// preserving the repository rule that provider factories are opened only
+// after Run begins.
+func (registry *SemanticDeciderRegistry) Describe(
+	reference string,
+) (SemanticDeciderDescriptor, error) {
+	entry, err := registry.resolve(strings.TrimSpace(reference))
+	if err != nil {
+		return SemanticDeciderDescriptor{}, err
+	}
+	return entry.descriptor, nil
+}
+
+// Open creates one independently owned semantic decider and verifies that its
+// live descriptor is exactly the descriptor registered during deployment
+// assembly. Callers must close the returned decider when it implements
+// io.Closer. Opening a fresh instance is important: two graph policy nodes may
+// select the same symbolic deployment, but must not accidentally share mutable
+// per-decision caches or lifecycle state.
+func (registry *SemanticDeciderRegistry) Open(
+	reference string,
+) (SemanticDecider, SemanticDeciderDescriptor, error) {
+	entry, err := registry.resolve(strings.TrimSpace(reference))
+	if err != nil {
+		return nil, SemanticDeciderDescriptor{}, err
+	}
+	decider, err := entry.factory()
+	if err != nil {
+		return nil, SemanticDeciderDescriptor{}, fmt.Errorf(
+			"create semantic decider %q: %w", reference, err,
+		)
+	}
+	if semanticReflectedNil(decider) {
+		return nil, SemanticDeciderDescriptor{}, fmt.Errorf(
+			"semantic decider %q factory returned nil", reference,
+		)
+	}
+	live := decider.Descriptor()
+	if err := live.Validate(); err != nil {
+		return nil, SemanticDeciderDescriptor{}, errors.Join(
+			fmt.Errorf("semantic decider %q returned invalid descriptor: %w", reference, err),
+			closeSemanticDecider(decider),
+		)
+	}
+	if !reflect.DeepEqual(live, entry.descriptor) {
+		return nil, SemanticDeciderDescriptor{}, errors.Join(
+			fmt.Errorf("semantic decider %q descriptor drifted", reference),
+			closeSemanticDecider(decider),
+		)
+	}
+	return decider, entry.descriptor, nil
+}
+
 // SemanticAdmissionDescriptor is a policy gate between canonical observation
 // commit and model activation. It emits the original typed commit/create only
 // on the voice or silent branch selected by an enumerated semantic act. The

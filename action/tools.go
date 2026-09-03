@@ -1,14 +1,18 @@
 package action
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 
+	"github.com/bojieli/OpenRealtime/internal/strictjson"
+	"github.com/bojieli/OpenRealtime/internal/toolargs"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -72,15 +76,30 @@ var (
 	ErrNotConfirmed = errors.New("action was not confirmed")
 	// ErrUnknownTool names a call for a tool that was never declared.
 	ErrUnknownTool = errors.New("unknown tool")
+	// ErrGraphNativeNormalizationRequired prevents the legacy Tools boundary
+	// from silently ignoring a deployment-owned argument normalizer. The
+	// graph-native NormalizeArguments element is the only implementation that
+	// can currently emit and re-attest the required derivation evidence.
+	ErrGraphNativeNormalizationRequired = errors.New("tool argument normalization requires the graph-native action path")
 )
 
-// ToolSpec is a declared tool: its schema, its confirmation requirement, and
-// which dispatcher runs it.
+// ToolArgumentNormalizer is deployment-owned control metadata for one direct
+// JSON object member. It is deliberately separate from Parameters: provider
+// APIs receive the standard JSON Schema, while the action authority path keeps
+// this transformation contract in the immutable tool declaration.
+type ToolArgumentNormalizer struct {
+	Argument   string `json:"argument"`
+	Normalizer string `json:"normalizer"`
+}
+
+// ToolSpec is a declared tool: its provider-facing schema, runtime-only
+// argument transformation contract, confirmation requirement, and dispatcher.
 type ToolSpec struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
-	Confirm     Confirm         `json:"confirm,omitempty"`
+	Name                string                   `json:"name"`
+	Description         string                   `json:"description"`
+	Parameters          json.RawMessage          `json:"parameters"`
+	ArgumentNormalizers []ToolArgumentNormalizer `json:"argument_normalizers,omitempty"`
+	Confirm             Confirm                  `json:"confirm,omitempty"`
 	// Background declares that starting this tool remains valid when newer
 	// user speech arrives. It is for non-consequential work whose purpose is to
 	// continue while the agent listens, not a general exemption from stale
@@ -91,6 +110,18 @@ type ToolSpec struct {
 	Target     string     `json:"target,omitempty"`
 	Dispatcher Dispatcher `json:"-"`
 }
+
+// ToolParameterCompactASCIIAlphanumericV1 removes ASCII speech separators
+// from a string argument and then requires one non-empty ASCII alphanumeric
+// token. It is intended for fields whose declared domain is a compact
+// identifier, not names, addresses, free text, or arbitrary strings.
+const ToolParameterCompactASCIIAlphanumericV1 = toolargs.CompactASCIIAlphanumericV1
+
+// ToolParameterCoordinatePairXYV1 recognizes only an x member whose value is
+// exactly a two-integer [x,y] array while y is absent, and derives separate x
+// and y members. It exists for an observed provider serialization defect; it
+// does not relax the provider-facing coordinate schema.
+const ToolParameterCoordinatePairXYV1 = toolargs.CoordinatePairXYV1
 
 // Registry is the declared action surface of a session.
 type Registry struct {
@@ -123,6 +154,32 @@ func (registry *Registry) Declare(spec ToolSpec) error {
 		return fmt.Errorf("tool %q parameters must be one JSON object", spec.Name)
 	}
 	spec.Parameters = slices.Clone(spec.Parameters)
+	if len(spec.ArgumentNormalizers) > 4096 {
+		return fmt.Errorf("tool %q declares more than 4096 argument normalizers", spec.Name)
+	}
+	spec.ArgumentNormalizers = slices.Clone(spec.ArgumentNormalizers)
+	sort.Slice(spec.ArgumentNormalizers, func(i, j int) bool {
+		return spec.ArgumentNormalizers[i].Argument < spec.ArgumentNormalizers[j].Argument
+	})
+	last := ""
+	for index, normalizer := range spec.ArgumentNormalizers {
+		if normalizer.Argument == "" || normalizer.Argument != strings.TrimSpace(normalizer.Argument) {
+			return fmt.Errorf("tool %q argument normalizer %d has a non-canonical argument", spec.Name, index)
+		}
+		if index > 0 && normalizer.Argument == last {
+			return fmt.Errorf("tool %q repeats argument normalizer %q", spec.Name, normalizer.Argument)
+		}
+		if !toolargs.Supported(normalizer.Normalizer) {
+			return fmt.Errorf("tool %q argument %q names unsupported normalizer %q",
+				spec.Name, normalizer.Argument, normalizer.Normalizer)
+		}
+		last = normalizer.Argument
+	}
+	if len(spec.ArgumentNormalizers) > 0 {
+		if err := validateArgumentNormalizerSchema(spec.Parameters, spec.ArgumentNormalizers); err != nil {
+			return fmt.Errorf("tool %q: %w", spec.Name, err)
+		}
+	}
 
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
@@ -130,6 +187,70 @@ func (registry *Registry) Declare(spec ToolSpec) error {
 		registry.order = append(registry.order, spec.Name)
 	}
 	registry.specs[spec.Name] = spec
+	return nil
+}
+
+func validateArgumentNormalizerSchema(
+	parameters json.RawMessage, normalizers []ToolArgumentNormalizer,
+) error {
+	if err := strictjson.Validate(parameters); err != nil {
+		return fmt.Errorf("argument-normalizer schema: %w", err)
+	}
+	var schema struct {
+		Type       string                     `json:"type"`
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal(parameters, &schema); err != nil || schema.Type != "object" || schema.Properties == nil {
+		return errors.New("argument normalizers require an object schema with properties")
+	}
+	for _, normalizer := range normalizers {
+		raw, found := schema.Properties[normalizer.Argument]
+		if !found {
+			return fmt.Errorf("argument normalizer names undeclared property %q", normalizer.Argument)
+		}
+		if err := strictjson.Validate(raw); err != nil {
+			return fmt.Errorf("argument property %q: %w", normalizer.Argument, err)
+		}
+		var property struct {
+			Type json.RawMessage `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &property); err != nil {
+			return fmt.Errorf("decode argument property %q: %w", normalizer.Argument, err)
+		}
+		var propertyType string
+		if err := json.Unmarshal(property.Type, &propertyType); err != nil {
+			return fmt.Errorf("argument normalizer property %q has no single declared type", normalizer.Argument)
+		}
+		switch normalizer.Normalizer {
+		case ToolParameterCompactASCIIAlphanumericV1:
+			if propertyType != "string" {
+				return fmt.Errorf("argument normalizer property %q must have type string", normalizer.Argument)
+			}
+		case ToolParameterCoordinatePairXYV1:
+			if normalizer.Argument != "x" || propertyType != "integer" {
+				return errors.New("coordinate pair normalizer requires integer property x")
+			}
+			y, found := schema.Properties["y"]
+			if !found {
+				return errors.New("coordinate pair normalizer requires declared property y")
+			}
+			if err := strictjson.Validate(y); err != nil {
+				return fmt.Errorf("argument property %q: %w", "y", err)
+			}
+			var yProperty struct {
+				Type json.RawMessage `json:"type"`
+			}
+			var yType string
+			if err := json.Unmarshal(y, &yProperty); err != nil ||
+				json.Unmarshal(yProperty.Type, &yType) != nil || yType != "integer" {
+				return errors.New("coordinate pair normalizer requires integer property y")
+			}
+			if !slices.Contains(schema.Required, "x") || !slices.Contains(schema.Required, "y") {
+				return errors.New("coordinate pair normalizer requires x and y in the schema required set")
+			}
+		}
+	}
 	return nil
 }
 
@@ -152,6 +273,8 @@ func (registry *Registry) Lookup(name string) (ToolSpec, bool) {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 	spec, exists := registry.specs[name]
+	spec.Parameters = slices.Clone(spec.Parameters)
+	spec.ArgumentNormalizers = slices.Clone(spec.ArgumentNormalizers)
 	return spec, exists
 }
 
@@ -163,6 +286,7 @@ func (registry *Registry) Specs() []ToolSpec {
 	for _, name := range registry.order {
 		spec := registry.specs[name]
 		spec.Parameters = slices.Clone(spec.Parameters)
+		spec.ArgumentNormalizers = slices.Clone(spec.ArgumentNormalizers)
 		result = append(result, spec)
 	}
 	return result
@@ -221,6 +345,11 @@ func NewTools(config ToolsConfig) (*Tools, error) {
 	if config.Store == nil {
 		return nil, errors.New("tool dispatch requires the canonical trajectory")
 	}
+	for _, spec := range config.Registry.Specs() {
+		if len(spec.ArgumentNormalizers) != 0 {
+			return nil, fmt.Errorf("tool %q: %w", spec.Name, ErrGraphNativeNormalizationRequired)
+		}
+	}
 	if config.Confirmer == nil {
 		config.Confirmer = DenyAll{}
 	}
@@ -240,6 +369,9 @@ func (tools *Tools) Dispatch(ctx context.Context, call trajectory.ToolCall) (tra
 	spec, declared := tools.config.Registry.Lookup(call.Name)
 	if !declared {
 		return trajectory.ToolResult{}, fmt.Errorf("%w: %s", ErrUnknownTool, call.Name)
+	}
+	if len(spec.ArgumentNormalizers) != 0 {
+		return trajectory.ToolResult{}, fmt.Errorf("tool %q: %w", call.Name, ErrGraphNativeNormalizationRequired)
 	}
 	if !tools.authoritative(call) {
 		return trajectory.ToolResult{}, fmt.Errorf("%w: %s", ErrNoAuthority, call.CallID)
@@ -309,6 +441,9 @@ func (tools *Tools) EmitRemote(ctx context.Context, call trajectory.ToolCall) er
 	spec, declared := tools.config.Registry.Lookup(call.Name)
 	if !declared {
 		return fmt.Errorf("%w: %s", ErrUnknownTool, call.Name)
+	}
+	if len(spec.ArgumentNormalizers) != 0 {
+		return fmt.Errorf("tool %q: %w", call.Name, ErrGraphNativeNormalizationRequired)
 	}
 	if spec.Dispatcher != nil {
 		return fmt.Errorf("tool %q has an in-process dispatcher", call.Name)
@@ -419,8 +554,24 @@ func (tools *Tools) confirm(ctx context.Context, call trajectory.ToolCall, spec 
 // provider's structural inability to act is enforced at the point of effect
 // rather than by convention.
 func (tools *Tools) authoritative(call trajectory.ToolCall) bool {
-	_, found := tools.producerPhase(call.CallID, call.Name)
-	return found
+	authoritative := false
+	for _, item := range tools.config.Store.Snapshot().Items {
+		if item.Kind != trajectory.KindToolCall || item.ToolCall == nil {
+			continue
+		}
+		if item.ToolCall.CallID == call.CallID && item.ToolCall.Name == call.Name &&
+			bytes.Equal(item.ToolCall.Arguments, call.Arguments) {
+			// A derived call is executable only after the graph-native action
+			// path re-attests its live registry, declaration, and normalization
+			// evidence. Legacy Tools has no such boundary, so matching trajectory
+			// bytes must fail closed instead of being mistaken for authority.
+			if item.ToolCallDerivation != nil {
+				return false
+			}
+			authoritative = true
+		}
+	}
+	return authoritative
 }
 
 func (tools *Tools) producerPhase(callID, name string) (trajectory.Phase, bool) {

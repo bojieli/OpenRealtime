@@ -31,7 +31,9 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -89,6 +91,57 @@ type Client struct {
 	refusals  atomic.Uint64
 	timeouts  atomic.Uint64
 	elapsedNS atomic.Uint64
+}
+
+const dumpPolicyRequests = "OPENREALTIME_DUMP_POLICY_REQUESTS"
+
+var policyDumpMu sync.Mutex
+
+type policyDumpRecord struct {
+	StartedAt  string          `json:"started_at"`
+	EndedAt    string          `json:"ended_at"`
+	DurationMS float64         `json:"duration_ms"`
+	Request    json.RawMessage `json:"request"`
+	Status     int             `json:"status,omitempty"`
+	Response   string          `json:"response,omitempty"`
+	Error      string          `json:"error,omitempty"`
+}
+
+// dump appends the exact provider exchange only when an operator explicitly
+// selects a private diagnostic file. This parallels the continuation request
+// dump and makes an upstream suppression distinguishable from a cognition or
+// tool failure without changing the policy decision.
+func (client *Client) dump(request []byte, status int, response []byte, cause error, startedAt time.Time) {
+	path := strings.TrimSpace(os.Getenv(dumpPolicyRequests))
+	if path == "" {
+		return
+	}
+	endedAt := time.Now()
+	record := policyDumpRecord{
+		StartedAt: startedAt.UTC().Format(time.RFC3339Nano),
+		EndedAt:   endedAt.UTC().Format(time.RFC3339Nano),
+		// time.Time retains its monotonic clock reading in-process. Sub uses it
+		// here, so wall-clock adjustments cannot corrupt the measured latency.
+		DurationMS: float64(endedAt.Sub(startedAt)) / float64(time.Millisecond),
+		Request:    append(json.RawMessage(nil), request...),
+		Status:     status,
+		Response:   string(response),
+	}
+	if cause != nil {
+		record.Error = cause.Error()
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		return
+	}
+	policyDumpMu.Lock()
+	defer policyDumpMu.Unlock()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.Write(append(encoded, '\n'))
 }
 
 // New validates the configuration.
@@ -220,7 +273,7 @@ type chatResponse struct {
 }
 
 // Decide answers one enumerated question.
-func (client *Client) Decide(ctx context.Context, decision interaction.Decision) (interaction.Outcome, error) {
+func (client *Client) Decide(ctx context.Context, decision interaction.Decision) (_ interaction.Outcome, resultErr error) {
 	if err := decision.Validate(); err != nil {
 		return interaction.Outcome{}, err
 	}
@@ -250,7 +303,7 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 		content = withImages(prompt, decision.Images)
 	}
 	body := chatRequest{
-		Model: client.config.Model, MaxTokens: 4, Temperature: 0,
+		Model: client.config.Model, MaxTokens: enumeratedCompletionBudget(decision.Options), Temperature: 0,
 		Messages:    []chatMessage{{Role: "user", Content: content}},
 		Logprobs:    true,
 		TopLogprobs: len(decision.Options),
@@ -288,6 +341,11 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 	}
 
 	started := time.Now()
+	status := 0
+	var payload []byte
+	defer func() {
+		client.dump(encoded, status, payload, resultErr, started)
+	}()
 	response, err := client.http.Do(request)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -296,7 +354,8 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 		return interaction.Outcome{}, fmt.Errorf("policy decision: %w", err)
 	}
 	defer response.Body.Close()
-	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	status = response.StatusCode
+	payload, err = io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
 		return interaction.Outcome{}, err
 	}
@@ -334,6 +393,24 @@ func (client *Client) Decide(ctx context.Context, decision interaction.Decision)
 		Confidence: confidence, Measured: measured,
 		ElapsedNS: uint64(elapsed.Nanoseconds()),
 	}, nil
+}
+
+// enumeratedCompletionBudget gives every declared answer enough room to exist
+// on the wire. The previous fixed four-token ceiling could truncate a valid
+// multi-token label (for example, "addressed-elsewhere") after the model had
+// already selected it. Strict option matching still prevents this additional
+// capacity from turning a decision into free generation.
+//
+// Tokenizers are provider-specific, so byte length is the only conservative
+// local upper bound: a tokenizer with byte fallback cannot require more than
+// one token per byte of the longest UTF-8 option. One additional token leaves
+// room for termination. Four remains the floor for the common one-word case.
+func enumeratedCompletionBudget(options []string) int {
+	budget := 4
+	for _, option := range options {
+		budget = max(budget, len(option)+1)
+	}
+	return budget
 }
 
 // match resolves an answer to one of the permitted options.
@@ -417,9 +494,9 @@ var _ interaction.Decider = (*Client)(nil)
 // loud has to come back with the policy, and no enumeration can contain it.
 //
 // It runs off the critical path, so the budget is generous where Decide's is
-// four tokens - what it produces is read once per turn rather than five times
-// a second.
-func (client *Client) Generate(ctx context.Context, prompt, evidence string, maxTokens int) (string, error) {
+// bounded to the exact enumerated vocabulary - what it produces is read once
+// per turn rather than five times a second.
+func (client *Client) Generate(ctx context.Context, prompt, evidence string, maxTokens int) (_ string, resultErr error) {
 	if strings.TrimSpace(prompt) == "" {
 		return "", errors.New("generation requires a prompt")
 	}
@@ -470,12 +547,19 @@ func (client *Client) Generate(ctx context.Context, prompt, evidence string, max
 	if strings.TrimSpace(client.config.APIKey) != "" {
 		request.Header.Set("Authorization", "Bearer "+client.config.APIKey)
 	}
+	started := time.Now()
+	status := 0
+	var payload []byte
+	defer func() {
+		client.dump(encoded, status, payload, resultErr, started)
+	}()
 	response, err := client.http.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("policy generation: %w", err)
 	}
 	defer response.Body.Close()
-	payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	status = response.StatusCode
+	payload, err = io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
 		return "", err
 	}

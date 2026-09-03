@@ -108,13 +108,14 @@ func TestRealtimeCUProductionVisualThresholdAdmitsMeasuredSmallTransitions(t *te
 	if observations := observe(1, 0); len(observations) != 1 {
 		t.Fatalf("initial keyframe observations = %+v", observations)
 	}
-	// Ten of the 32x32 signature cells is 0.9766%, below the production
-	// threshold. Eleven is 1.0742%, matching the small target transitions
-	// measured in the retained candidate run and must therefore be admitted.
-	if observations := observe(2, 10); len(observations) != 0 {
+	// Five of the 32x32 signature cells is 0.4883%, below the production
+	// threshold. Six is 0.5859%. The retained live temperature transition
+	// changed ten cells (0.9766%) and was suppressed by the old 1% threshold;
+	// the production threshold must admit that transition with margin.
+	if observations := observe(2, 5); len(observations) != 0 {
 		t.Fatalf("sub-threshold keyframe observations = %+v", observations)
 	}
-	if observations := observe(3, 11); len(observations) != 1 {
+	if observations := observe(3, 6); len(observations) != 1 {
 		t.Fatalf("measured small-transition observations = %+v", observations)
 	}
 	if len(retainer.payloads) != 2 {

@@ -2,10 +2,13 @@
 // No phase label grants speech: the edge into segment.text does.
 graph interaction_fast_only {
     cognition.TextModel :: fast;
+    interaction.ControlSerializationQuarantine :: fast_control_quarantine;
     interaction.SegmentPreparedText :: segment;
     flow.Tee :: outcome_copy;
 
-    fast.text -> segment.text;
+    fast.text -> fast_control_quarantine.text;
+    fast.result -> fast_control_quarantine.result;
+    fast_control_quarantine.safe_text -> segment.text;
     fast.outcome -> outcome_copy.in;
     outcome_copy.out -> segment.terminal;
 
@@ -19,7 +22,8 @@ graph interaction_fast_only {
     output speech_cancel = segment.speech_cancel;
     output model_cancel_request = segment.model_cancel;
     output interaction_outcome = segment.outcome;
-    output model_result = fast.result;
+    output model_result = fast_control_quarantine.safe_result;
+    output control_serialization_quarantine = fast_control_quarantine.quarantined;
     output model_tools = fast.tools;
     output model_outcome = outcome_copy.out;
     output model_resolution = fast.resolved;

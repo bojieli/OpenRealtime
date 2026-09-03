@@ -20,7 +20,16 @@ import (
 )
 
 var (
-	preparedTextType        = cognitionelements.PreparedTextType()
+	preparedTextType = cognitionelements.PreparedTextType()
+	// The safe types are nominal refinements over the same Go payloads. The
+	// graph compiler therefore rejects raw model text/results at speech and
+	// canonical-context sinks even though the runtime representation remains
+	// provider neutral.
+	safePreparedTextType = element.Segmented(
+		element.Named("interaction.SafePreparedTextDelta"), element.Named("flow.RunID"),
+	)
+	safeModelResultType = element.Event(element.Named("interaction.SafeModelResult"))
+
 	modelCancelType         = cognitionelements.CancelType()
 	modelOutcomeType        = cognitionelements.OutcomeType()
 	textSegmentType         = speech.TextSegmentType()
@@ -43,18 +52,54 @@ var (
 		element.Named("trajectory.Rejection"), element.Named("flow.RequestID"),
 	)
 	modelCommitOutcomeType = element.Event(element.Named("interaction.ModelCommitOutcome"))
+	controlQuarantineType  = element.Event(
+		element.Named("interaction.ControlSerializationQuarantine"),
+	)
 )
 
-func PreparedTextType() element.Type        { return preparedTextType.Clone() }
-func ModelCancelType() element.Type         { return modelCancelType.Clone() }
-func ModelOutcomeType() element.Type        { return modelOutcomeType.Clone() }
-func TextSegmentType() element.Type         { return textSegmentType.Clone() }
-func SpeechCancelType() element.Type        { return speechCancelType.Clone() }
-func TimeoutType() element.Type             { return timeoutType.Clone() }
-func SelectionType() element.Type           { return selectionType.Clone() }
-func SegmentationOutcomeType() element.Type { return segmentationOutcomeType.Clone() }
-func ArbitrationOutcomeType() element.Type  { return arbitrationOutcomeType.Clone() }
-func ModelCommitOutcomeType() element.Type  { return modelCommitOutcomeType.Clone() }
+func PreparedTextType() element.Type                   { return preparedTextType.Clone() }
+func SafePreparedTextType() element.Type               { return safePreparedTextType.Clone() }
+func SafeModelResultType() element.Type                { return safeModelResultType.Clone() }
+func ModelCancelType() element.Type                    { return modelCancelType.Clone() }
+func ModelOutcomeType() element.Type                   { return modelOutcomeType.Clone() }
+func TextSegmentType() element.Type                    { return textSegmentType.Clone() }
+func SpeechCancelType() element.Type                   { return speechCancelType.Clone() }
+func TimeoutType() element.Type                        { return timeoutType.Clone() }
+func SelectionType() element.Type                      { return selectionType.Clone() }
+func SegmentationOutcomeType() element.Type            { return segmentationOutcomeType.Clone() }
+func ArbitrationOutcomeType() element.Type             { return arbitrationOutcomeType.Clone() }
+func ModelCommitOutcomeType() element.Type             { return modelCommitOutcomeType.Clone() }
+func ControlSerializationQuarantineType() element.Type { return controlQuarantineType.Clone() }
+
+// ControlSerializationQuarantineDescriptor is the typed boundary between raw
+// model text and consumers that can persist or speak it. Its safe outputs are
+// nominally refined types, so raw model output cannot bypass this boundary by
+// structural compatibility. The audit output is a distinct, non-executable
+// event that no action element accepts.
+func ControlSerializationQuarantineDescriptor() element.Descriptor {
+	return element.Descriptor{
+		FormatVersion: element.DescriptorFormatVersion,
+		Name:          "interaction.ControlSerializationQuarantine", Revision: 2,
+		Ports: []element.Port{
+			{Name: "text", Direction: element.Input, Type: preparedTextType,
+				Cardinality: element.One, Required: true, DefaultDepth: 64},
+			{Name: "result", Direction: element.Input, Type: cognitionelements.ResultType(),
+				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			{Name: "safe_text", Direction: element.Output, Type: safePreparedTextType,
+				Cardinality: element.One, Required: true, DefaultDepth: 64},
+			{Name: "safe_result", Direction: element.Output, Type: safeModelResultType,
+				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			{Name: "quarantined", Direction: element.Output, Type: controlQuarantineType,
+				Cardinality: element.One, Required: true, DefaultDepth: 32},
+		},
+		Reaction: element.Reaction{
+			Triggers: []string{"text", "result"},
+			Outcomes: []string{"safe_text", "safe_result", "quarantined"}, MaxConcurrency: 1,
+		},
+		StateSchema:  "schema://openrealtime/interaction/control-serialization-quarantine-state/v2",
+		ConfigSchema: "schema://openrealtime/interaction/control-serialization-quarantine-config/v2",
+	}
+}
 
 // SegmentPreparedTextDescriptor turns one non-interleaved prepared run into
 // complete safe TTS requests. Cancellation is translated in both directions:
@@ -62,9 +107,9 @@ func ModelCommitOutcomeType() element.Type  { return modelCommitOutcomeType.Clon
 func SegmentPreparedTextDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "interaction.SegmentPreparedText", Revision: 1,
+		Name:          "interaction.SegmentPreparedText", Revision: 2,
 		Ports: []element.Port{
-			{Name: "text", Direction: element.Input, Type: preparedTextType,
+			{Name: "text", Direction: element.Input, Type: safePreparedTextType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "terminal", Direction: element.Input, Type: modelOutcomeType,
 				Cardinality: element.Variadic, Required: true, MinConnections: 1, DefaultDepth: 8},
@@ -83,8 +128,12 @@ func SegmentPreparedTextDescriptor() element.Descriptor {
 		},
 		Reaction: element.Reaction{
 			Triggers: []string{"text", "terminal", "timeout"}, Interrupts: []string{"cancel"},
-			Outcomes:       []string{"segments", "model_cancel", "speech_cancel", "outcome"},
-			MaxConcurrency: 1,
+			Outcomes: []string{"segments", "model_cancel", "speech_cancel", "outcome"},
+			// Cancellation is deliberately translated back to the producing
+			// model. The runner records terminal-run state before publishing that
+			// interrupt, so a model terminal returning around the loop cannot
+			// reactivate the run or require another input from the cycle.
+			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/interaction/segment-prepared-text-state/v1",
 		ConfigSchema: "schema://openrealtime/interaction/segment-prepared-text-config/v1",
@@ -96,9 +145,9 @@ func SegmentPreparedTextDescriptor() element.Descriptor {
 func SpeechArbiterDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "interaction.SpeechArbiter", Revision: 1,
+		Name:          "interaction.SpeechArbiter", Revision: 2,
 		Ports: []element.Port{
-			{Name: "text", Direction: element.Input, Type: preparedTextType,
+			{Name: "text", Direction: element.Input, Type: safePreparedTextType,
 				Cardinality: element.Variadic, Required: true, MinConnections: 1, DefaultDepth: 32},
 			{Name: "terminal", Direction: element.Input, Type: modelOutcomeType,
 				Cardinality: element.Variadic, Required: true, MinConnections: 1, DefaultDepth: 16},
@@ -108,7 +157,7 @@ func SpeechArbiterDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 8},
 			{Name: "cancel", Direction: element.Input, Type: modelCancelType,
 				Cardinality: element.One, Required: true, DefaultDepth: 8},
-			{Name: "selected", Direction: element.Output, Type: preparedTextType,
+			{Name: "selected", Direction: element.Output, Type: safePreparedTextType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "cancel_upstream", Direction: element.Output, Type: modelCancelType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -131,9 +180,9 @@ func SpeechArbiterDescriptor() element.Descriptor {
 func ModelResultCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "interaction.ModelResultCommit", Revision: 1,
+		Name:          "interaction.ModelResultCommit", Revision: 2,
 		Ports: []element.Port{
-			{Name: "result", Direction: element.Input, Type: cognitionelements.ResultType(),
+			{Name: "result", Direction: element.Input, Type: safeModelResultType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "committed", Direction: element.Input, Type: commitType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -216,6 +265,35 @@ type ModelCommitOutcome struct {
 	Message      string          `json:"message,omitempty"`
 }
 
+// ControlSerializationSource says which model-authored text surface contained
+// the isolated bytes. It is forensic provenance, never execution authority.
+type ControlSerializationSource string
+
+const (
+	ControlSerializationPreparedText ControlSerializationSource = "prepared_text"
+	ControlSerializationAssistant    ControlSerializationSource = "assistant"
+	ControlSerializationReasoning    ControlSerializationSource = "reasoning"
+)
+
+// ControlSerializationQuarantine contains no serialized payload. The digest
+// and causal envelope preserve auditable identity without copying possible
+// secrets or tool arguments onto a normal graph inspection surface.
+type ControlSerializationQuarantine struct {
+	RunID        string                          `json:"run_id"`
+	Source       ControlSerializationSource      `json:"source"`
+	SourceItemID string                          `json:"source_item_id"`
+	OutputIndex  int                             `json:"output_index,omitempty"`
+	BlockIndex   int                             `json:"block_index"`
+	Syntax       ControlSerializationSyntax      `json:"syntax"`
+	Disposition  ControlSerializationDisposition `json:"disposition"`
+	Bytes        int                             `json:"bytes"`
+	SHA256       string                          `json:"sha256"`
+}
+
+func (ControlSerializationQuarantine) InspectionCause() element.InspectionCauseKind {
+	return element.CauseModelRun
+}
+
 type ArbitrationOutcome struct {
 	Kind          OutcomeKind `json:"kind"`
 	RunID         string      `json:"run_id,omitempty"`
@@ -244,6 +322,12 @@ type SpeechArbiterConfig struct {
 
 type ModelResultCommitConfig struct {
 	MaxPending int `json:"max_pending,omitempty"`
+}
+
+type ControlSerializationQuarantineConfig struct {
+	MaxCandidateBytes int `json:"max_candidate_bytes,omitempty"`
+	MaxBlocks         int `json:"max_blocks,omitempty"`
+	MaxActiveStreams  int `json:"max_active_streams,omitempty"`
 }
 
 const maximumConfigurationBound = 64 << 20
@@ -308,6 +392,29 @@ func decodeCommitConfig(source json.RawMessage) (ModelResultCommitConfig, error)
 	return config, nil
 }
 
+func decodeControlSerializationQuarantineConfig(
+	source json.RawMessage,
+) (ControlSerializationQuarantineConfig, error) {
+	config := ControlSerializationQuarantineConfig{
+		MaxCandidateBytes: 4 << 20, MaxBlocks: 1024, MaxActiveStreams: 32,
+	}
+	if err := elementconfig.Decode(source, &config); err != nil {
+		return ControlSerializationQuarantineConfig{}, err
+	}
+	if config.MaxCandidateBytes < 1 || config.MaxCandidateBytes > maximumConfigurationBound {
+		return ControlSerializationQuarantineConfig{}, fmt.Errorf(
+			"max_candidate_bytes must be between 1 and %d", maximumConfigurationBound,
+		)
+	}
+	if config.MaxBlocks < 1 || config.MaxBlocks > 4096 {
+		return ControlSerializationQuarantineConfig{}, errors.New("max_blocks must be between 1 and 4096")
+	}
+	if config.MaxActiveStreams < 1 || config.MaxActiveStreams > 4096 {
+		return ControlSerializationQuarantineConfig{}, errors.New("max_active_streams must be between 1 and 4096")
+	}
+	return config, nil
+}
+
 func runAddress(runID, envelopeRunID, scope string) (string, error) {
 	runID = strings.TrimSpace(runID)
 	envelopeRunID = strings.TrimSpace(envelopeRunID)
@@ -347,7 +454,8 @@ func reportInteractionResolution(
 
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
-		SegmentPreparedTextDescriptor(), SpeechArbiterDescriptor(), ModelResultCommitDescriptor(),
+		ControlSerializationQuarantineDescriptor(), OverlapBargeInDescriptor(), SegmentPreparedTextDescriptor(),
+		SpeechArbiterDescriptor(), ModelResultCommitDescriptor(),
 		PostCommitSilenceDescriptor(),
 	}
 }
@@ -383,7 +491,8 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	entries := make([]factoryprofile.Entry, 0, len(Descriptors()))
 	for _, factory := range []element.Factory{
-		segmentPreparedTextFactory{}, speechArbiterFactory{}, modelResultCommitFactory{},
+		controlSerializationQuarantineFactory{}, overlapBargeInFactory{}, segmentPreparedTextFactory{},
+		speechArbiterFactory{}, modelResultCommitFactory{},
 		postCommitSilenceFactory{},
 	} {
 		entries = append(entries, factoryprofile.Entry{Factory: factory})

@@ -59,6 +59,11 @@ var (
 	)
 )
 
+// ActivityType returns the exact typed acoustic-transition contract used by
+// graph-native interaction policies. Acoustic activity is evidence only; it
+// does not itself imply that any downstream work should be interrupted.
+func ActivityType() element.Type { return activityType.Clone() }
+
 // EndpointMode names who owns a silence candidate.
 type EndpointMode string
 

@@ -50,6 +50,7 @@ func TestTextFileCognitionReferenceIsLockedCompleteAndAudioFree(t *testing.T) {
 		"trajectory":                "state.TrajectoryStore",
 		"activation":                "policy.GenerateOnObservation",
 		"model":                     "cognition.TextModel",
+		"model_control_quarantine":  "interaction.ControlSerializationQuarantine",
 		"model_result_commit":       "interaction.ModelResultCommit",
 		"trajectory_append_mux":     "flow.Mux",
 		"content_observation_copy":  "flow.Tee",
@@ -85,6 +86,9 @@ func TestTextFileCognitionReferenceIsLockedCompleteAndAudioFree(t *testing.T) {
 		{"trajectory_rejected_copy", "out", "model_result_commit", "rejected"},
 		{"observation_outcome_copy", "out", "activation", "committed"},
 		{"activation", "trigger", "model", "trigger"},
+		{"model", "text", "model_control_quarantine", "text"},
+		{"model", "result", "model_control_quarantine", "result"},
+		{"model_control_quarantine", "safe_result", "model_result_copy", "in"},
 		{"model_result_copy", "out", "model_result_commit", "result"},
 	} {
 		if !textFileHasEdge(reference.graph, edge.fromNode, edge.fromPort, edge.toNode, edge.toPort) {
@@ -108,7 +112,8 @@ func TestTextFileCognitionReferenceIsLockedCompleteAndAudioFree(t *testing.T) {
 		"observation_outcome": ir.OutputBoundary, "activation_authority": ir.OutputBoundary,
 		"activation_state": ir.OutputBoundary, "activation_outcome": ir.OutputBoundary,
 		"prepared_text": ir.OutputBoundary, "model_result": ir.OutputBoundary,
-		"model_proposals": ir.OutputBoundary, "model_outcome": ir.OutputBoundary,
+		"control_serialization_quarantine": ir.OutputBoundary,
+		"model_proposals":                  ir.OutputBoundary, "model_outcome": ir.OutputBoundary,
 		"model_resolution": ir.OutputBoundary, "model_commit_outcome": ir.OutputBoundary,
 	}
 	if len(reference.graph.Boundaries) != len(wantBoundaries) {
@@ -118,6 +123,14 @@ func TestTextFileCognitionReferenceIsLockedCompleteAndAudioFree(t *testing.T) {
 	for _, boundary := range reference.graph.Boundaries {
 		if want, found := wantBoundaries[boundary.Name]; !found || boundary.Direction != want {
 			t.Errorf("unexpected boundary %+v", boundary)
+		}
+		if wantType, found := map[string]element.Type{
+			"prepared_text":                    interactionelements.SafePreparedTextType(),
+			"model_result":                     interactionelements.SafeModelResultType(),
+			"control_serialization_quarantine": interactionelements.ControlSerializationQuarantineType(),
+		}[boundary.Name]; found && !boundary.Type.Equal(wantType) {
+			t.Errorf("boundary %s type = %s, want %s",
+				boundary.Name, boundary.Type.String(), wantType.String())
 		}
 		if strings.Contains(strings.ToLower(boundary.Name), "audio") ||
 			strings.Contains(strings.ToLower(boundary.Type.String()), "audio") {

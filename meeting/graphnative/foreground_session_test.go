@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
@@ -51,6 +52,7 @@ func (binding *foregroundTestBinding) Start(
 	binding.starts.Add(1)
 	binding.runtime.mu.Lock()
 	binding.runtime.sink = options.Sink
+	binding.runtime.startSettings = legacy.CloneSettings(options.Settings)
 	binding.runtime.mu.Unlock()
 	return binding.runtime, nil
 }
@@ -58,6 +60,7 @@ func (binding *foregroundTestBinding) Start(
 type foregroundTestRuntime struct {
 	mu              sync.Mutex
 	sink            legacy.Sink
+	startSettings   legacy.Settings
 	settings        legacy.Settings
 	texts           []legacy.TextInput
 	events          []string
@@ -126,6 +129,12 @@ func (runtime *foregroundTestRuntime) eventSnapshot() []string {
 	return slices.Clone(runtime.events)
 }
 
+func (runtime *foregroundTestRuntime) settingsSnapshot() (legacy.Settings, legacy.Settings) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	return legacy.CloneSettings(runtime.startSettings), legacy.CloneSettings(runtime.settings)
+}
+
 type foregroundTestClientSink struct{}
 
 func (foregroundTestClientSink) TurnBegin(context.Context) error                          { return nil }
@@ -157,6 +166,16 @@ func foregroundTestArtifacts() map[string]inspect.ArtifactIdentity {
 		"foreground-wire":     {ID: "adapter://openrealtime/meeting/foreground-wire", Revision: "implementation:1"},
 		"visual":              {ID: "model://openrealtime/meeting/visual", Revision: "2026-08-30"},
 		"background":          {ID: "model://openrealtime/meeting/background", Revision: "2026-08-30"},
+		"tts":                 {ID: "model://openrealtime/meeting/tts", Revision: "2026-08-30"},
+	}
+}
+
+func foregroundTestTTSDescriptor() v1.Descriptor {
+	return v1.Descriptor{
+		Name: "meeting-fixture-tts", Version: "2026-08-30",
+		Capabilities: v1.Capabilities{
+			v1.CapabilityPCM16Output: true, v1.CapabilityStreamingOutput: true,
+		},
 	}
 }
 
@@ -228,6 +247,12 @@ func foregroundTestPlugin(t testing.TB) (*SessionPlugin, *foregroundTestRuntime,
 			},
 			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
 				return nil, errors.New("background fixture must stay lazy")
+			},
+		},
+		TTS: TTSPlugin{
+			Artifact: artifacts["tts"], Descriptor: foregroundTestTTSDescriptor(),
+			Factory: func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
+				return nil, errors.New("TTS fixture must stay lazy")
 			},
 		},
 	})
@@ -465,6 +490,69 @@ func TestForegroundSessionAppliesInitialConfigurationBeforeOvertakingAudio(t *te
 	}
 	if events := runtime.eventSnapshot(); !slices.Equal(events, []string{"tools", "audio"}) {
 		t.Fatalf("initial input order = %v, want tools then audio", events)
+	}
+}
+
+func TestForegroundSessionForcesTextOnlyModalitiesWithoutDiscardingCallerPolicy(t *testing.T) {
+	plugin, runtime, _ := foregroundTestPlugin(t)
+	hello := foregroundTestHello(t)
+	initialTool := action.ToolSpec{
+		Name: "meeting.initial", Description: "initial tool",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"topic":{"type":"string"}}}`),
+		Background: true,
+	}
+	initialSettings := legacy.Settings{
+		Instruction: "initial meeting instruction", Tools: []action.ToolSpec{initialTool},
+		Modalities: []string{"audio", "text"},
+	}
+	created, err := plugin.newForegroundSession(context.Background(), hello, legacy.Options{
+		SessionID: "meeting-session-text-only", Sink: foregroundTestClientSink{},
+		Settings: initialSettings,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := created.(*foregroundSession)
+	t.Cleanup(func() { _ = session.Close() })
+
+	started, _ := runtime.settingsSnapshot()
+	if !slices.Equal(started.Modalities, []string{"text"}) {
+		t.Fatalf("foreground Start modalities = %v, want [text]", started.Modalities)
+	}
+	if started.Instruction != initialSettings.Instruction || !reflect.DeepEqual(started.Tools, initialSettings.Tools) {
+		t.Fatalf("foreground Start discarded caller policy: got instruction=%q tools=%+v",
+			started.Instruction, started.Tools)
+	}
+
+	updatedTool := action.ToolSpec{
+		Name: "meeting.updated", Description: "updated tool",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"decision":{"type":"boolean"}}}`),
+	}
+	updatedSettings := legacy.Settings{
+		Instruction: "updated meeting instruction", Tools: []action.ToolSpec{updatedTool},
+		Modalities: []string{"audio"},
+	}
+	update := foregroundTestInputMessage(t, hello, "tools",
+		foregroundSessionSettings{Settings: updatedSettings},
+		element.Envelope{ItemID: "tools-text-only", Sequence: 1})
+	if err := session.Send(update); err != nil {
+		t.Fatal(err)
+	}
+
+	_, applied := runtime.settingsSnapshot()
+	if !slices.Equal(applied.Modalities, []string{"text"}) {
+		t.Fatalf("foreground Update modalities = %v, want [text]", applied.Modalities)
+	}
+	if applied.Instruction != updatedSettings.Instruction || !reflect.DeepEqual(applied.Tools, updatedSettings.Tools) {
+		t.Fatalf("foreground Update discarded caller policy: got instruction=%q tools=%+v",
+			applied.Instruction, applied.Tools)
+	}
+	session.mu.Lock()
+	stored := legacy.CloneSettings(session.settings)
+	session.mu.Unlock()
+	if stored.Instruction != updatedSettings.Instruction || !reflect.DeepEqual(stored.Tools, updatedSettings.Tools) {
+		t.Fatalf("foreground session discarded caller policy: got instruction=%q tools=%+v",
+			stored.Instruction, stored.Tools)
 	}
 }
 

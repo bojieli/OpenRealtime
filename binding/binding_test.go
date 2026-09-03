@@ -2,9 +2,11 @@ package binding_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/perception"
 )
@@ -155,11 +157,24 @@ func TestCloneSettingsIsADeepCopy(t *testing.T) {
 	original := binding.Settings{
 		Modalities: []string{"audio"}, Observers: []string{"audio", "video"},
 		Gate: perception.DefaultGateConfig(),
+		Tools: []action.ToolSpec{{
+			Name: "track_order", Description: "track an order",
+			Parameters: json.RawMessage(`{"type":"object"}`),
+			ArgumentNormalizers: []action.ToolArgumentNormalizer{{
+				Argument: "order_id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+			}},
+		}},
 	}
 	copied := binding.CloneSettings(original)
 	copied.Modalities[0] = "text"
 	copied.Observers[0] = "lidar"
+	copied.Tools[0].Parameters[0] = '['
+	copied.Tools[0].ArgumentNormalizers[0].Argument = "mutated"
 	if original.Modalities[0] != "audio" || original.Observers[0] != "audio" {
 		t.Fatalf("the caller's value was mutated: %+v", original)
+	}
+	if got := string(original.Tools[0].Parameters); got != `{"type":"object"}` ||
+		original.Tools[0].ArgumentNormalizers[0].Argument != "order_id" {
+		t.Fatalf("the caller's tool declaration was mutated: %+v", original.Tools[0])
 	}
 }

@@ -660,10 +660,12 @@ func (adapter *Adapter) dump(result chatRequest) {
 	if path == "" {
 		return
 	}
-	encoded, err := json.Marshal(struct {
-		Model    string        `json:"model"`
-		Messages []chatMessage `json:"messages"`
-	}{Model: result.Model, Messages: result.Messages})
+	// Marshal the assembled provider body, not a messages-only projection.
+	// Tool declarations, selection policy, sampling controls, and dialect
+	// extensions materially affect model output and are required to reproduce a
+	// diagnostic. Authentication remains outside chatRequest and is never
+	// retained here.
+	encoded, err := json.Marshal(result)
 	if err != nil {
 		return
 	}
@@ -738,6 +740,8 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 	}
 
 	consumedInvocations := make(map[string]struct{})
+	promotedProposals := trajectory.PromotedToolProposalIDs(request.Trajectory)
+	terminalProposals, terminalDispositions := trajectory.TerminalToolProposalIDs(request.Trajectory)
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	for _, run := range continuation.ProviderRuns(request.Trajectory.Items) {
@@ -753,6 +757,39 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (chatRequest,
 			continue
 		}
 		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposal {
+			if _, promoted := promotedProposals[item.ID]; promoted {
+				// The authority chain records promotion as a separate canonical
+				// tool_call so that proposal and execution authority remain
+				// auditable. A chat provider must nevertheless see one assistant
+				// call, not both the non-executable working state and its exact
+				// executable promotion. Replaying both teaches some chat templates
+				// to echo tagged tool syntax as ordinary assistant speech.
+				continue
+			}
+			if _, terminal := terminalProposals[item.ID]; terminal {
+				// The terminal fact belongs at the later disposition's ordered
+				// position, not where this still-pending proposal was recorded.
+				continue
+			}
+			// Proposal-only provider state is deliberately not retained by the
+			// continuation runner. Keep this check before native-state replay as
+			// defense in depth for caller-supplied snapshots. Pending control
+			// intent is runtime context, never an assistant turn, but remains
+			// composable and therefore retains its exact name and arguments.
+			if content, valid := continuation.PendingToolProposalContent(item.ToolCall); valid {
+				result.Messages = append(result.Messages, chatMessage{Role: "user", Content: content})
+			}
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposalDisposition {
+			if _, valid := terminalDispositions[item.ID]; valid {
+				result.Messages = append(result.Messages, chatMessage{
+					Role: "user", Content: continuation.TerminalToolProposalNotice,
+				})
+			}
 			continue
 		}
 		modelItem := isModelOutputItem(item.Kind)
@@ -887,15 +924,12 @@ func compilePortableItem(
 		}
 		return chatMessage{Role: "assistant", Content: item.Content}, true, nil
 	case trajectory.KindToolProposal:
-		encoded, err := json.Marshal(map[string]any{
-			"non_executable_tool_proposal": map[string]any{
-				"name": item.ToolCall.Name, "arguments": json.RawMessage(item.ToolCall.Arguments),
-			},
-		})
-		if err != nil {
-			return chatMessage{}, false, err
-		}
-		return chatMessage{Role: "assistant", Content: string(encoded)}, true, nil
+		content, valid := continuation.PendingToolProposalContent(item.ToolCall)
+		return chatMessage{Role: "user", Content: content}, valid, nil
+	case trajectory.KindToolProposalDisposition:
+		// A disposition is meaningful only with validated ordered-prefix
+		// evidence. buildRequest handles that context before reaching here.
+		return chatMessage{}, false, nil
 	case trajectory.KindToolCall:
 		return chatMessage{Role: "assistant", ToolCalls: []chatToolCall{{
 			ID: item.ToolCall.CallID, Type: "function", Function: chatFunction{

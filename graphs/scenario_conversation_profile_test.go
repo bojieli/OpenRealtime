@@ -472,7 +472,147 @@ func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *te
 	assertScenarioFactoriesUnopened(t, fixture)
 }
 
-func TestScenarioConversationGraphTerminatesSilentTextBeforeSpeech(t *testing.T) {
+func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T) {
+	fixture := newScenarioProfileFixture(t)
+	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := preview.Plan.Graph()
+	var policyFound bool
+	for _, node := range graph.Nodes {
+		if node.ID != "overlap_barge_in" {
+			continue
+		}
+		policyFound = node.Element.Name == "interaction.OverlapBargeIn" &&
+			node.ConfigSchema == "schema://openrealtime/interaction/overlap-barge-in-config/v1"
+	}
+	if !policyFound {
+		t.Fatal("scenario graph has no descriptor-locked overlap barge-in policy")
+	}
+
+	for _, edge := range [][4]string{
+		{"admission", "activity", "acoustic_activity_copy", "in"},
+		{"acoustic_activity_copy", "out", "overlap_barge_in", "activity"},
+		{"asr_observation_copy", "out", "overlap_barge_in", "transcript"},
+		{"segment", "segments", "prepared_speech_copy", "in"},
+		{"prepared_speech_copy", "out", "tts", "text"},
+		{"prepared_speech_copy", "out", "overlap_barge_in", "speech"},
+		{"voice_session_invocation", "outcome", "voice_invocation_outcome_copy", "in"},
+		{"voice_invocation_outcome_copy", "out", "invocation_outcome_mux", "in"},
+		{"voice_invocation_outcome_copy", "out", "overlap_barge_in", "invocation"},
+		{"voice_model_outcome_copy", "out", "overlap_barge_in", "model"},
+		{"control_quarantine", "safe_result", "overlap_barge_in", "result"},
+		{"overlap_barge_in", "safe_result", "model_result_mux", "in"},
+		{"segment", "outcome", "segmentation_outcome_copy", "in"},
+		{"segmentation_outcome_copy", "out", "overlap_barge_in", "segmentation"},
+		{"tts", "status", "tts_status_copy", "in"},
+		{"tts_status_copy", "out", "overlap_barge_in", "tts"},
+		{"playback", "status", "playback_status_copy", "in"},
+		{"playback_status_copy", "out", "overlap_barge_in", "playback"},
+		{"playback", "released", "overlap_barge_in", "release"},
+		{"segment", "model_cancel", "segment_model_cancel_copy", "in"},
+		{"segment_model_cancel_copy", "out", "model_cancel_mux", "in"},
+		{"overlap_barge_in", "model_cancel", "model_cancel_mux", "in"},
+		{"model_cancel_mux", "out", "model_cancel_copy", "in"},
+		{"overlap_barge_in", "segmentation_cancel", "segmentation_cancel_mux", "in"},
+		{"segmentation_cancel_mux", "out", "segment", "cancel"},
+		{"overlap_barge_in", "tts_cancel", "tts_cancel_mux", "in"},
+		{"overlap_barge_in", "playback_cancel", "playback_cancel_mux", "in"},
+	} {
+		if !scenarioGraphHasEdge(graph, edge[0], edge[1], edge[2], edge[3]) {
+			t.Fatalf("scenario graph omits overlap edge %s.%s -> %s.%s",
+				edge[0], edge[1], edge[2], edge[3])
+		}
+	}
+	for _, forbidden := range [][4]string{
+		{"admission", "activity", "overlap_barge_in", "activity"},
+		{"asr", "observations", "overlap_barge_in", "transcript"},
+		{"segment", "segments", "tts", "text"},
+		{"segment", "segments", "overlap_barge_in", "speech"},
+		{"silent_session_invocation", "outcome", "overlap_barge_in", "invocation"},
+		{"silent_model", "outcome", "overlap_barge_in", "model"},
+		{"control_quarantine", "safe_result", "model_result_mux", "in"},
+		{"playback", "released", "", "gateway_turn_end"},
+	} {
+		if forbidden[2] == "" {
+			for _, boundary := range graph.Boundaries {
+				if boundary.Name == forbidden[3] && boundary.Endpoint.Node == forbidden[0] &&
+					boundary.Endpoint.Port == forbidden[1] {
+					t.Fatalf("scenario graph bypasses the overlap release barrier through %s.%s -> output %s",
+						forbidden[0], forbidden[1], forbidden[3])
+				}
+			}
+			continue
+		}
+		if scenarioGraphHasEdge(graph, forbidden[0], forbidden[1], forbidden[2], forbidden[3]) {
+			t.Fatalf("scenario graph bypasses an explicit foreground overlap fork through %s.%s -> %s.%s",
+				forbidden[0], forbidden[1], forbidden[2], forbidden[3])
+		}
+	}
+
+	for name, endpoint := range map[string]ir.Endpoint{
+		"model_cancel":                 {Node: "model_cancel_mux", Port: "in"},
+		"segmentation_cancel":          {Node: "segmentation_cancel_mux", Port: "in"},
+		"acoustic_activity":            {Node: "acoustic_activity_copy", Port: "out"},
+		"segmentation_outcome":         {Node: "segmentation_outcome_copy", Port: "out"},
+		"tts_status":                   {Node: "tts_status_copy", Port: "out"},
+		"playback_status":              {Node: "playback_status_copy", Port: "out"},
+		"gateway_turn_end":             {Node: "overlap_barge_in", Port: "safe_release"},
+		"segment_model_cancel_request": {Node: "segment_model_cancel_copy", Port: "out"},
+		"overlap_decision":             {Node: "overlap_barge_in", Port: "decision"},
+		"overlap_state":                {Node: "overlap_barge_in", Port: "state"},
+		"overlap_policy_resolution":    {Node: "overlap_barge_in", Port: "resolved"},
+	} {
+		var found bool
+		for _, boundary := range graph.Boundaries {
+			if boundary.Name == name && boundary.Endpoint.Node == endpoint.Node &&
+				boundary.Endpoint.Port == endpoint.Port {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("scenario graph boundary %q does not bind %+v", name, endpoint)
+		}
+	}
+
+	var values struct {
+		Nodes map[string]json.RawMessage `json:"nodes"`
+	}
+	if err := json.Unmarshal(config.Artifacts.Values.Data, &values); err != nil {
+		t.Fatal(err)
+	}
+	var semanticConfig struct {
+		Decider string `json:"decider"`
+	}
+	if err := json.Unmarshal(values.Nodes["semantic_admission"], &semanticConfig); err != nil {
+		t.Fatal(err)
+	}
+	var overlapConfig struct {
+		Decider       string `json:"decider"`
+		HoldMS        int    `json:"hold_ms"`
+		Unclassified  string `json:"unclassified"`
+		MaxActiveRuns int    `json:"max_active_runs"`
+		MaxUtterances int    `json:"max_utterances"`
+	}
+	if err := json.Unmarshal(values.Nodes["overlap_barge_in"], &overlapConfig); err != nil {
+		t.Fatal(err)
+	}
+	if overlapConfig.Decider == "" || overlapConfig.Decider != semanticConfig.Decider ||
+		overlapConfig.HoldMS != 800 || overlapConfig.Unclassified != "cancel" ||
+		overlapConfig.MaxActiveRuns != 256 || overlapConfig.MaxUtterances != 512 {
+		t.Fatalf("scenario overlap policy values = %+v; semantic decider = %q",
+			overlapConfig, semanticConfig.Decider)
+	}
+	assertScenarioFactoriesUnopened(t, fixture)
+}
+
+func TestScenarioConversationGraphQuarantinesControlAndTerminatesSilentTextBeforeSpeech(t *testing.T) {
 	fixture := newScenarioProfileFixture(t)
 	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
 	if err != nil {
@@ -487,8 +627,16 @@ func TestScenarioConversationGraphTerminatesSilentTextBeforeSpeech(t *testing.T)
 		{"semantic_admission", "silent_committed", "silent_session_invocation", "committed"},
 		{"semantic_admission", "silent_create", "silent_session_invocation", "create"},
 		{"silent_session_invocation", "trigger", "silent_model", "trigger"},
-		{"silent_model", "text", "silent_model_text_drop", "in"},
-		{"voice_model", "text", "model_text_copy", "in"},
+		{"silent_model", "text", "silent_control_quarantine", "text"},
+		{"silent_control_quarantine", "safe_text", "silent_model_text_drop", "in"},
+		{"voice_model", "text", "control_quarantine", "text"},
+		{"control_quarantine", "safe_text", "model_text_copy", "in"},
+		{"voice_model", "result", "control_quarantine", "result"},
+		{"silent_model", "result", "silent_control_quarantine", "result"},
+		{"control_quarantine", "safe_result", "overlap_barge_in", "result"},
+		{"overlap_barge_in", "safe_result", "model_result_mux", "in"},
+		{"silent_control_quarantine", "safe_result", "model_result_mux", "in"},
+		{"model_result_mux", "out", "model_result_copy", "in"},
 		{"voice_model_outcome_copy", "out", "segment", "terminal"},
 	} {
 		if !scenarioGraphHasEdge(graph, edge[0], edge[1], edge[2], edge[3]) {
@@ -497,6 +645,13 @@ func TestScenarioConversationGraphTerminatesSilentTextBeforeSpeech(t *testing.T)
 		}
 	}
 	for _, forbidden := range [][4]string{
+		{"voice_model", "text", "model_text_copy", "in"},
+		{"voice_model", "text", "segment", "text"},
+		{"model_result_mux", "out", "control_quarantine", "result"},
+		{"voice_model", "result", "model_result_mux", "in"},
+		{"silent_model", "result", "model_result_mux", "in"},
+		{"control_quarantine", "safe_result", "model_result_mux", "in"},
+		{"silent_model", "text", "silent_model_text_drop", "in"},
 		{"silent_model", "text", "model_text_copy", "in"},
 		{"silent_model", "text", "segment", "text"},
 		{"silent_model", "outcome", "segment", "terminal"},
@@ -507,13 +662,22 @@ func TestScenarioConversationGraphTerminatesSilentTextBeforeSpeech(t *testing.T)
 				forbidden[0], forbidden[1], forbidden[2], forbidden[3])
 		}
 	}
+	var foundDrop bool
+	quarantines := 0
 	for _, node := range graph.Nodes {
-		if node.ID == "silent_model_text_drop" && node.Element.Name == "flow.Drop" {
-			assertScenarioFactoriesUnopened(t, fixture)
-			return
+		foundDrop = foundDrop || node.ID == "silent_model_text_drop" && node.Element.Name == "flow.Drop"
+		if (node.ID == "control_quarantine" || node.ID == "silent_control_quarantine") &&
+			node.Element.Name == "interaction.ControlSerializationQuarantine" {
+			quarantines++
 		}
 	}
-	t.Fatal("scenario graph has no descriptor-locked terminal drop for silent model text")
+	if !foundDrop {
+		t.Fatal("scenario graph has no descriptor-locked terminal drop for silent model text")
+	}
+	if quarantines != 2 {
+		t.Fatalf("scenario graph has %d model-lane control serialization quarantines, want 2", quarantines)
+	}
+	assertScenarioFactoriesUnopened(t, fixture)
 }
 
 func scenarioGraphHasEdge(graph ir.Graph, fromNode, fromPort, toNode, toPort string) bool {

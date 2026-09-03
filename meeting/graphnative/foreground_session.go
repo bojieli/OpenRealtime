@@ -192,6 +192,7 @@ func (plugin *SessionPlugin) newForegroundSession(
 		return nil, err
 	}
 	runtimeOptions := cloneLegacyOptions(options)
+	runtimeOptions.Settings = meetingForegroundTextOnlySettings(runtimeOptions.Settings)
 	runtimeOptions.Sink = session
 	runtime, err := binding.Start(sessionCtx, runtimeOptions)
 	if err != nil {
@@ -484,7 +485,7 @@ func (session *foregroundSession) applyInput(message sidecar.Message, payload an
 			return fmt.Errorf("meeting foreground tools update: %w", err)
 		}
 		settings := legacy.CloneSettings(update.Settings)
-		if err := session.runtime.Update(ctx, settings); err != nil {
+		if err := session.runtime.Update(ctx, meetingForegroundTextOnlySettings(settings)); err != nil {
 			return err
 		}
 		session.mu.Lock()
@@ -533,6 +534,16 @@ func (session *foregroundSession) applyInput(message sidecar.Message, payload an
 	default:
 		return fmt.Errorf("meeting foreground received unsupported input port %q", message.Port)
 	}
+}
+
+// meetingForegroundTextOnlySettings is the deployment boundary between the
+// legacy foreground's cognition callbacks and graph-owned synthesis. Keep the
+// client settings for tool/instruction policy, but never let a session update
+// re-enable the legacy binding's native audio action plane.
+func meetingForegroundTextOnlySettings(source legacy.Settings) legacy.Settings {
+	result := legacy.CloneSettings(source)
+	result.Modalities = []string{"text"}
+	return result
 }
 
 func (session *foregroundSession) applyTrigger(
@@ -1743,6 +1754,11 @@ func cloneTrajectoryItemForMeeting(source trajectory.Item) trajectory.Item {
 		value := *source.ToolCall
 		value.Arguments = slices.Clone(source.ToolCall.Arguments)
 		result.ToolCall = &value
+	}
+	if source.ToolCallDerivation != nil {
+		value := *source.ToolCallDerivation
+		value.Rewrites = slices.Clone(source.ToolCallDerivation.Rewrites)
+		result.ToolCallDerivation = &value
 	}
 	if source.ToolResult != nil {
 		value := *source.ToolResult

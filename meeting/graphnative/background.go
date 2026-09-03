@@ -127,9 +127,12 @@ func (runner *backgroundInjectionRunner) accept(
 
 	case cognitionelements.TextChunk:
 		active := runner.active[runID]
-		if active == nil || delta.Index != active.next || delta.Interrupted ||
-			delta.Text == "" {
+		if active == nil || delta.Index != active.next || delta.Interrupted {
 			return runner.reject(ctx, envelope, runID, "invalid_delta", "delta is missing its exact active predecessor")
+		}
+		active.next++
+		if delta.Text == "" {
+			return nil
 		}
 		if len(delta.Text) > runner.config.MaxTextBytes-active.text.Len() {
 			delete(runner.active, runID)
@@ -143,13 +146,26 @@ func (runner *backgroundInjectionRunner) accept(
 			return runner.reject(ctx, envelope, runID, "invalid_delta", "delta contains malformed text")
 		}
 		active.text.WriteString(delta.Text)
-		active.next++
 		return nil
 
 	case cognitionelements.TextEnd:
 		active := runner.active[runID]
-		if active == nil || delta.Index != active.next || delta.Text != "" {
+		if active == nil || delta.Index != active.next {
 			return runner.reject(ctx, envelope, runID, "invalid_end", "end is missing its exact active predecessor")
+		}
+		if delta.Text != "" {
+			if len(delta.Text) > runner.config.MaxTextBytes-active.text.Len() {
+				delete(runner.active, runID)
+				runner.terminal.add(runID)
+				return runner.publishOutcome(ctx, envelope, BackgroundInjectionOutcome{
+					Kind: BackgroundRejected, RunID: runID, Bytes: active.text.Len(),
+					Code: "text_too_large", Message: "background text exceeded its configured bound",
+				})
+			}
+			if !utf8.ValidString(delta.Text) || strings.ContainsRune(delta.Text, '\x00') {
+				return runner.reject(ctx, envelope, runID, "invalid_end", "end contains malformed text")
+			}
+			active.text.WriteString(delta.Text)
 		}
 		delete(runner.active, runID)
 		runner.terminal.add(runID)

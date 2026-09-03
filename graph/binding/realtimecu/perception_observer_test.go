@@ -13,11 +13,12 @@ import (
 )
 
 type perceptionObserverFixture struct {
-	name       string
-	kind       perception.FrameKind
-	refreshes  int
-	reset      int
-	closeError error
+	name           string
+	kind           perception.FrameKind
+	refreshes      int
+	refreshSources []string
+	reset          int
+	closeError     error
 }
 
 func (fixture *perceptionObserverFixture) Name() string               { return fixture.name }
@@ -43,6 +44,9 @@ func (fixture *perceptionObserverFixture) Observe(
 	}}, nil
 }
 func (fixture *perceptionObserverFixture) RefreshNext() { fixture.refreshes++ }
+func (fixture *perceptionObserverFixture) RefreshSource(source string) {
+	fixture.refreshSources = append(fixture.refreshSources, source)
+}
 func (fixture *perceptionObserverFixture) Close() error { return fixture.closeError }
 
 func TestPerceptionObserverComposesSensorsAndRefreshesScreen(t *testing.T) {
@@ -71,8 +75,8 @@ func TestPerceptionObserverComposesSensorsAndRefreshesScreen(t *testing.T) {
 	if err := observer.Consequence(context.Background(), VisualConsequence{TargetSource: SourceScreen}); err != nil {
 		t.Fatal(err)
 	}
-	if video.refreshes != 1 {
-		t.Fatalf("video refreshes = %d, want 1", video.refreshes)
+	if video.refreshes != 0 || len(video.refreshSources) != 1 || video.refreshSources[0] != SourceScreen {
+		t.Fatalf("video refreshes = legacy %d, sources %v; want source-aware screen refresh", video.refreshes, video.refreshSources)
 	}
 	if err := observer.Close(); err != nil {
 		t.Fatal(err)

@@ -248,6 +248,24 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 			"schema://openrealtime/action/tool-lookup-config/v1",
 			schemaObject{"registry": identifier(0)}, "registry",
 		),
+		"schema://openrealtime/action/normalize-arguments-config/v1": standardObject(
+			"schema://openrealtime/action/normalize-arguments-config/v1", schemaObject{},
+		),
+		"schema://openrealtime/action/tool-admission-config/v1": standardObject(
+			"schema://openrealtime/action/tool-admission-config/v1",
+			schemaObject{
+				"allowed_tools": arraySchema(stringSchema(1, 1024), 0, 4096),
+				"denied_tools":  arraySchema(stringSchema(1, 1024), 0, 4096),
+			},
+		),
+		"schema://openrealtime/action/repetition-admission-config/v1": standardObject(
+			"schema://openrealtime/action/repetition-admission-config/v1",
+			schemaObject{
+				"mode":                enumSchema("allow", "at_most_once_after_success_per_user_intent"),
+				"repeatable_tools":    arraySchema(stringSchema(1, 1024), 0, 4096),
+				"max_tracked_effects": integerSchema(1, 4096),
+			},
+		),
 		"schema://openrealtime/authority/confirmation-config/v1": standardObject(
 			"schema://openrealtime/authority/confirmation-config/v1",
 			schemaObject{"provider": identifier(0), "max_pending": boundedState}, "provider",
@@ -303,6 +321,24 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"max_segment_bytes": integerSchema(1, maximumBoundBytes),
 				"max_run_bytes":     integerSchema(1, maximumBoundBytes),
 				"max_segments":      integerSchema(1, 4096), "terminal_memory": integerSchema(1, 4096),
+			},
+		),
+		"schema://openrealtime/interaction/control-serialization-quarantine-config/v2": standardObject(
+			"schema://openrealtime/interaction/control-serialization-quarantine-config/v2",
+			schemaObject{
+				"max_candidate_bytes": integerSchema(1, maximumBoundBytes),
+				"max_blocks":          integerSchema(1, 4096),
+				"max_active_streams":  integerSchema(1, 4096),
+			},
+		),
+		"schema://openrealtime/interaction/overlap-barge-in-config/v1": standardObject(
+			"schema://openrealtime/interaction/overlap-barge-in-config/v1",
+			schemaObject{
+				"decider":         optionalIdentifier(maximumIdentifierBytes),
+				"hold_ms":         integerSchema(1, 60_000),
+				"unclassified":    enumSchema("cancel", "keep_speaking"),
+				"max_active_runs": integerSchema(1, 4096),
+				"max_utterances":  integerSchema(1, 4096),
 			},
 		),
 		"schema://openrealtime/interaction/speech-arbiter-config/v1": standardObject(

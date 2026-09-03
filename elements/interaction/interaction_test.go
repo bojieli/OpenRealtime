@@ -40,6 +40,41 @@ const segmentGraph = `graph segment_test {
 }
 `
 
+const controlQuarantineGraph = `graph control_quarantine_test {
+    interaction.ControlSerializationQuarantine :: quarantine;
+    input text = quarantine.text;
+    input result = quarantine.result;
+    output safe_text = quarantine.safe_text;
+    output safe_result = quarantine.safe_result;
+    output quarantined = quarantine.quarantined;
+}
+`
+
+const controlQuarantineCommitSpeechGraph = `graph control_quarantine_commit_speech_test {
+    interaction.ControlSerializationQuarantine :: quarantine;
+    interaction.ModelResultCommit :: commit;
+    interaction.SegmentPreparedText :: segment;
+    state.TrajectoryStore :: store;
+    quarantine.safe_result -> commit.result;
+    commit.append -> store.append;
+    store.committed -> commit.committed;
+    store.rejected -> commit.rejected;
+    quarantine.safe_text -> segment.text;
+    input text = quarantine.text;
+    input result = quarantine.result;
+    input terminal = segment.terminal;
+    input timeout = segment.timeout;
+    input cancel = segment.cancel;
+    output quarantined = quarantine.quarantined;
+    output snapshot = store.snapshot;
+    output commit_outcome = commit.outcome;
+    output segments = segment.segments;
+    output model_cancel = segment.model_cancel;
+    output speech_cancel = segment.speech_cancel;
+    output segment_outcome = segment.outcome;
+}
+`
+
 const arbiterGraph = `graph arbiter_test {
     interaction.SpeechArbiter :: arbiter;
     input fast_text = arbiter.text;
@@ -94,7 +129,7 @@ func TestInteractionDescriptorsExposePolicyWithoutModelRoles(t *testing.T) {
 	}
 	arbiter := SpeechArbiterDescriptor()
 	selected, found := arbiter.Port("selected")
-	if !found || !selected.Type.Equal(cognitionelements.PreparedTextType()) {
+	if !found || !selected.Type.Equal(SafePreparedTextType()) {
 		t.Fatalf("selected port = %+v", selected)
 	}
 	text, _ := arbiter.Port("text")
@@ -105,6 +140,9 @@ func TestInteractionDescriptorsExposePolicyWithoutModelRoles(t *testing.T) {
 	segmentTerminal, _ := SegmentPreparedTextDescriptor().Port("terminal")
 	if segmentTerminal.Cardinality != element.Variadic {
 		t.Fatalf("segment terminal port = %+v", segmentTerminal)
+	}
+	if !SegmentPreparedTextDescriptor().Reaction.BreaksCycles {
+		t.Fatal("segment prepared text must attest its stateful model-cancellation feedback break")
 	}
 }
 
@@ -142,6 +180,18 @@ func TestStrictBoundedInteractionConfig(t *testing.T) {
 		{"arbiter unbounded", func(raw json.RawMessage) error { _, err := decodeArbiterConfig(raw); return err }, `{"max_buffered_bytes":999999999}`},
 		{"commit unknown", func(raw json.RawMessage) error { _, err := decodeCommitConfig(raw); return err }, `{"retry":true}`},
 		{"commit duplicate", func(raw json.RawMessage) error { _, err := decodeCommitConfig(raw); return err }, `{"max_pending":2,"max_pending":3}`},
+		{"quarantine unknown", func(raw json.RawMessage) error {
+			_, err := decodeControlSerializationQuarantineConfig(raw)
+			return err
+		}, `{"registry":"must-not-exist"}`},
+		{"quarantine unbounded", func(raw json.RawMessage) error {
+			_, err := decodeControlSerializationQuarantineConfig(raw)
+			return err
+		}, `{"max_candidate_bytes":999999999}`},
+		{"quarantine no blocks", func(raw json.RawMessage) error {
+			_, err := decodeControlSerializationQuarantineConfig(raw)
+			return err
+		}, `{"max_blocks":0}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -196,6 +246,31 @@ func TestSegmentPreparedTextReleasesSafeUnitsAndTranslatesCancellation(t *testin
 		Boundary: cognitionelements.TextEnd, Index: 2, Interrupted: true,
 	}))
 	assertNoEnvelope(t, segments)
+}
+
+func TestSegmentPreparedTextConsumesNoOpChunkAndTerminalText(t *testing.T) {
+	mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
+		map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":64}`)}, nil)
+	defer stopInteractionGraph(t, done, cancel)
+
+	const runID = "terminal-safe-text"
+	text := ingress(t, mounted, "text")
+	send(t, text, preparedEnvelope("terminal-begin", runID,
+		cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextBegin, Index: 0}))
+	send(t, text, preparedEnvelope("terminal-noop", runID,
+		cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: 1}))
+	send(t, text, preparedEnvelope("terminal-end", runID,
+		cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextEnd, Index: 2, Text: "released only at terminal",
+		}))
+	segment := receive(t, egress(t, mounted, "segments")).Payload.(speech.TextSegment)
+	if segment.Text != "released only at terminal" {
+		t.Fatalf("terminal safe segment = %+v", segment)
+	}
+	outcome := receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted)
+	if outcome.BufferedBytes != len("released only at terminal") || outcome.Segments != 1 {
+		t.Fatalf("terminal safe outcome = %+v", outcome)
+	}
 }
 
 func TestSegmentPreparedTextLateCancelRevokesCompletedStreamExactlyOnce(t *testing.T) {
@@ -433,6 +508,40 @@ func TestSpeechArbiterExplicitPreemptionClosesFramingAndCancelsOnlyTarget(t *tes
 		Boundary: cognitionelements.TextEnd, Index: 2, Interrupted: true,
 	}))
 	assertNoEnvelope(t, selected)
+}
+
+func TestSpeechArbiterPreservesNoOpChunkAndTerminalText(t *testing.T) {
+	mounted, done, cancel := mountInteractionGraph(t, arbiterGraph, nil, nil)
+	defer stopInteractionGraph(t, done, cancel)
+
+	const runID = "safe-framing"
+	sendSelection(t, ingress(t, mounted, "selection"), runID, SelectionPreempt, "select-safe-framing")
+	assertArbitrationKind(t, egress(t, mounted, "outcome"), OutcomeSelected, runID)
+	text := ingress(t, mounted, "fast_text")
+	for _, envelope := range []element.Envelope{
+		preparedEnvelope("safe-begin", runID,
+			cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextBegin, Index: 0}),
+		preparedEnvelope("safe-noop", runID,
+			cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: 1}),
+		preparedEnvelope("safe-end", runID,
+			cognitionelements.PreparedTextDelta{
+				Boundary: cognitionelements.TextEnd, Index: 2, Text: "terminal bytes",
+			}),
+	} {
+		send(t, text, envelope)
+	}
+	selected := egress(t, mounted, "selected")
+	for index, expected := range []cognitionelements.PreparedTextDelta{
+		{Boundary: cognitionelements.TextBegin, Index: 0},
+		{Boundary: cognitionelements.TextChunk, Index: 1},
+		{Boundary: cognitionelements.TextEnd, Index: 2, Text: "terminal bytes"},
+	} {
+		delta := receive(t, selected).Payload.(cognitionelements.PreparedTextDelta)
+		if delta != expected {
+			t.Fatalf("selected safe delta %d = %+v, want %+v", index, delta, expected)
+		}
+	}
+	assertArbitrationKind(t, egress(t, mounted, "outcome"), OutcomeCompleted, runID)
 }
 
 func TestSpeechArbiterRejectsOneRunAcrossSeveralLanesAndConflictingAddress(t *testing.T) {
@@ -880,17 +989,31 @@ func TestModelResultValidationTreatsZeroProposalRepresentationsEqually(t *testin
 
 func resultEnvelopeForTest(itemID string, result cognitionelements.Result) element.Envelope {
 	return element.Envelope{
-		Type: cognitionelements.ResultType(), ItemID: itemID, RunID: result.RunID, Payload: result,
+		Type: SafeModelResultType(), ItemID: itemID, RunID: result.RunID, Payload: result,
 	}
+}
+
+func rawResultEnvelopeForTest(itemID string, result cognitionelements.Result) element.Envelope {
+	envelope := resultEnvelopeForTest(itemID, result)
+	envelope.Type = cognitionelements.ResultType()
+	return envelope
 }
 
 func preparedEnvelope(
 	itemID, runID string, delta cognitionelements.PreparedTextDelta,
 ) element.Envelope {
 	return element.Envelope{
-		Type: PreparedTextType(), ItemID: itemID, RunID: runID,
+		Type: SafePreparedTextType(), ItemID: itemID, RunID: runID,
 		SourceID: "legacy-silent-model", Payload: delta,
 	}
+}
+
+func rawPreparedEnvelope(
+	itemID, runID string, delta cognitionelements.PreparedTextDelta,
+) element.Envelope {
+	envelope := preparedEnvelope(itemID, runID, delta)
+	envelope.Type = PreparedTextType()
+	return envelope
 }
 
 func preparedStream(runID, text string) []element.Envelope {
@@ -905,6 +1028,14 @@ func preparedStream(runID, text string) []element.Envelope {
 			Boundary: cognitionelements.TextEnd, Index: 2,
 		}),
 	}
+}
+
+func rawPreparedStream(runID, text string) []element.Envelope {
+	stream := preparedStream(runID, text)
+	for index := range stream {
+		stream[index].Type = PreparedTextType()
+	}
+	return stream
 }
 
 func sendSelection(

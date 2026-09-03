@@ -327,9 +327,9 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 		t.Fatalf("scenario endpoint model invocations=%d policy decisions=%d, want 7/7",
 			fixture.model.invocations.Load(), fixture.policy.decisions.Load())
 	}
-	if fixture.asrFactories.Load() != 2 || fixture.policyFactories.Load() != 1 ||
+	if fixture.asrFactories.Load() != 2 || fixture.policyFactories.Load() != 2 ||
 		fixture.modelFactories.Load() != 2 || fixture.ttsFactories.Load() != 1 {
-		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 2/1/2/1",
+		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 2/2/2/1",
 			fixture.asrFactories.Load(), fixture.policyFactories.Load(),
 			fixture.modelFactories.Load(), fixture.ttsFactories.Load())
 	}
@@ -465,6 +465,7 @@ func (fixture *scenarioEndpointFixture) assertFactories(t testing.TB, wanted int
 	modelWanted, policyWanted := wanted, wanted
 	if wanted > 0 {
 		modelWanted = wanted * 2
+		policyWanted = wanted * 2
 	}
 	if fixture.asrFactories.Load() != wanted || fixture.modelFactories.Load() != modelWanted ||
 		fixture.policyFactories.Load() != policyWanted || fixture.ttsFactories.Load() != wanted {

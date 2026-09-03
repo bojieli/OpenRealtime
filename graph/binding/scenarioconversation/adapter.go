@@ -36,58 +36,60 @@ import (
 const (
 	graphID = "scenario_conversation"
 
-	invocationUpdateBoundary            = "invocation_update"
-	responseCreateBoundary              = "response_create"
-	generationCancelBoundary            = "generation_cancel"
-	toolResultBoundary                  = "tool_result"
-	audioBoundary                       = "audio"
-	textBoundary                        = "text"
-	imageBoundary                       = "image"
-	contentCancelBoundary               = "content_cancel"
-	mediaResolveBoundary                = "media_resolve"
-	mediaReturnLeaseBoundary            = "media_return_lease"
-	modelCancelBoundary                 = "model_cancel"
-	actionCancelBoundary                = "action_cancel"
-	segmentationCancelBoundary          = "segmentation_cancel"
-	ttsCancelBoundary                   = "tts_cancel"
-	playbackCancelBoundary              = "playback_cancel"
-	acousticActivityBoundary            = "acoustic_activity"
-	admissionStateBoundary              = "admission_state"
-	admissionOutcomeBoundary            = "admission_outcome"
-	transcriptBoundary                  = "transcript_events"
-	observationBoundary                 = "observation_events"
-	ingressHandlesBoundary              = "ingress_handles"
-	ingressOutcomeBoundary              = "ingress_outcome"
-	mediaResolvedBoundary               = "media_resolved"
-	mediaLeaseReturnedBoundary          = "media_lease_returned"
-	messageCommitBoundary               = "message_commit_outcome"
-	semanticDecisionBoundary            = "semantic_decision"
-	semanticAdmissionStateBoundary      = "semantic_admission_state"
-	semanticAdmissionOutcomeBoundary    = "semantic_admission_outcome"
-	semanticPolicyResolutionBoundary    = "semantic_policy_resolution"
-	invocationOutcomeBoundary           = "invocation_outcome"
-	dispatchCommitBoundary              = "dispatch_commit"
-	canonicalResultBoundary             = "canonical_result"
-	modelOutcomeBoundary                = "model_outcome"
-	segmentationOutcomeBoundary         = "segmentation_outcome"
-	trajectorySnapshotBoundary          = "trajectory_snapshot"
-	provenanceOutcomeBoundary           = "provenance_outcome"
-	actionAdmissionBoundary             = "admission_action_outcome"
-	lookupOutcomeBoundary               = "lookup_outcome"
-	confirmationOutcomeBoundary         = "confirmation_outcome"
-	targetFenceOutcomeBoundary          = "target_fence_outcome"
-	canonicalCallOutcomeBoundary        = "canonical_call_outcome"
-	ledgerOutcomeBoundary               = "ledger_outcome"
-	dispatchOutcomeBoundary             = "dispatch_outcome"
-	resultCommitOutcomeBoundary         = "result_commit_outcome"
-	clientToolResultOutcomeBoundary     = "client_tool_result_outcome"
-	clientToolResultJoinOutcomeBoundary = "client_tool_result_join_outcome"
-	gatewayTurnBeginBoundary            = "gateway_turn_begin"
-	gatewayTurnEndBoundary              = "gateway_turn_end"
-	gatewaySpeechBeginBoundary          = "gateway_speech_begin"
-	gatewaySpeechTextBoundary           = "gateway_speech_text"
-	gatewaySpeechAudioBoundary          = "gateway_speech_audio"
-	gatewaySpeechEndBoundary            = "gateway_speech_end"
+	invocationUpdateBoundary             = "invocation_update"
+	responseCreateBoundary               = "response_create"
+	generationCancelBoundary             = "generation_cancel"
+	toolResultBoundary                   = "tool_result"
+	audioBoundary                        = "audio"
+	textBoundary                         = "text"
+	imageBoundary                        = "image"
+	contentCancelBoundary                = "content_cancel"
+	mediaResolveBoundary                 = "media_resolve"
+	mediaReturnLeaseBoundary             = "media_return_lease"
+	modelCancelBoundary                  = "model_cancel"
+	actionCancelBoundary                 = "action_cancel"
+	segmentationCancelBoundary           = "segmentation_cancel"
+	ttsCancelBoundary                    = "tts_cancel"
+	playbackCancelBoundary               = "playback_cancel"
+	acousticActivityBoundary             = "acoustic_activity"
+	admissionStateBoundary               = "admission_state"
+	admissionOutcomeBoundary             = "admission_outcome"
+	transcriptBoundary                   = "transcript_events"
+	observationBoundary                  = "observation_events"
+	ingressHandlesBoundary               = "ingress_handles"
+	ingressOutcomeBoundary               = "ingress_outcome"
+	mediaResolvedBoundary                = "media_resolved"
+	mediaLeaseReturnedBoundary           = "media_lease_returned"
+	messageCommitBoundary                = "message_commit_outcome"
+	semanticDecisionBoundary             = "semantic_decision"
+	semanticAdmissionStateBoundary       = "semantic_admission_state"
+	semanticAdmissionOutcomeBoundary     = "semantic_admission_outcome"
+	semanticPolicyResolutionBoundary     = "semantic_policy_resolution"
+	invocationOutcomeBoundary            = "invocation_outcome"
+	dispatchCommitBoundary               = "dispatch_commit"
+	canonicalResultBoundary              = "canonical_result"
+	modelResultBoundary                  = "model_result"
+	modelOutcomeBoundary                 = "model_outcome"
+	segmentationOutcomeBoundary          = "segmentation_outcome"
+	trajectorySnapshotBoundary           = "trajectory_snapshot"
+	provenanceOutcomeBoundary            = "provenance_outcome"
+	actionAdmissionBoundary              = "admission_action_outcome"
+	lookupOutcomeBoundary                = "lookup_outcome"
+	argumentNormalizationOutcomeBoundary = "argument_normalization_outcome"
+	confirmationOutcomeBoundary          = "confirmation_outcome"
+	targetFenceOutcomeBoundary           = "target_fence_outcome"
+	canonicalCallOutcomeBoundary         = "canonical_call_outcome"
+	ledgerOutcomeBoundary                = "ledger_outcome"
+	dispatchOutcomeBoundary              = "dispatch_outcome"
+	resultCommitOutcomeBoundary          = "result_commit_outcome"
+	clientToolResultOutcomeBoundary      = "client_tool_result_outcome"
+	clientToolResultJoinOutcomeBoundary  = "client_tool_result_join_outcome"
+	gatewayTurnBeginBoundary             = "gateway_turn_begin"
+	gatewayTurnEndBoundary               = "gateway_turn_end"
+	gatewaySpeechBeginBoundary           = "gateway_speech_begin"
+	gatewaySpeechTextBoundary            = "gateway_speech_text"
+	gatewaySpeechAudioBoundary           = "gateway_speech_audio"
+	gatewaySpeechEndBoundary             = "gateway_speech_end"
 
 	maximumAdapterTextBytes   = 1 << 20
 	maximumAdapterImageBytes  = 32 << 20
@@ -234,43 +236,45 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		ttsCancelBoundary:          {ir.InputBoundary, descriptorPortTypeByName("speech.TTS", "cancel")},
 		playbackCancelBoundary:     {ir.InputBoundary, descriptorPortTypeByName("speech.Playback", "cancel")},
 
-		acousticActivityBoundary:            {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "activity")},
-		admissionStateBoundary:              {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "state")},
-		admissionOutcomeBoundary:            {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "outcome")},
-		transcriptBoundary:                  {ir.OutputBoundary, ingresselements.ObservationType()},
-		observationBoundary:                 {ir.OutputBoundary, ingresselements.ObservationType()},
-		ingressHandlesBoundary:              {ir.OutputBoundary, ingresselements.AttachmentHandleType()},
-		ingressOutcomeBoundary:              {ir.OutputBoundary, ingresselements.OutcomeType()},
-		mediaResolvedBoundary:               {ir.OutputBoundary, mediaelements.ResolvedAttachmentType()},
-		mediaLeaseReturnedBoundary:          {ir.OutputBoundary, mediaelements.ReturnLeaseResultType()},
-		messageCommitBoundary:               {ir.OutputBoundary, stateelements.ObservationCommitOutcomeType()},
-		semanticDecisionBoundary:            {ir.OutputBoundary, policyelements.SemanticDecisionType()},
-		semanticAdmissionStateBoundary:      {ir.OutputBoundary, policyelements.SemanticAdmissionStateType()},
-		semanticAdmissionOutcomeBoundary:    {ir.OutputBoundary, policyelements.SemanticAdmissionOutcomeType()},
-		semanticPolicyResolutionBoundary:    {ir.OutputBoundary, policyelements.SemanticDeciderResolutionType()},
-		invocationOutcomeBoundary:           {ir.OutputBoundary, policyelements.SessionInvocationOutcomeType()},
-		dispatchCommitBoundary:              {ir.OutputBoundary, actionelements.CommittedType()},
-		canonicalResultBoundary:             {ir.OutputBoundary, actionelements.CanonicalResultType()},
-		modelOutcomeBoundary:                {ir.OutputBoundary, cognitionelements.OutcomeType()},
-		segmentationOutcomeBoundary:         {ir.OutputBoundary, interactionelements.SegmentationOutcomeType()},
-		trajectorySnapshotBoundary:          {ir.OutputBoundary, stateelements.SnapshotType()},
-		provenanceOutcomeBoundary:           {ir.OutputBoundary, actionelements.OutcomeType()},
-		actionAdmissionBoundary:             {ir.OutputBoundary, actionelements.OutcomeType()},
-		lookupOutcomeBoundary:               {ir.OutputBoundary, actionelements.OutcomeType()},
-		confirmationOutcomeBoundary:         {ir.OutputBoundary, actionelements.OutcomeType()},
-		targetFenceOutcomeBoundary:          {ir.OutputBoundary, actionelements.OutcomeType()},
-		canonicalCallOutcomeBoundary:        {ir.OutputBoundary, actionelements.OutcomeType()},
-		ledgerOutcomeBoundary:               {ir.OutputBoundary, actionelements.OutcomeType()},
-		dispatchOutcomeBoundary:             {ir.OutputBoundary, actionelements.OutcomeType()},
-		resultCommitOutcomeBoundary:         {ir.OutputBoundary, actionelements.OutcomeType()},
-		clientToolResultOutcomeBoundary:     {ir.OutputBoundary, actionelements.OutcomeType()},
-		clientToolResultJoinOutcomeBoundary: {ir.OutputBoundary, actionelements.OutcomeType()},
-		gatewayTurnBeginBoundary:            {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
-		gatewayTurnEndBoundary:              {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
-		gatewaySpeechBeginBoundary:          {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
-		gatewaySpeechTextBoundary:           {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
-		gatewaySpeechAudioBoundary:          {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
-		gatewaySpeechEndBoundary:            {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		acousticActivityBoundary:             {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "activity")},
+		admissionStateBoundary:               {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "state")},
+		admissionOutcomeBoundary:             {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "outcome")},
+		transcriptBoundary:                   {ir.OutputBoundary, ingresselements.ObservationType()},
+		observationBoundary:                  {ir.OutputBoundary, ingresselements.ObservationType()},
+		ingressHandlesBoundary:               {ir.OutputBoundary, ingresselements.AttachmentHandleType()},
+		ingressOutcomeBoundary:               {ir.OutputBoundary, ingresselements.OutcomeType()},
+		mediaResolvedBoundary:                {ir.OutputBoundary, mediaelements.ResolvedAttachmentType()},
+		mediaLeaseReturnedBoundary:           {ir.OutputBoundary, mediaelements.ReturnLeaseResultType()},
+		messageCommitBoundary:                {ir.OutputBoundary, stateelements.ObservationCommitOutcomeType()},
+		semanticDecisionBoundary:             {ir.OutputBoundary, policyelements.SemanticDecisionType()},
+		semanticAdmissionStateBoundary:       {ir.OutputBoundary, policyelements.SemanticAdmissionStateType()},
+		semanticAdmissionOutcomeBoundary:     {ir.OutputBoundary, policyelements.SemanticAdmissionOutcomeType()},
+		semanticPolicyResolutionBoundary:     {ir.OutputBoundary, policyelements.SemanticDeciderResolutionType()},
+		invocationOutcomeBoundary:            {ir.OutputBoundary, policyelements.SessionInvocationOutcomeType()},
+		dispatchCommitBoundary:               {ir.OutputBoundary, actionelements.CommittedType()},
+		canonicalResultBoundary:              {ir.OutputBoundary, actionelements.CanonicalResultType()},
+		modelResultBoundary:                  {ir.OutputBoundary, interactionelements.SafeModelResultType()},
+		modelOutcomeBoundary:                 {ir.OutputBoundary, cognitionelements.OutcomeType()},
+		segmentationOutcomeBoundary:          {ir.OutputBoundary, interactionelements.SegmentationOutcomeType()},
+		trajectorySnapshotBoundary:           {ir.OutputBoundary, stateelements.SnapshotType()},
+		provenanceOutcomeBoundary:            {ir.OutputBoundary, actionelements.OutcomeType()},
+		actionAdmissionBoundary:              {ir.OutputBoundary, actionelements.OutcomeType()},
+		lookupOutcomeBoundary:                {ir.OutputBoundary, actionelements.OutcomeType()},
+		argumentNormalizationOutcomeBoundary: {ir.OutputBoundary, actionelements.OutcomeType()},
+		confirmationOutcomeBoundary:          {ir.OutputBoundary, actionelements.OutcomeType()},
+		targetFenceOutcomeBoundary:           {ir.OutputBoundary, actionelements.OutcomeType()},
+		canonicalCallOutcomeBoundary:         {ir.OutputBoundary, actionelements.OutcomeType()},
+		ledgerOutcomeBoundary:                {ir.OutputBoundary, actionelements.OutcomeType()},
+		dispatchOutcomeBoundary:              {ir.OutputBoundary, actionelements.OutcomeType()},
+		resultCommitOutcomeBoundary:          {ir.OutputBoundary, actionelements.OutcomeType()},
+		clientToolResultOutcomeBoundary:      {ir.OutputBoundary, actionelements.OutcomeType()},
+		clientToolResultJoinOutcomeBoundary:  {ir.OutputBoundary, actionelements.OutcomeType()},
+		gatewayTurnBeginBoundary:             {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewayTurnEndBoundary:               {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechBeginBoundary:           {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechTextBoundary:            {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechAudioBoundary:           {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
+		gatewaySpeechEndBoundary:             {ir.OutputBoundary, speechelements.PlaybackReceiptType()},
 	}
 	boundaries := make(map[string]ir.Boundary, len(graph.Boundaries))
 	for _, boundary := range graph.Boundaries {
@@ -338,6 +342,7 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 	wanted := map[string]map[string]string{
 		"asr":                       {"provider": ASRReference},
 		"semantic_admission":        {"decider": PolicyReference},
+		"overlap_barge_in":          {"decider": PolicyReference},
 		"voice_model":               {"provider": ModelReference},
 		"silent_model":              {"provider": SilentModelReference},
 		"tool_lookup":               {"registry": ToolReference},
@@ -574,6 +579,11 @@ type session struct {
 	utterances      map[string]struct{}
 	playback        map[string]playbackReceiptState
 	playbackOrder   []string
+	pendingSpeech   map[string]struct{}
+	speechlessRuns  map[string]struct{}
+	speechlessIDs   []string
+	segmentedRuns   map[string]struct{}
+	segmentedRunIDs []string
 	speechRuns      map[string]int
 	speechRunOrder  []string
 	failures        map[string]struct{}
@@ -591,7 +601,7 @@ func newSession(
 ) (*session, error) {
 	if mounted == nil || options.Sink == nil || !canonicalIdentity(options.SessionID) ||
 		bundle == nil || bundle.bridge == nil || bundle.media == nil || bundle.store == nil ||
-		bundle.presentation == nil {
+		bundle.presentation == nil || bundle.playback == nil {
 		return nil, errors.New("scenario conversation session requires mounted graph, sink, identity, and dependency bundle")
 	}
 	if err := validateInitialSettings(options.Settings, config); err != nil {
@@ -645,7 +655,9 @@ func newSession(
 		active:      make(map[string]struct{}), calls: make(map[string]activeClientCall),
 		terminalCalls: make(map[string]struct{}),
 		utterances:    make(map[string]struct{}), playback: make(map[string]playbackReceiptState),
-		speechRuns: make(map[string]int), failures: make(map[string]struct{}),
+		pendingSpeech: make(map[string]struct{}), speechlessRuns: make(map[string]struct{}),
+		segmentedRuns: make(map[string]struct{}), speechRuns: make(map[string]int),
+		failures:     make(map[string]struct{}),
 		terminalRuns: make(map[string]struct{}),
 	}, nil
 }
@@ -749,6 +761,8 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.publishCall(ctx, envelope)
 		case canonicalResultBoundary:
 			err = session.acceptCanonicalResult(envelope)
+		case modelResultBoundary:
+			err = session.acceptModelResult(envelope)
 		case modelOutcomeBoundary:
 			err = session.acceptModelOutcome(ctx, envelope)
 		case segmentationOutcomeBoundary:
@@ -759,6 +773,7 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 		case trajectorySnapshotBoundary:
 			err = session.acceptTrajectorySnapshot(envelope)
 		case provenanceOutcomeBoundary, actionAdmissionBoundary, lookupOutcomeBoundary,
+			argumentNormalizationOutcomeBoundary,
 			confirmationOutcomeBoundary, targetFenceOutcomeBoundary,
 			canonicalCallOutcomeBoundary, ledgerOutcomeBoundary, dispatchOutcomeBoundary,
 			resultCommitOutcomeBoundary, clientToolResultJoinOutcomeBoundary:
@@ -768,7 +783,7 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 		case gatewayTurnBeginBoundary, gatewayTurnEndBoundary,
 			gatewaySpeechBeginBoundary, gatewaySpeechTextBoundary,
 			gatewaySpeechAudioBoundary, gatewaySpeechEndBoundary:
-			err = session.acceptPlaybackReceipt(name, envelope)
+			err = session.acceptPlaybackReceipt(ctx, name, envelope)
 			if err == nil {
 				err = session.publishDebug(ctx, name, envelope)
 			}

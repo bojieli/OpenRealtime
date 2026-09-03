@@ -8,6 +8,7 @@ graph silent_computer_use {
     state.TrajectoryStore :: trajectory;
     policy.GenerateOnObservation :: activation;
     cognition.TextModel :: model;
+    interaction.ControlSerializationQuarantine :: model_control_quarantine;
     interaction.ModelResultCommit :: model_result_commit;
     authority.ProvenanceJoin :: provenance_join;
     authority.ProposalAdmission :: proposal_admission;
@@ -52,7 +53,9 @@ graph silent_computer_use {
     observation_outcome_copy.out -> activation.committed;
     activation.trigger -> model.trigger;
     activation.authority -> provenance_join.candidate;
-    model.result -> model_result_copy.in;
+    model.text -> model_control_quarantine.text;
+    model.result -> model_control_quarantine.result;
+    model_control_quarantine.safe_result -> model_result_copy.in;
     model_result_copy.out -> model_result_commit.result;
     model_result_copy.out -> provenance_join.result;
     model.tools -> model_proposal_copy.in;
@@ -96,8 +99,9 @@ graph silent_computer_use {
     output observation_outcome = observation_outcome_copy.out;
     output activation_state = activation.state;
     output activation_outcome = activation.outcome;
-    output prepared_text = model.text;
+    output prepared_text = model_control_quarantine.safe_text;
     output model_result = model_result_copy.out;
+    output control_serialization_quarantine = model_control_quarantine.quarantined;
     output model_proposals = model_proposal_copy.out;
     output model_outcome = model.outcome;
     output model_resolution = model.resolved;

@@ -2,10 +2,13 @@
 // may speak when the developer explicitly routes it to the speech adapter.
 graph interaction_slow_only {
     cognition.TextModel :: slow;
+    interaction.ControlSerializationQuarantine :: slow_control_quarantine;
     interaction.SegmentPreparedText :: segment;
     flow.Tee :: outcome_copy;
 
-    slow.text -> segment.text;
+    slow.text -> slow_control_quarantine.text;
+    slow.result -> slow_control_quarantine.result;
+    slow_control_quarantine.safe_text -> segment.text;
     slow.outcome -> outcome_copy.in;
     outcome_copy.out -> segment.terminal;
 
@@ -19,7 +22,8 @@ graph interaction_slow_only {
     output speech_cancel = segment.speech_cancel;
     output model_cancel_request = segment.model_cancel;
     output interaction_outcome = segment.outcome;
-    output model_result = slow.result;
+    output model_result = slow_control_quarantine.safe_result;
+    output control_serialization_quarantine = slow_control_quarantine.quarantined;
     output model_tools = slow.tools;
     output model_outcome = outcome_copy.out;
     output model_resolution = slow.resolved;

@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 )
 
@@ -55,7 +57,7 @@ func TestCancelRevokesQueuedAndActiveSpeechAfterModelTerminal(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.activeReceipt {
-				if err := session.acceptPlaybackReceipt(gatewaySpeechAudioBoundary,
+				if err := session.acceptPlaybackReceipt(context.Background(), gatewaySpeechAudioBoundary,
 					playbackEnvelope(session.sessionID, "run-a", "utterance-a",
 						speechelements.PlaybackAudioEmitted, 4)); err != nil {
 					t.Fatal(err)
@@ -97,7 +99,7 @@ func TestCancelRevokesQueuedAndActiveSpeechAfterModelTerminal(t *testing.T) {
 
 			// Terminal playback consumes the pending run and makes a repeated API
 			// cancellation a true no-op rather than replaying exact interrupts.
-			if err := session.acceptPlaybackReceipt(gatewaySpeechEndBoundary,
+			if err := session.acceptPlaybackReceipt(context.Background(), gatewaySpeechEndBoundary,
 				playbackEnvelope(session.sessionID, "run-a", "utterance-a",
 					speechelements.PlaybackEnded, 5)); err != nil {
 				t.Fatal(err)
@@ -117,19 +119,212 @@ func TestCancelRevokesQueuedAndActiveSpeechAfterModelTerminal(t *testing.T) {
 	}
 }
 
+func TestCancelRevokesForegroundSpeechBetweenModelAndSegmentationTerminal(t *testing.T) {
+	var recorded []recordedScenarioCancellation
+	session := &session{
+		sessionID: "session-a", active: make(map[string]struct{}),
+		calls: make(map[string]activeClientCall), playback: make(map[string]playbackReceiptState),
+		pendingSpeech: make(map[string]struct{}), speechRuns: make(map[string]int),
+		terminalRuns: make(map[string]struct{}),
+	}
+	session.ports.segmentationCancel = mediaTestOutput{
+		typeOf: cognitionelements.CancelType(), broadcast: func(
+			_ context.Context, envelope element.Envelope,
+		) (element.SendResult, error) {
+			recorded = append(recorded, recordedScenarioCancellation{
+				boundary: "segmentation", envelope: envelope.Clone(),
+			})
+			return element.SendResult{Delivered: 1}, nil
+		},
+	}
+	if err := session.registerEmittedInvocation(invocationOutcome(
+		"run-a", "foreground",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.acceptModelOutcome(context.Background(), element.Envelope{
+		SessionID: session.sessionID, RunID: "run-a",
+		Payload: cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "run-a",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, active := session.active["run-a"]; active {
+		t.Fatal("terminal model run remained generation-active")
+	}
+	if _, pending := session.pendingSpeech["run-a"]; !pending {
+		t.Fatal("model terminal discarded the pending segmentation horizon")
+	}
+
+	if err := session.Cancel(context.Background(), "user interrupted before segment receipt"); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded) != 1 || recorded[0].boundary != "segmentation" ||
+		recorded[0].envelope.RunID != "run-a" {
+		t.Fatalf("terminal-to-segmentation cancellation = %+v", recorded)
+	}
+}
+
+func TestModelTerminalBeforeInvocationReceiptStillRetainsSpeechHorizon(t *testing.T) {
+	var recorded []element.Envelope
+	session := &session{
+		sessionID: "session-a", active: make(map[string]struct{}),
+		calls: make(map[string]activeClientCall), playback: make(map[string]playbackReceiptState),
+		pendingSpeech: make(map[string]struct{}), speechRuns: make(map[string]int),
+		terminalRuns: make(map[string]struct{}),
+	}
+	session.ports.segmentationCancel = mediaTestOutput{
+		typeOf: cognitionelements.CancelType(), broadcast: func(
+			_ context.Context, envelope element.Envelope,
+		) (element.SendResult, error) {
+			recorded = append(recorded, envelope.Clone())
+			return element.SendResult{Delivered: 1}, nil
+		},
+	}
+	if err := session.acceptModelOutcome(context.Background(), element.Envelope{
+		SessionID: session.sessionID, RunID: "run-reordered",
+		Payload: cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "run-reordered",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The invocation outcome drains on another boundary and may arrive after
+	// the model terminal. It must not erase or duplicate the conservative
+	// speech horizon established by terminal evidence.
+	if err := session.registerEmittedInvocation(invocationOutcome(
+		"run-reordered", "foreground",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Cancel(context.Background(), "reordered interruption"); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded) != 1 || recorded[0].RunID != "run-reordered" {
+		t.Fatalf("reordered terminal cancellation = %+v", recorded)
+	}
+}
+
+func TestToolOnlyForegroundResultClosesPendingSpeechHorizon(t *testing.T) {
+	session := &session{
+		sessionID: "session-a", active: make(map[string]struct{}),
+		pendingSpeech: make(map[string]struct{}), terminalRuns: make(map[string]struct{}),
+	}
+	if err := session.registerEmittedInvocation(invocationOutcome(
+		"run-tool", "foreground",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.acceptModelResult(element.Envelope{
+		SessionID: session.sessionID, RunID: "run-tool",
+		Payload: cognitionelements.Result{
+			RunID: "run-tool", ProviderReference: ModelReference,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, pending := session.pendingSpeech["run-tool"]; pending {
+		t.Fatal("tool-only foreground result retained a nonexistent speech horizon")
+	}
+	if err := session.acceptModelResult(element.Envelope{
+		SessionID: session.sessionID, RunID: "run-result-first",
+		Payload: cognitionelements.Result{
+			RunID: "run-result-first", ProviderReference: ModelReference,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.registerEmittedInvocation(invocationOutcome(
+		"run-result-first", "foreground",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if _, pending := session.pendingSpeech["run-result-first"]; pending {
+		t.Fatal("late invocation receipt revived result-proven speechless run")
+	}
+}
+
+func TestSegmentationTerminalPreventsLateSpeechHorizonRevival(t *testing.T) {
+	session := &session{
+		sessionID: "session-a", active: make(map[string]struct{}),
+		playback:      make(map[string]playbackReceiptState),
+		pendingSpeech: make(map[string]struct{}), speechRuns: make(map[string]int),
+		terminalRuns: make(map[string]struct{}),
+	}
+	if err := session.acceptSegmentationOutcome(segmentationEnvelope(
+		session.sessionID, "run-segmented", interactionelements.OutcomeCompleted, 1,
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.acceptPlaybackReceipt(context.Background(), gatewaySpeechEndBoundary,
+		playbackEnvelope(session.sessionID, "run-segmented", "utterance-segmented",
+			speechelements.PlaybackEnded, 5)); err != nil {
+		t.Fatal(err)
+	}
+	if _, pending := session.speechRuns["run-segmented"]; pending {
+		t.Fatal("terminal playback retained the completed speech run")
+	}
+	if err := session.registerEmittedInvocation(invocationOutcome(
+		"run-segmented", "foreground",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.acceptModelResult(element.Envelope{
+		SessionID: session.sessionID, RunID: "run-segmented",
+		Payload: cognitionelements.Result{
+			RunID: "run-segmented", ProviderReference: ModelReference,
+			AssistantText: "text whose segmentation terminal already drained",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.acceptModelOutcome(context.Background(), element.Envelope{
+		SessionID: session.sessionID, RunID: "run-segmented",
+		Payload: cognitionelements.Outcome{
+			Kind: cognitionelements.OutcomeSucceeded, Operation: "generate", RunID: "run-segmented",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, pending := session.pendingSpeech["run-segmented"]; pending {
+		t.Fatal("late model boundaries revived a terminal segmentation horizon")
+	}
+}
+
+func invocationOutcome(runID, role string) policyelements.SessionInvocationOutcome {
+	return policyelements.SessionInvocationOutcome{
+		Kind: policyelements.SessionInvocationEmitted, Operation: "create",
+		GenerationID: runID, Role: role,
+	}
+}
+
 func TestPlaybackReceiptTrackingHonorsSequenceAcrossConcurrentBoundaries(t *testing.T) {
+	client := &playbackClientSink{}
+	playbackSink := newSessionPlaybackSink(context.Background(), client,
+		scenarioPlaybackDescriptor(), newPresentationState(legacy.Settings{}))
+	utterance := action.Utterance{ID: "utterance-a", Text: "audible response"}
+	if err := playbackSink.Reserve(utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := playbackSink.Begin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := playbackSink.End(context.Background(), utterance, action.Outcome{}); err != nil {
+		t.Fatal(err)
+	}
 	session := &session{
 		sessionID: "session-a", playback: make(map[string]playbackReceiptState),
-		speechRuns: make(map[string]int),
+		speechRuns: make(map[string]int), bundle: &sessionBundle{playback: playbackSink},
 	}
 	// The terminal lane may be scheduled before the earlier audio lane. Its
 	// higher sequence must retain the terminal tombstone.
-	if err := session.acceptPlaybackReceipt(gatewayTurnEndBoundary,
+	if err := session.acceptPlaybackReceipt(context.Background(), gatewayTurnEndBoundary,
 		playbackEnvelope(session.sessionID, "run-a", "utterance-a",
 			speechelements.PlaybackReleased, 6)); err != nil {
 		t.Fatal(err)
 	}
-	if err := session.acceptPlaybackReceipt(gatewaySpeechAudioBoundary,
+	if err := session.acceptPlaybackReceipt(context.Background(), gatewaySpeechAudioBoundary,
 		playbackEnvelope(session.sessionID, "run-a", "utterance-a",
 			speechelements.PlaybackAudioEmitted, 4)); err != nil {
 		t.Fatal(err)
@@ -148,7 +343,7 @@ func TestPlaybackReceiptTrackingHonorsSequenceAcrossConcurrentBoundaries(t *test
 	if _, pending := session.speechRuns["run-a"]; pending {
 		t.Fatalf("late segmentation completion revived terminal playback: %v", session.speechRuns)
 	}
-	if err := session.acceptPlaybackReceipt(gatewaySpeechBeginBoundary,
+	if err := session.acceptPlaybackReceipt(context.Background(), gatewaySpeechBeginBoundary,
 		playbackEnvelope(session.sessionID, "run-a", "utterance-a",
 			speechelements.PlaybackBegun, 7)); err == nil ||
 		!strings.Contains(err.Error(), "after terminal") {

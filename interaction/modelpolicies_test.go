@@ -21,6 +21,39 @@ type recordingDecider struct {
 	err        error
 }
 
+type sequencedDecider struct {
+	mu      sync.Mutex
+	seen    []interaction.Decision
+	answers []string
+}
+
+func (decider *sequencedDecider) Name() string { return "sequenced" }
+
+func (decider *sequencedDecider) Decide(
+	_ context.Context, decision interaction.Decision,
+) (interaction.Outcome, error) {
+	decider.mu.Lock()
+	defer decider.mu.Unlock()
+	decider.seen = append(decider.seen, decision)
+	if len(decider.answers) == 0 {
+		return interaction.Outcome{}, nil
+	}
+	answer := decider.answers[0]
+	decider.answers = decider.answers[1:]
+	for index, option := range decision.Options {
+		if option == answer {
+			return interaction.Outcome{Index: index, Option: option}, nil
+		}
+	}
+	return interaction.Outcome{}, nil
+}
+
+func (decider *sequencedDecider) decisions() []interaction.Decision {
+	decider.mu.Lock()
+	defer decider.mu.Unlock()
+	return append([]interaction.Decision(nil), decider.seen...)
+}
+
 func (decider *recordingDecider) Name() string { return "recording" }
 
 func (decider *recordingDecider) Decide(
@@ -269,6 +302,113 @@ func TestProjectionSeesOnlyDecisionTimeInformation(t *testing.T) {
 	}
 }
 
+func TestOverlapClassifierSeesTheConnectedSpeechAndCurrentRevisionOnly(t *testing.T) {
+	decider := &recordingDecider{answer: string(interaction.OverlapDirected), confidence: 0.9}
+	classifier, err := interaction.NewModelOverlapClassifier(decider)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const agentSpeech = "I cannot turn on the study lamp."
+	const heard = "Actually, what"
+	const future = "financial goals I should set"
+	decision := interaction.Context{
+		Revision: interaction.Revision{ID: 7, StableText: heard},
+		Situation: &interaction.Situation{
+			Contract:      "You are Nova, the room assistant.",
+			AgentSpeaking: true,
+			AgentSaying:   agentSpeech,
+			Heard:         heard + " " + future,
+		},
+	}
+	if got := classifier.Classify(context.Background(), decision); got != interaction.OverlapDirected {
+		t.Fatalf("overlap classification = %q", got)
+	}
+	decisions := decider.decisions()
+	if len(decisions) != 1 {
+		t.Fatalf("overlap policy calls = %d, want 1", len(decisions))
+	}
+	shown := decisions[0].Prompt + "\n" + decisions[0].Evidence
+	for _, current := range []string{
+		agentSpeech, heard, "You are Nova", "strict closed class", "topic-shift opener",
+		"Topical unrelatedness alone", "role, or title used as a vocative",
+		"explicit identity in the agent contract takes precedence",
+		"let's switch", "by the way", "before I forget", "oh but", "I know", "I think so",
+	} {
+		if !strings.Contains(shown, current) {
+			t.Fatalf("overlap decision lost current evidence %q: %s", current, shown)
+		}
+	}
+	if strings.Contains(shown, future) {
+		t.Fatalf("overlap decision was shown future revision text %q", future)
+	}
+}
+
+func TestOverlapClassifierRevalidatesTheBackchannelSemanticContract(t *testing.T) {
+	tests := []struct {
+		name    string
+		heard   string
+		answers []string
+		want    interaction.OverlapEvidence
+		calls   int
+	}{
+		{
+			name:  "proposition cannot inhabit the one-or-two-token type",
+			heard: "Oh, it's starting.",
+			answers: []string{
+				string(interaction.OverlapBackchannel), string(interaction.OverlapSide),
+			},
+			want: interaction.OverlapSide, calls: 2,
+		},
+		{
+			name:  "language-dependent short continuer receives exact validation",
+			heard: "Yes, yeah.",
+			answers: []string{
+				string(interaction.OverlapBackchannel), "valid_backchannel",
+			},
+			want: interaction.OverlapBackchannel, calls: 2,
+		},
+		{
+			name:  "short proposition is reclassified without the invalid label",
+			heard: "I know.",
+			answers: []string{
+				string(interaction.OverlapBackchannel), "not_backchannel",
+				string(interaction.OverlapDirected),
+			},
+			want: interaction.OverlapDirected, calls: 3,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decider := &sequencedDecider{answers: append([]string(nil), test.answers...)}
+			classifier, err := interaction.NewModelOverlapClassifier(decider)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := classifier.Classify(context.Background(), interaction.Context{
+				Revision: interaction.Revision{ID: 1, StableText: test.heard},
+				Situation: &interaction.Situation{
+					AgentSpeaking: true, AgentSaying: "I cannot turn on the study lamp.",
+				},
+			})
+			if got != test.want {
+				t.Fatalf("classification = %q, want %q", got, test.want)
+			}
+			decisions := decider.decisions()
+			if len(decisions) != test.calls {
+				t.Fatalf("policy calls = %d, want %d: %+v", len(decisions), test.calls, decisions)
+			}
+			if test.want != interaction.OverlapBackchannel {
+				last := decisions[len(decisions)-1]
+				for _, option := range last.Options {
+					if option == string(interaction.OverlapBackchannel) {
+						t.Fatalf("semantic retry retained the invalid label: %+v", last.Options)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestProjectionWaitsForSilenceAndCachesPerRevision(t *testing.T) {
 	decider := &recordingDecider{answer: "finished", confidence: 0.95}
 	projection, err := interaction.NewModelProjection(decider, interaction.ProjectionOptions{
@@ -413,6 +553,9 @@ func TestPolicyModelsRequireADecider(t *testing.T) {
 	}
 	if _, err := interaction.NewModelProjection(nil, interaction.ProjectionOptions{}); err == nil {
 		t.Fatal("a model-backed policy needs a model")
+	}
+	if _, err := interaction.NewModelOverlapClassifier(nil); err == nil {
+		t.Fatal("a model-backed overlap classifier needs a model")
 	}
 }
 

@@ -57,6 +57,8 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 
 	var blocks []compiledBlock
 	consumed := make(map[string]struct{})
+	promotedProposals := trajectory.PromotedToolProposalIDs(request.Trajectory)
+	terminalProposals, terminalDispositions := trajectory.TerminalToolProposalIDs(request.Trajectory)
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	for _, run := range continuation.ProviderRuns(request.Trajectory.Items) {
@@ -78,6 +80,34 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 			continue
 		}
 		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposal {
+			if _, promoted := promotedProposals[item.ID]; promoted {
+				continue
+			}
+			if _, terminal := terminalProposals[item.ID]; terminal {
+				continue
+			}
+			// The provider gets exact pending working state as user/runtime text,
+			// including for defensive snapshots carrying forged retained state.
+			if content, valid := continuation.PendingToolProposalContent(item.ToolCall); valid {
+				raw, err := textBlock(content)
+				if err != nil {
+					return messagesRequest{}, err
+				}
+				blocks = append(blocks, compiledBlock{role: "user", raw: raw})
+			}
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposalDisposition {
+			if _, valid := terminalDispositions[item.ID]; valid {
+				raw, err := textBlock(continuation.TerminalToolProposalNotice)
+				if err != nil {
+					return messagesRequest{}, err
+				}
+				blocks = append(blocks, compiledBlock{role: "user", raw: raw})
+			}
 			continue
 		}
 		modelItem := isModelOutputItem(item.Kind)
@@ -249,7 +279,7 @@ func (adapter *Adapter) systemBlocks(request continuation.Request) ([]systemBloc
 // portable compilation is the only form that can describe a call that never
 // came back.
 func (adapter *Adapter) nativeInvocations(
-	request continuation.Request, resolved map[string]struct{},
+	request continuation.Request, resolved map[toolCallResolution]struct{},
 ) (map[string][]json.RawMessage, error) {
 	native := make(map[string][]json.RawMessage)
 	for _, item := range request.Trajectory.Items {
@@ -269,7 +299,7 @@ func (adapter *Adapter) nativeInvocations(
 		if state.Model != adapter.descriptor.Model {
 			continue
 		}
-		if !replayable(state.Content, resolved) {
+		if !replayable(item.InvocationID, state.Content, resolved) {
 			continue
 		}
 		native[item.InvocationID] = state.Content
@@ -278,11 +308,14 @@ func (adapter *Adapter) nativeInvocations(
 }
 
 // replayable reports whether every tool call in a retained turn was answered.
-func replayable(content []json.RawMessage, resolved map[string]struct{}) bool {
+func replayable(
+	invocationID string, content []json.RawMessage, resolved map[toolCallResolution]struct{},
+) bool {
 	for _, raw := range content {
 		var block struct {
 			Type string `json:"type"`
 			ID   string `json:"id"`
+			Name string `json:"name"`
 		}
 		if err := json.Unmarshal(raw, &block); err != nil {
 			return false
@@ -290,29 +323,96 @@ func replayable(content []json.RawMessage, resolved map[string]struct{}) bool {
 		if block.Type != "tool_use" {
 			continue
 		}
-		if _, answered := resolved[block.ID]; !answered {
+		identity := toolCallResolution{
+			invocationID: invocationID, callID: block.ID, name: block.Name,
+		}
+		if _, answered := resolved[identity]; !answered {
 			return false
 		}
 	}
 	return true
 }
 
-// resolvedToolCalls collects the call IDs that can be rendered as a complete
-// provider turn. A placeholder is not an authoritative world result, but it
-// is the runtime's explicit response that the call was interrupted and never
-// crossed the effect boundary; without it the provider receives a dangling
-// tool_use and commonly assumes the work happened.
-func resolvedToolCalls(snapshot trajectory.Snapshot) map[string]struct{} {
-	resolved := make(map[string]struct{})
+type toolCallResolution struct {
+	invocationID string
+	callID       string
+	name         string
+}
+
+type unscopedToolCallResolution struct {
+	callID string
+	name   string
+}
+
+type toolCallOwner struct {
+	identity    toolCallResolution
+	occurrences int
+}
+
+// resolvedToolCalls collects the invocation-scoped call identities that can be
+// rendered as complete provider turns. A placeholder is not an authoritative
+// world result, but it is the runtime's explicit response that the call was
+// interrupted and never crossed the effect boundary; without it the provider
+// receives a dangling tool_use and commonly assumes the work happened.
+func resolvedToolCalls(snapshot trajectory.Snapshot) map[toolCallResolution]struct{} {
+	// Provider call IDs are local to one cognition invocation. Retain every
+	// occurrence instead of collapsing by call ID so a legacy unscoped result
+	// can be accepted only when there is exactly one possible owner.
+	exactOwners := make(map[toolCallResolution]int)
+	unscopedOwners := make(map[unscopedToolCallResolution]toolCallOwner)
 	for _, item := range snapshot.Items {
-		if item.Kind == trajectory.KindToolResult && item.ToolResult != nil {
-			resolved[item.ToolResult.CallID] = struct{}{}
+		if item.Kind != trajectory.KindToolCall || item.ToolCall == nil {
+			continue
 		}
-		if item.Kind == trajectory.KindToolPlaceholder && item.ToolPlaceholder != nil {
-			resolved[item.ToolPlaceholder.CallID] = struct{}{}
+		identity := toolCallResolution{
+			invocationID: item.InvocationID,
+			callID:       item.ToolCall.CallID,
+			name:         item.ToolCall.Name,
+		}
+		exactOwners[identity]++
+		unscoped := unscopedToolCallResolution{callID: identity.callID, name: identity.name}
+		owner := unscopedOwners[unscoped]
+		owner.identity = identity
+		owner.occurrences++
+		unscopedOwners[unscoped] = owner
+	}
+
+	resolved := make(map[toolCallResolution]struct{})
+	for _, item := range snapshot.Items {
+		var callID, name string
+		switch item.Kind {
+		case trajectory.KindToolResult:
+			if item.ToolResult == nil {
+				continue
+			}
+			callID, name = item.ToolResult.CallID, item.ToolResult.Name
+		case trajectory.KindToolPlaceholder:
+			if item.ToolPlaceholder == nil {
+				continue
+			}
+			callID, name = item.ToolPlaceholder.CallID, item.ToolPlaceholder.Name
+		default:
+			continue
+		}
+		if identity, found := resolveToolCallScope(
+			item.InvocationID, callID, name, exactOwners, unscopedOwners,
+		); found {
+			resolved[identity] = struct{}{}
 		}
 	}
 	return resolved
+}
+
+func resolveToolCallScope(
+	invocationID, callID, name string, exactOwners map[toolCallResolution]int,
+	unscopedOwners map[unscopedToolCallResolution]toolCallOwner,
+) (toolCallResolution, bool) {
+	if invocationID != "" {
+		identity := toolCallResolution{invocationID: invocationID, callID: callID, name: name}
+		return identity, exactOwners[identity] == 1
+	}
+	owner := unscopedOwners[unscopedToolCallResolution{callID: callID, name: name}]
+	return owner.identity, owner.occurrences == 1
 }
 
 func isModelOutputItem(kind trajectory.Kind) bool {
@@ -323,7 +423,7 @@ func isModelOutputItem(kind trajectory.Kind) bool {
 // compileItem renders one trajectory item as portable content blocks.
 func compileItem(
 	item trajectory.Item, media continuation.MediaResolver, vision bool, selectedMedia map[string]struct{},
-	resolved map[string]struct{}, elapsed map[string]string,
+	resolved map[toolCallResolution]struct{}, elapsed map[string]string,
 ) ([]compiledBlock, error) {
 	switch item.Kind {
 	case trajectory.KindObservation:
@@ -372,10 +472,18 @@ func compileItem(
 		}
 		return []compiledBlock{{role: "assistant", raw: raw}}, nil
 	case trajectory.KindToolProposal:
-		if item.ToolCall == nil {
+		content, valid := continuation.PendingToolProposalContent(item.ToolCall)
+		if !valid {
 			return nil, nil
 		}
-		return proposalBlock(*item.ToolCall)
+		raw, err := textBlock(content)
+		if err != nil {
+			return nil, err
+		}
+		return []compiledBlock{{role: "user", raw: raw}}, nil
+	case trajectory.KindToolProposalDisposition:
+		// Only buildRequest has the ordered prefix needed to validate this fact.
+		return nil, nil
 	case trajectory.KindToolCall:
 		if item.ToolCall == nil {
 			return nil, nil
@@ -383,16 +491,15 @@ func compileItem(
 		// A call with no recorded result cannot be sent as tool_use: the very
 		// next message would have to answer it, and there is no answer. It is
 		// retold as text so the model still knows the attempt happened.
-		if _, answered := resolved[item.ToolCall.CallID]; !answered {
-			return proposalBlock(*item.ToolCall)
+		identity := toolCallResolution{
+			invocationID: item.InvocationID, callID: item.ToolCall.CallID, name: item.ToolCall.Name,
 		}
-		var input any
-		if err := json.Unmarshal(item.ToolCall.Arguments, &input); err != nil {
-			return nil, fmt.Errorf("decode tool arguments on item %s: %w", item.ID, err)
+		if _, answered := resolved[identity]; !answered {
+			return proposalBlock(*item.ToolCall)
 		}
 		raw, err := json.Marshal(map[string]any{
 			"type": "tool_use", "id": item.ToolCall.CallID,
-			"name": item.ToolCall.Name, "input": input,
+			"name": item.ToolCall.Name, "input": json.RawMessage(item.ToolCall.Arguments),
 		})
 		if err != nil {
 			return nil, err

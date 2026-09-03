@@ -172,8 +172,8 @@ func runTimelines(provider, model, url, key, effort, reason string, output io.Wr
 }
 
 // interactionPolicyRunner builds the runner that measures the shipping path:
-// decoding constrained to the enumerated acts, a four-token budget, and
-// reasoning turned off at the endpoint.
+// decoding constrained to the enumerated acts, an output budget derived from
+// the longest exact label, and reasoning turned off at the endpoint.
 // overlapPolicyRunner serves the overlap classification the way the runtime
 // does, through the policy endpoint.
 func overlapPolicyRunner(url, model, key string, guided bool, label string) (evals.Runner, error) {

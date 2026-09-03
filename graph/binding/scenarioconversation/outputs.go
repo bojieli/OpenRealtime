@@ -97,6 +97,8 @@ func (session *session) acceptSegmentationOutcome(envelope element.Envelope) err
 	defer session.activityMu.Unlock()
 	switch outcome.Kind {
 	case interactionelements.OutcomeCompleted:
+		session.rememberSegmentedRunLocked(outcome.RunID)
+		delete(session.pendingSpeech, outcome.RunID)
 		if _, duplicate := session.speechRuns[outcome.RunID]; duplicate {
 			return fmt.Errorf("scenario conversation run %q completed segmentation twice", outcome.RunID)
 		}
@@ -118,6 +120,8 @@ func (session *session) acceptSegmentationOutcome(envelope element.Envelope) err
 		return session.rememberSpeechRunLocked(outcome.RunID, remaining)
 	case interactionelements.OutcomeCanceled, interactionelements.OutcomeFailed,
 		interactionelements.OutcomeRefused:
+		session.rememberSegmentedRunLocked(outcome.RunID)
+		delete(session.pendingSpeech, outcome.RunID)
 		session.removeSpeechRunLocked(outcome.RunID)
 		return nil
 	case interactionelements.OutcomeIgnored:
@@ -127,8 +131,40 @@ func (session *session) acceptSegmentationOutcome(envelope element.Envelope) err
 	}
 }
 
+// acceptModelResult closes the conservative foreground speech horizon for a
+// result that contains no assistant text. A foreground invocation is tracked
+// from admission until either this proof of no speech or a terminal
+// segmentation outcome arrives. That bridges independently drained model and
+// segmentation lanes without retaining tool-only runs forever.
+func (session *session) acceptModelResult(envelope element.Envelope) error {
+	result, ok := scenarioCognitionResultPayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("scenario conversation model result has payload %T", envelope.Payload)
+	}
+	if envelope.SessionID != session.sessionID || !canonicalIdentity(result.RunID) ||
+		envelope.RunID != result.RunID {
+		return errors.New("scenario conversation model result drifted from its exact session or run")
+	}
+	if result.ProviderReference != ModelReference && result.ProviderReference != SilentModelReference {
+		return fmt.Errorf("scenario conversation model result has provider %q", result.ProviderReference)
+	}
+	session.activityMu.Lock()
+	defer session.activityMu.Unlock()
+	if result.ProviderReference == SilentModelReference || result.AssistantText == "" {
+		// Silent cognition is never connected to segmentation. An empty
+		// foreground result also proves there is no speech pipeline to revoke.
+		session.rememberSpeechlessRunLocked(result.RunID)
+		delete(session.pendingSpeech, result.RunID)
+		return nil
+	}
+	if _, segmented := session.segmentedRuns[result.RunID]; segmented {
+		return nil
+	}
+	return session.rememberPendingSpeechLocked(result.RunID)
+}
+
 func (session *session) acceptPlaybackReceipt(
-	boundary string, envelope element.Envelope,
+	ctx context.Context, boundary string, envelope element.Envelope,
 ) error {
 	receipt, ok := playbackReceiptPayload(envelope.Payload)
 	if !ok {
@@ -147,28 +183,32 @@ func (session *session) acceptPlaybackReceipt(
 	utterance.AssistantItemIDs = slices.Clone(receipt.Utterance.AssistantItemIDs)
 
 	session.activityMu.Lock()
-	defer session.activityMu.Unlock()
 	if session.playback == nil {
 		session.playback = make(map[string]playbackReceiptState)
 	}
 	previous, found := session.playback[utterance.ID]
 	if found {
 		if previous.runID != envelope.RunID || !samePlaybackUtterance(previous.utterance, utterance) {
+			session.activityMu.Unlock()
 			return fmt.Errorf("utterance %q changed its exact run or presentation contract", utterance.ID)
 		}
 		if receipt.Sequence < previous.sequence {
 			// The six receipt boundaries drain concurrently. A later effect can be
 			// observed first; its higher sequence is authoritative.
+			session.activityMu.Unlock()
 			return nil
 		}
 		if receipt.Sequence == previous.sequence {
+			session.activityMu.Unlock()
 			return fmt.Errorf("utterance %q repeated playback receipt sequence %d",
 				utterance.ID, receipt.Sequence)
 		}
 		if previous.terminal && active {
+			session.activityMu.Unlock()
 			return fmt.Errorf("utterance %q became active after terminal playback", utterance.ID)
 		}
 	} else if err := session.reservePlaybackStateLocked(); err != nil {
+		session.activityMu.Unlock()
 		return err
 	} else {
 		session.playbackOrder = append(session.playbackOrder, utterance.ID)
@@ -181,6 +221,15 @@ func (session *session) acceptPlaybackReceipt(
 	session.playback[utterance.ID] = state
 	if becameTerminal {
 		session.completeSpeechRunUtteranceLocked(envelope.RunID)
+	}
+	session.activityMu.Unlock()
+	if receipt.Kind == speechelements.PlaybackReleased {
+		if session.bundle == nil || session.bundle.playback == nil {
+			return errors.New("scenario conversation playback release has no sink barrier")
+		}
+		if err := session.bundle.playback.Release(ctx, envelope.RunID, receipt); err != nil {
+			return fmt.Errorf("complete scenario conversation playback release: %w", err)
+		}
 	}
 	return nil
 }
@@ -268,6 +317,49 @@ func (session *session) reservePlaybackStateLocked() error {
 		return nil
 	}
 	return errors.New("scenario conversation active playback receipt bound reached")
+}
+
+func (session *session) rememberPendingSpeechLocked(runID string) error {
+	if session.pendingSpeech == nil {
+		session.pendingSpeech = make(map[string]struct{})
+	}
+	if _, found := session.pendingSpeech[runID]; found {
+		return nil
+	}
+	if len(session.pendingSpeech) >= maximumAdapterMemory {
+		return errors.New("scenario conversation pending foreground speech bound reached")
+	}
+	session.pendingSpeech[runID] = struct{}{}
+	return nil
+}
+
+func (session *session) rememberSpeechlessRunLocked(runID string) {
+	if session.speechlessRuns == nil {
+		session.speechlessRuns = make(map[string]struct{})
+	}
+	rememberBoundedRunEvidence(session.speechlessRuns, &session.speechlessIDs, runID)
+}
+
+func (session *session) rememberSegmentedRunLocked(runID string) {
+	if session.segmentedRuns == nil {
+		session.segmentedRuns = make(map[string]struct{})
+	}
+	rememberBoundedRunEvidence(session.segmentedRuns, &session.segmentedRunIDs, runID)
+}
+
+func rememberBoundedRunEvidence(
+	records map[string]struct{}, order *[]string, runID string,
+) {
+	if _, found := records[runID]; found {
+		return
+	}
+	records[runID] = struct{}{}
+	*order = append(*order, runID)
+	for len(*order) > maximumAdapterMemory {
+		oldest := (*order)[0]
+		*order = (*order)[1:]
+		delete(records, oldest)
+	}
 }
 
 func (session *session) rememberSpeechRunLocked(runID string, remaining int) error {
@@ -908,6 +1000,15 @@ func (session *session) registerEmittedInvocation(
 	if _, duplicate := session.active[outcome.GenerationID]; duplicate {
 		return fmt.Errorf("scenario conversation generation %q was emitted twice", outcome.GenerationID)
 	}
+	if outcome.Role == "foreground" {
+		_, speechless := session.speechlessRuns[outcome.GenerationID]
+		_, segmented := session.segmentedRuns[outcome.GenerationID]
+		if !speechless && !segmented {
+			if err := session.rememberPendingSpeechLocked(outcome.GenerationID); err != nil {
+				return err
+			}
+		}
+	}
 	session.active[outcome.GenerationID] = struct{}{}
 	return nil
 }
@@ -1018,15 +1119,16 @@ func (session *session) publishCall(ctx context.Context, envelope element.Envelo
 	if !ok {
 		return fmt.Errorf("scenario conversation dispatch commit has payload %T", envelope.Payload)
 	}
-	admitted := committed.Executable.Canonical.Authorized.Confirmed.Declared.Admitted
-	call := cloneToolCall(admitted.Proposal.Call)
+	declared := committed.Executable.Canonical.Authorized.Confirmed.Declared
+	admitted := declared.Admitted
+	call := declaredActionCall(declared)
 	if err := validateToolCall(call); err != nil {
 		return err
 	}
 	if envelope.SessionID != session.sessionID || admitted.SessionID != session.sessionID ||
 		!canonicalIdentity(admitted.ModelRunID) || envelope.RunID != admitted.ModelRunID ||
 		admitted.Authority != trajectory.AuthorityUser ||
-		!sameToolCall(call, committed.Executable.Canonical.Authorized.Confirmed.Declared.Admitted.Proposal.Call) ||
+		!sameToolCall(call, declaredActionCall(declared)) ||
 		!canonicalIdentity(committed.Executable.CommitmentID) {
 		return errors.New("scenario conversation committed call drifted from canonical user authority")
 	}
@@ -1082,7 +1184,7 @@ func (session *session) acceptCanonicalResult(envelope element.Envelope) error {
 		canonical.Execution.Executable.CommitmentID != active.commitmentID ||
 		canonical.TrajectoryItemID == "" || canonical.StoreVersion == 0 ||
 		!sameToolCall(active.call,
-			canonical.Execution.Executable.Canonical.Authorized.Confirmed.Declared.Admitted.Proposal.Call) {
+			declaredActionCall(canonical.Execution.Executable.Canonical.Authorized.Confirmed.Declared)) {
 		return fmt.Errorf("scenario conversation canonical result %q has no exact emitted action", result.CallID)
 	}
 	switch canonical.Execution.CompletionOrigin {
@@ -1127,6 +1229,14 @@ func (session *session) acceptModelOutcome(ctx context.Context, envelope element
 		return fmt.Errorf("scenario conversation model outcome has unsupported operation %q", outcome.Operation)
 	}
 	session.activityMu.Lock()
+	_, speechless := session.speechlessRuns[outcome.RunID]
+	_, segmented := session.segmentedRuns[outcome.RunID]
+	if !speechless && !segmented {
+		if err := session.rememberPendingSpeechLocked(outcome.RunID); err != nil {
+			session.activityMu.Unlock()
+			return err
+		}
+	}
 	delete(session.active, outcome.RunID)
 	session.rememberTerminalRunLocked(outcome.RunID)
 	session.activityMu.Unlock()
@@ -1493,6 +1603,18 @@ func cognitionOutcomePayload(payload any) (cognitionelements.Outcome, bool) {
 		}
 	}
 	return cognitionelements.Outcome{}, false
+}
+
+func scenarioCognitionResultPayload(payload any) (cognitionelements.Result, bool) {
+	switch typed := payload.(type) {
+	case cognitionelements.Result:
+		return typed, true
+	case *cognitionelements.Result:
+		if typed != nil {
+			return *typed, true
+		}
+	}
+	return cognitionelements.Result{}, false
 }
 
 func segmentationOutcomePayload(payload any) (interactionelements.SegmentationOutcome, bool) {

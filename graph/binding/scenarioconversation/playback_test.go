@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/action"
 	legacy "github.com/bojieli/OpenRealtime/binding"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/perception"
 )
 
@@ -35,6 +37,13 @@ func TestSessionPlaybackSinkFreezesAudioProjectionForReservedUtterance(t *testin
 	if err := sink.End(context.Background(), utterance, action.Outcome{Completed: true}); err != nil {
 		t.Fatal(err)
 	}
+	client.mu.Lock()
+	if client.turnEnded != 0 {
+		client.mu.Unlock()
+		t.Fatal("playback End exposed TurnEnd before the graph release barrier")
+	}
+	client.mu.Unlock()
+	releaseSessionPlayback(t, sink, "run_1", utterance, action.Outcome{Completed: true})
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if client.reserved != 1 || client.begun != 1 || client.text != "hello" ||
@@ -68,6 +77,7 @@ func TestSessionPlaybackSinkFreezesTextOnlyProjectionForReservedUtterance(t *tes
 	if err := sink.End(context.Background(), utterance, action.Outcome{Completed: true}); err != nil {
 		t.Fatal(err)
 	}
+	releaseSessionPlayback(t, sink, "run_text", utterance, action.Outcome{Completed: true})
 	client.mu.Lock()
 	defer client.mu.Unlock()
 	if client.audio != 0 || client.begun != 1 || client.ended != 1 ||
@@ -108,6 +118,158 @@ func TestSessionPlaybackSinkForwardsReservationCancellation(t *testing.T) {
 	}
 }
 
+func TestSessionPlaybackReleaseRequiresExactPendingEffectAndIsOnceOnly(t *testing.T) {
+	client := &playbackClientSink{}
+	sink := newSessionPlaybackSink(context.Background(), client,
+		scenarioPlaybackDescriptor(), newPresentationState(legacy.Settings{}))
+	utterance := action.Utterance{
+		ID: "utterance_exact", Text: "exact release", AssistantItemIDs: []string{"assistant_1"},
+	}
+	outcome := action.Outcome{Completed: true, PlayedMS: 25}
+	missing := speechelements.PlaybackReceipt{
+		Kind: speechelements.PlaybackReleased, Sequence: 4,
+		Utterance: action.Utterance{ID: "utterance_missing", Text: "missing"},
+		Outcome:   outcome,
+	}
+	if err := sink.Release(context.Background(), "run_exact", missing); err == nil ||
+		!strings.Contains(err.Error(), "no pending sink outcome") {
+		t.Fatalf("missing release error = %v", err)
+	}
+	if err := sink.Reserve(utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Begin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.End(context.Background(), utterance, outcome); err != nil {
+		t.Fatal(err)
+	}
+	mismatched := speechelements.PlaybackReceipt{
+		Kind: speechelements.PlaybackReleased, Sequence: 6,
+		Utterance: clonePlaybackUtterance(utterance), Outcome: action.Outcome{Completed: true, PlayedMS: 26},
+	}
+	if err := sink.Release(context.Background(), "run_exact", mismatched); err == nil ||
+		!strings.Contains(err.Error(), "changed its sink effect") {
+		t.Fatalf("mismatched release error = %v", err)
+	}
+	receipt := mismatched
+	receipt.Outcome = outcome
+	if err := sink.Release(context.Background(), "run_exact", receipt); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Release(context.Background(), "run_exact", receipt); err == nil ||
+		!strings.Contains(err.Error(), "already consumed") {
+		t.Fatalf("duplicate release error = %v", err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.turnEnded != 1 {
+		t.Fatalf("exact release TurnEnd calls = %d, want 1", client.turnEnded)
+	}
+}
+
+func TestSessionPlaybackReleasePreservesIncompleteOutcome(t *testing.T) {
+	client := &playbackClientSink{}
+	sink := newSessionPlaybackSink(context.Background(), client,
+		scenarioPlaybackDescriptor(), newPresentationState(legacy.Settings{}))
+	utterance := action.Utterance{ID: "utterance_cancelled", Text: "partially heard"}
+	outcome := action.Outcome{PlayedMS: 15, Reason: "  user barge-in  "}
+	if err := sink.Reserve(utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Begin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.End(context.Background(), utterance, outcome); err != nil {
+		t.Fatal(err)
+	}
+	releaseSessionPlayback(t, sink, "run_cancelled", utterance, outcome)
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if len(client.turnOutcomes) != 1 || !client.turnOutcomes[0].Incomplete ||
+		client.turnOutcomes[0].Detail != "user barge-in" {
+		t.Fatalf("incomplete turn outcome = %+v", client.turnOutcomes)
+	}
+}
+
+func TestSessionPlaybackReleaseConsumesBeforeTurnEndError(t *testing.T) {
+	turnErr := errors.New("turn end failed")
+	client := &playbackClientSink{turnErr: turnErr}
+	sink := newSessionPlaybackSink(context.Background(), client,
+		scenarioPlaybackDescriptor(), newPresentationState(legacy.Settings{}))
+	utterance := action.Utterance{ID: "utterance_error", Text: "release error"}
+	outcome := action.Outcome{Completed: true}
+	if err := sink.Reserve(utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Begin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.End(context.Background(), utterance, outcome); err != nil {
+		t.Fatal(err)
+	}
+	receipt := speechelements.PlaybackReceipt{
+		Kind: speechelements.PlaybackReleased, Sequence: 6,
+		Utterance: clonePlaybackUtterance(utterance), Outcome: outcome,
+	}
+	if err := sink.Release(context.Background(), "run_error", receipt); !errors.Is(err, turnErr) {
+		t.Fatalf("TurnEnd release error = %v", err)
+	}
+	if err := sink.Release(context.Background(), "run_error", receipt); err == nil ||
+		!strings.Contains(err.Error(), "already consumed") {
+		t.Fatalf("release retry after TurnEnd error = %v", err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.turnEnded != 1 {
+		t.Fatalf("failed TurnEnd calls = %d, want 1", client.turnEnded)
+	}
+}
+
+func TestSessionPlaybackSinkCloseBalancesPendingRelease(t *testing.T) {
+	client := &playbackClientSink{}
+	sink := newSessionPlaybackSink(context.Background(), client,
+		scenarioPlaybackDescriptor(), newPresentationState(legacy.Settings{}))
+	utterance := action.Utterance{ID: "utterance_shutdown", Text: "finished locally"}
+	if err := sink.Reserve(utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Begin(context.Background(), utterance); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.End(context.Background(), utterance, action.Outcome{Completed: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	if client.ended != 1 || client.turnEnded != 1 || len(client.turnOutcomes) != 1 ||
+		!client.turnOutcomes[0].Incomplete ||
+		client.turnOutcomes[0].Detail != "playback release not observed before sink closed" {
+		t.Fatalf("pending release shutdown = speech ends %d turn outcomes %+v",
+			client.ended, client.turnOutcomes)
+	}
+}
+
+func releaseSessionPlayback(
+	t *testing.T, sink *sessionPlaybackSink, runID string,
+	utterance action.Utterance, outcome action.Outcome,
+) {
+	t.Helper()
+	err := sink.Release(context.Background(), runID, speechelements.PlaybackReceipt{
+		Kind: speechelements.PlaybackReleased, Sequence: 6,
+		Utterance: clonePlaybackUtterance(utterance), Outcome: outcome,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 type playbackClientSink struct {
 	mu                  sync.Mutex
 	reserved            int
@@ -119,6 +281,8 @@ type playbackClientSink struct {
 	textErr             error
 	turnBegun           int
 	turnEnded           int
+	turnOutcomes        []legacy.TurnOutcome
+	turnErr             error
 }
 
 func (sink *playbackClientSink) TurnBegin(context.Context) error {
@@ -127,11 +291,13 @@ func (sink *playbackClientSink) TurnBegin(context.Context) error {
 	sink.mu.Unlock()
 	return nil
 }
-func (sink *playbackClientSink) TurnEnd(context.Context, legacy.TurnOutcome) error {
+func (sink *playbackClientSink) TurnEnd(_ context.Context, outcome legacy.TurnOutcome) error {
 	sink.mu.Lock()
 	sink.turnEnded++
+	sink.turnOutcomes = append(sink.turnOutcomes, outcome)
+	err := sink.turnErr
 	sink.mu.Unlock()
-	return nil
+	return err
 }
 func (*playbackClientSink) Activity(context.Context, legacy.ActivityEvent) error { return nil }
 func (*playbackClientSink) Transcript(context.Context, legacy.TranscriptEvent) error {

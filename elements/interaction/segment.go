@@ -203,7 +203,7 @@ func (runner *segmentPreparedTextRunner) acceptText(
 		return nil
 	}
 	if runner.active == nil {
-		if err := validatePreparedDelta(delta, cognitionelements.TextBegin, 0); err != nil {
+		if err := validateSafePreparedDelta(delta, 0, false); err != nil {
 			return runner.refuseText(ctx, envelope, runID, "invalid_framing", err.Error())
 		}
 		runner.active = &preparedRun{
@@ -216,28 +216,22 @@ func (runner *segmentPreparedTextRunner) acceptText(
 			fmt.Sprintf("run %q arrived while run %q was open", runID, runner.active.id))
 	}
 	run := runner.active
-	if delta.Index != run.expected {
-		return runner.failActive(ctx, envelope, OutcomeFailed, "invalid_index",
-			fmt.Sprintf("prepared text index is %d, want %d", delta.Index, run.expected), true)
+	if err := validateSafePreparedDelta(delta, run.expected, true); err != nil {
+		code := "invalid_framing"
+		if delta.Index != run.expected {
+			code = "invalid_index"
+		}
+		return runner.failActive(ctx, envelope, OutcomeFailed, code, err.Error(), true)
 	}
 	run.expected++
 	switch delta.Boundary {
 	case cognitionelements.TextChunk:
-		if delta.Text == "" || delta.Interrupted {
-			return runner.failActive(ctx, envelope, OutcomeFailed, "invalid_framing",
-				"a prepared text delta requires text and cannot be terminal", true)
-		}
-		if len(delta.Text) > runner.config.MaxRunBytes-run.totalBytes {
-			return runner.failActive(ctx, envelope, OutcomeFailed, "run_too_large",
-				fmt.Sprintf("prepared run exceeds %d bytes", runner.config.MaxRunBytes), true)
-		}
-		run.totalBytes += len(delta.Text)
-		run.buffer += delta.Text
-		return runner.releaseSafeSegments(ctx, envelope)
+		_, err := runner.appendSafeText(ctx, envelope, run, delta.Text)
+		return err
 	case cognitionelements.TextEnd:
-		if delta.Text != "" {
-			return runner.failActive(ctx, envelope, OutcomeFailed, "invalid_framing",
-				"prepared text end cannot carry text", true)
+		active, err := runner.appendSafeText(ctx, envelope, run, delta.Text)
+		if err != nil || !active {
+			return err
 		}
 		if delta.Interrupted {
 			return runner.failActive(ctx, envelope, OutcomeFailed, "source_interrupted",
@@ -263,6 +257,24 @@ func (runner *segmentPreparedTextRunner) acceptText(
 	}
 }
 
+func (runner *segmentPreparedTextRunner) appendSafeText(
+	ctx context.Context, cause element.Envelope, run *preparedRun, text string,
+) (bool, error) {
+	if text == "" {
+		return true, nil
+	}
+	if len(text) > runner.config.MaxRunBytes-run.totalBytes {
+		return false, runner.failActive(ctx, cause, OutcomeFailed, "run_too_large",
+			fmt.Sprintf("prepared run exceeds %d bytes", runner.config.MaxRunBytes), true)
+	}
+	run.totalBytes += len(text)
+	run.buffer += text
+	if err := runner.releaseSafeSegments(ctx, cause); err != nil {
+		return runner.active == run, err
+	}
+	return runner.active == run, nil
+}
+
 func validatePreparedDelta(
 	delta cognitionelements.PreparedTextDelta, boundary cognitionelements.TextBoundary, index uint64,
 ) error {
@@ -272,6 +284,33 @@ func validatePreparedDelta(
 	}
 	if delta.Text != "" || delta.Interrupted {
 		return errors.New("prepared text begin cannot carry text or an interrupted marker")
+	}
+	return nil
+}
+
+// validateSafePreparedDelta defines the framing of the nominal safe stream.
+// Unlike raw provider text, a chunk may be an intentional no-op and an end may
+// carry bytes that the quarantine could not release until it saw the terminal.
+func validateSafePreparedDelta(
+	delta cognitionelements.PreparedTextDelta, expected uint64, started bool,
+) error {
+	if !started {
+		return validatePreparedDelta(delta, cognitionelements.TextBegin, 0)
+	}
+	if delta.Index != expected {
+		return fmt.Errorf("prepared text index is %d, want %d", delta.Index, expected)
+	}
+	switch delta.Boundary {
+	case cognitionelements.TextChunk:
+		if delta.Interrupted {
+			return errors.New("safe prepared text chunk cannot be interrupted")
+		}
+	case cognitionelements.TextEnd:
+		// Terminal text and Interrupted are both part of the safe framing.
+	case cognitionelements.TextBegin:
+		return errors.New("safe prepared run emitted a second begin")
+	default:
+		return fmt.Errorf("unknown safe prepared text boundary %q", delta.Boundary)
 	}
 	return nil
 }

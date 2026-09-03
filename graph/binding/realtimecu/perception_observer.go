@@ -125,12 +125,15 @@ func (observer *perceptionObserver) Consequence(
 		return errors.New("Realtime-CU perception observer is closed")
 	}
 	defer observer.end()
-	refreshable, ok := observer.video.(perception.RefreshableObserver)
-	if !ok {
-		return errors.New("Realtime-CU video observer cannot refresh after an action")
+	if refreshable, ok := observer.video.(perception.SourceRefreshableObserver); ok {
+		refreshable.RefreshSource(consequence.TargetSource)
+		return nil
 	}
-	refreshable.RefreshNext()
-	return nil
+	if refreshable, ok := observer.video.(perception.RefreshableObserver); ok {
+		refreshable.RefreshNext()
+		return nil
+	}
+	return errors.New("Realtime-CU video observer cannot refresh after an action")
 }
 
 func (observer *perceptionObserver) Close() error {

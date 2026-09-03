@@ -63,6 +63,99 @@ func TestClientBridgeRequiresGraphEmissionBeforeAcceptingResult(t *testing.T) {
 	}
 }
 
+func TestClientBridgeRejectsRawCoordinateProposalBeforeEffectiveCall(t *testing.T) {
+	bridge, specs, err := newClientBridge(testTarget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var click legacyaction.ToolSpec
+	for _, spec := range specs {
+		if spec.Name == computeruse.ClickNormalized {
+			click = spec
+			break
+		}
+	}
+	if click.Name == "" {
+		t.Fatal("normalized click declaration is missing")
+	}
+	visible := cloneToolSpec(click)
+	visible.ArgumentNormalizers = nil
+	if err := bridge.Update(legacy.Settings{Tools: []legacyaction.ToolSpec{visible}}); err != nil {
+		t.Fatal(err)
+	}
+	effective := trajectory.ToolCall{
+		CallID: "coordinate-call", Name: click.Name,
+		Arguments: json.RawMessage(`{"source":"screen","x":255,"y":566}`),
+	}
+	type dispatchOutcome struct {
+		result trajectory.ToolResult
+		err    error
+	}
+	done := make(chan dispatchOutcome, 1)
+	go func() {
+		result, dispatchErr := bridge.Dispatch(context.Background(), effective)
+		done <- dispatchOutcome{result: result, err: dispatchErr}
+	}()
+	waitForRegisteredCall(t, bridge, effective.CallID)
+	rawProposal := cloneToolCall(effective)
+	rawProposal.Arguments = json.RawMessage(`{"source":"screen","x":[255,566]}`)
+	if err := bridge.AwaitEmission(context.Background(), rawProposal); err == nil ||
+		!strings.Contains(err.Error(), "drifted from dispatcher input") {
+		t.Fatalf("raw coordinate proposal drift error = %v", err)
+	}
+	if err := bridge.AwaitEmission(context.Background(), effective); err != nil {
+		t.Fatalf("effective coordinate emission: %v", err)
+	}
+	want := trajectory.ToolResult{
+		CallID: effective.CallID, Name: effective.Name, Output: json.RawMessage(`{"clicked":true}`),
+	}
+	if err := bridge.Complete(want); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case outcome := <-done:
+		if outcome.err != nil || outcome.result.CallID != want.CallID ||
+			outcome.result.Name != want.Name || string(outcome.result.Output) != string(want.Output) ||
+			outcome.result.Error != want.Error {
+			t.Fatalf("effective coordinate dispatch outcome = %+v", outcome)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("effective coordinate dispatch did not complete")
+	}
+}
+
+func TestClientBridgeKeepsCoordinateNormalizerDeploymentOwned(t *testing.T) {
+	bridge, internal, err := newClientBridge(testTarget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var click legacyaction.ToolSpec
+	for _, spec := range internal {
+		if spec.Name == computeruse.ClickNormalized {
+			click = spec
+			break
+		}
+	}
+	if click.Name == "" || len(click.ArgumentNormalizers) != 1 ||
+		click.ArgumentNormalizers[0] != (legacyaction.ToolArgumentNormalizer{
+			Argument: "x", Normalizer: legacyaction.ToolParameterCoordinatePairXYV1,
+		}) {
+		t.Fatalf("internal normalized-click declaration = %+v", click)
+	}
+	visible := cloneToolSpec(click)
+	visible.ArgumentNormalizers = nil
+	if err := bridge.Update(legacy.Settings{Tools: []legacyaction.ToolSpec{visible}}); err != nil {
+		t.Fatalf("provider-visible schema without private metadata: %v", err)
+	}
+	if got := bridge.SnapshotSettings().tools; len(got) != 1 || len(got[0].ArgumentNormalizers) != 0 {
+		t.Fatalf("deployment metadata escaped into provider settings: %+v", got)
+	}
+	if err := bridge.Update(legacy.Settings{Tools: []legacyaction.ToolSpec{click}}); err == nil ||
+		!strings.Contains(err.Error(), "deployment-only") {
+		t.Fatalf("client-supplied normalizer error = %v", err)
+	}
+}
+
 func TestClientBridgeFailsClosedOnDeclarationDriftAndPendingMutation(t *testing.T) {
 	bridge, specs, err := newClientBridge(testTarget())
 	if err != nil {
@@ -94,7 +187,9 @@ func TestClientBridgeFailsClosedOnDeclarationDriftAndPendingMutation(t *testing.
 		done <- dispatchErr
 	}()
 	waitForRegisteredCall(t, bridge, call.CallID)
-	if err := bridge.Update(legacy.Settings{Tools: []legacyaction.ToolSpec{specs[1]}}); err == nil ||
+	replacement := cloneToolSpec(specs[1])
+	replacement.ArgumentNormalizers = nil
+	if err := bridge.Update(legacy.Settings{Tools: []legacyaction.ToolSpec{replacement}}); err == nil ||
 		!strings.Contains(err.Error(), "pending") {
 		t.Fatalf("pending declaration mutation error = %v", err)
 	}

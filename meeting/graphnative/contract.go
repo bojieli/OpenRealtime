@@ -9,6 +9,7 @@ package graphnative
 
 import (
 	"github.com/bojieli/OpenRealtime/element"
+	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	videograph "github.com/bojieli/OpenRealtime/elements/video"
 )
@@ -21,6 +22,7 @@ const (
 	ForegroundDeploymentReference = "meeting.foreground"
 	VisualProviderReference       = "meeting.visual"
 	BackgroundProviderReference   = "meeting.background"
+	TTSProviderReference          = "meeting.tts"
 	// ForegroundCausalOrderingCapability is required because model.External
 	// drains different input ports concurrently. A selected deployment must
 	// buffer a Generate frame until every ContextInjection named by its causal
@@ -82,9 +84,9 @@ func BackgroundInjectionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "meeting.BackgroundInjection",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
-			{Name: "text", Direction: element.Input, Type: modelelements.PreparedTextType(),
+			{Name: "text", Direction: element.Input, Type: interactionelements.SafePreparedTextType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 64},
 			{Name: "injection", Direction: element.Output, Type: modelelements.TextInputType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},

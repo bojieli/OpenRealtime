@@ -5,8 +5,8 @@
       "reference": "action.AuthorizedCallCommit",
       "identity": {
         "name": "action.AuthorizedCallCommit",
-        "revision": 2,
-        "digest": "sha256:97fe7318f637896959d0561081d1d9a50d9c0b26c0c0fb5c22825117a57a060c"
+        "revision": 3,
+        "digest": "sha256:89cea860e7881e2bfa669cb2573a7371cdc4731d1a438955f210a8364be90f28"
       }
     },
     {
@@ -23,6 +23,30 @@
         "name": "action.LedgerCommit",
         "revision": 2,
         "digest": "sha256:d0936589c792953801bface1a615434486d6523bb2d05ae967e04f7d453f0f96"
+      }
+    },
+    {
+      "reference": "action.NormalizeArguments",
+      "identity": {
+        "name": "action.NormalizeArguments",
+        "revision": 1,
+        "digest": "sha256:4fec14f995eef5b280e571498b4565f1621ae54254ef0a1e24d02b17a510c065"
+      }
+    },
+    {
+      "reference": "action.RepetitionAdmission",
+      "identity": {
+        "name": "action.RepetitionAdmission",
+        "revision": 1,
+        "digest": "sha256:4c34f0aba37cfc67383b6d7e59d1322c4b14a567a2f73d7db1340016ce3349d0"
+      }
+    },
+    {
+      "reference": "action.ToolAdmission",
+      "identity": {
+        "name": "action.ToolAdmission",
+        "revision": 1,
+        "digest": "sha256:2af66e32908629f3144178455bbd2bb665c972bf8231acd0dea4891bb811f98d"
       }
     },
     {
@@ -61,8 +85,8 @@
       "reference": "authority.ProvenanceJoin",
       "identity": {
         "name": "authority.ProvenanceJoin",
-        "revision": 1,
-        "digest": "sha256:4c6eb489dbeac31b3fbfc93ebd3e44cf4c3f992878b6cbf09acbe0686a672cac"
+        "revision": 2,
+        "digest": "sha256:43a1ac4dad1242b31225b6252b093f94fca6f32172d936877f9b468acc648bc3"
       }
     },
     {
@@ -98,19 +122,27 @@
       }
     },
     {
+      "reference": "interaction.ControlSerializationQuarantine",
+      "identity": {
+        "name": "interaction.ControlSerializationQuarantine",
+        "revision": 2,
+        "digest": "sha256:f5d773fcdfe5fe831b37e853185bea03ef86276f5b30999532d8cecb33654f62"
+      }
+    },
+    {
       "reference": "interaction.ModelResultCommit",
       "identity": {
         "name": "interaction.ModelResultCommit",
-        "revision": 1,
-        "digest": "sha256:96459cc6718ecc2e23cba18861c79e9ade44157e788dbe8fd010cf9ef67c5010"
+        "revision": 2,
+        "digest": "sha256:a870b95caedde1348dfc3bf0950aa4379c5e70c556f395e32160faff23442d18"
       }
     },
     {
       "reference": "policy.RealtimeComputerUseActivation",
       "identity": {
         "name": "policy.RealtimeComputerUseActivation",
-        "revision": 3,
-        "digest": "sha256:4932647d135c76c32fa8889ba8641e02a3f27d4495bbb99683598bc21a3621df"
+        "revision": 7,
+        "digest": "sha256:fdb826e2867506e8396be76d4caf1b30bd180c3ddadbd8912adc21c7877575d4"
       }
     },
     {

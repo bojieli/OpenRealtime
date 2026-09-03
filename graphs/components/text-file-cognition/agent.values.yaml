@@ -19,4 +19,8 @@ nodes:
   model:
     provider: deployment.text-file
     retain_reasoning: false
+  model_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
   model_result_commit: {}

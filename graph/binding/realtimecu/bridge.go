@@ -70,6 +70,17 @@ func newClientBridge(target computeruse.Target) (*clientBridge, []legacyaction.T
 	for _, spec := range specs {
 		bridge.wanted[spec.Name] = cloneToolSpec(spec)
 	}
+	// This is deployment-owned action-policy metadata, not part of the tool
+	// schema shown to the model or accepted from a Realtime client. Attach it
+	// only to the internal registry declaration consumed by the explicit
+	// NormalizeArguments graph element.
+	for index := range specs {
+		if specs[index].Name == computeruse.ClickNormalized {
+			specs[index].ArgumentNormalizers = []legacyaction.ToolArgumentNormalizer{{
+				Argument: "x", Normalizer: legacyaction.ToolParameterCoordinatePairXYV1,
+			}}
+		}
+	}
 	return bridge, specs, nil
 }
 
@@ -84,6 +95,9 @@ func (bridge *clientBridge) Update(settings legacy.Settings) error {
 		wanted, found := bridge.wanted[supplied.Name]
 		if !found {
 			return fmt.Errorf("realtime-CU session declared non-standard tool %q", supplied.Name)
+		}
+		if len(supplied.ArgumentNormalizers) != 0 {
+			return fmt.Errorf("realtime-CU tool %q supplied deployment-only argument normalizers", supplied.Name)
 		}
 		if supplied.Description != wanted.Description || supplied.Confirm != legacyaction.ConfirmNever ||
 			supplied.Target != bridge.target.Name || supplied.Background != wanted.Background ||
@@ -339,6 +353,7 @@ func (model *sessionModel) Close() error {
 
 func cloneToolSpec(spec legacyaction.ToolSpec) legacyaction.ToolSpec {
 	spec.Parameters = slices.Clone(spec.Parameters)
+	spec.ArgumentNormalizers = slices.Clone(spec.ArgumentNormalizers)
 	return spec
 }
 

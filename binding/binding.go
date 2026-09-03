@@ -834,6 +834,7 @@ func CloneSettings(settings Settings) Settings {
 	settings.Tools = slices.Clone(settings.Tools)
 	for index := range settings.Tools {
 		settings.Tools[index].Parameters = slices.Clone(settings.Tools[index].Parameters)
+		settings.Tools[index].ArgumentNormalizers = slices.Clone(settings.Tools[index].ArgumentNormalizers)
 	}
 	settings.Modalities = slices.Clone(settings.Modalities)
 	settings.Observers = slices.Clone(settings.Observers)

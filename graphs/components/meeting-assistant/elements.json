@@ -1,0 +1,204 @@
+{
+  "apiVersion": "openrealtime.ai/elements/v1alpha1",
+  "elements": [
+    {
+      "format_version": 1,
+      "name": "meeting.BackgroundInjection",
+      "revision": 2,
+      "ports": [
+        {
+          "name": "injection",
+          "direction": "output",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "text.ContextInjection"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "outcome",
+          "direction": "output",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "meeting.BackgroundInjectionOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "text",
+          "direction": "input",
+          "type": {
+            "name": "Segmented",
+            "arguments": [
+              {
+                "name": "interaction.SafePreparedTextDelta"
+              },
+              {
+                "name": "flow.RunID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 64
+        },
+        {
+          "name": "trigger",
+          "direction": "output",
+          "type": {
+            "name": "Trigger",
+            "arguments": [
+              {
+                "name": "cognition.Generate"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 8
+        }
+      ],
+      "reaction": {
+        "triggers": [
+          "text"
+        ],
+        "outcomes": [
+          "injection",
+          "outcome",
+          "trigger"
+        ],
+        "max_concurrency": 1
+      },
+      "state_schema": "schema://openrealtime/meeting/background-injection-state/v1",
+      "config_schema": "schema://openrealtime/meeting/background-injection-config/v1"
+    },
+    {
+      "format_version": 1,
+      "name": "meeting.ScreenFork",
+      "revision": 1,
+      "ports": [
+        {
+          "name": "end",
+          "direction": "output",
+          "type": {
+            "name": "Trigger",
+            "arguments": [
+              {
+                "name": "video.SourceEnd"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 4
+        },
+        {
+          "name": "foreground",
+          "direction": "output",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "video.InputFrame"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "loss_allowed": true,
+          "default_depth": 2
+        },
+        {
+          "name": "frame",
+          "direction": "output",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "video.InlineFrame"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "loss_allowed": true,
+          "default_depth": 2
+        },
+        {
+          "name": "source",
+          "direction": "output",
+          "type": {
+            "name": "Trigger",
+            "arguments": [
+              {
+                "name": "video.SourceStart"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 4
+        },
+        {
+          "name": "tick",
+          "direction": "output",
+          "type": {
+            "name": "Trigger",
+            "arguments": [
+              {
+                "name": "timing.Tick"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "loss_allowed": true,
+          "default_depth": 4
+        },
+        {
+          "name": "video",
+          "direction": "input",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "video.InputFrame"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "loss_allowed": true,
+          "default_depth": 2
+        }
+      ],
+      "reaction": {
+        "triggers": [
+          "video"
+        ],
+        "outcomes": [
+          "end",
+          "foreground",
+          "frame",
+          "source",
+          "tick"
+        ],
+        "max_concurrency": 1
+      },
+      "state_schema": "schema://openrealtime/meeting/screen-fork-state/v1",
+      "config_schema": "schema://openrealtime/meeting/screen-fork-config/v1"
+    }
+  ]
+}

@@ -10,6 +10,7 @@ graph text_file_cognition {
     state.TrajectoryStore :: trajectory;
     policy.GenerateOnObservation :: activation;
     cognition.TextModel :: model;
+    interaction.ControlSerializationQuarantine :: model_control_quarantine;
     interaction.ModelResultCommit :: model_result_commit;
     flow.Mux :: trajectory_append_mux;
     flow.Tee :: content_observation_copy;
@@ -44,7 +45,9 @@ graph text_file_cognition {
     observation_commit.outcome -> observation_outcome_copy.in;
     observation_outcome_copy.out -> activation.committed;
     activation.trigger -> model.trigger;
-    model.result -> model_result_copy.in;
+    model.text -> model_control_quarantine.text;
+    model.result -> model_control_quarantine.result;
+    model_control_quarantine.safe_result -> model_result_copy.in;
     model_result_copy.out -> model_result_commit.result;
 
     input text = content.text;
@@ -74,8 +77,9 @@ graph text_file_cognition {
     output activation_authority = activation.authority;
     output activation_state = activation.state;
     output activation_outcome = activation.outcome;
-    output prepared_text = model.text;
+    output prepared_text = model_control_quarantine.safe_text;
     output model_result = model_result_copy.out;
+    output control_serialization_quarantine = model_control_quarantine.quarantined;
     output model_proposals = model.tools;
     output model_outcome = model.outcome;
     output model_resolution = model.resolved;

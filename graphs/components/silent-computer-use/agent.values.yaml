@@ -25,6 +25,10 @@ nodes:
   model:
     provider: deployment.computer-use
     retain_reasoning: false
+  model_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
   model_result_commit: {}
   provenance_join: {}
   proposal_admission: {}

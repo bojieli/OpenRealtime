@@ -273,26 +273,20 @@ func (runner *speechArbiterRunner) validateRunDelta(
 		return errors.New("prepared text arrived after its end")
 	}
 	if !run.started {
-		if err := validatePreparedDelta(delta, cognitionelements.TextBegin, 0); err != nil {
+		if err := validateSafePreparedDelta(delta, 0, false); err != nil {
 			return err
 		}
 		run.started = true
 		run.expected = 1
 		return nil
 	}
-	if delta.Index != run.expected {
-		return fmt.Errorf("prepared text index is %d, want %d", delta.Index, run.expected)
+	if err := validateSafePreparedDelta(delta, run.expected, true); err != nil {
+		return err
 	}
 	run.expected++
 	switch delta.Boundary {
 	case cognitionelements.TextChunk:
-		if delta.Text == "" || delta.Interrupted {
-			return errors.New("a prepared text delta requires text and cannot be terminal")
-		}
 	case cognitionelements.TextEnd:
-		if delta.Text != "" {
-			return errors.New("prepared text end cannot carry text")
-		}
 		run.ended = true
 	case cognitionelements.TextBegin:
 		return errors.New("prepared run emitted a second begin")
@@ -410,7 +404,7 @@ func (runner *speechArbiterRunner) forwardDelta(
 	delta cognitionelements.PreparedTextDelta,
 ) error {
 	envelope := clonePreparedEnvelope(source, delta)
-	envelope.Type = preparedTextType
+	envelope.Type = safePreparedTextType
 	envelope.RunID = run.id
 	if run.lastOutput != "" {
 		envelope.CausalParents = appendUniqueString(envelope.CausalParents, run.lastOutput)
@@ -461,7 +455,7 @@ func (runner *speechArbiterRunner) closeSelected(
 		return nil
 	}
 	envelope := cause.Clone()
-	envelope.Type = preparedTextType
+	envelope.Type = safePreparedTextType
 	envelope.ItemID = cause.ItemID + ":synthetic-end:" + run.id
 	envelope.RunID = run.id
 	envelope.Sequence = run.expected + 1

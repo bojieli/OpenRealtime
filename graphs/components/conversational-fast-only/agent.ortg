@@ -11,6 +11,8 @@ graph conversational_fast_only {
     policy.GenerateOnObservation :: slow_activation;
     cognition.TextModel :: fast_model;
     cognition.TextModel :: slow_model;
+    interaction.ControlSerializationQuarantine :: fast_control_quarantine;
+    interaction.ControlSerializationQuarantine :: slow_control_quarantine;
     authority.ProvenanceJoin :: fast_action_join;
     authority.ProvenanceJoin :: slow_action_join;
     interaction.ModelResultCommit :: fast_result_commit;
@@ -72,10 +74,14 @@ graph conversational_fast_only {
     slow_activation.trigger -> slow_model.trigger;
     fast_activation.authority -> fast_action_join.candidate;
     slow_activation.authority -> slow_action_join.candidate;
-    fast_model.text -> fast_text_copy.in;
-    slow_model.text -> slow_text_copy.in;
-    fast_model.result -> fast_result_copy.in;
-    slow_model.result -> slow_result_copy.in;
+    fast_model.text -> fast_control_quarantine.text;
+    fast_model.result -> fast_control_quarantine.result;
+    slow_model.text -> slow_control_quarantine.text;
+    slow_model.result -> slow_control_quarantine.result;
+    fast_control_quarantine.safe_text -> fast_text_copy.in;
+    slow_control_quarantine.safe_text -> slow_text_copy.in;
+    fast_control_quarantine.safe_result -> fast_result_copy.in;
+    slow_control_quarantine.safe_result -> slow_result_copy.in;
     fast_result_copy.out -> fast_result_commit.result;
     slow_result_copy.out -> slow_result_commit.result;
     fast_result_copy.out -> fast_action_join.result;
@@ -136,6 +142,8 @@ graph conversational_fast_only {
     output slow_prepared_text = slow_text_copy.out;
     output fast_result = fast_result_copy.out;
     output slow_result = slow_result_copy.out;
+    output fast_control_serialization_quarantine = fast_control_quarantine.quarantined;
+    output slow_control_serialization_quarantine = slow_control_quarantine.quarantined;
     output fast_tools = fast_tool_copy.out;
     output slow_tools = slow_tool_copy.out;
     // This component deliberately stops before action admission. Provenance is

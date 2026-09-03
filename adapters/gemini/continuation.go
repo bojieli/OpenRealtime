@@ -416,6 +416,8 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 	}
 
 	consumedInvocations := make(map[string]struct{})
+	promotedProposals := trajectory.PromotedToolProposalIDs(request.Trajectory)
+	terminalProposals, terminalDispositions := trajectory.TerminalToolProposalIDs(request.Trajectory)
 	elapsed := continuation.ElapsedNotes(request.Trajectory.Items)
 	selectedMedia := continuation.LatestMediaHandles(request.Trajectory.Items)
 	var lastSemanticKind trajectory.Kind
@@ -432,6 +434,37 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 			continue
 		}
 		if item.Kind == trajectory.KindAssistant && assistantVisibility[item.ID] == trajectory.VisibilityCancelled {
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposal {
+			if _, promoted := promotedProposals[item.ID]; promoted {
+				continue
+			}
+			if _, terminal := terminalProposals[item.ID]; terminal {
+				continue
+			}
+			// Never replay proposal-only control state through a retained native
+			// model turn. Its exact details stay composable as runtime/user text
+			// until a later canonical disposition or promotion resolves it.
+			if content, valid := continuation.PendingToolProposalContent(item.ToolCall); valid {
+				part, _ := json.Marshal(map[string]string{"text": content})
+				result.Contents = appendGeminiContent(result.Contents, geminiContent{
+					Role: "user", Parts: []json.RawMessage{part},
+				})
+			}
+			lastSemanticKind = item.Kind
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposalDisposition {
+			if _, valid := terminalDispositions[item.ID]; valid {
+				part, _ := json.Marshal(map[string]string{
+					"text": continuation.TerminalToolProposalNotice,
+				})
+				result.Contents = appendGeminiContent(result.Contents, geminiContent{
+					Role: "user", Parts: []json.RawMessage{part},
+				})
+			}
+			lastSemanticKind = item.Kind
 			continue
 		}
 		lastSemanticKind = item.Kind
@@ -566,23 +599,20 @@ func compilePortableItem(
 		role = "model"
 		part["text"] = item.Content
 	case trajectory.KindToolProposal:
-		role = "model"
-		proposal, err := json.Marshal(map[string]any{
-			"non_executable_tool_proposal": map[string]any{
-				"name": item.ToolCall.Name, "arguments": json.RawMessage(item.ToolCall.Arguments),
-			},
-		})
-		if err != nil {
-			return geminiContent{}, false, err
+		content, valid := continuation.PendingToolProposalContent(item.ToolCall)
+		if !valid {
+			return geminiContent{}, false, nil
 		}
-		part["text"] = string(proposal)
+		part["text"] = content
+	case trajectory.KindToolProposalDisposition:
+		// Only buildRequest has enough ordered-prefix evidence to validate it.
+		return geminiContent{}, false, nil
 	case trajectory.KindToolCall:
 		role = "model"
-		var args any
-		if err := json.Unmarshal(item.ToolCall.Arguments, &args); err != nil {
-			return geminiContent{}, false, fmt.Errorf("decode tool arguments on item %s: %w", item.ID, err)
+		part["functionCall"] = map[string]any{
+			"id": item.ToolCall.CallID, "name": item.ToolCall.Name,
+			"args": json.RawMessage(item.ToolCall.Arguments),
 		}
-		part["functionCall"] = map[string]any{"id": item.ToolCall.CallID, "name": item.ToolCall.Name, "args": args}
 		part["thoughtSignature"] = portableToolCallThoughtSignature
 	case trajectory.KindToolResult:
 		var response any

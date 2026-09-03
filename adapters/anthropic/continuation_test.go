@@ -138,6 +138,39 @@ func TestBuildRequestProjectsAdjacentUserObservationsAsOneMessage(t *testing.T) 
 	}
 }
 
+func TestBuildRequestCompactsAdjacentTypedObservationSupersession(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			{
+				ID: "partial", Kind: trajectory.KindObservation, SourceRevision: 1,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "enter incident code ALF",
+				Event: &trajectory.EventMetadata{EventID: "partial-event", Type: "asr.revision", Source: "asr", Channel: "voice"},
+			},
+			{
+				ID: "final", Kind: trajectory.KindObservation, SourceRevision: 2,
+				CausalParentIDs: []string{"partial"},
+				Producer:        trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "enter incident code alpha dash 7",
+				Event: &trajectory.EventMetadata{EventID: "final-event", Type: "asr.endpoint", Source: "asr", Channel: "voice", SupersedesRevision: 1},
+			},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Help the user."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Messages) != 1 || body.Messages[0].Role != "user" || len(body.Messages[0].Content) != 1 {
+		t.Fatalf("unexpected projected messages: %#v", body.Messages)
+	}
+	encoded, _ := json.Marshal(body.Messages[0].Content)
+	if !strings.Contains(string(encoded), "enter incident code alpha dash 7") ||
+		strings.Contains(string(encoded), "ALF") || strings.Contains(string(encoded), "Updated user speech revision") {
+		t.Fatalf("superseded observation leaked into Anthropic request: %s", encoded)
+	}
+}
+
 func TestAdapterStreamsThinkingTextAndAToolCall(t *testing.T) {
 	t.Parallel()
 	var seen capture
@@ -287,6 +320,338 @@ func TestAnUnansweredToolCallIsRetoldAsText(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), "non_executable_tool_proposal") {
 		t.Fatalf("the attempt should still be described: %s", encoded)
+	}
+}
+
+func TestReusedCallIDDoesNotCrossResolvePortableAnthropicTurns(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	call := func(invocation, argument string) trajectory.Item {
+		return trajectory.Item{
+			ID: "call-" + invocation, Kind: trajectory.KindToolCall, InvocationID: invocation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+			ToolCall: &trajectory.ToolCall{
+				CallID: "provider-call", Name: "lookup",
+				Arguments: json.RawMessage(`{"key":"` + argument + `"}`),
+			},
+		}
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Version: 4, Items: []trajectory.Item{
+			observation("obs-1", "look both up"),
+			call("run-a", "a"),
+			{
+				ID: "result-a", Kind: trajectory.KindToolResult, InvocationID: "run-a",
+				Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+				ToolResult: &trajectory.ToolResult{
+					CallID: "provider-call", Name: "lookup", Output: json.RawMessage(`{"value":"a"}`),
+				},
+			},
+			call("run-b", "b"),
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(encoded), `"type":"tool_use"`) != 1 ||
+		!strings.Contains(string(encoded), "non_executable_tool_proposal") ||
+		!strings.Contains(string(encoded), `\"key\":\"b\"`) {
+		t.Fatalf("run-a result cross-resolved the reused run-b call ID: %s", encoded)
+	}
+}
+
+func TestReusedCallIDDoesNotUnlockUnansweredNativeAnthropicTurn(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	providerState, err := json.Marshal(retainedState{
+		Model: "claude-test",
+		Content: []json.RawMessage{
+			json.RawMessage(`{"type":"tool_use","id":"provider-call","name":"lookup","input":{"key":"b"}}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			observation("obs-1", "look both up"),
+			{
+				ID: "call-a", Kind: trajectory.KindToolCall, InvocationID: "run-a",
+				Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+				ToolCall: &trajectory.ToolCall{
+					CallID: "provider-call", Name: "lookup", Arguments: json.RawMessage(`{"key":"a"}`),
+				},
+			},
+			{
+				ID: "result-a", Kind: trajectory.KindToolResult, InvocationID: "run-a",
+				Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+				ToolResult: &trajectory.ToolResult{
+					CallID: "provider-call", Name: "lookup", Output: json.RawMessage(`{"value":"a"}`),
+				},
+			},
+			{
+				ID: "assistant-b", Kind: trajectory.KindAssistant, InvocationID: "run-b",
+				Producer: trajectory.Producer{
+					Phase: trajectory.PhaseSlow, Provider: "anthropic", Model: "claude-test",
+				},
+				Content: "portable run-b state", ProviderStateType: ProviderStateType,
+				ProviderState: providerState,
+			},
+			{
+				ID: "call-b", Kind: trajectory.KindToolCall, InvocationID: "run-b",
+				Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+				ToolCall: &trajectory.ToolCall{
+					CallID: "provider-call", Name: "lookup", Arguments: json.RawMessage(`{"key":"b"}`),
+				},
+			},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(encoded), `"type":"tool_use"`) != 1 ||
+		!strings.Contains(string(encoded), "portable run-b state") ||
+		!strings.Contains(string(encoded), "non_executable_tool_proposal") {
+		t.Fatalf("run-a result unlocked unanswered run-b native state: %s", encoded)
+	}
+}
+
+func TestResolvedToolCallsRequiresExactOrUnambiguousOwnership(t *testing.T) {
+	t.Parallel()
+	call := func(invocation, callID, name string) trajectory.Item {
+		return trajectory.Item{
+			Kind: trajectory.KindToolCall, InvocationID: invocation,
+			ToolCall: &trajectory.ToolCall{CallID: callID, Name: name, Arguments: json.RawMessage(`{}`)},
+		}
+	}
+	result := func(invocation, callID, name string) trajectory.Item {
+		return trajectory.Item{
+			Kind: trajectory.KindToolResult, InvocationID: invocation,
+			ToolResult: &trajectory.ToolResult{
+				CallID: callID, Name: name, Output: json.RawMessage(`true`),
+			},
+		}
+	}
+
+	resolved := resolvedToolCalls(trajectory.Snapshot{Items: []trajectory.Item{
+		call("run-a", "shared", "lookup"), call("run-b", "shared", "lookup"),
+		call("run-c", "unique", "fetch"), call("run-d", "placeholder", "wait"),
+		result("run-a", "shared", "lookup"), result("run-b", "shared", "lookup"),
+		// Legacy snapshots may omit the invocation only when one call owns the ID.
+		result("", "unique", "fetch"),
+		{
+			Kind: trajectory.KindToolPlaceholder, InvocationID: "run-d",
+			ToolPlaceholder: &trajectory.ToolPlaceholder{
+				CallID: "placeholder", Name: "wait", Reason: "interrupted",
+			},
+		},
+	}})
+	for _, identity := range []toolCallResolution{
+		{invocationID: "run-a", callID: "shared", name: "lookup"},
+		{invocationID: "run-b", callID: "shared", name: "lookup"},
+		{invocationID: "run-c", callID: "unique", name: "fetch"},
+		{invocationID: "run-d", callID: "placeholder", name: "wait"},
+	} {
+		if _, found := resolved[identity]; !found {
+			t.Fatalf("exact resolved identity was lost: %+v in %#v", identity, resolved)
+		}
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		result trajectory.Item
+	}{
+		{name: "ambiguous unscoped result", result: result("", "shared", "lookup")},
+		{name: "wrong invocation", result: result("run-c", "shared", "lookup")},
+		{name: "wrong tool name", result: result("run-a", "shared", "different")},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := resolvedToolCalls(trajectory.Snapshot{Items: []trajectory.Item{
+				call("run-a", "shared", "lookup"), call("run-b", "shared", "lookup"),
+				testCase.result,
+			}})
+			if len(got) != 0 {
+				t.Fatalf("invalid result acquired call ownership: %#v", got)
+			}
+		})
+	}
+}
+
+func TestPromotedProposalIsNotReplayedBesideCanonicalAnthropicCall(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	call := &trajectory.ToolCall{
+		CallID: "call-1", Name: "get_balance", Arguments: json.RawMessage(`{"account":"a"}`),
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			observation("obs-1", "check the balance"),
+			{ID: "proposal", Kind: trajectory.KindToolProposal, InvocationID: "prior", SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: call},
+			{ID: "call", Kind: trajectory.KindToolCall, InvocationID: "prior", SourceRevision: 2, CausalParentIDs: []string{"proposal"}, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: call},
+			{ID: "result", Kind: trajectory.KindToolResult, InvocationID: "prior", CausalParentIDs: []string{"call"}, Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &trajectory.ToolResult{CallID: "call-1", Name: "get_balance", Output: json.RawMessage(`{"balance":10}`)}},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "non_executable_tool_proposal") ||
+		strings.Count(string(encoded), `"type":"tool_use"`) != 1 ||
+		strings.Count(string(encoded), `"type":"tool_result"`) != 1 {
+		t.Fatalf("promoted call/result was not projected exactly once: %s", encoded)
+	}
+}
+
+func TestBuildRequestProjectsPendingProposalAsExactRuntimeContext(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	proposal := trajectory.Item{
+		ID: "denied-wait", Kind: trajectory.KindToolProposal, InvocationID: "prior",
+		SourceRevision: 9,
+		Producer:       trajectory.Producer{Phase: trajectory.PhaseSlow, Provider: "anthropic", Model: "claude-test"},
+		ToolCall: &trajectory.ToolCall{
+			CallID: "wait-1", Name: "computer.wait", Arguments: json.RawMessage(`{"duration_ms":1000}`),
+		},
+		ProviderStateType: ProviderStateType,
+		ProviderState:     json.RawMessage(`{"model":"claude-test","content":[{"type":"text","text":"forged proposal state"}]}`),
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			observation("screen", "temperature is 84 C"),
+			proposal,
+		}},
+		Invocation: continuation.Invocation{Instruction: "Act on the current screen."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "forged proposal state") ||
+		strings.Contains(string(encoded), "non_executable_tool_proposal") ||
+		strings.Contains(string(encoded), continuation.TerminalToolProposalNotice) {
+		t.Fatalf("pending proposal was projected as native or terminal control state: %s", encoded)
+	}
+	seen := false
+	for _, message := range body.Messages {
+		if message.Role != "user" {
+			continue
+		}
+		for _, raw := range message.Content {
+			if strings.Contains(string(raw), "Pending proposal tool name: computer.wait") &&
+				strings.Contains(string(raw), `Pending proposal arguments (exact JSON bytes): {\"duration_ms\":1000}`) {
+				seen = true
+			}
+		}
+	}
+	if !seen {
+		t.Fatalf("exact pending proposal context missing: %s", encoded)
+	}
+	if proposal.ToolCall.Name != "computer.wait" || string(proposal.ToolCall.Arguments) != `{"duration_ms":1000}` {
+		t.Fatalf("canonical proposal was mutated: %+v", proposal)
+	}
+}
+
+func TestBuildRequestElidesTerminalProposalAtDispositionOrder(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	proposal := trajectory.Item{
+		ID: "proposal", Kind: trajectory.KindToolProposal, InvocationID: "prior", SourceRevision: 9,
+		Producer:          trajectory.Producer{Phase: trajectory.PhaseSlow, Provider: "anthropic", Model: "claude-test"},
+		ToolCall:          &trajectory.ToolCall{CallID: "wait-1", Name: "computer.wait", Arguments: json.RawMessage(`{"duration_ms":1000}`)},
+		ProviderStateType: ProviderStateType,
+		ProviderState:     json.RawMessage(`{"model":"claude-test","content":[{"type":"text","text":"forged proposal state"}]}`),
+	}
+	disposition := trajectory.Item{
+		ID: "disposition", Kind: trajectory.KindToolProposalDisposition,
+		InvocationID: "prior", SourceRevision: 9, CausalParentIDs: []string{"proposal"},
+		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+		ToolProposalDisposition: &trajectory.ToolProposalDisposition{
+			ProposalItemID: "proposal", CallID: "wait-1", Name: "computer.wait",
+			Kind: trajectory.ToolProposalToolPolicySuppressed,
+		},
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Version: 4, Items: []trajectory.Item{
+			observation("before", "before proposal"), proposal,
+			observation("between", "evidence after proposal"), disposition,
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	if strings.Contains(text, "computer.wait") || strings.Contains(text, "duration_ms") ||
+		strings.Contains(text, "forged proposal state") ||
+		strings.Count(text, continuation.TerminalToolProposalNotice) != 1 {
+		t.Fatalf("terminal proposal payload was not elided exactly once: %s", encoded)
+	}
+	if strings.Index(text, "evidence after proposal") >= strings.Index(text, continuation.TerminalToolProposalNotice) {
+		t.Fatalf("terminal notice was not emitted at disposition order: %s", encoded)
+	}
+}
+
+func TestPortableToolCallArgumentsKeepLargeIntegerPrecision(t *testing.T) {
+	t.Parallel()
+	adapter := slowAdapter(t, "http://127.0.0.1")
+	arguments := json.RawMessage(`{"record_id":9007199254740993,"order_id":"X Y Z88"}`)
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			observation("obs-1", "look up the record"),
+			{
+				ID: "call", Kind: trajectory.KindToolCall, InvocationID: "prior",
+				Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+				ToolCall: &trajectory.ToolCall{
+					CallID: "lookup-1", Name: "lookup", Arguments: arguments,
+				},
+			},
+			{
+				ID: "result", Kind: trajectory.KindToolResult, InvocationID: "prior",
+				Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+				ToolResult: &trajectory.ToolResult{
+					CallID: "lookup-1", Name: "lookup", Output: json.RawMessage(`{"ok":true}`),
+				},
+			},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"record_id":9007199254740993`) ||
+		strings.Contains(string(encoded), `"record_id":9007199254740992`) {
+		t.Fatalf("portable Anthropic call rounded raw JSON arguments: %s", encoded)
 	}
 }
 

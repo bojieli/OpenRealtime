@@ -150,6 +150,7 @@ type sessionBundle struct {
 	bridge       *clientBridge
 	media        *mediaResolverBridge
 	presentation *presentationState
+	playback     *sessionPlaybackSink
 	store        *trajectory.Store
 	services     map[string]any
 }
@@ -206,8 +207,9 @@ func newSessionBundle(
 	}
 	playback := speechelements.NewPlaybackSinkRegistry()
 	playbackDescriptor := scenarioPlaybackDescriptor()
+	playbackSink := newSessionPlaybackSink(ctx, options.Sink, playbackDescriptor, presentation)
 	if err := playback.Register(PlaybackReference, playbackDescriptor, func() (speechelements.PlaybackSink, error) {
-		return newSessionPlaybackSink(ctx, options.Sink, playbackDescriptor, presentation), nil
+		return playbackSink, nil
 	}); err != nil {
 		mediaBridge.Close(err)
 		return nil, err
@@ -219,7 +221,8 @@ func newSessionBundle(
 		specs[index] = legacyaction.ToolSpec{
 			Name: declaration.Name, Description: declaration.Description,
 			Parameters: slices.Clone(declaration.Parameters), Confirm: declaration.Confirm,
-			Background: declaration.Background, Target: declaration.Target, Dispatcher: bridge,
+			ArgumentNormalizers: slices.Clone(declaration.ArgumentNormalizers),
+			Background:          declaration.Background, Target: declaration.Target, Dispatcher: bridge,
 		}
 	}
 	if err := tools.Register(ToolReference, specs); err != nil {
@@ -261,7 +264,7 @@ func newSessionBundle(
 	}
 	return &sessionBundle{
 		bridge: bridge, media: mediaBridge, presentation: presentation,
-		store: store, services: services,
+		playback: playbackSink, store: store, services: services,
 	}, nil
 }
 
@@ -271,6 +274,9 @@ func (bundle *sessionBundle) Close(cause error) error {
 	}
 	bundle.bridge.Close(cause)
 	bundle.media.Close(cause)
+	if bundle.playback != nil {
+		return bundle.playback.Close()
+	}
 	return nil
 }
 

@@ -202,10 +202,12 @@ func definitions(sourceProperty string, width, height int) []Definition {
 			DefaultConfirm: action.ConfirmPolicy,
 		},
 		{
-			Name:        Type,
-			Description: "Type literal text into whatever currently has focus.",
+			Name: Type,
+			Description: "Type an exact final character sequence into whatever currently has focus. " +
+				"For a dictated code or identifier, ordinary spoken words and digits stay intact, while " +
+				"spoken punctuation names denote their characters; for example, bravo dash nine becomes bravo-9.",
 			Parameters: object(
-				sourceProperty+`,"text":{"type":"string","description":"literal text to type"}`,
+				sourceProperty+`,"text":{"type":"string","description":"final characters to type, not a verbatim speech transcript; encode explicitly dictated punctuation names as punctuation characters"}`,
 				`"source","text"`),
 			DefaultConfirm: action.ConfirmPolicy,
 		},

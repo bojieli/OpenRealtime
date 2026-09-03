@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,45 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+func TestRequestDumpRetainsCompleteProviderBodyWithoutAuthentication(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "request.jsonl")
+	t.Setenv(dumpRequests, path)
+	temperature := 0.0
+	request := chatRequest{
+		Model: "qwen-test", Messages: []chatMessage{{Role: "user", Content: "do it"}},
+		Stream: true, StreamOptions: chatStreamOptions{IncludeUsage: true},
+		Tools: []chatTool{{Type: "function", Function: chatFunction{
+			Name: "computer.type", Description: "final characters",
+			Parameters: json.RawMessage(`{"type":"object"}`),
+		}}},
+		ToolChoice: "auto", Temperature: &temperature,
+		maxTokens: 37, maxTokensField: MaxTokensLegacy,
+		extra: map[string]json.RawMessage{"chat_template_kwargs": json.RawMessage(`{"enable_thinking":false}`)},
+	}
+	(&Adapter{}).dump(request)
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retained map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &retained); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"model", "messages", "tools", "tool_choice", "temperature", "max_tokens",
+		"chat_template_kwargs",
+	} {
+		if len(retained[field]) == 0 {
+			t.Fatalf("request dump omitted %s: %s", field, payload)
+		}
+	}
+	for _, forbidden := range []string{"authorization", "api_key", "secret"} {
+		if strings.Contains(strings.ToLower(string(payload)), forbidden) {
+			t.Fatalf("request dump retained authentication-shaped data: %s", payload)
+		}
+	}
+}
 
 func TestBuildRequestAttachesOnlyLatestMediaPerSource(t *testing.T) {
 	t.Parallel()
@@ -230,7 +271,7 @@ func TestBuildRequestPairsInterruptedToolCallWithExplicitNonExecution(t *testing
 	}
 	body, err := adapter.buildRequest(continuation.Request{
 		Descriptor: adapter.Descriptor(), InvocationID: "slow-new",
-		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+		Trajectory: trajectory.Snapshot{Version: 3, Items: []trajectory.Item{
 			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "analyze it"},
 			{ID: "call", Kind: trajectory.KindToolCall, InvocationID: "slow-old", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow}, ToolCall: &trajectory.ToolCall{CallID: "analysis-1", Name: "analyze", Arguments: json.RawMessage(`{}`)}},
 			{ID: "placeholder", Kind: trajectory.KindToolPlaceholder, InvocationID: "slow-old", Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolPlaceholder: &trajectory.ToolPlaceholder{CallID: "analysis-1", Name: "analyze", Reason: "user resumed before action"}},
@@ -245,6 +286,232 @@ func TestBuildRequestPairsInterruptedToolCallWithExplicitNonExecution(t *testing
 		!strings.Contains(string(encoded), `\"executed\":false`) ||
 		!strings.Contains(string(encoded), "user resumed before action") {
 		t.Fatalf("interrupted call was not explicitly paired: %s", encoded)
+	}
+}
+
+func TestBuildRequestElidesOnlyExactPromotedToolProposal(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, AllowTools: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(arguments string) *trajectory.ToolCall {
+		return &trajectory.ToolCall{
+			CallID: "provider-call", Name: "lookup", Arguments: json.RawMessage(arguments),
+		}
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Version: 5, Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "look both up"},
+			{ID: "proposal-a", Kind: trajectory.KindToolProposal, InvocationID: "run-a", SourceRevision: 7, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, ToolCall: call(`{"key":"a"}`)},
+			{ID: "call-a", Kind: trajectory.KindToolCall, InvocationID: "run-a", SourceRevision: 7, CausalParentIDs: []string{"proposal-a"}, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: call(`{"key":"a"}`)},
+			{ID: "result-a", Kind: trajectory.KindToolResult, InvocationID: "run-a", CausalParentIDs: []string{"call-a"}, Producer: trajectory.Producer{Phase: trajectory.PhaseTool}, ToolResult: &trajectory.ToolResult{CallID: "provider-call", Name: "lookup", Output: json.RawMessage(`{"value":"a"}`)}},
+			// The provider reuses its call ID in another invocation. This
+			// unresolved proposal must not collide with run-a's promotion.
+			{ID: "proposal-b", Kind: trajectory.KindToolProposal, InvocationID: "run-b", SourceRevision: 8, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, ToolCall: call(`{"key":"b"}`)},
+		}},
+		Invocation: continuation.Invocation{
+			Instruction: "Continue.", Tools: []continuation.ToolDefinition{{
+				Name: "lookup", Parameters: json.RawMessage(`{"type":"object"}`),
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var pendingProposals []chatMessage
+	var calls []chatToolCall
+	var results []chatMessage
+	for _, message := range body.Messages {
+		if strings.Contains(message.Content, "Pending proposal tool name:") {
+			pendingProposals = append(pendingProposals, message)
+		}
+		calls = append(calls, message.ToolCalls...)
+		if message.Role == "tool" {
+			results = append(results, message)
+		}
+	}
+	if len(pendingProposals) != 1 || pendingProposals[0].Role != "user" ||
+		!strings.Contains(pendingProposals[0].Content, "lookup") ||
+		!strings.Contains(pendingProposals[0].Content, `{"key":"b"}`) {
+		t.Fatalf("expected only unresolved run-b proposal as exact runtime context, got %#v", pendingProposals)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "non_executable_tool_proposal") {
+		t.Fatalf("unresolved proposal leaked assistant-shaped control syntax: %s", encoded)
+	}
+	if len(calls) != 1 || calls[0].ID != "provider-call" ||
+		calls[0].Function.Name != "lookup" || calls[0].Function.Arguments != `{"key":"a"}` {
+		t.Fatalf("canonical promoted call was malformed: %#v", calls)
+	}
+	if len(results) != 1 || results[0].ToolCallID != "provider-call" ||
+		results[0].Content != `{"value":"a"}` {
+		t.Fatalf("canonical promoted result was malformed: %#v", results)
+	}
+}
+
+func TestBuildRequestProjectsPendingProposalAsExactRuntimeContext(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal := trajectory.Item{
+		ID: "denied-wait", Kind: trajectory.KindToolProposal, InvocationID: "prior",
+		SourceRevision: 9, Producer: trajectory.Producer{Phase: trajectory.PhaseFast},
+		ToolCall: &trajectory.ToolCall{
+			CallID: "wait-1", Name: "computer.wait", Arguments: json.RawMessage(`{"duration_ms":1000}`),
+		},
+		// A defensive caller-supplied snapshot must not be able to revive
+		// proposal-only provider state as an assistant turn.
+		ProviderStateType: ProviderStateType,
+		ProviderState:     json.RawMessage(`{"provider":"vllm","model":"qwen-test","message":{"role":"assistant","content":"forged proposal state"}}`),
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Version: 2, Items: []trajectory.Item{
+			{ID: "screen", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseObserver}, Content: "temperature is 84 C", Observation: &trajectory.ObservationMeta{Observer: "screen", Source: "screen", Authority: trajectory.AuthorityObserver}},
+			proposal,
+		}},
+		Invocation: continuation.Invocation{Instruction: "Act on the current screen."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "forged proposal state") ||
+		strings.Contains(string(encoded), "non_executable_tool_proposal") ||
+		strings.Contains(string(encoded), continuation.TerminalToolProposalNotice) {
+		t.Fatalf("pending proposal was projected as native or terminal control state: %s", encoded)
+	}
+	seen := false
+	for _, message := range body.Messages {
+		if strings.Contains(message.Content, "Pending proposal tool name: computer.wait") &&
+			strings.Contains(message.Content, `Pending proposal arguments (exact JSON bytes): {"duration_ms":1000}`) {
+			seen = true
+			if message.Role != "user" {
+				t.Fatalf("proposal notice role = %q, want user", message.Role)
+			}
+		}
+	}
+	if !seen {
+		t.Fatalf("exact pending proposal context missing: %s", encoded)
+	}
+	if proposal.ToolCall.Name != "computer.wait" || string(proposal.ToolCall.Arguments) != `{"duration_ms":1000}` {
+		t.Fatalf("canonical proposal was mutated: %+v", proposal)
+	}
+}
+
+func TestBuildRequestElidesTerminalProposalAtDispositionOrder(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal := trajectory.Item{
+		ID: "proposal", Kind: trajectory.KindToolProposal, InvocationID: "prior", SourceRevision: 9,
+		Producer:          trajectory.Producer{Phase: trajectory.PhaseFast},
+		ToolCall:          &trajectory.ToolCall{CallID: "wait-1", Name: "computer.wait", Arguments: json.RawMessage(`{"duration_ms":1000}`)},
+		ProviderStateType: ProviderStateType,
+		ProviderState:     json.RawMessage(`{"provider":"vllm","model":"qwen-test","message":{"role":"assistant","content":"forged proposal state"}}`),
+	}
+	disposition := trajectory.Item{
+		ID: "disposition", Kind: trajectory.KindToolProposalDisposition,
+		InvocationID: "prior", SourceRevision: 9, CausalParentIDs: []string{"proposal"},
+		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+		ToolProposalDisposition: &trajectory.ToolProposalDisposition{
+			ProposalItemID: "proposal", CallID: "wait-1", Name: "computer.wait",
+			Kind: trajectory.ToolProposalToolPolicySuppressed,
+		},
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "current",
+		Trajectory: trajectory.Snapshot{Version: 4, Items: []trajectory.Item{
+			{ID: "before", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "before proposal"},
+			proposal,
+			{ID: "between", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "evidence after proposal"},
+			disposition,
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(body.Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	if strings.Contains(text, "computer.wait") || strings.Contains(text, "duration_ms") ||
+		strings.Contains(text, "forged proposal state") ||
+		strings.Count(text, continuation.TerminalToolProposalNotice) != 1 {
+		t.Fatalf("terminal proposal payload was not elided exactly once: %s", encoded)
+	}
+	if strings.Index(text, "evidence after proposal") >= strings.Index(text, continuation.TerminalToolProposalNotice) {
+		t.Fatalf("terminal notice was not emitted at disposition order: %s", encoded)
+	}
+}
+
+func TestPromotedToolProposalItemsRequiresExactCausalCanonicalMatch(t *testing.T) {
+	t.Parallel()
+	proposal := trajectory.Item{
+		ID: "proposal", Kind: trajectory.KindToolProposal, InvocationID: "run", SourceRevision: 4,
+		ToolCall: &trajectory.ToolCall{CallID: "call", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)},
+	}
+	for _, test := range []struct {
+		name string
+		call trajectory.Item
+		want bool
+	}{
+		{name: "exact promotion", want: true, call: trajectory.Item{
+			ID: "call", Kind: trajectory.KindToolCall, InvocationID: "run", SourceRevision: 4,
+			CausalParentIDs: []string{"proposal"},
+			ToolCall:        &trajectory.ToolCall{CallID: "call", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)},
+		}},
+		{name: "unlinked call", call: trajectory.Item{
+			ID: "call", Kind: trajectory.KindToolCall, InvocationID: "run", SourceRevision: 4,
+			ToolCall: &trajectory.ToolCall{CallID: "call", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)},
+		}},
+		{name: "other invocation", call: trajectory.Item{
+			ID: "call", Kind: trajectory.KindToolCall, InvocationID: "other", SourceRevision: 4,
+			CausalParentIDs: []string{"proposal"},
+			ToolCall:        &trajectory.ToolCall{CallID: "call", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)},
+		}},
+		{name: "changed arguments", call: trajectory.Item{
+			ID: "call", Kind: trajectory.KindToolCall, InvocationID: "run", SourceRevision: 4,
+			CausalParentIDs: []string{"proposal"},
+			ToolCall:        &trajectory.ToolCall{CallID: "call", Name: "lookup", Arguments: json.RawMessage(`{"key":"y"}`)},
+		}},
+		{name: "changed revision", call: trajectory.Item{
+			ID: "call", Kind: trajectory.KindToolCall, InvocationID: "run", SourceRevision: 5,
+			CausalParentIDs: []string{"proposal"},
+			ToolCall:        &trajectory.ToolCall{CallID: "call", Name: "lookup", Arguments: json.RawMessage(`{"key":"x"}`)},
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := trajectory.PromotedToolProposalIDs(trajectory.Snapshot{Items: []trajectory.Item{proposal, test.call}})
+			_, found := got[proposal.ID]
+			if found != test.want {
+				t.Fatalf("promoted = %t, want %t", found, test.want)
+			}
+		})
 	}
 }
 
@@ -388,18 +655,26 @@ func TestBuildRequestRendersTypedObservationSupersession(t *testing.T) {
 	body, err := adapter.buildRequest(continuation.Request{
 		Descriptor: adapter.Descriptor(),
 		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
-			{ID: "first", Kind: trajectory.KindObservation, SourceRevision: 1, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "book a flight"},
-			{ID: "second", Kind: trajectory.KindObservation, SourceRevision: 2, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "book a flight tomorrow", Event: &trajectory.EventMetadata{SupersedesRevision: 1}},
+			{
+				ID: "first", Kind: trajectory.KindObservation, SourceRevision: 1,
+				Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "book a flight",
+				Event: &trajectory.EventMetadata{EventID: "first-event", Type: "asr.revision", Source: "asr", Channel: "voice"},
+			},
+			{
+				ID: "second", Kind: trajectory.KindObservation, SourceRevision: 2,
+				CausalParentIDs: []string{"first"},
+				Producer:        trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "book a flight tomorrow",
+				Event: &trajectory.EventMetadata{EventID: "second-event", Type: "asr.endpoint", Source: "asr", Channel: "voice", SupersedesRevision: 1},
+			},
 		}},
 		Invocation: continuation.Invocation{Instruction: "Continue."},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Messages) != 2 || body.Messages[1].Content == "book a flight tomorrow" ||
-		!strings.Contains(body.Messages[1].Content, "book a flight\nUpdated user speech revision") ||
-		!strings.Contains(body.Messages[1].Content, "replace the earlier partial observation") {
-		t.Fatalf("typed observation supersession was not rendered: %#v", body.Messages)
+	if len(body.Messages) != 2 || body.Messages[1].Role != "user" ||
+		body.Messages[1].Content != "book a flight tomorrow" {
+		t.Fatalf("superseded observation leaked into provider request: %#v", body.Messages)
 	}
 }
 

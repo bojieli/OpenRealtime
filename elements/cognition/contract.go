@@ -226,6 +226,12 @@ type Result struct {
 	Outputs           []PreparedOutput        `json:"outputs,omitempty"`
 	AssistantText     string                  `json:"assistant_text,omitempty"`
 	ReasoningText     string                  `json:"reasoning_text,omitempty"`
+	// ReasoningRetained attests that every textual reasoning delta emitted by
+	// the provider is present in Outputs and ReasoningText. False is the
+	// fail-closed default: an opaque native provider state can then contain
+	// model-authored text that no downstream content boundary was able to
+	// inspect.
+	ReasoningRetained bool                    `json:"reasoning_retained,omitempty"`
 	ToolProposals     []ToolProposal          `json:"tool_proposals,omitempty"`
 	Completion        continuation.Completion `json:"completion"`
 	Interrupted       bool                    `json:"interrupted,omitempty"`

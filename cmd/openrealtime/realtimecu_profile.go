@@ -54,7 +54,7 @@ const (
 	realtimeCUProviderArtifactID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-provider/v2"
 	realtimeCUInspectionTokenTTLMS  = uint64((5 * time.Minute) / time.Millisecond)
 	realtimeCUAttachedKeyframeMode  = "attached-keyframe-v1"
-	realtimeCUVisualChangeThreshold = 0.01
+	realtimeCUVisualChangeThreshold = 0.005
 )
 
 type realtimeCUProfileOptions struct {

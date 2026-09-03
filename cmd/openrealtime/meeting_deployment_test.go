@@ -81,19 +81,35 @@ func TestComposedMeetingDeploymentVerifierBindsOpaqueLiveProofs(t *testing.T) {
 				attestor.attestCalls, attestor.revalidateCalls)
 		}
 	}
+	if err := verifier.VerifyForeground(context.Background(), got); err != nil {
+		t.Fatal(err)
+	}
+	if model.revalidateCalls != 2 || asr.revalidateCalls != 2 ||
+		tts.revalidateCalls != 1 || background.revalidateCalls != 1 {
+		t.Fatalf("Meeting foreground verification crossed into graph TTS: model=%d ASR=%d TTS=%d background=%d",
+			model.revalidateCalls, asr.revalidateCalls, tts.revalidateCalls, background.revalidateCalls)
+	}
+	if err := verifier.VerifyTTS(context.Background(), got); err != nil {
+		t.Fatal(err)
+	}
+	if model.revalidateCalls != 2 || asr.revalidateCalls != 2 ||
+		tts.revalidateCalls != 2 || background.revalidateCalls != 1 {
+		t.Fatalf("Meeting graph TTS verification touched unrelated deployments: model=%d ASR=%d TTS=%d background=%d",
+			model.revalidateCalls, asr.revalidateCalls, tts.revalidateCalls, background.revalidateCalls)
+	}
 	if err := verifier.VerifyVision(context.Background(), got); err != nil {
 		t.Fatal(err)
 	}
-	if model.revalidateCalls != 2 || asr.revalidateCalls != 1 ||
-		tts.revalidateCalls != 1 || background.revalidateCalls != 1 {
+	if model.revalidateCalls != 3 || asr.revalidateCalls != 2 ||
+		tts.revalidateCalls != 2 || background.revalidateCalls != 1 {
 		t.Fatalf("Meeting visual verification touched unrelated deployments: model=%d ASR=%d TTS=%d background=%d",
 			model.revalidateCalls, asr.revalidateCalls, tts.revalidateCalls, background.revalidateCalls)
 	}
 	if err := verifier.VerifyBackground(context.Background(), got); err != nil {
 		t.Fatal(err)
 	}
-	if model.revalidateCalls != 2 || asr.revalidateCalls != 1 ||
-		tts.revalidateCalls != 1 || background.revalidateCalls != 2 {
+	if model.revalidateCalls != 3 || asr.revalidateCalls != 2 ||
+		tts.revalidateCalls != 2 || background.revalidateCalls != 2 {
 		t.Fatalf("Meeting background verification touched unrelated deployments: model=%d ASR=%d TTS=%d background=%d",
 			model.revalidateCalls, asr.revalidateCalls, tts.revalidateCalls, background.revalidateCalls)
 	}
@@ -327,6 +343,9 @@ func TestLiveMeetingDeploymentSessionRevalidationLatency(t *testing.T) {
 	}
 	started := time.Now()
 	if err := components.VerifyForeground(context.Background(), identities); err != nil {
+		t.Fatal(err)
+	}
+	if err := components.VerifyTTS(context.Background(), identities); err != nil {
 		t.Fatal(err)
 	}
 	if err := components.VerifyVision(context.Background(), identities); err != nil {

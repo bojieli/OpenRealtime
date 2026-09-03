@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 3,
+      "revision": 7,
       "ports": [
         {
           "name": "authority",
@@ -52,6 +52,75 @@
           "default_depth": 32
         },
         {
+          "name": "disposition_append",
+          "direction": "output",
+          "type": {
+            "name": "Request",
+            "arguments": [
+              {
+                "name": "trajectory.Append"
+              },
+              {
+                "name": "flow.RequestID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "disposition_committed",
+          "direction": "input",
+          "type": {
+            "name": "Reply",
+            "arguments": [
+              {
+                "name": "trajectory.Commit"
+              },
+              {
+                "name": "flow.RequestID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "disposition_rejected",
+          "direction": "input",
+          "type": {
+            "name": "Reply",
+            "arguments": [
+              {
+                "name": "trajectory.Rejection"
+              },
+              {
+                "name": "flow.RequestID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "effect_terminal",
+          "direction": "input",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "action.PreEffectTerminal"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
           "name": "outcome",
           "direction": "output",
           "type": {
@@ -73,7 +142,7 @@
             "name": "Event",
             "arguments": [
               {
-                "name": "cognition.Result"
+                "name": "interaction.SafeModelResult"
               }
             ]
           },
@@ -116,6 +185,9 @@
       "reaction": {
         "triggers": [
           "committed",
+          "disposition_committed",
+          "disposition_rejected",
+          "effect_terminal",
           "result"
         ],
         "interrupts": [
@@ -123,6 +195,7 @@
         ],
         "outcomes": [
           "authority",
+          "disposition_append",
           "outcome",
           "state",
           "trigger"

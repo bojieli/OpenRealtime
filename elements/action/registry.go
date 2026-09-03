@@ -68,13 +68,14 @@ func (registries *ToolRegistries) Register(reference string, specs []legacyactio
 	normalized := validated.Specs()
 	tools := make(map[string]declaredTool, len(normalized))
 	type digestTool struct {
-		Name        string               `json:"name"`
-		Description string               `json:"description"`
-		Parameters  json.RawMessage      `json:"parameters"`
-		Confirm     legacyaction.Confirm `json:"confirm"`
-		Background  bool                 `json:"background"`
-		Target      string               `json:"target"`
-		Dispatcher  string               `json:"dispatcher"`
+		Name                string                                `json:"name"`
+		Description         string                                `json:"description"`
+		Parameters          json.RawMessage                       `json:"parameters"`
+		ArgumentNormalizers []legacyaction.ToolArgumentNormalizer `json:"argument_normalizers,omitempty"`
+		Confirm             legacyaction.Confirm                  `json:"confirm"`
+		Background          bool                                  `json:"background"`
+		Target              string                                `json:"target"`
+		Dispatcher          string                                `json:"dispatcher"`
 	}
 	digestTools := make([]digestTool, 0, len(normalized))
 	for _, spec := range normalized {
@@ -87,9 +88,11 @@ func (registries *ToolRegistries) Register(reference string, specs []legacyactio
 		}
 		copy := spec
 		copy.Parameters = slices.Clone(spec.Parameters)
+		copy.ArgumentNormalizers = slices.Clone(spec.ArgumentNormalizers)
 		declarationDigest, err := digestJSON(digestTool{
 			Name: copy.Name, Description: copy.Description, Parameters: copy.Parameters,
-			Confirm: copy.Confirm, Background: copy.Background, Target: copy.Target, Dispatcher: identity,
+			ArgumentNormalizers: copy.ArgumentNormalizers,
+			Confirm:             copy.Confirm, Background: copy.Background, Target: copy.Target, Dispatcher: identity,
 		})
 		if err != nil {
 			return fmt.Errorf("register tool registry %q: digest tool %q: %w", reference, spec.Name, err)
@@ -97,7 +100,8 @@ func (registries *ToolRegistries) Register(reference string, specs []legacyactio
 		tools[copy.Name] = declaredTool{spec: copy, digest: declarationDigest, dispatcherIdentity: identity}
 		digestTools = append(digestTools, digestTool{
 			Name: copy.Name, Description: copy.Description, Parameters: copy.Parameters,
-			Confirm: copy.Confirm, Background: copy.Background, Target: copy.Target, Dispatcher: identity,
+			ArgumentNormalizers: copy.ArgumentNormalizers,
+			Confirm:             copy.Confirm, Background: copy.Background, Target: copy.Target, Dispatcher: identity,
 		})
 	}
 	// Legacy Registry preserves declaration order, but sort by name for an
@@ -146,6 +150,8 @@ func (set toolSet) lookup(name string) (declaredTool, bool, error) {
 				name, tool.dispatcherIdentity, actual)
 		}
 	}
+	tool.spec.Parameters = slices.Clone(tool.spec.Parameters)
+	tool.spec.ArgumentNormalizers = slices.Clone(tool.spec.ArgumentNormalizers)
 	return tool, true, nil
 }
 

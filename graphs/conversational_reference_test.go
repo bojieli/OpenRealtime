@@ -552,6 +552,24 @@ func assertConversationalControlBoundaries(t *testing.T, reference conversationa
 				name, boundary.Direction, boundary.Type.String(), typeName)
 		}
 	}
+	for name, wantType := range map[string]element.Type{
+		"fast_prepared_text":                    interactionelements.SafePreparedTextType(),
+		"slow_prepared_text":                    interactionelements.SafePreparedTextType(),
+		"fast_result":                           interactionelements.SafeModelResultType(),
+		"slow_result":                           interactionelements.SafeModelResultType(),
+		"fast_control_serialization_quarantine": interactionelements.ControlSerializationQuarantineType(),
+		"slow_control_serialization_quarantine": interactionelements.ControlSerializationQuarantineType(),
+	} {
+		boundary, found := boundaries[name]
+		if !found {
+			t.Errorf("missing quarantined model output boundary %s", name)
+			continue
+		}
+		if boundary.Direction != ir.OutputBoundary || !boundary.Type.Equal(wantType) {
+			t.Errorf("boundary %s = %s %s, want output %s",
+				name, boundary.Direction, boundary.Type.String(), wantType.String())
+		}
+	}
 	for _, connector := range []struct {
 		id      string
 		element string
@@ -563,6 +581,8 @@ func assertConversationalControlBoundaries(t *testing.T, reference conversationa
 		{id: "slow_tool_copy", element: "flow.Tee"},
 		{id: "fast_action_join", element: "authority.ProvenanceJoin"},
 		{id: "slow_action_join", element: "authority.ProvenanceJoin"},
+		{id: "fast_control_quarantine", element: "interaction.ControlSerializationQuarantine"},
+		{id: "slow_control_quarantine", element: "interaction.ControlSerializationQuarantine"},
 		{id: "speech_cancel_copy", element: "flow.Tee"},
 	} {
 		if got := conversationalNodeElement(reference.graph, connector.id); got != connector.element {
@@ -649,8 +669,14 @@ func assertNoModelToModelEdges(t *testing.T, graph ir.Graph) {
 		toNode   string
 		toPort   string
 	}{
-		{"fast_model", "result", "fast_result_copy", "in"},
-		{"slow_model", "result", "slow_result_copy", "in"},
+		{"fast_model", "text", "fast_control_quarantine", "text"},
+		{"fast_model", "result", "fast_control_quarantine", "result"},
+		{"slow_model", "text", "slow_control_quarantine", "text"},
+		{"slow_model", "result", "slow_control_quarantine", "result"},
+		{"fast_control_quarantine", "safe_text", "fast_text_copy", "in"},
+		{"fast_control_quarantine", "safe_result", "fast_result_copy", "in"},
+		{"slow_control_quarantine", "safe_text", "slow_text_copy", "in"},
+		{"slow_control_quarantine", "safe_result", "slow_result_copy", "in"},
 		{"fast_result_copy", "out", "fast_result_commit", "result"},
 		{"slow_result_copy", "out", "slow_result_commit", "result"},
 		{"append_mux", "out", "trajectory", "append"},

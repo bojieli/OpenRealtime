@@ -130,7 +130,7 @@ func (bridge *clientBridge) Dispatch(
 func (bridge *clientBridge) awaitEmission(
 	ctx context.Context, sessionID, runID string, committed actionelements.CommittedAction,
 ) error {
-	call := cloneToolCall(committed.Executable.Canonical.Authorized.Confirmed.Declared.Admitted.Proposal.Call)
+	call := declaredActionCall(committed.Executable.Canonical.Authorized.Confirmed.Declared)
 	if ctx == nil {
 		return errors.New("scenario conversation client emission: nil context")
 	}
@@ -419,6 +419,18 @@ func clientCallScopeKey(sessionID, runID, callID string) string {
 func cloneToolCall(call trajectory.ToolCall) trajectory.ToolCall {
 	call.Arguments = slices.Clone(call.Arguments)
 	return call
+}
+
+// declaredActionCall is the exact call authorized for execution. Most calls
+// remain byte-identical to the model proposal; an explicit graph-native
+// normalization element may instead attach a separately attested effective
+// call. Keep that distinction local so adapters cannot accidentally emit the
+// unnormalized proposal after the action plane has authorized its derivative.
+func declaredActionCall(declared actionelements.DeclaredAction) trajectory.ToolCall {
+	if declared.EffectiveCall != nil {
+		return cloneToolCall(*declared.EffectiveCall)
+	}
+	return cloneToolCall(declared.Admitted.Proposal.Call)
 }
 
 func cloneToolResult(result trajectory.ToolResult) trajectory.ToolResult {

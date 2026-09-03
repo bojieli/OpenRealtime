@@ -12,7 +12,7 @@ const DECISION_KINDS = new Set([
 const DECISION_OPERATIONS = new Set([
   "accepted", "action", "admit", "already_committed", "attest", "authorize", "cancel",
   "candidate", "commit", "committed", "complete", "confirm", "context", "execute", "fence",
-  "join", "lookup", "prepare", "promote", "proposal", "provenance", "queue", "result",
+  "join", "lookup", "normalize", "prepare", "promote", "proposal", "provenance", "queue", "result",
   "rejected", "retry", "select", "timeout",
 ]);
 

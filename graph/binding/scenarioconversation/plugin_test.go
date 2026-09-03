@@ -2,9 +2,11 @@ package scenarioconversation
 
 import (
 	"context"
+	"encoding/json"
 	"sync/atomic"
 	"testing"
 
+	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	legacy "github.com/bojieli/OpenRealtime/binding"
@@ -124,5 +126,38 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 
 	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 || ttsOpened.Load() != 0 {
 		t.Fatal("reading resource-free graph inventory opened a provider")
+	}
+}
+
+func TestNormalizedToolDeclarationsOwnDeploymentNormalizerMetadata(t *testing.T) {
+	source := []ToolDeclaration{{
+		Name: "track_order", Description: "track an order",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"order_id":{"type":"string"}}}`),
+		ArgumentNormalizers: []legacyaction.ToolArgumentNormalizer{{
+			Argument: "order_id", Normalizer: legacyaction.ToolParameterCompactASCIIAlphanumericV1,
+		}},
+	}}
+	normalized, err := normalizeToolDeclarations(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(normalized[0].ArgumentNormalizers) != 1 ||
+		normalized[0].ArgumentNormalizers[0].Normalizer !=
+			legacyaction.ToolParameterCompactASCIIAlphanumericV1 {
+		t.Fatalf("normalized deployment lost argument policy: %+v", normalized[0])
+	}
+	source[0].Parameters[0] = '['
+	source[0].ArgumentNormalizers[0].Argument = "mutated-source"
+	if string(normalized[0].Parameters) !=
+		`{"properties":{"order_id":{"type":"string"}},"type":"object"}` ||
+		normalized[0].ArgumentNormalizers[0].Argument != "order_id" {
+		t.Fatalf("normalized declaration retained caller-owned buffers: %+v", normalized[0])
+	}
+
+	cloned := cloneToolDeclarations(normalized)
+	cloned[0].Parameters[0] = '['
+	cloned[0].ArgumentNormalizers[0].Argument = "mutated-clone"
+	if normalized[0].Parameters[0] != '{' || normalized[0].ArgumentNormalizers[0].Argument != "order_id" {
+		t.Fatalf("tool declaration clone shares private metadata: %+v", normalized[0])
 	}
 }

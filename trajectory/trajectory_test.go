@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -236,6 +237,29 @@ func TestToolIdentityScopesProviderCallIDByInvocation(t *testing.T) {
 	}
 	if pending := UnresolvedToolCalls(store.Snapshot()); len(pending) != 0 {
 		t.Fatalf("resolved scoped calls remained pending: %#v", pending)
+	}
+}
+
+func TestPromotedToolProposalIDsRequireExactScopedCausalPromotion(t *testing.T) {
+	t.Parallel()
+	call := func(arguments string) *ToolCall {
+		return &ToolCall{CallID: "shared", Name: "lookup", Arguments: json.RawMessage(arguments)}
+	}
+	snapshot := Snapshot{Items: []Item{
+		{ID: "proposal-a", Kind: KindToolProposal, InvocationID: "run-a", SourceRevision: 3, ToolCall: call(`{"key":"a"}`)},
+		{ID: "call-a", Kind: KindToolCall, InvocationID: "run-a", SourceRevision: 3, CausalParentIDs: []string{"proposal-a"}, ToolCall: call(`{"key":"a"}`)},
+		{ID: "proposal-b", Kind: KindToolProposal, InvocationID: "run-b", SourceRevision: 4, ToolCall: call(`{"key":"b"}`)},
+		// Reusing the provider call ID in another invocation cannot promote
+		// proposal-b. Neither can a causally linked but mutated call.
+		{ID: "wrong-scope", Kind: KindToolCall, InvocationID: "run-a", SourceRevision: 4, CausalParentIDs: []string{"proposal-b"}, ToolCall: call(`{"key":"b"}`)},
+		{ID: "mutated", Kind: KindToolCall, InvocationID: "run-b", SourceRevision: 4, CausalParentIDs: []string{"proposal-b"}, ToolCall: call(`{"key":"changed"}`)},
+	}}
+	promoted := PromotedToolProposalIDs(snapshot)
+	if len(promoted) != 1 {
+		t.Fatalf("promoted proposal IDs = %#v", promoted)
+	}
+	if _, found := promoted["proposal-a"]; !found {
+		t.Fatalf("exact promotion was not recognized: %#v", promoted)
 	}
 }
 
@@ -525,6 +549,55 @@ func TestStoreEnforcesTypedSupersessionProvenance(t *testing.T) {
 		},
 	}); err == nil {
 		t.Fatal("non-observation event claimed observation supersession")
+	}
+}
+
+func TestResolveObservationSupersessionUsesStoreCanonicalEdgeRules(t *testing.T) {
+	t.Parallel()
+	event := func(id, source, channel string, supersedes uint64) *EventMetadata {
+		return &EventMetadata{
+			EventID: id + "-event", Type: "input.revision", Source: source, Channel: channel,
+			SupersedesRevision: supersedes,
+		}
+	}
+	voice := Item{
+		ID: "voice-1", Kind: KindObservation, SourceRevision: 1,
+		Producer: Producer{Phase: PhaseUser}, Content: "partial",
+		Event: event("voice-1", "asr", "voice", 0),
+	}
+	independent := Item{
+		ID: "text-2", Kind: KindObservation, SourceRevision: 2,
+		Producer: Producer{Phase: PhaseUser}, Content: "independent",
+		Event: event("text-2", "keyboard", "text", 0),
+	}
+	replacement := Item{
+		ID: "voice-3", Kind: KindObservation, SourceRevision: 3,
+		CausalParentIDs: []string{"voice-1"}, Producer: Producer{Phase: PhaseUser}, Content: "complete",
+		Event: event("voice-3", "asr", "voice", 1),
+	}
+	index, err := ResolveObservationSupersession([]Item{voice, independent}, replacement)
+	if err != nil || index != 0 {
+		t.Fatalf("resolved target = %d, %v; want 0, nil", index, err)
+	}
+
+	stalePrefix := []Item{voice, independent, {
+		ID: "voice-4", Kind: KindObservation, SourceRevision: 4,
+		CausalParentIDs: []string{"voice-1"}, Producer: Producer{Phase: PhaseUser}, Content: "newer",
+		Event: event("voice-4", "asr", "voice", 1),
+	}}
+	replacement.ID = "voice-5"
+	replacement.SourceRevision = 5
+	replacement.Event = event("voice-5", "asr", "voice", 1)
+	if _, err := ResolveObservationSupersession(stalePrefix, replacement); err == nil ||
+		!strings.Contains(err.Error(), "latest canonical observation") {
+		t.Fatalf("stale supersession was resolved: %v", err)
+	}
+
+	malformed := replacement
+	malformed.Event = &EventMetadata{Source: "asr", Channel: "voice", SupersedesRevision: 1}
+	if _, err := ResolveObservationSupersession([]Item{voice}, malformed); err == nil ||
+		!strings.Contains(err.Error(), "event metadata requires") {
+		t.Fatalf("malformed supersession was resolved: %v", err)
 	}
 }
 

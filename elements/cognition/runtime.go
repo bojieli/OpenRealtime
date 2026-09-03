@@ -1018,8 +1018,9 @@ func (runner *textModelRunner) completeGeneration(
 		Invocation:     cloneInvocation(execution.generate.Invocation),
 		Outputs:        clonePreparedOutputs(execution.outputs),
 		AssistantText:  execution.assistant.String(), ReasoningText: execution.reasoning.String(),
-		ToolProposals: cloneToolProposals(execution.tools),
-		Completion:    cloneCompletion(executionResult.completion), Interrupted: interrupted,
+		ReasoningRetained: execution.runner.retainReasoning,
+		ToolProposals:     cloneToolProposals(execution.tools),
+		Completion:        cloneCompletion(executionResult.completion), Interrupted: interrupted,
 	}
 	if len(execution.sampled.snapshot.Items) > 0 {
 		result.ContextTailID = execution.sampled.snapshot.Items[len(execution.sampled.snapshot.Items)-1].ID
@@ -1243,6 +1244,11 @@ func cloneTrajectoryItem(item trajectory.Item) trajectory.Item {
 	if item.ToolCall != nil {
 		copy := cloneToolCall(*item.ToolCall)
 		item.ToolCall = &copy
+	}
+	if item.ToolCallDerivation != nil {
+		copy := *item.ToolCallDerivation
+		copy.Rewrites = slices.Clone(item.ToolCallDerivation.Rewrites)
+		item.ToolCallDerivation = &copy
 	}
 	if item.ToolResult != nil {
 		copy := *item.ToolResult

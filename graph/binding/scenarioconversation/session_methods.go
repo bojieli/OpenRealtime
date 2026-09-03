@@ -434,10 +434,13 @@ func (session *session) Cancel(ctx context.Context, reason string) error {
 	reason = boundedAdapterReason(reason)
 	session.activityMu.Lock()
 	generations := make([]string, 0, len(session.active))
-	runs := make(map[string]struct{}, len(session.active)+len(session.speechRuns)+len(session.calls))
+	runs := make(map[string]struct{}, len(session.active)+len(session.pendingSpeech)+len(session.speechRuns)+len(session.calls))
 	for generationID := range session.active {
 		generations = append(generations, generationID)
 		runs[generationID] = struct{}{}
+	}
+	for runID := range session.pendingSpeech {
+		runs[runID] = struct{}{}
 	}
 	calls := make([]activeClientCall, 0, len(session.calls))
 	for _, call := range session.calls {

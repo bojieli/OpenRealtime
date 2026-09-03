@@ -4,13 +4,19 @@
 graph interaction_both {
     cognition.TextModel :: fast;
     cognition.TextModel :: slow;
+    interaction.ControlSerializationQuarantine :: fast_control_quarantine;
+    interaction.ControlSerializationQuarantine :: slow_control_quarantine;
     interaction.SpeechArbiter :: arbiter;
     interaction.SegmentPreparedText :: segment;
     flow.Tee :: fast_outcome_copy;
     flow.Tee :: slow_outcome_copy;
 
-    fast.text -> arbiter.text;
-    slow.text -> arbiter.text;
+    fast.text -> fast_control_quarantine.text;
+    fast.result -> fast_control_quarantine.result;
+    slow.text -> slow_control_quarantine.text;
+    slow.result -> slow_control_quarantine.result;
+    fast_control_quarantine.safe_text -> arbiter.text;
+    slow_control_quarantine.safe_text -> arbiter.text;
     fast.outcome -> fast_outcome_copy.in;
     slow.outcome -> slow_outcome_copy.in;
     fast_outcome_copy.out -> arbiter.terminal;
@@ -38,11 +44,13 @@ graph interaction_both {
     output arbitration_model_cancel_request = arbiter.cancel_upstream;
     output segmentation_outcome = segment.outcome;
     output arbitration_outcome = arbiter.outcome;
-    output fast_result = fast.result;
+    output fast_result = fast_control_quarantine.safe_result;
+    output fast_control_serialization_quarantine = fast_control_quarantine.quarantined;
     output fast_tools = fast.tools;
     output fast_outcome = fast_outcome_copy.out;
     output fast_resolution = fast.resolved;
-    output slow_result = slow.result;
+    output slow_result = slow_control_quarantine.safe_result;
+    output slow_control_serialization_quarantine = slow_control_quarantine.quarantined;
     output slow_tools = slow.tools;
     output slow_outcome = slow_outcome_copy.out;
     output slow_resolution = slow.resolved;

@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
@@ -83,6 +84,20 @@ func meetingApplicationFixture(t testing.TB) (graphs.MeetingAssistantRegistratio
 				Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
 					calls.Add(1)
 					return nil, errors.New("background must stay lazy")
+				},
+			},
+			TTS: meetinggraph.TTSPlugin{
+				Artifact: meetingArtifact("model://openrealtime/meeting/tts"),
+				Descriptor: v1.Descriptor{
+					Name: "meeting-fixture-tts", Version: "implementation:1",
+					Capabilities: v1.Capabilities{
+						v1.CapabilityPCM16Output:     true,
+						v1.CapabilityStreamingOutput: true,
+					},
+				},
+				Factory: func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
+					calls.Add(1)
+					return nil, errors.New("TTS must stay lazy")
 				},
 			},
 		},

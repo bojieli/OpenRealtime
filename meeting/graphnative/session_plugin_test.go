@@ -8,19 +8,22 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	modelelements "github.com/bojieli/OpenRealtime/elements/model"
 	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
+	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 func TestSessionPluginConstructionIsResourceFreeAndDeclaresExactMountServices(t *testing.T) {
 	artifacts := foregroundTestArtifacts()
-	var foregroundCalls, visualCalls, backgroundCalls atomic.Int32
+	var foregroundCalls, visualCalls, backgroundCalls, ttsCalls atomic.Int32
 	backgroundDescriptor := foregroundTestDescriptor()
 	backgroundDescriptor.Phase = trajectory.PhaseSlow
 	backgroundDescriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
@@ -57,12 +60,19 @@ func TestSessionPluginConstructionIsResourceFreeAndDeclaresExactMountServices(t 
 				return nil, errors.New("background must stay lazy")
 			},
 		},
+		TTS: TTSPlugin{
+			Artifact: artifacts["tts"], Descriptor: foregroundTestTTSDescriptor(),
+			Factory: func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
+				ttsCalls.Add(1)
+				return nil, errors.New("TTS must stay lazy")
+			},
+		},
 	}
 	plugin, err := NewSessionPlugin(config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if foregroundCalls.Load()+visualCalls.Load()+backgroundCalls.Load() != 0 {
+	if foregroundCalls.Load()+visualCalls.Load()+backgroundCalls.Load()+ttsCalls.Load() != 0 {
 		t.Fatal("session plugin construction acquired a provider resource")
 	}
 
@@ -77,7 +87,8 @@ func TestSessionPluginConstructionIsResourceFreeAndDeclaresExactMountServices(t 
 	wantNames := []string{
 		modelelements.DeploymentRegistryService, modelelements.PayloadCodecService,
 		perceptionelements.VisualProviderRegistryService,
-		cognitionelements.ProviderRegistryService, stateelements.TrajectoryStoreService,
+		cognitionelements.ProviderRegistryService, speechelements.TTSProviderRegistryService,
+		stateelements.TrajectoryStoreService,
 	}
 	assembly := plugin.AssemblyDependencies()
 	mounts := plugin.MountDependencies()
@@ -91,8 +102,30 @@ func TestSessionPluginConstructionIsResourceFreeAndDeclaresExactMountServices(t 
 			t.Fatalf("dependency %d: assembly=%+v mount=%+v", index, assembly[index], mounts[index])
 		}
 	}
-	if foregroundCalls.Load()+visualCalls.Load()+backgroundCalls.Load() != 0 {
+	if foregroundCalls.Load()+visualCalls.Load()+backgroundCalls.Load()+ttsCalls.Load() != 0 {
 		t.Fatal("dependency metadata inspection acquired a provider resource")
+	}
+	ttsIndex := slices.IndexFunc(mounts, func(candidate graphlaunch.MountDependencyPlugin) bool {
+		return candidate.Name == speechelements.TTSProviderRegistryService
+	})
+	if ttsIndex < 0 {
+		t.Fatal("session plugin omitted its TTS mount contribution")
+	}
+	prepared, err := mounts[ttsIndex].Factory(context.Background(), legacy.Options{
+		SessionID: "meeting-tts-mount-laziness", Sink: foregroundTestClientSink{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared) != 1 || prepared[0].Name != speechelements.TTSProviderRegistryService ||
+		prepared[0].Artifact != artifacts["tts"] {
+		t.Fatalf("prepared TTS dependency = %+v", prepared)
+	}
+	if registry, ok := prepared[0].Service.(*speechelements.TTSProviderRegistry); !ok || registry == nil {
+		t.Fatalf("prepared TTS service has type %T", prepared[0].Service)
+	}
+	if got := ttsCalls.Load(); got != 0 {
+		t.Fatalf("TTS mount acquired provider resource %d time(s)", got)
 	}
 }
 

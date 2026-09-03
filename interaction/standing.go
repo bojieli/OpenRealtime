@@ -480,13 +480,86 @@ func (extractor *modelExtractor) Extract(
 	if err != nil {
 		return Extraction{}, err
 	}
-	for index := range extraction.Pins {
-		reading := extractor.readingOf(ctx, extraction.Pins[index])
-		extraction.Pins[index].Counting = reading.counting
-		extraction.Pins[index].Restricting = reading.restricting
-		extraction.Pins[index].Scope = reading.scope
+	grounded := extraction.Pins[:0]
+	for _, instruction := range extraction.Pins {
+		// Extraction is allowed to paraphrase, which also means it can add a
+		// trigger that was never present in the person's words. Do not classify
+		// or publish a proposed policy until a separate, deliberately narrower
+		// pass has grounded it in the exact utterance. A false policy persists
+		// into later turns and can outrank the deployment contract; a rejected
+		// real policy can be restated by the person, so uncertainty must fail
+		// closed here.
+		if !extractor.groundsStandingPolicy(ctx, utterance, instruction.Text) {
+			continue
+		}
+		reading := extractor.readingOf(ctx, instruction)
+		instruction.Counting = reading.counting
+		instruction.Restricting = reading.restricting
+		instruction.Scope = reading.scope
+		grounded = append(grounded, instruction)
 	}
+	extraction.Pins = grounded
 	return extraction, nil
+}
+
+// StandingPolicyGroundingInstruction verifies the one fact an extraction
+// paraphrase cannot be trusted to preserve: whether the person actually asked
+// the agent to keep watching or constraining future interaction at all.
+//
+// The proposed policy is evidence about what the extractor meant, never
+// evidence that the person said it. In particular, a present-tense observation
+// can be paraphrased into a future-event reaction, and a floor-taking phrase at
+// the front of an immediate question can be paraphrased into a silence rule.
+// Both are persistent instructions nobody gave.
+var StandingPolicyGroundingInstruction = "An extractor proposed a standing interaction policy from " +
+	"one exact utterance. Decide only whether the exact utterance explicitly establishes that kind of " +
+	"policy. The proposal explains what you are checking; it cannot supply a trigger, repetition, or " +
+	"constraint missing from the utterance. Answer yes or no and nothing else.\n\n" +
+	"This is a policy about WHEN the agent starts or suppresses a turn or action. Apply that boundary " +
+	"before looking at words such as always, every, when, or until. If the instruction only changes the " +
+	"content, length, tone, or format of replies that some other event was already going to trigger, " +
+	"answer no. Saying always or every reply does not turn reply style into an interaction trigger.\n\n" +
+	"Answer yes only when the utterance explicitly asks the agent for at least one of these:\n" +
+	"- react when a future event or condition occurs;\n" +
+	"- let each new event or piece itself trigger a repeated action, such as count, translate, or report " +
+	"as they go; or\n" +
+	"- obey a genuine temporary or ongoing constraint on when the agent may speak or act, such as " +
+	"waiting for the speaker to finish or never interrupting while they read.\n\n" +
+	"Answer no for a current observation, an immediate question or topic change, a one-shot command, " +
+	"or a reply-style/format preference. A discourse opener such as hold on or hold that thought does " +
+	"not create a silence policy when the rest of the same utterance immediately asks a question or " +
+	"changes topic. Judge what the whole utterance asks the agent to do, not words that could have meant " +
+	"something else in another sentence.\n\n" +
+	"no: Oh, it's starting to rain outside. / say something if it starts raining\n" +
+	"no: Hold on, what time is the meeting scheduled today? / do not reply until they ask what time it is\n" +
+	"no: Hold that thought. Can we discuss cooking tips instead? / do not reply until they finish their thought\n" +
+	"no: Book me a table for four at eight. / book a table when they ask\n" +
+	"no: Keep your answers to a sentence or two. / keep every answer short\n" +
+	"no: Always include the order number in replies. / include the order number in every reply\n" +
+	"yes: Tell me when the build finishes. / tell them when the build finishes\n" +
+	"yes: Hang on, I am not finished. / do not reply until they are finished\n" +
+	"yes: Count the animals as I mention them. / count each animal as they mention it\n" +
+	"yes: Stop me if I quote a price under fifty. / interrupt when they quote a price under fifty\n" +
+	"yes: Never talk over me while I am reading. / do not speak while they are reading\n"
+
+// groundsStandingPolicy checks a proposed pin before any auxiliary reading or
+// pinboard mutation. Only the exact token "yes" admits it. Provider errors,
+// hedged prose, and malformed output all reject the proposal: inventing a
+// durable instruction is the dangerous side of this boundary.
+func (extractor *modelExtractor) groundsStandingPolicy(
+	ctx context.Context, utterance, policy string,
+) bool {
+	utterance = strings.TrimSpace(utterance)
+	policy = strings.TrimSpace(policy)
+	if utterance == "" || policy == "" {
+		return false
+	}
+	evidence := "Exact utterance:\n" + utterance + "\n\nProposed standing policy:\n" + policy
+	answer, err := extractor.generator.Generate(ctx, StandingPolicyGroundingInstruction, evidence, 3)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(answer), "yes")
 }
 
 // CountingInstruction asks what kind of thing a policy is asking for.

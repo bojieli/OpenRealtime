@@ -3,4 +3,8 @@ graph: interaction_slow_only
 nodes:
   slow:
     provider: deployment.slow
+  slow_control_quarantine:
+    max_candidate_bytes: 4194304
+    max_blocks: 1024
+    max_active_streams: 32
   segment: {}

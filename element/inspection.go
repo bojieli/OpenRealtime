@@ -82,6 +82,7 @@ const (
 	DecisionFence            InspectionDecisionOperation = "fence"
 	DecisionJoin             InspectionDecisionOperation = "join"
 	DecisionLookup           InspectionDecisionOperation = "lookup"
+	DecisionNormalize        InspectionDecisionOperation = "normalize"
 	DecisionPrepare          InspectionDecisionOperation = "prepare"
 	DecisionPromote          InspectionDecisionOperation = "promote"
 	DecisionProposal         InspectionDecisionOperation = "proposal"
@@ -104,7 +105,7 @@ var supportedInspectionDecisionOperations = []InspectionDecisionOperation{
 	DecisionAttest, DecisionAuthorize, DecisionCancel, DecisionCandidate,
 	DecisionCommit, DecisionCommitted, DecisionComplete, DecisionConfirm,
 	DecisionContext, DecisionExecute, DecisionFence, DecisionJoin, DecisionLookup,
-	DecisionPrepare, DecisionPromote, DecisionProposal, DecisionProvenance,
+	DecisionNormalize, DecisionPrepare, DecisionPromote, DecisionProposal, DecisionProvenance,
 	DecisionQueue, DecisionResult, DecisionRejection, DecisionRetry, DecisionSelect,
 	DecisionTimeout,
 }

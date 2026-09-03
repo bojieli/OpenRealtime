@@ -117,6 +117,49 @@ func TestPrepareClientEffectCallsFailsClosedBeforePartialEmission(t *testing.T) 
 	}
 }
 
+func TestSessionUpdatedNeverExposesArgumentNormalizers(t *testing.T) {
+	var clientDeclaration wireTool
+	if err := json.Unmarshal([]byte(`{
+		"type":"function","name":"track_order","description":"track an order",
+		"parameters":{"type":"object","properties":{"order_id":{"type":"string"}}},
+		"argument_normalizers":[{"argument":"order_id","normalizer":"client-override"}]
+	}`), &clientDeclaration); err != nil {
+		t.Fatal(err)
+	}
+	clientSpec, err := clientDeclaration.spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(clientSpec.ArgumentNormalizers) != 0 {
+		t.Fatalf("client populated deployment-only normalizers: %+v", clientSpec.ArgumentNormalizers)
+	}
+
+	session := &session{
+		id: "sess_internal", model: "test-model",
+		settings: settings{tools: []action.ToolSpec{{
+			Name: "track_order", Description: "track an order",
+			Parameters: clientSpec.Parameters,
+			ArgumentNormalizers: []action.ToolArgumentNormalizer{{
+				Argument: "order_id", Normalizer: action.ToolParameterCompactASCIIAlphanumericV1,
+			}},
+		}}},
+	}
+	updated := session.sessionEvent("session.updated")
+	object := updated["session"].(map[string]any)
+	definition := object["tools"].([]map[string]any)[0]
+	if _, exposed := definition["argument_normalizers"]; exposed {
+		t.Fatalf("session.updated exposed deployment-only metadata: %+v", definition)
+	}
+	encoded, err := json.Marshal(updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "argument_normalizers") ||
+		strings.Contains(string(encoded), action.ToolParameterCompactASCIIAlphanumericV1) {
+		t.Fatalf("session.updated leaked deployment-only metadata: %s", encoded)
+	}
+}
+
 type blockingEffectIssuer struct {
 	entered chan struct{}
 	release chan struct{}

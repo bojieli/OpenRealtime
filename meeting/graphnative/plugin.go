@@ -275,6 +275,7 @@ func validateMeetingPlanReferences(plan *graphconfig.Plan) error {
 		{"foreground", "deployment", ForegroundDeploymentReference},
 		{"screen_observer", "provider", VisualProviderReference},
 		{"background_model", "provider", BackgroundProviderReference},
+		{"foreground_tts", "provider", TTSProviderReference},
 	}
 	values := plan.Values()
 	decoded := make(map[string]map[string]any, len(wanted))

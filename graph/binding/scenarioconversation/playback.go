@@ -3,12 +3,16 @@ package scenarioconversation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 )
 
 const (
@@ -64,12 +68,24 @@ type sessionPlaybackSink struct {
 	presentation *presentationState
 	mu           sync.Mutex
 	turns        map[string]playbackTurn
+	released     map[string]playbackRelease
+	releaseOrder []string
+	closed       bool
 }
 
 type playbackTurn struct {
 	utterance action.Utterance
 	textOnly  bool
 	begun     bool
+	ended     bool
+	outcome   action.Outcome
+	turn      legacy.TurnOutcome
+}
+
+type playbackRelease struct {
+	runID     string
+	utterance action.Utterance
+	outcome   action.Outcome
 }
 
 func newSessionPlaybackSink(
@@ -79,7 +95,7 @@ func newSessionPlaybackSink(
 	descriptor.Capabilities = maps.Clone(descriptor.Capabilities)
 	return &sessionPlaybackSink{
 		ctx: ctx, sink: sink, descriptor: descriptor, presentation: presentation,
-		turns: make(map[string]playbackTurn),
+		turns: make(map[string]playbackTurn), released: make(map[string]playbackRelease),
 	}
 }
 
@@ -168,21 +184,86 @@ func (sink *sessionPlaybackSink) End(
 	}
 	sink.mu.Lock()
 	turn, found := sink.turns[utterance.ID]
-	if found {
-		delete(sink.turns, utterance.ID)
+	valid := found && turn.begun && !turn.ended && samePlaybackUtterance(turn.utterance, utterance)
+	if valid {
+		turn.ended = true
+		turn.outcome = outcome
+		if !outcome.Completed {
+			turn.turn = legacy.TurnOutcome{
+				Incomplete: true, Detail: boundedAdapterReason(outcome.Reason),
+			}
+		}
+		sink.turns[utterance.ID] = turn
 	}
 	sink.mu.Unlock()
-	if !found || !turn.begun {
+	if !valid {
 		return errors.New("scenario conversation playback end has no begun utterance")
 	}
 	speechErr := sink.sink.SpeechEnd(ctx, utterance, outcome)
-	turnOutcome := legacy.TurnOutcome{}
-	if !outcome.Completed {
-		turnOutcome.Incomplete = true
-		turnOutcome.Detail = outcome.Reason
+	if speechErr == nil {
+		// TurnEnd is intentionally withheld. The graph's barriered released
+		// receipt is the externally visible permit for the next user turn.
+		return nil
 	}
+	sink.mu.Lock()
+	delete(sink.turns, utterance.ID)
+	sink.rememberReleasedLocked(playbackRelease{utterance: clonePlaybackUtterance(utterance), outcome: outcome})
+	sink.mu.Unlock()
+	turnOutcome := legacy.TurnOutcome{Incomplete: true, Detail: boundedAdapterReason(speechErr.Error())}
 	turnErr := sink.sink.TurnEnd(ctx, turnOutcome)
 	return errors.Join(speechErr, turnErr)
+}
+
+// Release crosses the graph-authorized turn-completion boundary. Playback.End
+// records the exact sink effect but cannot expose TurnEnd itself: doing so lets
+// response.done overtake policy lifecycle retirement on independent graph
+// lanes. The released receipt must match and consume that pending effect once.
+func (sink *sessionPlaybackSink) Release(
+	ctx context.Context, runID string, receipt speechelements.PlaybackReceipt,
+) error {
+	if sink == nil || sink.sink == nil {
+		return errors.New("scenario conversation playback sink is unavailable")
+	}
+	if ctx == nil {
+		return errors.New("scenario conversation playback release has nil context")
+	}
+	runID = strings.TrimSpace(runID)
+	utteranceID := strings.TrimSpace(receipt.Utterance.ID)
+	if !canonicalIdentity(runID) || !canonicalIdentity(utteranceID) {
+		return errors.New("scenario conversation playback release requires exact run and utterance identities")
+	}
+	sink.mu.Lock()
+	if previous, duplicate := sink.released[utteranceID]; duplicate {
+		sink.mu.Unlock()
+		if previous.runID != runID || !samePlaybackUtterance(previous.utterance, receipt.Utterance) ||
+			previous.outcome != receipt.Outcome {
+			return fmt.Errorf("scenario conversation playback release %q conflicts with its terminal receipt", utteranceID)
+		}
+		return fmt.Errorf("scenario conversation playback release %q was already consumed", utteranceID)
+	}
+	turn, found := sink.turns[utteranceID]
+	if !found {
+		sink.mu.Unlock()
+		return fmt.Errorf("scenario conversation playback release %q has no pending sink outcome", utteranceID)
+	}
+	if !turn.begun || !turn.ended {
+		sink.mu.Unlock()
+		return fmt.Errorf("scenario conversation playback release %q arrived before sink completion", utteranceID)
+	}
+	if !samePlaybackUtterance(turn.utterance, receipt.Utterance) || turn.outcome != receipt.Outcome {
+		sink.mu.Unlock()
+		return fmt.Errorf("scenario conversation playback release %q changed its sink effect", utteranceID)
+	}
+	delete(sink.turns, utteranceID)
+	sink.rememberReleasedLocked(playbackRelease{
+		runID: runID, utterance: clonePlaybackUtterance(turn.utterance), outcome: turn.outcome,
+	})
+	turnOutcome := turn.turn
+	sink.mu.Unlock()
+	if err := sink.sink.TurnEnd(ctx, turnOutcome); err != nil {
+		return fmt.Errorf("release scenario conversation playback turn %q: %w", utteranceID, err)
+	}
+	return nil
 }
 
 func (sink *sessionPlaybackSink) Reserve(utterance action.Utterance) error {
@@ -253,6 +334,11 @@ func (sink *sessionPlaybackSink) Close() error {
 		return nil
 	}
 	sink.mu.Lock()
+	if sink.closed {
+		sink.mu.Unlock()
+		return nil
+	}
+	sink.closed = true
 	turns := make([]playbackTurn, 0, len(sink.turns))
 	for id, turn := range sink.turns {
 		delete(sink.turns, id)
@@ -265,16 +351,43 @@ func (sink *sessionPlaybackSink) Close() error {
 			if reserving, ok := sink.sink.(legacy.SpeechReservationSink); ok {
 				reserving.SpeechReservationCancelled(sink.ctx, turn.utterance)
 			}
-		} else {
+		} else if !turn.ended {
 			joined = errors.Join(joined, sink.sink.SpeechEnd(
 				sink.ctx, turn.utterance, action.Outcome{Reason: "playback sink closed"},
 			))
 		}
-		joined = errors.Join(joined, sink.sink.TurnEnd(sink.ctx, legacy.TurnOutcome{
-			Incomplete: true, Detail: "playback sink closed",
-		}))
+		turnOutcome := turn.turn
+		if !turnOutcome.Incomplete {
+			turnOutcome = legacy.TurnOutcome{
+				Incomplete: true, Detail: "playback release not observed before sink closed",
+			}
+		}
+		joined = errors.Join(joined, sink.sink.TurnEnd(sink.ctx, turnOutcome))
 	}
 	return joined
+}
+
+func (sink *sessionPlaybackSink) rememberReleasedLocked(release playbackRelease) {
+	if sink.released == nil {
+		sink.released = make(map[string]playbackRelease)
+	}
+	id := release.utterance.ID
+	if _, found := sink.released[id]; found {
+		return
+	}
+	sink.released[id] = release
+	sink.releaseOrder = append(sink.releaseOrder, id)
+	if len(sink.releaseOrder) <= maximumAdapterMemory {
+		return
+	}
+	oldest := sink.releaseOrder[0]
+	sink.releaseOrder = sink.releaseOrder[1:]
+	delete(sink.released, oldest)
+}
+
+func clonePlaybackUtterance(utterance action.Utterance) action.Utterance {
+	utterance.AssistantItemIDs = slices.Clone(utterance.AssistantItemIDs)
+	return utterance
 }
 
 func (sink *sessionPlaybackSink) deleteTurn(utteranceID string) {
