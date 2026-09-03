@@ -3,6 +3,7 @@ package policy_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -342,6 +343,90 @@ func TestTemporalEvidenceAdmissionDynamicDiscoveryIsScopedToCurrentIntentCohort(
 	outcome := temporalOutcome(t, harness)
 	if outcome.RequiredObservations != 1 || outcome.QualifiedObservations != 1 {
 		t.Fatalf("cohort-scoped outcome = %+v", outcome)
+	}
+}
+
+func TestVerifyAdmittedTemporalEvidenceRejectsTamperingAndSupersededIntent(t *testing.T) {
+	store := trajectory.NewStore()
+	appendTemporalItems(t, store,
+		temporalObserver("old-screen", "old-screen-event", "vision", "screen", 10, 1),
+		temporalObserver("old-camera", "old-camera-event", "vision", "camera", 11, 2),
+		temporalIntent("intent", "intent-event", 20, 3),
+		temporalObserver("fresh-screen", "fresh-screen-event", "vision", "screen", 30, 4, "intent"),
+		temporalObserver("fresh-camera", "fresh-camera-event", "vision", "camera", 31, 5, "intent"),
+	)
+	harness := mountTemporalEvidence(t, store,
+		`{"mode":"after_intent","source_set":"observed_before_intent"}`)
+	defer harness.stop(t)
+	commit := temporalCommit(t, store, 5)
+	sendPolicy(t, harness.ingress(t, "committed"), temporalCommitEnvelope("verify-admission", commit))
+	admission := receivePolicy(t, harness.egress(t, "admitted")).Payload.(policyelements.AdmittedTemporalEvidence)
+	if outcome := temporalOutcome(t, harness); outcome.Kind != policyelements.TemporalEvidenceAdmissionAdmitted {
+		t.Fatalf("admission outcome = %+v", outcome)
+	}
+	if err := policyelements.VerifyAdmittedTemporalEvidence(store.Snapshot(), admission); err != nil {
+		t.Fatalf("verify valid admission: %v", err)
+	}
+
+	clone := func() policyelements.AdmittedTemporalEvidence {
+		result := admission
+		if admission.DurableIntent != nil {
+			intent := *admission.DurableIntent
+			result.DurableIntent = &intent
+		}
+		result.QualifyingObservations = slices.Clone(admission.QualifyingObservations)
+		return result
+	}
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*policyelements.AdmittedTemporalEvidence)
+	}{
+		{name: "prefix", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.Prefix.Digest = "sha256:" + strings.Repeat("0", 64)
+		}},
+		{name: "trigger identity", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.TriggerObservation.SourceRevision++
+		}},
+		{name: "durable intent", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.DurableIntent.OccurredNS++
+		}},
+		{name: "qualifying provenance", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.QualifyingObservations[0].Source = "other-screen"
+		}},
+		{name: "missing dynamic pair", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.QualifyingObservations = value.QualifyingObservations[:1]
+		}},
+		{name: "reordered dynamic pairs", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.QualifyingObservations[0], value.QualifyingObservations[1] =
+				value.QualifyingObservations[1], value.QualifyingObservations[0]
+		}},
+		{name: "duplicate evidence", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.QualifyingObservations = append(
+				value.QualifyingObservations, value.QualifyingObservations[0])
+		}},
+		{name: "immediate with after-intent evidence", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.Mode = policyelements.TemporalEvidenceAdmissionImmediate
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			forged := clone()
+			testCase.mutate(&forged)
+			if err := policyelements.VerifyAdmittedTemporalEvidence(store.Snapshot(), forged); err == nil {
+				t.Fatal("forged admission verified")
+			}
+		})
+	}
+
+	appendTemporalItems(t, store, temporalInstruction("later-runtime-state", 6))
+	if err := policyelements.VerifyAdmittedTemporalEvidence(store.Snapshot(), admission); err != nil {
+		t.Fatalf("later non-user state invalidated admission: %v", err)
+	}
+	provisional := temporalIntent("new-user-revision", "new-user-revision-event", 40, 7)
+	provisional.Event.Type = "participant.revision"
+	appendTemporalItems(t, store, provisional)
+	err := policyelements.VerifyAdmittedTemporalEvidence(store.Snapshot(), admission)
+	if !errors.Is(err, policyelements.ErrAdmittedTemporalEvidenceSuperseded) {
+		t.Fatalf("superseded admission error = %v", err)
 	}
 }
 
