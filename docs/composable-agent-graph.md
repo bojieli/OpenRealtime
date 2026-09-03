@@ -3218,10 +3218,12 @@ the required new 165-attempt sample.
       timestamps and action counts, no later request, no protocol failure, no
       timeout, and zero outstanding responses/tools. Raw
       `correct_action_rate` still records that the intended effect occurred,
-      while `task_success_rate` and `Passed` require correctness, timeliness,
-      and settlement. This corrects future evidence only; it is not a runtime
-      reactivation policy and does not retroactively accept or reject the
-      immutable `b535b15` campaign.
+      while `task_success_rate` requires correctness and settlement without
+      hiding an independent deadline miss; the case-level `Passed` bit also
+      requires timeliness. Aggregate realtime acceptance therefore uses
+      `minimum_passed`, not `task_success_rate` alone. This corrects future
+      evidence only; it is not a runtime reactivation policy and does not
+      retroactively accept or reject the immutable `b535b15` campaign.
     - [x] Make the stronger Realtime-CU score reproducible for completed v3
       rows. Review context v3 pins scorer identity
       `openrealtime.realtime-cu.settled-success.v1`, the timeout bit, action

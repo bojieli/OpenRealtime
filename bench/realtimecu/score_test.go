@@ -18,7 +18,9 @@ func TestScoreSeparatesCorrectnessFromDeadline(t *testing.T) {
 		call,
 	}}
 	result := score(base, item, page, actions, transcript, false)
-	if result.Passed || result.Metrics["correct_action_rate"] != 1 || result.Metrics["deadline_miss_count"] != 1 {
+	if result.Passed || result.Metrics["correct_action_rate"] != 1 ||
+		result.Metrics["task_success_rate"] != 1 ||
+		result.Metrics["deadline_miss_count"] != 1 {
 		t.Fatalf("late correctness must remain visible without passing: %+v", result)
 	}
 }

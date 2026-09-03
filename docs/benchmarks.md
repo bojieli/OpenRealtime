@@ -324,9 +324,15 @@ run always declares the full sixteen-case suite as expected and is therefore
 incomplete and non-reportable. `-list` prints the owned tasks without starting
 a browser.
 
-Correctness and timeliness are separate outputs. `correct_action_rate` records
-functional success even when an action was late;
-`task_success_rate`/`deadline_miss_count` express the task's realtime outcome.
+Correctness, settlement, and timeliness remain separately inspectable.
+`correct_action_rate` records that the intended browser effect occurred even
+when later work remained unsettled. `task_success_rate` additionally requires
+the complete settlement witness and a quiescent, error-free session, but it
+does not erase an otherwise settled result solely because it was late.
+`deadline_miss_count` records that independent timing failure, and the
+case-level `Passed` bit is the conjunction of settled task success and no
+deadline miss. Realtime aggregate acceptance therefore uses `minimum_passed`
+rather than treating `task_success_rate` alone as the pass oracle.
 The report also retains cue-to-first-tool, cue-to-effectful-action,
 speech-end-to-action, cue/frame-to-observation, action execution, and total
 completion latency, with sample counts and distributions. Screenshot, wait,
