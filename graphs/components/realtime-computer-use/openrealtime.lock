@@ -141,8 +141,8 @@
       "reference": "policy.RealtimeComputerUseActivation",
       "identity": {
         "name": "policy.RealtimeComputerUseActivation",
-        "revision": 8,
-        "digest": "sha256:c1c017e7da0cc435bcb9a128198fa71db29b1081e03cbda981e747d19780cb3f"
+        "revision": 9,
+        "digest": "sha256:3f110646c31efba255c5a3b6d089a95bb648f0584e1acffb269d119e4631baf0"
       }
     },
     {

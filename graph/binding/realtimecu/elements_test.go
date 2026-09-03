@@ -16,7 +16,7 @@ func TestRealtimeCUElementDescriptorIdentitiesAreStable(t *testing.T) {
 		digest     string
 	}{
 		{ObservationCommitDescriptor(), "sha256:3f6a2ed8c53bf3e8ef8e4e645b25691332f3b6c6f93283a839b4bb03088cbd28"},
-		{ActivationDescriptor(), "sha256:c1c017e7da0cc435bcb9a128198fa71db29b1081e03cbda981e747d19780cb3f"},
+		{ActivationDescriptor(), "sha256:3f110646c31efba255c5a3b6d089a95bb648f0584e1acffb269d119e4631baf0"},
 	} {
 		identity, err := test.descriptor.Identity()
 		if err != nil {
@@ -24,7 +24,7 @@ func TestRealtimeCUElementDescriptorIdentitiesAreStable(t *testing.T) {
 		}
 		wantRevision := uint64(1)
 		if identity.Name == ActivationReference {
-			wantRevision = 8
+			wantRevision = 9
 		}
 		if identity.Revision != wantRevision || identity.Digest != test.digest {
 			t.Fatalf("%s identity = %+v, want revision %d digest %s",

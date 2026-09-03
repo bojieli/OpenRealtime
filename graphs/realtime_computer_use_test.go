@@ -69,15 +69,20 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 			"emit only the single tool call and no plan, narration, or assistant prose") {
 		t.Fatal("values artifact did not retain the exact screen target, cognition bound, and dictated-identifier rule")
 	}
+	if !strings.Contains(string(config.Artifacts.Values.Data),
+		`"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"}`) {
+		t.Fatal("values artifact did not retain activation's independent temporal-admission contract")
+	}
 	launched, err := graphlaunch.New(context.Background(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	identity := launched.Plan.Identity()
 	if identity.SourceDigest != "sha256:cd9eb5452f6fefe3ae4ed1ce3b728de9e747d94c6581f660840950b0449e64f0" ||
-		identity.LockDigest != "sha256:8e19702eff825d8b9d632f09fdc93d9b6f063f3896fe5e04ffc191f50b6b882b" ||
-		identity.GraphFingerprint != "sha256:419729da8be106daa609070697ec7f6ae451e57a6202058197c8bac9c84ce9e5" ||
-		identity.PlanFingerprint != "sha256:6a81588327af1de81272cafcef285e49a98662e4b895edb24f42a1098cee709d" {
+		identity.LockDigest != "sha256:040c8a904306de16527536241a9ccc805be65ccac08c3a3c1327837522ae19bb" ||
+		identity.ValuesDigest != "sha256:c98cb622506aec8e3a4bb0246b5e67b881d76ee2561da47ef790b4a083e0c4bc" ||
+		identity.GraphFingerprint != "sha256:7f7a2d7d93231236350b9eec8f774c6c1c74451a0be5eb447225e491bea6eb1c" ||
+		identity.PlanFingerprint != "sha256:0384b009fb10d90742f31e7585de2a30bfb5706fc10f1e078f34dbe16704490d" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {

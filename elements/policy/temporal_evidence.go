@@ -148,6 +148,21 @@ func decodeTemporalEvidenceAdmissionConfig(
 	if err := elementconfig.Decode(source, &config); err != nil {
 		return TemporalEvidenceAdmissionConfig{}, err
 	}
+	return normalizeTemporalEvidenceAdmissionConfig(config)
+}
+
+// ValidateTemporalEvidenceAdmissionConfig validates the values-plane contract
+// a consumer expects from a connected temporal-admission policy. Consumers
+// must pin this expectation independently; an admission payload cannot prove
+// which explicit observer/source set the graph author configured upstream.
+func ValidateTemporalEvidenceAdmissionConfig(config TemporalEvidenceAdmissionConfig) error {
+	_, err := normalizeTemporalEvidenceAdmissionConfig(config)
+	return err
+}
+
+func normalizeTemporalEvidenceAdmissionConfig(
+	config TemporalEvidenceAdmissionConfig,
+) (TemporalEvidenceAdmissionConfig, error) {
 	switch config.Mode {
 	case TemporalEvidenceAdmissionImmediate:
 		if config.SourceSet != "" || len(config.Required) != 0 {

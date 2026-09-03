@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 8,
+      "revision": 9,
       "ports": [
         {
           "name": "admitted",
@@ -204,7 +204,7 @@
         "breaks_cycles": true
       },
       "state_schema": "schema://openrealtime/realtime-cu/durable-activation-state/v1",
-      "config_schema": "schema://openrealtime/policy/generate-on-observation-config/v1",
+      "config_schema": "schema://openrealtime/realtime-cu/activation-config/v1",
       "dependencies": [
         {
           "name": "runtime.clock"

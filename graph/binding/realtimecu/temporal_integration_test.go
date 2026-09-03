@@ -148,6 +148,50 @@ func TestMountedTemporalActivationImmediateModePreservesDirectComposition(t *tes
 	}
 }
 
+func TestMountedTemporalActivationImmediateCancellationUsesCanonicalStoreFloor(t *testing.T) {
+	store := trajectory.NewStore()
+	oldIntent := temporalActivationUser("old-direct-intent", 10, 1)
+	appendTemporalActivationItems(t, store, oldIntent)
+	harness := mountTemporalActivation(t, store, `{"mode":"immediate"}`)
+	harness.send(t, "cancel", element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: "cancel-old-direct-intent",
+		SessionID: activationTestSession, Sequence: 5,
+		Payload: policyelements.GenerationCancel{
+			StreamID: activationTestSession, Reason: "participant canceled",
+		},
+	})
+	if outcome := harness.receiveActivationOutcome(t); outcome.Kind != policyelements.GenerationCanceled ||
+		outcome.Code != "intent_revoked" {
+		t.Fatalf("immediate cancellation outcome = %+v", outcome)
+	}
+	harness.receive(t, "state")
+
+	for _, sequence := range []uint64{0, 6} {
+		harness.sendCommit(t, store, oldIntent, sequence)
+		if outcome := harness.receiveEvidenceOutcome(t); outcome.Kind != policyelements.TemporalEvidenceAdmissionAdmitted {
+			t.Fatalf("policy did not admit canonical old intent at sequence %d: %+v", sequence, outcome)
+		}
+		if outcome := harness.receiveActivationOutcome(t); outcome.Kind != policyelements.GenerationIgnored ||
+			outcome.Code != "intent_revoked" {
+			t.Fatalf("post-cancel immediate admission at sequence %d = %+v", sequence, outcome)
+		}
+		harness.receive(t, "state")
+		harness.assertNoTrigger(t)
+	}
+
+	newIntent := temporalActivationUser("new-direct-intent", 20, 2)
+	appendTemporalActivationItems(t, store, newIntent)
+	harness.sendCommit(t, store, newIntent, 0)
+	if outcome := harness.receiveEvidenceOutcome(t); outcome.Kind != policyelements.TemporalEvidenceAdmissionAdmitted {
+		t.Fatalf("new immediate intent evidence outcome = %+v", outcome)
+	}
+	trigger := harness.receive(t, "trigger")
+	if trigger.RunID == "" || !containsString(trigger.CausalParents, newIntent.ID) ||
+		containsString(trigger.CausalParents, oldIntent.ID) {
+		t.Fatalf("new immediate intent trigger = %+v", trigger)
+	}
+}
+
 func TestObservationCommitTimestampsOnlyUntimedFinalUserIntent(t *testing.T) {
 	for _, test := range []struct {
 		name        string
@@ -274,10 +318,10 @@ func mountTemporalActivation(
 	}
 	values := map[string]json.RawMessage{
 		"evidence": json.RawMessage(evidenceConfig),
-		"activation": json.RawMessage(`{
+		"activation": json.RawMessage(fmt.Sprintf(`{
 			"role":"computer-use","invocation":{"instruction":"act on admitted evidence"},
-			"terminal_memory":32,"cancel_memory":16
-		}`),
+			"terminal_memory":32,"cancel_memory":16,"expected_admission":%s
+		}`, evidenceConfig)),
 	}
 	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
 		Graph: compiled.Graph, Registry: registry, Services: services, Values: values,

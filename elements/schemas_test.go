@@ -11,6 +11,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/elements"
+	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphschema "github.com/bojieli/OpenRealtime/graph/schema"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -34,6 +35,10 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 			wanted[descriptor.ConfigSchema] = struct{}{}
 		}
 	}
+	// Realtime-CU is a repository-owned application element registered into a
+	// caller-owned catalog, while its immutable values schema ships with the
+	// standard resolver used by that reference graph.
+	wanted[realtimecubinding.ActivationConfigSchema] = struct{}{}
 	references := make([]string, 0, len(wanted))
 	for reference := range wanted {
 		references = append(references, reference)
@@ -42,14 +47,19 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 37 {
-		t.Fatalf("standard config schema count = %d, want 37", len(references))
+	if len(references) != 38 {
+		t.Fatalf("standard config schema count = %d, want 38", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
 	if err != nil {
 		t.Fatal(err)
 	}
+	realtimeCURegistrations, err := realtimecubinding.ElementFactoryRegistrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrations = append(registrations, realtimeCURegistrations...)
 	for _, registration := range registrations {
 		descriptor := registration.Factory.Descriptor()
 		if descriptor.ConfigSchema == "" {
@@ -148,6 +158,45 @@ func TestStandardSchemasDelegateNonRepresentableSemanticsToExactFactoryValidator
 				t.Fatal("exact factory validator accepted invalid cross-field configuration")
 			}
 		})
+	}
+}
+
+func TestRealtimeCUActivationSchemaDoesNotWidenGenericGeneration(t *testing.T) {
+	catalog, err := elements.StandardConfigSchemaCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	generic, err := catalog.ResolveConfigSchema(
+		context.Background(), "schema://openrealtime/policy/generate-on-observation-config/v1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withExpectation := decodeSchemaValue(t,
+		`{"role":"fast","invocation":{"instruction":"Answer."},"expected_admission":{"mode":"immediate"}}`)
+	if err := compileStandardSchema(t, generic).Validate(withExpectation); err == nil {
+		t.Fatal("generic generation schema accepted the Realtime-CU admission expectation")
+	}
+
+	activation, err := catalog.ResolveConfigSchema(
+		context.Background(), realtimecubinding.ActivationConfigSchema,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compiled := compileStandardSchema(t, activation)
+	withoutExpectation := decodeSchemaValue(t,
+		`{"role":"computer-use","invocation":{"instruction":"Act."}}`)
+	if err := compiled.Validate(withoutExpectation); err == nil {
+		t.Fatal("Realtime-CU activation schema accepted a missing admission expectation")
+	}
+	valid := json.RawMessage(
+		`{"role":"computer-use","invocation":{"instruction":"Act."},"expected_admission":{"mode":"immediate"}}`)
+	if err := compiled.Validate(decodeSchemaValue(t, string(valid))); err != nil {
+		t.Fatalf("Realtime-CU activation schema rejected valid config: %v", err)
+	}
+	if err := standardValidatorsBySchema(t)[realtimecubinding.ActivationConfigSchema].ValidateConfig(valid); err != nil {
+		t.Fatalf("Realtime-CU activation validator rejected valid config: %v", err)
 	}
 }
 
@@ -256,6 +305,11 @@ func standardValidatorsBySchema(t *testing.T) map[string]element.ConfigValidator
 	if err != nil {
 		t.Fatal(err)
 	}
+	realtimeCURegistrations, err := realtimecubinding.ElementFactoryRegistrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrations = append(registrations, realtimeCURegistrations...)
 	result := make(map[string]element.ConfigValidator)
 	for _, registration := range registrations {
 		descriptor := registration.Factory.Descriptor()
@@ -311,6 +365,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{"decider":"semantic-primary","direct_visual_input":true,"standing_extraction":true,"verify_voice_activation":true,"verify_silent_action":true,"minimum_activation_confidence":0.75}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{"role":"fast"}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}`,
+		"schema://openrealtime/realtime-cu/activation-config/v1":                       `{"role":"computer-use","invocation":{"instruction":"Act."},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"}}`,
 		"schema://openrealtime/speech/playback-config/v1":                              `{"sink":"speaker"}`,
 		"schema://openrealtime/speech/tts-config/v1":                                   `{"provider":"tts"}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":                `{}`,
@@ -353,6 +408,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"eventually"}`,
+		"schema://openrealtime/realtime-cu/activation-config/v1":                       `{"role":"computer-use","invocation":{"instruction":"Act."}}`,
 		"schema://openrealtime/speech/playback-config/v1":                              `{}`,
 		"schema://openrealtime/speech/tts-config/v1":                                   `{}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":                `{"revision_namespace":""}`,

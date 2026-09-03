@@ -15,7 +15,6 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/elements"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
-	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
@@ -78,7 +77,7 @@ func RealtimeComputerUseArtifacts(target computeruse.Target) (graphconfig.Artifa
 	if err != nil {
 		return graphconfig.Artifacts{}, err
 	}
-	var activation policyelements.GenerateOnObservationConfig
+	var activation realtimecubinding.ActivationConfig
 	if err := json.Unmarshal(document.Nodes["activation"], &activation); err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("decode realtime-CU activation values: %w", err)
 	}

@@ -23,6 +23,80 @@ import (
 
 const activationTestSession = "activation-test-session"
 
+func TestActivationConfigRequiresIndependentTemporalAdmissionContract(t *testing.T) {
+	validator := activationFactory{}
+	for _, source := range []string{
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"immediate"}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}}`,
+	} {
+		if err := validator.ValidateConfig(json.RawMessage(source)); err != nil {
+			t.Errorf("valid activation config %s: %v", source, err)
+		}
+	}
+	for _, source := range []string{
+		`{"role":"computer-use","invocation":{"instruction":"act"}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"explicit"}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"immediate","source_set":"explicit"}}`,
+	} {
+		if err := validator.ValidateConfig(json.RawMessage(source)); err == nil {
+			t.Errorf("invalid activation config was accepted: %s", source)
+		}
+	}
+}
+
+func TestActivationRejectsAdmissionThatDiffersFromPinnedTemporalContract(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	fixture.runner.config.ExpectedAdmission = policyelements.TemporalEvidenceAdmissionConfig{
+		Mode:      policyelements.TemporalEvidenceAdmissionAfterIntent,
+		SourceSet: policyelements.TemporalEvidenceSourceSetObservedBeforeIntent,
+	}
+	intentEnvelope, intentCommit := fixture.appendUser(t, "contract-intent", "watch the display")
+	intentIdentity := intentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	freshEnvelope, _ := fixture.appendVisual(
+		t, "contract-screen", "ready", intentCommit.TrajectoryItemID,
+	)
+	honest := afterIntentAdmissionEnvelope(freshEnvelope, intentIdentity)
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*policyelements.AdmittedTemporalEvidence)
+	}{
+		{name: "mode downgrade", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.Mode = policyelements.TemporalEvidenceAdmissionImmediate
+			value.SourceSet = ""
+			value.DurableIntent = nil
+			value.QualifyingObservations = nil
+		}},
+		{name: "source-set replacement", mutate: func(value *policyelements.AdmittedTemporalEvidence) {
+			value.SourceSet = policyelements.TemporalEvidenceSourceSetExplicit
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			forged := honest.Clone()
+			admission := forged.Payload.(policyelements.AdmittedTemporalEvidence)
+			testCase.mutate(&admission)
+			forged.Payload = admission
+			if err := fixture.runner.acceptAdmission(context.Background(), forged); err != nil {
+				t.Fatal(err)
+			}
+			if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+				outcome.Code != "invalid_temporal_admission" {
+				t.Fatalf("forged admission outcome = %+v", outcome)
+			}
+			if triggers := fixture.trigger.snapshot(); len(triggers) != 0 {
+				t.Fatalf("forged admission activated cognition: %+v", triggers)
+			}
+		})
+	}
+	if err := fixture.runner.acceptAdmission(context.Background(), honest); err != nil {
+		t.Fatal(err)
+	}
+	if triggers := fixture.trigger.snapshot(); len(triggers) != 1 {
+		t.Fatalf("honest pinned admission triggers = %+v", triggers)
+	}
+}
+
 func TestActivationReplaysExactDeferredVisualAfterBlockedNoProposalResult(t *testing.T) {
 	fixture := newActivationTestFixture(t)
 	firstRun, firstVersion := fixture.startGeneration(t, "user-task", "click when the threshold is exceeded")
@@ -212,12 +286,20 @@ func TestActivationRepetitionSuppressionClearsProposalAfterModelResult(t *testin
 
 func TestActivationSettlesDispositionWithoutSupersededDeferredAdmission(t *testing.T) {
 	fixture := newActivationTestFixture(t)
+	fixture.runner.config.ExpectedAdmission = policyelements.TemporalEvidenceAdmissionConfig{
+		Mode:      policyelements.TemporalEvidenceAdmissionAfterIntent,
+		SourceSet: policyelements.TemporalEvidenceSourceSetObservedBeforeIntent,
+	}
 	intentEnvelope, intentCommit := fixture.appendUser(t, "user-task", "click the warning")
-	if err := fixture.runner.acceptAdmission(context.Background(), intentEnvelope); err != nil {
+	intentIdentity := intentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	initialEnvelope, initialCommit := fixture.appendVisual(
+		t, "screen-initial", "warning not visible", intentCommit.TrajectoryItemID,
+	)
+	initialEnvelope = afterIntentAdmissionEnvelope(initialEnvelope, intentIdentity)
+	if err := fixture.runner.acceptAdmission(context.Background(), initialEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	runID := fixture.trigger.snapshot()[0].RunID
-	intentIdentity := intentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
 
 	visualEnvelope, visualCommit := fixture.appendVisual(
 		t, "screen-warning", "warning visible", intentCommit.TrajectoryItemID,
@@ -228,7 +310,7 @@ func TestActivationSettlesDispositionWithoutSupersededDeferredAdmission(t *testi
 	}
 	proposal := activationTestProposal("superseded-deferred-call")
 	if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
-		runID, intentCommit.StoreVersion, []cognitionelements.ToolProposal{proposal},
+		runID, initialCommit.StoreVersion, []cognitionelements.ToolProposal{proposal},
 	)); err != nil {
 		t.Fatal(err)
 	}
@@ -979,12 +1061,17 @@ func newActivationTestFixture(t *testing.T) *activationTestFixture {
 	}
 	fixture.runner = &activationRunner{
 		instance: "activation-test",
-		config: policyelements.GenerateOnObservationConfig{
-			Role: "computer-use",
-			Invocation: continuation.Invocation{
-				Instruction: "act on the durable user task", MaxOutputTokens: 64,
+		config: ActivationConfig{
+			GenerateOnObservationConfig: policyelements.GenerateOnObservationConfig{
+				Role: "computer-use",
+				Invocation: continuation.Invocation{
+					Instruction: "act on the durable user task", MaxOutputTokens: 64,
+				},
+				TerminalMemory: 32, CancelMemory: 16,
 			},
-			TerminalMemory: 32, CancelMemory: 16,
+			ExpectedAdmission: policyelements.TemporalEvidenceAdmissionConfig{
+				Mode: policyelements.TemporalEvidenceAdmissionImmediate,
+			},
 		},
 		clock: graphruntime.ClockFunc(func() uint64 {
 			fixture.nextNS++

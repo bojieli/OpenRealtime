@@ -206,7 +206,14 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 			"type": "string", "pattern": `^(minimal|low|medium|high|\+?[0-9]+)$`,
 		},
 	}, "instruction")
-
+	temporalEvidenceConfigProperties := schemaObject{
+		"mode":       enumSchema("immediate", "after_intent"),
+		"source_set": enumSchema("explicit", "observed_before_intent"),
+		"required": arraySchema(objectSchema(schemaObject{
+			"observer": identifier(256), "source": identifier(256),
+		}, "observer", "source"), 0, 32),
+	}
+	temporalEvidenceConfig := objectSchema(temporalEvidenceConfigProperties, "mode")
 	documents := map[string]schemaObject{
 		"schema://openrealtime/acoustic/admission-config/v1": standardObject(
 			"schema://openrealtime/acoustic/admission-config/v1",
@@ -425,13 +432,15 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		),
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1": standardObject(
 			"schema://openrealtime/policy/temporal-evidence-admission-config/v1",
+			temporalEvidenceConfigProperties, "mode",
+		),
+		"schema://openrealtime/realtime-cu/activation-config/v1": standardObject(
+			"schema://openrealtime/realtime-cu/activation-config/v1",
 			schemaObject{
-				"mode":       enumSchema("immediate", "after_intent"),
-				"source_set": enumSchema("explicit", "observed_before_intent"),
-				"required": arraySchema(objectSchema(schemaObject{
-					"observer": identifier(256), "source": identifier(256),
-				}, "observer", "source"), 0, 32),
-			}, "mode",
+				"role": identifier(256), "invocation": invocation,
+				"max_pending": largeBoundedState, "terminal_memory": largeBoundedState,
+				"cancel_memory": largeBoundedState, "expected_admission": temporalEvidenceConfig,
+			}, "role", "invocation", "expected_admission",
 		),
 		"schema://openrealtime/policy/semantic-admission-config/v3": standardObject(
 			"schema://openrealtime/policy/semantic-admission-config/v3",

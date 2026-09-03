@@ -21,11 +21,24 @@ var ErrAdmittedTemporalEvidenceSuperseded = errors.New(
 // content-free description of evidence in snapshot. Consumers should call it
 // at their trust boundary instead of trusting identities copied through a
 // typed graph port: it re-proves the canonical prefix and trigger, durable
-// intent, causal freshness, distinct qualifying pairs, and (when dynamic)
-// the complete source set frozen before the intent.
+// intent, causal freshness, distinct qualifying pairs, and the complete source
+// set selected by expected. Requiring the independently pinned expectation is
+// what prevents a forged payload from downgrading the mode or replacing an
+// explicitly configured observer/source cohort.
 func VerifyAdmittedTemporalEvidence(
 	snapshot trajectory.Snapshot, admission AdmittedTemporalEvidence,
+	expected TemporalEvidenceAdmissionConfig,
 ) error {
+	expected, err := normalizeTemporalEvidenceAdmissionConfig(expected)
+	if err != nil {
+		return fmt.Errorf("expected temporal admission contract: %w", err)
+	}
+	if admission.Mode != expected.Mode || admission.SourceSet != expected.SourceSet {
+		return fmt.Errorf(
+			"temporal admission contract %q/%q differs from expected %q/%q",
+			admission.Mode, admission.SourceSet, expected.Mode, expected.SourceSet,
+		)
+	}
 	commit := admission.TriggerCommit
 	if admission.Prefix != commit.Context.Prefix {
 		return errors.New("temporal admission prefix differs from its trigger commit")
@@ -171,21 +184,22 @@ func VerifyAdmittedTemporalEvidence(
 		seenPairs[pair] = struct{}{}
 		qualifiedPairs = append(qualifiedPairs, pair)
 	}
+	expectedPairs := expected.Required
 	if admission.SourceSet == TemporalEvidenceSourceSetObservedBeforeIntent {
 		epochStart := temporalEvidenceEpochStart(prefix, intentIndex)
-		expected, expectedErr := observedSourceSet(prefix, epochStart, intentIndex)
-		if expectedErr != nil {
-			return fmt.Errorf("derive dynamic temporal source set: %w", expectedErr)
+		expectedPairs, err = observedSourceSet(prefix, epochStart, intentIndex)
+		if err != nil {
+			return fmt.Errorf("derive dynamic temporal source set: %w", err)
 		}
-		if len(expected) == 0 {
+		if len(expectedPairs) == 0 {
 			return errors.New("dynamic temporal source set is empty")
 		}
-		if !slices.Equal(expected, qualifiedPairs) {
-			return fmt.Errorf(
-				"dynamic temporal source set %v differs from qualifying pairs %v",
-				expected, qualifiedPairs,
-			)
-		}
+	}
+	if !slices.Equal(expectedPairs, qualifiedPairs) {
+		return fmt.Errorf(
+			"expected temporal source set %v differs from qualifying pairs %v",
+			expectedPairs, qualifiedPairs,
+		)
 	}
 	return nil
 }

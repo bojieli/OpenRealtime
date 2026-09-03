@@ -27,7 +27,8 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v8"
+	ActivationConfigSchema    = "schema://openrealtime/realtime-cu/activation-config/v1"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v9"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumDispositionRetries = 8
@@ -47,7 +48,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      8,
+		Revision:      9,
 		Ports: []element.Port{
 			{Name: "admitted", Direction: element.Input,
 				Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One,
@@ -94,7 +95,7 @@ func ActivationDescriptor() element.Descriptor {
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/realtime-cu/durable-activation-state/v1",
-		ConfigSchema: "schema://openrealtime/policy/generate-on-observation-config/v1",
+		ConfigSchema: ActivationConfigSchema,
 		Dependencies: []element.Dependency{
 			{Name: graphruntime.ClockServiceName},
 			{Name: graphruntime.SequenceServiceName},
@@ -159,39 +160,51 @@ func (activationFactory) Mount(
 	}, nil
 }
 
-func decodeActivationConfig(source json.RawMessage) (policyelements.GenerateOnObservationConfig, error) {
-	config := policyelements.GenerateOnObservationConfig{
-		MaxPending: 64, TerminalMemory: defaultTerminalMemory,
-		CancelMemory: defaultCancellationMemory,
+// ActivationConfig pins both cognition parameters and the exact temporal
+// admission contract expected at the consumer boundary. Repeating the policy
+// contract here is intentional: typed payloads prove shape, while an
+// independently configured expectation prevents a forged or miswired producer
+// from weakening timing or explicit source requirements.
+type ActivationConfig struct {
+	policyelements.GenerateOnObservationConfig
+	ExpectedAdmission policyelements.TemporalEvidenceAdmissionConfig `json:"expected_admission"`
+}
+
+func decodeActivationConfig(source json.RawMessage) (ActivationConfig, error) {
+	config := ActivationConfig{
+		GenerateOnObservationConfig: policyelements.GenerateOnObservationConfig{
+			MaxPending: 64, TerminalMemory: defaultTerminalMemory,
+			CancelMemory: defaultCancellationMemory,
+		},
 	}
 	if err := decodeExactJSON(source, &config); err != nil {
-		return policyelements.GenerateOnObservationConfig{}, err
+		return ActivationConfig{}, err
 	}
 	if !canonical(config.Role) || len(config.Role) > 256 {
-		return policyelements.GenerateOnObservationConfig{}, errors.New("activation role must be a canonical identifier")
+		return ActivationConfig{}, errors.New("activation role must be a canonical identifier")
 	}
 	if config.MaxPending < 1 || config.MaxPending > maximumActivationMemory ||
 		config.TerminalMemory < 1 || config.TerminalMemory > maximumActivationMemory ||
 		config.CancelMemory < 1 || config.CancelMemory > maximumActivationMemory {
-		return policyelements.GenerateOnObservationConfig{}, errors.New("activation memory bounds must be between 1 and 1000000")
+		return ActivationConfig{}, errors.New("activation memory bounds must be between 1 and 1000000")
 	}
 	if config.Invocation.SourceRevision != 0 {
-		return policyelements.GenerateOnObservationConfig{}, errors.New("activation source revision is derived from canonical user authority")
+		return ActivationConfig{}, errors.New("activation source revision is derived from canonical user authority")
 	}
 	if len(config.Invocation.Instruction) > maximumInstructionBytes ||
 		!utf8.ValidString(config.Invocation.Instruction) {
-		return policyelements.GenerateOnObservationConfig{}, errors.New("activation instruction must be bounded valid UTF-8")
+		return ActivationConfig{}, errors.New("activation instruction must be bounded valid UTF-8")
 	}
 	if config.Invocation.MaxOutputTokens > 1_000_000 {
-		return policyelements.GenerateOnObservationConfig{}, errors.New("activation maximum output tokens exceeds 1000000")
+		return ActivationConfig{}, errors.New("activation maximum output tokens exceeds 1000000")
 	}
 	if config.Invocation.Effort != "" {
 		parsed, err := continuation.ParseEffort(string(config.Invocation.Effort))
 		if err != nil || parsed != config.Invocation.Effort {
 			if err != nil {
-				return policyelements.GenerateOnObservationConfig{}, err
+				return ActivationConfig{}, err
 			}
-			return policyelements.GenerateOnObservationConfig{}, errors.New("activation effort is not canonical")
+			return ActivationConfig{}, errors.New("activation effort is not canonical")
 		}
 	}
 	validator := continuation.Descriptor{
@@ -201,7 +214,10 @@ func decodeActivationConfig(source json.RawMessage) (policyelements.GenerateOnOb
 		SpeechAuthority: continuation.SpeechAuthoritySilent,
 	}
 	if err := continuation.ValidateInvocation(config.Invocation, validator); err != nil {
-		return policyelements.GenerateOnObservationConfig{}, err
+		return ActivationConfig{}, err
+	}
+	if err := policyelements.ValidateTemporalEvidenceAdmissionConfig(config.ExpectedAdmission); err != nil {
+		return ActivationConfig{}, fmt.Errorf("expected_admission: %w", err)
 	}
 	config.Invocation = cloneInvocation(config.Invocation)
 	return config, nil
@@ -306,8 +322,9 @@ type verifiedTemporalAdmission struct {
 
 func verifyActivationTemporalAdmission(
 	snapshot trajectory.Snapshot, admission policyelements.AdmittedTemporalEvidence,
+	expected policyelements.TemporalEvidenceAdmissionConfig,
 ) (verifiedTemporalAdmission, error) {
-	if err := policyelements.VerifyAdmittedTemporalEvidence(snapshot, admission); err != nil {
+	if err := policyelements.VerifyAdmittedTemporalEvidence(snapshot, admission, expected); err != nil {
 		return verifiedTemporalAdmission{}, err
 	}
 	commit := admission.TriggerCommit
@@ -328,7 +345,7 @@ func verifyActivationTemporalAdmission(
 
 type activationRunner struct {
 	instance   string
-	config     policyelements.GenerateOnObservationConfig
+	config     ActivationConfig
 	clock      graphruntime.Clock
 	sequences  *graphruntime.SequenceAllocator
 	store      *trajectory.Store
@@ -354,7 +371,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:8", ActivationDescriptor()); err != nil {
+		"implementation:9", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -466,7 +483,9 @@ func (runner *activationRunner) acceptAdmissionAtContext(
 		return runner.publishState(ctx, envelope)
 	}
 	snapshot := runner.store.Snapshot()
-	attested, err := verifyActivationTemporalAdmission(snapshot, admission)
+	attested, err := verifyActivationTemporalAdmission(
+		snapshot, admission, runner.config.ExpectedAdmission,
+	)
 	if err != nil {
 		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission", err.Error())
 	}
@@ -519,6 +538,10 @@ func (runner *activationRunner) acceptAdmissionAtContext(
 			runner.deferred = nil
 			return runner.ignore(ctx, envelope, commit, "user_observation_not_final",
 				"a provisional user observation cannot activate computer effects")
+		}
+		if admission.TriggerObservation.StoreVersion <= runner.revokedStoreVersion {
+			return runner.ignore(ctx, envelope, commit, "intent_revoked",
+				"temporal admission names a durable intent at or before the latest cancellation")
 		}
 		nextIntent := userIntentBasis{
 			itemID: current.ID, triggerItemID: current.Event.EventID,
@@ -804,7 +827,9 @@ func (runner *activationRunner) tryStartDisposition(ctx context.Context) error {
 	}
 	parents := []string{proposal.ID}
 	if runner.deferred != nil {
-		if err := attestDeferredObservation(snapshot, *runner.deferred); err != nil {
+		if err := attestDeferredObservation(
+			snapshot, *runner.deferred, runner.config.ExpectedAdmission,
+		); err != nil {
 			if !errors.Is(err, policyelements.ErrAdmittedTemporalEvidenceSuperseded) {
 				return fmt.Errorf("attest retained observation for proposal disposition: %w", err)
 			}
@@ -1014,12 +1039,15 @@ func trajectoryDispositionKind(
 	}
 }
 
-func attestDeferredObservation(snapshot trajectory.Snapshot, deferred deferredVisualCommit) error {
+func attestDeferredObservation(
+	snapshot trajectory.Snapshot, deferred deferredVisualCommit,
+	expected policyelements.TemporalEvidenceAdmissionConfig,
+) error {
 	commit := deferred.commit
 	if deferred.admission.TriggerCommit != commit {
 		return errors.New("retained temporal admission changed its trigger commit")
 	}
-	if _, err := verifyActivationTemporalAdmission(snapshot, deferred.admission); err != nil {
+	if _, err := verifyActivationTemporalAdmission(snapshot, deferred.admission, expected); err != nil {
 		return fmt.Errorf("retained temporal admission: %w", err)
 	}
 	if commit.StoreVersion == 0 || commit.Context.Prefix.Version != commit.StoreVersion ||
