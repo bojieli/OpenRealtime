@@ -333,6 +333,32 @@ does not erase an otherwise settled result solely because it was late.
 case-level `Passed` bit is the conjunction of settled task success and no
 deadline miss. Realtime aggregate acceptance therefore uses `minimum_passed`
 rather than treating `task_success_rate` alone as the pass oracle.
+
+As of 2026-09-03, the release registry deliberately marks all five
+Realtime-CU behavioral domains—aggregate, exact per-case, safety, deadline,
+and latency—`unavailable`. A complete result can therefore be retained,
+reviewed, and independently reopened, but it cannot pass behavioral
+acceptance until the owners register the accepted `minimum_passed`, all
+sixteen case minima, the authoritative zero-tolerance safety metrics, deadline
+bounds, and latency median/tail limits plus any reasoned exclusions. Diagnostic
+or historical observations are evidence for choosing those targets; the
+runner must not silently convert them into acceptance thresholds.
+
+The generic `policy.IntentSettlement` checkpoint did not run a live or paid
+Realtime-CU benchmark. It is not yet connected to a reference disposition
+producer, protocol/session cancellation translator, activation
+settlement/acknowledgement boundary, or frozen production graph/profile, so
+there is no runnable settlement candidate from which a valid benchmark row
+could be produced. Its focused unit, adversarial, race, schema, catalog, and
+affected-package checks—including rejected-input allocation, failure-atomicity,
+trusted-session attribution, generated-lineage integrity, and a mounted
+type-correct two-settlement-gate composition—are
+implementation evidence only. Aggregate, exact-per-case, safety, deadline,
+and latency acceptance remain unavailable;
+the focused two-camera/two-moving-target/two-transient campaign and repaired
+exact-sixteen campaign remain open; and the final-candidate ledger remains
+**0/7,486**.
+
 The report also retains cue-to-first-tool, cue-to-effectful-action,
 speech-end-to-action, cue/frame-to-observation, action execution, and total
 completion latency, with sample counts and distributions. Screenshot, wait,

@@ -134,7 +134,7 @@ applicationConfig := realtimecu.ApplicationConfig{
         Name: "benchmark-browser",
         Sources: []string{"screen"},
         Width: 1280,
-        Height: 720,
+        Height: 577,
     },
 }
 ```
@@ -199,7 +199,7 @@ launchConfig, err := graphs.RealtimeComputerUseLaunchConfig(
             Name: "benchmark-browser",
             Sources: []string{"screen"},
             Width: 1280,
-            Height: 720,
+            Height: 577,
         },
     },
 )
@@ -303,7 +303,7 @@ moving-target retries can use different coordinates and evade exact repetition
 identity, while treating no-proposal as success would break asynchronous and
 multi-step tasks.
 
-The planned repair therefore keeps two graph-visible, replaceable elements:
+The repair architecture keeps two graph-visible, replaceable elements:
 
 ```text
 successful result-linked post-effect evidence
@@ -324,21 +324,106 @@ deployment with continuation, but it must own a distinct semantic-decider
 client, selection, digest, and lifecycle so its policy and latency remain
 independently inspectable.
 
-The settlement gate is deterministic rather than model-owned. It independently
-revalidates the typed admission and canonical causal chain, holds a bounded
-candidate consequence until the matching disposition arrives, releases it for
-`continue`, and latches the exact intent on a verified terminal disposition.
-Ordinary and failed-effect visual evidence remains reactive. Invalid, stale,
-conflicting, or indeterminate evidence fails closed without being mislabeled as
-success; a genuinely newer durable intent or exactly addressed cancellation
-starts a new epoch. The reference graph will package producer plus gate for easy
-authoring while retaining both nodes and all timing, state, interrupt, and
-terminal paths in static and live inspection.
+The producer-neutral half of that architecture now exists as the registered
+`policy.IntentSettlement` element. It independently revalidates the typed
+admission and exact canonical intent→call→successful-result→result-linked
+observation chain, holds a bounded candidate consequence until the matching
+disposition arrives, releases it for `continue`, and retains terminal state
+until downstream activation acknowledges exact cleanup. Ordinary and
+failed-effect visual evidence remains reactive. Invalid, stale, conflicting,
+or indeterminate evidence fails closed without being mislabeled as success.
 
-The remaining behavioral sequence is to implement and adversarially test those
-contracts, wire and lock the reference subgraph, register machine-enforceable
-Realtime-CU acceptance targets, and then run both camera, both moving-target,
-and both transient-alert variants from one repaired immutable candidate. Any
-failure is retained and repaired before all 16 cases are rerun from a newly
-frozen candidate. Nothing in the implementation checks above advances the
-project-wide 0/7,486 final-candidate attempt ledger.
+The terminal decision is not just a string label. Succeeded and failed
+decisions embed the exact disposition; canceled decisions embed an exact
+canonical durable-intent cancellation; reset decisions embed the exact reset;
+and superseded decisions embed the newer canonical user-authority identity.
+The independent verifier rejects a terminal kind without its one mutually
+exclusive witness. The mounted trajectory service now also carries a trusted
+session identity, so the first foreign evidence or cancellation cannot select
+the session or poison cancellation memory.
+
+Cancellation intentionally has the distinct type
+`Interrupt<policy.IntentSettlementCancellation>`. Existing
+`GenerationCancel` values address a generation or media stream and are
+compile-time incompatible: copying an observation stream ID or a session ID
+into this boundary would not prove which durable-intent epoch is being
+revoked. The production reference therefore still needs a stateful
+cancellation coordinator that resolves protocol/session authority to the
+exact canonical intent and routes the appropriate downstream activation
+cancellation as an explicit graph choice.
+
+Independent ports do not acquire a hidden scheduler priority merely because a
+descriptor classifies one as an interrupt. Settlement actor receipt is the
+linearization point. If cancel is received first, a later continuation is
+refused and exact cleanup awaits acknowledgement. If continuation is received
+first, its one admitted envelope cannot be retracted; the later cancellation
+tombstones subsequent same-intent evidence, and the production coordinator
+must cancel the already released downstream activation. Concurrent messages
+with no happens-before relationship may linearize either way. Lossless output
+publication applies normal graph backpressure and is canceled by graph context,
+not preempted by a later control waiting on another input port.
+
+Current implementation ledger:
+
+| Slice | Status | Remaining boundary |
+| --- | --- | --- |
+| Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented and locally verified | Bind a real producer artifact/configuration in the production lock |
+| Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
+| Reference semantic/vision disposition producer | Open | Implement its separate client, lifecycle, exact-media resolution, and measured latency |
+| Protocol/session cancellation translation | Open | Resolve exact canonical intent and explicitly coordinate already released activation |
+| Activation settlement input and acknowledgement output | Open | Independently verify the decision, atomically clear the matching effect, and return exact terminal lineage |
+| Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Open | Wire and freeze the complete reference subgraph without an admission bypass |
+| Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
+
+The implementation checkpoint is also hardened at its untrusted typed-input
+boundary. It checks nested evidence, disposition, and acknowledgement shape
+before cloning or canonical hashing; a failed clock/ID construction cannot
+leave an empty intent record or a rejected replacement queued for later
+execution. Refusal output projects only bounded canonical metadata, and state
+plus refusal envelopes are pinned to the mounted trajectory session; a nested
+foreign-session probe cannot be relabeled as mounted-session evidence. Probe
+issuer and sequence are bound into the request identity and agree with the
+published envelope. All generated lineages are deduplicated, capped, and
+stripped of a pre-seeded self-parent. A continued admission receives a fresh
+content-addressed identity over its immutable envelope and directly names the
+held evidence, disposition, and probe while preserving the upstream source and
+sequence used by activation cancellation floors. That identity is verified,
+not nominally forbidden, on another settlement gate's evidence input, so
+type-correct gate chaining remains executable; cross-type namespace reuse and
+same-ID/changed-metadata reuse fail closed. Duplicate terminal dispositions do
+not publish a second envelope under the existing terminal ID. These properties
+are local implementation guarantees, not evidence that the still-unwired
+Realtime-CU policy behaves correctly against a live model.
+
+Terminal suppression requires an explicit lossless handshake with activation;
+dropping only the post-effect observation would leave activation's active
+generation/result state live. The target reference topology is therefore:
+
+```ortg
+temporal_evidence_admission.admitted -> intent_settlement.evidence;
+intent_settlement.probe              -> intent_disposition.probe;
+intent_disposition.disposition       -> intent_settlement.disposition;
+intent_settlement.admitted           -> activation.admitted;
+intent_settlement.terminal           -> activation.settlement;
+activation.settlement_ack            -> intent_settlement.ack;
+```
+
+There is no admission bypass around the settlement gate. On `continue`, the
+gate releases the original verified evidence through `admitted`. On a verified
+terminal disposition, it suppresses that evidence and retains the exact
+terminal latch until activation independently reopens the canonical prefix,
+clears the matching generation/effect atomically, and returns the exact
+acknowledgement. This is not a cognition cancellation: the cognition run may
+already have ended before the result and post-effect observation exist, and a
+broad generation cancellation does not prove which completed effect was
+settled.
+
+The remaining behavioral sequence is to implement the producer, translator,
+and activation handshake; adversarially test their mounted composition; wire
+and lock the reference subgraph; register machine-enforceable Realtime-CU
+acceptance targets; and then run both camera, both moving-target, and both
+transient-alert variants from one repaired immutable candidate. Any failure is
+retained and repaired before all 16 cases are rerun from a newly frozen
+candidate. No live benchmark was run for this generic checkpoint, and nothing
+in its implementation checks advances the project-wide 0/7,486 final-candidate
+attempt ledger.
