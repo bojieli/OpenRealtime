@@ -3,6 +3,7 @@ package candidate_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -50,10 +51,24 @@ func (attempt *lifecycleAttempt) Abort() error {
 
 type resumableLifecyclePlugin struct {
 	lifecyclePlugin
-	retained     bench.Provenance
-	bindCalls    int
-	recoverCalls int
+	retained             bench.Provenance
+	bindCalls            int
+	recoverCalls         int
+	completionTranscript bench.Transcript
+	evidenceTranscript   bench.Transcript
+	evidenceErr          error
+	mutateOutcome        func(*bench.TaskOutcome)
 }
+
+type recoveredTranscript struct {
+	transcript bench.Transcript
+	err        error
+}
+
+func (evidence recoveredTranscript) ReopenTranscript(context.Context) (bench.Transcript, error) {
+	return evidence.transcript, evidence.err
+}
+func (recoveredTranscript) CommitValidated(context.Context) error { return nil }
 
 func (plugin *resumableLifecyclePlugin) BindRun(
 	_ context.Context, _ string, _ bench.Cell, _ bench.Provenance, _ candidate.RunOrigin,
@@ -64,11 +79,19 @@ func (plugin *resumableLifecyclePlugin) BindRun(
 
 func (plugin *resumableLifecyclePlugin) RecoverAttempt(
 	_ context.Context, attempt candidate.Attempt,
-) (candidate.Completion, bool, error) {
+) (candidate.Recovery, bool, error) {
 	plugin.recoverCalls++
-	return candidate.Completion{
-		Attempt: attempt,
-		Outcome: bench.TaskOutcome{ID: attempt.Case, Completed: true, Passed: true},
+	completion := candidate.Completion{
+		Attempt:    attempt,
+		Outcome:    bench.TaskOutcome{ID: attempt.Case, Completed: true, Passed: true},
+		Transcript: plugin.completionTranscript,
+	}
+	if plugin.mutateOutcome != nil {
+		plugin.mutateOutcome(&completion.Outcome)
+	}
+	return candidate.Recovery{
+		Completion: completion,
+		Evidence:   recoveredTranscript{transcript: plugin.evidenceTranscript, err: plugin.evidenceErr},
 	}, true, nil
 }
 
@@ -191,6 +214,11 @@ func TestLifecycleBindsOriginalRunAndCommitsRecoveredAttempt(t *testing.T) {
 	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: plugin, Suite: "suite", Cell: bench.Reference(),
 		Provenance: current, Origin: origin,
+		RecoveryValidator: func(
+			context.Context, candidate.Attempt, bench.Transcript,
+		) (bench.TaskOutcome, error) {
+			return bench.TaskOutcome{ID: "case", Completed: true, Passed: true}, nil
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +270,108 @@ func TestLifecycleRejectsRecoveredBuildDrift(t *testing.T) {
 	if _, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: plugin, Suite: "suite", Cell: bench.Reference(),
 		Provenance: current, Origin: origin,
+		RecoveryValidator: func(
+			context.Context, candidate.Attempt, bench.Transcript,
+		) (bench.TaskOutcome, error) {
+			return bench.TaskOutcome{}, nil
+		},
 	}); err == nil {
 		t.Fatal("candidate lifecycle accepted recovered evidence from another build")
+	}
+}
+
+func TestLifecycleRecoveryFailsClosedWithoutExactDeterministicRescore(t *testing.T) {
+	origin, err := candidate.NewRunOrigin(
+		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:8080/v1/realtime",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenance := bench.Provenance{Revision: "candidate", ExecutableSHA256: "executable"}
+	newLifecycle := func(t *testing.T, plugin *resumableLifecyclePlugin) *candidate.Lifecycle {
+		t.Helper()
+		lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: t.Context(), Plugin: plugin, Suite: "suite", Cell: bench.Reference(),
+			Provenance: provenance, Origin: origin,
+			RecoveryValidator: func(
+				context.Context, candidate.Attempt, bench.Transcript,
+			) (bench.TaskOutcome, error) {
+				return bench.TaskOutcome{ID: "case", Completed: true, Passed: true}, nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return lifecycle
+	}
+
+	t.Run("missing suite validator", func(t *testing.T) {
+		plugin := &resumableLifecyclePlugin{retained: provenance}
+		if _, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: t.Context(), Plugin: plugin, Suite: "suite", Cell: bench.Reference(),
+			Provenance: provenance, Origin: origin,
+		}); err == nil || !strings.Contains(err.Error(), "suite-owned deterministic validator") {
+			t.Fatalf("missing validator error = %v", err)
+		}
+	})
+
+	t.Run("validator returns impossible outcome", func(t *testing.T) {
+		plugin := &resumableLifecyclePlugin{retained: provenance}
+		lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+			Context: t.Context(), Plugin: plugin, Suite: "suite", Cell: bench.Reference(),
+			Provenance: provenance, Origin: origin,
+			RecoveryValidator: func(
+				context.Context, candidate.Attempt, bench.Transcript,
+			) (bench.TaskOutcome, error) {
+				return bench.TaskOutcome{
+					ID: "case", Completed: true, Error: "completed rows cannot fail",
+				}, nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := lifecycle.Begin("case", 1, map[string]any{"criterion": "exact"}); err == nil || !strings.Contains(err.Error(), "validator produced an invalid outcome") {
+			t.Fatalf("invalid validator outcome error = %v", err)
+		}
+	})
+
+	for _, testCase := range []struct {
+		name   string
+		plugin *resumableLifecyclePlugin
+		want   string
+	}{
+		{
+			name: "forged passed bit",
+			plugin: &resumableLifecyclePlugin{
+				retained:      provenance,
+				mutateOutcome: func(outcome *bench.TaskOutcome) { outcome.Passed = false },
+			},
+			want: "differs from deterministic rescore",
+		},
+		{
+			name: "cached transcript differs from reopened evidence",
+			plugin: &resumableLifecyclePlugin{
+				retained: provenance, evidenceTranscript: bench.Transcript{PlaybackMS: 1},
+			},
+			want: "differs from reopened raw evidence",
+		},
+		{
+			name: "reopen failure",
+			plugin: &resumableLifecyclePlugin{
+				retained: provenance, evidenceErr: errors.New("durable source changed"),
+			},
+			want: "durable source changed",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			lifecycle := newLifecycle(t, testCase.plugin)
+			if _, err := lifecycle.Begin("case", 1, map[string]any{"criterion": "exact"}); err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("recovery error = %v, want %q", err, testCase.want)
+			}
+			if len(testCase.plugin.begin) != 0 {
+				t.Fatal("failed recovery started a replacement external attempt")
+			}
+		})
 	}
 }

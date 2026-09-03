@@ -450,11 +450,19 @@ func TestSessionEmptyObserverSelectionDelegatesAndRetainsNegotiatedDefaults(t *t
 			case "session.update":
 				updates <- message
 				for _, response := range []map[string]any{
-					{"type": "session.updated", "session": map[string]any{}},
+					{"type": "session.updated", "session": map[string]any{
+						"openrealtime": map[string]any{
+							"version": openrealtime.Version,
+							"enabled": []string{string(openrealtime.FeatureVideoInput)},
+							"observers": []string{
+								"deployment.default-audio", "deployment.default-video",
+							},
+						},
+					}},
 					{
 						"type": openrealtime.EventDebug, "category": "session", "name": "session.updated",
 						"attributes": map[string]any{"runtime": map[string]any{
-							"binding": "graph", "observers": []string{"deployment.default-audio", "deployment.default-video"},
+							"binding": "graph",
 						}},
 					},
 				} {
@@ -490,11 +498,14 @@ func TestSessionEmptyObserverSelectionDelegatesAndRetainsNegotiatedDefaults(t *t
 	if _, present := extension["observers"]; present {
 		t.Fatalf("empty observer selection was rewritten instead of delegated: %+v", extension)
 	}
-	if transcript.Runtime == nil || !slices.Equal(
-		transcript.Runtime.Observers,
+	if !slices.Equal(
+		transcript.NegotiatedObservers,
 		[]string{"deployment.default-audio", "deployment.default-video"},
 	) {
-		t.Fatalf("negotiated default observers = %+v", transcript.Runtime)
+		t.Fatalf("negotiated default observers = %+v", transcript.NegotiatedObservers)
+	}
+	if transcript.Runtime == nil || len(transcript.Runtime.Observers) != 0 {
+		t.Fatalf("runtime status was used as observer negotiation evidence: %+v", transcript.Runtime)
 	}
 }
 

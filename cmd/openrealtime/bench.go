@@ -1352,6 +1352,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 		model           string
 		out             string
 		limit           int
+		taskIDs         string
 		cellName        string
 		referenceLevels string
 		varyFactor      string
@@ -1366,6 +1367,7 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	flags.StringVar(&model, "model", "", "model to request")
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
 	flags.IntVar(&limit, "limit", 0, "stop after this many recordings")
+	flags.StringVar(&taskIDs, "tasks", "", "comma-separated exact task IDs for a focused diagnostic")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F2")
@@ -1405,6 +1407,15 @@ func runFDBv3(arguments []string, output io.Writer) error {
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}
+	if strings.TrimSpace(taskIDs) != "" {
+		for _, taskID := range strings.Split(taskIDs, ",") {
+			taskID = strings.TrimSpace(taskID)
+			if taskID == "" {
+				return errors.New("FDB v3 focused task list contains an empty identity")
+			}
+			runOptions.TaskIDs = append(runOptions.TaskIDs, taskID)
+		}
+	}
 	if reviewResources != nil {
 		runOptions.Evidence, runOptions.EvidenceOrigin = reviewResources.bundle, reviewResources.origin
 	}
@@ -1421,8 +1432,13 @@ func runFDBv3(arguments []string, output io.Writer) error {
 	fmt.Fprintf(output, "tasks      : %d completed, %d failed, of %d expected\n",
 		result.Summary.Completed, result.Summary.Failed, result.Expected)
 	fmt.Fprintf(output, "  right tool and arguments : %d\n", breakdown.CalledWithRightArguments)
-	fmt.Fprintf(output, "  right tool, wrong value  : %d  (identifier reassembly)\n", breakdown.SpellingFailures)
-	fmt.Fprintf(output, "  no matching call         : %d\n", breakdown.NoCall)
+	fmt.Fprintf(output, "  right tools, wrong args  : %d\n", breakdown.SpellingFailures)
+	fmt.Fprintf(output, "  wrong tool selection     : %d\n", breakdown.WrongTool)
+	fmt.Fprintf(output, "  missing expected calls   : %d\n", breakdown.MissingCalls)
+	fmt.Fprintf(output, "  no tool calls            : %d\n", breakdown.NoCall)
+	fmt.Fprintf(output, "  extra tool calls         : %d\n", breakdown.ExtraCalls)
+	fmt.Fprintf(output, "  failed simulator calls   : %d\n", breakdown.FailedCalls)
+	fmt.Fprintf(output, "  invalid score evidence   : %d\n", breakdown.InvalidScore)
 	if reportErr := result.Reportable(); reportErr != nil {
 		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
 	} else {

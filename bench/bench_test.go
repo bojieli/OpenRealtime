@@ -1,11 +1,129 @@
 package bench_test
 
 import (
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
 )
+
+func TestTaskOutcomeValidationRejectsImpossibleAndNoncanonicalStates(t *testing.T) {
+	valid := []bench.TaskOutcome{
+		{ID: "completed-pass", Completed: true, Passed: true,
+			Metrics: map[string]float64{"latency_ms": 12.5},
+			Notes:   map[string]string{"detail": "", "multiline": "first\n\tsecond"}},
+		{ID: "completed-failure", Completed: true},
+		// An attempt can fail before the suite has a useful provider error. It is
+		// still an honest incomplete row and must remain representable.
+		{ID: "early-setup-failure"},
+		{ID: "provider-failure", Error: "provider returned 500\nrequest aborted"},
+		{ID: "attestation-failure", Completed: true, ExecutionError: "inspector unavailable"},
+	}
+	for _, outcome := range valid {
+		if err := outcome.Validate(); err != nil {
+			t.Errorf("valid outcome %q: %v", outcome.ID, err)
+		}
+	}
+
+	tests := []struct {
+		name    string
+		outcome bench.TaskOutcome
+		want    string
+	}{
+		{name: "missing ID", outcome: bench.TaskOutcome{}, want: "ID"},
+		{name: "padded ID", outcome: bench.TaskOutcome{ID: " case"}, want: "noncanonical"},
+		{name: "control in ID", outcome: bench.TaskOutcome{ID: "case\nother"}, want: "control"},
+		{name: "invalid ID UTF-8", outcome: bench.TaskOutcome{ID: string([]byte{0xff})}, want: "UTF-8"},
+		{name: "oversized ID", outcome: bench.TaskOutcome{ID: strings.Repeat("i", 8<<10)}, want: "oversized"},
+		{name: "completed with error", outcome: bench.TaskOutcome{
+			ID: "case", Completed: true, Error: "failed anyway",
+		}, want: "completed task outcome carries an error"},
+		{name: "incomplete pass", outcome: bench.TaskOutcome{
+			ID: "case", Passed: true,
+		}, want: "incomplete task outcome is marked passed"},
+		{name: "padded error", outcome: bench.TaskOutcome{
+			ID: "case", Error: " provider failed ",
+		}, want: "whitespace"},
+		{name: "noncanonical error control", outcome: bench.TaskOutcome{
+			ID: "case", Error: "provider\rfailed",
+		}, want: "control"},
+		{name: "oversized error", outcome: bench.TaskOutcome{
+			ID: "case", Error: strings.Repeat("e", 2<<20),
+		}, want: "oversized"},
+		{name: "nonfinite NaN metric", outcome: bench.TaskOutcome{
+			ID: "case", Metrics: map[string]float64{"latency_ms": math.NaN()},
+		}, want: "not finite"},
+		{name: "nonfinite infinite metric", outcome: bench.TaskOutcome{
+			ID: "case", Metrics: map[string]float64{"latency_ms": math.Inf(1)},
+		}, want: "not finite"},
+		{name: "empty metric name", outcome: bench.TaskOutcome{
+			ID: "case", Metrics: map[string]float64{"": 1},
+		}, want: "metric name"},
+		{name: "padded note name", outcome: bench.TaskOutcome{
+			ID: "case", Notes: map[string]string{" detail": "value"},
+		}, want: "note name"},
+		{name: "oversized note name", outcome: bench.TaskOutcome{
+			ID: "case", Notes: map[string]string{strings.Repeat("k", 2<<10): "value"},
+		}, want: "oversized"},
+		{name: "padded note value", outcome: bench.TaskOutcome{
+			ID: "case", Notes: map[string]string{"detail": " value"},
+		}, want: "whitespace"},
+		{name: "noncanonical note control", outcome: bench.TaskOutcome{
+			ID: "case", Notes: map[string]string{"detail": "one\rtwo"},
+		}, want: "control"},
+		{name: "oversized note value", outcome: bench.TaskOutcome{
+			ID: "case", Notes: map[string]string{"detail": strings.Repeat("v", 2<<20)},
+		}, want: "oversized"},
+		{name: "too many metrics", outcome: bench.TaskOutcome{
+			ID: "case", Metrics: outcomeMetrics(5_000),
+		}, want: "maximum"},
+		{name: "too many notes", outcome: bench.TaskOutcome{
+			ID: "case", Notes: outcomeNotes(5_000),
+		}, want: "maximum"},
+		{name: "evidence and execution error", outcome: bench.TaskOutcome{
+			ID: "case", Completed: true, Execution: &bench.ExecutionEvidence{},
+			ExecutionError: "inspector unavailable",
+		}, want: "both execution evidence"},
+		{name: "invalid execution evidence", outcome: bench.TaskOutcome{
+			ID: "case", Completed: true, Execution: &bench.ExecutionEvidence{},
+		}, want: "execution evidence"},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := testCase.outcome.Validate()
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("Validate() error = %v, want %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func outcomeMetrics(count int) map[string]float64 {
+	result := make(map[string]float64, count)
+	for index := 0; index < count; index++ {
+		result["metric-"+strconv.Itoa(index)] = float64(index)
+	}
+	return result
+}
+
+func outcomeNotes(count int) map[string]string {
+	result := make(map[string]string, count)
+	for index := 0; index < count; index++ {
+		result["note-"+strconv.Itoa(index)] = "value"
+	}
+	return result
+}
+
+func TestReportableRejectsACompletedTaskWithAnError(t *testing.T) {
+	result := complete("forged", 1, 1)
+	result.Tasks[0].Error = "hidden failure"
+	result.Finish()
+	if err := result.Reportable(); err == nil || !strings.Contains(err.Error(), "outcome is invalid") {
+		t.Fatalf("a contradictory task outcome became reportable: %v", err)
+	}
+}
 
 func complete(name string, passed, total int) bench.Result {
 	result := bench.Result{

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Distribution summarises a sample.
@@ -129,6 +131,134 @@ type TaskOutcome struct {
 	ExecutionError string `json:"execution_evidence_error,omitempty"`
 }
 
+const (
+	maximumTaskOutcomeIDBytes        = 4 << 10
+	maximumTaskOutcomeMapEntries     = 4 << 10
+	maximumTaskOutcomeMapKeyBytes    = 1 << 10
+	maximumTaskOutcomeTextBytes      = 1 << 20
+	maximumTaskOutcomeAggregateBytes = 8 << 20
+)
+
+// Validate rejects outcome states which no deterministic benchmark scorer can
+// truthfully produce. It deliberately does not require an error on an
+// incomplete row: setup can fail before a suite has enough context to provide
+// one, and those rows remain useful diagnostics. The enclosing Result decides
+// whether execution evidence is required for this cell.
+func (outcome TaskOutcome) Validate() error {
+	if err := validateTaskOutcomeIdentity("task outcome ID", outcome.ID, maximumTaskOutcomeIDBytes); err != nil {
+		return err
+	}
+	if outcome.Completed && outcome.Error != "" {
+		return errors.New("completed task outcome carries an error")
+	}
+	if !outcome.Completed && outcome.Passed {
+		return errors.New("incomplete task outcome is marked passed")
+	}
+	if err := validateTaskOutcomeText("task outcome error", outcome.Error, maximumTaskOutcomeTextBytes); err != nil {
+		return err
+	}
+	if err := validateTaskOutcomeText(
+		"task outcome execution error", outcome.ExecutionError, maximumTaskOutcomeTextBytes,
+	); err != nil {
+		return err
+	}
+	if outcome.Execution != nil && outcome.ExecutionError != "" {
+		return errors.New("task outcome carries both execution evidence and an execution error")
+	}
+	if outcome.Execution != nil {
+		if err := outcome.Execution.Validate(); err != nil {
+			return fmt.Errorf("task outcome execution evidence: %w", err)
+		}
+	}
+	if err := validateTaskOutcomeMetrics(outcome.Metrics); err != nil {
+		return err
+	}
+	return validateTaskOutcomeNotes(outcome.Notes)
+}
+
+func validateTaskOutcomeMetrics(metrics map[string]float64) error {
+	if len(metrics) > maximumTaskOutcomeMapEntries {
+		return fmt.Errorf("task outcome has %d metrics; maximum is %d",
+			len(metrics), maximumTaskOutcomeMapEntries)
+	}
+	total := 0
+	for name, value := range metrics {
+		if err := validateTaskOutcomeIdentity(
+			"task outcome metric name", name, maximumTaskOutcomeMapKeyBytes,
+		); err != nil {
+			return err
+		}
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("task outcome metric %q is not finite", name)
+		}
+		if total > maximumTaskOutcomeAggregateBytes-len(name) {
+			return errors.New("task outcome metric names exceed their aggregate byte limit")
+		}
+		total += len(name)
+	}
+	return nil
+}
+
+func validateTaskOutcomeNotes(notes map[string]string) error {
+	if len(notes) > maximumTaskOutcomeMapEntries {
+		return fmt.Errorf("task outcome has %d notes; maximum is %d",
+			len(notes), maximumTaskOutcomeMapEntries)
+	}
+	total := 0
+	for name, value := range notes {
+		if err := validateTaskOutcomeIdentity(
+			"task outcome note name", name, maximumTaskOutcomeMapKeyBytes,
+		); err != nil {
+			return err
+		}
+		if err := validateTaskOutcomeText(
+			fmt.Sprintf("task outcome note %q", name), value, maximumTaskOutcomeTextBytes,
+		); err != nil {
+			return err
+		}
+		entryBytes := len(name) + len(value)
+		if entryBytes > maximumTaskOutcomeAggregateBytes ||
+			total > maximumTaskOutcomeAggregateBytes-entryBytes {
+			return errors.New("task outcome notes exceed their aggregate byte limit")
+		}
+		total += entryBytes
+	}
+	return nil
+}
+
+func validateTaskOutcomeIdentity(label, value string, maximum int) error {
+	if value == "" || len(value) > maximum || !utf8.ValidString(value) ||
+		strings.TrimSpace(value) != value {
+		return fmt.Errorf("%s is empty, oversized, or noncanonical UTF-8", label)
+	}
+	for _, symbol := range value {
+		if unicode.IsControl(symbol) {
+			return fmt.Errorf("%s contains a control character", label)
+		}
+	}
+	return nil
+}
+
+func validateTaskOutcomeText(label, value string, maximum int) error {
+	if len(value) > maximum || !utf8.ValidString(value) {
+		return fmt.Errorf("%s is oversized or is not valid UTF-8", label)
+	}
+	if value == "" {
+		return nil
+	}
+	if strings.TrimSpace(value) != value {
+		return fmt.Errorf("%s has leading or trailing whitespace", label)
+	}
+	for _, symbol := range value {
+		// Diagnostic text may be multiline. LF and horizontal tab are the only
+		// control characters with one unambiguous retained representation.
+		if unicode.IsControl(symbol) && symbol != '\n' && symbol != '\t' {
+			return fmt.Errorf("%s contains a noncanonical control character", label)
+		}
+	}
+	return nil
+}
+
 // AttachExecution copies the shared session driver's evidence into a task.
 // The copy prevents a scorer or later session from mutating the transcript's
 // immutable proof through an aliased slice.
@@ -229,6 +359,14 @@ func (result Result) Reportable() error {
 	}
 	legacySessionFailures := 0
 	for _, task := range result.Tasks {
+		if err := task.Validate(); err != nil {
+			identity := strings.TrimSpace(task.ID)
+			if identity == "" {
+				identity = "<missing>"
+			}
+			failures = append(failures, fmt.Sprintf(
+				"task %q outcome is invalid: %v", identity, err))
+		}
 		if strings.TrimSpace(task.Notes["session_failure"]) != "" {
 			legacySessionFailures++
 		}

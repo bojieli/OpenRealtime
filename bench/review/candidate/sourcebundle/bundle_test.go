@@ -3,6 +3,7 @@ package sourcebundle
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -109,6 +110,12 @@ func fixtureOutcome(caseID string, passed bool) bench.TaskOutcome {
 	}
 }
 
+func fixtureRecoveryValidator(
+	_ context.Context, attempt candidate.Attempt, _ bench.Transcript,
+) (bench.TaskOutcome, error) {
+	return fixtureOutcome(attempt.Case, true), nil
+}
+
 func fixtureTranscript() bench.Transcript {
 	return bench.Transcript{
 		PlaybackMS: 125,
@@ -169,6 +176,17 @@ func TestBundleSealsSharedSessionAudioAndVerifiesEveryBinding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	receiptPayload, err := os.ReadFile(fixture.receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopenedManifest, reopenedReceipt, err := VerifyReceiptPayload(t.Context(), receiptPayload)
+	if err != nil || !reflect.DeepEqual(reopenedManifest, manifest) || reopenedReceipt != receipt {
+		t.Fatalf("VerifyReceiptPayload() manifest=%+v receipt=%+v error=%v", reopenedManifest, reopenedReceipt, err)
+	}
+	if _, _, err := VerifyReceiptPayload(t.Context(), append(receiptPayload, ' ')); err == nil {
+		t.Fatal("VerifyReceiptPayload() accepted noncanonical receipt bytes")
+	}
 	if receipt.AttemptCount != 1 || manifest.AttemptCount != 1 ||
 		manifest.Advisory != "pending" || !manifest.Attempts[0].EvidenceComplete ||
 		manifest.Attempts[0].Media == nil || manifest.Attempts[0].Media.Role != "time_aligned_room_and_agent" {
@@ -212,6 +230,7 @@ func TestBundleResumesDurableAttemptsWithoutReplayingThem(t *testing.T) {
 	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
 		Provenance: newProcessProvenance, Origin: fixture.origin,
+		RecoveryValidator: fixtureRecoveryValidator,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -269,6 +288,67 @@ func TestBundleResumesDurableAttemptsWithoutReplayingThem(t *testing.T) {
 	}
 }
 
+func TestBundleRecoveryReopensTranscriptAndRejectsPostResumeTamper(t *testing.T) {
+	fixture := newSourceFixture(t)
+	specification := fixture.attempt(t, "tampered", 1, false)
+	attempt := beginAttempt(t, fixture, specification)
+	if err := attempt.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	completeAttempt(t, attempt, specification, fixtureOutcome("tampered", true))
+	if err := fixture.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := Resume(t.Context(), Options{
+		Directory: fixture.directory, ReceiptPath: fixture.receipt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
+		Provenance: fixture.provenance, Origin: fixture.origin,
+		RecoveryValidator: fixtureRecoveryValidator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completionPath := filepath.Join(
+		fixture.directory, "attempts", digestName(specification.ID()), "completion.json",
+	)
+	payload, err := os.ReadFile(completionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(completionPath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(completionPath, append(payload, ' '), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.Begin(
+		"tampered", 1, map[string]any{"criterion": "exact", "case": "tampered"},
+	); err == nil || !strings.Contains(err.Error(), "changed before rescore") {
+		t.Fatalf("post-resume transcript tamper error = %v", err)
+	}
+	result := bench.Result{
+		Suite: "source-suite", Cell: fixture.cell, Provenance: lifecycle.Provenance(),
+		Expected: 1, Tasks: []bench.TaskOutcome{{ID: "tampered"}},
+	}
+	result.Finish()
+	if err := lifecycle.Finish(result); err == nil ||
+		!strings.Contains(err.Error(), "without deterministic rescore") {
+		t.Fatalf("unvalidated recovery finish error = %v", err)
+	}
+	if _, err := os.Lstat(fixture.receipt); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unvalidated recovery published receipt: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(fixture.directory, manifestName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unvalidated recovery published manifest: %v", err)
+	}
+}
+
 func TestBundleExclusiveLeasePreventsConcurrentResume(t *testing.T) {
 	fixture := newSourceFixture(t)
 	options := Options{Directory: fixture.directory, ReceiptPath: fixture.receipt}
@@ -319,6 +399,7 @@ func TestBundleResumeArchivesInterruptedAttemptAndAllowsExactRetry(t *testing.T)
 	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
 		Provenance: fixture.provenance, Origin: fixture.origin,
+		RecoveryValidator: fixtureRecoveryValidator,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -389,6 +470,7 @@ func TestBundleResumeRejectsChangedCommitMarkerAndBuildIdentity(t *testing.T) {
 	if _, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
 		Provenance: drifted, Origin: fixture.origin,
+		RecoveryValidator: fixtureRecoveryValidator,
 	}); err == nil {
 		t.Fatal("resumed source accepted a different executable identity")
 	}

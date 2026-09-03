@@ -43,8 +43,8 @@ func Resume(ctx context.Context, options Options) (*Bundle, error) {
 	}
 	bundle := &Bundle{
 		directory: directory, receipt: receipt, root: root, lease: lease, identity: identity, guard: guard,
-		attempts: make(map[string]*attemptState), recovered: make(map[string]candidate.Completion),
-		claimed: make(map[string]struct{}),
+		attempts: make(map[string]*attemptState), recovered: make(map[string]recoveredAttempt),
+		claimed: make(map[string]struct{}), validated: make(map[string]struct{}),
 	}
 	if err := loadPartialBundle(ctx, bundle); err != nil {
 		closeErr := errors.Join(root.Close(), closeBundleLease(lease))
@@ -168,7 +168,10 @@ func loadPartialBundle(ctx context.Context, bundle *Bundle) error {
 			terminal: true, released: true,
 		}
 		bundle.attempts[entry.AttemptID] = state
-		bundle.recovered[entry.AttemptID] = completion
+		completionPath := filepath.ToSlash(filepath.Join(entry.Directory, entry.CompletionPath))
+		bundle.recovered[entry.AttemptID] = recoveredAttempt{
+			completion: completion, completionFile: fileIndex[completionPath],
+		}
 	}
 	if _, err := walkSourceFilesGuarded(bundle.root, bundle.guard); err != nil {
 		return err

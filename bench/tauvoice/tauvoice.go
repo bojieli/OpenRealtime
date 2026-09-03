@@ -464,6 +464,7 @@ func Run(ctx context.Context, config Config) (bench.Result, error) {
 		created, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 			Context: ctx, Plugin: config.Evidence, Suite: result.Suite,
 			Cell: result.Cell, Provenance: result.Provenance, Origin: config.EvidenceOrigin,
+			RecoveryValidator: refuseRecoveredOutcome,
 		})
 		if err != nil {
 			return bench.Result{}, fmt.Errorf("create tau-Voice candidate evidence lifecycle: %w", err)

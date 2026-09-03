@@ -157,10 +157,9 @@
       "case_key": "exact",
       "aggregate": {
         "registration": {
-          "status": "registered",
-          "source": "docs/measurement.md, Realtime-CU F10 result, 2026-08-25: slow-only overall correct 6/16"
-        },
-        "minimum_passed": 6
+          "status": "unavailable",
+          "reason": "The F10 write-up reports 6/16 correct actions, but the current acceptance field minimum_passed counts only tasks that are both correct and within deadline. The retained source has summary.passed=5, so an owner-approved target using the current metric semantics is required."
+        }
       },
       "cases": {
         "registration": {
@@ -176,20 +175,9 @@
       },
       "deadline": {
         "registration": {
-          "status": "registered",
-          "source": "docs/measurement.md, Realtime-CU F10 result, 2026-08-25: slow-only 5/16 correct within deadline"
-        },
-        "rules": [
-          {
-            "name": "deadline-misses",
-            "metric": "deadline_miss_count",
-            "statistic": "sum",
-            "comparison": "at_most",
-            "threshold": 11,
-            "minimum_samples": 16,
-            "require_every_task": true
-          }
-        ]
+          "status": "unavailable",
+          "reason": "The F10 write-up's 5/16 correct-within-deadline does not imply eleven deadline misses: the retained source records ten deadline misses and one additional incorrect non-miss. An owner-approved deadline rule and threshold must be registered without deriving one metric from the other."
+        }
       },
       "latency": {
         "registration": {

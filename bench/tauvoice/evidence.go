@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"unicode"
@@ -42,6 +41,19 @@ type tauCandidateContext struct {
 	SimulationSHA256     string    `json:"simulation_sha256,omitempty"`
 	SimulationBytes      int       `json:"simulation_bytes,omitempty"`
 	DeterministicScoring string    `json:"deterministic_scoring"`
+}
+
+func refuseRecoveredOutcome(
+	_ context.Context, _ candidate.Attempt, _ bench.Transcript,
+) (bench.TaskOutcome, error) {
+	// The source bundle retains the full simulation trace, but tau2's
+	// authoritative database/communicated-information reward and summary cost
+	// are emitted by its results index. Reimplementing that evaluator from the
+	// trace would be a different scorer, so recovery remains fail-closed until
+	// the authoritative deterministic row is retained as replayable raw input.
+	return bench.TaskOutcome{}, errors.New(
+		"tau-Voice recovered completion cannot be deterministically rescored from retained raw evidence",
+	)
 }
 
 func (config *Config) retainCandidateOutcome(
@@ -102,7 +114,9 @@ func (config *Config) retainCandidateOutcome(
 		return err
 	}
 	if found {
-		if !reflect.DeepEqual(recovered.Outcome, outcome) {
+		// A recovery validator currently always refuses tau-Voice. Keep this
+		// branch defensive if replayable tau2 evidence is added later.
+		if recovered.Outcome.ID != outcome.ID {
 			return errors.New("tau-Voice recovered candidate outcome differs from the deterministic row")
 		}
 		return nil

@@ -640,21 +640,23 @@ func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
 		t.Fatalf("behavioral gate omits its checked targets or frozen candidate: %+v", gate.Prerequisites)
 	}
 
-	results := map[string]string{
-		"fd-bench":        "{artifacts}/candidate-fdbench6147.json",
-		"fdb-v1.5":        "{artifacts}/candidate-fdb15.json",
-		"fdb-v3":          "{artifacts}/candidate-fdb3.json",
-		"meeting-cascade": "{artifacts}/candidate-meeting-cascade.json",
-		"realtime-cu":     "{artifacts}/candidate-realtime-cu.json",
-		"scenario":        "{artifacts}/candidate-scenario.json",
-		"tau-control":     "{artifacts}/candidate-tau-control.json",
-		"tau-regular":     "{artifacts}/candidate-tau-regular.json",
+	closures := map[string]string{
+		"fd-bench":        "{artifacts}/candidate-fdbench6147.closure.json",
+		"fdb-v1.5":        "{artifacts}/candidate-fdb15.closure.json",
+		"fdb-v3":          "{artifacts}/candidate-fdb3.closure.json",
+		"meeting-cascade": "{artifacts}/candidate-meeting-cascade.closure.json",
+		"realtime-cu":     "{artifacts}/candidate-realtime-cu.closure.json",
+		"scenario":        "{artifacts}/candidate-scenario.closure.json",
+		"tau-control":     "{artifacts}/candidate-tau-control.closure.json",
+		"tau-regular":     "{artifacts}/candidate-tau-regular.closure.json",
 	}
-	if countArgument(gate.Command, "-result") != len(results) {
-		t.Fatalf("behavioral gate has %d result flags, want %d: %v",
-			countArgument(gate.Command, "-result"), len(results), gate.Command)
+	if countArgument(gate.Command, "-closure") != len(closures) ||
+		countArgument(gate.Command, "-result") != 0 {
+		t.Fatalf("behavioral gate has %d closure and %d unsealed result flags, want %d/0: %v",
+			countArgument(gate.Command, "-closure"), countArgument(gate.Command, "-result"),
+			len(closures), gate.Command)
 	}
-	for id, path := range results {
+	for id, path := range closures {
 		argument := id + "=" + path
 		if countArgument(gate.Command, argument) != 1 {
 			t.Errorf("behavioral gate must consume %q exactly once: %v", argument, gate.Command)
@@ -666,7 +668,7 @@ func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
 			}
 		}
 		if count != 1 {
-			t.Errorf("behavioral gate must require result %q exactly once; got %d", path, count)
+			t.Errorf("behavioral gate must require closure %q exactly once; got %d", path, count)
 		}
 	}
 	for _, exact := range []string{

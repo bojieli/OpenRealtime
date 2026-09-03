@@ -24,6 +24,13 @@ type recoveringEvidencePlugin struct {
 	result       bench.Result
 }
 
+type recoveredTranscript struct{ transcript bench.Transcript }
+
+func (evidence recoveredTranscript) ReopenTranscript(context.Context) (bench.Transcript, error) {
+	return evidence.transcript, nil
+}
+func (recoveredTranscript) CommitValidated(context.Context) error { return nil }
+
 func (plugin *recoveringEvidencePlugin) BindRun(
 	_ context.Context, _ string, _ bench.Cell, provenance bench.Provenance, _ candidate.RunOrigin,
 ) (bench.Provenance, error) {
@@ -39,12 +46,14 @@ func (plugin *recoveringEvidencePlugin) BeginAttempt(
 
 func (plugin *recoveringEvidencePlugin) RecoverAttempt(
 	_ context.Context, attempt candidate.Attempt,
-) (candidate.Completion, bool, error) {
+) (candidate.Recovery, bool, error) {
 	plugin.recoverCalls++
-	return candidate.Completion{
-		Attempt: attempt,
-		Outcome: bench.TaskOutcome{ID: attempt.Case, Completed: true, Passed: true},
-	}, true, nil
+	transcript := bench.Transcript{}
+	outcome, err := validateRecoveredOutcome(context.Background(), attempt, transcript)
+	return candidate.Recovery{
+		Completion: candidate.Completion{Attempt: attempt, Outcome: outcome, Transcript: transcript},
+		Evidence:   recoveredTranscript{transcript: transcript},
+	}, err == nil, err
 }
 
 func (plugin *recoveringEvidencePlugin) FinishSuite(_ context.Context, result bench.Result) error {

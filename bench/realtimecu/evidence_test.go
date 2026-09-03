@@ -2,7 +2,9 @@ package realtimecu
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -10,7 +12,6 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
-	binding "github.com/bojieli/OpenRealtime/binding"
 )
 
 type fixtureEvidencePlugin struct {
@@ -119,16 +120,17 @@ func TestLiveEvidenceRequiresExactNegotiatedObserverSelection(t *testing.T) {
 		EndpointSHA256: endpointIdentity("ws://fixture.invalid/v1/realtime"),
 	}
 	requested := []string{"fixture.graph-native-observer"}
-	for _, transcript := range []bench.Transcript{
-		{},
-		{Runtime: &binding.Status{Observers: []string{"different"}}},
-	} {
-		if err := validateNegotiatedObservers(origin, requested, transcript); err == nil {
-			t.Fatalf("observer drift was accepted: %+v", transcript.Runtime)
-		}
+	if err := validateNegotiatedObservers(origin, requested, bench.Transcript{}); err == nil ||
+		!strings.Contains(err.Error(), "no OpenRealtime observer negotiation response") {
+		t.Fatalf("missing observer response error = %v", err)
 	}
 	if err := validateNegotiatedObservers(origin, requested, bench.Transcript{
-		Runtime: &binding.Status{Observers: slices.Clone(requested)},
+		NegotiatedObservers: []string{"different"},
+	}); err == nil || !strings.Contains(err.Error(), "different") {
+		t.Fatalf("observer mismatch error = %v", err)
+	}
+	if err := validateNegotiatedObservers(origin, requested, bench.Transcript{
+		NegotiatedObservers: slices.Clone(requested),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -141,6 +143,52 @@ func TestLiveEvidenceRequiresExactNegotiatedObserverSelection(t *testing.T) {
 	combined, tolerated = realtimeCUPlaybackFailure(bench.ErrConversationTimeout, nil)
 	if !tolerated || !errors.Is(combined, bench.ErrConversationTimeout) {
 		t.Fatalf("attested conversation timeout combined=%v tolerated=%t", combined, tolerated)
+	}
+}
+
+func TestRealtimeCURunnerReturnsExplicitFailureWhenActionBudgetIsExhausted(t *testing.T) {
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	started := time.Unix(100, 0)
+	environment := realtimeCURunEnvironment{episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+		return realtimeCURunEpisode{
+			ready: func(context.Context) error { return nil }, started: func() time.Time { return started },
+			surface:       &fixtureRunSurface{},
+			captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			result:        func(context.Context) (PageResult, error) { return PageResult{}, nil },
+		}, nil
+	}}
+	checked := false
+	_, _ = runCase(context.Background(), environment, Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		FrameRate: 3, Timeout: time.Second,
+		dependencies: &runDependencies{
+			playSamples: func(ctx context.Context, config bench.SessionConfig, _ []int16) (bench.Transcript, error) {
+				for index := 0; index < item.Task.MaxActions; index++ {
+					output, err := config.HandleTool(ctx, bench.ToolRequest{
+						CallID: fmt.Sprintf("call-%d", index), Name: "computer.click_normalized",
+						Arguments: json.RawMessage(`{"source":"screen","x":500,"y":500}`),
+					})
+					if err != nil || len(output) == 0 {
+						t.Fatalf("admitted action %d output=%s error=%v", index, output, err)
+					}
+				}
+				output, err := config.HandleTool(ctx, bench.ToolRequest{
+					CallID: "over-budget", Name: "computer.click_normalized",
+					Arguments: json.RawMessage(`{"source":"screen","x":500,"y":500}`),
+				})
+				if err == nil || !strings.Contains(err.Error(), "action budget exhausted") || len(output) != 0 {
+					t.Fatalf("over-budget action output=%s error=%v", output, err)
+				}
+				checked = true
+				return bench.Transcript{}, errors.New("fixture transport complete")
+			},
+			now: func() time.Time { return started },
+		},
+		evidenceOrigin: EvidenceRunOrigin{Kind: EvidenceOriginHermetic},
+	}, item)
+	if !checked {
+		t.Fatal("session driver did not exercise the action budget")
 	}
 }
 

@@ -21,34 +21,36 @@ const (
 // evidence plug-in. The lifecycle owns no provider, credential, filesystem,
 // encoder, server, or presentation client.
 type LifecycleConfig struct {
-	Context        context.Context
-	Plugin         Plugin
-	Suite          string
-	Cell           bench.Cell
-	Provenance     bench.Provenance
-	Origin         RunOrigin
-	AttemptTimeout time.Duration
-	SuiteTimeout   time.Duration
+	Context           context.Context
+	Plugin            Plugin
+	Suite             string
+	Cell              bench.Cell
+	Provenance        bench.Provenance
+	Origin            RunOrigin
+	RecoveryValidator RecoveryValidator
+	AttemptTimeout    time.Duration
+	SuiteTimeout      time.Duration
 }
 
 // Lifecycle coordinates one candidate cell and prevents duplicate,
 // uncommitted, or post-finish attempts from being presented as complete.
 type Lifecycle struct {
-	mu             sync.Mutex
-	ctx            context.Context
-	plugin         Plugin
-	suite          string
-	cell           bench.Cell
-	provenance     bench.Provenance
-	origin         RunOrigin
-	attemptTimeout time.Duration
-	suiteTimeout   time.Duration
-	started        map[string]struct{}
-	cases          map[string]int
-	committed      map[string]struct{}
-	active         int
-	finishing      bool
-	finished       bool
+	mu                sync.Mutex
+	ctx               context.Context
+	plugin            Plugin
+	suite             string
+	cell              bench.Cell
+	provenance        bench.Provenance
+	origin            RunOrigin
+	recoveryValidator RecoveryValidator
+	attemptTimeout    time.Duration
+	suiteTimeout      time.Duration
+	started           map[string]struct{}
+	cases             map[string]int
+	committed         map[string]struct{}
+	active            int
+	finishing         bool
+	finished          bool
 }
 
 // NewLifecycle validates the candidate-run contract before any attempt can
@@ -76,6 +78,9 @@ func NewLifecycle(config LifecycleConfig) (*Lifecycle, error) {
 	_, recoversAttempts := config.Plugin.(AttemptRecoverer)
 	if bindsRun != recoversAttempts {
 		return nil, errors.New("candidate evidence recovery plug-in contract is incomplete")
+	}
+	if recoversAttempts && config.RecoveryValidator == nil {
+		return nil, errors.New("candidate evidence recovery requires a suite-owned deterministic validator")
 	}
 	if bindsRun {
 		bound, bindErr := binder.BindRun(
@@ -105,7 +110,8 @@ func NewLifecycle(config LifecycleConfig) (*Lifecycle, error) {
 	return &Lifecycle{
 		ctx: config.Context, plugin: config.Plugin, suite: config.Suite,
 		cell: cloneCell(config.Cell), provenance: config.Provenance, origin: config.Origin,
-		attemptTimeout: attemptTimeout, suiteTimeout: suiteTimeout,
+		recoveryValidator: config.RecoveryValidator,
+		attemptTimeout:    attemptTimeout, suiteTimeout: suiteTimeout,
 		started: make(map[string]struct{}), cases: make(map[string]int),
 		committed: make(map[string]struct{}),
 	}, nil
@@ -205,19 +211,55 @@ func (lifecycle *Lifecycle) begin(
 	lifecycle.mu.Unlock()
 
 	if recoverer, supported := lifecycle.plugin.(AttemptRecoverer); supported {
-		recovered, found, recoverErr := recoverer.RecoverAttempt(lifecycle.ctx, providerSpecification)
+		recovery, found, recoverErr := recoverer.RecoverAttempt(lifecycle.ctx, providerSpecification)
 		if recoverErr != nil {
 			lifecycle.release(identity, false)
 			return nil, StageError(caseID, "recover attempt", recoverErr)
 		}
 		if found {
-			completion, cloneErr := CloneCompletion(recovered)
+			completion, cloneErr := CloneCompletion(recovery.Completion)
 			if cloneErr != nil || !reflect.DeepEqual(completion.Attempt, specification) {
 				lifecycle.release(identity, false)
 				if cloneErr == nil {
 					cloneErr = errors.New("recovered completion differs from the requested attempt")
 				}
 				return nil, StageError(caseID, "recover attempt", cloneErr)
+			}
+			if nilPlugin(recovery.Evidence) {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "validate recovered attempt",
+					errors.New("candidate recovered attempt has no durable raw evidence"))
+			}
+			reopened, reopenErr := recovery.Evidence.ReopenTranscript(lifecycle.ctx)
+			if reopenErr != nil {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "reopen recovered evidence", reopenErr)
+			}
+			if !reflect.DeepEqual(reopened, completion.Transcript) {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "validate recovered attempt",
+					errors.New("candidate recovered transcript differs from reopened raw evidence"))
+			}
+			reconstructed, validateErr := lifecycle.recoveryValidator(
+				lifecycle.ctx, specification, reopened,
+			)
+			if validateErr != nil {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "rescore recovered attempt", validateErr)
+			}
+			if validateErr = reconstructed.Validate(); validateErr != nil {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "validate recovered attempt",
+					fmt.Errorf("suite recovery validator produced an invalid outcome: %w", validateErr))
+			}
+			if !reflect.DeepEqual(reconstructed, completion.Outcome) {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "validate recovered attempt",
+					errors.New("candidate recovered outcome differs from deterministic rescore"))
+			}
+			if commitErr := recovery.Evidence.CommitValidated(lifecycle.ctx); commitErr != nil {
+				lifecycle.release(identity, false)
+				return nil, StageError(caseID, "commit validated recovery", commitErr)
 			}
 			lifecycle.release(identity, true)
 			return &ActiveAttempt{

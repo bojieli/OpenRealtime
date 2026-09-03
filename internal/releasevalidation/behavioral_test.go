@@ -2,8 +2,11 @@ package releasevalidation
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -21,6 +24,7 @@ func TestBehavioralAcceptancePassesOnlyCompleteFrozenCandidate(t *testing.T) {
 		t.Fatalf("acceptance report = %+v", report)
 	}
 	if report.Suites[0].Execution == nil ||
+		!sha256Pattern.MatchString(report.Suites[0].ClosureSHA256) ||
 		report.Suites[0].Execution.RequirementSHA256 != fixture.candidate.Suites[0].ExecutionRequirementSHA256 ||
 		report.Suites[0].Execution.GraphFingerprint == "" ||
 		report.Suites[0].Execution.ConfigurationSHA256 == "" ||
@@ -46,7 +50,7 @@ func TestBehavioralAcceptanceFailsClosedOnCandidateAndEvidenceGaps(t *testing.T)
 				fixture.result.Tasks = fixture.result.Tasks[:1]
 				fixture.result.Finish()
 			},
-			want: "population is incomplete",
+			want: "campaign result population differs from closure",
 		},
 		{
 			name: "forged summary",
@@ -56,18 +60,47 @@ func TestBehavioralAcceptanceFailsClosedOnCandidateAndEvidenceGaps(t *testing.T)
 			want: "stored summary differs",
 		},
 		{
+			name: "completed row hides an error",
+			mutate: func(fixture *behavioralFixture) {
+				fixture.result.Tasks[0].Error = "provider failed"
+			},
+			want: "completed task outcome carries an error",
+		},
+		{
+			name: "row claims evidence and attestation failure",
+			mutate: func(fixture *behavioralFixture) {
+				fixture.result.Tasks[0].ExecutionError = "inspector failed"
+			},
+			want: "both execution evidence and an execution error",
+		},
+		{
+			name: "noncanonical metric identity",
+			mutate: func(fixture *behavioralFixture) {
+				fixture.result.Tasks[0].Metrics[" reply_latency_ms"] = 1
+				fixture.result.Finish()
+			},
+			want: "metric name",
+		},
+		{
+			name: "noncanonical note value",
+			mutate: func(fixture *behavioralFixture) {
+				fixture.result.Tasks[0].Notes = map[string]string{"detail": " padded"}
+			},
+			want: "leading or trailing whitespace",
+		},
+		{
 			name: "build identity mismatch",
 			mutate: func(fixture *behavioralFixture) {
 				fixture.result.Provenance.ExecutableSHA256 = strings.Repeat("c", 64)
 			},
-			want: "executable digest differs",
+			want: "campaign result build or machine differs from closure",
 		},
 		{
 			name: "execution identity mismatch",
 			mutate: func(fixture *behavioralFixture) {
 				fixture.candidate.Suites[0].ExecutionRequirementSHA256 = digestFor('9')
 			},
-			want: "execution identity differs",
+			want: "campaign result execution requirement differs from closure",
 		},
 		{
 			name: "missing safety evidence",
@@ -278,6 +311,7 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 		t.Fatalf("checked target suite count = %d, want %d", len(targets.Suites), len(want))
 	}
 	population := 0
+	var scenarioTarget *BehavioralSuiteTarget
 	for _, suite := range targets.Suites {
 		expected, found := want[suite.ID]
 		if !found {
@@ -291,6 +325,10 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 				suite.ID, suite.ResultKind, suite.Suite, suite.ExpectedPopulation, expected)
 		}
 		population += suite.ExpectedPopulation
+		if suite.ID == "scenario" {
+			copy := suite
+			scenarioTarget = &copy
+		}
 	}
 	if len(want) != 0 {
 		t.Fatalf("checked targets omit final suites: %+v", want)
@@ -298,13 +336,35 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 	if population != 7486 {
 		t.Fatalf("checked final population = %d, want 7486", population)
 	}
+	if scenarioTarget == nil || scenarioTarget.Aggregate.MinimumPassed == nil ||
+		*scenarioTarget.Aggregate.MinimumPassed != 140 || len(scenarioTarget.Cases.Targets) != 11 {
+		t.Fatalf("scenario acceptance target is not the exact 140/165, eleven-case baseline: %+v",
+			scenarioTarget)
+	}
+	minimumTotal := 0
+	countMinimum := -1
+	for _, target := range scenarioTarget.Cases.Targets {
+		minimumTotal += target.MinimumPassed
+		if target.Case == "count-as-they-go" {
+			if target.ExpectedAttempts != 15 {
+				t.Fatalf("count-as-they-go attempts = %d, want 15", target.ExpectedAttempts)
+			}
+			countMinimum = target.MinimumPassed
+		}
+	}
+	if minimumTotal != 140 || countMinimum != 8 {
+		t.Fatalf("scenario per-case minima sum/count-as-they-go = %d/%d, want 140/8",
+			minimumTotal, countMinimum)
+	}
 }
 
 type behavioralFixture struct {
-	targets    BehavioralTargets
-	candidate  FrozenCandidate
-	result     bench.Result
-	resultPath string
+	targets     BehavioralTargets
+	candidate   FrozenCandidate
+	result      bench.Result
+	directory   string
+	resultPath  string
+	closurePath string
 }
 
 func newBehavioralFixture(t *testing.T) behavioralFixture {
@@ -361,16 +421,24 @@ func newBehavioralFixture(t *testing.T) behavioralFixture {
 				Comparison: ComparisonAtMost, Threshold: 25, MinimumSamples: 2, RequireEveryTask: true},
 		}},
 	}}}
+	directory := t.TempDir()
 	candidate := FrozenCandidate{
 		FormatVersion: FrozenCandidateVersion, CandidateID: "fixture-final",
 		Revision: revision, ExecutableSHA256: "sha256:" + strings.Repeat("b", 64), Machine: machine,
 		Suites: []FrozenCandidateSuite{{
 			ID: "fixture", ExecutionRequirementSHA256: digestBytes(requirementPayload),
+			RunSpecSHA256: digestFor('3'), TaskInventorySHA256: digestFor('4'),
+			ScorerSHA256: digestFor('5'),
+			SourceReceipts: []CampaignSourceRequirement{{
+				Kind: "fixture-source", ArtifactFormat: "fixture.source-receipt",
+			}},
 			Lineage: []RunLineage{{CampaignID: "final", Kind: RunFinalFull, Population: 2}},
 		}},
 	}
 	return behavioralFixture{targets: targets, candidate: candidate,
-		result: result, resultPath: filepath.Join(t.TempDir(), "result.json")}
+		result: result, directory: directory,
+		resultPath:  filepath.Join(directory, "result.json"),
+		closurePath: filepath.Join(directory, "closure.json")}
 }
 
 func (fixture *behavioralFixture) writeResult(t *testing.T) {
@@ -380,12 +448,166 @@ func (fixture *behavioralFixture) writeResult(t *testing.T) {
 	}
 }
 
-func (fixture behavioralFixture) evaluate(t *testing.T) BehavioralAcceptanceReport {
+func (fixture *behavioralFixture) publishClosure(t *testing.T) {
 	t.Helper()
 	fixture.writeResult(t)
+	lineage := fixture.candidate.Suites[0].Lineage
+	if len(lineage) == 0 {
+		return
+	}
+	predecessors := make([]CampaignArtifact, 0, len(lineage)-1)
+	for index, run := range lineage[:len(lineage)-1] {
+		population := run.Population
+		if population > len(fixture.result.Tasks) {
+			population = len(fixture.result.Tasks)
+		}
+		priorResult := fixture.result
+		priorResult.Expected = population
+		priorResult.Tasks = slices.Clone(fixture.result.Tasks[:population])
+		// A repair changes the executable and therefore creates a new candidate.
+		// Predecessor closures must remain admissible across that boundary; only
+		// the final accepted populations are required to share one candidate.
+		priorResult.Provenance.Revision = strings.Repeat(string(rune('c'+index)), 40)
+		priorResult.Provenance.ExecutableSHA256 = strings.Repeat(string(rune('d'+index)), 64)
+		priorResult.Finish()
+		prefix := fmt.Sprintf("prior-%02d", index)
+		priorPath := filepath.Join(fixture.directory, prefix+".closure.json")
+		prior := fixture.campaignClosure(t, prefix, run.CampaignID, priorResult, nil)
+		prior.CandidateID = fmt.Sprintf("diagnostic-candidate-%02d", index)
+		prior.CandidateSHA256 = digestFor(byte('a' + index))
+		prior.Revision = priorResult.Provenance.Revision
+		prior.ExecutableSHA256 = "sha256:" + priorResult.Provenance.ExecutableSHA256
+		if _, err := PublishCampaignClosure(CampaignClosurePublication{Closure: prior, Path: priorPath}); err != nil {
+			t.Fatalf("publish predecessor closure: %v", err)
+		}
+		payload, err := os.ReadFile(priorPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest := digestBytes(payload)
+		fixture.candidate.Suites[0].Lineage[index].ArtifactSHA256 = digest
+		predecessors = append(predecessors, CampaignArtifact{
+			Format: CampaignClosureFormat, FormatVersion: CampaignClosureVersion,
+			Path: filepath.Base(priorPath), ArtifactSHA256: digest,
+		})
+	}
+	final := fixture.candidate.Suites[0].Lineage[len(lineage)-1]
+	closure := fixture.campaignClosure(t, "final", final.CampaignID, fixture.result, predecessors)
+	closure.ClosureSHA256 = campaignClosureDigest(closure)
+	payload, err := marshalCampaignCanonical(closure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.closurePath, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (fixture *behavioralFixture) campaignClosure(
+	t *testing.T, prefix, campaignID string, result bench.Result, predecessors []CampaignArtifact,
+) CampaignClosure {
+	t.Helper()
+	runSpec := CampaignRunSpec{
+		Format: CampaignRunSpecFormat, FormatVersion: CampaignRunSpecVersion,
+		SuiteID: "fixture", CampaignID: campaignID,
+		WorkingDirectory: "repository-root",
+		Arguments:        []string{"openrealtime", "bench", "fixture", "-seed", "7"},
+		Environment:      []CampaignNamedValue{{Name: "fixture_mode", Value: "release"}},
+		Endpoints:        []CampaignNamedDigest{{Name: "agent", SHA256: digestFor('6')}},
+	}
+	ids := make([]string, len(result.Tasks))
+	for index, task := range result.Tasks {
+		ids[index] = task.ID
+	}
+	sort.Strings(ids)
+	inventory := CampaignTaskInventory{
+		Format: CampaignInventoryFormat, FormatVersion: CampaignInventoryVersion,
+		SuiteID: "fixture", ExpectedPopulation: len(ids), TaskIDs: ids,
+	}
+	scorer := CampaignScorerManifest{
+		Format: CampaignScorerFormat, FormatVersion: CampaignScorerVersion,
+		SuiteID: "fixture", Identity: "fixture deterministic scorer",
+		Revision: "v1", ImplementationSHA256: digestFor('7'),
+		Inputs: []CampaignNamedDigest{{Name: "rubric", SHA256: digestFor('8')}},
+	}
+	runArtifact := fixture.writeCampaignArtifact(t, prefix+".run-spec.json", runSpec,
+		CampaignRunSpecFormat, CampaignRunSpecVersion)
+	inventoryArtifact := fixture.writeCampaignArtifact(t, prefix+".inventory.json", inventory,
+		CampaignInventoryFormat, CampaignInventoryVersion)
+	scorerArtifact := fixture.writeCampaignArtifact(t, prefix+".scorer.json", scorer,
+		CampaignScorerFormat, CampaignScorerVersion)
+	resultName := prefix + ".result.json"
+	resultPath := filepath.Join(fixture.directory, resultName)
+	if prefix == "final" {
+		resultPath = fixture.resultPath
+		resultName = filepath.Base(fixture.resultPath)
+	} else if err := result.Write(resultPath); err != nil {
+		t.Fatal(err)
+	}
+	resultPayload, err := os.ReadFile(resultPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultSHA256 := digestBytes(resultPayload)
+	rawSourceName := prefix + ".source.raw.json"
+	rawSourcePayload := []byte("{\"complete\":true,\"format\":\"fixture.source-receipt\",\"receipt_sha256\":\"" +
+		digestFor('9') + "\",\"result_sha256\":\"" + resultSHA256 + "\"}\n")
+	if err := os.WriteFile(filepath.Join(fixture.directory, rawSourceName), rawSourcePayload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sourceReceipt, err := SealCampaignArtifactReceipt(CampaignArtifactReceipt{
+		Format: CampaignArtifactReceiptFormat, FormatVersion: CampaignArtifactReceiptVersion,
+		Kind: "fixture-source", ArtifactFormat: "fixture.source-receipt",
+		ArtifactPath: rawSourceName, ArtifactSHA256: digestBytes(rawSourcePayload),
+		PortableReceiptSHA256: digestFor('9'),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceArtifact := fixture.writeCampaignArtifact(t, prefix+".source.receipt.json", sourceReceipt,
+		CampaignArtifactReceiptFormat, CampaignArtifactReceiptVersion)
+	if prefix == "final" {
+		fixture.candidate.Suites[0].RunSpecSHA256 = runArtifact.ArtifactSHA256
+		fixture.candidate.Suites[0].TaskInventorySHA256 = inventoryArtifact.ArtifactSHA256
+		fixture.candidate.Suites[0].ScorerSHA256 = scorerArtifact.ArtifactSHA256
+	}
+	return CampaignClosure{
+		Format: CampaignClosureFormat, FormatVersion: CampaignClosureVersion,
+		SuiteID: "fixture", CampaignID: campaignID,
+		CandidateID: fixture.candidate.CandidateID, CandidateSHA256: digestFor('2'),
+		Revision: fixture.candidate.Revision, ExecutableSHA256: fixture.candidate.ExecutableSHA256,
+		Machine:                    fixture.candidate.Machine,
+		ExecutionRequirementSHA256: fixture.candidate.Suites[0].ExecutionRequirementSHA256,
+		RunSpec:                    runArtifact, Inventory: inventoryArtifact,
+		SourceReceipts: []CampaignArtifact{sourceArtifact},
+		Result: CampaignArtifact{Format: ResultKindBench, FormatVersion: 1,
+			Path: resultName, ArtifactSHA256: resultSHA256},
+		Scorer: scorerArtifact, ExpectedPopulation: len(result.Tasks),
+		TaskPopulationSHA256: digestTaskPopulation(result.Tasks), Predecessors: predecessors,
+	}
+}
+
+func (fixture behavioralFixture) writeCampaignArtifact(
+	t *testing.T, name string, value any, format string, version int,
+) CampaignArtifact {
+	t.Helper()
+	payload, err := MarshalCampaignArtifact(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture.directory, name), payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return CampaignArtifact{Format: format, FormatVersion: version, Path: name,
+		ArtifactSHA256: digestBytes(payload)}
+}
+
+func (fixture behavioralFixture) evaluate(t *testing.T) BehavioralAcceptanceReport {
+	t.Helper()
+	fixture.publishClosure(t)
 	return EvaluateBehavioralAcceptance(
 		fixture.targets, digestFor('1'), fixture.candidate, digestFor('2'),
-		[]BehavioralResultInput{{ID: "fixture", Path: fixture.resultPath}},
+		[]BehavioralClosureInput{{ID: "fixture", Path: fixture.closurePath}},
 	)
 }
 

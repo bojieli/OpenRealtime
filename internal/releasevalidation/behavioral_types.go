@@ -20,8 +20,8 @@ import (
 
 const (
 	BehavioralTargetsVersion    = 1
-	FrozenCandidateVersion      = 1
-	BehavioralAcceptanceVersion = 1
+	FrozenCandidateVersion      = 2
+	BehavioralAcceptanceVersion = 2
 
 	RegistrationRegistered    = "registered"
 	RegistrationUnavailable   = "unavailable"
@@ -136,14 +136,27 @@ type FrozenCandidate struct {
 }
 
 type FrozenCandidateSuite struct {
-	ID                         string       `json:"id"`
-	ExecutionRequirementSHA256 string       `json:"execution_requirement_sha256"`
-	Lineage                    []RunLineage `json:"lineage"`
+	ID                         string                      `json:"id"`
+	ExecutionRequirementSHA256 string                      `json:"execution_requirement_sha256"`
+	RunSpecSHA256              string                      `json:"run_spec_sha256"`
+	TaskInventorySHA256        string                      `json:"task_inventory_sha256"`
+	ScorerSHA256               string                      `json:"scorer_sha256"`
+	SourceReceipts             []CampaignSourceRequirement `json:"source_receipts"`
+	Lineage                    []RunLineage                `json:"lineage"`
 }
 
-// RunLineage is chronological. Earlier failed/full and focused artifacts are
-// digest-bound. The last row is necessarily the newly executed complete final
-// population, whose result digest is sealed into the acceptance report.
+// CampaignSourceRequirement is frozen before a final campaign. The receipt
+// digest cannot exist yet, but its semantic kind and schema must already be
+// fixed so a final run cannot substitute an unrelated evidence artifact.
+type CampaignSourceRequirement struct {
+	Kind           string `json:"kind"`
+	ArtifactFormat string `json:"artifact_format"`
+}
+
+// RunLineage is chronological. Earlier failed/full and focused rows bind the
+// raw canonical bytes of their verified campaign closures. The last row is
+// the predeclared final campaign; its post-run closure is supplied separately
+// to acceptance and cannot be written into this pre-run candidate declaration.
 type RunLineage struct {
 	CampaignID     string `json:"campaign_id"`
 	Kind           string `json:"kind"`
@@ -490,8 +503,26 @@ func validateFrozenMachine(machine bench.Machine) error {
 
 func (suite FrozenCandidateSuite) validate() error {
 	if !behavioralIDPattern.MatchString(suite.ID) ||
-		!sha256Pattern.MatchString(suite.ExecutionRequirementSHA256) {
-		return fmt.Errorf("suite %q has an invalid ID or execution-requirement digest", suite.ID)
+		!sha256Pattern.MatchString(suite.ExecutionRequirementSHA256) ||
+		!sha256Pattern.MatchString(suite.RunSpecSHA256) ||
+		!sha256Pattern.MatchString(suite.TaskInventorySHA256) ||
+		!sha256Pattern.MatchString(suite.ScorerSHA256) {
+		return fmt.Errorf("suite %q has an invalid ID or frozen campaign digest", suite.ID)
+	}
+	if len(suite.SourceReceipts) == 0 || len(suite.SourceReceipts) > maximumCampaignSourceReceipts {
+		return fmt.Errorf("suite %q has no bounded source-receipt requirements", suite.ID)
+	}
+	previousSource := ""
+	for _, source := range suite.SourceReceipts {
+		if !behavioralIDPattern.MatchString(source.Kind) ||
+			validateCampaignText(source.ArtifactFormat, 256, false) != nil {
+			return fmt.Errorf("suite %q has an invalid source-receipt requirement", suite.ID)
+		}
+		key := source.Kind + "\x00" + source.ArtifactFormat
+		if previousSource != "" && previousSource >= key {
+			return fmt.Errorf("suite %q source-receipt requirements must be uniquely sorted", suite.ID)
+		}
+		previousSource = key
 	}
 	if len(suite.Lineage) == 0 || len(suite.Lineage) > 10_000 {
 		return fmt.Errorf("suite %q has no bounded campaign lineage", suite.ID)
@@ -523,7 +554,7 @@ func (suite FrozenCandidateSuite) validate() error {
 			}
 		case RunFinalFull:
 			if index != len(suite.Lineage)-1 || run.ArtifactSHA256 != "" {
-				return fmt.Errorf("suite %q final full run must be the unsealed last lineage row", suite.ID)
+				return fmt.Errorf("suite %q final full run must be the predeclared last lineage row without a digest", suite.ID)
 			}
 		default:
 			return fmt.Errorf("suite %q has unknown lineage kind %q", suite.ID, run.Kind)

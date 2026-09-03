@@ -42,13 +42,54 @@ func Verify(ctx context.Context, directory, receiptPath string) (Manifest, Recei
 	}
 	canonicalReceipt, err := receiptPayload(receipt)
 	if err != nil || !bytes.Equal(receiptBytes, canonicalReceipt) ||
-		receipt.Format != ReceiptFormat || receipt.FormatVersion != ReceiptFormatVersion ||
-		receipt.Directory != directory || receipt.AttemptCount <= 0 ||
-		!validDigest(receipt.ManifestSHA256) || !validDigest(receipt.FileSetSHA256) ||
-		!validDigest(receipt.ReceiptSHA256) {
+		validateReceiptIdentity(directory, receipt) != nil {
 		return Manifest{}, Receipt{}, errors.New("candidate source receipt identity is invalid")
 	}
+	return verifyReceiptSource(ctx, directory, receipt)
+}
 
+// VerifyReceiptPayload reopens a candidate source tree against exact canonical
+// receipt bytes already read by an outer closure. It avoids a second path read
+// and the corresponding receipt-replacement race.
+func VerifyReceiptPayload(ctx context.Context, payload []byte) (Manifest, Receipt, error) {
+	if ctx == nil {
+		return Manifest{}, Receipt{}, errors.New("verify candidate source bundle: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return Manifest{}, Receipt{}, err
+	}
+	var receipt Receipt
+	if err := decodeCanonical(payload, &receipt); err != nil {
+		return Manifest{}, Receipt{}, errors.New("candidate source receipt is invalid")
+	}
+	canonicalReceipt, err := receiptPayload(receipt)
+	if err != nil || !bytes.Equal(payload, canonicalReceipt) {
+		return Manifest{}, Receipt{}, errors.New("candidate source receipt identity is invalid")
+	}
+	directory, err := validateAbsolutePath("candidate source directory", receipt.Directory)
+	if err != nil || validateReceiptIdentity(directory, receipt) != nil {
+		return Manifest{}, Receipt{}, errors.New("candidate source receipt identity is invalid")
+	}
+	return verifyReceiptSource(ctx, directory, receipt)
+}
+
+func validateReceiptIdentity(directory string, receipt Receipt) error {
+	identity := receipt
+	identity.Directory = ""
+	identity.ReceiptSHA256 = ""
+	payload, err := canonicalCompact(identity)
+	if err != nil || receipt.Format != ReceiptFormat || receipt.FormatVersion != ReceiptFormatVersion ||
+		receipt.Directory != directory || receipt.AttemptCount <= 0 ||
+		!validDigest(receipt.ManifestSHA256) || !validDigest(receipt.FileSetSHA256) ||
+		!validDigest(receipt.ReceiptSHA256) || digest(payload) != receipt.ReceiptSHA256 {
+		return errors.New("candidate source receipt identity is invalid")
+	}
+	return nil
+}
+
+func verifyReceiptSource(
+	ctx context.Context, directory string, receipt Receipt,
+) (Manifest, Receipt, error) {
 	visible, err := os.Lstat(directory)
 	if err != nil || visible.Mode()&os.ModeSymlink != 0 || !visible.IsDir() {
 		return Manifest{}, Receipt{}, errors.New("candidate source directory is invalid")

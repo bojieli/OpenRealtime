@@ -213,6 +213,7 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
 			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
 			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+			RecoveryValidator: validateRecoveredOutcome,
 		})
 		if err != nil {
 			return bench.Result{}, fmt.Errorf("create FDB candidate evidence lifecycle: %w", err)
@@ -238,6 +239,41 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	return finish(runErr)
 }
 
+type attemptContext struct {
+	Category      Category `json:"category"`
+	ContextText   string   `json:"context_text"`
+	EventText     string   `json:"event_text"`
+	EventStartMS  float64  `json:"event_start_ms"`
+	EventEndMS    float64  `json:"event_end_ms"`
+	ShouldYield   bool     `json:"should_yield"`
+	YieldWindowMS int64    `json:"yield_window_ms"`
+	HoldWindowMS  int64    `json:"hold_window_ms"`
+}
+
+func validateRecoveredOutcome(
+	_ context.Context, attempt candidate.Attempt, transcript bench.Transcript,
+) (bench.TaskOutcome, error) {
+	var retained attemptContext
+	if err := json.Unmarshal(attempt.Context, &retained); err != nil {
+		return bench.TaskOutcome{}, fmt.Errorf("decode recovered FDB scorer context: %w", err)
+	}
+	if transcript.Failure != "" {
+		return bench.TaskOutcome{}, errors.New("recovered FDB transcript retains a session failure")
+	}
+	outcome := bench.TaskOutcome{
+		ID: attempt.Case,
+		Notes: map[string]string{
+			"category": string(retained.Category),
+			"context":  retained.ContextText,
+			"event":    retained.EventText,
+		},
+		Completed: true,
+	}
+	outcome.AttachExecution(transcript)
+	scoreOutcome(&outcome, transcript, retained)
+	return outcome, nil
+}
+
 func runSample(
 	ctx context.Context, options Options, sample Sample, evidenceLifecycle *candidate.Lifecycle,
 ) (outcome bench.TaskOutcome, evidenceErr error) {
@@ -254,17 +290,7 @@ func runSample(
 	if evidenceLifecycle != nil {
 		var err error
 		attempt, err = evidenceLifecycle.Begin(
-			sample.ID, 1,
-			struct {
-				Category      Category `json:"category"`
-				ContextText   string   `json:"context_text"`
-				EventText     string   `json:"event_text"`
-				EventStartMS  float64  `json:"event_start_ms"`
-				EventEndMS    float64  `json:"event_end_ms"`
-				ShouldYield   bool     `json:"should_yield"`
-				YieldWindowMS int64    `json:"yield_window_ms"`
-				HoldWindowMS  int64    `json:"hold_window_ms"`
-			}{
+			sample.ID, 1, attemptContext{
 				Category: sample.Category, ContextText: sample.ContextText, EventText: sample.EventText,
 				EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
 				ShouldYield:   sample.Category.ShouldYield(),
@@ -308,16 +334,26 @@ func runSample(
 		return outcome, evidenceErr
 	}
 	outcome.Completed = true
+	scoreOutcome(&outcome, transcript, attemptContext{
+		Category: sample.Category, ContextText: sample.ContextText, EventText: sample.EventText,
+		EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
+		ShouldYield:   sample.Category.ShouldYield(),
+		YieldWindowMS: options.YieldWindow.Milliseconds(), HoldWindowMS: options.HoldWindow.Milliseconds(),
+	})
+	return outcome, evidenceErr
+}
+
+func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retained attemptContext) {
 
 	// Was the agent actually making sound when the event began? Everything
 	// below depends on it, and a task where it was not is a fact about
 	// latency rather than about overlap.
 	const lookback = 500.0
-	before := transcript.AudioBetween(sample.EventStartMS-lookback, sample.EventStartMS)
+	before := transcript.AudioBetween(retained.EventStartMS-lookback, retained.EventStartMS)
 	speaking := before > 0
 
-	yieldWindow := float64(options.YieldWindow.Milliseconds())
-	after := transcript.AudioBetween(sample.EventStartMS, sample.EventStartMS+yieldWindow)
+	yieldWindow := float64(retained.YieldWindowMS)
+	after := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+yieldWindow)
 	outcome.Metrics = map[string]float64{
 		"agent_audio_before_event_ms": before,
 		"agent_audio_after_event_ms":  after,
@@ -330,32 +366,31 @@ func runSample(
 		// a latency problem. It is reported as its own thing.
 		outcome.Notes["applicable"] = "false"
 		outcome.Passed = true
-		return outcome, evidenceErr
+		return
 	}
 	outcome.Notes["applicable"] = "true"
 
-	if sample.Category.ShouldYield() {
+	if retained.ShouldYield {
 		// Yielding means the audio stops, and the number that says whether it
 		// did is how long it kept going. A ratio of audio volumes would
 		// conflate "stopped late" with "never stopped", and those are
 		// different failures with different causes.
-		latency, found := stopLatency(transcript, sample.EventStartMS)
+		latency, found := stopLatency(transcript, retained.EventStartMS)
 		if !found {
 			// No audio at all after the event: it stopped immediately.
 			outcome.Metrics["yield_latency_ms"] = 0
 			outcome.Passed = true
-			return outcome, evidenceErr
+			return
 		}
 		outcome.Metrics["yield_latency_ms"] = latency
 		outcome.Passed = latency <= yieldWindow
-		return outcome, evidenceErr
+		return
 	}
 	// Holding means the audio continues.
-	holdWindow := float64(options.HoldWindow.Milliseconds())
-	held := transcript.AudioBetween(sample.EventStartMS, sample.EventStartMS+holdWindow)
+	holdWindow := float64(retained.HoldWindowMS)
+	held := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+holdWindow)
 	outcome.Metrics["agent_audio_hold_window_ms"] = held
 	outcome.Passed = held > 0
-	return outcome, evidenceErr
 }
 
 // stopLatency is how long the interrupted utterance kept going.

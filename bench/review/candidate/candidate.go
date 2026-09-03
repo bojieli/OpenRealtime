@@ -292,6 +292,30 @@ type Completion struct {
 	Transcript bench.Transcript  `json:"transcript"`
 }
 
+// RecoveredEvidence is the retained deterministic trace behind one recovered
+// completion. The transcript is scorer input recorded during the original
+// attempt; this contract does not claim that it can be re-derived from the
+// retained media. ReopenTranscript must read the durable source again because
+// a discovery-time cache would let a changed completion bypass the scorer.
+type RecoveredEvidence interface {
+	ReopenTranscript(context.Context) (bench.Transcript, error)
+	CommitValidated(context.Context) error
+}
+
+// Recovery couples a claimed completion to the durable raw evidence from
+// which a suite can reconstruct its deterministic outcome. The lifecycle does
+// not treat Completion as authoritative until it has reopened Evidence and a
+// suite-owned RecoveryValidator has reproduced Completion.Outcome exactly.
+type Recovery struct {
+	Completion Completion
+	Evidence   RecoveredEvidence
+}
+
+// RecoveryValidator deterministically rebuilds an outcome from a freshly
+// reopened transcript. It must not use retained Passed or Metrics values; the
+// lifecycle exact-compares its returned outcome with the retained completion.
+type RecoveryValidator func(context.Context, Attempt, bench.Transcript) (bench.TaskOutcome, error)
+
 // EvidenceError identifies which candidate-retention stage failed without
 // conflating it with the deterministic scorer outcome.
 type EvidenceError struct {
@@ -338,6 +362,9 @@ func StageError(caseID, stage string, err error) error {
 func (completion Completion) Validate() error {
 	if err := completion.Attempt.Validate(); err != nil {
 		return err
+	}
+	if err := completion.Outcome.Validate(); err != nil {
+		return fmt.Errorf("candidate outcome: %w", err)
 	}
 	if completion.Outcome.ID != completion.Attempt.Case {
 		return errors.New("candidate outcome belongs to a different case")
@@ -447,10 +474,9 @@ type RunBinder interface {
 }
 
 // AttemptRecoverer is the optional per-attempt half of RunBinder; a plug-in
-// must implement both recovery interfaces or neither. A recovered
-// completion is authoritative current-run evidence, not a cache: the lifecycle
-// validates it against the exact newly reconstructed Attempt and counts it as a
-// committed attempt without calling BeginAttempt or any media callback.
+// must implement both recovery interfaces or neither. A recovered completion
+// is only a claim: the lifecycle requires durable RecoveredEvidence and a
+// suite-owned RecoveryValidator before it counts the attempt as committed.
 type AttemptRecoverer interface {
-	RecoverAttempt(context.Context, Attempt) (Completion, bool, error)
+	RecoverAttempt(context.Context, Attempt) (Recovery, bool, error)
 }

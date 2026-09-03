@@ -522,10 +522,18 @@ func productionFDBV3ToolDeclarations(
 	if strings.TrimSpace(dataset) == "" || dataset != strings.TrimSpace(dataset) {
 		return nil, errors.New("scenario FDB v3 tool selection requires a canonical dataset path")
 	}
-	tasks, err := fdbv3.Load(dataset, 0)
+	tasks, err := fdbv3.LoadReleased(dataset)
 	if err != nil {
 		return nil, fmt.Errorf("load scenario FDB v3 tool dataset: %w", err)
 	}
+	return fdbV3ToolDeclarations(tasks)
+}
+
+// fdbV3ToolDeclarations is the pure catalog-to-declaration projection used by
+// focused tests. Production callers must enter through
+// productionFDBV3ToolDeclarations so an incomplete or byte-drifted dataset
+// cannot freeze a benchmark profile.
+func fdbV3ToolDeclarations(tasks []fdbv3.Task) ([]scenarioconversation.ToolDeclaration, error) {
 	if len(tasks) == 0 {
 		return nil, errors.New("scenario FDB v3 tool dataset contains no released tasks")
 	}
@@ -547,9 +555,17 @@ func productionFDBV3ToolDeclarations(
 		if tool.Type != "function" {
 			return nil, fmt.Errorf("scenario FDB v3 tool %d has type %q, want function", index, tool.Type)
 		}
+		normalizers := fdbv3.ArgumentNormalizers(tool.Name)
+		argumentNormalizers := make([]legacyaction.ToolArgumentNormalizer, len(normalizers))
+		for normalizerIndex, normalizer := range normalizers {
+			argumentNormalizers[normalizerIndex] = legacyaction.ToolArgumentNormalizer{
+				Argument: normalizer.Argument, Normalizer: normalizer.Normalizer,
+			}
+		}
 		declarations = append(declarations, scenarioconversation.ToolDeclaration{
 			Name: tool.Name, Description: tool.Description,
-			Parameters: tool.Parameters, Confirm: legacyaction.ConfirmNever,
+			Parameters: tool.Parameters, ArgumentNormalizers: argumentNormalizers,
+			Confirm: legacyaction.ConfirmNever,
 		})
 	}
 	return declarations, nil

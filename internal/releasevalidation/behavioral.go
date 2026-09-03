@@ -29,10 +29,14 @@ const (
 	BehavioralBlocked BehavioralOutcome = "blocked"
 )
 
-type BehavioralResultInput struct {
+type BehavioralClosureInput struct {
 	ID   string
 	Path string
 }
+
+// BehavioralResultInput remains as a source-compatible alias. Path now names
+// a campaign closure, never a bare result; supplying result JSON fails closed.
+type BehavioralResultInput = BehavioralClosureInput
 
 type BehavioralAcceptanceReport struct {
 	FormatVersion         int                     `json:"format_version"`
@@ -55,6 +59,7 @@ type BehavioralSuiteReport struct {
 	ResultKind         string                     `json:"result_kind"`
 	Outcome            BehavioralOutcome          `json:"outcome"`
 	ResultSHA256       string                     `json:"result_sha256,omitempty"`
+	ClosureSHA256      string                     `json:"closure_sha256,omitempty"`
 	ExpectedPopulation int                        `json:"expected_population"`
 	ObservedPopulation int                        `json:"observed_population"`
 	Completed          int                        `json:"completed"`
@@ -90,15 +95,15 @@ type BehavioralCheck struct {
 }
 
 // EvaluateBehavioralAcceptance creates one candidate-only acceptance report.
-// Historical result files are deliberately not inputs: checked target numbers
-// are the comparison authority, while all observed rows come from the final
-// graph-native candidate.
+// Historical result files and bare final results are deliberately not inputs:
+// checked target numbers are the comparison authority, while every observed
+// row is reached through a verified final graph-native campaign closure.
 func EvaluateBehavioralAcceptance(
 	targets BehavioralTargets,
 	targetsSHA256 string,
 	candidate FrozenCandidate,
 	candidateSHA256 string,
-	inputs []BehavioralResultInput,
+	inputs []BehavioralClosureInput,
 ) BehavioralAcceptanceReport {
 	report := BehavioralAcceptanceReport{
 		FormatVersion: BehavioralAcceptanceVersion,
@@ -134,18 +139,18 @@ func EvaluateBehavioralAcceptance(
 	inputByID := make(map[string]string, len(inputs))
 	for _, input := range inputs {
 		if !behavioralIDPattern.MatchString(input.ID) || strings.TrimSpace(input.Path) == "" {
-			report.Failures = append(report.Failures, "candidate result input has an invalid ID or empty path")
+			report.Failures = append(report.Failures, "campaign closure input has an invalid ID or empty path")
 			continue
 		}
 		if _, duplicate := inputByID[input.ID]; duplicate {
 			report.Failures = append(report.Failures,
-				fmt.Sprintf("candidate result input repeats suite %q", input.ID))
+				fmt.Sprintf("campaign closure input repeats suite %q", input.ID))
 			continue
 		}
 		inputByID[input.ID] = input.Path
 		if _, found := targetByID[input.ID]; !found {
 			report.Failures = append(report.Failures,
-				fmt.Sprintf("candidate result input declares unrequired suite %q", input.ID))
+				fmt.Sprintf("campaign closure input declares unrequired suite %q", input.ID))
 		}
 	}
 
@@ -165,22 +170,29 @@ func EvaluateBehavioralAcceptance(
 		appendRegistrationBlockers(&suiteReport, target)
 		if !inputFound {
 			suiteReport.Failures = append(suiteReport.Failures,
-				"final-candidate result artifact was not supplied")
+				"final-candidate campaign closure was not supplied")
 			report.Suites = append(report.Suites, finishBehavioralSuite(suiteReport))
 			continue
 		}
 
-		result, resultDigest, resultErr := readBehavioralResult(path, target.ResultKind)
-		if resultErr != nil {
-			suiteReport.Failures = append(suiteReport.Failures, resultErr.Error())
+		verified, closureErr := VerifyCampaignClosure(path)
+		if closureErr != nil {
+			suiteReport.Failures = append(suiteReport.Failures,
+				"verify final-candidate campaign closure: "+closureErr.Error())
 			report.Suites = append(report.Suites, finishBehavioralSuite(suiteReport))
 			continue
 		}
+		result := verified.Result
+		resultDigest := verified.Closure.Result.ArtifactSHA256
 		suiteReport.ResultSHA256 = resultDigest
+		suiteReport.ClosureSHA256 = verified.Closure.ClosureSHA256
 		suiteReport.ObservedPopulation = len(result.Tasks)
 		suiteReport.Completed = result.Summary.Completed
 		suiteReport.Passed = result.Summary.Passed
 
+		validateCampaignClosureControl(
+			&suiteReport, target, frozen, frozenFound, candidate, candidateSHA256, verified,
+		)
 		validateBehavioralResult(&suiteReport, target, frozen, frozenFound, candidate, result)
 		if target.Aggregate.Registration.Status == RegistrationRegistered {
 			minimum := *target.Aggregate.MinimumPassed
@@ -230,6 +242,10 @@ func readBehavioralResult(path, kind string) (bench.Result, string, error) {
 	if err != nil {
 		return bench.Result{}, "", fmt.Errorf("read final-candidate result: %w", err)
 	}
+	return decodeBehavioralResult(payload, kind)
+}
+
+func decodeBehavioralResult(payload []byte, kind string) (bench.Result, string, error) {
 	if err := strictjson.ValidateWithLimits(payload, strictjson.Limits{
 		MaxInputBytes: int(maximumBehavioralResultBytes), MaxDepth: 512,
 		MaxTokens: 64_000_000, MaxObjectMembers: 1_000_000,
@@ -290,6 +306,103 @@ func readBehavioralResultFile(path string) ([]byte, error) {
 		return nil, errors.New("result changed while it was read")
 	}
 	return payload, nil
+}
+
+func validateCampaignClosureControl(
+	report *BehavioralSuiteReport,
+	target BehavioralSuiteTarget,
+	frozen FrozenCandidateSuite,
+	frozenFound bool,
+	candidate FrozenCandidate,
+	candidateSHA256 string,
+	verified VerifiedCampaignClosure,
+) {
+	closure := verified.Closure
+	if closure.SuiteID != target.ID {
+		report.Failures = append(report.Failures, fmt.Sprintf(
+			"campaign closure suite is %q, want %q", closure.SuiteID, target.ID))
+	}
+	if closure.Result.Format != target.ResultKind {
+		report.Failures = append(report.Failures,
+			"campaign closure result kind differs from the preregistered target")
+	}
+	if closure.ExpectedPopulation != target.ExpectedPopulation {
+		report.Failures = append(report.Failures,
+			"campaign closure population differs from the preregistered target")
+	}
+	if closure.CandidateID != candidate.CandidateID ||
+		closure.CandidateSHA256 != candidateSHA256 {
+		report.Failures = append(report.Failures,
+			"campaign closure belongs to a different frozen candidate")
+	}
+	if closure.Revision != candidate.Revision ||
+		closure.ExecutableSHA256 != candidate.ExecutableSHA256 ||
+		!reflect.DeepEqual(closure.Machine, candidate.Machine) {
+		report.Failures = append(report.Failures,
+			"campaign closure build or machine differs from the frozen candidate")
+	}
+	if !frozenFound {
+		return
+	}
+	if closure.ExecutionRequirementSHA256 != frozen.ExecutionRequirementSHA256 {
+		report.Failures = append(report.Failures,
+			"campaign closure execution requirement differs from the frozen candidate")
+	}
+	if closure.RunSpec.ArtifactSHA256 != frozen.RunSpecSHA256 {
+		report.Failures = append(report.Failures,
+			"campaign closure run specification differs from the frozen candidate")
+	}
+	if closure.Inventory.ArtifactSHA256 != frozen.TaskInventorySHA256 {
+		report.Failures = append(report.Failures,
+			"campaign closure task inventory differs from the frozen candidate")
+	}
+	if closure.Scorer.ArtifactSHA256 != frozen.ScorerSHA256 {
+		report.Failures = append(report.Failures,
+			"campaign closure scorer differs from the frozen candidate")
+	}
+	if len(verified.SourceReceipts) != len(frozen.SourceReceipts) {
+		report.Failures = append(report.Failures,
+			"campaign closure source-receipt set differs from the frozen candidate")
+	} else {
+		actual := make([]string, len(verified.SourceReceipts))
+		want := make([]string, len(frozen.SourceReceipts))
+		for index, source := range verified.SourceReceipts {
+			actual[index] = source.Kind + "\x00" + source.ArtifactFormat
+		}
+		for index, requirement := range frozen.SourceReceipts {
+			want[index] = requirement.Kind + "\x00" + requirement.ArtifactFormat
+		}
+		sort.Strings(actual)
+		sort.Strings(want)
+		if !slices.Equal(actual, want) {
+			report.Failures = append(report.Failures,
+				"campaign closure source-receipt identity differs from the frozen candidate")
+		}
+	}
+	if len(frozen.Lineage) == 0 {
+		return
+	}
+	final := frozen.Lineage[len(frozen.Lineage)-1]
+	if closure.CampaignID != final.CampaignID || closure.ExpectedPopulation != final.Population {
+		report.Failures = append(report.Failures,
+			"campaign closure does not close the declared final_full lineage row")
+	}
+	priorLineage := frozen.Lineage[:len(frozen.Lineage)-1]
+	if len(verified.Predecessors) != len(priorLineage) ||
+		len(closure.Predecessors) != len(priorLineage) {
+		report.Failures = append(report.Failures,
+			"campaign closure predecessor set does not close the repair lineage")
+		return
+	}
+	for index, run := range priorLineage {
+		prior := verified.Predecessors[index]
+		artifact := closure.Predecessors[index]
+		if prior.CampaignID != run.CampaignID || prior.ExpectedPopulation != run.Population ||
+			artifact.ArtifactSHA256 != run.ArtifactSHA256 {
+			report.Failures = append(report.Failures, fmt.Sprintf(
+				"campaign closure predecessor %d does not match declared repair lineage", index))
+		}
+	}
 }
 
 func validateBehavioralResult(

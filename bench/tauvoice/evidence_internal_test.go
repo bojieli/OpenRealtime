@@ -24,6 +24,13 @@ type tauCandidatePlugin struct {
 	recoveries  int
 }
 
+type tauRecoveredEvidence struct{ transcript bench.Transcript }
+
+func (evidence tauRecoveredEvidence) ReopenTranscript(context.Context) (bench.Transcript, error) {
+	return evidence.transcript, nil
+}
+func (tauRecoveredEvidence) CommitValidated(context.Context) error { return nil }
+
 func (plugin *tauCandidatePlugin) BindRun(
 	_ context.Context, _ string, _ bench.Cell, provenance bench.Provenance, _ candidate.RunOrigin,
 ) (bench.Provenance, error) {
@@ -44,12 +51,18 @@ func (plugin *tauCandidatePlugin) FinishSuite(_ context.Context, result bench.Re
 
 func (plugin *tauCandidatePlugin) RecoverAttempt(
 	_ context.Context, attempt candidate.Attempt,
-) (candidate.Completion, bool, error) {
+) (candidate.Recovery, bool, error) {
 	if plugin.recovered == nil {
-		return candidate.Completion{}, false, nil
+		return candidate.Recovery{}, false, nil
 	}
 	plugin.recoveries++
-	return candidate.Completion{Attempt: attempt, Outcome: *plugin.recovered}, true, nil
+	transcript := bench.Transcript{PlaybackMS: plugin.recovered.Metrics["simulation_duration_ms"]}
+	return candidate.Recovery{
+		Completion: candidate.Completion{
+			Attempt: attempt, Outcome: *plugin.recovered, Transcript: transcript,
+		},
+		Evidence: tauRecoveredEvidence{transcript: transcript},
+	}, true, nil
 }
 
 type tauCandidateAttempt struct{ plugin *tauCandidatePlugin }
@@ -103,6 +116,7 @@ func TestRetainCandidateOutcomeImportsPinnedTauArtifacts(t *testing.T) {
 	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: plugin, Suite: "tau-voice", Cell: cell,
 		Provenance: provenance, Origin: origin,
+		RecoveryValidator: refuseRecoveredOutcome,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +173,7 @@ func TestRetainCandidateOutcomeImportsPinnedTauArtifacts(t *testing.T) {
 	}
 }
 
-func TestRetainCandidateOutcomeRecoverySkipsTauArtifactImport(t *testing.T) {
+func TestRetainCandidateOutcomeRecoveryFailsClosedWithoutReplayableTauScore(t *testing.T) {
 	const (
 		runName      = "candidate-telecom-regular"
 		simulationID = "70bbf463-1baf-48be-9ae5-a66dd9d4ac22"
@@ -195,25 +209,18 @@ func TestRetainCandidateOutcomeRecoverySkipsTauArtifactImport(t *testing.T) {
 	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: plugin, Suite: "tau-voice", Cell: cell,
 		Provenance: provenance, Origin: origin,
+		RecoveryValidator: refuseRecoveredOutcome,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := config.retainCandidateOutcome(
 		t.Context(), lifecycle, "telecom", runName, outcome,
-	); err != nil {
-		t.Fatal(err)
-	}
-	result := bench.Result{
-		Suite: "tau-voice", Cell: cell, Provenance: provenance, Expected: 1,
-		Tasks: []bench.TaskOutcome{outcome},
-	}
-	result.Finish()
-	if err := lifecycle.Finish(result); err != nil {
-		t.Fatal(err)
+	); err == nil || !strings.Contains(err.Error(), "cannot be deterministically rescored") {
+		t.Fatalf("tau recovery error = %v", err)
 	}
 	if plugin.recoveries != 1 || len(plugin.attempts) != 0 || len(plugin.media) != 0 ||
-		len(plugin.artifacts) != 0 || len(plugin.completions) != 0 || len(plugin.finishes) != 1 {
+		len(plugin.artifacts) != 0 || len(plugin.completions) != 0 || len(plugin.finishes) != 0 {
 		t.Fatalf("tau recovery: recover=%d attempts=%d media=%d artifacts=%d completions=%d finishes=%d",
 			plugin.recoveries, len(plugin.attempts), len(plugin.media), len(plugin.artifacts),
 			len(plugin.completions), len(plugin.finishes))
@@ -267,6 +274,7 @@ func TestRetainCandidateOutcomeRejectsMissingArtifactIdentity(t *testing.T) {
 	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
 		Context: t.Context(), Plugin: plugin, Suite: "tau-voice", Cell: cell,
 		Provenance: provenance, Origin: origin,
+		RecoveryValidator: refuseRecoveredOutcome,
 	})
 	if err != nil {
 		t.Fatal(err)

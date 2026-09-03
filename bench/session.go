@@ -72,6 +72,15 @@ type Transcript struct {
 	// PlaybackMS is how long the input recording was.
 	PlaybackMS float64 `json:"playback_ms"`
 	Failure    string  `json:"failure,omitempty"`
+	// NegotiatedObservers is the authoritative observer set returned by the
+	// session.updated OpenRealtime negotiation response. A nil slice means the
+	// endpoint returned no OpenRealtime response; a non-nil empty slice means
+	// the extension negotiated successfully but selected no observers.
+	//
+	// This deliberately does not come from Runtime. Graph-native runtime status
+	// describes execution identity, while observer selection is wire-negotiated
+	// session state.
+	NegotiatedObservers []string `json:"negotiated_observers,omitempty"`
 	// Runtime is the handshake-resolved architecture evidence emitted after
 	// session.update. It is present only when CaptureRuntimeEvidence was set;
 	// ordinary benchmark clients retain their existing wire behavior.
@@ -804,16 +813,17 @@ type recorder struct {
 	// openResponses counts responses the server has created and not finished.
 	// While it is above zero the agent still owes this turn something, so
 	// silence is work rather than completion.
-	openResponses      int
-	openTools          int
-	playbackFinishedAt time.Time
-	lastActivity       time.Time
-	failure            string
-	runtime            *binding.Status
-	inspection         *openrealtime.InspectionAccess
-	configured         chan struct{}
-	configuredOnce     sync.Once
-	audio              *sessionAudioRecorder
+	openResponses       int
+	openTools           int
+	playbackFinishedAt  time.Time
+	lastActivity        time.Time
+	failure             string
+	negotiatedObservers []string
+	runtime             *binding.Status
+	inspection          *openrealtime.InspectionAccess
+	configured          chan struct{}
+	configuredOnce      sync.Once
+	audio               *sessionAudioRecorder
 }
 
 func (recorder *recorder) at() float64 {
@@ -871,8 +881,13 @@ func (recorder *recorder) snapshot() Transcript {
 		copied := *recorder.inspection
 		inspection = &copied
 	}
+	var negotiatedObservers []string
+	if recorder.negotiatedObservers != nil {
+		negotiatedObservers = append([]string{}, recorder.negotiatedObservers...)
+	}
 	return Transcript{
-		Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure, Runtime: runtime,
+		Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure,
+		NegotiatedObservers: negotiatedObservers, Runtime: runtime,
 		OutstandingResponses: recorder.openResponses, OutstandingTools: recorder.openTools,
 		inspection: inspection,
 	}
@@ -973,20 +988,23 @@ func (recorder *recorder) handle(
 ) {
 	switch event.Type {
 	case "session.updated":
-		if config.CaptureRuntimeEvidence {
-			var decoded struct {
-				Session struct {
-					OpenRealtime *openrealtime.Response `json:"openrealtime"`
-				} `json:"session"`
-			}
-			if event.Decode(&decoded) == nil && decoded.Session.OpenRealtime != nil &&
-				decoded.Session.OpenRealtime.Debug != nil &&
+		var decoded struct {
+			Session struct {
+				OpenRealtime *openrealtime.Response `json:"openrealtime"`
+			} `json:"session"`
+		}
+		if event.Decode(&decoded) == nil && decoded.Session.OpenRealtime != nil {
+			// Start from a non-nil empty slice so an acknowledged selection of no
+			// observers remains distinguishable from no OpenRealtime response.
+			observers := append([]string{}, decoded.Session.OpenRealtime.Observers...)
+			recorder.mu.Lock()
+			recorder.negotiatedObservers = observers
+			if config.CaptureRuntimeEvidence && decoded.Session.OpenRealtime.Debug != nil &&
 				decoded.Session.OpenRealtime.Debug.Inspection != nil {
 				access := *decoded.Session.OpenRealtime.Debug.Inspection
-				recorder.mu.Lock()
 				recorder.inspection = &access
-				recorder.mu.Unlock()
 			}
+			recorder.mu.Unlock()
 		}
 		if recorder.configured != nil {
 			recorder.configuredOnce.Do(func() { close(recorder.configured) })
@@ -1152,14 +1170,18 @@ func (recorder *recorder) answer(
 			CallID: callID, Name: name, Arguments: arguments, Received: time.Now(),
 		})
 		if err != nil {
-			output = json.RawMessage(fmt.Sprintf("{%q:%q}", "error", err.Error()))
+			// Realtime function_call_output has no error member. The gateway's
+			// deliberately narrow, protocol-wide failure representation is an
+			// output beginning with "Error:". A JSON object containing an error
+			// field is ordinary tool data and must not be misclassified.
+			output = json.RawMessage("Error: " + err.Error())
 		} else if len(produced) > 0 {
 			output = produced
 		}
 	} else if config.Respond != nil {
 		produced, err := config.Respond(name, arguments)
 		if err != nil {
-			output = json.RawMessage(fmt.Sprintf("{%q:%q}", "error", err.Error()))
+			output = json.RawMessage("Error: " + err.Error())
 		} else if len(produced) > 0 {
 			output = produced
 		}

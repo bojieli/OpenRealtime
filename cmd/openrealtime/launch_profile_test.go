@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/bench/fdbv3"
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
@@ -219,33 +220,54 @@ func TestScenarioProfileFreezePinsFDBV3ToolUnion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	path := filepath.Join(root, "scenario-fdbv3-profile.yaml")
-	if err := runLaunchProfile([]string{
-		"scenario", "-out", path, "-fdbv3-dataset", dataset,
-	}, &bytes.Buffer{}); err != nil {
-		t.Fatal(err)
-	}
-	payload, err := os.ReadFile(path)
+	tasks, err := fdbv3.Load(dataset, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	profile, err := launchprofile.ParseYAML(path, payload)
+	declarations, err := fdbV3ToolDeclarations(tasks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(declarations)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, exact := range []string{
-		`"name":"add_to_cart"`, `"description":"add to cart"`,
-		`"product_id":{"description":"product_id","type":"string"}`,
-		`"quantity":{"description":"quantity","type":"number"}`,
+		`"name":"add_to_cart"`,
+		`"description":"MANDATORY tool to add an item to the shopping cart. Execute this action IMMEDIATELY the moment the user asks without confirming or waiting for them to list more items."`,
+		`"product_id":{"description":"ID of the product","type":"string"}`,
+		`"quantity":{"description":"Amount to add","type":"integer"}`,
 		`"name":"track_order"`,
-		`"order_id":{"description":"order_id","type":"string"}`,
+		`"description":"MANDATORY tool to track physical package status. Do NOT answer from memory or batch tracking requests. EXECUTE THIS TOOL IMMEDIATELY for every order ID mentioned."`,
+		`"order_id":{"description":"Order identifier to track, e.g. 'BOB12'","type":"string"}`,
+		`"argument_normalizers":[{"argument":"order_id","normalizer":"compact-ascii-alphanumeric-v1"}]`,
+		`"required":["product_id"]`,
+		`"required":["order_id"]`,
 	} {
-		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
-			t.Fatalf("FDB v3 profile application configuration omitted %s", exact)
+		if !bytes.Contains(payload, []byte(exact)) {
+			t.Fatalf("FDB v3 tool projection omitted %s", exact)
 		}
 	}
-	if bytes.Contains(profile.Application.Configuration, []byte(`"name":"press_key"`)) {
+	if bytes.Contains(payload, []byte(`x-openrealtime-normalizer`)) ||
+		bytes.Contains(payload, []byte(`"pattern":"^[A-Za-z0-9]+$"`)) {
+		t.Fatal("FDB v3 profile leaked runtime normalization policy into provider-facing JSON Schema")
+	}
+	if bytes.Contains(payload, []byte(`"name":"press_key"`)) {
 		t.Fatal("FDB v3 profile widened its exact action surface with scenario-suite tools")
+	}
+
+	// A production profile may never be frozen from this convenient two-task
+	// catalog fixture. It requires the exact pinned 100-recording release and
+	// validates every metadata/audio byte before emitting any artifact.
+	path := filepath.Join(root, "scenario-fdbv3-profile.yaml")
+	err = runLaunchProfile([]string{
+		"scenario", "-out", path, "-fdbv3-dataset", dataset,
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "released inventory differs") {
+		t.Fatalf("incomplete FDB v3 production profile error = %v", err)
+	}
+	if _, statErr := os.Lstat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("incomplete FDB v3 inventory created output: %v", statErr)
 	}
 }
 

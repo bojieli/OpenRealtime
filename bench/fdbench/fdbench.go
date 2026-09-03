@@ -196,6 +196,7 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 		evidenceLifecycle, err = candidate.NewLifecycle(candidate.LifecycleConfig{
 			Context: ctx, Plugin: options.Evidence, Suite: result.Suite,
 			Cell: result.Cell, Provenance: result.Provenance, Origin: options.EvidenceOrigin,
+			RecoveryValidator: validateRecoveredOutcome,
 		})
 		if err != nil {
 			return bench.Result{}, fmt.Errorf("create FD-Bench candidate evidence lifecycle: %w", err)
@@ -221,6 +222,32 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	return finish(runErr)
 }
 
+type attemptContext struct {
+	Condition       string `json:"condition"`
+	Turns           []Turn `json:"turns"`
+	LatencyBudgetMS int64  `json:"latency_budget_ms"`
+	Criterion       string `json:"criterion"`
+}
+
+func validateRecoveredOutcome(
+	_ context.Context, attempt candidate.Attempt, transcript bench.Transcript,
+) (bench.TaskOutcome, error) {
+	var retained attemptContext
+	if err := json.Unmarshal(attempt.Context, &retained); err != nil {
+		return bench.TaskOutcome{}, fmt.Errorf("decode recovered FD-Bench scorer context: %w", err)
+	}
+	if transcript.Failure != "" {
+		return bench.TaskOutcome{}, errors.New("recovered FD-Bench transcript retains a session failure")
+	}
+	outcome := bench.TaskOutcome{
+		ID: attempt.Case, Completed: true,
+		Notes: map[string]string{"condition": retained.Condition},
+	}
+	outcome.AttachExecution(transcript)
+	score(&outcome, transcript, retained.Turns, float64(retained.LatencyBudgetMS))
+	return outcome, nil
+}
+
 func runConversation(
 	ctx context.Context, options Options, conversation Conversation,
 	evidenceLifecycle *candidate.Lifecycle,
@@ -233,12 +260,7 @@ func runConversation(
 	var attempt *candidate.ActiveAttempt
 	if evidenceLifecycle != nil {
 		var err error
-		attempt, err = evidenceLifecycle.Begin(conversation.ID, 1, struct {
-			Condition       string `json:"condition"`
-			Turns           []Turn `json:"turns"`
-			LatencyBudgetMS int64  `json:"latency_budget_ms"`
-			Criterion       string `json:"criterion"`
-		}{
+		attempt, err = evidenceLifecycle.Begin(conversation.ID, 1, attemptContext{
 			Condition: conversation.Condition, Turns: conversation.Turns,
 			LatencyBudgetMS: options.LatencyBudget.Milliseconds(),
 			Criterion:       "measure response latency, premature starts, overruns, and missed annotated turns",

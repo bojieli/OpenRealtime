@@ -12,9 +12,9 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/releasevalidation"
 )
 
-type resultFlags []releasevalidation.BehavioralResultInput
+type closureFlags []releasevalidation.BehavioralClosureInput
 
-func (values *resultFlags) String() string {
+func (values *closureFlags) String() string {
 	parts := make([]string, 0, len(*values))
 	for _, value := range *values {
 		parts = append(parts, value.ID+"="+value.Path)
@@ -22,12 +22,12 @@ func (values *resultFlags) String() string {
 	return strings.Join(parts, ",")
 }
 
-func (values *resultFlags) Set(raw string) error {
+func (values *closureFlags) Set(raw string) error {
 	id, path, found := strings.Cut(raw, "=")
 	if !found || strings.TrimSpace(id) == "" || strings.TrimSpace(path) == "" {
-		return errors.New("result must be SUITE_ID=PATH")
+		return errors.New("closure must be SUITE_ID=PATH")
 	}
-	*values = append(*values, releasevalidation.BehavioralResultInput{ID: id, Path: path})
+	*values = append(*values, releasevalidation.BehavioralClosureInput{ID: id, Path: path})
 	return nil
 }
 
@@ -42,9 +42,15 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 		"checked preregistered behavioral targets")
 	candidatePath := flags.String("candidate", "", "frozen final-candidate declaration")
 	reportPath := flags.String("report", "", "create-only acceptance report path")
-	var results resultFlags
-	flags.Var(&results, "result", "final candidate result as SUITE_ID=PATH; repeat for every required suite")
+	var closures closureFlags
+	var unsealedResults closureFlags
+	flags.Var(&closures, "closure", "sealed final campaign closure as SUITE_ID=PATH; repeat for every required suite")
+	flags.Var(&unsealedResults, "result", "deprecated unsealed result input; always rejected")
 	if err := flags.Parse(arguments); err != nil {
+		return 2
+	}
+	if len(unsealedResults) != 0 {
+		fmt.Fprintln(stderr, "-result is an unsealed artifact and cannot satisfy behavioral acceptance; publish and supply -closure")
 		return 2
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*candidatePath) == "" ||
@@ -63,7 +69,7 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	report := releasevalidation.EvaluateBehavioralAcceptance(
-		targets, targetDigest, candidate, candidateDigest, results,
+		targets, targetDigest, candidate, candidateDigest, closures,
 	)
 	payload, err := releasevalidation.MarshalBehavioralAcceptanceReport(report)
 	if err != nil {

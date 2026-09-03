@@ -40,8 +40,9 @@ type Bundle struct {
 	identity   os.FileInfo
 	guard      sensitiveGuard
 	attempts   map[string]*attemptState
-	recovered  map[string]candidate.Completion
+	recovered  map[string]recoveredAttempt
 	claimed    map[string]struct{}
+	validated  map[string]struct{}
 	active     int
 	finishing  bool
 	finished   bool
@@ -63,6 +64,16 @@ type attemptState struct {
 	failure   error
 	terminal  bool
 	released  bool
+}
+
+type recoveredAttempt struct {
+	completion     candidate.Completion
+	completionFile SourceFile
+}
+
+type recoveredEvidence struct {
+	bundle    *Bundle
+	attemptID string
 }
 
 type reviewContext struct {
@@ -88,8 +99,8 @@ func New(options Options) (*Bundle, error) {
 	}
 	bundle := &Bundle{
 		directory: directory, receipt: receipt, root: root, lease: lease, identity: identity, guard: guard,
-		attempts: make(map[string]*attemptState), recovered: make(map[string]candidate.Completion),
-		claimed: make(map[string]struct{}),
+		attempts: make(map[string]*attemptState), recovered: make(map[string]recoveredAttempt),
+		claimed: make(map[string]struct{}), validated: make(map[string]struct{}),
 	}
 	if err := makeDirectory(root, "attempts"); err != nil {
 		return nil, errors.Join(
@@ -561,7 +572,8 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 	for _, state := range bundle.attempts {
 		states = append(states, state)
 	}
-	recoveredCount, claimedCount := len(bundle.recovered), len(bundle.claimed)
+	recoveredCount, claimedCount, validatedCount :=
+		len(bundle.recovered), len(bundle.claimed), len(bundle.validated)
 	bundle.mu.Unlock()
 	defer func() {
 		bundle.mu.Lock()
@@ -607,6 +619,11 @@ func (bundle *Bundle) FinishSuite(ctx context.Context, result bench.Result) (res
 	if claimedCount != recoveredCount {
 		resultErr = errors.Join(resultErr, errors.New(
 			"candidate source resumed population contains an unclaimed durable attempt",
+		))
+	}
+	if validatedCount != recoveredCount {
+		return errors.Join(resultErr, errors.New(
+			"candidate source resumed population contains a recovery without deterministic rescore",
 		))
 	}
 	for _, entry := range entries {
@@ -802,45 +819,122 @@ func matchingResumeBuild(left, right bench.Provenance) bool {
 // Each retained identity can be claimed only once by the new lifecycle.
 func (bundle *Bundle) RecoverAttempt(
 	ctx context.Context, specification candidate.Attempt,
-) (candidate.Completion, bool, error) {
+) (candidate.Recovery, bool, error) {
 	if bundle == nil || ctx == nil {
-		return candidate.Completion{}, false, errors.New(
+		return candidate.Recovery{}, false, errors.New(
 			"recover candidate source attempt: nil bundle or context",
 		)
 	}
 	if err := ctx.Err(); err != nil {
-		return candidate.Completion{}, false, err
+		return candidate.Recovery{}, false, err
 	}
 	snapshot, err := candidate.CloneAttempt(specification)
 	if err != nil {
-		return candidate.Completion{}, false, err
+		return candidate.Recovery{}, false, err
 	}
 	bundle.mu.Lock()
 	defer bundle.mu.Unlock()
 	if bundle.finishing || bundle.finished || bundle.root == nil {
-		return candidate.Completion{}, false, errors.New("candidate source bundle is finishing")
+		return candidate.Recovery{}, false, errors.New("candidate source bundle is finishing")
 	}
 	if err := verifyBundleRoot(bundle.root, bundle.directory, bundle.identity); err != nil {
-		return candidate.Completion{}, false, err
+		return candidate.Recovery{}, false, err
 	}
 	recovered, found := bundle.recovered[snapshot.ID()]
 	if !found {
-		return candidate.Completion{}, false, nil
+		return candidate.Recovery{}, false, nil
 	}
 	if _, duplicate := bundle.claimed[snapshot.ID()]; duplicate {
-		return candidate.Completion{}, false, errors.New("candidate source recovered attempt was already claimed")
+		return candidate.Recovery{}, false, errors.New("candidate source recovered attempt was already claimed")
 	}
-	if !reflect.DeepEqual(recovered.Attempt, snapshot) {
-		return candidate.Completion{}, false, errors.New(
+	if !reflect.DeepEqual(recovered.completion.Attempt, snapshot) {
+		return candidate.Recovery{}, false, errors.New(
 			"candidate source recovered attempt differs from the requested contract",
 		)
 	}
-	owned, err := candidate.CloneCompletion(recovered)
+	owned, err := candidate.CloneCompletion(recovered.completion)
 	if err != nil {
-		return candidate.Completion{}, false, err
+		return candidate.Recovery{}, false, err
 	}
 	bundle.claimed[snapshot.ID()] = struct{}{}
-	return owned, true, nil
+	return candidate.Recovery{
+		Completion: owned,
+		Evidence:   &recoveredEvidence{bundle: bundle, attemptID: snapshot.ID()},
+	}, true, nil
+}
+
+// ReopenTranscript reads and authenticates completion.json again after the
+// recovery claim. Discovery-time decoded state is deliberately insufficient:
+// the suite validator must receive the durable transcript that exists at the
+// moment the lifecycle decides whether to commit the recovered attempt.
+func (evidence *recoveredEvidence) ReopenTranscript(ctx context.Context) (bench.Transcript, error) {
+	if evidence == nil || evidence.bundle == nil || ctx == nil {
+		return bench.Transcript{}, errors.New("reopen candidate source transcript: nil evidence or context")
+	}
+	if err := ctx.Err(); err != nil {
+		return bench.Transcript{}, err
+	}
+	bundle := evidence.bundle
+	bundle.mu.Lock()
+	defer bundle.mu.Unlock()
+	if bundle.finishing || bundle.finished || bundle.root == nil {
+		return bench.Transcript{}, errors.New("candidate source bundle is finishing")
+	}
+	if err := verifyBundleRoot(bundle.root, bundle.directory, bundle.identity); err != nil {
+		return bench.Transcript{}, err
+	}
+	recovered, found := bundle.recovered[evidence.attemptID]
+	if !found {
+		return bench.Transcript{}, errors.New("candidate source recovered evidence is missing")
+	}
+	payload, err := readRegular(
+		bundle.root, recovered.completionFile.Path, recovered.completionFile.SizeBytes,
+	)
+	if err != nil || digest(payload) != recovered.completionFile.SHA256 {
+		return bench.Transcript{}, errors.New("candidate source recovered completion changed before rescore")
+	}
+	var reopened candidate.Completion
+	if err := decodeCanonical(payload, &reopened); err != nil ||
+		normalizeAttemptContext(&reopened.Attempt) != nil || reopened.Validate() != nil {
+		return bench.Transcript{}, errors.New("candidate source recovered completion is invalid during rescore")
+	}
+	if !reflect.DeepEqual(reopened.Attempt, recovered.completion.Attempt) {
+		return bench.Transcript{}, errors.New("candidate source recovered attempt changed before rescore")
+	}
+	owned, err := candidate.CloneCompletion(reopened)
+	if err != nil {
+		return bench.Transcript{}, err
+	}
+	return owned.Transcript, nil
+}
+
+// CommitValidated records the lifecycle's successful exact rescore. It is the
+// only path by which a recovered source entry becomes eligible for final
+// bundle sealing.
+func (evidence *recoveredEvidence) CommitValidated(ctx context.Context) error {
+	if evidence == nil || evidence.bundle == nil || ctx == nil {
+		return errors.New("commit candidate source recovery: nil evidence or context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	bundle := evidence.bundle
+	bundle.mu.Lock()
+	defer bundle.mu.Unlock()
+	if bundle.finishing || bundle.finished || bundle.root == nil {
+		return errors.New("candidate source bundle is finishing")
+	}
+	if _, found := bundle.recovered[evidence.attemptID]; !found {
+		return errors.New("candidate source recovered evidence is missing")
+	}
+	if _, claimed := bundle.claimed[evidence.attemptID]; !claimed {
+		return errors.New("candidate source recovered evidence was not claimed")
+	}
+	if _, duplicate := bundle.validated[evidence.attemptID]; duplicate {
+		return errors.New("candidate source recovered evidence was already validated")
+	}
+	bundle.validated[evidence.attemptID] = struct{}{}
+	return nil
 }
 
 var _ candidate.Plugin = (*Bundle)(nil)
@@ -849,3 +943,4 @@ var _ candidate.CapturedMediaEvidence = (*attemptState)(nil)
 var _ candidate.CapturedArtifactEvidence = (*attemptState)(nil)
 var _ candidate.RunBinder = (*Bundle)(nil)
 var _ candidate.AttemptRecoverer = (*Bundle)(nil)
+var _ candidate.RecoveredEvidence = (*recoveredEvidence)(nil)

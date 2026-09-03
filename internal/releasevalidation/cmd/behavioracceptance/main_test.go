@@ -16,7 +16,6 @@ func TestRunRetainsFailedReportAndRefusesToOverwriteIt(t *testing.T) {
 	directory := t.TempDir()
 	targetPath := filepath.Join(directory, "targets.json")
 	candidatePath := filepath.Join(directory, "candidate.json")
-	resultPath := filepath.Join(directory, "result.json")
 	reportPath := filepath.Join(directory, "report.json")
 	unavailable := func(reason string) releasevalidation.Registration {
 		return releasevalidation.Registration{
@@ -46,6 +45,12 @@ func TestRunRetainsFailedReportAndRefusesToOverwriteIt(t *testing.T) {
 		},
 		Suites: []releasevalidation.FrozenCandidateSuite{{
 			ID: "fixture", ExecutionRequirementSHA256: "sha256:" + strings.Repeat("c", 64),
+			RunSpecSHA256:       "sha256:" + strings.Repeat("d", 64),
+			TaskInventorySHA256: "sha256:" + strings.Repeat("e", 64),
+			ScorerSHA256:        "sha256:" + strings.Repeat("f", 64),
+			SourceReceipts: []releasevalidation.CampaignSourceRequirement{{
+				Kind: "fixture-source", ArtifactFormat: "fixture.source-receipt",
+			}},
 			Lineage: []releasevalidation.RunLineage{{
 				CampaignID: "final", Kind: releasevalidation.RunFinalFull, Population: 1,
 			}},
@@ -53,13 +58,9 @@ func TestRunRetainsFailedReportAndRefusesToOverwriteIt(t *testing.T) {
 	}
 	writeJSON(t, targetPath, targets)
 	writeJSON(t, candidatePath, candidate)
-	if err := os.WriteFile(resultPath, []byte("{}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	arguments := []string{
 		"-targets", targetPath,
 		"-candidate", candidatePath,
-		"-result", "fixture=" + resultPath,
 		"-report", reportPath,
 	}
 	var stdout, stderr bytes.Buffer
@@ -88,6 +89,18 @@ func TestRunRetainsFailedReportAndRefusesToOverwriteIt(t *testing.T) {
 	after, err := os.ReadFile(reportPath)
 	if err != nil || !bytes.Equal(after, original) {
 		t.Fatalf("create-only report changed after overwrite refusal: %v", err)
+	}
+}
+
+func TestRunRecognizesButRejectsLegacyUnsealedResultInput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"-candidate", "candidate.json", "-report", "report.json",
+		"-result", "fixture=result.json",
+	}, &stdout, &stderr)
+	if code != 2 || stdout.Len() != 0 ||
+		!strings.Contains(stderr.String(), "unsealed artifact") {
+		t.Fatalf("legacy result input = %d, stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
 }
 
