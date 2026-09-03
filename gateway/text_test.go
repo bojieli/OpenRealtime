@@ -79,9 +79,9 @@ func TestGatewayStampsTypedTextInAbsoluteDispatchClock(t *testing.T) {
 		},
 	})
 	client.await("conversation.item.created", 5*time.Second)
-	after := uint64(time.Now().UnixNano())
 	select {
 	case input := <-inputs:
+		after := uint64(time.Now().UnixNano())
 		if input.OccurredNS < before || input.OccurredNS > after || input.OccurredNS < 1_000_000_000_000_000_000 {
 			t.Fatalf("typed input dispatch time = %d, want Unix nanoseconds in [%d, %d]", input.OccurredNS, before, after)
 		}
