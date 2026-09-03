@@ -963,13 +963,16 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		if !present {
 			continue
 		}
-		fmt.Fprintf(output, "  %-12s correct %d/%d (%.1f%%), correct within deadline %d/%d (%.1f%%)\n",
+		fmt.Fprintf(output, "  %-12s correct %d/%d (%.1f%%), correct, timely, and settled %d/%d (%.1f%%)\n",
 			grounding, reading.Correct, reading.Cases, reading.CorrectRate*100,
-			reading.Timely, reading.Cases, reading.TimelyRate*100)
+			reading.Accepted, reading.Cases, reading.AcceptedRate*100)
 	}
 	for _, metric := range []string{
 		"cue_to_action_latency_ms", "frame_to_observation_latency_ms",
 		"cue_to_observation_latency_ms", "action_execution_ms",
+		"invalid_action_count", "grounding_error_count", "premature_action_count",
+		"post_success_action_count", "settlement_evidence_missing_count", "session_timeout_count",
+		"session_failure_count", "outstanding_response_count", "outstanding_tool_count",
 	} {
 		distribution, present := result.Summary.Distributions[metric]
 		if !present {

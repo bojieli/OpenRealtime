@@ -44,13 +44,16 @@
     const root = document.getElementById('root');
     let timers = [];
     let started = performance.now();
-    let result = { complete: false, success: false, code: '', reason: 'no action', completed_at_ms: 0, actions: 0 };
+    let result = { complete: false, success: false, code: '', reason: 'no action', completed_at_ms: 0, actions: 0, actions_after_completion: 0 };
     const later = (fn, ms) => { const id = setTimeout(fn, ms); timers.push(() => clearTimeout(id)); return id; };
     const every = (fn, ms) => { const id = setInterval(fn, ms); timers.push(() => clearInterval(id)); return id; };
     const elapsed = () => performance.now() - started;
     function finish(success, reason, code = '') {
       result.actions++;
-      if (result.complete) return;
+      if (result.complete) {
+        result = { ...result, actions_after_completion: result.actions_after_completion + 1 };
+        return;
+      }
       result = { ...result, complete: true, success, code, reason, completed_at_ms: elapsed() };
       document.getElementById('clock').textContent = success ? 'COMPLETED' : 'FAILED';
     }
@@ -63,7 +66,7 @@
     function reset() {
       timers.forEach((stop) => stop()); timers = [];
       started = performance.now();
-      result = { complete: false, success: false, code: '', reason: 'no action', completed_at_ms: 0, actions: 0 };
+      result = { complete: false, success: false, code: '', reason: 'no action', completed_at_ms: 0, actions: 0, actions_after_completion: 0 };
       document.getElementById('clock').textContent = 'LIVE';
       root.replaceChildren();
       render();

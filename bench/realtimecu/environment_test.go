@@ -58,6 +58,16 @@ func TestOwnedBrowserEnvironmentSupportsMarkedGroundingEndToEnd(t *testing.T) {
 	if !result.Success || !result.Complete {
 		t.Fatalf("marked click did not reach the page: %+v", result)
 	}
+	if err := episode.Surface().ClickElement(ctx, violet); err != nil {
+		t.Fatal(err)
+	}
+	result, err = episode.Result(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ActionsAfterCompletion != 1 {
+		t.Fatalf("repeated post-success click was not retained: %+v", result)
+	}
 }
 
 func TestOwnedBrowserEnvironmentReportsStructuredBeforeCondition(t *testing.T) {

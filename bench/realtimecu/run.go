@@ -128,12 +128,26 @@ func (dependencies *runDependencies) validate() error {
 
 // ActionRecord is one model call and what the environment did with it.
 type ActionRecord struct {
+	Ordinal     int             `json:"ordinal"`
 	CallID      string          `json:"call_id"`
 	Name        string          `json:"name"`
 	Arguments   json.RawMessage `json:"arguments"`
 	ReceivedAt  time.Time       `json:"-"`
 	CompletedAt time.Time       `json:"-"`
 	Error       string          `json:"error,omitempty"`
+	PageBefore  *PageResult     `json:"page_before,omitempty"`
+	PageAfter   *PageResult     `json:"page_after,omitempty"`
+}
+
+func realtimeCUIncompleteOutcome(item Case) bench.TaskOutcome {
+	return bench.TaskOutcome{
+		ID: item.ID(), Completed: false,
+		Metrics: map[string]float64{},
+		Notes: map[string]string{
+			"category": item.Task.Category, "difficulty": item.Task.Difficulty,
+			"axes": axesText(item.Task.Axes), "grounding": string(item.Grounding),
+		},
+	}
 }
 
 // Run executes selected repository-owned cases against a running endpoint.
@@ -243,17 +257,11 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 func runCase(
 	ctx context.Context, environment realtimeCURunEnvironment, options Options, item Case,
 ) (outcome bench.TaskOutcome, evidenceErr error) {
-	incomplete := bench.TaskOutcome{
-		ID: item.ID(), Completed: false,
-		Metrics: map[string]float64{},
-		Notes: map[string]string{
-			"category": item.Task.Category, "difficulty": item.Task.Difficulty,
-			"axes": axesText(item.Task.Axes), "grounding": string(item.Grounding),
-		},
-	}
+	incomplete := realtimeCUIncompleteOutcome(item)
 	var transcript bench.Transcript
 	var page PageResult
 	var actionTrace []ActionRecord
+	var timedOut bool
 	var attempt AttemptEvidence
 	var evidenceMu sync.Mutex
 	joinEvidenceError := func(err error) {
@@ -311,7 +319,7 @@ func runCase(
 			}
 			completion, err := cloneEvidenceCompletion(EvidenceCompletion{
 				Attempt: specification, Outcome: outcome, Transcript: transcript,
-				Page: page, Actions: actionTrace,
+				Page: page, Actions: actionTrace, TimedOut: timedOut,
 			})
 			if err != nil {
 				joinEvidenceError(err)
@@ -368,33 +376,60 @@ func runCase(
 	var actionMu sync.Mutex
 	var actions []ActionRecord
 	handle := func(toolContext context.Context, request bench.ToolRequest) (json.RawMessage, error) {
+		// The evaluator serializes the entire state/action/state transaction, not
+		// merely the dispatcher call. This gives scoring an ordinal witness on one
+		// browser clock and closes the reset-round-trip ambiguity that host
+		// timestamps alone cannot resolve.
+		actionMu.Lock()
+		defer actionMu.Unlock()
 		record := ActionRecord{
-			CallID: request.CallID, Name: request.Name,
+			Ordinal: len(actions) + 1, CallID: request.CallID, Name: request.Name,
 			Arguments: slices.Clone(request.Arguments), ReceivedAt: request.Received,
 		}
-		actionMu.Lock()
-		budgetExhausted := len(actions) >= item.Task.MaxActions
-		actionMu.Unlock()
-		if budgetExhausted {
+		before, resultErr := episode.result(toolContext)
+		if resultErr != nil {
+			record.Error = "read page state before action: " + resultErr.Error()
+			record.CompletedAt = options.dependencies.now()
+			actions = append(actions, record)
+			return nil, errors.New(record.Error)
+		}
+		record.PageBefore = clonePageResult(before)
+		if before.Complete {
+			record.Error = "task is already complete; refusing post-completion action"
+			record.CompletedAt = options.dependencies.now()
+			record.PageAfter = clonePageResult(before)
+			actions = append(actions, record)
+			return nil, errors.New(record.Error)
+		}
+		if len(actions) >= item.Task.MaxActions {
 			record.Error = fmt.Sprintf("task action budget of %d is exhausted", item.Task.MaxActions)
 			record.CompletedAt = options.dependencies.now()
-			actionMu.Lock()
+			record.PageAfter = clonePageResult(before)
 			actions = append(actions, record)
-			actionMu.Unlock()
 			return nil, errors.New("action budget exhausted")
 		}
 		toolResult, dispatchErr := dispatcher.Dispatch(toolContext, trajectory.ToolCall{
 			CallID: request.CallID, Name: request.Name, Arguments: request.Arguments,
 		})
-		record.CompletedAt = options.dependencies.now()
 		if dispatchErr != nil {
 			record.Error = dispatchErr.Error()
 		} else {
 			record.Error = toolResult.Error
 		}
-		actionMu.Lock()
+		after, resultErr := episode.result(toolContext)
+		record.CompletedAt = options.dependencies.now()
+		if resultErr != nil {
+			if record.Error != "" {
+				record.Error += "; "
+			}
+			record.Error += "read page state after action: " + resultErr.Error()
+		} else {
+			record.PageAfter = clonePageResult(after)
+		}
 		actions = append(actions, record)
-		actionMu.Unlock()
+		if resultErr != nil {
+			return nil, errors.New(record.Error)
+		}
 		if dispatchErr != nil {
 			return nil, dispatchErr
 		}
@@ -437,7 +472,7 @@ func runCase(
 	observerErr := validateNegotiatedObservers(
 		options.evidenceOrigin, options.Observers, transcript,
 	)
-	playErr, timedOut := realtimeCUPlaybackFailure(playErr, observerErr)
+	playErr, timedOut = realtimeCUPlaybackFailure(playErr, observerErr)
 	incomplete.AttachExecution(transcript)
 	if playErr != nil && !timedOut {
 		incomplete.Error = playErr.Error()
@@ -453,12 +488,8 @@ func runCase(
 	actionMu.Lock()
 	actionTrace = cloneActionRecords(actions)
 	actionMu.Unlock()
-	outcome = score(incomplete, item, episode.started(), page, actionTrace, transcript)
+	outcome = score(incomplete, item, page, actionTrace, transcript, timedOut)
 	outcome.AttachExecution(transcript)
-	outcome.Metrics["session_timeout_count"] = truth(timedOut)
-	if timedOut {
-		outcome.Notes["session_timeout"] = "the connected agent continued beyond the evaluation horizon"
-	}
 	return outcome, evidenceErr
 }
 

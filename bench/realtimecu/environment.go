@@ -256,12 +256,18 @@ const (
 
 // PageResult is the deterministic evaluator state owned by the fixture.
 type PageResult struct {
-	Complete      bool           `json:"complete"`
-	Success       bool           `json:"success"`
-	Code          PageResultCode `json:"code,omitempty"`
-	Reason        string         `json:"reason"`
-	CompletedAtMS float64        `json:"completed_at_ms"`
-	Actions       int            `json:"actions"`
+	Complete               bool           `json:"complete"`
+	Success                bool           `json:"success"`
+	Code                   PageResultCode `json:"code,omitempty"`
+	Reason                 string         `json:"reason"`
+	CompletedAtMS          float64        `json:"completed_at_ms"`
+	Actions                int            `json:"actions"`
+	ActionsAfterCompletion int            `json:"actions_after_completion"`
+}
+
+func clonePageResult(result PageResult) *PageResult {
+	cloned := result
+	return &cloned
 }
 
 func (episode *Episode) Result(ctx context.Context) (PageResult, error) {

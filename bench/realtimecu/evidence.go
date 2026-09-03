@@ -131,6 +131,7 @@ type EvidenceCompletion struct {
 	Transcript bench.Transcript  `json:"transcript"`
 	Page       PageResult        `json:"page_result"`
 	Actions    []ActionRecord    `json:"actions"`
+	TimedOut   bool              `json:"timed_out"`
 }
 
 // AttemptEvidence receives exact media from the same shared session used by
@@ -175,6 +176,12 @@ func cloneActionRecords(source []ActionRecord) []ActionRecord {
 	for index, record := range source {
 		result[index] = record
 		result[index].Arguments = slices.Clone(record.Arguments)
+		if record.PageBefore != nil {
+			result[index].PageBefore = clonePageResult(*record.PageBefore)
+		}
+		if record.PageAfter != nil {
+			result[index].PageAfter = clonePageResult(*record.PageAfter)
+		}
 	}
 	return result
 }

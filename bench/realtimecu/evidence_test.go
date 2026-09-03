@@ -192,6 +192,114 @@ func TestRealtimeCURunnerReturnsExplicitFailureWhenActionBudgetIsExhausted(t *te
 	}
 }
 
+func TestRealtimeCURunnerCannotPassAfterSuccessfulPageTimesOut(t *testing.T) {
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	started := time.Unix(150, 0)
+	environment := realtimeCURunEnvironment{episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+		return realtimeCURunEpisode{
+			ready: func(context.Context) error { return nil }, started: func() time.Time { return started },
+			surface:       &fixtureRunSurface{},
+			captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			result: func(context.Context) (PageResult, error) {
+				return PageResult{
+					Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4_000,
+				}, nil
+			},
+		}, nil
+	}}
+	outcome, evidenceErr := runCase(context.Background(), environment, Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		FrameRate: 3, Timeout: 10 * time.Second,
+		dependencies: &runDependencies{
+			playSamples: func(context.Context, bench.SessionConfig, []int16) (bench.Transcript, error) {
+				return bench.Transcript{PlaybackMS: 10_000, Moments: []bench.Moment{
+					{Kind: bench.MomentReady, AtMS: 0},
+					{Kind: bench.MomentToolCall, Name: "computer.click", AtMS: 4_000},
+				}}, bench.ErrConversationTimeout
+			},
+			now: func() time.Time { return started.Add(10 * time.Second) },
+		},
+		evidenceOrigin: EvidenceRunOrigin{Kind: EvidenceOriginHermetic},
+	}, item)
+	if evidenceErr != nil {
+		t.Fatal(evidenceErr)
+	}
+	if outcome.Passed || outcome.Metrics["task_success_rate"] != 0 ||
+		outcome.Metrics["correct_action_rate"] != 1 ||
+		outcome.Metrics["session_timeout_count"] != 1 || outcome.Notes["session_timeout"] == "" {
+		t.Fatalf("timeout after sticky page success must remain a deterministic failure: %+v", outcome)
+	}
+}
+
+func TestRealtimeCURunnerRefusesAndScoresPostSuccessToolRequest(t *testing.T) {
+	item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+	started := time.Unix(175, 0)
+	pageReads := 0
+	success := PageResult{
+		Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4_000, Actions: 1,
+	}
+	environment := realtimeCURunEnvironment{episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+		return realtimeCURunEpisode{
+			ready: func(context.Context) error { return nil }, started: func() time.Time { return started },
+			surface:       &fixtureRunSurface{},
+			captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
+			result: func(context.Context) (PageResult, error) {
+				pageReads++
+				if pageReads == 1 {
+					return PageResult{}, nil
+				}
+				return success, nil
+			},
+		}, nil
+	}}
+	arguments := json.RawMessage(`{"source":"screen","x":500,"y":500}`)
+	nowIndex := 0
+	outcome, evidenceErr := runCase(context.Background(), environment, Options{
+		Endpoint: "ws://hermetic.invalid/v1/realtime", Cell: ReferenceCell(),
+		FrameRate: 3, Timeout: 10 * time.Second,
+		dependencies: &runDependencies{
+			playSamples: func(ctx context.Context, config bench.SessionConfig, _ []int16) (bench.Transcript, error) {
+				if _, err := config.HandleTool(ctx, bench.ToolRequest{
+					CallID: "success", Name: "computer.click_normalized", Arguments: arguments,
+					Received: started.Add(4 * time.Second),
+				}); err != nil {
+					return bench.Transcript{}, err
+				}
+				if _, err := config.HandleTool(ctx, bench.ToolRequest{
+					CallID: "continued", Name: "computer.click_normalized", Arguments: arguments,
+					Received: started.Add(4100 * time.Millisecond),
+				}); err == nil || !strings.Contains(err.Error(), "already complete") {
+					t.Fatalf("post-success request error = %v", err)
+				}
+				return bench.Transcript{Moments: []bench.Moment{
+					{Kind: bench.MomentReady, AtMS: 0},
+					{Kind: bench.MomentToolCall, AtMS: 4_000, CallID: "success",
+						Name: "computer.click_normalized", Arguments: string(arguments)},
+					{Kind: bench.MomentToolCall, AtMS: 4_100, CallID: "continued",
+						Name: "computer.click_normalized", Arguments: string(arguments)},
+				}}, nil
+			},
+			now: func() time.Time {
+				nowIndex++
+				return started.Add(time.Duration(4_000+nowIndex*100) * time.Millisecond)
+			},
+		},
+		evidenceOrigin: EvidenceRunOrigin{Kind: EvidenceOriginHermetic},
+	}, item)
+	if evidenceErr != nil {
+		t.Fatal(evidenceErr)
+	}
+	if outcome.Passed || outcome.Metrics["task_success_rate"] != 0 ||
+		outcome.Metrics["correct_action_rate"] != 1 ||
+		outcome.Metrics["post_success_action_count"] != 1 ||
+		outcome.Metrics["settlement_evidence_missing_count"] != 0 ||
+		outcome.Metrics["action_count"] != 2 || outcome.Metrics["invalid_action_count"] != 1 {
+		t.Fatalf("post-success request was not refused and scored exactly: %+v", outcome)
+	}
+}
+
 func TestRunnerRejectsCaptureRateThatDriftsFromCellIdentity(t *testing.T) {
 	_, err := Run(t.Context(), Options{
 		Endpoint: "ws://fixture.invalid/v1/realtime", Cell: ReferenceCell(), FrameRate: 10,
@@ -319,13 +427,18 @@ func TestHermeticRunnerWiresExactMediaAndFreezesEvidence(t *testing.T) {
 		newEnvironment: func(context.Context, EnvironmentConfig) (realtimeCURunEnvironment, error) {
 			return realtimeCURunEnvironment{
 				episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+					pageReads := 0
 					return realtimeCURunEpisode{
 						ready: func(context.Context) error { return nil }, started: func() time.Time { return started },
 						surface:       surface,
 						captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
 						captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
 						result: func(context.Context) (PageResult, error) {
-							return PageResult{Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4000}, nil
+							pageReads++
+							if pageReads == 1 {
+								return PageResult{}, nil
+							}
+							return PageResult{Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4000, Actions: 1}, nil
 						},
 					}, nil
 				},
@@ -352,10 +465,18 @@ func TestHermeticRunnerWiresExactMediaAndFreezesEvidence(t *testing.T) {
 			}); err != nil {
 				return bench.Transcript{}, err
 			}
+			arguments := json.RawMessage(`{"source":"screen","x":500,"y":500}`)
+			if _, err := config.HandleTool(ctx, bench.ToolRequest{
+				CallID: "fixture-call", Name: "computer.click_normalized",
+				Arguments: arguments, Received: started.Add(4 * time.Second),
+			}); err != nil {
+				return bench.Transcript{}, err
+			}
 			return bench.Transcript{PlaybackMS: 5000, Moments: []bench.Moment{
 				{Kind: bench.MomentReady, AtMS: 0},
 				{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 10},
-				{Kind: bench.MomentToolCall, Name: "computer.click", AtMS: 4000},
+				{Kind: bench.MomentToolCall, Name: "computer.click_normalized", CallID: "fixture-call",
+					Arguments: string(arguments), AtMS: 4000},
 			}}, nil
 		},
 		now: func() time.Time { return started.Add(4 * time.Second) },
@@ -454,14 +575,19 @@ func TestEvidenceCaptureFailureDoesNotRewriteDeterministicOutcome(t *testing.T) 
 		newEnvironment: func(context.Context, EnvironmentConfig) (realtimeCURunEnvironment, error) {
 			return realtimeCURunEnvironment{
 				episode: func(context.Context, Case) (realtimeCURunEpisode, error) {
+					pageReads := 0
 					return realtimeCURunEpisode{
 						ready:   func(context.Context) error { return nil },
 						started: func() time.Time { return started }, surface: &fixtureRunSurface{},
 						captureScreen: func(context.Context) ([]byte, error) { return fixturePNG, nil },
 						captureCamera: func(context.Context) ([]byte, error) { return fixturePNG, nil },
 						result: func(context.Context) (PageResult, error) {
+							pageReads++
+							if pageReads == 1 {
+								return PageResult{}, nil
+							}
 							return PageResult{
-								Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4_000,
+								Complete: true, Success: true, Reason: "fixture success", CompletedAtMS: 4_000, Actions: 1,
 							}, nil
 						},
 					}, nil
@@ -484,10 +610,18 @@ func TestEvidenceCaptureFailureDoesNotRewriteDeterministicOutcome(t *testing.T) 
 			}); err != nil {
 				t.Fatal(err)
 			}
+			arguments := json.RawMessage(`{"source":"screen","x":500,"y":500}`)
+			if _, err := config.HandleTool(ctx, bench.ToolRequest{
+				CallID: "fixture-call", Name: "computer.click_normalized",
+				Arguments: arguments, Received: started.Add(4 * time.Second),
+			}); err != nil {
+				return bench.Transcript{}, err
+			}
 			return bench.Transcript{PlaybackMS: 5_000, Moments: []bench.Moment{
 				{Kind: bench.MomentReady, AtMS: 0},
 				{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 10},
-				{Kind: bench.MomentToolCall, Name: "computer.click", AtMS: 4_000},
+				{Kind: bench.MomentToolCall, Name: "computer.click_normalized", CallID: "fixture-call",
+					Arguments: string(arguments), AtMS: 4_000},
 			}}, nil
 		},
 		now: func() time.Time { return started.Add(4 * time.Second) },
