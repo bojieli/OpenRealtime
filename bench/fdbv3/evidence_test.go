@@ -125,7 +125,7 @@ func TestCandidateEvidenceRetainsFDBV3AttemptIdentityBeforePlayback(t *testing.T
 		releaseValidityScorerIdentity, upstreamFallbackScorerIdentity,
 		openRealtimeHistoricalScorerIdentity, semanticRepairedScorerIdentity,
 		semanticReferenceErrataIdentity, fixtureDispositionRegistryIdentity,
-		harnessIdentity, upstreamToolCatalogIdentity, simulatorIdentity,
+		releaseEvidenceScorerIdentity, harnessIdentity, upstreamToolCatalogIdentity, simulatorIdentity,
 	} {
 		if !bytes.Contains(plugin.attempt.Context, []byte(identity)) {
 			t.Fatalf("attempt context omits score identity %q: %s", identity, plugin.attempt.Context)
@@ -149,6 +149,9 @@ func TestCandidateEvidenceRetainsFDBV3AttemptIdentityBeforePlayback(t *testing.T
 	if retained.Scoring.FixtureDispositions != fixtureDispositionRegistryIdentity {
 		t.Fatalf("retained scoring identity = %+v", retained.Scoring)
 	}
+	if retained.Scoring.ReleaseEvidence != releaseEvidenceScorerIdentity {
+		t.Fatalf("retained release-evidence identity = %+v", retained.Scoring)
+	}
 	if len(result.Tasks) != 1 || result.Tasks[0].Completed || result.Summary.Complete {
 		t.Fatalf("result = %+v", result)
 	}
@@ -167,10 +170,10 @@ func TestCandidateEvidenceRecoveryRefusesMissingOrInconsistentScoreEvidence(t *t
 			completion.Outcome = bench.TaskOutcome{ID: completion.Attempt.Case, Completed: true, Passed: true}
 		}},
 		{name: "missing tool result", mutate: func(completion *candidate.Completion) {
-			completion.Transcript.Moments = completion.Transcript.Moments[:1]
+			completion.Transcript.Moments = completion.Transcript.Moments[:2]
 		}},
 		{name: "forged tool result", mutate: func(completion *candidate.Completion) {
-			completion.Transcript.Moments[1].Text = `{"status":"success"}`
+			completion.Transcript.Moments[2].Text = `{"status":"success"}`
 		}},
 		{name: "forged passed bit", mutate: func(completion *candidate.Completion) {
 			completion.Outcome.Passed = false
@@ -345,6 +348,7 @@ func validRecoveredCompletion(attempt candidate.Attempt) (candidate.Completion, 
 	transcript := bench.Transcript{
 		PlaybackMS: 1000,
 		Moments: []bench.Moment{
+			{AtMS: 0, Kind: bench.MomentReady},
 			{AtMS: 10, Kind: bench.MomentToolCall, CallID: "call-1", Name: "track_order", Arguments: arguments},
 			{AtMS: 20, Kind: bench.MomentToolResult, CallID: "call-1", Name: "track_order", Text: string(result)},
 		},
@@ -354,15 +358,10 @@ func validRecoveredCompletion(attempt candidate.Attempt) (candidate.Completion, 
 		ArtifactDigest: context.Execution.InventoryArtifactSHA256,
 		TaskNames:      []string{context.Task.ID},
 	}
-	observed, err := observedCallsFromTranscript(transcript)
+	outcome, _, err := scoreTaskTranscript(context.Task, transcript, inventory)
 	if err != nil {
 		return candidate.Completion{}, err
 	}
-	outcome := newTaskOutcome(context.Task, inventory)
-	outcome.Completed = true
-	outcome.AttachExecution(transcript)
-	attachScores(&outcome, context.Task, observed, inventory)
-	outcome.Notes["observed"] = describe(observed)
 	return candidate.Completion{Attempt: attempt, Outcome: outcome, Transcript: transcript}, nil
 }
 

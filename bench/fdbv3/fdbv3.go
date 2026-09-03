@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	harnessIdentity = "openrealtime/fdb-v3-shared-realtime-harness-v3"
+	harnessIdentity = "openrealtime/fdb-v3-shared-realtime-harness-v4"
 	// upstreamToolCatalogIdentity pins the source whose Python signatures are
 	// reflected into the provider-facing catalog below. The released metadata
 	// is an evaluation oracle, not a tool-declaration oracle: it contains fields
@@ -666,6 +666,7 @@ type attemptScoringIdentity struct {
 	SemanticRepaired       string `json:"semantic_repaired"`
 	SemanticErrata         string `json:"semantic_errata"`
 	FixtureDispositions    string `json:"fixture_dispositions"`
+	ReleaseEvidence        string `json:"release_evidence"`
 }
 
 type attemptExecutionIdentity struct {
@@ -713,6 +714,7 @@ func buildAttemptContext(
 			SemanticRepaired:       semanticRepairedScorerIdentity,
 			SemanticErrata:         semanticReferenceErrataIdentity,
 			FixtureDispositions:    fixtureDispositionRegistryIdentity,
+			ReleaseEvidence:        releaseEvidenceScorerIdentity,
 		},
 		Execution: attemptExecutionIdentity{
 			Harness: harnessIdentity, UpstreamToolCatalog: upstreamToolCatalogIdentity,
@@ -763,6 +765,7 @@ func newTaskOutcome(task Task, inventory releasedDatasetInventory) bench.TaskOut
 			"semantic_repaired_scorer":       semanticRepairedScorerIdentity,
 			"semantic_repaired_errata":       semanticReferenceErrataIdentity,
 			"fixture_dispositions":           fixtureDispositionRegistryIdentity,
+			"release_evidence_scorer":        releaseEvidenceScorerIdentity,
 			"harness":                        harnessIdentity,
 			"upstream_tool_catalog":          upstreamToolCatalogIdentity,
 			"simulator":                      simulatorIdentity,
@@ -822,48 +825,45 @@ func runTask(
 		outcome.Error = err.Error()
 		return outcome, evidenceErr
 	}
-	if transcript.Failure != "" {
-		outcome.Error = transcript.Failure
-		return outcome, evidenceErr
-	}
-	observed, err := observedCallsFromTranscript(transcript)
+	scored, _, err := scoreTaskTranscript(task, transcript, inventory)
 	if err != nil {
-		outcome.Error = "reconstruct FDB v3 tool evidence: " + err.Error()
+		outcome.Error = "score FDB v3 transcript evidence: " + err.Error()
 		return outcome, evidenceErr
 	}
-	outcome.Completed = true
-	attachScores(&outcome, task, observed, inventory)
-	if len(observed) > 0 {
-		outcome.Notes["observed"] = describe(observed)
-	}
+	outcome = scored
 	return outcome, evidenceErr
 }
 
 func reconstructRecoveredOutcome(
 	task Task, transcript bench.Transcript, inventory releasedDatasetInventory,
 ) (bench.TaskOutcome, error) {
-	if transcript.Failure != "" {
-		return bench.TaskOutcome{}, errors.New("recovered FDB v3 completion retains a failed transcript")
+	reconstructed, _, err := scoreTaskTranscript(task, transcript, inventory)
+	if err != nil {
+		return bench.TaskOutcome{}, fmt.Errorf("score recovered FDB v3 transcript evidence: %w", err)
 	}
-	if !finiteNonnegative(transcript.PlaybackMS) || transcript.PlaybackMS == 0 {
-		return bench.TaskOutcome{}, errors.New("recovered FDB v3 completion has no valid playback duration")
-	}
-	if transcript.OutstandingResponses != 0 || transcript.OutstandingTools != 0 {
-		return bench.TaskOutcome{}, errors.New("recovered FDB v3 completion retains outstanding session work")
+	return reconstructed, nil
+}
+
+func scoreTaskTranscript(
+	task Task, transcript bench.Transcript, inventory releasedDatasetInventory,
+) (bench.TaskOutcome, []observedCall, error) {
+	if err := validateScoringTranscript(transcript); err != nil {
+		return bench.TaskOutcome{}, nil, err
 	}
 	observed, err := observedCallsFromTranscript(transcript)
 	if err != nil {
-		return bench.TaskOutcome{}, fmt.Errorf("reconstruct recovered FDB v3 tool evidence: %w", err)
+		return bench.TaskOutcome{}, nil, fmt.Errorf("reconstruct tool evidence: %w", err)
 	}
 	reconstructed := newTaskOutcome(task, inventory)
 	reconstructed.Completed = true
 	reconstructed.AttachExecution(transcript)
 	retainTranscriptNotes(reconstructed.Notes, transcript)
 	attachScores(&reconstructed, task, observed, inventory)
+	attachReleaseEvidence(&reconstructed, task, transcript, observed)
 	if len(observed) > 0 {
 		reconstructed.Notes["observed"] = describe(observed)
 	}
-	return reconstructed, nil
+	return reconstructed, observed, nil
 }
 
 // playTaskAudio keeps the source distinction fail closed. A non-nil AudioWAV
@@ -905,6 +905,7 @@ func attachScores(
 	outcome.Notes["semantic_repaired_scorer"] = semanticRepairedScorerIdentity
 	outcome.Notes["semantic_repaired_errata"] = semanticReferenceErrataIdentity
 	outcome.Notes["fixture_dispositions"] = fixtureDispositionRegistryIdentity
+	outcome.Notes["release_evidence_scorer"] = releaseEvidenceScorerIdentity
 	outcome.Notes["harness"] = harnessIdentity
 	outcome.Notes["upstream_tool_catalog"] = upstreamToolCatalogIdentity
 	outcome.Notes["simulator"] = simulatorIdentity
