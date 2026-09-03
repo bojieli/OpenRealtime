@@ -441,6 +441,13 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 	if got := len(strings.Split(conditions, ",")); got != 21 {
 		t.Fatalf("FD-Bench candidate condition count = %d, want 21", got)
 	}
+	fdbV3Command := byID["external.benchmark.candidate.fdb3"].Command
+	if got := countArgument(fdbV3Command, "-model"); got != 1 {
+		t.Fatalf("FDB v3 candidate model selector count = %d, want exactly one", got)
+	}
+	if got := argumentAfter(fdbV3Command, "-model"); got != "openrealtime" {
+		t.Fatalf("FDB v3 candidate model selector = %q, want %q", got, "openrealtime")
+	}
 	for id, runPrefix := range map[string]string{
 		"external.benchmark.tau.control": "candidate-tau-control",
 		"external.benchmark.tau.regular": "candidate-tau-regular",

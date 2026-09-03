@@ -38,7 +38,7 @@
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-prefix", "{artifacts}/candidate-fdb3-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-fdb3.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "bench", "fdbv3", "-dataset", "{root}/.runtime/full-duplex-bench-v3/dataset/fdb_v3_data_released", "-endpoint", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-model", "openrealtime", "-execution", "{env:OPENREALTIME_BENCH_EXECUTION}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-prefix", "{artifacts}/candidate-fdb3-review", "-review-provider", "google.gemini-3.7-flash", "-review-key-env", "GEMINI_API_KEY", "-review-concurrency", "16", "-out", "{artifacts}/candidate-fdb3.json"],
       "timeout": "12h",
       "skip_policy": "forbid",
       "prerequisites": [
