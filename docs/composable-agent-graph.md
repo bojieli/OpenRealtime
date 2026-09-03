@@ -1803,7 +1803,7 @@ reconstruction, or alternate benchmark path.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-09-02**. This is the progress
+Last reconciled with the repository on **2026-09-03**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
 ledger and `git log origin/main..main` together identify the accepted local
@@ -1825,8 +1825,18 @@ behavior-affecting code or artifact change invalidates the affected final-run
 evidence even when an earlier campaign remains useful as a checked historical
 execution milestone.
 
-At this reconciliation, 266 of 317 explicit tracker boxes are checked (83.9%)
-and 51 remain open. The percentage records completed reviewable slices; it does
+The words **complete**, **production-ready**, **regression-free**, and
+**release-ready** are reserved for that final result. A green unit, race, vet,
+protocol, smoke, synthetic-integration, focused benchmark, or earlier complete
+suite run may be reported only with its narrower scope. The release candidate
+is frozen before the first required attempt; all 7,486 required attempts must
+name the same executable and final-candidate manifest, including its
+preregistered suite-specific graph/values/deployment/model/policy identities.
+Any subsequent behavior-affecting change creates a new candidate and requires
+the affected complete suites—and ultimately the final matrix—to be rerun.
+
+At this reconciliation, 285 of 348 explicit tracker boxes are checked (81.9%)
+and 63 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -1834,7 +1844,7 @@ of-done requirement.
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, interaction/result commit, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Shared-server launch integration and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
@@ -1848,6 +1858,26 @@ Current checkpoint notes:
   branch history and the ledger below. Worktree-only slices remain unchecked
   until their review and required evidence are complete; no hard-coded branch
   or remote position is a completion oracle.
+- This reconciliation pins Scenario Conversation graph fingerprint
+  `sha256:b80c6d721e45ab7a4a89b6264d821807b899502c6f74880eab456ac55841ca2e`
+  and Realtime-CU graph fingerprint
+  `sha256:41783296ff87a28b4fb9b52a4d0dadcffe8be79cb223558231ca00086f9a6285`.
+  The Realtime-CU activation descriptor is revision 7 at
+  `sha256:fdb826e2867506e8396be76d4caf1b30bd180c3ddadbd8912adc21c7877575d4`,
+  with runtime and implementation revision 7. Strict computer-use graph
+  validation passes. Scenario source is canonical and locked; its general
+  conversational validator still reports `W_NO_TERMINAL_OUTCOME` for the named
+  intentional `flow.Drop` that consumes silent-model text, so this document
+  makes no warning-free Scenario claim.
+- Go 1.25 checkpoint validation passes repository-wide `go test ./...` and
+  `go vet ./...`; the complete `graphs` package passes ten repetitions. Ten
+  race-enabled repetitions pass across trajectory/provider projection,
+  semantic policy, action and interaction elements, Realtime-CU and Scenario
+  bindings, and the graph-native Meeting runtime. The mounted Realtime-CU
+  disposition case passes ten normal and ten race-enabled repetitions, and the
+  clean mounted Scenario unchanged-Realtime-endpoint regression passes 100
+  repetitions. These are implementation and concurrency checks only: no live
+  benchmark population or final-candidate gate is inferred from them.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
@@ -2320,11 +2350,11 @@ tracker by itself:
   `/openrealtime/v1/sessions/{session}/live` resource and use only the
   management capability header; its source-free static-model sibling uses the
   same session authority, and compiled server profiles own all route mounts.
-- [x] Freeze every direct candidate contract before its full run.
+- [ ] Freeze every direct candidate contract before its full run.
   - [x] Treat the benchmark owner's recorded original numbers as the trusted
     historical comparison targets. Do not reconstruct historical attempts or
     require historical media.
-  - [x] Pin fixture/task revisions, model/provider revisions, voices, tools,
+  - [ ] Pin fixture/task revisions, model/provider revisions, voices, tools,
     timing policy, machine class, concurrency, trial count/seeds where
     applicable, and every graph/config/profile identity for each new run. The
     digest-checked dataset/preparation gates freeze the FDB, FD-Bench, and tau2
@@ -2336,21 +2366,41 @@ tracker by itself:
     build or machine drift. Tau2's last implicit run-defining values are now
     explicit and fail-closed: trial count, campaign and Python hash seeds,
     scheduler concurrency/workers, cadence, timeout, local caller/ASR/synthesis
-    models and voices, and fresh per-condition run prefixes.
+    models and voices, and fresh per-condition run prefixes. The existing
+    contracts cover many of these fields but do not yet bind every
+    behavior-affecting model, endpoint/transport, timeout, harness/catalog,
+    task inventory, audio/browser environment, seed, concurrency, and runtime
+    dependency identity for every required suite; therefore neither this child
+    nor its parent is frozen.
+  - [ ] Bind each suite to one canonical run-specification and input-inventory
+    digest that includes every behavior-affecting graph, values, deployment,
+    model, policy, tool catalog, media/browser/Python environment, timeout,
+    seed, concurrency, transport, and scorer field. Reject omitted, defaulted,
+    or resumed values that cannot be proven identical to the frozen candidate.
 - [ ] Retain every new attempt—including failed, timed-out, and regressed
   diagnostics—with deterministic outcomes, exact graph/runtime evidence,
   playable audio and/or synchronized video as applicable, review manifests,
   and create-only external receipts.
-  - [x] Make attempt-stage retention restartable for the direct FDB v1.5,
+  - [ ] Make attempt-stage retention restartable for the direct FDB v1.5,
     FDB v3, FD-Bench, and tau-Voice campaigns. Each complete attempt now
     publishes an atomic canonical commit marker after its media, context,
     outcome, transcript, and artifacts are durable; `-review-resume` takes a
     crash-released exclusive lease, admits only the same suite/cell/origin,
     executable, and machine, reuses exact committed outcomes without replay,
     and preserves markerless or explicitly incomplete directories under
-    `interruptions/` before retry. Finalization-stage debris remains
-    fail-closed, and this subgate does not close the parent until every
-    required population has actually run and been reviewed.
+    `interruptions/` before retry. The storage layer currently proves byte and
+    attempt-identity equality, but generic recovery can still trust a retained
+    deterministic `Passed` value. This child remains open until every suite
+    must reopen its raw evidence, independently rerun its deterministic scorer,
+    and exact-compare the reconstructed outcome before a recovered completion
+    can be committed. Finalization-stage debris remains fail-closed, and this
+    subgate does not close the parent until every required population has
+    actually run and been reviewed.
+  - [ ] Require a suite-owned recovery validator/rescorer for every recovered
+    attempt. FDB v1.5, FDB v3, FD-Bench, tau-Voice, Meeting Assistant,
+    Realtime-CU, and interaction scenarios must fail recovery when their raw
+    evidence is insufficient to deterministically reconstruct the retained
+    outcome; structural JSON equality alone is not acceptance evidence.
   - [x] Serialize final candidate-review aggregate publication across concurrent
     writers. A persistent, private, single-link OS-lock marker is derived from
     and reserved beside the exact external receipt; its descriptor is
@@ -2365,27 +2415,31 @@ tracker by itself:
 - [ ] Review every retained candidate recording with the exact
   `google/gemini-3.7-flash` plug-in. Advisory review exposes media and behavior
   problems but never changes the deterministic scorer.
-  - [x] Review and independently reopen every recording in the four completed
-    required candidate populations: Meeting Assistant 4/4, Realtime-CU 16/16,
-    FDB v1.5 498/498, and FDB v3 100/100. Their 618 exact-model evaluations,
-    usable media, create-only receipts, deterministic outcomes, and advisory
-    disagreements remain sealed. The one-pass scenario 11×1, active FD-Bench,
-    and both tau-Voice populations keep the universal review gate open.
+  - [x] Review and independently reopen every recording in the completed
+    Meeting Assistant 4/4, Realtime-CU 16/16, and FDB v1.5 498/498 campaigns,
+    plus all 100 recordings in the diagnostic-only FDB v3 campaign. Their 618
+    exact-model evaluations, usable media, create-only receipts, and advisory
+    findings remain sealed. The FDB v3 deterministic labels are
+    acceptance-invalid and its repaired rerun must be reviewed again; the
+    one-pass scenario 11×1, active FD-Bench, and both tau-Voice populations
+    also keep the universal review gate open.
 - [ ] Publish a case-by-case pass/fail document that places the new totals,
   safety/deadline outcomes, and latency distributions beside the trusted
   historical numbers without inventing unavailable historical detail.
   - [x] Publish sealed media-linked case-by-case `REVIEW.md` reports for the
-    four completed candidate populations. They preserve deterministic scoring,
-    exact-model advisory findings, reportability, and each available safety or
-    timing result without reconstructing historical attempts. The final shared
-    side-by-side report remains open until every required population and its
+    Meeting Assistant, Realtime-CU, FDB v1.5, and diagnostic FDB v3 campaigns.
+    They preserve their original outcomes and exact-model advisory findings
+    without reconstructing historical attempts. The old FDB v3 deterministic
+    report is not a valid quality result, and the final shared side-by-side
+    report remains open until every repaired required population and its
     accepted historical comparison are present.
 
 The historical scenario trail includes the accepted 140/165 total at fifteen
 repetitions: 15/15 each for asked-not-to-be-interrupted, recorded-menu,
-requested-silence, acknowledgement, ordinary-question, and count-as-they-go;
-14/15 third-party conversation; 13/15 correction interruption; 11/15 each for
-translation and visual description; and 8/15 waiter. A one-attempt-per-case
+requested-silence, acknowledgement, and ordinary-question; 14/15 third-party
+conversation; 13/15 correction interruption; 11/15 each for translation and
+visual description; and 8/15 each for waiter and count-as-they-go. A
+one-attempt-per-case
 operator checkpoint may be retained as diagnostic evidence, but it is not the
 release population and cannot claim statistical parity with or substitute for
 the required new 165-attempt sample.
@@ -2512,30 +2566,34 @@ the required new 165-attempt sample.
   its complete create-only source/evaluation receipt bundle is sealed by review
   manifest
   `sha256:99b822af255d90b1f12696e66b0f467d76977fef261f1626d2e8ab7b8965bd60`.
-- [x] Run all 100 released FDB v3 examples through the new graph-native
-  endpoint and retain per-attempt review media. Candidate-02 at clean commit
-  `f30ad89` completed 100/100 with zero infrastructure failures and
-  graph-native execution evidence on every task. This closes the complete-run
-  requirement, not the later quality/non-regression gate: only 9/100 tasks
-  called every expected tool with the accepted arguments, 10/100 called every
-  expected tool with a wrong identifier value, and 81/100 made no complete
-  matching call. The exact-success split was ecommerce 2/29, finance 5/25,
-  housing 2/26, and travel 0/20. Exact `google/gemini-3.7-flash` review retained
-  usable WAV media and agreed with the deterministic outcome for all 100
-  attempts; 95 attempts retained at least one significant finding (145 total).
-  Credential-free reopening verified all 100 evaluations and zero quarantine.
-  The retained result is
-  `fdbv3-candidate-full100-20260901-02-full-reviewed.json`
-  (`sha256:9b98c5a9cb6373f8e7846923dca3708f6141e6773139c489c383f9f74668c518`);
-  its complete create-only source/evaluation receipt bundle is sealed by review
-  manifest
-  `sha256:73ba92f8d3cb2327127f23e35682f3719af840187d62806b5e6c9a2f5931720a`.
+- [ ] Run all 100 released FDB v3 examples through the repaired, pinned
+  graph-native harness and scorer and retain per-attempt review media.
+  - [x] Preserve the earlier 100-attempt Candidate-02 campaign strictly as
+    diagnostic execution and media evidence. It ran at clean commit `f30ad89`
+    with graph-native evidence on every task, but it is invalid for acceptance:
+    the old scorer could pass an expected call even when the attempt also made
+    an unintended extra call, and at least
+    `finance_12_69a9cf80f4d7668d5c815038` was falsely accepted with
+    `expected_calls=1` and `observed_calls=2`: an incorrect 100-EUR call was
+    followed by the expected 150-EUR call. Consequently
+    its reported 9/100 exact score, category split, and deterministic-review
+    agreement are not trusted quality results. The immutable artifacts remain
+    available for diagnosis; they must never satisfy the FDB v3 population,
+    quality, or final-candidate gates. The retained result is
+    `fdbv3-candidate-full100-20260901-02-full-reviewed.json`
+    (`sha256:9b98c5a9cb6373f8e7846923dca3708f6141e6773139c489c383f9f74668c518`),
+    sealed by review manifest
+    `sha256:73ba92f8d3cb2327127f23e35682f3719af840187d62806b5e6c9a2f5931720a`.
 - [ ] Run all 6,147 FD-Bench conversations across all 21 released
   conditions with comparable endpointing, overlap, answer, and latency
   distributions; an aggregate over a subset of conditions is not a full run.
-  The immutable candidate-04 run was healthy in the background and had reached
-  attempt 976/6,147 at 2026-09-02 01:48 UTC. This dated progress checkpoint is
-  not a partial-condition aggregate and does not satisfy the box.
+  The Candidate-04 diagnostic stopped on 2026-09-02 after starting attempt
+  1,547/6,147, with 1,546 durable attempt completions and one preserved
+  incomplete attempt. Its old executable rejected the harness's
+  `-review-resume` flag, so the campaign did not produce a complete population
+  or aggregate. Those artifacts remain useful for diagnosis only: they cannot
+  satisfy this box, and a later executable cannot combine them with new
+  attempts while claiming one immutable final candidate.
 - [x] Add a canonical pinned tau2 inventory boundary that calls the upstream
   `base` split, refuses dirty task/loader inputs and data-path overrides, and
   validates the exact 50 airline / 114 retail / 114 telecom partition.
@@ -2567,17 +2625,50 @@ the required new 165-attempt sample.
   the trusted original numbers in aggregate pass rate and per-case behavior, with
   no safety regression and no material deadline or latency-distribution
   regression.
-  - [x] Implement a machine-enforced, candidate-only behavioral acceptance
+  - [ ] Implement a machine-enforced, candidate-only behavioral acceptance
     report that refuses incomplete populations, unregistered trusted aggregate
     or per-case targets, missing safety/deadline/latency evidence, mismatched
     final graph/config/runtime identity, and diagnostic-only rerun lineage. This
     is a release-evidence gate over graph-native results, not a resurrected
     legacy execution or migration-comparison path. The strict checked target
-    registry, pre-run frozen-candidate declaration, create-only report command,
-    focused-to-full repair lineage, and required release-matrix gate are now
-    implemented and tested. The current registry honestly marks unavailable
-    historical targets as blockers, so this implementation checkpoint closes
-    no benchmark-population, final-candidate, or behavioral non-regression box.
+    registry, version-two pre-run frozen-candidate declaration, create-only
+    report command, focused-to-full repair lineage, required release-matrix
+    gate, and repository-owned campaign-closure verifier are implemented and
+    tested. Bare result JSON and a declarative `final_full` row now fail closed.
+    The child remains open because campaign producers do not yet emit all
+    canonical run-spec/inventory/scorer/wrapper/closure artifacts, some trusted
+    target registrations remain unavailable, and raw deterministic replay is
+    incomplete. This implementation evidence closes no benchmark population,
+    final-candidate, or behavioral non-regression box.
+    - [x] Require a create-only external source receipt and campaign-closure
+      receipt for every accepted suite result. The closure must bind the one
+      candidate and executable, canonical run specification, exact task/trial
+      inventory, source receipt, final result digest, scorer identity, and
+      predecessor repair closure; a bare result path or declarative
+      `final_full` label is insufficient. The publisher verifies every input,
+      writes with no-replace semantics, reopens the result and repository-owned
+      source tree, and cross-binds their deterministic-result digests.
+    - [ ] Make the acceptance verifier reopen retained raw evidence through a
+      suite-owned deterministic verifier and independently reproduce every
+      outcome and required metric. Reject a suite for which only self-asserted
+      scores, rewards, provenance, or execution evidence survive. Repository-
+      owned source verifiers now reopen scenario, Meeting Assistant,
+      Realtime-CU, FDB v1.5, FDB v3, FD-Bench, and tau-Voice receipt trees;
+      recovered FDB-family attempts are deterministically rescored and tau-
+      Voice recovery fails closed, but not every suite can yet replay every
+      accepted score and metric from its lowest-level retained evidence.
+    - [x] Bind each declared repair lineage edge externally: preserve the
+      failed full campaign, link the focused diagnostic and repaired full-suite
+      closure to it, and require an exact chronological digest match. Earlier
+      repair closures are independently verified as same-suite evidence and may
+      name the older candidate/revision/executable that actually failed; only
+      all eight final closures must share the final frozen candidate.
+    - [ ] Retain the frozen declaration, all source trees and receipts, every
+      repair closure, the eight final closures, and the acceptance report in an
+      independently controlled append-only or signed release store. The local
+      unkeyed SHA-256 closure proves content integrity, not authorship, and
+      cannot by itself prove that an adversary omitted a later campaign or
+      fabricated a coherent replacement artifact universe.
   - [x] Make the machine-enforced required matrix exact: eight suite identities
     and 7,486 attempts comprising scenario 165, cascade Meeting Assistant 4,
     Realtime-CU 16, FDB v1.5 498, FDB v3 100, FD-Bench 6,147, tau control 278,
@@ -2606,6 +2697,378 @@ the required new 165-attempt sample.
     slice and then all 498 tasks still require immutable reruns after the active
     FD-Bench campaign releases the shared model deployments; this subgate does
     not close the parent quality gate.
+  - [x] Close the no-text/tool-only and playback-release ordering holes exposed
+    while exercising the repaired Scenario Conversation endpoint. A successful
+    foreground tool-only result formerly emitted no text stream and therefore
+    no segmentation terminal; on independent graph lanes the result or
+    `response.done` could then overtake both that missing proof and the terminal
+    playback state. The control-serialization quarantine now emits a typed empty
+    safe-text begin/end frame for a validated no-text result and causally parents
+    the safe result to that terminal. `interaction.OverlapBargeIn` supplies the
+    cross-port result barrier and forwards `playback.released` only after
+    validating the exact run, utterance, text, outcome, and sequence. The
+    session playback sink withholds legacy `TurnEnd` until that graph-authorized
+    release, consumes it once, and turns an unconsumed shutdown into an explicit
+    incomplete turn. Hostile tests cover release before active and terminal
+    TTS/playback statuses, late-status tombstoning, missing/mismatched/duplicate
+    releases, cancellation-reason preservation, and `TurnEnd` failure. Focused
+    race repetitions pass, and the clean mounted unchanged-Realtime-endpoint
+    regression passed 100/100 against Scenario lock
+    `sha256:b80c6d721e45ab7a4a89b6264d821807b899502c6f74880eab456ac55841ca2e`.
+    This checks the lifecycle-ordering repair only; it is not scenario, FDB, or
+    final-candidate benchmark evidence.
+  - [x] Trace and repair the semantic-overlap observation gap exposed by the
+    exact `user_interruption/1` and `background_speech/1` recordings. The
+    classifier previously received only the overlapping transcript, so a
+    relevant correction and an unrelated room observation were formally
+    indistinguishable; the background control happened to pass only after the
+    unclassified timeout canceled active speech. The graph now explicitly
+    tees each prepared foreground speech segment to both TTS and the typed
+    `interaction.OverlapBargeIn` controller. The controller retains bounded
+    run/utterance identity, supplies the exact active agent clause with only
+    the current ASR revision, and treats takeover/question openers and strict
+    listener continuers as distinct conversational functions. A fresh frozen
+    diagnostic profile from immutable binary
+    `sha256:1b3854ef0c62182682fa01ff6560de350dd0399343cc2c86185ea62a912760ba`
+    replayed `user_interruption/1`, `background_speech/1`,
+    `user_backchannel/1`, and `talking_to_other/1`: `Actually.` produced an
+    addressed semantic cancellation, while `Oh, it's starting.`, the complete
+    acknowledgement sequence, and named side speech produced no fallback
+    cancellation. A repeated control exposed a second real defect: enumerated
+    decoding once labeled the three-token proposition `Oh, it's starting.` as
+    a listener backchannel despite the label's closed semantic contract. The
+    policy now mechanically rejects impossible lexical shape, separately
+    validates language-dependent one/two-token candidates, and reclassifies
+    rejected evidence with the impossible label removed; the exact controls
+    then retained the proposition as side speech and all three genuine
+    acknowledgements as backchannels. The first seven interruption recordings
+    also produced directed semantic cancellation for every applicable spoken
+    event. Their remaining scorer failures are retained timing evidence, not
+    silently treated as fixed behavior: for example, case 7's released
+    `interrupt.wav` contains 1,353 ms of leading silence after the metadata
+    event timestamp, while the connected controller canceled about 600 ms
+    after speech actually began. Focused ten-repeat, race, vet, graph-lock,
+    and diff gates are green. These diagnostics close the observation-space
+    and invalid-label defects only; the parent remains open until the exact
+    complete FDB v1.5 campaign is rerun from the final frozen candidate.
+  - [x] Reject standing interaction policies invented from ordinary
+    observations, immediate questions, and floor-taking topic changes before
+    they can enter durable policy memory. Exact overlap-policy traces showed
+    the extraction model rewriting `Oh, it's starting to rain outside.` into a
+    future rain trigger, and rewriting `Hold on, what time ...?` and `Hold that
+    thought. Can we discuss ...?` into silence constraints nobody requested.
+    Every proposed pin now crosses a separate grounding pass against the exact
+    utterance before count, restriction, or scope classification. That pass
+    admits only an explicit future-event reaction, an event-triggered repeated
+    action, or a genuine temporary/ongoing interaction constraint; it rejects
+    current observations, one-shot work, and response style, and fails closed
+    on provider or output uncertainty. Scripted tests retain all three exact
+    failures plus one-shot/style controls and legitimate future-event,
+    temporary-silence, count-as-mentioned, price-threshold, and ongoing-reading
+    policies. Mounted semantic-admission lifecycle tests prove that each exact
+    false proposal leaves policy memory empty and the immediate request on the
+    normal decision path. Direct `qwen-fast` replay rejected each false proposal
+    and kept each legitimate control end to end. Repeated package, focused race,
+    and vet gates pass. The immutable diagnostic binary is
+    `openrealtime-scenario-standing-grounding-repair-20260903-06`
+    (`sha256:973ef6efd00361a7ce2bddf92a40a5d73d330788c0ee103bb5d09b8affdae79a`),
+    with launch-profile fingerprint
+    `sha256:b66c9476006bd3305f706a2aad84e24b57db878bf637d599c27c8db66f08ba24`
+    and plan fingerprint
+    `sha256:4e714b1658061634fa5d25ec0c8f254289ab3dfe57a94f191cf4d495f9d3149b`.
+    Its retained `background_speech/1` control result is
+    `sha256:36897bab800a7b5c2b655abe5fa2f51e40bb5e9fa4e4fbdb74345dffacbcda9d`
+    and its first-eleven interruption result is
+    `sha256:7578e723d77202a103e2deded1f8757ecb09f4a778a2d9ecd3fd122bbf87b076`.
+    The opt-in exact policy exchange dump is sealed at
+    `sha256:145171ed8d944dbeb301e9b363232cadad6757d98712c854dd4c5cd43390e127`;
+    request dumping now covers the extractor's free-form `Generate` calls as
+    well as enumerated decisions. A subsequent worktree-only observability
+    repair adds UTC nanosecond start/end timestamps and monotonic duration to
+    each actual provider attempt, including transport, partial-body, non-2xx,
+    and malformed-response failures, without retaining credentials. This
+    closes only the false-pin defect; the complete frozen FDB rerun and parent
+    non-regression gate remain open.
+  - [x] Prevent completed third-party speech from acquiring voice, tool, or
+    standing-policy authority after the prior response is already terminal.
+    The retained `talking_to_other/91` trace exposed a real gap rather than an
+    overlap-cancellation failure: `Tim, printer's jammed again—help?` arrived
+    on a new non-overlapping final stream, so the overlap controller correctly
+    had no active run to cancel and primary semantic admission answered it.
+    Semantic admission now uses the internal `addressed-elsewhere` activation
+    result before extraction and primary act selection. A confident result
+    suppresses the exact stream/revision at `voice_addressing`; even an
+    uncertain result cannot pin or revoke durable policy. This is an internal
+    semantic-admission decision, not a newly claimed typed `addressing`
+    capability. Explicit assistant identity in the agent contract takes
+    precedence, leading name/role/title vocatives identify another recipient,
+    and a name used as a verb object does not. Low-confidence `wait` likewise
+    cannot veto a confident direct answer. A mounted Scenario Conversation
+    regression completes turn one, proves the later third-party stream reaches
+    neither model, TTS, playback, cancellation, silent action, nor standing
+    extraction, and then admits an independently addressed third stream with
+    no leaked hostile policy; ten repeated and race-enabled runs pass.
+    The first live probe also found the transport truncating the valid
+    `addressed-elsewhere` enum to `addressed-else` because every decision had a
+    hard-coded four-token budget. Enumerated decisions now derive a bounded
+    budget from the longest exact UTF-8 option while retaining strict exact
+    matching. The original four-token failure and eight-token counterfactual
+    are retained at respectively
+    `sha256:454f49edd48af20928f561536c96aa59e52c2528d9484cacf88fa1269e387b92`
+    and
+    `sha256:7ecb68166990dae87a5cf726f8f870573f4ad5706ce716524714d258943f7d97`.
+    An actual-client budget audit is retained at
+    `sha256:7c9adfd098ba778357943992a4c60a4c9275071d8f31178588f7d109945a23f4`.
+    The first 24-case identity/vocative audit deliberately preserved four
+    newly exposed semantic failures at
+    `sha256:f2d77cfbe5f4ede02bad06accf03369f4f87c14861b90dafb9f47c4307bb3973`;
+    after general prompt-contract repairs, the byte-equivalent case population
+    passed 24/24 with no provider or enum error at
+    `sha256:df361106fc55f61e67945751e5ba57b50da245b95f36f641c3f15451559fdd9e`.
+    Every final exchange stopped normally. Opt-in request diagnostics now bind
+    each real provider attempt to UTC nanosecond timestamps, monotonic
+    duration, status, complete or partial response, and final error without
+    retaining headers or credentials. This checks only the concrete admission,
+    transport, and observability repairs; the repaired 498-attempt FDB campaign
+    and its parent non-regression gate remain open.
+  - [x] Keep ASR revision compaction a mutation-isolated provider projection
+    rather than rewriting canonical trajectory history. Store admission and
+    provider projection now share one strict supersession resolver. Projection
+    hides an earlier revision only when its valid replacement is in the same
+    uninterrupted user-observation run; it fails open by preserving malformed,
+    stale, ambiguous, cross-stream, and cross-boundary claims explicitly, and
+    clears the supersession marker only on the copied surviving item. The singleton
+    path also copies its item struct instead of aliasing the canonical input
+    slice. Adversarial normal and race tests cover ownership, boundaries, and
+    invalid claims, while OpenAI-compatible, Gemini, and Anthropic adapter tests
+    confirm that filtering begins from the full canonical snapshot. This closes
+    only the projection-ownership defect, not any benchmark population or
+    final-candidate gate.
+  - [x] Preserve and diagnose the first complete Realtime-CU candidate's
+    observer regressions, then exercise the two observer repairs on the exact
+    affected live slice. Candidate-05 retained the original 8/16 result and
+    showed that the temperature cue changed only 10/1,024 signature cells,
+    below the former `0.01` threshold, while camera and screen observations
+    incorrectly shared one fingerprint/cadence state and generated 147--155
+    observations before timeout. The production threshold is now `0.005`,
+    visual state and refresh are source-specific, and the consequence observer
+    refreshes only `screen`. The create-only diagnostic candidate
+    `realtime-cu-diagnostic-observer-repair-focused4-20260903-02.json`
+    (`sha256:ef751b45dba15908688700003a381bd492993088fc02dba242269fb286f4c577`)
+    passed temperature/pixel and both camera-smoke groundings with 462/539/515
+    ms cue-to-action latency. Temperature/set-of-mark remained a retained
+    failure despite four observations, so this checked repair subgate closes
+    neither that case nor the complete Realtime-CU suite.
+  - [x] Terminate the retained Realtime-CU exhausted-authority feedback loop
+    through the protocol's explicit failure path and validate the repair on a
+    formerly looping live case. The failed trace had committed
+    `{"error":"action budget exhausted"}` as ordinary successful tool data,
+    forced a visual consequence, and reactivated durable intent indefinitely;
+    affected attempts made 13--62 calls and two timed out. Benchmark handler
+    failures now use the exact `Error: ...` function-output representation,
+    dispatcher and budget failures remain errors, and the activation element
+    consumes the causally linked visual consequence of a failed effect without
+    discarding intent for later independent evidence. Normal, race, and vet
+    gates passed for the affected benchmark, binding, and graph surfaces. The
+    new immutable diagnostic binary is
+    `openrealtime-realtimecu-exhaustion-repair-20260903-03`
+    (`sha256:6abc92d92ad56fc42729d8b40391a1a5732f228f2c48df40e2a7259f1259ef5f`),
+    with frozen plan
+    `sha256:54ee32974e375c22b11dcc827cd383c33bb8673d47ec31b75df2989c1851021a`.
+    Its retained temperature/pixel replay
+    `realtime-cu-diagnostic-exhaustion-repair-temperature-pixel-20260903-01.json`
+    (`sha256:0f5976085a79bf98e16f2829fa2b54c93835b6f973769a2c6832047bacfd5abc`)
+    passed with four total proposals (the three-action budget plus one rejected
+    exhaustion proposal), zero session timeouts, eight observations, 745 ms
+    cue-to-action latency, and 9,349 ms task completion. Review manifest
+    `sha256:751328f2e56feeec4f028acf23a8f1611f9f8c958ccee8403776e089bc64aac3`
+    independently retained the redundant post-success calls. This closes the
+    unbounded-loop repair only, not action efficiency or the full-suite gate.
+  - [ ] Complete the remaining Realtime-CU repair cycle: diagnose and repair
+    temperature/set-of-mark, normalize only the closed malformed typed-coordinate
+    proposal shape without weakening the declared action schema, repair the
+    typed set-of-mark incident-code value/submission behavior, rerun each exact
+    affected slice with create-only evidence, and then rerun all sixteen cases
+    from one frozen graph-native candidate. Preserve any newly exposed failure
+    and repeat the focused-then-complete cycle; none of the focused diagnostics
+    may satisfy the final-candidate ledger.
+    - [x] Add the closed `coordinate-pair-x-y-v1` deployment-owned argument
+      normalizer and route the Realtime-CU action graph explicitly through
+      `ToolLookup -> NormalizeArguments -> Confirmation`. It accepts only an
+      `x` value containing exactly two JSON integers while `y` is absent,
+      preserves the byte-exact model proposal, derives a separate effective
+      `x`/`y` call, records replayable registry/declaration-bound trajectory
+      evidence, and fails closed for every ambiguous shape. Provider-facing
+      JSON Schema remains strict and contains no normalizer metadata. Focused
+      normal, repeated, race, and vet gates are green; this is component
+      evidence, not a benchmark closure.
+    - [x] Repair and exercise the normalized-call client boundary. The action
+      dispatcher registered the effective call, while the Realtime-CU adapter
+      had reconstructed `dispatch.committed` from the original malformed
+      proposal and correctly tripped the bridge drift check. The adapter now
+      emits `DeclaredAction.EffectiveCall` when present, and the bridge still
+      independently compares it with the dispatcher input. The mounted test
+      retains raw `{"source":"screen","x":[255,566]}` proposal evidence and
+      the derived `{"source":"screen","x":255,"y":566}` canonical call.
+      Immutable diagnostic binary
+      `openrealtime-realtimecu-coordinate-repair-20260903-01` is retained at
+      `sha256:34a0e6bbaa53f9dd5c1783ea54adfb60ecfa1a0d7f03d600ddd430ced79aa596`,
+      with create-only profile
+      `sha256:3fd897f27632bb0744f47621d38070fa6492541f459f24f5600ec7c17aa570c1`
+      and plan
+      `sha256:20be74e20eb17b71e95273237a5c74d7ff78c750217d151b54a87d7218a3565f`.
+      This closes the coordinate transport defect only.
+    - [x] Preserve and diagnose the next failure exposed by the exact
+      `typed-incident-code/pixel` live replay. The normalized click crossed
+      successfully as `x=255,y=566`, with zero invalid actions and no session
+      timeout, but the model then typed literal `alpha dash 7`; the browser
+      deterministically rejected `ALPHA DASH 7` instead of the intended
+      `ALPHA-7`. The failed result is retained at
+      `realtime-cu-diagnostic-coordinate-repair-typed-incident-pixel-20260903-01.json`
+      (`sha256:5776288b5f73cd360d1528fb4541ed732794176311d8cd33ea37d9b29a2aa131`),
+      and exact Gemini review agreed with the failure in manifest
+      `sha256:d18f8dc6ee5019a80828cfacb6dd969a587d17fc89bca6c73481ca5fc67d393f`.
+      This newly exposed semantic failure keeps both typed-incident cases and
+      the complete Realtime-CU gate open.
+    - [x] Diagnose the remaining temperature/set-of-mark failure as a
+      deterministic activation race, not demonstrated perception or model
+      stochasticity. A committed 84 C visual observation arrived while the
+      preceding 72 C no-action generation was active; activation classified
+      it as `generation_pending`, then cleared the active generation without
+      replaying that latest committed prefix. Adaptive perception correctly
+      emitted no duplicate for the unchanged 84 C screen.
+    - [x] Implement and deterministically exercise a capacity-one,
+      latest-wins deferred eligible visual commit: revalidate and replay it
+      after a zero-proposal result, coalesce newer commits, discard pre-effect
+      deferred state after a proposal, and clear it on cancellation or a new
+      durable intent. The activation element now retains an exact value-copied
+      committed prefix, coalesces by monotonic store version, re-enters the full
+      admission path only after a no-proposal result, and clears the slot on an
+      effect proposal, provisional or replacement intent, cancellation, and
+      shutdown. Deterministic blocked-provider tests cover exact-prefix replay
+      after later store append and caller mutation, latest-wins delivery,
+      pre-effect discard, cancellation plus late result, and replacement
+      intent. The focused tests passed 100 repetitions, 20 race-enabled
+      repetitions, the complete Realtime-CU binding package, and vet. This
+      closes only the scheduling implementation subgate; paired live
+      temperature evidence and the exact-sixteen rerun remain open below.
+    - [x] Add an explicit, graph-composable successful-effect repetition
+      boundary instead of hiding post-completion behavior in the Realtime-CU
+      binding. `action.RepetitionAdmission` sits after effective-argument
+      normalization and before confirmation, defaults to compatibility-preserving
+      `allow`, and lets this profile select
+      `at_most_once_after_success_per_user_intent` with named repeatable-tool
+      exceptions. Its semantic identity covers the session, durable authority
+      observation, target, tool, immutable declaration, and strict canonical
+      effective arguments while excluding provider call IDs and mutable screen
+      state. Only successful canonical results establish replay memory; failed
+      effects remain retryable, result forwarding is serialized after memory
+      admission, and bounded saturation fails closed rather than evicting a
+      prior success and making it executable again. Suppression emits the typed
+      non-result `action.PreEffectTerminal`, so activation settles either
+      terminal/result ordering without fabricating a tool result, committing to
+      the ledger, dispatching an effect, or requiring a visual consequence.
+      Deterministic tests cover fresh call IDs, canonical and normalized
+      argument equivalence, scope changes, explicit repeatable tools, error
+      retries, saturation, both event orders, contradiction/mismatch refusal,
+      retained-visual replay, cancellation, and replacement intent. The
+      reviewed descriptor bundle and lock now compile the exact topology; ten
+      repeated graph integrations, focused race checks, and vet pass. This
+      closes only the repetition-policy implementation subgate; it does not
+      close either live typed-incident case, the exact-sixteen campaign, or any
+      final-candidate benchmark gate.
+    - [x] Repair the typed-incident code-value behavior without benchmark-only
+      hard-coding or weakening action authority, then retain passing focused
+      pixel and set-of-mark evidence. The shared activation instruction now
+      defines a general character-faithful dictated-identifier rule, including
+      spoken punctuation, while leaving proposal authority and the declared
+      `computer.type` schema unchanged. Both focused live attempts used binary
+      `openrealtime-realtimecu-repetition-admission-repair-20260903-01`
+      (`sha256:4d6772ec92eddf6e776b47c8635b9a9503d633aa4f2ff751ebaeee6d6fb064b7`)
+      and frozen profile
+      `sha256:9c2b4ff1bebc6b1cd80cb781ee8db84bef22df51837e029e5420aa7e756e5e0d`.
+      Pixel emitted focus at normalized `(255,566)`, typed exact `alpha-7`,
+      and submitted at `(124,727)`; set-of-mark emitted element `1`, typed the
+      same exact value, and submitted element `2`. Each passed with exactly
+      three actions and zero invalid, grounding, premature, deadline, or
+      session-timeout events. Results are
+      `sha256:b363cc00dafc97d98f06ff18249bf2c2bb47d8262221987e6808121a07a7e813`
+      and
+      `sha256:06c852dc989040064a7aa3b9892fea7aaa9c00680f4ef99030af33724de35e82`;
+      exact Gemini review manifests are respectively
+      `sha256:3ceaffbbc493ba96910ee27de58d1051619d7755f67859631729acd4af529ff8`
+      and
+      `sha256:17cc6f0936f7c40070385c37149c07413c50179167806b1f8499bec8deca93bc`.
+      Independent reopening verified both source receipts, final review
+      receipts, evaluation bundles, and media trees. Each retained attempt is
+      reportable focused evidence, but each one-case outer bundle correctly
+      refuses aggregate publication because fifteen cases are absent and the
+      worktree was dirty. This closes only the typed-incident focused subgate;
+      the paired temperature, exact-sixteen, and final-candidate gates remain
+      open.
+    - [x] Replace the temperature diagnostic's prompt-only placeholder ban with
+      an explicit graph-composable tool-admission boundary. Independent replay
+      of both previously reported passing temperature attempts proved that the
+      provider first emitted `computer.wait`; the decisive 84-degree visual
+      arrived while that placeholder was pending, and the later click used
+      post-wait context rather than the intended zero-proposal deferred replay.
+      `action.ToolAdmission` now accepts the typed declared action, applies a
+      strict deployment-authored allow/deny policy with compatibility-preserving
+      allow-all default and deny precedence, and emits either the admitted
+      action or a typed `action.PreEffectTerminal` before ledger commit,
+      dispatch, fabricated result, or forced visual consequence. The locked
+      Realtime-CU reference graph alone denies `computer.screenshot` and
+      `computer.wait`, preserves its existing repetition exceptions, and muxes
+      tool-policy and repetition terminals into activation. Activation handles
+      terminal/result arrival in either order and replays the exact retained
+      visual prefix through the full commit-admission path after suppression.
+      Repeated component, activation, and mounted-graph tests prove that the
+      declared provider surface is unchanged, a denied placeholder never
+      crosses the client boundary, and later visual evidence can produce a real
+      click. The locked graph format/check, repeated shutdown coverage, race,
+      and vet gates are green. This checks only the explicit policy and replay
+      implementation; the old placeholder-assisted attempts do not satisfy the
+      live temperature, exact-sixteen, or final-candidate gates.
+    - [x] Stop a denied proposal from priming the next provider turn as
+      assistant-authored control JSON. The first valid post-ToolAdmission
+      temperature/pixel attempt correctly prevented `computer.wait` from
+      crossing the effect boundary but then made no click and missed its
+      deadline. Its retained result is
+      `realtime-cu-diagnostic-tool-admission-repair-temperature-pixel-20260903-02.json`,
+      sealed by review manifest
+      `sha256:7007697ac3ddad579b19a6308bb2e6a70de7e838d16f656ee282502e9ee62683`.
+      The trace showed that proposal-only runs intentionally lose native
+      provider state and fall back to portable trajectory projection; all
+      three adapters rendered the unpromoted proposal as assistant/model JSON.
+      Qwen then emitted the desired click as bare serialized assistant text,
+      which the control-serialization quarantine correctly refused. Canonical
+      trajectory now retains the complete non-executable proposal unchanged.
+      An unpromoted proposal remains pending and composable: provider projection
+      presents its exact tool name and argument bytes as runtime/user context,
+      never as an assistant-authored call. Only a closed, append-only
+      `ToolProposalDisposition`—currently tool-policy or repetition
+      suppression—makes it terminal. Realtime-CU activation resolves the exact
+      canonical proposal, emits that disposition through the graph-visible
+      trajectory compare-and-append lane, retries a bounded version conflict,
+      and releases the run or replays deferred visual evidence only after the
+      matching committed prefix is acknowledged. OpenAI-compatible, Gemini,
+      and Anthropic then replace a validated terminal proposal and disposition
+      with a generic no-action runtime notice containing no raw arguments;
+      exact promoted call/result projection is unchanged. Malformed, missing,
+      contradictory, or forged disposition evidence fails closed without
+      reviving control JSON or erasing a pending proposal. Focused normal,
+      adapter race, vet, canonical-input nonmutation, exact-promotion,
+      disposition-ordering, and transactional trajectory tests pass. This is
+      only the provider-context and terminal-handshake repair; the following
+      live paired temperature gate remains open until both grounding modes
+      actually click under the accepted safety, deadline, and latency contract.
+    - [ ] Run paired temperature pixel/set-of-mark focused evidence from the
+      repaired immutable candidate and meet the accepted correctness,
+      deadline, safety, and latency targets.
+    - [ ] Run and independently reopen all sixteen Realtime-CU cases from one
+      subsequently frozen candidate. If any aggregate or case materially
+      regresses, retain it and repeat diagnosis, focused repair, and the exact
+      sixteen-case rerun before checking this parent item.
   - [x] Preserve and diagnose the first concrete FDB v3 argument regression
     without overwriting either failed attempt. The retained 100-task campaign
     established the blocking 9/100 exact result. A fresh graph-attested rerun
@@ -2633,11 +3096,48 @@ the required new 165-attempt sample.
     frozen graph-native candidate. Preserve every failed rerun and repeat the
     focused-then-complete cycle until the accepted baseline is met or improved;
     implementation tests alone cannot check this box.
+    - [x] Publish and pin an upstream-truthful FDB v3 harness/catalog profile
+      separately from runtime-only argument-normalization metadata. Direct
+      inspection of the released `lk_agent_tool.py` established that its
+      callable surface omits metadata-only `search_products.category`, requires
+      `update_search_filter.value` to be a string, and defaults commute mode,
+      product maximum price, and cart quantity. The provider catalog now
+      reflects those exact signatures and binds the released agent, simulator,
+      instruction, inventory, endpoint, model, timeout, and catalog identities
+      into every attempt. Eighteen exact artifact-bound fixture dispositions
+      expose annotation/callable contradictions instead of widening the model's
+      tool schema or silently repairing them.
+    - [x] Define and enforce release and diagnostic semantics for
+      order-sensitive workflows. Authoritative release validity counts every
+      attempted effect and requires the exact successful call population in
+      released order; the separately identified upstream comparator sees only
+      calls the pinned Python wrapper could bind, invoke, and log. Semantic
+      result references and conditional actions require a successful producer
+      result before the dependent call, fail closed without timing evidence,
+      and classify `finance_20` as explicitly indeterminate because “favorable
+      rate” has no released threshold. The historical comparator remains a
+      separate named metric. These implementation subgates do not close the
+      parent until the focused and full live reruns are retained and reviewed.
 - [ ] After all implementation and configuration work is frozen, build one
   clean final candidate, pin its exact graph/values/deployment/model/policy and
   machine identities, and run the complete required matrix from that candidate.
   Earlier complete campaigns remain diagnostic and historical evidence; they
   do not certify later code or configuration.
+  The live final-candidate ledger is deliberately all-open:
+
+  | Required cell | Attempts | Final frozen-candidate status |
+  | --- | ---: | --- |
+  | Interaction scenarios, 11 cases × 15 | 165 | Open; no qualifying final-candidate run |
+  | Meeting Assistant cascade | 4 | Open; prior campaign is diagnostic for the later candidate |
+  | Realtime-CU | 16 | Open; prior campaign is diagnostic for the later candidate |
+  | FDB v1.5 | 498 | Open; repair and complete-suite rerun required |
+  | FDB v3 | 100 | Open; scorer/harness repair and complete-suite rerun required |
+  | FD-Bench, all 21 conditions | 6,147 | Open; no qualifying final-candidate run |
+  | τ-Voice control | 278 | Open; no qualifying final-candidate run |
+  | τ-Voice regular | 278 | Open; no qualifying final-candidate run |
+  | **Required total** | **7,486** | **Open** |
+
+  Meeting omni and DynaCU remain optional and never enter this total.
 - [ ] If any final-candidate aggregate, per-case behavior, safety result,
   deadline result, or latency distribution materially regresses, preserve the
   failed campaign and repeat diagnosis, repair, focused validation, and the
@@ -2714,6 +3214,27 @@ the required new 165-attempt sample.
     comparison is fingerprint-bound and retained as diagnostic evidence;
     shared-server integration and full live quality populations keep the
     parent open.
+- [x] Make every production Meeting spoken-output lane cross an explicit typed
+  control/content-separation boundary before it can reach a user.
+  - [x] Complete and mount the text-result quarantine so publication preserves
+    the source envelope sequence, emits exactly one safe envelope per raw text
+    envelope, strips unattested provider-native state, bounds parser state,
+    defers same-run results until the safe text terminal, and proves the full
+    Meeting foreground-to-adapter ordering path. Separate foreground and
+    background quarantines prevent a silent-model result from waiting on a text
+    stream that can never arrive. Mounted tests exercise result/text edge
+    reordering, serialized-control removal, graph-TTS backpressure, and the
+    zero-text tool-only terminal path; affected descriptor/schema identities
+    and locks are regenerated and reviewed.
+  - [x] Choose and enforce the production native-audio policy: route only
+    sanitized text through TTS, or introduce a separately typed,
+    deployment-attested native-audio/control-separation boundary. The Meeting
+    cascade now takes the first option: raw native foreground audio terminates
+    in a named audit drain, the deployment is forced to text output, and only
+    quarantined `SafePreparedText` may enter graph TTS and the adapter's spoken
+    output coordinator. The coordinator requires exact safe-text/result,
+    segmentation, synthesis, and audio agreement before terminal publication;
+    a proven tool-only result closes without creating a TTS plan.
 - [x] Add alternative tests where deliberative output speaks directly or fast
   and deliberative streams meet at an explicit stream-aware arbiter.
 
@@ -4407,12 +4928,14 @@ checked from foundation work alone; each requires end-to-end release evidence.
     followed by a complete-suite rerun. Historical per-attempt artifacts are
     not reconstructed or required.
   - [x] Complete, independently reopened graph-native candidate populations now
-    exist for Meeting Assistant (4/4), Realtime-CU (16/16), and FDB v3
-    (100/100), with exact live graph evidence, retained media, deterministic
-    outcomes, exact-model advisory review, and create-only source/evaluation
-    receipts. The final scenario 11×15 population, FD-Bench, both tau-Voice
-    conditions, and the resulting full non-regression cycle keep the universal
-    parent gate open.
+    exist for Meeting Assistant (4/4) and Realtime-CU (16/16), with exact live
+    graph evidence, retained media, deterministic outcomes, exact-model
+    advisory review, and create-only source/evaluation receipts. The prior FDB
+    v3 100-attempt campaign remains retained but is acceptance-invalid because
+    its scorer admitted extra effects. A repaired FDB v3 population, the final
+    scenario 11×15 population, FD-Bench, both tau-Voice conditions, all other
+    final-candidate reruns, and the resulting full non-regression cycle keep the
+    universal parent gate open.
 - [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
   - [x] Leaf and bounded multi-entry implementation, configuration, and

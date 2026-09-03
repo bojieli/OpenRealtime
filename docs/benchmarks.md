@@ -74,6 +74,11 @@ authored action surface remains unchanged.
 | `bench meeting` | OpenRealtime Meeting Assistant v1 | concurrent listening, speaking, shared-screen action, correction, and slow document work |
 | `bench dynacu` | DynaCU-Bench | optional independent external validation of dynamic computer use |
 
+For an FDB v3 repair loop, `-tasks id-a,id-b` reruns exact released directory
+identities while still exposing the full released tool catalog. The resulting
+partial artifact is diagnostic-only and cannot satisfy the 100-task release
+population; after it passes, rerun all 100 tasks from the frozen candidate.
+
 Architecture experiments need more identity than the generic factor table can
 carry. [Architecture experiments](architecture-experiments.md) defines the
 versioned manifest, live session evidence, unavailable-cell handling, and the

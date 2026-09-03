@@ -133,14 +133,18 @@ higher trusted result.
 
 The per-benchmark matrix gates enforce complete execution and sealed evidence.
 They are not, by themselves, behavioral acceptance. The required
-`external.benchmark.validation.behavioral` gate consumes all eight final result
-files, one pre-run frozen-candidate declaration, and the checked behavioral
-target registry. It refuses incomplete populations, mixed candidates,
-unregistered targets, material regressions, and a repair history that ends in a
-diagnostic subset. The checked registry still records several unavailable
-trusted targets, so the gate correctly remains blocked until benchmark owners
-register them; implementing the gate does not close a benchmark or
-non-regression checklist item.
+`external.benchmark.validation.behavioral` gate consumes eight create-only
+campaign closures, one pre-run frozen-candidate declaration, and the checked
+behavioral target registry. A bare result path is never an acceptance input.
+Each closure reopens the exact result and binds its candidate, executable,
+machine, graph execution requirement, run specification, pre-run inventory,
+source receipts, deterministic scorer, task population, and repair lineage.
+The gate refuses incomplete populations, mixed candidates, unregistered
+targets, material regressions, and a repair history that ends in a diagnostic
+subset. The checked registry still records several unavailable trusted targets,
+so the gate correctly remains blocked until benchmark owners register them;
+implementing the gate does not close a benchmark or non-regression checklist
+item.
 
 ### Behavioral acceptance control artifacts
 
@@ -171,7 +175,7 @@ start and is strict JSON of this shape (abbreviated to one suite here):
 
 ```json
 {
-  "format_version": 1,
+  "format_version": 2,
   "candidate_id": "final-2026-09-02-01",
   "revision": "0123456789abcdef0123456789abcdef01234567",
   "executable_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -188,18 +192,27 @@ start and is strict JSON of this shape (abbreviated to one suite here):
     {
       "id": "fdb-v1.5",
       "execution_requirement_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "run_spec_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "task_inventory_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "scorer_sha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "source_receipts": [
+        {
+          "kind": "deterministic-source",
+          "artifact_format": "openrealtime.candidate-source-receipt"
+        }
+      ],
       "lineage": [
         {
           "campaign_id": "fdb15-failed-full-01",
           "kind": "failed_full",
           "population": 498,
-          "artifact_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          "artifact_sha256": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         },
         {
           "campaign_id": "fdb15-focused-fix-01",
           "kind": "focused_diagnostic",
           "population": 24,
-          "artifact_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          "artifact_sha256": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
         },
         {
           "campaign_id": "fdb15-final-full-02",
@@ -214,35 +227,114 @@ start and is strict JSON of this shape (abbreviated to one suite here):
 
 The real declaration must contain all eight uniquely sorted suite IDs. Its one
 global revision, executable digest, and exact machine identity must match every
-result. Each suite pins the SHA-256 of the canonical bytes emitted by
-`bench.MarshalExecutionRequirement`, which binds Graph IR, values,
+closure and result. Each suite pins the SHA-256 of the canonical bytes emitted
+by `bench.MarshalExecutionRequirement`, which binds Graph IR, values,
 deployment, and live element/runtime identities; it is not a digest of an
-arbitrarily formatted source file.
+arbitrarily formatted source file. It also pins three pre-run canonical
+artifacts: the complete behavior-affecting command/environment/endpoint run
+specification, the exact sorted task inventory, and the deterministic scorer
+implementation plus immutable scorer inputs. The source-receipt requirements
+freeze semantic kinds and schemas before the receipts can exist.
 
 Lineage is chronological. A suite with no observed regression has only its
-unsealed final `final_full` row. Every `failed_full` row retains the failed
-artifact digest and requires a later retained `focused_diagnostic`; the last
-row must then be a new complete `final_full` result. A focused population must
-remain smaller than the suite population, and every row labelled as a full run
-must have the exact complete population. The acceptance report seals the final
-result digest, so the last declaration row intentionally has no artifact
-digest. A focused pass without the subsequent complete affected-suite rerun is
-rejected.
+predeclared final `final_full` row. Every `failed_full` row retains the raw
+canonical digest of its campaign closure and requires a later retained
+`focused_diagnostic` closure; the last row must then be a new complete
+`final_full` campaign. A focused population must remain smaller than the suite
+population, and every row labelled as a full run must have the exact complete
+population. The final closure does not exist when the candidate is frozen, so
+the last declaration row intentionally has no artifact digest. Its closure
+must name that exact campaign and directly bind every earlier closure in
+chronological order. A focused pass without the subsequent complete
+affected-suite rerun is rejected.
 
-Run the acceptance command directly only after all final result paths exist:
+### Campaign closure contract
+
+All artifacts referenced by a closure use canonical flat filenames in the
+closure's directory. They may not use absolute paths, parent traversal, nested
+directories, or symlinks. The static run specification, task inventory, and
+scorer manifest are canonical compact JSON terminated by one newline. Generate
+and review them before freezing the candidate; the candidate pins their raw
+SHA-256 values. Endpoint entries retain only secret-free normalized endpoint
+digests, and the public environment list must never contain credentials.
+
+For example, the referenced `fdb15.run-spec.json` includes the explicit working
+directory as well as the positional argument vector; an omitted working
+directory or executable is invalid, while an intentionally empty non-leading
+argument remains representable:
+
+```json
+{"format":"openrealtime.behavioral-run-spec","format_version":1,"suite_id":"fdb-v1.5","campaign_id":"fdb15-final-full-02","working_directory":"repository-root","arguments":["openrealtime","bench","fdb","-endpoint",""],"environment":[{"name":"OPENREALTIME_RELEASE_MODE","value":"true"}],"endpoints":[{"name":"realtime","sha256":"sha256:..."}]}
+```
+
+After a campaign, wrap each externally retained suite source receipt in an
+`openrealtime.behavioral-artifact-receipt`. The wrapper records its semantic
+kind, the underlying receipt's format, flat filename, exact raw digest, the
+underlying receipt's path-independent `receipt_sha256`, and a wrapper
+self-digest. The closure then binds the wrappers, result, exact sorted task
+inventory, a digest of all complete task rows, and every predecessor closure.
+Its draft has this abbreviated shape:
+
+```json
+{"format":"openrealtime.behavioral-campaign-closure","format_version":1,"suite_id":"fdb-v1.5","campaign_id":"fdb15-final-full-02","candidate_id":"final-2026-09-02-01","candidate_sha256":"sha256:...","revision":"0123456789abcdef0123456789abcdef01234567","executable_sha256":"sha256:...","machine":{"cores":32,"os":"linux","arch":"amd64","go_version":"go1.25.0"},"execution_requirement_sha256":"sha256:...","run_spec":{"format":"openrealtime.behavioral-run-spec","format_version":1,"path":"fdb15.run-spec.json","artifact_sha256":"sha256:..."},"inventory":{"format":"openrealtime.behavioral-task-inventory","format_version":1,"path":"fdb15.inventory.json","artifact_sha256":"sha256:..."},"source_receipts":[{"format":"openrealtime.behavioral-artifact-receipt","format_version":1,"path":"fdb15.source.wrapper.json","artifact_sha256":"sha256:..."}],"result":{"format":"bench_result","format_version":1,"path":"candidate-fdb15.json","artifact_sha256":"sha256:..."},"scorer":{"format":"openrealtime.behavioral-scorer","format_version":1,"path":"fdb15.scorer.json","artifact_sha256":"sha256:..."},"expected_population":498,"task_population_sha256":"sha256:...","predecessors":[],"closure_sha256":""}
+```
+
+Repair predecessors need not—and normally cannot—share the final candidate's
+revision or executable. A behavior-affecting repair creates a new candidate.
+Every predecessor closure is independently reopened and must belong to the
+same suite, while the frozen final-candidate declaration binds its exact digest,
+campaign identity, population, and chronological role. Only the eight accepted
+final closures must all name the one final frozen candidate and executable.
+Requiring old failed closures to claim that final identity would make a real
+code-repair lineage impossible.
+
+Publish that draft only through the verifier. It first reopens and hashes every
+artifact, decodes the typed manifests with unknown-field rejection, confirms
+the result IDs exactly equal the pre-run inventory, recursively verifies the
+predecessors, calculates `closure_sha256`, writes with create-only semantics,
+and reopens the published closure:
+
+```sh
+go run ./internal/releasevalidation/cmd/campaignclosure \
+  -draft .runtime/release/final/fdb15.closure.draft.json \
+  -out .runtime/release/final/candidate-fdb15.closure.json
+```
+
+The closure verifier accepts only repository-owned receipt schemas. It invokes
+the generic candidate-source verifier for FDB v1.5, FDB v3, FD-Bench, and
+τ-Voice; the scenario source verifier; the Meeting source verifier; or the
+Realtime-CU source verifier. Each implementation reopens the complete retained
+tree against its external receipt, and the deterministic result digest returned
+by that verifier must equal the closure's result digest. An unknown receipt
+schema fails; a byte-valid wrapper cannot nominate its own trusted verifier.
+
+The closure is still a content-integrity receipt, not a signature or proof that
+an untrusted author really ran a model. The generic candidate source verifier
+reconstructs and cross-checks retained attempts, completions, transcripts,
+media, and deterministic rows. Recovered FDB v1.5, FDB v3, and FD-Bench
+attempts are suite-rescored before they may seal; recovered τ-Voice attempts
+currently fail closed because the retained trace cannot independently replay
+the authoritative tau2 score. Acceptance does not claim to rerun every suite's
+scorer from raw media. A release job must also retain the resulting closure in
+an independently controlled artifact store; fabricating a coherent replacement
+universe is outside what an unkeyed SHA-256 receipt can detect. A result JSON
+alone, a self-declared `final_full` label, or a closure whose bound artifacts
+drift cannot pass.
+
+Run the acceptance command directly only after all eight final closures exist:
 
 ```sh
 go run ./internal/releasevalidation/cmd/behavioracceptance \
   -targets scripts/behavioral-acceptance-targets.json \
   -candidate "$OPENREALTIME_BEHAVIORAL_CANDIDATE" \
-  -result fd-bench=.runtime/release/final/candidate-fdbench6147.json \
-  -result fdb-v1.5=.runtime/release/final/candidate-fdb15.json \
-  -result fdb-v3=.runtime/release/final/candidate-fdb3.json \
-  -result meeting-cascade=.runtime/release/final/candidate-meeting-cascade.json \
-  -result realtime-cu=.runtime/release/final/candidate-realtime-cu.json \
-  -result scenario=.runtime/release/final/candidate-scenario.json \
-  -result tau-control=.runtime/release/final/candidate-tau-control.json \
-  -result tau-regular=.runtime/release/final/candidate-tau-regular.json \
+  -closure fd-bench=.runtime/release/final/candidate-fdbench6147.closure.json \
+  -closure fdb-v1.5=.runtime/release/final/candidate-fdb15.closure.json \
+  -closure fdb-v3=.runtime/release/final/candidate-fdb3.closure.json \
+  -closure meeting-cascade=.runtime/release/final/candidate-meeting-cascade.closure.json \
+  -closure realtime-cu=.runtime/release/final/candidate-realtime-cu.closure.json \
+  -closure scenario=.runtime/release/final/candidate-scenario.closure.json \
+  -closure tau-control=.runtime/release/final/candidate-tau-control.closure.json \
+  -closure tau-regular=.runtime/release/final/candidate-tau-regular.closure.json \
   -report .runtime/release/final/behavioral-acceptance.json
 ```
 
@@ -251,8 +343,9 @@ has the exact population and identity and clears every registered target;
 `failed` means candidate evidence or an observed value violates the contract;
 `blocked` means required trusted target data is honestly unavailable. Both
 `failed` and `blocked` exit 1. Malformed control artifacts, invocation errors,
-or an existing report path exit 2. Passing unit and integration tests merely
-verify this machinery; only the complete frozen campaigns and a `passed`
+the deprecated unsealed `-result` flag, or an existing report path exit 2.
+Passing unit and integration tests merely verify this machinery; only the
+complete frozen campaigns, all independently verified closures, and a `passed`
 report can close the behavioral benchmark gates.
 
 The graph-native scenario candidate also owns a create-only human/media review
