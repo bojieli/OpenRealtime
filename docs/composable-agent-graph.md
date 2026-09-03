@@ -1806,8 +1806,10 @@ reconstruction, or alternate benchmark path.
 Last reconciled with the repository on **2026-09-03**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
-ledger and `git log origin/main..main` together identify the accepted local
-checkpoints without relying on a self-referential “latest commit” marker.
+ledger and the reconciled commits already present in branch history identify
+accepted checkpoints without relying on a self-referential “latest commit”
+marker. Remote divergence and worktree state are transport and editing facts,
+not completion oracles.
 
 A checked box means the implementation and the evidence required by that item
 are both present. Partially implemented work stays unchecked and names what is
@@ -1847,8 +1849,8 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this reconciliation, 295 of 361 explicit tracker boxes are checked (81.7%)
-and 66 remain open. The percentage records completed reviewable slices; it does
+At this reconciliation, 297 of 362 explicit tracker boxes are checked (82.0%)
+and 65 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -1861,13 +1863,13 @@ is rerun against that exact candidate. The current critical path is:
 | Required cell | Current evidence and diagnosis | Next acceptance gate |
 | --- | --- | --- |
 | Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns | Exercise the landed continuation/admission repairs, fix any remaining behavior, then run 11 cases x 15 |
-| Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence | Rerun from the eventual shared final candidate |
-| Realtime-CU (16) | Clean `b535b15` campaign executed and reviewed 16/16 but scored 14/16; both camera tasks acted before fresh hazard evidence, and moving-target/transient cases exposed post-success continuation. Future evidence now has settlement-aware state/action/state scoring and a generic temporal-admission primitive, but that primitive is not wired into the production graph | Timestamp the durable intent, wire and validate temporal admission, add bounded post-effect settlement, run the affected focused cases, then rerun all 16 |
-| FDB v1.5 (498) | Earlier 498/498 execution retained severe interruption-quality regression; several general lifecycle, overlap, addressing, and policy-grounding defects are repaired | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
+| Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
+| Realtime-CU (16) | Clean `b535b15` campaign executed and reviewed 16/16 but scored 14/16; both camera tasks acted before fresh hazard evidence, and moving-target/transient cases exposed post-success continuation. Production now timestamps durable intent, routes observation commit through typed temporal admission into activation, re-attests evidence at the consumer, and applies cancellation floors. Focused normal/race/mounted/endpoint tests are green, but no live repaired-camera or settlement benchmark has run | Add graph-visible bounded post-effect settlement, run both camera and both moving-target cases, diagnose and repair any failures, then rerun all 16 from one frozen candidate |
+| FDB v1.5 (498) | Earlier diagnostic completed 498/498 and passed 355; interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
 | FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result. A full mounted endpoint regression now proves deployment-owned spoken-ID normalization without changing raw proposals, provider schemas, or speech | Run the exact failed task, preregister and run a representative slice, then rerun all 100 from one frozen candidate |
-| FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete and tied to an obsolete candidate | Finish restartable, independently rescored retention and run all 21 conditions |
-| tau-Voice control (278) | Population and pinned upstream boundary exist; no qualifying final-candidate campaign | Run all 278 control tasks with retained review evidence |
-| tau-Voice regular (278) | Population and pinned upstream boundary exist; no qualifying final-candidate campaign | Run all 278 regular tasks with retained review evidence |
+| FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete; its obsolete executable rejected resume and cannot be mixed with a later candidate | Finish restartable, independently rescored retention and rerun all 21 conditions from one candidate |
+| tau-Voice control (278) | An older nonreportable diagnostic completed 278/278 and passed 160; the pinned 50/114/114 upstream population now exists, but no graph-native final-candidate campaign does | Run all 278 control tasks with retained review evidence |
+| tau-Voice regular (278) | The pinned 50/114/114 upstream population exists; the required regular campaign has not started | Run all 278 regular tasks with retained review evidence |
 
 Accordingly, the architecture tracker percentage is useful for locating
 implemented slices, but it is not a release percentage. The release remains
@@ -1878,7 +1880,7 @@ deadline, and latency targets and their evidence is independently reopened.
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Production Realtime-CU temporal-admission/activation composition, shared-server launch integration, and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, production Realtime-CU admission/activation composition with timestamped intent and mounted shared-server endpoint coverage, cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Graph-visible Realtime-CU post-effect settlement/quiescence and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
@@ -1893,13 +1895,24 @@ Current checkpoint notes:
   until their review and required evidence are complete; no hard-coded branch
   or remote position is a completion oracle.
 - This reconciliation pins Scenario Conversation graph fingerprint
-  `sha256:b80c6d721e45ab7a4a89b6264d821807b899502c6f74880eab456ac55841ca2e`
-  and Realtime-CU graph fingerprint
-  `sha256:41783296ff87a28b4fb9b52a4d0dadcffe8be79cb223558231ca00086f9a6285`.
-  The Realtime-CU activation descriptor is revision 7 at
-  `sha256:fdb826e2867506e8396be76d4caf1b30bd180c3ddadbd8912adc21c7877575d4`,
-  with runtime and implementation revision 7. Strict computer-use graph
-  validation passes. Scenario source is canonical and locked; its general
+  `sha256:b80c6d721e45ab7a4a89b6264d821807b899502c6f74880eab456ac55841ca2e`.
+  Realtime-CU now pins source digest
+  `sha256:cd9eb5452f6fefe3ae4ed1ce3b728de9e747d94c6581f660840950b0449e64f0`,
+  lock digest
+  `sha256:040c8a904306de16527536241a9ccc805be65ccac08c3a3c1327837522ae19bb`,
+  values digest
+  `sha256:c98cb622506aec8e3a4bb0246b5e67b881d76ee2561da47ef790b4a083e0c4bc`,
+  graph fingerprint
+  `sha256:7f7a2d7d93231236350b9eec8f774c6c1c74451a0be5eb447225e491bea6eb1c`,
+  and plan fingerprint
+  `sha256:0384b009fb10d90742f31e7585de2a30bfb5706fc10f1e078f34dbe16704490d`.
+  The activation descriptor is revision 9 at
+  `sha256:3f110646c31efba255c5a3b6d089a95bb648f0584e1acffb269d119e4631baf0`,
+  with runtime `/activation/v9` and implementation revision 9. The reusable
+  temporal-admission descriptor is revision 1 at
+  `sha256:91e7c9bdd498945efc09eb34f0e29679c3de752bbb98455d33fa672a437a8ee8`.
+  Strict computer-use graph formatting and profile validation pass. Scenario
+  source is canonical and locked; its general
   conversational validator still reports `W_NO_TERMINAL_OUTCOME` for the named
   intentional `flow.Drop` that consumes silent-model text, so this document
   makes no warning-free Scenario claim.
@@ -1912,14 +1925,25 @@ Current checkpoint notes:
   clean mounted Scenario unchanged-Realtime-endpoint regression passes 100
   repetitions. These are implementation and concurrency checks only: no live
   benchmark population or final-candidate gate is inferred from them.
-- The current worktree additionally passes the complete Realtime-CU package,
-  its race-enabled package, all Realtime-CU CLI tests, the full repository test
-  and vet gates, and focused normal/race endpoint tests for both byte-exact and
-  normalized Scenario tool lifecycles. `policy.TemporalEvidenceAdmission`
-  passes its element, schema/catalog, graph, repeated, race, and vet checks.
-  These checks prove the implementation slices named below; no live model,
-  focused benchmark, complete-suite rerun, or frozen-candidate attempt is
-  inferred from them.
+- The committed settlement/scoring, temporal-policy, and Scenario endpoint
+  normalization slices were validated with their focused normal/race/vet
+  checks plus repository-wide test and vet gates before they entered branch
+  history. Those checks prove only the named implementation slices; they do
+  not establish the state of a later dirty worktree, a live model, a focused
+  benchmark, a complete-suite rerun, or a frozen-candidate attempt.
+- The production Realtime-CU temporal-admission checkpoint was validated on Go
+  1.25.0 with focused normal, race, and vet gates over `elements`,
+  `elements/policy`, `graph/binding/realtimecu`, `gateway`, `graphs`, and the
+  CLI profile; strict graph format and `computer-use` profile checks; and
+  repository-wide `go test ./... -count=1` plus `go vet ./...` from a clean
+  detached worktree at the exact committed code checkpoint. Independent audit
+  found and drove closure of an explicit-source/mode-forgery gap, an
+  immediate-mode cancellation-floor gap, and a scheduling-sensitive timestamp
+  assertion before push. The repaired forgery and cancellation cases passed
+  twenty repetitions each; camera reactivation passed ten and the stable
+  WebSocket endpoint passed five. A final read-only re-audit reported no
+  material blocker. These are implementation gates only: they add zero
+  attempts to the frozen-candidate benchmark ledger.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
@@ -1974,8 +1998,8 @@ Current checkpoint notes:
   targeted race, every real-Chromium profile, and the shared browser/native
   companion gate are green. The remaining phase gates concern complete
   server/native presentation lifecycle evidence rather than visual mutation.
-- Seven of the fifteen project-level definition-of-done outcomes are proven end
-  to end. The remaining eight have named completed subgates, but direct
+- Eight of the fifteen project-level definition-of-done outcomes are proven end
+  to end. The remaining seven have named completed subgates, but direct
   benchmark execution, production inspection, reconciliation, native-client
   evidence, and obsolete-path deletion are still outstanding.
 
@@ -2355,10 +2379,12 @@ Reference-agent tracker:
   canonical-call commit, idempotent ledger commit, and dispatch before a client
   effect can occur. The exact tool result and subsequent visual observation
   re-enter the canonical trajectory before another effect is admitted. Its
-  stable Realtime endpoint regression exercises that complete two-effect loop,
-  and the clean reviewed Chromium-backed candidate campaign passed all sixteen
-  pixel and set-of-mark cases with synchronized A/V and exact live graph
-  attestation.
+  stable Realtime endpoint regression exercises that complete two-effect loop.
+  The later clean reviewed Chromium-backed campaign executed and independently
+  reopened all sixteen pixel and set-of-mark cases with synchronized A/V and
+  exact live graph attestation, but scored only 14/16: the two physical-camera
+  cases acted before fresh hazard evidence, and post-success continuation was
+  also retained for repair. That campaign is diagnostic, not acceptance.
 - [x] Independent voice and computer-use policies composed in one graph. The
   production Scenario Conversation topology has separate voiced and silent
   invocation branches over one committed trajectory. Voiced prepared text is
@@ -3196,17 +3222,24 @@ the required new 165-attempt sample.
       and settlement. This corrects future evidence only; it is not a runtime
       reactivation policy and does not retroactively accept or reject the
       immutable `b535b15` campaign.
-    - [x] Make the stronger Realtime-CU score independently reproducible from
-      retained evidence. Review context v3 pins exact scorer identity
+    - [x] Make the stronger Realtime-CU score reproducible for completed v3
+      rows. Review context v3 pins scorer identity
       `openrealtime.realtime-cu.settled-success.v1`, the timeout bit, action
       ordinals, timestamps, and every before/after page state. Completion and
-      offline source/final verification reconstruct the authored case and
-      require an exact deterministic rescore. Genuine context-v2 source
-      receipts remain credential-free integrity-verifiable as diagnostic
-      evidence through their verbatim legacy schema, but are explicitly
-      verification-only and are rejected before resume, provider invocation,
-      chmod, recovery, or new publication.
-    - [ ] Add a general graph-composable temporal-evidence admission policy for
+      offline source/final verification reconstruct each completed authored
+      case and require an exact deterministic rescore. The verbatim context-v2
+      schema remains integrity-verifiable and explicitly verification-only;
+      v2 is rejected before resume, provider invocation, chmod, recovery, or
+      new publication.
+    - [ ] Close the remaining exact Realtime-CU replay gaps before calling the
+      evidence path universal. Incomplete v3 rows need a replayable structured
+      failure witness instead of bypassing rescore; action duration must be
+      retained in a representation that cannot change when Go's hidden
+      monotonic clock is removed by serialization; the scorer identity must be
+      bound to its exact implementation; and legacy-v2 compatibility needs a
+      genuine checked-in historical golden rather than only a fixture generated
+      by the current implementation.
+    - [x] Add a general graph-composable temporal-evidence admission policy for
       condition-dependent effects. It must bind the qualifying observation's
       source and causal freshness to the durable user intent, fail closed on
       stale or missing evidence, and remain useful beyond this benchmark; a
@@ -3220,12 +3253,26 @@ the required new 165-attempt sample.
         for every pair, so fresh screen evidence cannot substitute for camera,
         and newer stale, malformed, wrong-source, or noncausal evidence fails
         closed instead of falling back to an older valid frame.
-      - [ ] Give every production Realtime-CU durable user intent a positive
+      - [x] Give every production Realtime-CU durable user intent a positive
         occurrence timestamp, change activation to consume and validate the
         typed temporal admission, wire the selected source policy in the
         locked graph/values/descriptor artifacts, and execute mounted
-        cancellation/revocation regressions. Until this is done, the reusable
-        element is not a claim that the camera bug is repaired.
+        cancellation/revocation regressions. `binding.TextInput` carries an
+        optional source time, the gateway stamps typed input in Unix
+        nanoseconds, audio/video preserve their source timestamp, and direct
+        untimed callers receive a commit-clock fallback. The production graph
+        now connects observation commit through `after_intent` /
+        `observed_before_intent` admission to revision-9 activation. Activation
+        independently verifies the exact prefix, trigger, durable intent,
+        complete frozen observer/source cohort, post-intent causal freshness,
+        and absence of later user authority against its independently pinned
+        `expected_admission` contract, so a typed-but-forged payload cannot
+        downgrade the timing mode or replace an explicit source set.
+        Cancellation records sequence and store-version revocation floors in
+        both immediate and after-intent modes. Focused element, adapter, mounted
+        cancellation/recovery, multi-source, and stable WebSocket endpoint
+        regressions pass. This closes the production implementation gate, not
+        the still-open focused live-camera, settlement, or exact-sixteen gates.
     - [ ] Add a graph-visible post-effect settlement/quiescence policy that
       stops reactivation after the task's success evidence while preserving
       legitimate multi-step intents such as focus, type, and submit. Exercise
@@ -5128,9 +5175,10 @@ checked from foundation work alone; each requires end-to-end release evidence.
     regression gates, and every discovered regression has been fixed and
     followed by a complete-suite rerun. Historical per-attempt artifacts are
     not reconstructed or required.
-  - [x] Complete, independently reopened graph-native candidate populations now
-    exist for Meeting Assistant (4/4) and Realtime-CU (16/16), with exact live
-    graph evidence, retained media, deterministic outcomes, exact-model
+  - [x] Complete, independently reopened graph-native diagnostic populations
+    now exist for Meeting Assistant (4/4 accepted in its historical campaign)
+    and Realtime-CU (16/16 executed and reopened, 14/16 scored), with exact
+    live graph evidence, retained media, deterministic outcomes, exact-model
     advisory review, and create-only source/evaluation receipts. The prior FDB
     v3 100-attempt campaign remains retained but is acceptance-invalid because
     its scorer admitted extra effects. A repaired FDB v3 population, the final

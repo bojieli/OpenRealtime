@@ -43,7 +43,10 @@ rejected before it can cross the corresponding boundary.
 The external-effect path is:
 
 ```text
-committed user observation
+committed user observation + pre-intent observer/source cohort
+  -> fresh post-intent causal observations
+  -> temporal-evidence admission
+  -> durable activation
   -> proposal + canonical provenance
   -> declaration -> confirmation -> target fence
   -> canonical call -> irreversibility ledger
@@ -56,6 +59,28 @@ per-session client rendezvous supplied by the adapter plugin. The adapter does
 not render a call until `dispatch.committed` proves the graph has crossed that
 boundary. It does not accept a client result before that emission.
 
+The reference values configure `policy.TemporalEvidenceAdmission` as
+`after_intent` with `observed_before_intent`. The policy freezes the bounded
+observer/source cohort that was actually present before the newest final user
+intent, then admits activation only when each exact pair has a newer causal
+observation. A fresh screen observation therefore cannot stand in for a stale
+camera observation. The typed admission carries the exact prefix, trigger,
+durable intent, and qualifying observation identities; activation independently
+revalidates those identities against the canonical trajectory. Developers can
+replace this policy in another graph, including with its `immediate` mode,
+without changing the model or action path; they must also set activation's
+`expected_admission` to the same contract. This independent pin prevents a
+typed-but-forged admission from downgrading the timing mode or substituting a
+smaller explicit observer/source requirement.
+
+Final user intent also has explicit source time. Audio/video observations keep
+their capture timestamp; `binding.TextInput.OccurredNS` carries typed-input
+time, and the protocol gateway stamps it in Unix nanoseconds at dispatch. A
+direct binding caller that omits the optional field receives a commit-clock
+fallback rather than creating untimed durable intent. Temporal admission can
+therefore compare every qualifying observer sample with one positive intent
+time without inferring timing from modality or arrival order.
+
 After `action.ToolResultCommit` publishes a canonical result, the adapter
 notifies the observer through `Observer.Consequence`. The next screen
 observation causally names both the durable canonical user task and that exact
@@ -65,9 +90,10 @@ shared `authority.ProposalAdmission` element. This makes an unchanged screen
 meaningful feedback too: an observer can force one post-effect sample and then
 return to its normal sparse cadence. Camera observations inherit the user task
 but never the screen-effect result parent. Ordinary camera/screen cadence is
-still committed as context, but it cannot independently reactivate cognition;
-only a new canonical user task or the first screen carrying a new canonical
-tool result is an activation boundary.
+still committed as context. Once temporal admission has established a durable
+intent, later changed observer evidence may reactivate cognition so a waiting
+condition can be detected; the activation policy still serializes one unsettled
+generation/effect and consumes each exact post-effect screen consequence.
 
 Canonical results awaiting visual evidence are retained in a bounded FIFO;
 they are never stored in a replaceable "latest result" slot. Each nonempty
@@ -78,9 +104,12 @@ session fails closed before another consequence notification instead of
 discarding or reparenting causal evidence.
 
 An addressed Realtime cancellation also crosses the graph. The adapter waits
-for the durable-activation cancellation outcome before returning, so a frame
-already in flight cannot reorder behind the cancellation and silently revive
-the old intent. A later user observation may establish a new task normally.
+for the durable-activation cancellation outcome before returning. Activation
+records both the runtime sequence and canonical store-version revocation floors
+in every admission mode, so an admission already in flight cannot reorder
+behind cancellation and revive the old intent even when its runtime sequence is
+absent or newer. A later timestamped user observation may establish a new task
+normally.
 
 ## Application profile and plugin registry
 
@@ -210,6 +239,23 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
+The 2026-09-03 production checkpoint pins graph fingerprint
+`sha256:7f7a2d7d93231236350b9eec8f774c6c1c74451a0be5eb447225e491bea6eb1c`
+and plan fingerprint
+`sha256:0384b009fb10d90742f31e7585de2a30bfb5706fc10f1e078f34dbe16704490d`.
+Its activation descriptor/runtime/implementation are revision 9 with descriptor
+digest
+`sha256:3f110646c31efba255c5a3b6d089a95bb648f0584e1acffb269d119e4631baf0`;
+the temporal-admission descriptor is revision 1 with digest
+`sha256:91e7c9bdd498945efc09eb34f0e29679c3de752bbb98455d33fa672a437a8ee8`.
+The dedicated activation values schema requires the independent admission
+contract without widening the generic generation schema. Focused
+normal/race/vet, strict graph, explicit-source and mode-forgery refusal,
+all-mode cancellation/recovery, multi-source freshness, and stable WebSocket
+endpoint gates pass, followed by repository-wide test and vet from a clean
+detached worktree. These are implementation checks, not live model quality
+evidence.
+
 The WebSocket integration test launches the real locked graph through the
 strict application registration, generic profile registry, and
 `server.NewProfileGraphBundle`. It then sends microphone evidence, observes a
@@ -222,7 +268,8 @@ visual-consequence checkpoints through the unchanged endpoint.
 Separate negative tests cover unknown configuration fields, application/model/
 observer artifact or descriptor drift, source and target widening, schema
 drift, unknown tools, premature or mismatched results, camera/user-authority
-drift, and incorrect post-effect causality. Each profile negative asserts that
+drift, stale or wrong-source temporal evidence, cancellation/revocation, and
+incorrect post-effect causality. Each profile negative asserts that
 neither the model nor observer factory was acquired.
 
 All eight authored task families under pixel and set-of-mark grounding select
@@ -241,3 +288,12 @@ credential-free integration tests establish wiring and safety invariants, not
 model quality or benchmark non-regression; publish performance only after the
 full sixteen live cases finish against the exact candidate endpoint and their
 result artifact passes the repository's release validation.
+
+The latest retained live diagnostic predates this production wiring: it ran all
+16 cases and scored 14/16, with both camera cases acting before fresh hazard
+evidence and moving-target/transient cases exposing post-success continuation.
+No live case has yet validated this temporal repair. The remaining behavioral
+sequence is to add graph-visible post-effect settlement/quiescence, run both
+camera and both moving-target variants, diagnose and repair any failures, and
+then rerun all 16 from one frozen candidate. Nothing in the implementation
+checks above advances the project-wide 0/7,486 final-candidate attempt ledger.
