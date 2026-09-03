@@ -23,7 +23,7 @@ func TestStandardCatalogsConstruct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot := discovery.Snapshot(); len(snapshot.Implementations) != 46 ||
+	if snapshot := discovery.Snapshot(); len(snapshot.Implementations) != 47 ||
 		len(snapshot.Dependencies) != 3 {
 		t.Fatalf("standard assembly discovery = %+v", snapshot)
 	}
@@ -39,7 +39,7 @@ func TestStandardFactoryRegistrationsCoverTheDescriptorCatalogExactly(t *testing
 		t.Fatal(err)
 	}
 	names := descriptors.Names()
-	if len(registrations) != 46 || len(registrations) != len(names) {
+	if len(registrations) != 47 || len(registrations) != len(names) {
 		t.Fatalf("standard inventory has %d registrations and %d descriptors", len(registrations), len(names))
 	}
 	for index, registration := range registrations {
@@ -109,6 +109,7 @@ func TestStandardAssemblyInventoryNamesEveryExternalPluginGap(t *testing.T) {
 		"policy.semantic.deciders",
 		"speech.playback.sinks",
 		"speech.tts.providers",
+		"state.trajectory.store",
 	}
 	wantOptional := []string{
 		"cognition.media.resolver",
@@ -116,13 +117,12 @@ func TestStandardAssemblyInventoryNamesEveryExternalPluginGap(t *testing.T) {
 		"interaction.post-commit-silence.scheduler",
 		"perception.media.retainer",
 		"speech.playback.scheduler",
-		"state.trajectory.store",
 	}
 	wantRuntime := []string{"runtime.clock", "runtime.secrets", "runtime.sequence"}
 	if !slices.Equal(inventory.ExternalRequiredDependencies, wantRequired) ||
 		!slices.Equal(inventory.ExternalOptionalDependencies, wantOptional) ||
 		!slices.Equal(inventory.RuntimeDependencies, wantRuntime) ||
-		len(inventory.Implementations) != 46 || len(inventory.ConfigSchemas) != 36 ||
+		len(inventory.Implementations) != 47 || len(inventory.ConfigSchemas) != 37 ||
 		len(inventory.UnresolvedConfigSchemas) != 0 {
 		t.Fatalf("standard assembly inventory = %+v", inventory)
 	}

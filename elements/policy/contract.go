@@ -288,6 +288,7 @@ func boundedPolicyReason(value string) string {
 func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
 		GenerateOnObservationDescriptor(), SessionInvocationDescriptor(), SemanticAdmissionDescriptor(),
+		TemporalEvidenceAdmissionDescriptor(),
 	}
 }
 

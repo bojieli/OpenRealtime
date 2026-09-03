@@ -42,8 +42,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 36 {
-		t.Fatalf("standard config schema count = %d, want 36", len(references))
+	if len(references) != 37 {
+		t.Fatalf("standard config schema count = %d, want 37", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -226,7 +226,7 @@ func BenchmarkStandardConfigSchemaCatalog(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(catalog.References()) != 35 {
+		if len(catalog.References()) != 37 {
 			b.Fatal("incomplete standard config schema catalog")
 		}
 	}
@@ -310,6 +310,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/generate-on-observation-config/v1":               `{"role":"fast","invocation":{"instruction":"Answer briefly."}}`,
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{"decider":"semantic-primary","direct_visual_input":true,"standing_extraction":true,"verify_voice_activation":true,"verify_silent_action":true,"minimum_activation_confidence":0.75}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{"role":"fast"}`,
+		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}`,
 		"schema://openrealtime/speech/playback-config/v1":                              `{"sink":"speaker"}`,
 		"schema://openrealtime/speech/tts-config/v1":                                   `{"provider":"tts"}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":                `{}`,
@@ -351,6 +352,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/generate-on-observation-config/v1":               `{}`,
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{}`,
+		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"eventually"}`,
 		"schema://openrealtime/speech/playback-config/v1":                              `{}`,
 		"schema://openrealtime/speech/tts-config/v1":                                   `{}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":                `{"revision_namespace":""}`,

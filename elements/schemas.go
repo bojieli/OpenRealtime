@@ -423,6 +423,16 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"cancel_memory": largeBoundedState,
 			}, "role",
 		),
+		"schema://openrealtime/policy/temporal-evidence-admission-config/v1": standardObject(
+			"schema://openrealtime/policy/temporal-evidence-admission-config/v1",
+			schemaObject{
+				"mode":       enumSchema("immediate", "after_intent"),
+				"source_set": enumSchema("explicit", "observed_before_intent"),
+				"required": arraySchema(objectSchema(schemaObject{
+					"observer": identifier(256), "source": identifier(256),
+				}, "observer", "source"), 0, 32),
+			}, "mode",
+		),
 		"schema://openrealtime/policy/semantic-admission-config/v3": standardObject(
 			"schema://openrealtime/policy/semantic-admission-config/v3",
 			schemaObject{
