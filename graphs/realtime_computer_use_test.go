@@ -74,10 +74,10 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 		t.Fatal(err)
 	}
 	identity := launched.Plan.Identity()
-	if identity.SourceDigest != "sha256:85b694e61756f9d93c418b8ec1bc6ccdfdcf9af0da9954e4b949e20e360642c7" ||
-		identity.LockDigest != "sha256:3a42050d9927ea8274c668f2d332aa765939013fb9f0b3c57ea708845d39940a" ||
-		identity.GraphFingerprint != "sha256:534a104ecb56a59b429f02a43b8ead58ca0295cabbaa05908fdd31b50fdf463b" ||
-		identity.PlanFingerprint != "sha256:77dc8418ad09f3c5fd1fd551a639e20ff919daf26e4a53044a369543a647f477" {
+	if identity.SourceDigest != "sha256:cd9eb5452f6fefe3ae4ed1ce3b728de9e747d94c6581f660840950b0449e64f0" ||
+		identity.LockDigest != "sha256:8e19702eff825d8b9d632f09fdc93d9b6f063f3896fe5e04ffc191f50b6b882b" ||
+		identity.GraphFingerprint != "sha256:419729da8be106daa609070697ec7f6ae451e57a6202058197c8bac9c84ce9e5" ||
+		identity.PlanFingerprint != "sha256:6a81588327af1de81272cafcef285e49a98662e4b895edb24f42a1098cee709d" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -114,6 +114,13 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 90,
+		Image: []byte{0}, MIMEType: "image/png", Width: 1280, Height: 720,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 90)
 	if err := runtime.Audio(context.Background(), perception.Frame{
 		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
 		PCM16LE: []byte{1, 0, 2, 0}, SampleRateHz: 24_000,
@@ -136,6 +143,18 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}); err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case call := <-sink.calls:
+		t.Fatalf("final intent activated before refreshed screen evidence: %+v", call)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 102,
+		Image: []byte{1}, MIMEType: "image/png", Width: 1280, Height: 720,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 102)
 	callEvent := receiveRealtimeCU(t, sink.calls, "client call")
 	if modelFactories.Load() != 1 {
 		t.Fatalf("model session factories after first cognition = %d, want one", modelFactories.Load())
@@ -244,14 +263,42 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 	}); err != nil {
 		t.Fatal(err)
 	}
+	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
+		if err := runtime.Video(context.Background(), perception.Frame{
+			Kind: perception.FrameImage, Source: source, CapturedNS: uint64(80 + index),
+			Image: []byte{byte(index + 1)}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		receiveRealtimeCUObservation(t, sink.observations, source, uint64(80+index))
+	}
 	if err := runtime.Audio(context.Background(), perception.Frame{
 		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
 		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 110,
+		Image: []byte{3}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 110)
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("fresh screen activated before frozen camera refreshed: %+v", invocation)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceCamera, CapturedNS: 120,
+		Image: []byte{4}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceCamera, 120)
 	initial := receiveRealtimeCU(t, model.invocations, "initial user cognition")
-	if initial.Number != 1 || initial.LastSource != realtimecu.SourceMicrophone || initial.ToolResults != 0 {
+	if initial.Number != 1 || initial.LastSource != realtimecu.SourceCamera || initial.ToolResults != 0 {
 		t.Fatalf("initial cognition = %+v", initial)
 	}
 	select {
@@ -391,14 +438,28 @@ func TestRealtimeComputerUseToolAdmissionSuppressesPlaceholderAndReleasesNextVis
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 90,
+		Image: []byte{1}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 90)
 	if err := runtime.Audio(context.Background(), perception.Frame{
 		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
 		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 110,
+		Image: []byte{2}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 110)
 	first := receiveRealtimeCU(t, model.invocations, "placeholder proposal cognition")
-	if first.Number != 1 || first.LastSource != realtimecu.SourceMicrophone {
+	if first.Number != 1 || first.LastSource != realtimecu.SourceScreen {
 		t.Fatalf("first cognition = %+v", first)
 	}
 	for {
@@ -549,12 +610,26 @@ func TestRealtimeComputerUseGraphNormalizesOnlyTheDeclaredCoordinatePairShape(t 
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 90,
+		Image: []byte{1}, MIMEType: "image/jpeg", Width: 1280, Height: 720,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 90)
 	if err := runtime.Audio(context.Background(), perception.Frame{
 		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
 		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 110,
+		Image: []byte{2}, MIMEType: "image/jpeg", Width: 1280, Height: 720,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 110)
 	event := receiveRealtimeCU(t, sink.calls, "normalized coordinate call")
 	if len(event.Calls) != 1 {
 		t.Fatalf("normalized coordinate event = %+v", event)
@@ -682,7 +757,7 @@ func TestRealtimeComputerUseResourceAwareObserverSharesExactSessionMediaWithMode
 	exactFrame := []byte("exact-session-keyframe-bytes")
 	if err := runtime.Video(context.Background(), perception.Frame{
 		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 100,
-		Image: exactFrame, MIMEType: "image/jpeg", Width: 64, Height: 48,
+		Image: []byte("pre-intent-keyframe"), MIMEType: "image/jpeg", Width: 64, Height: 48,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -700,6 +775,13 @@ func TestRealtimeComputerUseResourceAwareObserverSharesExactSessionMediaWithMode
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 102,
+		Image: exactFrame, MIMEType: "image/jpeg", Width: 64, Height: 48,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 102)
 	resolved := receiveRealtimeCU(t, seenMedia, "model-resolved session keyframe")
 	if !slices.Equal(resolved, exactFrame) {
 		t.Fatalf("model resolved media %q, want %q", resolved, exactFrame)
@@ -753,7 +835,10 @@ func (*testRealtimeCUModel) Continue(
 	_ context.Context, request continuation.Request, emit continuation.Emit,
 ) (continuation.Completion, error) {
 	if len(request.Trajectory.Items) == 0 ||
-		request.Trajectory.Items[len(request.Trajectory.Items)-1].Producer.Phase != trajectory.PhaseUser {
+		!slices.ContainsFunc(request.Trajectory.Items, func(item trajectory.Item) bool {
+			return item.Kind == trajectory.KindObservation &&
+				trajectory.AuthorityOf(item) == trajectory.AuthorityUser
+		}) {
 		return continuation.Completion{StopReason: "stop"}, nil
 	}
 	call := trajectory.ToolCall{
@@ -1004,7 +1089,9 @@ type testRealtimeCUSink struct {
 func newTestRealtimeCUSink() *testRealtimeCUSink {
 	return &testRealtimeCUSink{
 		calls: make(chan legacy.ToolCallEvent, 8), observations: make(chan perception.Observation, 16),
-		transcripts: make(chan legacy.TranscriptEvent, 8), debug: make(chan legacy.DebugEvent, 128),
+		// Graph debug outputs are lossless. Retain enough events for multi-turn
+		// tests that inspect only selected outcomes after the action lifecycle.
+		transcripts: make(chan legacy.TranscriptEvent, 8), debug: make(chan legacy.DebugEvent, 1024),
 	}
 }
 
@@ -1072,6 +1159,19 @@ func receiveRealtimeCU[T any](t *testing.T, source <-chan T, name string) T {
 		var zero T
 		t.Fatalf("timed out waiting for %s", name)
 		return zero
+	}
+}
+
+func receiveRealtimeCUObservation(
+	t *testing.T, source <-chan perception.Observation, wantedSource string, occurredNS uint64,
+) perception.Observation {
+	t.Helper()
+	for {
+		observation := receiveRealtimeCU(t, source, wantedSource+" observation")
+		if observation.Source != wantedSource || observation.OccurredNS != occurredNS {
+			continue
+		}
+		return observation
 	}
 }
 

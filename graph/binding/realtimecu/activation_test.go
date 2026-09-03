@@ -41,8 +41,9 @@ func TestActivationReplaysExactDeferredVisualAfterBlockedNoProposalResult(t *tes
 	visualEnvelope, visualCommit := fixture.appendVisual(t, "screen-84", "84 C; threshold exceeded", "user-task")
 	// Exercise the pointer-payload boundary and mutate the caller-owned value
 	// after admission. Deferred replay must use the pinned committed value.
-	visualEnvelope.Payload = &visualCommit
-	if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+	visualAdmission := visualEnvelope.Payload.(policyelements.AdmittedTemporalEvidence)
+	visualEnvelope.Payload = &visualAdmission
+	if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.runner.deferred == nil || fixture.runner.deferred.commit.StoreVersion != visualCommit.StoreVersion {
@@ -54,8 +55,8 @@ func TestActivationReplaysExactDeferredVisualAfterBlockedNoProposalResult(t *tes
 	}
 
 	wantCommit := visualCommit
-	visualCommit.StoreVersion = 999
-	visualCommit.Context.Prefix.Digest = "mutated-by-caller"
+	visualAdmission.TriggerCommit.StoreVersion = 999
+	visualAdmission.TriggerCommit.Context.Prefix.Digest = "mutated-by-caller"
 	fixture.appendInstruction(t, "later-unrelated-state")
 	close(release)
 	if err := <-resultDone; err != nil {
@@ -96,15 +97,15 @@ func TestActivationDeferredVisualIsCapacityOneLatestWins(t *testing.T) {
 	firstRun, firstVersion := fixture.startGeneration(t, "user-task", "watch the temperature")
 
 	firstEnvelope, firstCommit := fixture.appendVisual(t, "screen-80", "80 C", "user-task")
-	if err := fixture.runner.acceptCommit(context.Background(), firstEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), firstEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	latestEnvelope, latestCommit := fixture.appendVisual(t, "screen-84", "84 C", "user-task")
-	if err := fixture.runner.acceptCommit(context.Background(), latestEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), latestEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	// A delayed older lane must not replace the newer retained world state.
-	if err := fixture.runner.acceptCommit(context.Background(), firstEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), firstEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.runner.deferred == nil || fixture.runner.deferred.commit.StoreVersion != latestCommit.StoreVersion ||
@@ -136,7 +137,7 @@ func TestActivationProposalRetainsLatestVisualUntilEffectDisposition(t *testing.
 	fixture := newActivationTestFixture(t)
 	firstRun, firstVersion := fixture.startGeneration(t, "user-task", "click the warning")
 	visualEnvelope, _ := fixture.appendVisual(t, "screen-warning", "warning visible", "user-task")
-	if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 		t.Fatal(err)
 	}
 
@@ -161,7 +162,7 @@ func TestActivationProposalRetainsLatestVisualUntilEffectDisposition(t *testing.
 	}
 
 	preEffectEnvelope, _ := fixture.appendVisual(t, "screen-still-warning", "warning still visible", "user-task")
-	if err := fixture.runner.acceptCommit(context.Background(), preEffectEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), preEffectEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if outcome := fixture.lastOutcome(t); outcome.Code != "effect_pending" {
@@ -206,6 +207,71 @@ func TestActivationRepetitionSuppressionClearsProposalAfterModelResult(t *testin
 	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationIgnored ||
 		outcome.Code != "effect_repetition_suppressed" || outcome.GenerationID != runID {
 		t.Fatalf("suppression outcome = %+v", outcome)
+	}
+}
+
+func TestActivationSettlesDispositionWithoutSupersededDeferredAdmission(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	intentEnvelope, intentCommit := fixture.appendUser(t, "user-task", "click the warning")
+	if err := fixture.runner.acceptAdmission(context.Background(), intentEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	runID := fixture.trigger.snapshot()[0].RunID
+	intentIdentity := intentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+
+	visualEnvelope, visualCommit := fixture.appendVisual(
+		t, "screen-warning", "warning visible", intentCommit.TrajectoryItemID,
+	)
+	visualEnvelope = afterIntentAdmissionEnvelope(visualEnvelope, intentIdentity)
+	if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	proposal := activationTestProposal("superseded-deferred-call")
+	if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+		runID, intentCommit.StoreVersion, []cognitionelements.ToolProposal{proposal},
+	)); err != nil {
+		t.Fatal(err)
+	}
+	proposalItem := fixture.appendModelProposal(t, runID, proposal)
+	replacementEnvelope, replacementCommit := fixture.appendUser(
+		t, "replacement-task", "click a different warning",
+	)
+	// Simulate the replacement commit reaching the canonical store while the
+	// old admitted visual is still queued behind the active proposal.
+	if err := fixture.runner.acceptEffectTerminal(context.Background(),
+		activationEffectTerminalEnvelope(runID, proposal.Call.CallID)); err != nil {
+		t.Fatalf("superseded deferred admission killed disposition settlement: %v", err)
+	}
+	if fixture.runner.deferred != nil {
+		t.Fatalf("superseded deferred admission was retained: %+v", fixture.runner.deferred)
+	}
+	_, request := fixture.latestDispositionRequest(t)
+	if slices.Contains(request.Items[0].CausalParentIDs, visualCommit.TrajectoryItemID) ||
+		!slices.Equal(request.Items[0].CausalParentIDs, []string{proposalItem.ID}) {
+		t.Fatalf("disposition inherited superseded evidence: %v", request.Items[0].CausalParentIDs)
+	}
+	fixture.commitDisposition(t)
+	if len(fixture.trigger.snapshot()) != 1 {
+		t.Fatalf("superseded admission replayed after disposition: %+v", fixture.trigger.snapshot())
+	}
+
+	replacementIdentity := replacementEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	freshEnvelope, freshCommit := fixture.appendVisual(
+		t, "replacement-screen", "different warning visible", replacementCommit.TrajectoryItemID,
+	)
+	freshEnvelope = afterIntentAdmissionEnvelope(freshEnvelope, replacementIdentity)
+	if err := fixture.runner.acceptAdmission(context.Background(), freshEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	triggers := fixture.trigger.snapshot()
+	if len(triggers) != 2 || fixture.runner.intent == nil ||
+		fixture.runner.intent.itemID != replacementCommit.TrajectoryItemID {
+		t.Fatalf("fresh replacement intent did not activate: intent=%+v triggers=%+v",
+			fixture.runner.intent, triggers)
+	}
+	generate := triggers[1].Payload.(cognitionelements.Generate)
+	if generate.ExpectedContextVersion == nil || *generate.ExpectedContextVersion != freshCommit.StoreVersion {
+		t.Fatalf("replacement generation context = %+v, want %d", generate, freshCommit.StoreVersion)
 	}
 }
 
@@ -486,7 +552,7 @@ func TestActivationSuppressionReplaysVisualThatPredatesNoEffect(t *testing.T) {
 	fixture := newActivationTestFixture(t)
 	runID, contextVersion := fixture.startGeneration(t, "user-task", "click the warning once")
 	visualEnvelope, visualCommit := fixture.appendVisual(t, "screen-changed", "warning changed", "user-task")
-	if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	proposal := activationTestProposal("repeat-call")
@@ -551,7 +617,7 @@ func TestActivationDeferredObservationAfterDispositionUsesItsOwnNewerPrefix(t *t
 		t.Fatalf("test visual version %d is not newer than disposition %d",
 			visualCommit.StoreVersion, dispositionCommit.Version)
 	}
-	if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if len(fixture.trigger.snapshot()) != 1 || fixture.runner.deferred == nil {
@@ -614,7 +680,7 @@ func TestActivationCancellationAndNewIntentCannotCrossDispositionBarrier(t *test
 	replacementEnvelope, replacementCommit := fixture.appendUser(
 		t, "replacement-task", "click a different control",
 	)
-	if err := fixture.runner.acceptCommit(context.Background(), replacementEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), replacementEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if len(fixture.trigger.snapshot()) != 1 || fixture.runner.deferred == nil ||
@@ -665,7 +731,7 @@ func TestActivationToolPolicySuppressionReplaysDeferredVisualInEitherArrivalOrde
 			visualEnvelope, visualCommit := fixture.appendVisual(
 				t, "screen-84", "84 C; threshold exceeded", "user-task",
 			)
-			if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+			if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 				t.Fatal(err)
 			}
 			proposal := activationTestProposal("placeholder-wait")
@@ -782,7 +848,7 @@ func TestActivationNewIntentStartsNormallyAfterSuppression(t *testing.T) {
 	}
 	fixture.commitDisposition(t)
 	replacementEnvelope, replacementCommit := fixture.appendUser(t, "replacement-task", "click a different control")
-	if err := fixture.runner.acceptCommit(context.Background(), replacementEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), replacementEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if len(fixture.trigger.snapshot()) != 2 || fixture.runner.active == nil ||
@@ -801,7 +867,7 @@ func TestActivationReplacementIntentClearsTerminalPendingModelResult(t *testing.
 		t.Fatal(err)
 	}
 	replacementEnvelope, replacementCommit := fixture.appendUser(t, "replacement-task", "click a different control")
-	if err := fixture.runner.acceptCommit(context.Background(), replacementEnvelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), replacementEnvelope); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.runner.pendingTerminal != nil || fixture.runner.active == nil ||
@@ -825,7 +891,7 @@ func TestActivationCancellationAndNewIntentClearDeferredVisual(t *testing.T) {
 		fixture := newActivationTestFixture(t)
 		firstRun, firstVersion := fixture.startGeneration(t, "user-task", "watch the display")
 		visualEnvelope, _ := fixture.appendVisual(t, "screen-changed", "display changed", "user-task")
-		if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+		if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 			t.Fatal(err)
 		}
 		if fixture.runner.deferred == nil {
@@ -860,11 +926,11 @@ func TestActivationCancellationAndNewIntentClearDeferredVisual(t *testing.T) {
 		fixture := newActivationTestFixture(t)
 		fixture.startGeneration(t, "user-task", "watch the display")
 		visualEnvelope, _ := fixture.appendVisual(t, "screen-old-task", "old task state", "user-task")
-		if err := fixture.runner.acceptCommit(context.Background(), visualEnvelope); err != nil {
+		if err := fixture.runner.acceptAdmission(context.Background(), visualEnvelope); err != nil {
 			t.Fatal(err)
 		}
 		newIntentEnvelope, _ := fixture.appendUser(t, "replacement-task", "do something else")
-		if err := fixture.runner.acceptCommit(context.Background(), newIntentEnvelope); err != nil {
+		if err := fixture.runner.acceptAdmission(context.Background(), newIntentEnvelope); err != nil {
 			t.Fatal(err)
 		}
 		if fixture.runner.deferred != nil || fixture.runner.intent == nil ||
@@ -1031,12 +1097,26 @@ func dispositionRejectionEnvelope(
 	return reply
 }
 
+func afterIntentAdmissionEnvelope(
+	envelope element.Envelope, intent policyelements.TemporalEvidenceItemIdentity,
+) element.Envelope {
+	admission := envelope.Payload.(policyelements.AdmittedTemporalEvidence)
+	admission.Mode = policyelements.TemporalEvidenceAdmissionAfterIntent
+	admission.SourceSet = policyelements.TemporalEvidenceSourceSetObservedBeforeIntent
+	admission.DurableIntent = &intent
+	admission.QualifyingObservations = []policyelements.TemporalEvidenceItemIdentity{
+		admission.TriggerObservation,
+	}
+	envelope.Payload = admission
+	return envelope
+}
+
 func (fixture *activationTestFixture) startGeneration(
 	t *testing.T, itemID, content string,
 ) (string, uint64) {
 	t.Helper()
 	envelope, commit := fixture.appendUser(t, itemID, content)
-	if err := fixture.runner.acceptCommit(context.Background(), envelope); err != nil {
+	if err := fixture.runner.acceptAdmission(context.Background(), envelope); err != nil {
 		t.Fatal(err)
 	}
 	triggers := fixture.trigger.snapshot()
@@ -1109,9 +1189,23 @@ func (fixture *activationTestFixture) appendObservation(
 			Prefix: prefix, StateItemID: fmt.Sprintf("trajectory-state-%d", snapshot.Version),
 		},
 	}
+	observer, source := item.Event.Source, item.Event.Channel
+	if item.Observation != nil {
+		observer, source = item.Observation.Observer, item.Observation.Source
+	}
+	identity := policyelements.TemporalEvidenceItemIdentity{
+		TrajectoryItemID: item.ID, TriggerItemID: item.Event.EventID,
+		StoreVersion: snapshot.Version, SourceRevision: item.SourceRevision,
+		OccurredNS: item.Event.OccurredNS, Authority: trajectory.AuthorityOf(item),
+		Observer: observer, Source: source,
+	}
+	admission := policyelements.AdmittedTemporalEvidence{
+		Mode:          policyelements.TemporalEvidenceAdmissionImmediate,
+		TriggerCommit: commit, TriggerObservation: identity, Prefix: prefix,
+	}
 	return element.Envelope{
-		Type: stateelements.ObservationCommitOutcomeType(), ItemID: item.ID + "-commit",
-		SessionID: activationTestSession, Sequence: snapshot.Version, Payload: commit,
+		Type: policyelements.AdmittedTemporalEvidenceType(), ItemID: item.ID + "-admitted",
+		SessionID: activationTestSession, Sequence: snapshot.Version, Payload: admission,
 	}, commit
 }
 

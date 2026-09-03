@@ -224,6 +224,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	assertRealtimeCUNegotiation(t, updated, observer.name)
 
 	frame := realtimeCUJPEG(t, 320, 240)
+	preIntentTimestampMS := time.Now().UnixMilli()
 	for _, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
 		client.send(map[string]any{
 			"type": openrealtime.EventVideoSourceUpdate, "source": source,
@@ -231,7 +232,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		})
 		client.send(map[string]any{
 			"type": openrealtime.EventVideoFrameAppend, "source": source,
-			"frame": frame, "timestamp_ms": 1_000,
+			"frame": frame, "timestamp_ms": preIntentTimestampMS,
 		})
 		client.await(5*time.Second, func(message map[string]any) bool {
 			return message["type"] == openrealtime.EventObservationAdded &&
@@ -248,6 +249,28 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	})
 	if transcript["transcript"] != "click the visible control" {
 		t.Fatalf("endpoint microphone transcript = %+v", transcript)
+	}
+	// Both observer/source pairs present before the intent are frozen. Refresh
+	// each after the final transcript before cognition may activate.
+	time.Sleep(350 * time.Millisecond)
+	freshIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
+	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
+		client.send(map[string]any{
+			"type": openrealtime.EventVideoFrameAppend, "source": source,
+			"frame": frame, "timestamp_ms": freshIntentTimestampMS,
+		})
+		client.await(5*time.Second, func(message map[string]any) bool {
+			return message["type"] == openrealtime.EventObservationAdded &&
+				message["source"] == source &&
+				message["timestamp_ms"] == float64(freshIntentTimestampMS)
+		})
+		if index == 0 {
+			select {
+			case invocation := <-model.invocations:
+				t.Fatalf("fresh screen activated before frozen camera refreshed: %d", invocation)
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
 	}
 	call := client.await(10*time.Second, func(message map[string]any) bool {
 		return message["type"] == "response.function_call_arguments.done"
@@ -269,14 +292,16 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	// changed visual evidence can reactivate only after the model returned no
 	// proposal or the exact proposed effect has a canonical visual consequence.
 	time.Sleep(350 * time.Millisecond)
+	pendingEffectTimestampMS := freshIntentTimestampMS + 1
 	for _, source := range []string{realtimecu.SourceCamera, realtimecu.SourceScreen} {
 		client.send(map[string]any{
 			"type": openrealtime.EventVideoFrameAppend, "source": source,
-			"frame": frame, "timestamp_ms": 1_500,
+			"frame": frame, "timestamp_ms": pendingEffectTimestampMS,
 		})
 		client.await(5*time.Second, func(message map[string]any) bool {
 			return message["type"] == openrealtime.EventObservationAdded &&
-				message["source"] == source && message["timestamp_ms"] == float64(1_500)
+				message["source"] == source &&
+				message["timestamp_ms"] == float64(pendingEffectTimestampMS)
 		})
 	}
 	select {
@@ -312,13 +337,15 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	// A source is rate-limited independently at the negotiated three FPS. Wait
 	// one interval so this is an admitted post-effect screen, not a dropped one.
 	time.Sleep(350 * time.Millisecond)
+	postEffectTimestampMS := pendingEffectTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
-		"frame": frame, "timestamp_ms": 2_000,
+		"frame": frame, "timestamp_ms": postEffectTimestampMS,
 	})
 	feedback := client.await(5*time.Second, func(message map[string]any) bool {
 		return message["type"] == openrealtime.EventObservationAdded &&
-			message["source"] == realtimecu.SourceScreen && message["timestamp_ms"] == float64(2_000)
+			message["source"] == realtimecu.SourceScreen &&
+			message["timestamp_ms"] == float64(postEffectTimestampMS)
 	})
 	if feedback["authority"] != "observer" {
 		t.Fatalf("post-effect screen feedback = %+v", feedback)
@@ -409,7 +436,8 @@ func (model *multiStepRealtimeCUModel) Continue(
 	arguments := json.RawMessage(`{"source":"screen","x":10,"y":20}`)
 	step := 1
 	switch {
-	case results == 0 && trajectory.AuthorityOf(last) == trajectory.AuthorityUser:
+	case results == 0 && last.Kind == trajectory.KindObservation &&
+		last.Observation != nil && last.Observation.Source == realtimecu.SourceCamera:
 	case results == 1 && last.Kind == trajectory.KindObservation &&
 		last.Observation != nil && last.Observation.Source == realtimecu.SourceScreen:
 		step = 2

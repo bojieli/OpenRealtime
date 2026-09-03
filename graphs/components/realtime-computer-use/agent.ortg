@@ -10,6 +10,7 @@ graph realtime_computer_use {
     flow.Tee :: observation_input_copy;
     state.RealtimeComputerUseObservationCommit :: observation_commit;
     state.TrajectoryStore :: trajectory;
+    policy.TemporalEvidenceAdmission :: temporal_evidence_admission;
     policy.RealtimeComputerUseActivation :: activation;
     cognition.TextModel :: model;
     interaction.ControlSerializationQuarantine :: model_control_quarantine;
@@ -63,7 +64,8 @@ graph realtime_computer_use {
     trajectory_rejected_copy.out -> tool_result_commit.rejected;
     trajectory_rejected_copy.out -> activation.disposition_rejected;
     observation_commit.outcome -> observation_outcome_copy.in;
-    observation_outcome_copy.out -> activation.committed;
+    observation_outcome_copy.out -> temporal_evidence_admission.committed;
+    temporal_evidence_admission.admitted -> activation.admitted;
     activation.trigger -> model.trigger;
     activation.authority -> provenance_join.candidate;
     model.text -> model_control_quarantine.text;
@@ -119,6 +121,7 @@ graph realtime_computer_use {
     output trajectory_commit = trajectory_committed_copy.out;
     output trajectory_rejection = trajectory_rejected_copy.out;
     output observation_outcome = observation_outcome_copy.out;
+    output temporal_evidence_admission_outcome = temporal_evidence_admission.outcome;
     output activation_state = activation.state;
     output activation_outcome = activation.outcome;
     output prepared_text = model_control_quarantine.safe_text;

@@ -4,8 +4,23 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 7,
+      "revision": 8,
       "ports": [
+        {
+          "name": "admitted",
+          "direction": "input",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "policy.AdmittedTemporalEvidence"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
         {
           "name": "authority",
           "direction": "output",
@@ -35,21 +50,6 @@
           "cardinality": "one",
           "required": true,
           "default_depth": 16
-        },
-        {
-          "name": "committed",
-          "direction": "input",
-          "type": {
-            "name": "Event",
-            "arguments": [
-              {
-                "name": "trajectory.ObservationCommitOutcome"
-              }
-            ]
-          },
-          "cardinality": "one",
-          "required": true,
-          "default_depth": 32
         },
         {
           "name": "disposition_append",
@@ -184,7 +184,7 @@
       ],
       "reaction": {
         "triggers": [
-          "committed",
+          "admitted",
           "disposition_committed",
           "disposition_rejected",
           "effect_terminal",

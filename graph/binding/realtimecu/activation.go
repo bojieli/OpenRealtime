@@ -27,7 +27,7 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v7"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v8"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumDispositionRetries = 8
@@ -47,10 +47,10 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      7,
+		Revision:      8,
 		Ports: []element.Port{
-			{Name: "committed", Direction: element.Input,
-				Type: stateelements.ObservationCommitOutcomeType(), Cardinality: element.One,
+			{Name: "admitted", Direction: element.Input,
+				Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 32},
 			{Name: "cancel", Direction: element.Input,
 				Type: policyelements.GenerationCancelType(), Cardinality: element.One,
@@ -85,7 +85,7 @@ func ActivationDescriptor() element.Descriptor {
 		},
 		Reaction: element.Reaction{
 			Triggers: []string{
-				"committed", "result", "effect_terminal", "disposition_committed", "disposition_rejected",
+				"admitted", "result", "effect_terminal", "disposition_committed", "disposition_rejected",
 			},
 			Interrupts: []string{"cancel"},
 			Outcomes: []string{
@@ -208,7 +208,7 @@ func decodeActivationConfig(source json.RawMessage) (policyelements.GenerateOnOb
 }
 
 type activationPorts struct {
-	committed, cancel, result, effectTerminal             element.InputPort
+	admitted, cancel, result, effectTerminal              element.InputPort
 	dispositionCommitted, dispositionRejected             element.InputPort
 	trigger, candidate, state, outcome, dispositionAppend element.OutputPort
 }
@@ -222,7 +222,7 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 		name string
 		set  *element.InputPort
 	}{
-		{"committed", &result.committed}, {"cancel", &result.cancel},
+		{"admitted", &result.admitted}, {"cancel", &result.cancel},
 		{"result", &result.result}, {"effect_terminal", &result.effectTerminal},
 		{"disposition_committed", &result.dispositionCommitted},
 		{"disposition_rejected", &result.dispositionRejected},
@@ -267,8 +267,9 @@ type activeGeneration struct {
 // user intent behind an older proposal. Capacity is deliberately one so input
 // cadence cannot become an unbounded cognition queue.
 type deferredVisualCommit struct {
-	envelope element.Envelope
-	commit   stateelements.ObservationCommitOutcome
+	envelope  element.Envelope
+	admission policyelements.AdmittedTemporalEvidence
+	commit    stateelements.ObservationCommitOutcome
 }
 
 type pendingEffectTerminal struct {
@@ -296,6 +297,35 @@ type activationContextOverride struct {
 	tailID  string
 }
 
+type verifiedTemporalAdmission struct {
+	prefix             []trajectory.Item
+	trigger            trajectory.Item
+	intent             *userIntentBasis
+	intentStoreVersion uint64
+}
+
+func verifyActivationTemporalAdmission(
+	snapshot trajectory.Snapshot, admission policyelements.AdmittedTemporalEvidence,
+) (verifiedTemporalAdmission, error) {
+	if err := policyelements.VerifyAdmittedTemporalEvidence(snapshot, admission); err != nil {
+		return verifiedTemporalAdmission{}, err
+	}
+	commit := admission.TriggerCommit
+	prefix := snapshot.Items[:commit.StoreVersion]
+	verified := verifiedTemporalAdmission{
+		prefix: prefix, trigger: prefix[commit.StoreVersion-1],
+	}
+	if admission.DurableIntent != nil {
+		intent := prefix[admission.DurableIntent.StoreVersion-1]
+		verified.intent = &userIntentBasis{
+			itemID: intent.ID, triggerItemID: intent.Event.EventID,
+			sourceRevision: intent.SourceRevision,
+		}
+		verified.intentStoreVersion = admission.DurableIntent.StoreVersion
+	}
+	return verified, nil
+}
+
 type activationRunner struct {
 	instance   string
 	config     policyelements.GenerateOnObservationConfig
@@ -305,15 +335,16 @@ type activationRunner struct {
 	resolution element.ResolutionReporter
 	ports      activationPorts
 
-	intent             *userIntentBasis
-	active             *activeGeneration
-	deferred           *deferredVisualCommit
-	pendingTerminal    *pendingEffectTerminal
-	pendingDisposition *pendingProposalDisposition
-	revokedSequence    uint64
-	terminal           map[string]struct{}
-	terminalOrder      []string
-	state              policyelements.GenerationState
+	intent              *userIntentBasis
+	active              *activeGeneration
+	deferred            *deferredVisualCommit
+	pendingTerminal     *pendingEffectTerminal
+	pendingDisposition  *pendingProposalDisposition
+	revokedSequence     uint64
+	revokedStoreVersion uint64
+	terminal            map[string]struct{}
+	terminalOrder       []string
+	state               policyelements.GenerationState
 }
 
 type activationInput struct {
@@ -323,7 +354,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:7", ActivationDescriptor()); err != nil {
+		"implementation:8", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -338,7 +369,7 @@ func (runner *activationRunner) Run(parent context.Context) error {
 		kind string
 		port element.InputPort
 	}{
-		{"committed", runner.ports.committed}, {"cancel", runner.ports.cancel},
+		{"admitted", runner.ports.admitted}, {"cancel", runner.ports.cancel},
 		{"result", runner.ports.result}, {"effect_terminal", runner.ports.effectTerminal},
 		{"disposition_committed", runner.ports.dispositionCommitted},
 		{"disposition_rejected", runner.ports.dispositionRejected},
@@ -364,8 +395,8 @@ func (runner *activationRunner) Run(parent context.Context) error {
 		case input := <-inputs:
 			var err error
 			switch input.kind {
-			case "committed":
-				err = runner.acceptCommit(ctx, input.envelope)
+			case "admitted":
+				err = runner.acceptAdmission(ctx, input.envelope)
 			case "cancel":
 				err = runner.acceptCancel(ctx, input.envelope)
 			case "result":
@@ -386,43 +417,41 @@ func (runner *activationRunner) Run(parent context.Context) error {
 	}
 }
 
-func (runner *activationRunner) acceptCommit(
+func (runner *activationRunner) acceptAdmission(
 	ctx context.Context, envelope element.Envelope,
 ) error {
-	return runner.acceptCommitAtContext(ctx, envelope, nil)
+	return runner.acceptAdmissionAtContext(ctx, envelope, nil)
 }
 
-// acceptCommitAtContext admits one exact committed observation. A disposition
+// acceptAdmissionAtContext consumes one exact temporal admission. A disposition
 // replay keeps the original observation as the activation cause while sampling
 // the later acknowledged prefix whose actual tail is the disposition item.
 // This avoids relabelling runtime state as an observation merely to satisfy a
 // tail-shaped API.
-func (runner *activationRunner) acceptCommitAtContext(
+func (runner *activationRunner) acceptAdmissionAtContext(
 	ctx context.Context, envelope element.Envelope, override *activationContextOverride,
 ) error {
-	commit, ok := observationCommitOutcomePayload(envelope.Payload)
+	admission, ok := admittedTemporalEvidencePayload(envelope.Payload)
 	if !ok {
 		return runner.refuse(ctx, envelope, stateelements.ObservationCommitOutcome{},
-			"invalid_commit", fmt.Sprintf("commit payload has type %T", envelope.Payload))
+			"invalid_temporal_admission", fmt.Sprintf("temporal admission payload has type %T", envelope.Payload))
+	}
+	commit := admission.TriggerCommit
+	if !envelope.Type.Equal(policyelements.AdmittedTemporalEvidenceType()) {
+		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission",
+			fmt.Sprintf("temporal admission envelope has type %s", envelope.Type.String()))
 	}
 	if commit.Kind != stateelements.ObservationCommitted {
-		runner.state.Ignored++
-		if err := runner.publishOutcome(ctx, envelope, commit, policyelements.GenerationOutcome{
-			Kind: policyelements.GenerationIgnored, Role: runner.config.Role,
-			StreamID: commit.StreamID, SourceRevision: commit.SourceRevision,
-			ContextVersion: commit.StoreVersion, TriggerItemID: commit.TriggerItemID,
-			Code:    "observation_not_committed",
-			Message: "observation did not cross the canonical trajectory boundary",
-		}); err != nil {
-			return err
-		}
-		return runner.publishState(ctx, envelope)
+		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission",
+			"temporal admission does not contain a committed observation")
 	}
 	if !canonical(envelope.SessionID) || !canonical(commit.TrajectoryItemID) ||
-		!canonical(commit.TriggerItemID) || commit.SourceRevision == 0 ||
+		!canonical(commit.TriggerItemID) || !canonical(commit.StreamID) ||
+		!canonical(commit.Context.StateItemID) || commit.SourceRevision == 0 ||
+		commit.ObservationRevision == 0 ||
 		commit.StoreVersion == 0 || commit.Context.Prefix.Version != commit.StoreVersion {
-		return runner.refuse(ctx, envelope, commit, "invalid_commit",
-			"commit omits canonical session, observation, revision, or context identity")
+		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission",
+			"temporal admission omits canonical session, observation, revision, or context identity")
 	}
 	if envelope.Sequence != 0 && envelope.Sequence <= runner.revokedSequence {
 		runner.state.Ignored++
@@ -437,18 +466,12 @@ func (runner *activationRunner) acceptCommitAtContext(
 		return runner.publishState(ctx, envelope)
 	}
 	snapshot := runner.store.Snapshot()
-	if err := trajectory.VerifyPrefix(snapshot, commit.Context.Prefix); err != nil {
-		return runner.refuse(ctx, envelope, commit, "context_mismatch", err.Error())
+	attested, err := verifyActivationTemporalAdmission(snapshot, admission)
+	if err != nil {
+		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission", err.Error())
 	}
-	observationPrefix := snapshot.Items[:commit.StoreVersion]
-	current, found := trajectoryItem(trajectory.Snapshot{Version: commit.StoreVersion, Items: observationPrefix},
-		commit.TrajectoryItemID)
-	if !found || current.Kind != trajectory.KindObservation || current.Event == nil ||
-		current.SourceRevision != commit.SourceRevision || current.Event.EventID != commit.TriggerItemID ||
-		observationPrefix[len(observationPrefix)-1].ID != current.ID {
-		return runner.refuse(ctx, envelope, commit, "invalid_observation_basis",
-			"commit does not name the exact event-backed context tail")
-	}
+	observationPrefix := attested.prefix
+	current := attested.trigger
 	effectiveCommit := commit
 	contextTailID := current.ID
 	prefix := observationPrefix
@@ -476,7 +499,17 @@ func (runner *activationRunner) acceptCommitAtContext(
 		contextTailID = override.tailID
 	}
 	authorityValue := trajectory.AuthorityOf(current)
-	if authorityValue == trajectory.AuthorityUser {
+	if admission.Mode == policyelements.TemporalEvidenceAdmissionAfterIntent {
+		if attested.intent == nil || authorityValue != trajectory.AuthorityObserver {
+			return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission",
+				"after-intent admission lacks an observer trigger and exact durable intent")
+		}
+		if attested.intentStoreVersion <= runner.revokedStoreVersion {
+			return runner.ignore(ctx, envelope, commit, "intent_revoked",
+				"temporal admission names a durable intent at or before the latest cancellation")
+		}
+		runner.selectIntent(*attested.intent)
+	} else if authorityValue == trajectory.AuthorityUser {
 		// ASR revisions are useful canonical evidence, but a revisable prefix is
 		// not yet the participant's instruction. Clear an older durable intent
 		// while a new utterance is provisional so visual cadence cannot reactivate
@@ -491,20 +524,7 @@ func (runner *activationRunner) acceptCommitAtContext(
 			itemID: current.ID, triggerItemID: current.Event.EventID,
 			sourceRevision: current.SourceRevision,
 		}
-		if runner.intent == nil || *runner.intent != nextIntent {
-			// A visual retained under an older task can never become evidence for
-			// the new durable task, even if both happen to share a causal prefix.
-			runner.deferred = nil
-			if runner.pendingTerminal != nil && runner.pendingDisposition == nil {
-				// The action path has already made the older generation terminal
-				// without crossing an effect boundary. A replacement user intent may
-				// therefore release that generation even if its model-result copy is
-				// still queued; the eventual result is ignored as a terminal old run.
-				runner.active = nil
-				runner.pendingTerminal = nil
-			}
-		}
-		runner.intent = &nextIntent
+		runner.selectIntent(nextIntent)
 	} else if authorityValue != trajectory.AuthorityObserver {
 		return runner.refuse(ctx, envelope, commit, "invalid_authority",
 			fmt.Sprintf("current observation carries %q authority", authorityValue))
@@ -559,12 +579,12 @@ func (runner *activationRunner) acceptCommitAtContext(
 		switch {
 		case runner.active.callID == "":
 			if authorityValue == trajectory.AuthorityObserver {
-				return runner.deferVisual(ctx, envelope, commit)
+				return runner.deferVisual(ctx, envelope, admission, commit)
 			}
 			return runner.ignore(ctx, envelope, commit, "generation_pending",
 				"one exact cognition turn is still in flight")
 		case resultParent == "":
-			message := runner.retainDeferredVisual(envelope, commit,
+			message := runner.retainDeferredVisual(envelope, admission, commit,
 				"changed visual evidence is retained while the proposed effect awaits a terminal disposition",
 				"a newer changed visual prefix is already retained while the proposed effect awaits disposition")
 			return runner.ignore(ctx, envelope, commit, "effect_pending", message)
@@ -605,7 +625,7 @@ func (runner *activationRunner) acceptCommitAtContext(
 		return runner.publishState(ctx, envelope)
 	}
 	runner.active = &activeGeneration{id: generationID, contextVersion: effectiveCommit.StoreVersion}
-	if err := runner.emit(ctx, envelope, generationID, effectiveCommit, *runner.intent, contextTailID); err != nil {
+	if err := runner.emit(ctx, envelope, admission, generationID, effectiveCommit, *runner.intent, contextTailID); err != nil {
 		runner.active = nil
 		return err
 	}
@@ -663,7 +683,7 @@ func (runner *activationRunner) acceptResult(
 			// the retained PrefixIdentity against the append-only store and checks
 			// that its exact durable intent is still a causal ancestor. Never
 			// rebuild a trigger from the store's newer tail.
-			return runner.acceptCommit(ctx, deferred.envelope)
+			return runner.acceptAdmission(ctx, deferred.envelope)
 		}
 		return nil
 	} else {
@@ -785,9 +805,17 @@ func (runner *activationRunner) tryStartDisposition(ctx context.Context) error {
 	parents := []string{proposal.ID}
 	if runner.deferred != nil {
 		if err := attestDeferredObservation(snapshot, *runner.deferred); err != nil {
-			return fmt.Errorf("attest retained observation for proposal disposition: %w", err)
+			if !errors.Is(err, policyelements.ErrAdmittedTemporalEvidenceSuperseded) {
+				return fmt.Errorf("attest retained observation for proposal disposition: %w", err)
+			}
+			// A newer user observation invalidates the old retained visual, but it
+			// does not undo the already-terminal proposal. Settle that proposal
+			// without parenting the disposition to superseded evidence; the new
+			// intent can activate only after its own fresh temporal admission.
+			runner.deferred = nil
+		} else {
+			parents = appendUniqueString(parents, runner.deferred.commit.TrajectoryItemID)
 		}
-		parents = appendUniqueString(parents, runner.deferred.commit.TrajectoryItemID)
 	}
 	item := trajectory.Item{
 		ID:              dispositionTrajectoryItemID(pending.cause.SessionID, runner.active.id, proposal.ID, kind),
@@ -899,9 +927,9 @@ func (runner *activationRunner) acceptDispositionCommit(
 		// This observation committed after the disposition and its own context
 		// therefore already contains that canonical fact with the observation as
 		// the real tail.
-		return runner.acceptCommit(ctx, deferred.envelope)
+		return runner.acceptAdmission(ctx, deferred.envelope)
 	}
-	return runner.acceptCommitAtContext(ctx, deferred.envelope, &activationContextOverride{
+	return runner.acceptAdmissionAtContext(ctx, deferred.envelope, &activationContextOverride{
 		context: commit.Context, version: commit.Version, tailID: pending.item.ID,
 	})
 }
@@ -988,6 +1016,12 @@ func trajectoryDispositionKind(
 
 func attestDeferredObservation(snapshot trajectory.Snapshot, deferred deferredVisualCommit) error {
 	commit := deferred.commit
+	if deferred.admission.TriggerCommit != commit {
+		return errors.New("retained temporal admission changed its trigger commit")
+	}
+	if _, err := verifyActivationTemporalAdmission(snapshot, deferred.admission); err != nil {
+		return fmt.Errorf("retained temporal admission: %w", err)
+	}
 	if commit.StoreVersion == 0 || commit.Context.Prefix.Version != commit.StoreVersion ||
 		commit.StoreVersion > snapshot.Version {
 		return errors.New("retained observation has an invalid canonical version")
@@ -1123,16 +1157,18 @@ func (runner *activationRunner) refuseEffectTerminal(
 
 func (runner *activationRunner) deferVisual(
 	ctx context.Context, envelope element.Envelope,
+	admission policyelements.AdmittedTemporalEvidence,
 	commit stateelements.ObservationCommitOutcome,
 ) error {
-	message := runner.retainDeferredVisual(envelope, commit,
+	message := runner.retainDeferredVisual(envelope, admission, commit,
 		"changed visual evidence is retained until the in-flight cognition turn settles",
 		"a newer changed visual prefix is already retained for the in-flight cognition turn")
 	return runner.ignore(ctx, envelope, commit, "generation_deferred", message)
 }
 
 func (runner *activationRunner) retainDeferredVisual(
-	envelope element.Envelope, commit stateelements.ObservationCommitOutcome,
+	envelope element.Envelope, admission policyelements.AdmittedTemporalEvidence,
+	commit stateelements.ObservationCommitOutcome,
 	retainedMessage, supersededMessage string,
 ) string {
 	message := retainedMessage
@@ -1140,13 +1176,33 @@ func (runner *activationRunner) retainDeferredVisual(
 		retained := envelope.Clone()
 		// Envelope.Clone intentionally shares immutable payloads. Pin this value
 		// copy anyway so replay cannot observe mutation through a caller-owned
-		// *ObservationCommitOutcome.
-		retained.Payload = commit
-		runner.deferred = &deferredVisualCommit{envelope: retained, commit: commit}
+		// *AdmittedTemporalEvidence.
+		admission = cloneAdmittedTemporalEvidence(admission)
+		retained.Payload = admission
+		runner.deferred = &deferredVisualCommit{
+			envelope: retained, admission: admission, commit: commit,
+		}
 	} else {
 		message = supersededMessage
 	}
 	return message
+}
+
+func (runner *activationRunner) selectIntent(next userIntentBasis) {
+	if runner.intent == nil || *runner.intent != next {
+		// Evidence retained under an older task can never become evidence for the
+		// new durable task, even when both share an earlier causal prefix.
+		runner.deferred = nil
+		if runner.pendingTerminal != nil && runner.pendingDisposition == nil {
+			// The action path already made the older generation terminal without
+			// crossing an effect boundary. A replacement intent may release it even
+			// if its model-result copy is still queued; that late result is terminal.
+			runner.active = nil
+			runner.pendingTerminal = nil
+		}
+	}
+	copy := next
+	runner.intent = &copy
 }
 
 func (runner *activationRunner) ignore(
@@ -1166,7 +1222,8 @@ func (runner *activationRunner) ignore(
 }
 
 func (runner *activationRunner) emit(
-	ctx context.Context, cause element.Envelope, generationID string,
+	ctx context.Context, cause element.Envelope,
+	admission policyelements.AdmittedTemporalEvidence, generationID string,
 	commit stateelements.ObservationCommitOutcome, basis userIntentBasis, contextTailID string,
 ) error {
 	invocation := cloneInvocation(runner.config.Invocation)
@@ -1187,6 +1244,16 @@ func (runner *activationRunner) emit(
 		contextTailID, commit.TriggerItemID, basis.itemID, basis.triggerItemID,
 	} {
 		trigger.CausalParents = appendUniqueString(trigger.CausalParents, parent)
+	}
+	if admission.DurableIntent != nil {
+		trigger.CausalParents = appendUniqueString(
+			trigger.CausalParents, admission.DurableIntent.TrajectoryItemID,
+		)
+	}
+	for _, observation := range admission.QualifyingObservations {
+		trigger.CausalParents = appendUniqueString(
+			trigger.CausalParents, observation.TrajectoryItemID,
+		)
 	}
 	trigger.Payload = generate
 	candidate := trigger.Clone()
@@ -1236,6 +1303,9 @@ func (runner *activationRunner) acceptCancel(
 	}
 	if envelope.Sequence > runner.revokedSequence {
 		runner.revokedSequence = envelope.Sequence
+	}
+	if version := runner.store.Snapshot().Version; version > runner.revokedStoreVersion {
+		runner.revokedStoreVersion = version
 	}
 	runner.state.Canceled++
 	if err := runner.publishOutcome(ctx, envelope, stateelements.ObservationCommitOutcome{},
@@ -1346,16 +1416,27 @@ func receiveActivationInputs(
 	}
 }
 
-func observationCommitOutcomePayload(payload any) (stateelements.ObservationCommitOutcome, bool) {
+func admittedTemporalEvidencePayload(payload any) (policyelements.AdmittedTemporalEvidence, bool) {
 	switch value := payload.(type) {
-	case stateelements.ObservationCommitOutcome:
-		return value, true
-	case *stateelements.ObservationCommitOutcome:
+	case policyelements.AdmittedTemporalEvidence:
+		return cloneAdmittedTemporalEvidence(value), true
+	case *policyelements.AdmittedTemporalEvidence:
 		if value != nil {
-			return *value, true
+			return cloneAdmittedTemporalEvidence(*value), true
 		}
 	}
-	return stateelements.ObservationCommitOutcome{}, false
+	return policyelements.AdmittedTemporalEvidence{}, false
+}
+
+func cloneAdmittedTemporalEvidence(
+	value policyelements.AdmittedTemporalEvidence,
+) policyelements.AdmittedTemporalEvidence {
+	if value.DurableIntent != nil {
+		copy := *value.DurableIntent
+		value.DurableIntent = &copy
+	}
+	value.QualifyingObservations = slices.Clone(value.QualifyingObservations)
+	return value
 }
 
 func generationCancelPayload(payload any) (policyelements.GenerationCancel, bool) {

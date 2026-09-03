@@ -5,6 +5,9 @@ nodes:
   observation_input_copy: {}
   observation_commit: {}
   trajectory: {}
+  temporal_evidence_admission:
+    mode: after_intent
+    source_set: observed_before_intent
   activation:
     role: computer-use
     invocation:
