@@ -577,6 +577,61 @@ func TestReviewBundleRetainsDeterministicCaseAudioVideoAndRawEvidence(t *testing
 	}
 }
 
+func TestReviewBundlePinsSettlementScorerAndReplayableActionWitness(t *testing.T) {
+	directory, receipt := fixtureFinishedReviewBundle(t)
+	manifest, err := VerifyReviewSourceBundle(directory, receipt.SourceManifestSHA256)
+	if err != nil || len(manifest.Attempts) != 1 {
+		t.Fatalf("source manifest=%+v error=%v", manifest, err)
+	}
+	payload, err := os.ReadFile(filepath.Join(
+		directory, filepath.FromSlash(manifest.Attempts[0].Context.Path),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextValue, err := decodeReviewContext(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contextValue.Version != ReviewContextVersion ||
+		contextValue.Scorer != RealtimeCUScorerIdentity || contextValue.TimedOut ||
+		len(contextValue.Actions) != 1 || contextValue.Actions[0].Ordinal != 1 ||
+		contextValue.Actions[0].PageBefore == nil || contextValue.Actions[0].PageAfter == nil ||
+		contextValue.Actions[0].PageBefore.Complete || !contextValue.Actions[0].PageAfter.Success {
+		t.Fatalf("current review context lacks pinned replay evidence: %+v", contextValue)
+	}
+}
+
+func TestReviewCompletionRejectsDeterministicScoreDriftBeforePublication(t *testing.T) {
+	for _, mode := range []string{"passed", "metric"} {
+		t.Run(mode, func(t *testing.T) {
+			directory := filepath.Join(t.TempDir(), "review")
+			t.Cleanup(func() { makeReviewTreeWritable(directory) })
+			bundle, err := NewReviewBundle(ReviewBundleOptions{
+				Directory: directory, VideoFactory: &fixtureReviewVideoFactory{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			item := Case{Task: Suite()[0], Grounding: GroundingPixel}
+			attempt, completion, _ := fixturePendingReviewAttempt(t, bundle, item, true)
+			switch mode {
+			case "passed":
+				completion.Outcome.Passed = false
+			case "metric":
+				completion.Outcome.Metrics["task_success_rate"] = 0
+			}
+			if err := attempt.Complete(t.Context(), completion); err == nil ||
+				!strings.Contains(err.Error(), "differs from deterministic rescore") {
+				t.Fatalf("Complete() score-drift error = %v", err)
+			}
+			if _, err := os.Lstat(filepath.Join(directory, reviewSourceManifest)); !os.IsNotExist(err) {
+				t.Fatalf("score drift published deterministic source marker: %v", err)
+			}
+		})
+	}
+}
+
 func TestReviewBundleRetainsAllIncompleteDeterministicRowsWithoutSummaryDrift(t *testing.T) {
 	directory := filepath.Join(t.TempDir(), "review")
 	t.Cleanup(func() { makeReviewTreeWritable(directory) })
@@ -1790,15 +1845,17 @@ func TestReviewBundlePadsQuietAudioStrictlyPastLatestVideoSampleBoundary(t *test
 	}); err != nil {
 		t.Fatal(err)
 	}
-	outcome := bench.TaskOutcome{
-		ID: item.ID(), Completed: true, Passed: true,
-		Metrics: map[string]float64{"task_success_rate": 1},
-	}
+	actionAtMS := milliseconds(item.Task.CueAt + 100*time.Millisecond)
+	page, actions, call := successfulScoreEvidence(time.Unix(1_700_000_000, 0), actionAtMS, "fixture deterministic result")
+	transcript := bench.Transcript{PlaybackMS: 100, Moments: []bench.Moment{
+		{Kind: bench.MomentReady, AtMS: 0},
+		{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 100},
+		call,
+	}}
+	outcome := score(realtimeCUIncompleteOutcome(item), item, page, actions, transcript, false)
 	if err := attempt.Complete(t.Context(), EvidenceCompletion{
-		Attempt: specification, Outcome: outcome,
-		Transcript: bench.Transcript{PlaybackMS: 100, Moments: []bench.Moment{
-			{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 100},
-		}},
+		Attempt: specification, Outcome: outcome, Transcript: transcript,
+		Page: page, Actions: actions,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2159,6 +2216,75 @@ func TestReviewBundleResumePreservesPublishedOuterReview(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(directory, "manifest.json")); err != nil {
 		t.Fatalf("published outer manifest changed: %v", err)
+	}
+}
+
+func TestLegacyV2ReviewSourceRemainsVerifiableButCannotResume(t *testing.T) {
+	directory, receipt := fixtureLegacyV2ReviewSource(t)
+	manifest, err := VerifyReviewSourceReceipt(directory, receipt)
+	if err != nil || len(manifest.Attempts) != 1 {
+		t.Fatalf("credential-free legacy source verification=%+v error=%v", manifest, err)
+	}
+	rootBefore, err := os.Lstat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestBefore, err := os.ReadFile(filepath.Join(directory, reviewSourceManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewer := &fixtureCUReviewer{}
+	resumed, err := ResumeReviewBundle(t.Context(), ReviewBundleResumeOptions{
+		Directory: directory, SourceReceipt: receipt,
+		Reviewer:         openFixtureCUReviewer(t, reviewer),
+		EvaluationStores: fixtureReviewEvaluationStores(t, directory),
+	})
+	if err == nil || resumed != nil ||
+		!strings.Contains(err.Error(), "verification-only and cannot be resumed") {
+		t.Fatalf("legacy ResumeReviewBundle()=%v error=%v", resumed, err)
+	}
+	manifestAfter, readErr := os.ReadFile(filepath.Join(directory, reviewSourceManifest))
+	rootAfter, statErr := os.Lstat(directory)
+	if readErr != nil || statErr != nil || !bytes.Equal(manifestAfter, manifestBefore) ||
+		rootAfter.Mode().Perm() != rootBefore.Mode().Perm() || reviewer.calls.Load() != 0 {
+		t.Fatalf("legacy resume mutated/called provider: read=%v stat=%v mode=%v/%v calls=%d",
+			readErr, statErr, rootBefore.Mode().Perm(), rootAfter.Mode().Perm(), reviewer.calls.Load())
+	}
+	for _, name := range []string{"manifest.json", "REVIEW.md"} {
+		if _, err := os.Lstat(filepath.Join(directory, name)); !os.IsNotExist(err) {
+			t.Fatalf("legacy resume published %s: %v", name, err)
+		}
+	}
+	if _, err := VerifyReviewSourceReceipt(directory, receipt); err != nil {
+		t.Fatalf("legacy source no longer verifies after refused resume: %v", err)
+	}
+}
+
+func TestReviewSourceVerifierReplaysSettlementScorerAfterCoherentRehash(t *testing.T) {
+	directory, receipt := fixtureFinishedReviewBundle(t)
+	manifest, err := VerifyReviewSourceBundle(directory, receipt.SourceManifestSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(filepath.Join(
+		directory, filepath.FromSlash(manifest.Attempts[0].Context.Path),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextValue, err := decodeReviewContext(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contextValue.Page.Success = false
+	payload, err = canonicalReviewObject(contextValue, maximumReviewContextBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, manifestSHA := rewriteFixtureReviewSourceContext(t, directory, manifest, payload)
+	if _, err := VerifyReviewSourceBundle(directory, manifestSHA); err == nil ||
+		!strings.Contains(err.Error(), "score cannot be reproduced") {
+		t.Fatalf("coherently rehashed score drift verification error = %v", err)
 	}
 }
 
@@ -2538,6 +2664,90 @@ func fixtureFinishedReviewedBundle(t testing.TB) (string, ReviewBundleReceipt) {
 	return directory, receipt
 }
 
+func fixtureLegacyV2ReviewSource(t testing.TB) (string, ReviewSourceReceipt) {
+	t.Helper()
+	directory, receipt := fixtureFinishedReviewBundle(t)
+	manifest, err := VerifyReviewSourceBundle(directory, receipt.SourceManifestSHA256)
+	if err != nil || len(manifest.Attempts) != 1 {
+		t.Fatalf("current source manifest=%+v error=%v", manifest, err)
+	}
+	payload, err := os.ReadFile(filepath.Join(
+		directory, filepath.FromSlash(manifest.Attempts[0].Context.Path),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := decodeReviewContext(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := legacyRealtimeCUReviewContextV2{
+		Format: current.Format, Version: legacyReviewContextVersion,
+		Suite: current.Suite, Case: current.Case, Trial: current.Trial,
+		ResultSHA256: current.ResultSHA256, Cell: current.Cell, Provenance: current.Provenance,
+		Task: current.Task, Grounding: current.Grounding, RunOrigin: current.RunOrigin,
+		ExecutionRequirement: current.ExecutionRequirement, Observers: slices.Clone(current.Observers),
+		Outcome: current.Outcome, Transcript: current.Transcript,
+		Page: legacyRealtimeCUPageV2{
+			Complete: current.Page.Complete, Success: current.Page.Success, Code: current.Page.Code,
+			Reason: current.Page.Reason, CompletedAtMS: current.Page.CompletedAtMS,
+			Actions: current.Page.Actions,
+		},
+		Actions: make([]legacyRealtimeCUActionV2, len(current.Actions)),
+	}
+	for index, action := range current.Actions {
+		legacy.Actions[index] = legacyRealtimeCUActionV2{
+			CallID: action.CallID, Name: action.Name, Arguments: slices.Clone(action.Arguments),
+			ReceivedAt: action.ReceivedAt, CompletedAt: action.CompletedAt, Error: action.Error,
+		}
+	}
+	payload, err = canonicalReviewObject(legacy, maximumReviewContextBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, manifestSHA := rewriteFixtureReviewSourceContext(t, directory, manifest, payload)
+	sourceReceipt, err := buildReviewSourceReceipt(directory, manifest, manifestSHA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return directory, sourceReceipt
+}
+
+func rewriteFixtureReviewSourceContext(
+	t testing.TB, directory string, manifest ReviewManifest, contextPayload []byte,
+) (ReviewManifest, string) {
+	t.Helper()
+	if len(manifest.Attempts) != 1 {
+		t.Fatalf("rewrite fixture requires one attempt, got %d", len(manifest.Attempts))
+	}
+	makeReviewTreeWritable(directory)
+	for _, name := range []string{"manifest.json", "REVIEW.md"} {
+		if err := os.Remove(filepath.Join(directory, name)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
+	contextPath := filepath.Join(directory, filepath.FromSlash(manifest.Attempts[0].Context.Path))
+	if err := os.WriteFile(contextPath, contextPayload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Attempts[0].Context.SHA256 = reviewDigest(contextPayload)
+	manifest.Attempts[0].Context.SizeBytes = int64(len(contextPayload))
+	manifestPayload, markdown, err := encodeReviewPublication(manifest, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, reviewSourceManifest), manifestPayload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "SOURCE_REVIEW.md"), markdown, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sealReviewSourceArtifacts(directory); err != nil {
+		t.Fatal(err)
+	}
+	return manifest, reviewDigest(manifestPayload)
+}
+
 func fixtureReviewAttempt(
 	t testing.TB, bundle *ReviewBundle, item Case, passed bool,
 ) bench.TaskOutcome {
@@ -2590,27 +2800,31 @@ func fixturePendingReviewAttempt(
 			t.Fatal(err)
 		}
 	}
-	outcome := bench.TaskOutcome{
-		ID: item.ID(), Completed: true, Passed: passed,
-		Metrics: map[string]float64{
-			"task_success_rate": truth(passed), "correct_action_rate": truth(passed),
-			"deadline_miss_count": truth(!passed),
-		},
-		Notes: map[string]string{
-			"category": item.Task.Category, "difficulty": item.Task.Difficulty,
-			"axes": axesText(item.Task.Axes), "grounding": string(item.Grounding),
-			"page_result": "fixture deterministic result",
+	started := time.Unix(1_700_000_000, 0)
+	actionAtMS := milliseconds(item.Task.CueAt + 100*time.Millisecond)
+	arguments := json.RawMessage(`{"source":"screen","x":500,"y":500}`)
+	page := PageResult{
+		Complete: true, Success: passed, Reason: "fixture deterministic result",
+		CompletedAtMS: actionAtMS, Actions: 1,
+	}
+	actions := []ActionRecord{{
+		Ordinal: 1, CallID: "fixture-call", Name: "computer.click_normalized",
+		Arguments: arguments, ReceivedAt: started.Add(item.Task.CueAt + 100*time.Millisecond),
+		CompletedAt: started.Add(item.Task.CueAt + 110*time.Millisecond),
+		PageBefore:  clonePageResult(PageResult{}), PageAfter: clonePageResult(page),
+	}}
+	transcript := bench.Transcript{
+		PlaybackMS: 100, Moments: []bench.Moment{
+			{Kind: bench.MomentReady, AtMS: 0},
+			{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 0},
+			{Kind: bench.MomentToolCall, AtMS: actionAtMS, CallID: "fixture-call",
+				Name: "computer.click_normalized", Arguments: string(arguments)},
 		},
 	}
+	outcome := score(realtimeCUIncompleteOutcome(item), item, page, actions, transcript, false)
 	completion := EvidenceCompletion{
-		Attempt: specification, Outcome: outcome,
-		Transcript: bench.Transcript{
-			PlaybackMS: 100, Moments: []bench.Moment{
-				{Kind: bench.MomentReady, AtMS: 0},
-				{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 0},
-			},
-		},
-		Page: PageResult{Complete: true, Success: passed, Reason: "fixture deterministic result", CompletedAtMS: 50},
+		Attempt: specification, Outcome: outcome, Transcript: transcript,
+		Page: page, Actions: actions,
 	}
 	return attempt, completion, outcome
 }

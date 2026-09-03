@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -347,22 +348,51 @@ func TestOpenRealtimeCUReviewCLIResumeRecoversSealedResultWithoutBrowser(t *test
 	}); err != nil {
 		t.Fatal(err)
 	}
+	page := realtimecu.PageResult{
+		Complete: true, Success: true, Reason: "fixture deterministic result",
+		CompletedAtMS: 4_000, Actions: 1,
+	}
+	actionArguments := json.RawMessage(`{"source":"screen","x":500,"y":500}`)
+	actionStarted := time.Unix(1_700_000_000, 0)
+	actions := []realtimecu.ActionRecord{{
+		Ordinal: 1, CallID: "fixture-call", Name: "computer.click_normalized",
+		Arguments: actionArguments, ReceivedAt: actionStarted,
+		CompletedAt: actionStarted.Add(10 * time.Millisecond),
+		PageBefore:  &realtimecu.PageResult{}, PageAfter: &page,
+	}}
+	actionsJSON, err := json.Marshal(actions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	outcome := bench.TaskOutcome{
 		ID: item.ID(), Completed: true, Passed: true,
 		Metrics: map[string]float64{
-			"task_success_rate": 1, "correct_action_rate": 1, "deadline_miss_count": 0,
+			"post_success_action_count": 0, "settlement_evidence_missing_count": 0,
+			"session_timeout_count": 0, "session_failure_count": 0,
+			"outstanding_response_count": 0, "outstanding_tool_count": 0,
+			"task_success_rate": 1, "correct_action_rate": 1, "action_count": 1,
+			"invalid_action_count": 0, "grounding_error_count": 0,
+			"observation_count": 0, "video_frame_count": 1,
+			"task_completion_ms": 4_000, "cue_to_completion_ms": 200,
+			"cue_to_action_latency_ms": 200, "premature_action_count": 0,
+			"cue_to_first_tool_latency_ms": 200, "deadline_miss_count": 0,
+			"action_execution_ms": 10,
 		},
-		Notes: map[string]string{"page_result": "fixture deterministic result"},
+		Notes: map[string]string{
+			"category": "control", "difficulty": "easy", "axes": "audio",
+			"grounding": "pixel", "page_result": "fixture deterministic result",
+			"actions": string(actionsJSON),
+		},
 	}
+	transcript := bench.Transcript{PlaybackMS: 100, Moments: []bench.Moment{
+		{Kind: bench.MomentReady, AtMS: 0},
+		{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 0},
+		{Kind: bench.MomentToolCall, AtMS: 4_000, CallID: "fixture-call",
+			Name: "computer.click_normalized", Arguments: string(actionArguments)},
+	}}
 	if err := attempt.Complete(t.Context(), realtimecu.EvidenceCompletion{
-		Attempt: specification, Outcome: outcome,
-		Transcript: bench.Transcript{PlaybackMS: 100, Moments: []bench.Moment{
-			{Kind: bench.MomentReady, AtMS: 0},
-			{Kind: bench.MomentVideoFrame, Source: "screen", AtMS: 0},
-		}},
-		Page: realtimecu.PageResult{
-			Complete: true, Success: true, Reason: "fixture deterministic result", CompletedAtMS: 50,
-		},
+		Attempt: specification, Outcome: outcome, Transcript: transcript,
+		Page: page, Actions: actions,
 	}); err != nil {
 		t.Fatal(err)
 	}

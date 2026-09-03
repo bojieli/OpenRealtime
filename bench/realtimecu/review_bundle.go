@@ -32,7 +32,8 @@ const (
 	ReviewBundleFormat         = "openrealtime.realtime-cu-review"
 	ReviewBundleFormatVersion  = 3
 	ReviewContextFormat        = "openrealtime.realtime-cu-review-context"
-	ReviewContextVersion       = 2
+	ReviewContextVersion       = 3
+	legacyReviewContextVersion = 2
 	ReviewSourceReceiptFormat  = "openrealtime.realtime-cu-review-source-receipt"
 	ReviewSourceReceiptVersion = 1
 	ReviewPhaseSource          = "deterministic-source"
@@ -471,6 +472,9 @@ func ResumeReviewBundle(
 			return nil, fmt.Errorf("verify recovered deterministic realtime computer-use source: %w", err)
 		}
 	}
+	if err := requireCurrentReviewSourceContexts(directory, source); err != nil {
+		return nil, err
+	}
 	if err := recoverRejectedReviewPublication(directory); err != nil {
 		return nil, err
 	}
@@ -513,24 +517,16 @@ func ResumeReviewBundle(
 		if err != nil {
 			return fail(err)
 		}
-		specification := EvidenceAttempt{
-			Suite: SuiteName, Case: indexed.Case, Trial: indexed.Trial,
-			Task:      cloneCase(Case{Task: contextValue.Task}).Task,
-			Grounding: indexed.Grounding, Origin: contextValue.RunOrigin,
-			Observers:            slices.Clone(contextValue.Observers),
-			ExecutionRequirement: contextValue.ExecutionRequirement,
+		if contextValue.Version != ReviewContextVersion {
+			return fail(errors.New(
+				"legacy realtime computer-use review source is verification-only and cannot be resumed",
+			))
 		}
-		if err := specification.validate(); err != nil {
-			return fail(err)
-		}
-		actions, err := resumedReviewActions(contextValue.Actions)
+		completion, err := reviewCompletionFromContext(contextValue)
 		if err != nil {
 			return fail(err)
 		}
-		completion := EvidenceCompletion{
-			Attempt: specification, Outcome: cloneTaskOutcome(contextValue.Outcome),
-			Transcript: contextValue.Transcript, Page: contextValue.Page, Actions: actions,
-		}
+		specification := completion.Attempt
 		if err := validateReviewCompletionEvidence(completion); err != nil {
 			return fail(err)
 		}
@@ -592,6 +588,37 @@ func ResumeReviewBundle(
 	return bundle, nil
 }
 
+func requireCurrentReviewSourceContexts(directory string, source ReviewManifest) (resultErr error) {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return errors.New("open realtime computer-use source for scorer classification")
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			resultErr = errors.Join(resultErr, errors.New(
+				"close realtime computer-use source after scorer classification",
+			))
+		}
+	}()
+	for _, attempt := range source.Attempts {
+		payload, _, err := readReviewFile(root, attempt.Context.Path, maximumReviewContextBytes)
+		if err != nil || !artifactMatches(attempt.Context, payload) {
+			return errors.New("read realtime computer-use source context for scorer classification")
+		}
+		contextValue, err := decodeReviewContext(payload)
+		if err != nil {
+			return err
+		}
+		if contextValue.Version != ReviewContextVersion ||
+			contextValue.Scorer != RealtimeCUScorerIdentity {
+			return errors.New(
+				"legacy realtime computer-use review source is verification-only and cannot be resumed",
+			)
+		}
+	}
+	return nil
+}
+
 func makeReviewRootWritableForResume(directory string, root *os.Root) error {
 	identity, err := verifyReviewRootIdentity(directory, root, nil)
 	if err != nil {
@@ -615,8 +642,14 @@ func resumedReviewActions(source []realtimeCUReviewAction) ([]ActionRecord, erro
 	result := make([]ActionRecord, len(source))
 	for index, action := range source {
 		result[index] = ActionRecord{
-			CallID: action.CallID, Name: action.Name,
+			Ordinal: action.Ordinal, CallID: action.CallID, Name: action.Name,
 			Arguments: slices.Clone(action.Arguments), Error: action.Error,
+		}
+		if action.PageBefore != nil {
+			result[index].PageBefore = clonePageResult(*action.PageBefore)
+		}
+		if action.PageAfter != nil {
+			result[index].PageAfter = clonePageResult(*action.PageAfter)
 		}
 		for _, item := range []struct {
 			value       string
@@ -637,6 +670,40 @@ func resumedReviewActions(source []realtimeCUReviewAction) ([]ActionRecord, erro
 		}
 	}
 	return result, nil
+}
+
+func reviewCompletionFromContext(contextValue realtimeCUReviewContext) (EvidenceCompletion, error) {
+	specification := EvidenceAttempt{
+		Suite: SuiteName, Case: contextValue.Case, Trial: contextValue.Trial,
+		Task:      cloneCase(Case{Task: contextValue.Task}).Task,
+		Grounding: contextValue.Grounding, Origin: contextValue.RunOrigin,
+		Observers:            slices.Clone(contextValue.Observers),
+		ExecutionRequirement: contextValue.ExecutionRequirement,
+	}
+	if err := specification.validate(); err != nil {
+		return EvidenceCompletion{}, err
+	}
+	actions, err := resumedReviewActions(contextValue.Actions)
+	if err != nil {
+		return EvidenceCompletion{}, err
+	}
+	return EvidenceCompletion{
+		Attempt: specification, Outcome: cloneTaskOutcome(contextValue.Outcome),
+		Transcript: contextValue.Transcript, Page: contextValue.Page, Actions: actions,
+		TimedOut: contextValue.TimedOut,
+	}, nil
+}
+
+func validateCurrentReviewContextScore(contextValue realtimeCUReviewContext) error {
+	if contextValue.Version != ReviewContextVersion ||
+		contextValue.Scorer != RealtimeCUScorerIdentity {
+		return errors.New("realtime computer-use review context does not name the current scorer")
+	}
+	completion, err := reviewCompletionFromContext(contextValue)
+	if err != nil {
+		return err
+	}
+	return validateReviewCompletionEvidence(completion)
 }
 
 func (bundle *ReviewBundle) Directory() string {
@@ -1163,6 +1230,12 @@ func (attempt *reviewBundleAttempt) Complete(
 }
 
 func validateReviewCompletionEvidence(completion EvidenceCompletion) error {
+	if err := completion.Attempt.validate(); err != nil {
+		return err
+	}
+	if err := completion.Outcome.Validate(); err != nil {
+		return fmt.Errorf("realtime computer-use outcome is invalid: %w", err)
+	}
 	if completion.Outcome.ExecutionError != completion.Transcript.ExecutionError ||
 		!reflect.DeepEqual(completion.Outcome.Execution, completion.Transcript.Execution) {
 		return errors.New("realtime computer-use transcript execution evidence differs from its outcome")
@@ -1170,6 +1243,26 @@ func validateReviewCompletionEvidence(completion EvidenceCompletion) error {
 	if completion.Outcome.Execution != nil &&
 		completion.Outcome.Execution.Scope != completion.Attempt.Case {
 		return errors.New("realtime computer-use execution evidence scope differs from its case")
+	}
+	if !completion.Outcome.Completed {
+		if completion.Outcome.Passed {
+			return errors.New("incomplete realtime computer-use evidence is marked passed")
+		}
+		// Setup and transport failures can occur before a page/action witness
+		// exists. Those diagnostic rows remain integrity-bound, but only completed
+		// rows claim a deterministic behavioral score that can be replayed.
+		return nil
+	}
+	item := Case{Task: cloneCase(Case{Task: completion.Attempt.Task}).Task, Grounding: completion.Attempt.Grounding}
+	reconstructed := realtimeCUIncompleteOutcome(item)
+	reconstructed.AttachExecution(completion.Transcript)
+	reconstructed = score(
+		reconstructed, item, completion.Page, cloneActionRecords(completion.Actions),
+		completion.Transcript, completion.TimedOut,
+	)
+	reconstructed.AttachExecution(completion.Transcript)
+	if !reflect.DeepEqual(reconstructed, completion.Outcome) {
+		return errors.New("realtime computer-use outcome differs from deterministic rescore")
 	}
 	return nil
 }
@@ -1205,6 +1298,7 @@ func (attempt *reviewBundleAttempt) Abort() error {
 type realtimeCUReviewContext struct {
 	Format               string                     `json:"format"`
 	Version              int                        `json:"version"`
+	Scorer               string                     `json:"scorer"`
 	Suite                string                     `json:"suite"`
 	Case                 string                     `json:"case"`
 	Trial                int                        `json:"trial"`
@@ -1220,9 +1314,55 @@ type realtimeCUReviewContext struct {
 	Transcript           bench.Transcript           `json:"transcript"`
 	Page                 PageResult                 `json:"page_result"`
 	Actions              []realtimeCUReviewAction   `json:"actions"`
+	TimedOut             bool                       `json:"timed_out"`
 }
 
 type realtimeCUReviewAction struct {
+	Ordinal     int             `json:"ordinal"`
+	CallID      string          `json:"call_id"`
+	Name        string          `json:"name"`
+	Arguments   json.RawMessage `json:"arguments"`
+	ReceivedAt  string          `json:"received_at,omitempty"`
+	CompletedAt string          `json:"completed_at,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	PageBefore  *PageResult     `json:"page_before,omitempty"`
+	PageAfter   *PageResult     `json:"page_after,omitempty"`
+}
+
+// The v2 schema is kept verbatim for credential-free integrity verification
+// of already published diagnostic bundles. It is intentionally not promoted
+// into the current schema: v2 did not retain the state/action/state witness or
+// timeout bit needed to reproduce settlement-aware scoring.
+type legacyRealtimeCUReviewContextV2 struct {
+	Format               string                     `json:"format"`
+	Version              int                        `json:"version"`
+	Suite                string                     `json:"suite"`
+	Case                 string                     `json:"case"`
+	Trial                int                        `json:"trial"`
+	ResultSHA256         string                     `json:"result_sha256"`
+	Cell                 bench.Cell                 `json:"cell"`
+	Provenance           bench.Provenance           `json:"provenance"`
+	Task                 Task                       `json:"task"`
+	Grounding            Grounding                  `json:"grounding"`
+	RunOrigin            EvidenceRunOrigin          `json:"run_origin"`
+	ExecutionRequirement bench.ExecutionRequirement `json:"execution_requirement,omitempty"`
+	Observers            []string                   `json:"observers,omitempty"`
+	Outcome              bench.TaskOutcome          `json:"deterministic_outcome"`
+	Transcript           bench.Transcript           `json:"transcript"`
+	Page                 legacyRealtimeCUPageV2     `json:"page_result"`
+	Actions              []legacyRealtimeCUActionV2 `json:"actions"`
+}
+
+type legacyRealtimeCUPageV2 struct {
+	Complete      bool           `json:"complete"`
+	Success       bool           `json:"success"`
+	Code          PageResultCode `json:"code,omitempty"`
+	Reason        string         `json:"reason"`
+	CompletedAtMS float64        `json:"completed_at_ms"`
+	Actions       int            `json:"actions"`
+}
+
+type legacyRealtimeCUActionV2 struct {
 	CallID      string          `json:"call_id"`
 	Name        string          `json:"name"`
 	Arguments   json.RawMessage `json:"arguments"`
@@ -1235,8 +1375,14 @@ func retainedReviewActions(source []ActionRecord) []realtimeCUReviewAction {
 	result := make([]realtimeCUReviewAction, len(source))
 	for index, action := range source {
 		result[index] = realtimeCUReviewAction{
-			CallID: action.CallID, Name: action.Name, Arguments: slices.Clone(action.Arguments),
-			Error: action.Error,
+			Ordinal: action.Ordinal, CallID: action.CallID, Name: action.Name,
+			Arguments: slices.Clone(action.Arguments), Error: action.Error,
+		}
+		if action.PageBefore != nil {
+			result[index].PageBefore = clonePageResult(*action.PageBefore)
+		}
+		if action.PageAfter != nil {
+			result[index].PageAfter = clonePageResult(*action.PageAfter)
 		}
 		if !action.ReceivedAt.IsZero() {
 			result[index].ReceivedAt = action.ReceivedAt.UTC().Format(time.RFC3339Nano)
@@ -1257,7 +1403,8 @@ func retainedReviewContext(
 	}
 	value := realtimeCUReviewContext{
 		Format: ReviewContextFormat, Version: ReviewContextVersion,
-		Suite: SuiteName, Case: source.specification.Case, Trial: 1,
+		Scorer: RealtimeCUScorerIdentity,
+		Suite:  SuiteName, Case: source.specification.Case, Trial: 1,
 		ResultSHA256: reviewDigest(resultPayload), Cell: cloneCell(result.Cell),
 		Provenance:           result.Provenance,
 		Task:                 cloneCase(Case{Task: source.specification.Task}).Task,
@@ -1269,6 +1416,7 @@ func retainedReviewContext(
 		Transcript:           transcript,
 		Page:                 source.completion.Page,
 		Actions:              retainedReviewActions(source.completion.Actions),
+		TimedOut:             source.completion.TimedOut,
 	}
 	payload, err := canonicalReviewObject(value, maximumReviewContextBytes)
 	if err != nil || len(payload) == 0 || len(payload) >= maximumReviewContextBytes ||
@@ -3071,7 +3219,8 @@ func verifyReviewSourceBundleAtMarkerWithOperations(
 		}
 		contextValue, err := decodeReviewContext(contextPayload)
 		if err != nil || contextValue.Format != ReviewContextFormat ||
-			contextValue.Version != ReviewContextVersion || contextValue.Suite != SuiteName ||
+			(contextValue.Version != ReviewContextVersion &&
+				contextValue.Version != legacyReviewContextVersion) || contextValue.Suite != SuiteName ||
 			contextValue.Case != attempt.Case || contextValue.Trial != 1 ||
 			contextValue.ResultSHA256 != manifest.Result.SHA256 ||
 			!reflect.DeepEqual(contextValue.Cell, result.Cell) ||
@@ -3084,6 +3233,13 @@ func verifyReviewSourceBundleAtMarkerWithOperations(
 			validateEvidenceObservers(contextValue.Observers) != nil ||
 			!reflect.DeepEqual(contextValue.ExecutionRequirement, result.Cell.Execution) {
 			return ReviewManifest{}, errors.New("deterministic source context differs from its attempt")
+		}
+		if contextValue.Version == ReviewContextVersion {
+			if err := validateCurrentReviewContextScore(contextValue); err != nil {
+				return ReviewManifest{}, fmt.Errorf(
+					"deterministic source context score cannot be reproduced: %w", err,
+				)
+			}
 		}
 		mediaDirectory := filepath.Join(directory, filepath.FromSlash(attempt.MediaBundle.Path))
 		mediaManifest, err := reviewmedia.VerifyBundle(
@@ -3393,7 +3549,8 @@ func verifyReviewBundleWithOperations(
 		}
 		contextValue, err := decodeReviewContext(contextPayload)
 		if err != nil || contextValue.Format != ReviewContextFormat ||
-			contextValue.Version != ReviewContextVersion || contextValue.Suite != SuiteName ||
+			(contextValue.Version != ReviewContextVersion &&
+				contextValue.Version != legacyReviewContextVersion) || contextValue.Suite != SuiteName ||
 			contextValue.Case != attempt.Case || contextValue.Trial != 1 ||
 			contextValue.ResultSHA256 != manifest.Result.SHA256 ||
 			!reflect.DeepEqual(contextValue.Cell, result.Cell) ||
@@ -3406,6 +3563,13 @@ func verifyReviewBundleWithOperations(
 			validateEvidenceObservers(contextValue.Observers) != nil ||
 			!reflect.DeepEqual(contextValue.ExecutionRequirement, result.Cell.Execution) {
 			return ReviewManifest{}, errors.New("realtime computer-use review context differs from its attempt")
+		}
+		if contextValue.Version == ReviewContextVersion {
+			if err := validateCurrentReviewContextScore(contextValue); err != nil {
+				return ReviewManifest{}, fmt.Errorf(
+					"realtime computer-use review context score cannot be reproduced: %w", err,
+				)
+			}
 		}
 		mediaDirectory := filepath.Join(directory, filepath.FromSlash(attempt.MediaBundle.Path))
 		mediaManifest, err := reviewmedia.VerifyBundle(
@@ -3812,23 +3976,77 @@ func encodeReviewResult(result bench.Result) ([]byte, error) {
 }
 
 func decodeReviewContext(payload []byte) (realtimeCUReviewContext, error) {
-	var value realtimeCUReviewContext
 	if len(payload) == 0 || len(payload) > maximumReviewContextBytes || strictjson.Validate(payload) != nil {
 		return realtimeCUReviewContext{}, errors.New("realtime computer-use review context is not strict JSON")
 	}
+	var envelope struct {
+		Format  string `json:"format"`
+		Version int    `json:"version"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil || envelope.Format != ReviewContextFormat {
+		return realtimeCUReviewContext{}, errors.New("decode realtime computer-use review context identity")
+	}
+	switch envelope.Version {
+	case ReviewContextVersion:
+		var value realtimeCUReviewContext
+		if err := decodeExactReviewContext(payload, &value); err != nil {
+			return realtimeCUReviewContext{}, err
+		}
+		if value.Scorer != RealtimeCUScorerIdentity {
+			return realtimeCUReviewContext{}, errors.New("realtime computer-use review context scorer identity is invalid")
+		}
+		return value, nil
+	case legacyReviewContextVersion:
+		var legacy legacyRealtimeCUReviewContextV2
+		if err := decodeExactReviewContext(payload, &legacy); err != nil {
+			return realtimeCUReviewContext{}, err
+		}
+		return upgradeLegacyReviewContextV2(legacy), nil
+	default:
+		return realtimeCUReviewContext{}, errors.New("realtime computer-use review context version is unsupported")
+	}
+}
+
+func decodeExactReviewContext(payload []byte, destination any) error {
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil {
-		return realtimeCUReviewContext{}, errors.New("decode realtime computer-use review context")
+	if err := decoder.Decode(destination); err != nil {
+		return errors.New("decode realtime computer-use review context")
 	}
 	if err := requireJSONEOF(decoder); err != nil {
-		return realtimeCUReviewContext{}, err
+		return err
 	}
-	canonical, err := canonicalReviewObject(value, maximumReviewContextBytes)
+	canonical, err := canonicalReviewObject(destination, maximumReviewContextBytes)
 	if err != nil || !bytes.Equal(canonical, payload) {
-		return realtimeCUReviewContext{}, errors.New("realtime computer-use review context is noncanonical")
+		return errors.New("realtime computer-use review context is noncanonical")
 	}
-	return value, nil
+	return nil
+}
+
+func upgradeLegacyReviewContextV2(legacy legacyRealtimeCUReviewContextV2) realtimeCUReviewContext {
+	value := realtimeCUReviewContext{
+		Format: legacy.Format, Version: legacy.Version, Suite: legacy.Suite,
+		Case: legacy.Case, Trial: legacy.Trial, ResultSHA256: legacy.ResultSHA256,
+		Cell: legacy.Cell, Provenance: legacy.Provenance, Task: legacy.Task,
+		Grounding: legacy.Grounding, RunOrigin: legacy.RunOrigin,
+		ExecutionRequirement: legacy.ExecutionRequirement,
+		Observers:            slices.Clone(legacy.Observers),
+		Outcome:              legacy.Outcome,
+		Transcript:           legacy.Transcript,
+		Page: PageResult{
+			Complete: legacy.Page.Complete, Success: legacy.Page.Success,
+			Code: legacy.Page.Code, Reason: legacy.Page.Reason,
+			CompletedAtMS: legacy.Page.CompletedAtMS, Actions: legacy.Page.Actions,
+		},
+		Actions: make([]realtimeCUReviewAction, len(legacy.Actions)),
+	}
+	for index, action := range legacy.Actions {
+		value.Actions[index] = realtimeCUReviewAction{
+			CallID: action.CallID, Name: action.Name, Arguments: slices.Clone(action.Arguments),
+			ReceivedAt: action.ReceivedAt, CompletedAt: action.CompletedAt, Error: action.Error,
+		}
+	}
+	return value
 }
 
 func requireJSONEOF(decoder *json.Decoder) error {
