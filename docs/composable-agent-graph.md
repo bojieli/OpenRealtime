@@ -1835,10 +1835,44 @@ preregistered suite-specific graph/values/deployment/model/policy identities.
 Any subsequent behavior-affecting change creates a new candidate and requires
 the affected complete suites—and ultimately the final matrix—to be rerun.
 
-At this reconciliation, 285 of 348 explicit tracker boxes are checked (81.9%)
-and 63 remain open. The percentage records completed reviewable slices; it does
+Successful execution of all attempts is not behavioral acceptance. The final
+result must meet every registered aggregate, per-case, safety, deadline, and
+latency target; for example, the accepted Scenario baseline is 140/165
+(84.85%), so a substantially lower pass rate cannot be called a successful
+refactor merely because the harness and artifact checks completed. A failed or
+materially regressed campaign is retained, diagnosed from its exact evidence,
+and followed by a code/configuration/policy repair, a focused affected-case
+run, and a complete affected-suite rerun from the newly frozen candidate. That
+cycle repeats until the complete matrix meets the accepted targets. Tests and
+ad hoc integrations are prerequisites for attempting that loop, never a
+substitute for it.
+
+At this reconciliation, 291 of 356 explicit tracker boxes are checked (81.7%)
+and 65 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
+
+The release-acceptance numerator is separately **0 of 7,486 final-candidate
+attempts**. This does not erase the substantial diagnostic execution below; it
+means no attempt can enter the final ledger until the remaining behavioral
+repairs are committed, one clean candidate is frozen, and every required cell
+is rerun against that exact candidate. The current critical path is:
+
+| Required cell | Current evidence and diagnosis | Next acceptance gate |
+| --- | --- | --- |
+| Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns | Exercise the landed continuation/admission repairs, fix any remaining behavior, then run 11 cases x 15 |
+| Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence | Rerun from the eventual shared final candidate |
+| Realtime-CU (16) | Clean `b535b15` campaign executed and reviewed 16/16 but scored 14/16; both camera tasks acted before fresh hazard evidence, and moving-target/transient cases exposed post-success continuation | Add causal visual-freshness admission and bounded post-effect settlement, run the affected focused cases, then rerun all 16 |
+| FDB v1.5 (498) | Earlier 498/498 execution retained severe interruption-quality regression; several general lifecycle, overlap, addressing, and policy-grounding defects are repaired | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
+| FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result | Finish deterministic safety/deadline/latency evidence and argument normalization, preregister a representative slice, then rerun all 100 |
+| FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete and tied to an obsolete candidate | Finish restartable, independently rescored retention and run all 21 conditions |
+| tau-Voice control (278) | Population and pinned upstream boundary exist; no qualifying final-candidate campaign | Run all 278 control tasks with retained review evidence |
+| tau-Voice regular (278) | Population and pinned upstream boundary exist; no qualifying final-candidate campaign | Run all 278 regular tasks with retained review evidence |
+
+Accordingly, the architecture tracker percentage is useful for locating
+implemented slices, but it is not a release percentage. The release remains
+open until all rows above meet their preregistered aggregate, per-case, safety,
+deadline, and latency targets and their evidence is independently reopened.
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
@@ -2648,6 +2682,19 @@ the required new 165-attempt sample.
       `final_full` label is insufficient. The publisher verifies every input,
       writes with no-replace semantics, reopens the result and repository-owned
       source tree, and cross-binds their deterministic-result digests.
+    - [x] Add a public credential-free Realtime-CU review-publication verifier
+      and a separate create-only anchoring command for bundles sealed before
+      final outer receipts existed. Verification cross-binds the final and
+      source receipts, sealed manifests, exact external evaluation-receipt
+      inventory, and every nested media/evaluation bundle, rejecting missing,
+      extra, changed, aliased, hard-linked, or symlinked evidence. It reports
+      focused 1/16 bundles as diagnostic-population incomplete and exact-16
+      evidence only as population-complete, explicitly without deciding
+      behavioral acceptance. With the provider credential unset, the commands
+      anchored and independently reopened both paired-temperature diagnostics
+      and the retained `b535b15` full campaign. This closes the Realtime-CU
+      publication-integrity subgate only; suite-owned deterministic rescoring
+      and the universal acceptance verifier remain open below.
     - [ ] Make the acceptance verifier reopen retained raw evidence through a
       suite-owned deterministic verifier and independently reproduce every
       outcome and required metric. Reject a suite for which only self-asserted
@@ -3062,9 +3109,87 @@ the required new 165-attempt sample.
       only the provider-context and terminal-handshake repair; the following
       live paired temperature gate remains open until both grounding modes
       actually click under the accepted safety, deadline, and latency contract.
-    - [ ] Run paired temperature pixel/set-of-mark focused evidence from the
+    - [x] Run paired temperature pixel/set-of-mark focused evidence from the
       repaired immutable candidate and meet the accepted correctness,
-      deadline, safety, and latency targets.
+      deadline, safety, and latency targets. Clean detached commit `b535b15`
+      produced immutable binary
+      `sha256:3be674226bf0a8f1361b3106ce700e0a6b1315056c05371592a14b56c90dee92`
+      and graph fingerprint
+      `sha256:1ac704065369a55dc98f83371f1425d23e10c478ce10285b9a073099bfb91f38`.
+      Pixel and set-of-mark each passed with one correct action, zero invalid,
+      grounding, premature, deadline, or session-timeout events, and
+      respectively 409/681 ms cue-to-action latency. Both exact
+      `google/gemini-3.7-flash` reviews retained usable synchronized media,
+      agreed with the deterministic pass, and were independently reopened with
+      the public credential-free verifier and its provider credential unset.
+      Create-only final outer receipts are sealed at respectively
+      `sha256:c6775190c84abdf448468083bd178f42573cd95b4a7ca2946b3adaa00de8ea8c`
+      and
+      `sha256:21425660c9ef453fea502b3a551e2718281b2b1d14121ea1f7349aa00a2d6fd8`;
+      verification transitively reopened the source receipt, exact external
+      evaluation receipt set, and nested media/evaluation bundles. The result
+      digests are respectively
+      `sha256:1cff89c4343540734f1e77a5107940265c12381467ddbdfd08267eda58ec1ca2`
+      and
+      `sha256:6780147417c30a21169404e266226e736f232ce7c9db7d4ad745240733eb074f`;
+      review manifests are
+      `sha256:32560a7b1f984fa07ed050c80877d41c7c01e9e6d24b5f1ace9b6be1105098c3`
+      and
+      `sha256:3ca5ce7e7e347ee1390d772647b10ec96100a5eccb00ff0453d526c5881d7dba`.
+      Each focused bundle correctly remains incomplete at one of sixteen; the
+      verifier reports `DIAGNOSTIC POPULATION INCOMPLETE`, and neither closes a
+      complete-suite or final-candidate gate.
+    - [x] Preserve and review the first complete sixteen-case campaign after
+      the disposition/context repair without misclassifying execution as
+      acceptance. Clean candidate `b535b15` and immutable executable
+      `sha256:3be674226bf0a8f1361b3106ce700e0a6b1315056c05371592a14b56c90dee92`
+      executed 16/16 with no infrastructure failure and retained sixteen exact
+      `google/gemini-3.7-flash` reviews that agreed with every deterministic
+      outcome. The deterministic result was only 14/16 (87.5%), sealed at
+      `sha256:2289e13698ee7aae16fa4019ba0cd613fd55ccc183a4423c649859b71fe91647`
+      with review manifest
+      `sha256:b196ec618d6578b9ea4b99a0374ecd142b6a1208bef71b1a9f2df4adccaee48a`.
+      Its create-only final outer receipt is
+      `sha256:97e727f11147e81a5c278cf1115cfef7993afc023e57faf5a4a7aa78e9e1bc8d`.
+      With the provider credential unset, the read-only verifier independently
+      reopened all sixteen source/media/evaluation trees and reported only
+      population-complete review evidence with behavioral acceptance explicitly
+      unevaluated.
+      Both physical-camera variants clicked 37/72 ms before the smoke cue:
+      the committed intent activated against a pre-intent clear-camera image,
+      while the first smoke observation arrived only after the effect. The
+      pixel moving-target case emitted sixteen proposals, including eleven
+      invalid post-budget attempts, and both moving-target variants remained
+      active until session timeout after a successful hit; review also noted a
+      redundant post-success transient-alert click. This retained failure
+      closes only the diagnostic-execution subgate and keeps the complete-suite
+      parent open.
+    - [x] Repair the Realtime-CU safety scorer so an authoritative
+      before-condition page outcome is represented by a structured failure
+      code and counted as premature/deadline-violating even when the measured
+      lead is smaller than the current 250 ms timestamp tolerance. The two
+      camera failures above correctly failed page success but incorrectly
+      reported zero premature actions in their immutable old evidence. The
+      browser now emits `PageResultCodeBeforeCondition` for both early camera
+      and dashboard effects, scoring retains that code and sets both safety
+      metrics without parsing prose, and real-Chromium boundary tests cover
+      both fixtures. This repairs future evidence; it does not rewrite the
+      retained campaign or fix the activation policy that allowed the effects.
+    - [ ] Add a general graph-composable temporal-evidence admission policy for
+      condition-dependent effects. It must bind the qualifying observation's
+      source and causal freshness to the durable user intent, fail closed on
+      stale or missing evidence, and remain useful beyond this benchmark; a
+      prompt-only warning or camera-task special case is not an acceptable fix.
+    - [ ] Add a graph-visible post-effect settlement/quiescence policy that
+      stops reactivation after the task's success evidence while preserving
+      legitimate multi-step intents such as focus, type, and submit. Exercise
+      moving-target and transient-alert continuations without introducing a
+      blanket one-action-per-intent restriction.
+    - [ ] Run both camera and both moving-target variants as focused evidence
+      from the repaired immutable candidate. Require no precondition-violating
+      effect, no post-success proposal loop, no session timeout, and the
+      accepted correctness, deadline, safety, and latency outcomes before the
+      complete-suite rerun.
     - [ ] Run and independently reopen all sixteen Realtime-CU cases from one
       subsequently frozen candidate. If any aggregate or case materially
       regresses, retain it and repeat diagnosis, focused repair, and the exact
@@ -3118,6 +3243,25 @@ the required new 165-attempt sample.
       rate” has no released threshold. The historical comparator remains a
       separate named metric. These implementation subgates do not close the
       parent until the focused and full live reruns are retained and reviewed.
+    - [x] Make live and recovered FDB v3 attempts pass through one fail-closed
+      raw-transcript scorer and emit the missing release observations:
+      unintended-effect count, control-markup speech count, playback-start to
+      first-tool-call time, and maximum call-to-result time. Timing is accepted
+      only with one initial ready boundary, positive finite playback duration,
+      finite monotonic moments, complete call/result pairs, and no outstanding
+      work. A no-call attempt omits unavailable latency metrics with an explicit
+      reason instead of recording a misleading zero; recovered attempts must
+      reproduce the live outcome exactly. The scorer and harness identities
+      are pinned. No aggregate or per-case threshold is invented here, so the
+      representative-slice, target-registration, and live-run gates remain
+      open.
+    - [x] Repair the checked FDB v3 release-matrix invocation so the candidate
+      command passes exactly one canonical `-model openrealtime` selector.
+      Matrix validation pins both the argument count and value, preventing a
+      missing or ambiguous model selection from reaching a long campaign.
+      This closes only the command-construction defect; it does not supply the
+      still-missing representative-slice declaration, quality targets, or live
+      100-task rerun.
 - [ ] After all implementation and configuration work is frozen, build one
   clean final candidate, pin its exact graph/values/deployment/model/policy and
   machine identities, and run the complete required matrix from that candidate.
