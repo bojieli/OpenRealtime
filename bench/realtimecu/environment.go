@@ -245,13 +245,23 @@ func (episode *Episode) CaptureCamera(context.Context) ([]byte, error) {
 	return encoded.Bytes(), nil
 }
 
+// PageResultCode identifies a deterministic terminal condition reported by the
+// browser fixture. Reason remains human-readable evidence; scoring must use the
+// structured code rather than infer semantics from that prose.
+type PageResultCode string
+
+const (
+	PageResultCodeBeforeCondition PageResultCode = "before_condition"
+)
+
 // PageResult is the deterministic evaluator state owned by the fixture.
 type PageResult struct {
-	Complete      bool    `json:"complete"`
-	Success       bool    `json:"success"`
-	Reason        string  `json:"reason"`
-	CompletedAtMS float64 `json:"completed_at_ms"`
-	Actions       int     `json:"actions"`
+	Complete      bool           `json:"complete"`
+	Success       bool           `json:"success"`
+	Code          PageResultCode `json:"code,omitempty"`
+	Reason        string         `json:"reason"`
+	CompletedAtMS float64        `json:"completed_at_ms"`
+	Actions       int            `json:"actions"`
 }
 
 func (episode *Episode) Result(ctx context.Context) (PageResult, error) {

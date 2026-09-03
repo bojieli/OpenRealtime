@@ -15,6 +15,9 @@ func score(
 ) bench.TaskOutcome {
 	outcome.Completed = true
 	outcome.Notes["page_result"] = page.Reason
+	if page.Code != "" {
+		outcome.Notes["page_result_code"] = string(page.Code)
+	}
 	if transcript.Failure != "" {
 		outcome.Notes["session_failure"] = transcript.Failure
 	}
@@ -43,25 +46,25 @@ func score(
 
 	readyAt, ready := firstMoment(transcript, bench.MomentReady, "")
 	firstCall, called := firstEffect(transcript)
+	premature := page.Code == PageResultCodeBeforeCondition
 	deadlineMissed := true
 	if ready && called {
 		reaction := firstCall.AtMS - (readyAt.AtMS + milliseconds(item.Task.CueAt))
 		outcome.Metrics["cue_to_action_latency_ms"] = reaction
-		outcome.Metrics["premature_action_count"] = truth(reaction < -250)
-		deadlineMissed = reaction < -250 || reaction > milliseconds(item.Task.Deadline)
+		premature = premature || reaction < -250
+		deadlineMissed = premature || reaction > milliseconds(item.Task.Deadline)
 		if stopped, ok := lastMomentBefore(transcript, bench.MomentSpeechStopped, firstCall.AtMS); ok {
 			outcome.Metrics["speech_end_to_action_latency_ms"] = firstCall.AtMS - stopped.AtMS
 		}
-	} else {
-		outcome.Metrics["premature_action_count"] = 0
 	}
+	outcome.Metrics["premature_action_count"] = truth(premature)
 	if anyCall, ok := firstMoment(transcript, bench.MomentToolCall, ""); ready && ok {
 		outcome.Metrics["cue_to_first_tool_latency_ms"] =
 			anyCall.AtMS - (readyAt.AtMS + milliseconds(item.Task.CueAt))
 	}
 	if page.Complete && page.Success {
 		completionReaction := page.CompletedAtMS - milliseconds(item.Task.CueAt)
-		deadlineMissed = completionReaction < -250 || completionReaction > milliseconds(item.Task.Deadline)
+		deadlineMissed = premature || completionReaction < -250 || completionReaction > milliseconds(item.Task.Deadline)
 	}
 	outcome.Metrics["deadline_miss_count"] = truth(deadlineMissed)
 	outcome.Passed = page.Complete && page.Success && !deadlineMissed

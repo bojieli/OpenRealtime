@@ -23,6 +23,45 @@ func TestScoreSeparatesCorrectnessFromDeadline(t *testing.T) {
 	}
 }
 
+func TestScoreTreatsAuthoritativeBeforeConditionAsPrematureInsideTimestampTolerance(t *testing.T) {
+	item := Case{Task: Task{CueAt: time.Second, Deadline: 400 * time.Millisecond}, Grounding: GroundingPixel}
+	base := bench.TaskOutcome{Metrics: map[string]float64{}, Notes: map[string]string{}}
+	transcript := bench.Transcript{Moments: []bench.Moment{
+		{AtMS: 100, Kind: bench.MomentReady},
+		// The action is only 25 ms before the transcript-derived cue, inside the
+		// scorer's clock-alignment tolerance. The browser nevertheless observed
+		// that the authored condition was false and is authoritative about it.
+		{AtMS: 1075, Kind: bench.MomentToolCall},
+	}}
+	result := score(base, item, time.Now(), PageResult{
+		Complete: true, Success: false, Code: PageResultCodeBeforeCondition,
+		CompletedAtMS: 975, Reason: "human-readable wording may change",
+	}, nil, transcript)
+	if result.Passed || result.Metrics["premature_action_count"] != 1 ||
+		result.Metrics["deadline_miss_count"] != 1 {
+		t.Fatalf("authoritative before-condition result must fail timing safety: %+v", result)
+	}
+	if result.Notes["page_result_code"] != string(PageResultCodeBeforeCondition) {
+		t.Fatalf("structured page result code was not retained: %+v", result.Notes)
+	}
+}
+
+func TestScoreRetainsTimestampToleranceWithoutBeforeConditionCode(t *testing.T) {
+	item := Case{Task: Task{CueAt: time.Second, Deadline: 400 * time.Millisecond}, Grounding: GroundingPixel}
+	base := bench.TaskOutcome{Metrics: map[string]float64{}, Notes: map[string]string{}}
+	transcript := bench.Transcript{Moments: []bench.Moment{
+		{AtMS: 0, Kind: bench.MomentReady},
+		{AtMS: 975, Kind: bench.MomentToolCall},
+	}}
+	result := score(base, item, time.Now(), PageResult{
+		Complete: true, Success: true, CompletedAtMS: 975, Reason: "fixture success",
+	}, nil, transcript)
+	if !result.Passed || result.Metrics["premature_action_count"] != 0 ||
+		result.Metrics["deadline_miss_count"] != 0 {
+		t.Fatalf("small clock skew without authoritative early evidence must retain tolerance: %+v", result)
+	}
+}
+
 func TestScoreRetainsRecognizedUserTurnsForFailureDiagnosis(t *testing.T) {
 	base := bench.TaskOutcome{Metrics: map[string]float64{}, Notes: map[string]string{}}
 	transcript := bench.Transcript{Moments: []bench.Moment{
