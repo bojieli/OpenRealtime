@@ -43,16 +43,76 @@ import (
 const (
 	scenarioEndpointModelName    = "scenario-conversation-endpoint-test"
 	scenarioEndpointVoice        = "scenario-endpoint-voice"
-	scenarioEndpointTool         = "lookup.weather"
-	scenarioEndpointCallID       = "call_weather_endpoint_1"
 	scenarioEndpointSilentCallID = "call_click_silent_endpoint_1"
 	scenarioEndpointPrompt       = "Follow the exact endpoint scenario instructions."
 )
 
 var errScenarioEndpointProvider = errors.New("scripted endpoint provider failure")
 
+type scenarioEndpointToolCase struct {
+	name               string
+	tool               string
+	callID             string
+	stableTranscript   string
+	unstableTranscript string
+	finalTranscript    string
+	description        string
+	parameters         string
+	normalizers        []legacyaction.ToolArgumentNormalizer
+	proposalArguments  string
+	effectiveArguments string
+	result             string
+	reply              string
+}
+
+func scenarioEndpointToolCases() []scenarioEndpointToolCase {
+	return []scenarioEndpointToolCase{
+		{
+			name:               "byte-exact weather call",
+			tool:               "lookup.weather",
+			callID:             "call_weather_endpoint_1",
+			stableTranscript:   "weather",
+			unstableTranscript: " in Paris",
+			finalTranscript:    "weather in Paris",
+			description:        "Look up exact weather data.",
+			parameters:         `{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`,
+			proposalArguments:  `{"city":"Paris"}`,
+			effectiveArguments: `{"city":"Paris"}`,
+			result:             `{"ok":true,"temperature_c":21}`,
+			reply:              "Weather result accepted.",
+		},
+		{
+			name:               "deployment-normalized spoken identifier",
+			tool:               "track_order",
+			callID:             "call_track_order_endpoint_1",
+			stableTranscript:   "track order",
+			unstableTranscript: " X Y Z88",
+			finalTranscript:    "track order X Y Z88",
+			description:        "Track an order by its spoken identifier.",
+			parameters:         `{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}`,
+			normalizers: []legacyaction.ToolArgumentNormalizer{{
+				Argument: "order_id", Normalizer: legacyaction.ToolParameterCompactASCIIAlphanumericV1,
+			}},
+			proposalArguments:  `{"order_id":"X Y Z88"}`,
+			effectiveArguments: `{"order_id":"XYZ88"}`,
+			result:             `{"ok":true,"status":"shipped"}`,
+			reply:              "Order result accepted.",
+		},
+	}
+}
+
 func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing.T) {
-	fixture := newScenarioEndpointFixture(t)
+	for _, toolCase := range scenarioEndpointToolCases() {
+		toolCase := toolCase
+		t.Run(toolCase.name, func(t *testing.T) {
+			testScenarioConversationGraphRoundTrip(t, toolCase)
+		})
+	}
+}
+
+func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpointToolCase) {
+	t.Helper()
+	fixture := newScenarioEndpointFixture(t, toolCase)
 	contract, err := graphnative.BuildContract()
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +204,7 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	client.awaitType(5*time.Second, "session.created")
 	fixture.assertFactories(t, 1)
 
-	client.send(scenarioEndpointSessionUpdate(t))
+	client.send(scenarioEndpointSessionUpdate(t, toolCase))
 	updated := client.awaitType(5*time.Second, "session.updated")
 	assertScenarioEndpointSession(t, updated)
 
@@ -165,12 +225,12 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	client.awaitType(5*time.Second, "input_audio_buffer.speech_stopped")
 	transcript := client.awaitType(5*time.Second,
 		"conversation.item.input_audio_transcription.completed")
-	if transcript["transcript"] != "weather in Paris" {
+	if transcript["transcript"] != toolCase.finalTranscript {
 		t.Fatalf("scenario endpoint transcript = %+v", transcript)
 	}
 	call := client.awaitType(10*time.Second, "response.function_call_arguments.done")
-	if call["call_id"] != scenarioEndpointCallID || call["name"] != scenarioEndpointTool ||
-		call["arguments"] != `{"city":"Paris"}` {
+	if call["call_id"] != toolCase.callID || call["name"] != toolCase.tool ||
+		call["arguments"] != toolCase.effectiveArguments {
 		t.Fatalf("scenario endpoint function call = %+v", call)
 	}
 	callResponseID, _ := call["response_id"].(string)
@@ -183,8 +243,8 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	client.send(map[string]any{
 		"type": "conversation.item.create", "event_id": "evt_tool_result",
 		"item": map[string]any{
-			"type": "function_call_output", "call_id": scenarioEndpointCallID,
-			"output": `{"ok":true,"temperature_c":21}`,
+			"type": "function_call_output", "call_id": toolCase.callID,
+			"output": toolCase.result,
 		},
 	})
 	client.await(5*time.Second, false, func(message map[string]any) bool {
@@ -192,7 +252,7 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 			return false
 		}
 		item, _ := message["item"].(map[string]any)
-		return item["type"] == "function_call_output" && item["call_id"] == scenarioEndpointCallID
+		return item["type"] == "function_call_output" && item["call_id"] == toolCase.callID
 	})
 	client.send(map[string]any{"type": "response.create", "event_id": "evt_tool_resume"})
 	var resultEvidence trajectory.ToolResult
@@ -205,14 +265,25 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 		t.Fatalf("timed out waiting for canonical tool result; model invocations=%d policy decisions=%d next_wire=%s read_error=%v",
 			fixture.model.invocations.Load(), fixture.policy.decisions.Load(), wire, wireErr)
 	}
-	if resultEvidence.CallID != scenarioEndpointCallID || resultEvidence.Name != scenarioEndpointTool ||
-		string(resultEvidence.Output) != `{"ok":true,"temperature_c":21}` {
+	if resultEvidence.CallID != toolCase.callID || resultEvidence.Name != toolCase.tool ||
+		string(resultEvidence.Output) != toolCase.result {
 		t.Fatalf("scenario endpoint model tool result = %+v", resultEvidence)
 	}
 	firstSpeech := client.awaitType(10*time.Second, "response.output_audio.delta")
 	assertScenarioEndpointAudio(t, firstSpeech)
 	firstSpeechResponse, _ := firstSpeech["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, firstSpeechResponse, "completed")
+	spokenPlans := fixture.tts.plannedTexts()
+	if spoken := strings.Join(spokenPlans, " "); spoken != toolCase.reply {
+		t.Fatalf("action continuation reached TTS as %q", spoken)
+	}
+	for _, control := range []string{
+		toolCase.tool, toolCase.proposalArguments, toolCase.effectiveArguments, "order_id",
+	} {
+		if slices.ContainsFunc(spokenPlans, func(text string) bool { return strings.Contains(text, control) }) {
+			t.Fatalf("serialized action control %q reached TTS: %q", control, spokenPlans)
+		}
+	}
 
 	imageBytes, imageURL := scenarioEndpointJPEG(t, 64, 48)
 	client.send(map[string]any{
@@ -308,7 +379,7 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 	}
 	silentResponseID, _ := silentCall["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, silentResponseID, "completed")
-	barrier := scenarioEndpointSessionUpdate(t)
+	barrier := scenarioEndpointSessionUpdate(t, toolCase)
 	barrier["event_id"] = "evt_final_session_barrier"
 	client.send(barrier)
 	client.awaitType(5*time.Second, "session.updated")
@@ -350,11 +421,13 @@ type scenarioEndpointFixture struct {
 	policy          *scenarioEndpointPolicy
 }
 
-func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
+func newScenarioEndpointFixture(
+	t testing.TB, toolCase scenarioEndpointToolCase,
+) *scenarioEndpointFixture {
 	t.Helper()
 	fixture := &scenarioEndpointFixture{}
-	fixture.asr = &scenarioEndpointASR{}
-	fixture.model = newScenarioEndpointModel()
+	fixture.asr = &scenarioEndpointASR{toolCase: toolCase}
+	fixture.model = newScenarioEndpointModel(toolCase)
 	fixture.policy = &scenarioEndpointPolicy{}
 	fixture.tts = newScenarioEndpointTTS()
 	fixture.gatewayArtifact = fixture.artifact("gateway", "1")
@@ -390,9 +463,10 @@ func newScenarioEndpointFixture(t testing.TB) *scenarioEndpointFixture {
 		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
 		SilentModel: silentModelSelection, TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
-			Name: scenarioEndpointTool, Description: "Look up exact weather data.",
-			Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
-			Confirm:    legacyaction.ConfirmNever,
+			Name: toolCase.tool, Description: toolCase.description,
+			Parameters:          json.RawMessage(toolCase.parameters),
+			ArgumentNormalizers: slices.Clone(toolCase.normalizers),
+			Confirm:             legacyaction.ConfirmNever,
 		}, {
 			Name: click.Name, Description: click.Description,
 			Parameters: slices.Clone(click.Parameters), Confirm: legacyaction.ConfirmNever,
@@ -517,6 +591,7 @@ func scenarioEndpointPolicyDescriptor() policyelements.SemanticDeciderDescriptor
 type scenarioEndpointASR struct {
 	pushes    atomic.Int32
 	finalizes atomic.Int32
+	toolCase  scenarioEndpointToolCase
 }
 
 func (*scenarioEndpointASR) Descriptor() v1.Descriptor { return scenarioEndpointASRDescriptor() }
@@ -527,7 +602,7 @@ func (provider *scenarioEndpointASR) PushFrame(
 	sequence := provider.pushes.Add(1)
 	return []v1.PerceptionRevision{{
 		RevisionID: uint64(sequence), SourceSample: frame.SampleOffset,
-		StableText: "weather", UnstableText: " in Paris",
+		StableText: provider.toolCase.stableTranscript, UnstableText: provider.toolCase.unstableTranscript,
 	}}, nil
 }
 
@@ -537,7 +612,7 @@ func (provider *scenarioEndpointASR) Finalize(
 	sequence := provider.finalizes.Add(1)
 	return v1.PerceptionRevision{
 		RevisionID: uint64(provider.pushes.Load()) + uint64(sequence), SourceSample: sample,
-		StableText: "weather in Paris", Final: true,
+		StableText: provider.toolCase.finalTranscript, Final: true,
 	}, nil
 }
 
@@ -561,6 +636,7 @@ type scenarioEndpointMediaEvidence struct {
 
 type scenarioEndpointModel struct {
 	invocations    atomic.Int32
+	toolCase       scenarioEndpointToolCase
 	toolResults    chan trajectory.ToolResult
 	media          chan scenarioEndpointMediaEvidence
 	cancelStarted  chan struct{}
@@ -569,8 +645,9 @@ type scenarioEndpointModel struct {
 	cancelDone     sync.Once
 }
 
-func newScenarioEndpointModel() *scenarioEndpointModel {
+func newScenarioEndpointModel(toolCase scenarioEndpointToolCase) *scenarioEndpointModel {
 	return &scenarioEndpointModel{
+		toolCase:      toolCase,
 		toolResults:   make(chan trajectory.ToolResult, 1),
 		media:         make(chan scenarioEndpointMediaEvidence, 1),
 		cancelStarted: make(chan struct{}), cancelObserved: make(chan struct{}),
@@ -587,30 +664,35 @@ func (provider *scenarioEndpointModel) Continue(
 	switch invocation := provider.invocations.Add(1); invocation {
 	case 1:
 		if request.Invocation.Instruction != scenarioEndpointPrompt ||
-			len(request.Invocation.Tools) != 2 || request.Invocation.Tools[0].Name != scenarioEndpointTool ||
+			len(request.Invocation.Tools) != 2 || request.Invocation.Tools[0].Name != provider.toolCase.tool ||
 			request.Invocation.Tools[1].Name != computeruse.Click {
 			return continuation.Completion{}, errors.New("endpoint invocation settings drifted")
 		}
-		if !scenarioEndpointHasFinalAudio(request.Trajectory, "weather in Paris") {
+		toolJSON, err := json.Marshal(request.Invocation.Tools[0])
+		if err != nil {
+			return continuation.Completion{}, err
+		}
+		if bytes.Contains(toolJSON, []byte("normalizer")) || bytes.Contains(toolJSON, []byte("pattern")) {
+			return continuation.Completion{}, errors.New("deployment argument policy leaked to provider tool schema")
+		}
+		if !scenarioEndpointHasFinalAudio(request.Trajectory, provider.toolCase.finalTranscript) {
 			return continuation.Completion{}, errors.New("endpoint final audio observation is missing")
 		}
 		call := trajectory.ToolCall{
-			CallID: scenarioEndpointCallID, Name: scenarioEndpointTool,
-			Arguments: json.RawMessage(`{"city":"Paris"}`),
+			CallID: provider.toolCase.callID, Name: provider.toolCase.tool,
+			Arguments: json.RawMessage(provider.toolCase.proposalArguments),
 		}
 		if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
 			return continuation.Completion{}, err
 		}
 		return continuation.Completion{StopReason: "tool_call"}, nil
 	case 2:
-		for _, item := range request.Trajectory.Items {
-			if item.Kind == trajectory.KindToolResult && item.ToolResult != nil &&
-				item.InvocationID != "" && item.ToolResult.CallID == scenarioEndpointCallID {
-				provider.toolResults <- *item.ToolResult
-				return scenarioEndpointSpeak(emit, "Weather result accepted.")
-			}
+		result, err := scenarioEndpointActionEvidence(request.Trajectory, provider.toolCase)
+		if err != nil {
+			return continuation.Completion{}, err
 		}
-		return continuation.Completion{}, errors.New("canonical tool result is missing")
+		provider.toolResults <- result
+		return scenarioEndpointSpeak(emit, provider.toolCase.reply)
 	case 3:
 		if request.Media == nil {
 			return continuation.Completion{}, errors.New("retained-media resolver is missing")
@@ -698,8 +780,66 @@ func scenarioEndpointHasFinalAudio(snapshot trajectory.Snapshot, text string) bo
 	return false
 }
 
+func scenarioEndpointActionEvidence(
+	snapshot trajectory.Snapshot, toolCase scenarioEndpointToolCase,
+) (trajectory.ToolResult, error) {
+	var proposal, call *trajectory.Item
+	var result *trajectory.ToolResult
+	for index := range snapshot.Items {
+		item := &snapshot.Items[index]
+		switch {
+		case item.Kind == trajectory.KindToolProposal && item.ToolCall != nil &&
+			item.ToolCall.CallID == toolCase.callID:
+			proposal = item
+		case item.Kind == trajectory.KindToolCall && item.ToolCall != nil &&
+			item.ToolCall.CallID == toolCase.callID:
+			call = item
+		case item.Kind == trajectory.KindToolResult && item.ToolResult != nil &&
+			item.ToolResult.CallID == toolCase.callID:
+			result = item.ToolResult
+		}
+	}
+	if proposal == nil || call == nil || result == nil {
+		return trajectory.ToolResult{}, errors.New("normalized canonical action lifecycle is incomplete")
+	}
+	if proposal.ToolCall.Name != toolCase.tool || call.ToolCall.Name != toolCase.tool ||
+		result.Name != toolCase.tool {
+		return trajectory.ToolResult{}, errors.New("canonical action lifecycle changed the tool identity")
+	}
+	if string(proposal.ToolCall.Arguments) != toolCase.proposalArguments {
+		return trajectory.ToolResult{}, errors.New("canonical model proposal did not retain raw argument bytes")
+	}
+	if string(call.ToolCall.Arguments) != toolCase.effectiveArguments ||
+		!slices.Contains(call.CausalParentIDs, proposal.ID) {
+		return trajectory.ToolResult{}, errors.New("canonical action did not causally promote the effective call")
+	}
+	derivation := call.ToolCallDerivation
+	if len(toolCase.normalizers) == 0 {
+		if derivation != nil {
+			return trajectory.ToolResult{}, errors.New("byte-exact canonical action unexpectedly carries a derivation")
+		}
+		return *result, nil
+	}
+	if derivation == nil || derivation.Kind != trajectory.ToolCallDerivationSchemaNormalizationV1 ||
+		derivation.SourceArgumentsDigest != trajectory.ToolCallArgumentsDigest(proposal.ToolCall.Arguments) ||
+		derivation.EffectiveArgumentsDigest != trajectory.ToolCallArgumentsDigest(call.ToolCall.Arguments) ||
+		len(derivation.Rewrites) != len(toolCase.normalizers) {
+		return trajectory.ToolResult{}, errors.New("canonical action lacks the exact auditable argument derivation")
+	}
+	for index, normalizer := range toolCase.normalizers {
+		if derivation.Rewrites[index] != (trajectory.ToolCallArgumentRewrite{
+			Argument: normalizer.Argument, Normalizer: normalizer.Normalizer,
+		}) {
+			return trajectory.ToolResult{}, errors.New("canonical action changed its declared argument derivation")
+		}
+	}
+	return *result, nil
+}
+
 type scenarioEndpointTTS struct {
 	plans          atomic.Int32
+	mu             sync.Mutex
+	texts          []string
 	cancelStarted  chan struct{}
 	cancelObserved chan struct{}
 	cancelStart    sync.Once
@@ -729,6 +869,9 @@ func (provider *scenarioEndpointTTS) Stream(
 	ctx context.Context, plan v1.SpeechPlan, emit func(v1.SpeechChunk) error,
 ) error {
 	provider.plans.Add(1)
+	provider.mu.Lock()
+	provider.texts = append(provider.texts, plan.Text)
+	provider.mu.Unlock()
 	chunk := v1.SpeechChunk{
 		ChunkID: plan.CandidateID + ":audio:1", CandidateID: plan.CandidateID,
 		SampleRateHz: 24_000, PCM16LE: scenarioEndpointPCM(2_400), Final: true,
@@ -744,6 +887,12 @@ func (provider *scenarioEndpointTTS) Stream(
 		return context.Cause(ctx)
 	}
 	return emit(chunk)
+}
+
+func (provider *scenarioEndpointTTS) plannedTexts() []string {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return slices.Clone(provider.texts)
 }
 
 func scenarioEndpointTTSDescriptor() v1.Descriptor {
@@ -939,7 +1088,9 @@ func scenarioEndpointClickDefinition(t testing.TB) computeruse.Definition {
 	return computeruse.Definition{}
 }
 
-func scenarioEndpointSessionUpdate(t testing.TB) map[string]any {
+func scenarioEndpointSessionUpdate(
+	t testing.TB, toolCase scenarioEndpointToolCase,
+) map[string]any {
 	t.Helper()
 	click := scenarioEndpointClickDefinition(t)
 	return map[string]any{
@@ -962,13 +1113,8 @@ func scenarioEndpointSessionUpdate(t testing.TB) map[string]any {
 				},
 			},
 			"tools": []map[string]any{{
-				"type": "function", "name": scenarioEndpointTool,
-				"description": "Look up exact weather data.",
-				"parameters": map[string]any{
-					"type": "object", "properties": map[string]any{
-						"city": map[string]any{"type": "string"},
-					}, "required": []string{"city"},
-				},
+				"type": "function", "name": toolCase.tool,
+				"description": toolCase.description, "parameters": json.RawMessage(toolCase.parameters),
 			}, {
 				"type": "function", "name": click.Name,
 				"description": click.Description, "parameters": json.RawMessage(click.Parameters),
