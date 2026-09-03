@@ -945,6 +945,9 @@ func (session *session) onTextMessage(create conversationItemCreateEvent) error 
 	}
 	return session.runtime.Text(session.ctx, binding.TextInput{
 		ItemID: itemID, Role: role, Text: text, Images: images,
+		// Gateway dispatch time shares the absolute Unix clock used by video
+		// arrival timestamps. It is not claimed to be socket receipt time.
+		OccurredNS: uint64(time.Now().UnixNano()),
 	})
 }
 

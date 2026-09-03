@@ -9,12 +9,47 @@ import (
 	"testing"
 	"time"
 
+	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+func TestTypedTextPreservesSourceTimeOnObservationEnvelope(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		occurredNS uint64
+	}{
+		{name: "gateway source time", occurredNS: 1_787_856_123_456_789_000},
+		{name: "direct caller fallback remains available"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			port := &recordingOutputPort{name: textBoundary, typeName: stateelements.ObservationType()}
+			session := &session{
+				sessionID: "typed-time-session", text: port,
+				revisions: make(map[string]uint64), captured: make(map[string]uint64),
+				seenText: make(map[string]struct{}), active: make(map[string]activeCall),
+			}
+			if err := session.Text(context.Background(), legacy.TextInput{
+				ItemID: "typed-item", Role: "user", Text: "click continue",
+				OccurredNS: testCase.occurredNS,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			envelopes := port.snapshot()
+			if len(envelopes) != 1 || envelopes[0].CaptureNS != testCase.occurredNS {
+				t.Fatalf("typed observation envelopes = %+v", envelopes)
+			}
+			observation, ok := envelopes[0].Payload.(perception.Observation)
+			if !ok || observation.OccurredNS != testCase.occurredNS ||
+				observation.Authority != trajectory.AuthorityUser || !observation.Final {
+				t.Fatalf("typed observation = %+v (%T)", envelopes[0].Payload, envelopes[0].Payload)
+			}
+		})
+	}
+}
 
 func TestScreenObservationsCausallyConsumeCanonicalClientEffectsInFIFOOrder(t *testing.T) {
 	observer := &adapterTestObserver{name: "test-observer"}

@@ -723,8 +723,11 @@ func (session *session) Text(ctx context.Context, input legacy.TextInput) error 
 	observation := perception.Observation{
 		Text: input.Text, Observer: textObserverName, Source: "text",
 		Authority: trajectory.AuthorityUser, Revision: revision, Final: true,
+		OccurredNS: input.OccurredNS,
 	}
-	if err := session.sendObservation(ctx, session.text, observation, 0, nil, input.ItemID); err != nil {
+	if err := session.sendObservation(
+		ctx, session.text, observation, input.OccurredNS, nil, input.ItemID,
+	); err != nil {
 		return err
 	}
 	session.seenText[input.ItemID] = struct{}{}

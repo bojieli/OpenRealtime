@@ -375,10 +375,28 @@ func (runner *observationCommitRunner) startObservation(
 	for _, parent := range queued.envelope.CausalParents {
 		parents = appendUniqueString(parents, parent)
 	}
+	committedNS := runner.clock.NowNS()
+	occurredNS := queued.observation.OccurredNS
+	// Audio/video observations and timestamped typed input retain their source
+	// clock exactly. Direct callers may omit the optional typed-input time, so
+	// establish one only when a final user observation would otherwise become an
+	// untimed durable intent. The value one is the earliest valid runtime-clock
+	// instant and keeps an injected clock that starts at zero from producing
+	// invalid evidence.
+	if queued.observation.Authority == trajectory.AuthorityUser &&
+		queued.observation.Final && occurredNS == 0 {
+		occurredNS = queued.envelope.CaptureNS
+		if occurredNS == 0 {
+			occurredNS = committedNS
+		}
+		if occurredNS == 0 {
+			occurredNS = 1
+		}
+	}
 	trajectoryItemID := fmt.Sprintf("%s-observation-%d", runner.instance, canonicalRevision)
 	item := trajectory.Item{
 		ID: trajectoryItemID, Kind: trajectory.KindObservation,
-		MonotonicNS: runner.clock.NowNS(), CausalParentIDs: parents,
+		MonotonicNS: committedNS, CausalParentIDs: parents,
 		SourceRevision: canonicalRevision, Producer: queued.observation.Producer(),
 		Content: queued.observation.Text, Observation: queued.observation.Meta(),
 		Event: &trajectory.EventMetadata{
@@ -387,7 +405,7 @@ func (runner *observationCommitRunner) startObservation(
 				false: queued.observation.Observer + ".revision"}[queued.observation.Final],
 			Source:     queued.observation.Observer,
 			Channel:    firstCanonical(queued.observation.Source, queued.envelope.SourceID, "observation"),
-			OccurredNS: queued.observation.OccurredNS,
+			OccurredNS: occurredNS,
 			CorrelationID: firstCanonical(queued.envelope.OpportunityID,
 				queued.envelope.SourceID, queued.streamID),
 			SupersedesRevision: superseded.canonicalRevision,

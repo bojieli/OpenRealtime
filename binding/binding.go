@@ -180,6 +180,10 @@ type TextInput struct {
 	ItemID string `json:"item_id"`
 	Role   string `json:"role"`
 	Text   string `json:"text"`
+	// OccurredNS is source time for the typed event. Protocol gateways should
+	// stamp it in the same clock domain as other client media; zero lets direct
+	// callers use the receiving binding's documented fallback.
+	OccurredNS uint64 `json:"occurred_ns,omitempty"`
 	// Images are pictures the client attached to this turn.
 	//
 	// They are not a video source. A source is a stream the server gates,

@@ -1,11 +1,94 @@
 package gateway_test
 
 import (
+	"context"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/binding/cascade"
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/gateway"
+	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 )
+
+type textTimestampBinding struct {
+	binding.Binding
+	inputs chan<- binding.TextInput
+}
+
+func (bind textTimestampBinding) Start(
+	ctx context.Context, options binding.Options,
+) (binding.Runtime, error) {
+	runtime, err := bind.Binding.Start(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	return &textTimestampRuntime{Runtime: runtime, inputs: bind.inputs}, nil
+}
+
+type textTimestampRuntime struct {
+	binding.Runtime
+	inputs chan<- binding.TextInput
+}
+
+func (runtime *textTimestampRuntime) Text(ctx context.Context, input binding.TextInput) error {
+	runtime.inputs <- input
+	return runtime.Runtime.Text(ctx, input)
+}
+
+func TestGatewayStampsTypedTextInAbsoluteDispatchClock(t *testing.T) {
+	legacyBind, err := cascade.New(cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "unused"}, nil },
+		Fast:       fast(), Slow: slow(), Speech: toneSpeech{}, Voice: "test-voice", FastMaxTokens: 64,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := graphbinding.New(legacyBind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := make(chan binding.TextInput, 1)
+	gatewayServer, err := gateway.New(gateway.Config{
+		Binding: textTimestampBinding{Binding: mounted, inputs: inputs},
+		Model:   "openrealtime-test", ValidateWire: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(testGatewayHandler(gatewayServer))
+	t.Cleanup(func() {
+		httpServer.Close()
+		closeCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := gatewayServer.Close(closeCtx); err != nil {
+			t.Errorf("close gateway: %v", err)
+		}
+	})
+	client := dial(t, httpServer)
+	client.await("session.created", 5*time.Second)
+	before := uint64(time.Now().UnixNano())
+	client.send(map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"id": "typed-source-time", "type": "message", "role": "user",
+			"content": []map[string]any{{"type": "input_text", "text": "click continue"}},
+		},
+	})
+	client.await("conversation.item.created", 5*time.Second)
+	after := uint64(time.Now().UnixNano())
+	select {
+	case input := <-inputs:
+		if input.OccurredNS < before || input.OccurredNS > after || input.OccurredNS < 1_000_000_000_000_000_000 {
+			t.Fatalf("typed input dispatch time = %d, want Unix nanoseconds in [%d, %d]", input.OccurredNS, before, after)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("typed input did not reach binding")
+	}
+}
 
 // A computer-use agent wants the function calls and the reasoning, not a voice.
 // Refusing text output made this server unusable for exactly the clients the
