@@ -5,14 +5,17 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -47,6 +50,7 @@ type realtimeCUReviewCLIConfig struct {
 	Resume                        bool
 	Provider                      string
 	APIKeyEnvironment             string
+	ReceiptPath                   string
 	SourceReceiptPath             string
 	EvaluationReceiptDirectory    string
 	EvaluationQuarantineDirectory string
@@ -64,6 +68,7 @@ type realtimeCUReviewCLIResources struct {
 	reviewer                      review.ProviderDescriptor
 	encoder                       reviewmedia.EncoderDescriptor
 	attestor                      reviewmedia.AttestorDescriptor
+	receiptPath                   string
 	sourceReceiptPath             string
 	evaluationReceiptDirectory    string
 	evaluationQuarantineDirectory string
@@ -71,12 +76,120 @@ type realtimeCUReviewCLIResources struct {
 	evidenceComplete              bool
 }
 
+func runRealtimeCUReviewVerification(arguments []string, output io.Writer) error {
+	options, err := resolveRealtimeCUReviewVerificationOptions(
+		"verify-realtime-cu-review", arguments, output,
+	)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	verified, err := realtimecu.VerifyReviewBundlePublication(ctx, options)
+	if err != nil {
+		return err
+	}
+	return reportRealtimeCUReviewVerification(output, options, verified)
+}
+
+func runRealtimeCUReviewReceiptPublication(arguments []string, output io.Writer) error {
+	options, err := resolveRealtimeCUReviewVerificationOptions(
+		"anchor-realtime-cu-review", arguments, output,
+	)
+	if err != nil {
+		return err
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	verified, err := realtimecu.PublishReviewBundleReceipt(ctx, options)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "create-only Realtime-CU final review receipt anchored at %s\n",
+		options.ReceiptPath)
+	return reportRealtimeCUReviewVerification(output, options, verified)
+}
+
+func resolveRealtimeCUReviewVerificationOptions(
+	command string, arguments []string, output io.Writer,
+) (realtimecu.ReviewBundleVerificationOptions, error) {
+	flags := flag.NewFlagSet("openrealtime bench "+command, flag.ContinueOnError)
+	var options realtimecu.ReviewBundleVerificationOptions
+	flags.StringVar(&options.Directory, "review-dir", "", "sealed Realtime-CU review directory")
+	flags.StringVar(&options.ReceiptPath, "review-receipt", "", "external final Realtime-CU review receipt")
+	flags.StringVar(&options.SourceReceiptPath, "review-source-receipt", "", "external deterministic-source receipt")
+	flags.StringVar(&options.EvaluationReceiptDirectory, "review-evaluation-receipts", "", "external per-case evaluation receipt directory")
+	flags.SetOutput(output)
+	if err := flags.Parse(arguments); err != nil {
+		return realtimecu.ReviewBundleVerificationOptions{}, err
+	}
+	if flags.NArg() != 0 || strings.TrimSpace(options.Directory) == "" {
+		return realtimecu.ReviewBundleVerificationOptions{},
+			fmt.Errorf("%s accepts flags only and requires -review-dir", command)
+	}
+	directory, err := filepath.Abs(options.Directory)
+	if err != nil {
+		return realtimecu.ReviewBundleVerificationOptions{},
+			errors.New("resolve Realtime-CU review verification directory")
+	}
+	options.Directory = directory
+	if options.ReceiptPath == "" {
+		options.ReceiptPath = directory + ".receipt.json"
+	}
+	if options.SourceReceiptPath == "" {
+		options.SourceReceiptPath = directory + ".source-receipt.json"
+	}
+	if options.EvaluationReceiptDirectory == "" {
+		options.EvaluationReceiptDirectory = directory + ".evaluation-receipts"
+	}
+	for destination, source := range map[*string]string{
+		&options.ReceiptPath:                options.ReceiptPath,
+		&options.SourceReceiptPath:          options.SourceReceiptPath,
+		&options.EvaluationReceiptDirectory: options.EvaluationReceiptDirectory,
+	} {
+		resolved, resolveErr := filepath.Abs(source)
+		if resolveErr != nil {
+			return realtimecu.ReviewBundleVerificationOptions{},
+				errors.New("resolve Realtime-CU review verification path")
+		}
+		*destination = resolved
+	}
+	return options, nil
+}
+
+func reportRealtimeCUReviewVerification(
+	output io.Writer, options realtimecu.ReviewBundleVerificationOptions,
+	verified realtimecu.ReviewBundleVerification,
+) error {
+	fmt.Fprintf(output, "verified Realtime-CU review integrity: %d/%d cases, %d external evaluations\n",
+		len(verified.Manifest.Attempts), verified.Manifest.Expected,
+		len(verified.EvaluationReceipts))
+	fmt.Fprintf(output, "review bundle   : %s\n", options.Directory)
+	fmt.Fprintf(output, "review receipt  : %s (%s)\n",
+		options.ReceiptPath, verified.Receipt.ManifestSHA256)
+	fmt.Fprintf(output, "source receipt  : %s (%s)\n",
+		options.SourceReceiptPath, verified.SourceReceipt.ReceiptSHA256)
+	if !verified.EvidenceComplete {
+		fmt.Fprintln(output, "DIAGNOSTIC POPULATION INCOMPLETE: integrity verified; exact16 reportable source and evaluation evidence is required")
+		return nil
+	}
+	wantReviewer := gemini.Descriptor()
+	for _, attempt := range verified.Manifest.Attempts {
+		if attempt.Reviewer == nil || *attempt.Reviewer != wantReviewer {
+			fmt.Fprintln(output, "POPULATION EVIDENCE INCOMPLETE: verified evidence does not use the exact google.gemini-3.7-flash reviewer for every case")
+			return errors.New("verified Realtime-CU review has a nonconforming reviewer identity")
+		}
+	}
+	fmt.Fprintln(output, "population-complete Realtime-CU review evidence verified (exact16 synchronized A/V + external receipts + Gemini 3.7 Flash); behavioral acceptance not evaluated")
+	return nil
+}
+
 func openRealtimeCUReviewCLI(
 	ctx context.Context, config realtimeCUReviewCLIConfig, deploymentToken string,
 	lookupEnv func(string) (string, bool),
 ) (*realtimeCUReviewCLIResources, error) {
 	if strings.TrimSpace(config.Directory) == "" {
-		if config.Resume || config.SourceReceiptPath != "" || config.EvaluationReceiptDirectory != "" ||
+		if config.Resume || config.ReceiptPath != "" || config.SourceReceiptPath != "" || config.EvaluationReceiptDirectory != "" ||
 			config.EvaluationQuarantineDirectory != "" || (config.Concurrency != 0 && config.Concurrency != 4) ||
 			config.FFmpegPath != "" || config.FFprobePath != "" || config.BubblewrapPath != "" ||
 			(config.Provider != "" && config.Provider != gemini.RegistrationName) {
@@ -107,6 +220,9 @@ func openRealtimeCUReviewCLI(
 	if config.SourceReceiptPath == "" {
 		config.SourceReceiptPath = directory + ".source-receipt.json"
 	}
+	if config.ReceiptPath == "" {
+		config.ReceiptPath = directory + ".receipt.json"
+	}
 	if config.EvaluationReceiptDirectory == "" {
 		config.EvaluationReceiptDirectory = directory + ".evaluation-receipts"
 	}
@@ -117,6 +233,10 @@ func openRealtimeCUReviewCLI(
 	if err != nil {
 		return nil, errors.New("resolve Realtime-CU source receipt path")
 	}
+	receiptPath, err := filepath.Abs(config.ReceiptPath)
+	if err != nil {
+		return nil, errors.New("resolve Realtime-CU final review receipt path")
+	}
 	evaluationReceiptDirectory, err := filepath.Abs(config.EvaluationReceiptDirectory)
 	if err != nil {
 		return nil, errors.New("resolve Realtime-CU evaluation receipt directory")
@@ -126,7 +246,8 @@ func openRealtimeCUReviewCLI(
 		return nil, errors.New("resolve Realtime-CU evaluation quarantine directory")
 	}
 	paths := []string{
-		directory, sourceReceiptPath, evaluationReceiptDirectory, evaluationQuarantineDirectory,
+		directory, receiptPath, sourceReceiptPath, evaluationReceiptDirectory,
+		evaluationQuarantineDirectory,
 	}
 	for _, path := range paths {
 		if filepath.Clean(path) != path || path == filepath.Dir(path) {
@@ -159,6 +280,11 @@ func openRealtimeCUReviewCLI(
 			if statErr != nil || info.Mode()&os.ModeSymlink != 0 || info.IsDir() != wantDirectory {
 				return nil, fmt.Errorf("Realtime-CU review resume path is missing or invalid: %s", path)
 			}
+		}
+		if _, statErr := os.Lstat(receiptPath); statErr == nil {
+			return nil, fmt.Errorf("Realtime-CU review create-only path already exists: %s", receiptPath)
+		} else if !os.IsNotExist(statErr) {
+			return nil, errors.New("inspect Realtime-CU review create-only path")
 		}
 	} else {
 		for _, path := range paths {
@@ -306,6 +432,7 @@ func openRealtimeCUReviewCLI(
 		bundle: bundle, resumedResult: resumedResult, lease: lease, reviewer: lease.Descriptor(),
 		encoder: encoderDescriptor, attestor: attestorDescriptor,
 		sensitive:                     slices.Clone(sensitive),
+		receiptPath:                   receiptPath,
 		sourceReceiptPath:             sourceReceiptPath,
 		evaluationReceiptDirectory:    evaluationReceiptDirectory,
 		evaluationQuarantineDirectory: evaluationQuarantineDirectory,
@@ -563,15 +690,37 @@ func (resources *realtimeCUReviewCLIResources) retain(ctx context.Context, outpu
 		}
 		fmt.Fprintf(output, "Realtime-CU evaluation receipt retained at %s\n", path)
 	}
+	if resultErr != nil {
+		return resultErr
+	}
 	if receipt, ok := resources.bundle.Receipt(); ok {
 		manifest, verifyErr := realtimecu.VerifyReviewBundleReceipt(receipt.Directory, receipt)
 		if verifyErr != nil {
 			resultErr = errors.Join(resultErr, errors.New("reverify sealed Realtime-CU review bundle"))
 		} else {
-			resources.evidenceComplete = manifest.Complete && manifest.Reportable &&
-				len(manifest.Attempts) == 16 && len(evaluationReceipts) == 16
-			fmt.Fprintf(output, "Realtime-CU review bundle sealed at %s (%s)\n",
-				receipt.Directory, receipt.ManifestSHA256)
+			verified, publicationErr := realtimecu.PublishReviewBundleReceipt(
+				ctx, realtimecu.ReviewBundleVerificationOptions{
+					Directory: receipt.Directory, ReceiptPath: resources.receiptPath,
+					SourceReceiptPath:          resources.sourceReceiptPath,
+					EvaluationReceiptDirectory: resources.evaluationReceiptDirectory,
+				},
+			)
+			if publicationErr != nil {
+				resultErr = errors.Join(resultErr,
+					fmt.Errorf("durably publish final Realtime-CU review receipt: %w", publicationErr))
+			} else {
+				if verified.Receipt != receipt {
+					return errors.Join(resultErr,
+						errors.New("published Realtime-CU final receipt differs from the run receipt"))
+				}
+				resources.evidenceComplete = verified.EvidenceComplete &&
+					manifest.Complete && manifest.Reportable && len(manifest.Attempts) == 16 &&
+					len(evaluationReceipts) == 16
+				fmt.Fprintf(output, "Realtime-CU review bundle sealed at %s (%s)\n",
+					receipt.Directory, receipt.ManifestSHA256)
+				fmt.Fprintf(output, "Realtime-CU final review receipt retained at %s\n",
+					resources.receiptPath)
+			}
 		}
 	} else {
 		fmt.Fprintln(output,

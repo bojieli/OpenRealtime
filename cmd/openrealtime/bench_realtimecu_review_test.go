@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -170,6 +171,80 @@ func TestOpenRealtimeCUReviewCLINoDirectoryLeavesEvidenceUnconfigured(t *testing
 	}, "", os.LookupEnv)
 	if err != nil || resources != nil {
 		t.Fatalf("unconfigured review resources=%+v error=%v", resources, err)
+	}
+}
+
+func TestRealtimeCUReviewVerificationReportsDiagnosticAsIncomplete(t *testing.T) {
+	var output bytes.Buffer
+	options := realtimecu.ReviewBundleVerificationOptions{
+		Directory: "/fixture/review", ReceiptPath: "/fixture/review.receipt.json",
+		SourceReceiptPath:          "/fixture/review.source-receipt.json",
+		EvaluationReceiptDirectory: "/fixture/review.evaluation-receipts",
+	}
+	verified := realtimecu.ReviewBundleVerification{
+		Receipt: realtimecu.ReviewBundleReceipt{ManifestSHA256: strings.Repeat("a", 64)},
+		SourceReceipt: realtimecu.ReviewSourceReceipt{
+			ReceiptSHA256: strings.Repeat("b", 64),
+		},
+		Manifest: realtimecu.ReviewManifest{
+			Expected: 16, Attempts: []realtimecu.ReviewAttempt{{Case: "static-control/pixel"}},
+		},
+		EvaluationReceipts: map[string]review.EvaluationBundleReceipt{
+			"static-control/pixel": {},
+		},
+		EvidenceComplete: false,
+	}
+	err := reportRealtimeCUReviewVerification(&output, options, verified)
+	if err != nil || !strings.Contains(output.String(), "1/16") ||
+		!strings.Contains(output.String(), "DIAGNOSTIC POPULATION INCOMPLETE") ||
+		strings.Contains(output.String(), "population-complete") ||
+		strings.Contains(output.String(), "accepted") ||
+		strings.Contains(output.String(), "release-ready") {
+		t.Fatalf("diagnostic verification output=%q error=%v", output.String(), err)
+	}
+}
+
+func TestRealtimeCUReviewVerificationReportsPopulationWithoutBehavioralAcceptance(t *testing.T) {
+	var output bytes.Buffer
+	descriptor := gemini.Descriptor()
+	attempts := make([]realtimecu.ReviewAttempt, 16)
+	receipts := make(map[string]review.EvaluationBundleReceipt, 16)
+	for index := range attempts {
+		caseID := fmt.Sprintf("fixture-case-%02d", index+1)
+		attempts[index] = realtimecu.ReviewAttempt{Case: caseID, Reviewer: &descriptor}
+		receipts[caseID] = review.EvaluationBundleReceipt{}
+	}
+	verified := realtimecu.ReviewBundleVerification{
+		Receipt: realtimecu.ReviewBundleReceipt{ManifestSHA256: strings.Repeat("a", 64)},
+		SourceReceipt: realtimecu.ReviewSourceReceipt{
+			ReceiptSHA256: strings.Repeat("b", 64),
+		},
+		Manifest:           realtimecu.ReviewManifest{Expected: 16, Attempts: attempts},
+		EvaluationReceipts: receipts,
+		EvidenceComplete:   true,
+	}
+	err := reportRealtimeCUReviewVerification(&output, realtimecu.ReviewBundleVerificationOptions{
+		Directory: "/fixture/review", ReceiptPath: "/fixture/review.receipt.json",
+		SourceReceiptPath: "/fixture/review.source-receipt.json",
+	}, verified)
+	text := output.String()
+	if err != nil || !strings.Contains(text, "population-complete") ||
+		!strings.Contains(text, "behavioral acceptance not evaluated") ||
+		strings.Contains(text, "release-ready") || strings.Contains(text, "accepted") {
+		t.Fatalf("population verification output=%q error=%v", text, err)
+	}
+}
+
+func TestRunBenchDispatchesCredentialFreeRealtimeCUReviewVerifier(t *testing.T) {
+	var output bytes.Buffer
+	err := runBench([]string{"verify-realtime-cu-review"}, &output)
+	if err == nil || !strings.Contains(err.Error(), "requires -review-dir") {
+		t.Fatalf("verify-realtime-cu-review dispatch error=%v output=%q", err, output.String())
+	}
+	output.Reset()
+	err = runBench([]string{"anchor-realtime-cu-review"}, &output)
+	if err == nil || !strings.Contains(err.Error(), "requires -review-dir") {
+		t.Fatalf("anchor-realtime-cu-review dispatch error=%v output=%q", err, output.String())
 	}
 }
 

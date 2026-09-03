@@ -81,7 +81,7 @@ type meetingReviewCLIResources struct {
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|fdb|fdbv3|fdbench|tau-voice|dynacu|review-candidate|verify-candidate-review> [flags]")
+		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|anchor-realtime-cu-review|verify-realtime-cu-review|fdb|fdbv3|fdbench|tau-voice|dynacu|review-candidate|verify-candidate-review> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -99,6 +99,10 @@ func runBench(arguments []string, output io.Writer) error {
 		return runTauVoice(arguments[1:], output)
 	case "realtime-cu", "realtime-computer-use", "computer-use":
 		return runRealtimeCU(arguments[1:], output)
+	case "verify-realtime-cu-review":
+		return runRealtimeCUReviewVerification(arguments[1:], output)
+	case "anchor-realtime-cu-review":
+		return runRealtimeCUReviewReceiptPublication(arguments[1:], output)
 	case "meeting", "meeting-assistant", "live-meeting":
 		return runMeeting(arguments[1:], output)
 	case "dynacu":
@@ -846,6 +850,8 @@ func runRealtimeCU(arguments []string, output io.Writer) error {
 		"offline reviewer plug-in (exactly google.gemini-3.7-flash)")
 	flags.StringVar(&reviewConfig.APIKeyEnvironment, "review-key-env", "GEMINI_API_KEY",
 		"environment variable holding the Gemini review key")
+	flags.StringVar(&reviewConfig.ReceiptPath, "review-receipt", "",
+		"external create-only final review receipt path")
 	flags.StringVar(&reviewConfig.SourceReceiptPath, "review-source-receipt", "",
 		"external create-only deterministic source receipt path")
 	flags.StringVar(&reviewConfig.EvaluationReceiptDirectory, "review-evaluation-receipts", "",
