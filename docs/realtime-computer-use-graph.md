@@ -287,18 +287,18 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
-The 2026-09-04 canceled-effect-cleanup and deferred-replay production-artifact
-checkpoint pins, for
+The 2026-09-04 canceled-effect-cleanup, deferred-replay, and superseded-observation
+authority checkpoint pins, for
 the checked integration fixture in
 `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
 (`benchmark-browser`, one `screen` source at 1280x720, and the test
 model/policy/observer selections), graph fingerprint
-`sha256:7c3e56f79e6e41ffb2263ae3ca0d2c388c030e4da033a6c4da67f5780af89567`
+`sha256:762753ea42dbdee3333a0bc805693623b4b29dce72046330160170d43601e654`
 and plan fingerprint
-`sha256:9cbc1b2c4145c9d1b030ce5761947e67c8fad29a5172e36786a29c974b6416d1`.
+`sha256:7fd06c0c1f1a7187bf719324a6a434aa90a8ff31bcf279506377c1809decb4fd`.
 Its source, lock, and values digests are respectively
 `sha256:c4e359429b829c4d33aa13771717ed04f239bf6afa2da4275d637936903e6085`,
-`sha256:a718420e2a593b1d4172edd9c85733a389680646322b1a30ee21d05d0d9d763d`,
+`sha256:5a5956210bf6599ed7ba03c830cb55792c653aad79937a2ef358fdafcc38a406`,
 and
 `sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`.
 The lock selects activation revision 15
@@ -313,6 +313,10 @@ and cancellation coordinator revision 4
 (`sha256:4c88c464aca6cbac08f1739ac7e7ac944117f242135a46499fa016aec72604c4`).
 It also selects `action.ToolResultCommit` revision 4
 (`sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`).
+`authority.ProposalAdmission` is revision 3
+(`sha256:ad0d65d84433491b5ee882a79dc8593b84a157f346863a3340261dd3ea8e47fb`),
+which rejects a delayed proposal if its canonical observation basis has already
+been superseded before admission.
 The graph template passes canonical formatting and warning-free strict
 `computer-use` validation; the strict bound check reports
 `sha256:97652c06e8e35bd445869a514911aaf68bd76fa9c49de91e6941cf4df2a64436`.

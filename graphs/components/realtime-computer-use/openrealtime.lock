@@ -77,8 +77,8 @@
       "reference": "authority.ProposalAdmission",
       "identity": {
         "name": "authority.ProposalAdmission",
-        "revision": 2,
-        "digest": "sha256:640c40a2310ab22e7f5bbb5982e226aeb76b65897250be65f161c0412048d6c7"
+        "revision": 3,
+        "digest": "sha256:ad0d65d84433491b5ee882a79dc8593b84a157f346863a3340261dd3ea8e47fb"
       }
     },
     {

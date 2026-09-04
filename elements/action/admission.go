@@ -385,6 +385,22 @@ func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, identity st
 			Code: "source_revision_mismatch", Message: fmt.Sprintf("canonical source revision is %d, claim requires %d", canonical.SourceRevision, expected),
 		})
 	}
+	newer, superseded, err := canonicalSupersedingObservation(snapshot.Items, canonical.ID)
+	if err != nil {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, *pending.provenance, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "admit", CallID: callID,
+			Code: "invalid_supersession", Message: err.Error(),
+		})
+	}
+	if superseded {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, *pending.provenance, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "admit", CallID: callID,
+			Code: "observation_superseded", Message: fmt.Sprintf(
+				"canonical observation %q at source revision %d was superseded by %q at source revision %d",
+				canonical.ID, canonical.SourceRevision, newer.ID, newer.SourceRevision,
+			),
+		})
+	}
 	authority := trajectory.AuthorityOf(canonical)
 	allowed := canonical.Kind == trajectory.KindObservation && authority == trajectory.AuthorityUser
 	if runner.config.AllowSystem {
@@ -436,6 +452,40 @@ func canonicalItem(items []trajectory.Item, id string) (trajectory.Item, bool) {
 		}
 	}
 	return trajectory.Item{}, false
+}
+
+// canonicalSupersedingObservation reports whether a later item in an
+// append-only canonical snapshot directly replaces the observation that gave
+// a proposal its effect authority. ResolveObservationSupersession is also the
+// Store's admission rule, so this check cannot drift into a second, weaker
+// approximation of stream identity or revision ordering. A transitive chain
+// necessarily contains the direct replacement in the same snapshot.
+func canonicalSupersedingObservation(
+	items []trajectory.Item, observationItemID string,
+) (trajectory.Item, bool, error) {
+	basisIndex := slices.IndexFunc(items, func(item trajectory.Item) bool {
+		return item.ID == observationItemID
+	})
+	if basisIndex < 0 {
+		return trajectory.Item{}, false, fmt.Errorf(
+			"canonical observation %q is absent from the trajectory", observationItemID,
+		)
+	}
+	for laterIndex := basisIndex + 1; laterIndex < len(items); laterIndex++ {
+		replacedIndex, err := trajectory.ResolveObservationSupersession(
+			items[:laterIndex], items[laterIndex],
+		)
+		if err != nil {
+			return trajectory.Item{}, false, fmt.Errorf(
+				"resolve canonical observation supersession at item %q: %w",
+				items[laterIndex].ID, err,
+			)
+		}
+		if replacedIndex == basisIndex {
+			return items[laterIndex], true, nil
+		}
+	}
+	return trajectory.Item{}, false, nil
 }
 
 func validateProvenanceBinding(

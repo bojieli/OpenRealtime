@@ -658,7 +658,7 @@ func statePort(name string, direction element.Direction, value element.Type) ele
 
 func ProposalAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "authority.ProposalAdmission", Revision: 2,
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.ProposalAdmission", Revision: 3,
 		Ports: []element.Port{
 			port("proposal", element.Input, proposalType, 32), port("provenance", element.Input, provenanceType, 32),
 			port("cancel", element.Input, interruptType, 16), port("timeout", element.Input, interruptType, 16),

@@ -2113,13 +2113,13 @@ Current checkpoint notes:
   model/policy/observer selections) pins source digest
   `sha256:c4e359429b829c4d33aa13771717ed04f239bf6afa2da4275d637936903e6085`,
   lock digest
-  `sha256:a718420e2a593b1d4172edd9c85733a389680646322b1a30ee21d05d0d9d763d`,
+  `sha256:5a5956210bf6599ed7ba03c830cb55792c653aad79937a2ef358fdafcc38a406`,
   values digest
   `sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`,
   graph fingerprint
-  `sha256:7c3e56f79e6e41ffb2263ae3ca0d2c388c030e4da033a6c4da67f5780af89567`,
+  `sha256:762753ea42dbdee3333a0bc805693623b4b29dce72046330160170d43601e654`,
   and plan fingerprint
-  `sha256:9cbc1b2c4145c9d1b030ce5761947e67c8fad29a5172e36786a29c974b6416d1`.
+  `sha256:7fd06c0c1f1a7187bf719324a6a434aa90a8ff31bcf279506377c1809decb4fd`.
   The activation descriptor is revision 15 at
   `sha256:a829f38214520ef1d8999bb94f5764bd9ef6e72f38d49aede2fc2fb1e3ed77bc`,
   with runtime `/activation/v15` and implementation revision 15. The
@@ -2132,6 +2132,10 @@ Current checkpoint notes:
   `sha256:4c88c464aca6cbac08f1739ac7e7ac944117f242135a46499fa016aec72604c4`.
   `action.ToolResultCommit` is revision 4 at
   `sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`.
+  `authority.ProposalAdmission` is revision 3 at
+  `sha256:ad0d65d84433491b5ee882a79dc8593b84a157f346863a3340261dd3ea8e47fb`;
+  it refuses a delayed tool proposal when the canonical trajectory already
+  contains a superseding revision of that proposal's observation authority.
   `policy.IntentDispositionRetry` is revision 1 at
   `sha256:c15556d5f4f61a5defa5463500eb75d7403711b2cc446b1605c710cfe3785678`.
   Their settlement, cancellation, and acknowledgement ports are required and

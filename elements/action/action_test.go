@@ -2130,7 +2130,7 @@ func TestDescriptorsExposeFifteenDistinctBoundariesAndOnlyDispatchIsExternal(t *
 		t.Fatalf("descriptor count = %d, want 15", len(descriptors))
 	}
 	existingRevisions := map[string]uint64{
-		"authority.ProposalAdmission":    2,
+		"authority.ProposalAdmission":    3,
 		"authority.ActionArbiter":        2,
 		"authority.ProvenanceJoin":       2,
 		"action.ToolLookup":              2,
@@ -2345,6 +2345,78 @@ func TestProposalAdmissionRejectsCrossRunAndUnrelatedAuthorityJoins(t *testing.T
 	if fixture.dispatcher.calls.Load() != 0 {
 		t.Fatalf("invalid provenance executed %d actions", fixture.dispatcher.calls.Load())
 	}
+}
+
+func TestProposalAdmissionRejectsSupersededObservationBasis(t *testing.T) {
+	fixture := newFixture(t, legacyaction.ConfirmNever, true, &testDispatcher{name: "computer:browser"})
+	defer fixture.stop(t)
+
+	// Capture the exact prefix on which the model began, then commit a newer
+	// canonical revision before its delayed proposal reaches admission. This
+	// is the graph race from a partial menu label completing while cognition
+	// is still producing a tool call.
+	basis := fixture.store.Snapshot()
+	if basis.Version != 3 || basis.Items[len(basis.Items)-1].ID != "screen-observation" {
+		t.Fatalf("supersession test basis = %+v", basis)
+	}
+	if err := fixture.store.Append(trajectory.Item{
+		ID: "user-observation-final", Kind: trajectory.KindObservation, MonotonicNS: 4,
+		CausalParentIDs: []string{"user-observation"}, SourceRevision: 10,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content:  "click the named control after its complete label arrives",
+		Event: &trajectory.EventMetadata{
+			EventID: "user-trigger-final", Type: "input_text.endpoint", Source: "user",
+			Channel: "text", OccurredNS: 4, SupersedesRevision: 1,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const callID = "superseded-observation-call"
+	const runID = "superseded-observation-run"
+	proposalItemID := "proposal-" + callID
+	activationItemID := "activation-" + callID
+	activationCauseItemID := "activation-cause-" + callID
+	contextEnvelopeItemID := "context-" + callID
+	modelCauses := []string{
+		activationItemID, activationCauseItemID, "user-observation", "user-trigger",
+		contextEnvelopeItemID, "screen-observation",
+	}
+	proposal := cognitionelements.ToolProposal{
+		Call: trajectory.ToolCall{
+			CallID: callID, Name: computeruse.Click,
+			Arguments: json.RawMessage(`{"source":"screen","x":1,"y":2}`),
+		},
+		Declared: true, ProviderAuthority: continuation.ToolAuthorityPropose,
+	}
+	send(t, fixture.ingress(t, "proposal"), element.Envelope{
+		Type: ProposalType(), ItemID: proposalItemID, RunID: runID,
+		CausalParents: modelCauses, Payload: proposal,
+	})
+	send(t, fixture.ingress(t, "provenance"), element.Envelope{
+		Type: ProvenanceType(), ItemID: "provenance-" + callID, RunID: runID,
+		CausalParents: []string{proposalItemID, "candidate-" + callID, "result-" + callID},
+		Payload: Provenance{
+			CallID: callID, ProposalItemID: proposalItemID, ModelRunID: runID,
+			SessionID: "action-test-session", CandidateItemID: "candidate-" + callID,
+			ResultItemID: "result-" + callID, ActivationItemID: activationItemID,
+			ActivationCauseItemID: activationCauseItemID, ObservationItemID: "user-observation",
+			ObservationTriggerItemID: "user-trigger", SourceRevision: 1,
+			ContextVersion: basis.Version, ContextEnvelopeItemID: contextEnvelopeItemID,
+			ContextTailItem: "screen-observation", ProviderReference: "test",
+			ModelResultDigest: testModelResultDigest, ModelProducer: testModelProducer(),
+		},
+	})
+
+	outcome := receive(t, fixture.egress(t, "admission_outcome")).Payload.(Outcome)
+	if outcome.Kind != OutcomeRejected || outcome.Code != "observation_superseded" ||
+		outcome.CallID != callID {
+		t.Fatalf("superseded observation outcome = %+v", outcome)
+	}
+	if fixture.dispatcher.calls.Load() != 0 {
+		t.Fatalf("superseded proposal executed %d actions", fixture.dispatcher.calls.Load())
+	}
+	assertNoEnvelope(t, fixture.egress(t, "committed"))
 }
 
 func TestConfirmationRequiredDeniedAndApproved(t *testing.T) {
