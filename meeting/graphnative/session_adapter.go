@@ -162,12 +162,13 @@ type meetingSessionAdapter struct {
 	turn          *meetingAdapterTurn
 	activeSpeech  map[string]*meetingAdapterSpeech
 	completedRuns map[string]struct{}
-	// segmentationCancellations are exact run tombstones established before
-	// an internal SegmentPreparedText model-cancel request is re-entered at the
-	// graph's cancel ingress. They prevent a non-cooperative foreground from
-	// publishing result or tool data after cancellation.
-	segmentationCancellations map[string]struct{}
-	closed                    atomic.Bool
+	// segmentationCancellationCutoffs are exact run tombstones established
+	// before an internal SegmentPreparedText model-cancel request is re-entered
+	// at the graph's cancel ingress. A positive cutoff is the trusted,
+	// session-scoped foreground response sequence that caused cancellation;
+	// zero means no source-order proof exists (for example, a timeout).
+	segmentationCancellationCutoffs map[string]uint64
+	closed                          atomic.Bool
 }
 
 func newMeetingSessionAdapter(
@@ -201,7 +202,7 @@ func newMeetingSessionAdapter(
 		ctx: ctx, sessionID: sessionID, sink: options.Sink, profile: profile.Clone(), ports: ports,
 		frameRate: config.FrameRateMilliHz, store: store,
 		videoCaptured: make(map[string]uint64), activeSpeech: make(map[string]*meetingAdapterSpeech),
-		completedRuns: make(map[string]struct{}), segmentationCancellations: make(map[string]struct{}),
+		completedRuns: make(map[string]struct{}), segmentationCancellationCutoffs: make(map[string]uint64),
 	}, nil
 }
 
@@ -493,20 +494,25 @@ func meetingResponseBoundary(name string) bool {
 	}
 }
 
-func meetingBoundaryForbiddenAfterSegmentationCancellation(name string) bool {
-	switch name {
-	case "tool_proposals", "foreground_safe_result":
-		return true
-	default:
+func (session *meetingSessionAdapter) segmentationCancellationRejects(
+	name string, envelope element.Envelope,
+) bool {
+	if name != "tool_proposals" && name != "foreground_safe_result" {
 		return false
 	}
-}
-
-func (session *meetingSessionAdapter) segmentationCancellationRequested(runID string) bool {
 	session.turnMu.Lock()
 	defer session.turnMu.Unlock()
-	_, found := session.segmentationCancellations[runID]
-	return found
+	cutoff, found := session.segmentationCancellationCutoffs[envelope.RunID]
+	if !found {
+		return false
+	}
+	// A safe result is produced only after the foreground source terminal and
+	// can never precede a segmentation cancellation. Tool proposals are emitted
+	// on an independent graph edge, so only their trusted, positive response
+	// sequence can prove that they were already buffered before the positive
+	// sequence which caused cancellation.
+	return name != "tool_proposals" || cutoff == 0 || cutoff > maximumMeetingResponseEvents ||
+		envelope.Sequence == 0 || envelope.Sequence >= cutoff
 }
 
 // relayForegroundModelCancel is the explicit causal break between
@@ -533,18 +539,23 @@ func (session *meetingSessionAdapter) relayForegroundModelCancel(
 	}
 
 	session.turnMu.Lock()
-	if session.segmentationCancellations == nil {
-		session.segmentationCancellations = make(map[string]struct{})
+	if session.segmentationCancellationCutoffs == nil {
+		session.segmentationCancellationCutoffs = make(map[string]uint64)
 	}
-	if _, duplicate := session.segmentationCancellations[runID]; duplicate {
+	if _, duplicate := session.segmentationCancellationCutoffs[runID]; duplicate {
 		session.turnMu.Unlock()
 		return fmt.Errorf("meeting segmentation requested model cancellation twice for run %q", runID)
 	}
-	if len(session.segmentationCancellations) >= maximumMeetingAdapterRunIDs {
+	if len(session.segmentationCancellationCutoffs) >= maximumMeetingAdapterRunIDs {
 		session.turnMu.Unlock()
 		return errors.New("meeting segmentation cancellation identity limit reached")
 	}
-	session.segmentationCancellations[runID] = struct{}{}
+	cutoff := uint64(0)
+	if envelope.SourceID == ForegroundDeploymentReference &&
+		envelope.Sequence <= maximumMeetingResponseEvents {
+		cutoff = envelope.Sequence
+	}
+	session.segmentationCancellationCutoffs[runID] = cutoff
 	session.turnMu.Unlock()
 
 	relayed := envelope.Clone()
@@ -593,8 +604,7 @@ func (session *meetingSessionAdapter) acceptCoordinatedResponse(
 	if !canonicalText(runID) || len(runID) > sidecar.MaxElementIdentifierBytes {
 		return fmt.Errorf("meeting response boundary %s has a non-canonical run ID", event.name)
 	}
-	if meetingBoundaryForbiddenAfterSegmentationCancellation(event.name) &&
-		session.segmentationCancellationRequested(runID) {
+	if session.segmentationCancellationRejects(event.name, envelope) {
 		return fmt.Errorf("meeting foreground emitted %s for run %q after segmentation cancellation",
 			event.name, runID)
 	}

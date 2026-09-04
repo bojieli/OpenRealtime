@@ -1015,6 +1015,111 @@ func TestMeetingSessionAdapterCancelTargetsSharedResponseWhileVoiceAndVisualRuns
 	}
 }
 
+func TestMeetingSessionAdapterSegmentationCancellationUsesForegroundSequenceCutoff(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		boundary     string
+		cancelSource string
+		cutoff       uint64
+		sequence     uint64
+		wantCutoff   uint64
+		wantAccepted bool
+	}{
+		{
+			name: "earlier tool proposal", boundary: "tool_proposals",
+			cancelSource: ForegroundDeploymentReference, cutoff: 3, sequence: 1,
+			wantCutoff: 3, wantAccepted: true,
+		},
+		{
+			name: "zero-sequence tool proposal", boundary: "tool_proposals",
+			cancelSource: ForegroundDeploymentReference, cutoff: 3, sequence: 0,
+			wantCutoff: 3,
+		},
+		{
+			name: "equal-sequence tool proposal", boundary: "tool_proposals",
+			cancelSource: ForegroundDeploymentReference, cutoff: 3, sequence: 3,
+			wantCutoff: 3,
+		},
+		{
+			name: "later tool proposal", boundary: "tool_proposals",
+			cancelSource: ForegroundDeploymentReference, cutoff: 3, sequence: 4,
+			wantCutoff: 3,
+		},
+		{
+			name: "timeout has no response cutoff", boundary: "tool_proposals",
+			cancelSource: "meeting.timeout", cutoff: 0, sequence: 1,
+			wantCutoff: 0,
+		},
+		{
+			name: "oversized response cutoff", boundary: "tool_proposals",
+			cancelSource: ForegroundDeploymentReference,
+			cutoff:       maximumMeetingResponseEvents + 1, sequence: 1,
+			wantCutoff: 0,
+		},
+		{
+			name: "safe result remains forbidden", boundary: "foreground_safe_result",
+			cancelSource: ForegroundDeploymentReference, cutoff: 3, sequence: 1,
+			wantCutoff: 3,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cancelPort := newTestOutput("cancel", modelelements.CancelType())
+			adapter := &meetingSessionAdapter{
+				ctx: context.Background(), sessionID: "meeting-cancellation-cutoff", sink: &orderedMeetingSink{},
+				ports:        meetingAdapterPorts{cancel: cancelPort},
+				activeSpeech: make(map[string]*meetingAdapterSpeech), completedRuns: make(map[string]struct{}),
+				segmentationCancellationCutoffs: make(map[string]uint64),
+			}
+			runID := "cutoff-run"
+			if err := adapter.relayForegroundModelCancel(context.Background(), element.Envelope{
+				Type: cancelPort.Type(), ItemID: "cutoff-cause:model-cancel",
+				SessionID: adapter.sessionID, SourceID: test.cancelSource,
+				RunID: runID, Sequence: test.cutoff, CancellationScope: runID,
+				Payload: cognitionelements.Cancel{RunID: runID, Reason: "segmentation failed"},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			_ = outputEnvelope(t, cancelPort)
+			if got := adapter.segmentationCancellationCutoffs[runID]; got != test.wantCutoff {
+				t.Fatalf("stored cancellation cutoff = %d, want %d", got, test.wantCutoff)
+			}
+
+			payload := any(cognitionelements.ToolProposal{Call: trajectory.ToolCall{
+				CallID: "cutoff-call", Name: "lookup",
+			}})
+			if test.boundary == "foreground_safe_result" {
+				payload = cognitionelements.Result{
+					RunID: runID, ProviderReference: ForegroundDeploymentReference,
+				}
+			}
+			coordinator := &meetingAdapterResponseCoordinator{
+				runs: make(map[string]*meetingAdapterCoordinatedRun),
+			}
+			err := adapter.acceptCoordinatedResponse(context.Background(), coordinator,
+				meetingAdapterResponseEvent{name: test.boundary, envelope: element.Envelope{
+					ItemID: "delayed-response", SessionID: adapter.sessionID,
+					SourceID: ForegroundDeploymentReference, RunID: runID,
+					Sequence: test.sequence, Payload: payload,
+				}})
+			if test.wantAccepted {
+				if err != nil {
+					t.Fatalf("pre-cancel response rejected: %v", err)
+				}
+				if run := coordinator.runs[runID]; run == nil || len(run.tools) != 1 {
+					t.Fatalf("pre-cancel tool was not buffered: %+v", run)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("response without pre-cancel sequence proof was accepted")
+			}
+			if _, created := coordinator.runs[runID]; created {
+				t.Fatal("rejected response created coordinator state")
+			}
+		})
+	}
+}
+
 func TestMeetingSessionAdapterPartialCoordinatedRunCancellationAndSourceValidation(t *testing.T) {
 	adapter := &meetingSessionAdapter{
 		ctx: context.Background(), sessionID: "meeting-response-gap", sink: &orderedMeetingSink{},
