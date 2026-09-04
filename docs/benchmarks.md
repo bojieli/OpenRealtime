@@ -376,6 +376,20 @@ deterministic backoff, exact probe replay, control quiescence, typed exhaustion,
 and inspectable state/outcomes; it is not a hidden provider timer. These remain
 local behavioral regressions, not benchmark rows.
 
+A later locked-profile regression exposed and repaired a separate behavioral
+stall before a live campaign: activation had treated the exact visual
+consequence of a canonical `ToolResult.Error` as consumed terminal evidence,
+leaving the still-achievable durable intent waiting for an unrelated future
+frame. Revision-13 activation now clears only that failed old effect and uses
+its exact linked frame to open one recovery turn. The mounted case proves that
+the error never reaches success-disposition policy, the recovery effect can
+settle successfully, both result/consequence links remain canonical, and later
+changing frames remain quiescent. Cancellation on both sides of that failed
+consequence, bounded cleanup of canceled known-call retention, and benchmark-
+scorer interpretation remain open. This repair and its focused checks also
+produce no benchmark row. No live or paid Realtime-CU benchmark ran at this
+checkpoint.
+
 The retained live evidence must also be read by checkpoint rather than reduced
 to one headline number. Candidate-05's current settlement-aware exact-sixteen
 artifact reports 8/16. The later clean `b535b15` campaign executed and was
@@ -394,9 +408,11 @@ two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
 campaign remain open; and the final-candidate ledger remains **0/7,486**.
 
 The next benchmark run is intentionally gated on behavior, not on producing a
-new headline number. First complete the three remaining shipped-profile cases:
-forged cross-node evidence, duplicate/reordered terminal decisions, and failed
-effects. Then register all five Realtime-CU
+new headline number. First complete the three remaining shipped-profile
+subgates: forged cross-node evidence, duplicate/reordered terminal decisions,
+and cancellation/capacity/scorer behavior around failed effects. Ordinary
+failed-effect recovery is already production-mounted; the broader gate remains
+open. Then register all five Realtime-CU
 acceptance domains and freeze the exact candidate. Run the two camera, two
 moving-target, and two transient-alert variants as a focused repair set. Every
 failure must be reopened from retained evidence, attributed to code,

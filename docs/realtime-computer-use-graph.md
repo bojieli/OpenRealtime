@@ -54,7 +54,9 @@ committed user observation + pre-intent observer/source cohort
   -> canonical call -> irreversibility ledger
   -> client call -> client result -> canonical result
   -> forced screen consequence observation
-  -> disposition producer -> continue or terminal settlement
+  -> settlement gate
+       successful result -> disposition producer -> continue or terminal settlement
+       failed result     -> one recovery activation under the durable intent
 ```
 
 Only `action.Dispatch` has an external effect, and its dispatcher is the
@@ -272,21 +274,21 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
-The 2026-09-04 explicit-retry production-artifact checkpoint pins, for the checked
+The 2026-09-04 failed-effect-recovery production-artifact checkpoint pins, for the checked
 integration fixture in
 `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
 (`benchmark-browser`, one `screen` source at 1280x720, and the test
 model/policy/observer selections), graph fingerprint
-`sha256:9aa17db0437959619089dce5a496ef873597886c4d7d4b31f0a30e3a9e4f1979`
+`sha256:a0e96188b04e325cd17a4edf245be75d1b06789a754a586bd21e25d0bbaee7b2`
 and plan fingerprint
-`sha256:7ef628a0cf2a5cf2f94aba6b7cb5ccdaa78f79e6c0be2264f373c83e771cea8c`.
+`sha256:c24a4725bd123c213cf8bdedcbefced73e5bf278ae032d3514b5e61c43d7bf8e`.
 Its source, lock, and values digests are respectively
 `sha256:661850f3302f4f1e997ebd1f6e2506703e70ea205aabfa035eb098dba682906e`,
-`sha256:fc462b47b5176463ceff0357edcfdd95e4a944bf49da7d449891c56625774320`,
+`sha256:d5e908c338c54cd7bf18c2def99c55530d4b1c1825a48c67dfd3c38f727a4d60`,
 and
 `sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`.
-The lock selects activation revision 12
-(`sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`),
+The lock selects activation revision 13
+(`sha256:245b0826149c31debcbb09e51428f4d7b47ed17bffd701e938d86fc4017f6a5a`),
 disposition producer revision 2
 (`sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`),
 disposition retry revision 1
@@ -408,15 +410,19 @@ client and gives the producer the observer's exact retained-media resolver;
 configuration or descriptor drift fails before provider work begins.
 
 The producer, producer-neutral `policy.IntentSettlement` gate, graph-owned
-`policy.IntentDispositionRetry`, and activation's revision-12 settlement
+`policy.IntentDispositionRetry`, and activation's revision-13 settlement
 consumer/acknowledgement boundary are now connected as independently
 replaceable nodes. The gate independently revalidates the typed
 admission and exact canonical intent→call→successful-result→result-linked
 observation chain, holds a bounded candidate consequence until the matching
 disposition arrives, releases it for `continue`, and retains terminal state
-until downstream activation acknowledges exact cleanup. Ordinary and
-failed-effect visual evidence remains reactive. Invalid, stale, conflicting,
-or indeterminate evidence fails closed without being mislabeled as success.
+until downstream activation acknowledges exact cleanup. Ordinary visual
+evidence remains reactive. An exact result-linked consequence for a failed
+effect is a non-candidate for success classification: it bypasses the
+disposition producer, closes only the matching old effect, and immediately
+grounds one recovery cognition turn under the still-durable intent. Invalid,
+stale, conflicting, or indeterminate evidence fails closed without being
+mislabeled as success.
 Activation independently verifies a terminal decision, clears only the exact
 effect without a new cognition turn, retains valid cross-lane reorderings, and
 retries one immutable acknowledgement. The graph has exactly one activation
@@ -486,8 +492,8 @@ Current implementation ledger:
 | Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented, locked, and locally verified | Live quality remains unmeasured |
 | Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
 | Reference semantic/vision disposition producer | Profile-bound and locally verified | Exercise quality on focused live cases |
-| Protocol/session cancellation translation | Implemented and adversarially verified through retry, provider, model, idle-action, and crossed-action phases | Complete the remaining forged/reordered/failed-effect mounted cases |
-| Activation settlement input and acknowledgement output | Connected; focus→type→submit, terminal cadence, and new-intent recovery are production-mounted and race-tested | Confirm behavior in the focused live cases |
+| Protocol/session cancellation translation | Implemented and adversarially verified through retry, provider, model, idle-action, and crossed-action phases | Complete forged/reordered boundaries plus canceled failed-effect cleanup/capacity coverage |
+| Activation settlement input and acknowledgement output | Connected; focus→type→submit, ordinary failed-effect recovery, terminal cadence, and new-intent recovery are production-mounted and race-tested | Exercise cancellation on both sides of a failed consequence and confirm behavior in the focused live cases |
 | Indeterminate settlement retry | Implemented as `policy.IntentDispositionRetry@1`, locked, strictly validated, and production-mounted through `indeterminate → retry → continue → continue → succeeded` | Exercise retry quality and exhaustion policy with the selected live disposition provider |
 | Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Implementation artifacts are pinned with no admission bypass; strict check passes | They are not yet a frozen benchmark candidate and change if later behavioral repair changes code or configuration |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
@@ -558,20 +564,27 @@ without pretending that exhaustion disappeared.
 There is no admission bypass around the settlement gate. On `continue`, the
 gate releases the original verified evidence through `admitted`. On a verified
 terminal disposition, it
-suppresses that evidence and retains the exact terminal latch until revision-12
+suppresses that evidence and retains the exact terminal latch until revision-13
 activation independently reopens the canonical prefix, clears the matching
 generation/effect atomically, and returns the exact acknowledgement. This is
 not a cognition cancellation: the cognition run may already have ended before
 the result and post-effect observation exist, and a broad generation
 cancellation does not prove which completed effect was settled.
 
-The remaining mounted matrix is now concentrated on forged cross-node
-evidence, duplicate/reordered terminal decisions, and failed effects. After
-those cases, machine-enforceable Realtime-CU
+The ordinary failed-effect path is now mounted through canonical error result,
+exact result-linked visual consequence, immediate single recovery, successful
+terminal settlement, retained lineage, and post-settlement cadence quiescence.
+The remaining mounted matrix is concentrated on forged cross-node evidence,
+duplicate/reordered terminal decisions, and cancellation/capacity/scorer
+behavior around failed effects. In particular, cancellation audit identified
+an unclosed risk that a canceled known-call generation can remain retained when
+the eventual canonical result is an error, because failed evidence correctly
+never enters terminal settlement; a focused capacity test must prove and drive
+the cleanup rule. After those cases, machine-enforceable Realtime-CU
 acceptance targets must be registered. Then both camera, both moving-target,
 and both transient-alert variants run from one repaired immutable candidate.
 Each observed failure is retained and repaired before all 16 cases are rerun
-from a newly frozen candidate. No live benchmark was run for this settlement/
+from a newly frozen candidate. No live or paid benchmark was run for this settlement/
 cancellation checkpoint, and nothing in its implementation checks advances
 the project-wide 0/7,486 final-candidate attempt ledger.
 

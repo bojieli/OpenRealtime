@@ -1849,9 +1849,9 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this checkpoint, 309 of 379 explicit tracker boxes are checked (81.5%)
+At this checkpoint, 310 of 380 explicit tracker boxes are checked (81.6%)
 and 70 remain open. The denominator grew when the broad mounted Realtime-CU
-composition item was split into eight reviewable subgates; five are now
+composition item was split into nine reviewable subgates; six are now
 evidenced and three remain open. The lower percentage relative to the earlier,
 coarser ledger is added resolution, not lost implementation. The
 percentage records completed reviewable slices; it does not dilute an open
@@ -1867,7 +1867,7 @@ is rerun against that exact candidate. The current critical path is:
 | --- | --- | --- |
 | Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns | Exercise the landed continuation/admission repairs, fix any remaining behavior, then run 11 cases x 15 |
 | Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
-| Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. The mounted focus→type→submit regression exercises `indeterminate → retry → continue → continue → succeeded`. Focused and stable-endpoint implementation checks pass, but the complete mounted matrix, enforceable targets, and live repair campaign remain open | Complete the remaining mounted adversarial matrix, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
+| Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable live defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. Mounted regressions now exercise both `indeterminate → retry → continue → continue → succeeded` and canonical failed effect → immediate recovery effect → successful terminal settlement. Focused and stable-endpoint implementation checks pass, but the complete mounted matrix, enforceable targets, and live repair campaign remain open | Complete forged/reordered boundary cases and canceled failed-effect retention/scoring coverage, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
 | FDB v1.5 (498) | Earlier diagnostic completed 498/498 and passed 355; interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
 | FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result. A full mounted endpoint regression now proves deployment-owned spoken-ID normalization without changing raw proposals, provider schemas, or speech | Run the exact failed task, preregister and run a representative slice, then rerun all 100 from one frozen candidate |
 | FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete; its obsolete executable rejected resume and cannot be mixed with a later candidate | Finish restartable, independently rescored retention and rerun all 21 conditions from one candidate |
@@ -1884,9 +1884,9 @@ cannot be mistaken for behavioral acceptance:
 
 | Ledger | Current state | Meaning |
 | --- | --- | --- |
-| Architecture implementation | 309/379 boxes checked (81.5%); 70 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
+| Architecture implementation | 310/380 boxes checked (81.6%); 70 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
 | Phase exits | Phases 0, 3, and 4 are marked complete; phases 1, 2, 5, 6, 7, and 8 remain open | A phase closes only through its own checked exit gate |
-| Realtime-CU mounted composition | Eight named dimensions exercised; three remain: forged cross-node evidence, reordered/duplicate terminal evidence, and failed effect | The parent mounted-composition box remains unchecked until every dimension runs through the shipped profile |
+| Realtime-CU mounted composition | Nine reviewable subgates; six evidenced and three open: forged cross-node evidence, reordered/duplicate terminal evidence, and canceled failed-effect retention/scorer coverage | The parent mounted-composition box remains unchecked until every subgate runs through the shipped profile |
 | Realtime-CU target registry | All five domains remain `unavailable` | No result can yet satisfy aggregate, exact-case, safety, deadline, and latency acceptance |
 | Repaired-candidate live work | Focused six variants and the subsequent exact sixteen have not run | Historical 8/16 and 14/16 checkpoints remain diagnostic, not candidate credit |
 | Definition of done | 8/15 top-level outcomes checked; 17/24 including nested subgates | Seven top-level release outcomes remain open regardless of lower-level implementation progress |
@@ -1899,7 +1899,7 @@ The exact checkbox distribution is:
 | Delivery and acceptance ledger | 139 | 44 | 183 |
 | Phase 0 | 4 | 0 | 4 |
 | Phase 1 | 7 | 1 | 8 |
-| Phase 2 | 15 | 6 | 21 |
+| Phase 2 | 16 | 6 | 22 |
 | Phase 3 | 5 | 0 | 5 |
 | Phase 4 | 10 | 0 | 10 |
 | Phase 5 | 11 | 2 | 13 |
@@ -1907,7 +1907,7 @@ The exact checkbox distribution is:
 | Phase 7 | 9 | 4 | 13 |
 | Phase 8 | 4 | 2 | 6 |
 | Definition of done, including subgates | 17 | 7 | 24 |
-| **Total** | **309** | **70** | **379** |
+| **Total** | **310** | **70** | **380** |
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
@@ -1930,8 +1930,10 @@ the Realtime-CU profile, implement the exact session-cancellation coordinator,
 and connect and lock the producer, settlement gate, activation handshake, and
 coordinator without an admission bypass. The subsequent reconciliation added
 eight mounted-composition subgates. Four were already checked, and the explicit
-production-mounted retry repair closes one more, producing the current 309/379
-ledger with three mounted adversarial cases still open. No parent,
+production-mounted retry repair closed one more. Splitting failed-effect work
+into its independently proven recovery path and its still-open cancellation /
+scorer path now produces the current 310/380 ledger: six of nine mounted
+subgates are checked and three remain open. No parent,
 live-behavior, phase-exit, or release item was closed by inference.
 
 The delivered implementation is organized so that each behavioral boundary can
@@ -1944,12 +1946,14 @@ be reviewed or reverted independently:
 | Production graph coordination | `5ed3f63`, `3f230c0` | Coordinates settlement, activation, model, canonical model-result, and configured action-stage cancellation; refreshes the locked activation/profile identity |
 | Crossed-effect honesty | `ab2e29a` | Keeps the first exact cancellation at `ToolResultCommit` until the mandatory result safe point and reports an irreversible crossing as incomplete rather than pretending cancellation succeeded |
 | Shutdown liveness | `15e91b6` | Orders media publication against adapter close without holding the lifecycle lock while waiting for canonical commit, allowing close to drain blocked media waiters |
-| Documentation and evidence ledger | `0931a7b`, `190cdec`, `1413722`, `a5d42ad` | Records the production integration, artifact identities, local verification, checklist movement, cancellation/multi-step evidence, and still-open behavioral gates |
+| Documentation and evidence ledger | `0931a7b`, `190cdec`, `1413722`, `a5d42ad`, `446febf`, `c90852c` | Records the production integration, artifact identities, local verification, checklist movement, cancellation/multi-step/retry evidence, and still-open behavioral gates |
 | Commit-acknowledgement isolation | `a75e8c1` | Prevents an unrelated trajectory commit for the same run from masquerading as failure of the canonical model-result transaction; upgrades the coordinator to revision 3 and exercises provider, model, crossed-action, replacement-intent, and stable-endpoint cancellation ordering |
 | Multi-step terminal settlement | `98ecad4` | Executes focus→type→submit under two explicit continuations, latches success after the third effect, resists continuous changing frames, and reopens only for a new intent with fresh evidence |
 | Explicit graph-owned retry | `aec38f8` | Adds typed `policy.IntentDispositionRetry` ports, deterministic bounded exponential backoff, exact immutable-probe replay, typed exhaustion, cancellation/reset quiescence, bounded memory, and adversarial runtime coverage without hiding timing policy inside the producer or settlement gate |
 | Terminal-sink validation | `3915ab4` | Allows explicitly routed `flow.Drop` and `flow.IgnoreInterrupt` terminal sinks under warning-as-error validation while preserving `W_NO_TERMINAL_OUTCOME` for ordinary incomplete workers |
 | Production retry mount | `5a9e5d6` | Routes probes through retry, tees every disposition to settlement and retry, serializes producer use, forwards cancel/reset only after retry quiescence, routes typed exhaustion explicitly, refreshes the lock/identities, and exercises `indeterminate → retry → continue → continue → succeeded` through the shipped profile |
+| Failed-effect recovery | `e85065b` | Repairs a production state-machine stall: an exact canonical failed result plus its linked visual consequence now closes the old effect and immediately opens one recovery cognition turn under the same durable intent. Failed results still bypass the success-disposition policy; a later successful consequence can settle terminally and suppress cadence. Activation advances to revision 13 with refreshed descriptor, lock, runtime, graph, and plan identities |
+| Cascade test synchronization | `038d212` | Makes the background-response regression wait for provider completion and first speech delivery rather than treating provider invocation as output completion; the previously observed full-suite scheduling failure then passes fifty focused repetitions |
 
 The changes address concrete failure mechanisms found while reviewing retained
 Realtime-CU evidence, but live confirmation remains deliberately separate:
@@ -1963,27 +1967,38 @@ Realtime-CU evidence, but live confirmation remains deliberately separate:
 | Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | The local locked-profile WebSocket test reports `incomplete/action_already_crossed`, commits the mandatory cancellation result, requests visual consequence evidence, suppresses the old epoch, and admits a later intent | Exercise an authored failed-effect case and confirm live scorer behavior |
 | A terminal policy could accidentally become a blanket one-action-per-intent rule | Settlement explicitly chooses continuation or terminal state per canonical consequence | The production graph executes click/focus→type→submit under two continuations, terminates on success, ignores five changing cadence frames, and admits a new intent afterward | Confirm moving-target and transient-alert live behavior |
 | A transient provider, policy, or retained-media failure could strand a durable intent after one `indeterminate` decision | A separate typed retry node immediately forwards the immutable probe, schedules only verified indeterminate outcomes with bounded deterministic backoff, and stops on terminal disposition, cancellation, reset, elapsed-time bound, or attempt exhaustion | Element tests cover exact replay, capped exponential schedules, typed exhaustion, forged/stale/duplicate/reordered inputs, capacity, shutdown, and race behavior; the locked production focus→type→submit test begins with an automatic retry | Exercise the selected live disposition provider in the focused cases; route exhaustion to a different fallback if the application should not drop it |
+| A canonical failed client effect could strand a still-achievable durable intent | Revision-13 activation treats the exact failed result-linked frame as recovery context after clearing only the matching old effect; the settlement gate still classifies the error as a non-candidate and never asks the terminal-success policy to judge it | The exact locked production topology executes failed click → canonical error result → exact linked frame → one recovery click → successful terminal disposition; both results and both consequence links remain in trajectory, and three later changing frames cannot reactivate the settled intent | Exercise cancel-before/after-failed-consequence ordering and bounded canceled-effect cleanup, prove scorer interpretation, then run the authored failed-effect live case |
 | Session shutdown could deadlock behind media waiting for canonical commit | Observer use and publication/close ordering now have separate lifecycle boundaries; close drains commit waiters | Focused normal and race-enabled close regressions pass | Confirm the live focused cases terminate without running to the evaluation horizon |
 
-Validation was rerun from a clean detached worktree at exact code checkpoint
-`5a9e5d6` with Go 1.25. Repository-wide `go test ./... -count=1` and
-`go vet ./...` passed. Race-enabled tests passed for `elements/policy`,
-`graph/binding/realtimecu`, `graph/validate`, and `graphs`. Canonical `.ortg`
-formatting and warnings-as-errors validation passed for both the
-`computer-use` Realtime-CU graph and the `conversational-voice` Scenario graph;
-lock/descriptor/profile/graph/plan identity checks also passed. These results
-establish implementation and concurrency properties only. No live or paid benchmark was run, no
+Validation at the later implementation checkpoint passed from this clean
+detached worktree with Go 1.25. The affected Realtime-CU binding, graph,
+CLI-profile, descriptor, lock, and identity tests passed; the production
+failed-effect regression and descriptor-lock checks passed twenty repetitions,
+and the focused race-enabled path passed. The first repository-wide run exposed
+one unrelated cascade-test scheduling race: provider invocation was used as a
+proxy for completed output, so the assertion could observe zero spoken messages
+under package-level contention. Commit `038d212` waits for the provider's
+completed decision and the first delivered speech; that exact case passes fifty
+repetitions. After that repair, `go test ./... -count=1` passed repository-wide.
+Repository-wide `go vet ./...` also passed. Race-enabled tests passed for
+`graph/binding/realtimecu`, `graphs`, and `binding/cascade`; canonical Realtime-CU
+`.ortg` formatting and warning-as-errors `computer-use` validation passed with
+the refreshed descriptor lock. These results establish implementation and
+concurrency properties only. No live or paid benchmark was run, no
 Realtime-CU acceptance target is yet registered, and the final-candidate ledger
 therefore remains 0/7,486.
 
 The ordered critical path from this checkpoint is:
 
 1. Complete the remaining production-mounted matrix for forged cross-node
-   evidence, duplicate/reordered terminal decisions, and failed effects.
-   Shared retained media, cancellation/replacement, asynchronous provider/model
-   wait, crossed effects, explicit indeterminate retry, focus→type→submit,
-   five sequential changing cadence frames, graph-level race, and stable local
-   WebSocket ordering now have production-composition coverage.
+   evidence, duplicate/reordered terminal decisions, and cancellation around
+   failed effects, including bounded cleanup of canceled known-call retention
+   and scorer evidence. Ordinary failed-effect recovery is now covered through
+   the exact locked profile. Shared retained media, cancellation/replacement,
+   asynchronous provider/model wait, crossed effects, explicit indeterminate
+   retry, focus→type→submit, five sequential changing cadence frames,
+   graph-level race, and stable local WebSocket ordering also have
+   production-composition coverage.
 2. Register machine-enforceable Realtime-CU aggregate, exact per-case, safety,
    deadline, and latency targets. An `unavailable` target cannot accept a run.
 3. Freeze a candidate and run the two camera, two moving-target, and two
@@ -2012,12 +2027,17 @@ attempt/elapsed-time exhaustion, or shutdown. The reference graph selects
 explicit sink in the reference design, so another application may instead
 compose escalation, a user prompt, a different policy, or a direct output.
 
-The next production-composition blockers are therefore the three cases that
+The next production-composition blockers are therefore the three subgates that
 still lack full locked-profile treatment: forged cross-node settlement
 evidence, duplicate/reordered terminal decisions across every connected
-boundary, and failed-effect behavior. Completing those tests is still only a
-prerequisite to registering targets and beginning the focused live repair
-loop; it does not itself advance the benchmark ledger.
+boundary, and cancellation/capacity/scorer behavior around a failed effect.
+The cancellation audit identified a concrete adjacent risk to test and repair:
+a canceled known-call generation can remain in `canceledEffects` when its
+canonical result is an error, because failed evidence correctly never enters
+terminal settlement. Repetition could eventually exhaust `CancelMemory`.
+This is tracked as an open defect, not described as proven safe. Completing
+these tests is still only a prerequisite to registering targets and beginning
+the focused live repair loop; it does not itself advance the benchmark ledger.
 
 Current checkpoint notes:
 
@@ -2034,16 +2054,16 @@ Current checkpoint notes:
   model/policy/observer selections) pins source digest
   `sha256:661850f3302f4f1e997ebd1f6e2506703e70ea205aabfa035eb098dba682906e`,
   lock digest
-  `sha256:fc462b47b5176463ceff0357edcfdd95e4a944bf49da7d449891c56625774320`,
+  `sha256:d5e908c338c54cd7bf18c2def99c55530d4b1c1825a48c67dfd3c38f727a4d60`,
   values digest
   `sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`,
   graph fingerprint
-  `sha256:9aa17db0437959619089dce5a496ef873597886c4d7d4b31f0a30e3a9e4f1979`,
+  `sha256:a0e96188b04e325cd17a4edf245be75d1b06789a754a586bd21e25d0bbaee7b2`,
   and plan fingerprint
-  `sha256:7ef628a0cf2a5cf2f94aba6b7cb5ccdaa78f79e6c0be2264f373c83e771cea8c`.
-  The activation descriptor is revision 12 at
-  `sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`,
-  with runtime `/activation/v12` and implementation revision 12. The
+  `sha256:c24a4725bd123c213cf8bdedcbefced73e5bf278ae032d3514b5e61c43d7bf8e`.
+  The activation descriptor is revision 13 at
+  `sha256:245b0826149c31debcbb09e51428f4d7b47ed17bffd701e938d86fc4017f6a5a`,
+  with runtime `/activation/v13` and implementation revision 13. The
   disposition producer is revision 2 at
   `sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`,
   and the cancellation coordinator is revision 3 at
@@ -3604,11 +3624,15 @@ the required new 165-attempt sample.
         WebSocket endpoint. The production composition now covers shared media,
         provider/model waits, replacement intents, crossed action, multi-step
         continuation, terminal cadence, explicit indeterminate retry, races,
-        and the endpoint. Forged cross-node evidence, duplicate/reordered
-        terminal decisions, and failed-effect behavior still need the same
-        production-mounted treatment. Standalone descriptor, schema, runtime,
-        exact-media, bounded-state, and ordering subsets do not close this
-        composed runtime gate or any live behavioral gate.
+        and the endpoint. The ordinary failed-effect recovery path is also now
+        production-mounted: its exact error result and linked frame open one
+        recovery turn without entering terminal-disposition policy, and a later
+        successful effect settles normally. Forged cross-node evidence,
+        duplicate/reordered terminal decisions, and failed-effect cancellation /
+        capacity / scorer behavior still need production-mounted treatment.
+        Standalone descriptor, schema, runtime, exact-media, bounded-state, and
+        ordering subsets do not close this composed runtime gate or any live
+        behavioral gate.
         - [x] Exercise exact cancellation and canonical result settlement
           through in-flight policy-client, active-model, idle-action, and
           crossed-action phases; require fresh evidence for each replacement
@@ -3642,9 +3666,20 @@ the required new 165-attempt sample.
           succeeded`; element-level normal and race tests cover exact replay,
           exhaustion, forged/stale/duplicate/reordered evidence, bounded state,
           capacity, cancellation, reset, and shutdown.
-        - [ ] Exercise failed-effect behavior through the full locked
-          production profile and verify result-linked visual consequence,
-          retry/terminal policy, cancellation, scorer evidence, and quiescence.
+        - [x] Exercise ordinary failed-effect recovery through the full locked
+          production profile. The first exact click returns a canonical
+          `ToolResult.Error`; its result-linked visual consequence bypasses the
+          success-disposition producer and immediately opens exactly one
+          recovery generation under the durable intent. A different recovery
+          click succeeds, receives a separately linked consequence, settles
+          through `succeeded`, suppresses three changing cadence frames, and
+          leaves both results plus both exact links in the trajectory.
+        - [ ] Complete failed-effect cancellation and acceptance coverage
+          through the full locked production profile: exercise cancel before
+          and after the failed consequence, prevent canceled known-call records
+          from exhausting bounded activation memory, prove scorer treatment of
+          the canonical error/result links, and retain quiescence and fresh-
+          intent recovery under every ordering.
       - [ ] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
         `scripts/behavioral-acceptance-targets.json`. Its current
