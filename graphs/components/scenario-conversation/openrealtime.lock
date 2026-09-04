@@ -173,8 +173,8 @@
       "reference": "interaction.OverlapBargeIn",
       "identity": {
         "name": "interaction.OverlapBargeIn",
-        "revision": 5,
-        "digest": "sha256:5ac4a9fbdccd6bab9ac218e06babca9c3e4dbb46a2c93d6ecf3ba23ff114408c"
+        "revision": 6,
+        "digest": "sha256:e64d669308f98d4d72b3d5ba00e80907dfd278652399397894ec880729381a64"
       }
     },
     {
@@ -229,8 +229,8 @@
       "reference": "policy.SemanticAdmission",
       "identity": {
         "name": "policy.SemanticAdmission",
-        "revision": 3,
-        "digest": "sha256:3c751840f61ca1f8dfc30ef35e3d2a826285f1af62e94d28a6d4badc62b3e6b0"
+        "revision": 4,
+        "digest": "sha256:35d57e24724f42fc2062a2e3bb6d69c52bd5a7616e241d99f25d07a2bbac4ebe"
       }
     },
     {

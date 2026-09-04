@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
@@ -111,9 +112,9 @@ func (semanticAdmissionFactory) Mount(
 }
 
 type semanticAdmissionPorts struct {
-	context, update, committed, create, quiet, cancel          element.InputPort
-	voiceCommitted, silentCommitted, voiceCreate, silentCreate element.OutputPort
-	decision, state, outcome, resolved                         element.OutputPort
+	context, update, agentOutput, committed, create, quiet, cancel element.InputPort
+	voiceCommitted, silentCommitted, voiceCreate, silentCreate     element.OutputPort
+	decision, state, outcome, resolved                             element.OutputPort
 }
 
 func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, error) {
@@ -126,6 +127,7 @@ func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, er
 		set  *element.InputPort
 	}{
 		{"context", &result.context}, {"update", &result.update},
+		{"agent_output", &result.agentOutput},
 		{"committed", &result.committed}, {"create", &result.create},
 		{"quiet", &result.quiet}, {"cancel", &result.cancel},
 	} {
@@ -260,6 +262,7 @@ type semanticAdmissionRunner struct {
 	canceledStreams  map[cancellationAddress]string
 	canceledOrder    []cancellationAddress
 	pinboard         *coreinteraction.Pinboard
+	agentOutput      coreinteraction.AgentOutput
 	state            SemanticAdmissionState
 }
 
@@ -330,6 +333,7 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 		variadic bool
 	}{
 		{kind: "context", port: runner.ports.context}, {kind: "update", port: runner.ports.update},
+		{kind: "agent_output", port: runner.ports.agentOutput},
 		{kind: "committed", port: runner.ports.committed, variadic: true},
 		{kind: "create", port: runner.ports.create}, {kind: "quiet", port: runner.ports.quiet},
 		{kind: "cancel", port: runner.ports.cancel},
@@ -416,6 +420,10 @@ func (runner *semanticAdmissionRunner) acceptInput(
 		if err := runner.acceptUpdate(ctx, input.envelope); err != nil {
 			return err
 		}
+	case "agent_output":
+		if err := runner.acceptAgentOutput(ctx, input.envelope); err != nil {
+			return err
+		}
 	case "committed":
 		if err := runner.enqueueCommit(ctx, input.envelope); err != nil {
 			return err
@@ -435,6 +443,25 @@ func (runner *semanticAdmissionRunner) acceptInput(
 		return err
 	}
 	return runner.publishState(ctx, input.envelope)
+}
+
+func (runner *semanticAdmissionRunner) acceptAgentOutput(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	output, ok := semanticAgentOutputPayload(envelope.Payload)
+	if !ok {
+		return runner.publishRefusal(ctx, envelope, "agent_output", "invalid_agent_output",
+			fmt.Sprintf("semantic admission agent output payload has type %T", envelope.Payload))
+	}
+	if err := validateSemanticAgentOutput(output); err != nil {
+		return runner.publishRefusal(ctx, envelope, "agent_output", "invalid_agent_output", err.Error())
+	}
+	if output.Revision <= runner.agentOutput.Revision {
+		runner.state.Ignored++
+		return nil
+	}
+	runner.agentOutput = output
+	return nil
 }
 
 func (runner *semanticAdmissionRunner) acceptContext(ctx context.Context, envelope element.Envelope) error {
@@ -1316,6 +1343,9 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 		AllowedActs: []coreinteraction.Act{
 			coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
 		},
+		AgentSpeaking: runner.agentOutput.Active,
+		AgentSaying:   runner.agentOutput.Saying,
+		InFlight:      runner.agentOutput.InFlight,
 	}
 	for _, policy := range standing {
 		state.Restricted = state.Restricted || policy.Restricting
@@ -1882,6 +1912,36 @@ func semanticSnapshotPayload(payload any) (trajectory.Snapshot, bool) {
 		}
 	}
 	return trajectory.Snapshot{}, false
+}
+
+func semanticAgentOutputPayload(payload any) (coreinteraction.AgentOutput, bool) {
+	switch value := payload.(type) {
+	case coreinteraction.AgentOutput:
+		return value, true
+	case *coreinteraction.AgentOutput:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return coreinteraction.AgentOutput{}, false
+}
+
+func validateSemanticAgentOutput(output coreinteraction.AgentOutput) error {
+	if output.Revision == 0 {
+		return errors.New("semantic admission agent output revision must be positive")
+	}
+	if output.Audible && (!output.Active || output.Queued) {
+		return errors.New("semantic admission audible agent output must be active and not queued")
+	}
+	if !output.Active && (output.Queued || output.Audible || output.Saying != "" || output.InFlight != "") {
+		return errors.New("semantic admission inactive agent output carries active lifecycle state")
+	}
+	for name, value := range map[string]string{"saying": output.Saying, "in_flight": output.InFlight} {
+		if value != strings.TrimSpace(value) || !utf8.ValidString(value) || len(value) > maximumSemanticTextBytes {
+			return fmt.Errorf("semantic admission agent output %s is not bounded canonical text", name)
+		}
+	}
+	return nil
 }
 
 func cloneSemanticSnapshot(source trajectory.Snapshot) trajectory.Snapshot {

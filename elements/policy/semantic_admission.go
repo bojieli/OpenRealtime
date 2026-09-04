@@ -32,7 +32,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID       = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision = "implementation:5"
+	semanticAdmissionRuntimeRevision = "implementation:6"
 	defaultSemanticRecentLines       = 12
 	defaultSemanticPending           = 64
 	defaultSemanticTerminalMemory    = 512
@@ -237,12 +237,14 @@ func (registry *SemanticDeciderRegistry) Open(
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 3,
+		Name:          "policy.SemanticAdmission", Revision: 4,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
 			{Name: "update", Direction: element.Input, Type: semanticUpdateType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			{Name: "agent_output", Direction: element.Input, Type: coreinteraction.AgentOutputType(),
+				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
 			{Name: "committed", Direction: element.Input, Type: semanticCommitType,
 				Cardinality: element.Variadic, Required: true, MinConnections: 1, DefaultDepth: 32},
 			{Name: "create", Direction: element.Input, Type: semanticCreateType,
@@ -269,7 +271,7 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 1},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"committed", "create", "quiet"}, SampledState: []string{"context", "update"},
+			Triggers: []string{"committed", "create", "quiet"}, SampledState: []string{"context", "update", "agent_output"},
 			Interrupts:     []string{"cancel"},
 			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "decision", "state", "outcome", "resolved"},
 			MaxConcurrency: 1, BreaksCycles: true,

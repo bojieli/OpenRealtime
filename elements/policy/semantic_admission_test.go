@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -26,6 +27,7 @@ const semanticAdmissionGraph = `graph semantic_admission_test {
     policy.SemanticAdmission :: admission;
     input context = admission.context;
     input update = admission.update;
+    input agent_output = admission.agent_output;
     input committed = admission.committed;
     input create = admission.create;
     input quiet = admission.quiet;
@@ -52,7 +54,7 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 3 ||
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 4 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v3" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}
@@ -1993,6 +1995,123 @@ func TestSemanticAdmissionNewerEvidenceCancelsOnlyTheOlderDecision(t *testing.T)
 	assertNoPolicyEnvelope(t, harness.egress(t, "silent_committed"))
 }
 
+func TestSemanticAdmissionUsesVoiceLifecycleAcrossTranscriptRevisions(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		acts: []coreinteraction.Act{
+			coreinteraction.ActInterrupt,
+			coreinteraction.ActKeepSpeaking,
+			coreinteraction.ActKeepSpeaking,
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+		TranscriptEvents: &policyelements.SemanticTranscriptEventConfig{
+			Partial: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this partial transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough,
+					coreinteraction.ActInterrupt, coreinteraction.ActKeepSpeaking,
+					coreinteraction.ActStopSpeaking,
+				},
+			},
+			Final: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this final transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
+					coreinteraction.ActKeepSpeaking, coreinteraction.ActStopSpeaking,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	items := []trajectory.Item{
+		semanticTranscriptObservation(
+			"correction-partial", "asr.revision", 1,
+			"And then ship it by the thirteenth.",
+		),
+		semanticTranscriptObservation(
+			"correction-final", "asr.endpoint", 2,
+			"And then ship it by the thirteenth.",
+		),
+		semanticTranscriptObservation(
+			"continued-partial", "asr.revision", 1,
+			"Which gives us plenty of time to finish the documentation.",
+		),
+	}
+	streams := []string{"correction-stream", "correction-stream", "continued-stream"}
+
+	appendAndCommit := func(index int) policyelements.SemanticDecision {
+		snapshot := trajectory.Snapshot{
+			Version: uint64(index + 1), Items: append([]trajectory.Item(nil), items[:index+1]...),
+		}
+		stateID := fmt.Sprintf("state-%d", index+1)
+		sendSemanticContext(t, harness, stateID, snapshot)
+		prefix, identifyErr := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+		if identifyErr != nil {
+			t.Fatal(identifyErr)
+		}
+		commit := semanticCommittedOutcome(items[index], streams[index], prefix, stateID, snapshot.Version)
+		commit.ObservationRevision = items[index].SourceRevision
+		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+			Type:   stateelements.ObservationCommitOutcomeType(),
+			ItemID: fmt.Sprintf("commit-%d", index+1), SessionID: "semantic-session",
+			Payload: commit,
+		})
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		return receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	}
+
+	first := appendAndCommit(0)
+	grant := receivePolicy(t, harness.egress(t, "voice_committed")).Payload.(policyelements.SemanticGrant)
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if first.Act != coreinteraction.ActInterrupt || grant.Act != coreinteraction.ActInterrupt {
+		t.Fatalf("partial correction decision=%+v grant=%+v", first, grant)
+	}
+
+	output := coreinteraction.AgentOutput{
+		Revision: 2, Active: true, Queued: true,
+		InFlight: "voice output active: model=1, segmentation=1, synthesis=0, playback=0",
+	}
+	sendPolicy(t, harness.ingress(t, "agent_output"), element.Envelope{
+		Type: coreinteraction.AgentOutputType(), ItemID: "agent-output-2",
+		SessionID: "semantic-session", Payload: output,
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+
+	final := appendAndCommit(1)
+	finalOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	continued := appendAndCommit(2)
+	continuedOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+
+	if final.Act != coreinteraction.ActKeepSpeaking || continued.Act != coreinteraction.ActKeepSpeaking ||
+		finalOutcome.Code != "keep_speaking" || continuedOutcome.Code != "keep_speaking" {
+		t.Fatalf("lifecycle decisions final=%+v/%+v continued=%+v/%+v",
+			final, finalOutcome, continued, continuedOutcome)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "voice_committed"))
+	captured := decider.captured()
+	if len(captured) != 3 ||
+		!reflect.DeepEqual(captured[1].Options, []string{"keep-speaking", "stop-speaking"}) ||
+		!reflect.DeepEqual(captured[2].Options, []string{"keep-speaking", "stop-speaking"}) ||
+		!strings.Contains(captured[1].Evidence, "agent: voice output is active and still being prepared") ||
+		!strings.Contains(captured[1].Evidence, output.InFlight) ||
+		!strings.Contains(captured[2].Evidence, output.InFlight) {
+		t.Fatalf("transcript lifecycle policy requests = %+v", captured)
+	}
+}
+
 func TestSemanticAdmissionCancelWinsWhenProviderReturnsAfterCancellation(t *testing.T) {
 	entered := make(chan int, 1)
 	release := make(chan struct{})
@@ -2329,6 +2448,22 @@ func semanticEndpointObservation(
 		},
 		Event: &trajectory.EventMetadata{
 			EventID: "event-" + stream, Type: "asr.endpoint", Source: "asr", Channel: "microphone",
+		},
+	}
+}
+
+func semanticTranscriptObservation(
+	stream, eventType string, sourceRevision uint64, content string,
+) trajectory.Item {
+	return trajectory.Item{
+		ID: "observation-" + stream, Kind: trajectory.KindObservation,
+		MonotonicNS: sourceRevision, SourceRevision: sourceRevision,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: content,
+		Observation: &trajectory.ObservationMeta{
+			Observer: "asr", Source: "microphone", Authority: trajectory.AuthorityUser,
+		},
+		Event: &trajectory.EventMetadata{
+			EventID: "event-" + stream, Type: eventType, Source: "asr", Channel: "microphone",
 		},
 	}
 }

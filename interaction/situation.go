@@ -97,10 +97,12 @@ type Situation struct {
 	Restricted bool
 	// Recent is the rolling conversation window, oldest first.
 	Recent []string
-	// AgentSpeaking says whether the agent's own voice is playing, and
-	// AgentSaying is what it has said so far in that sentence. Together they
-	// decide which acts exist: an agent that is not speaking cannot keep
-	// speaking, and one already mid-sentence is not choosing whether to start.
+	// AgentSpeaking says whether the agent owns an active voice-output
+	// lifecycle, from admitted generation through playback. AgentSaying is the
+	// prepared or audible text when it is known. Together they decide which
+	// acts exist: an agent with no voice output cannot keep speaking, and one
+	// already preparing or presenting a response is not choosing whether to
+	// start another.
 	AgentSpeaking bool
 	AgentSaying   string
 	// Speaker names whoever else is involved, empty when nobody is. Speaking
@@ -288,7 +290,11 @@ func (state Situation) Render() string {
 		block.WriteString("transcript event: " + string(state.TranscriptEvent) + "\n")
 	}
 	if state.AgentSpeaking {
-		block.WriteString("agent: speaking out loud right now, has said \"" + state.AgentSaying + "\" so far\n")
+		if strings.TrimSpace(state.AgentSaying) == "" {
+			block.WriteString("agent: voice output is active and still being prepared\n")
+		} else {
+			block.WriteString("agent: voice output is queued or audible, saying \"" + state.AgentSaying + "\"\n")
+		}
 	} else {
 		block.WriteString("agent: not speaking\n")
 	}

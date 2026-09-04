@@ -46,6 +46,7 @@ const overlapBargeInGraph = `graph overlap_barge_in_test {
     output safe_release = overlap.safe_release;
     output decision = overlap.decision;
     output state = overlap.state;
+    output agent_output = overlap.agent_output;
     output resolved = overlap.resolved;
 }
 `
@@ -64,10 +65,10 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 5 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 6 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
-		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v2" {
+		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v3" {
 		t.Fatalf("overlap descriptor = %+v", descriptor)
 	}
 
@@ -735,6 +736,7 @@ func TestOverlapBargeInCancelsLateWorkForTheSameActiveSpeech(t *testing.T) {
 	if state := stateEnvelope.Payload.(OverlapState); !state.CancelIssued {
 		t.Fatalf("post-cancel state = %+v", state)
 	}
+	_ = receive(t, harness.output(t, "agent_output"))
 
 	// Retire the initially visible work. The user is still speaking, so a
 	// non-cooperative or separately queued run that arrives afterward must get
@@ -813,6 +815,86 @@ func TestOverlapBargeInProtectsDeliberateSameStreamUntilExplicitStop(t *testing.
 	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"), decisionEnvelope.ItemID, "run-a")
 }
 
+func TestOverlapBargeInSemanticKeepSpeakingClosesTheAcousticDeadline(t *testing.T) {
+	harness := mountOverlapBargeIn(t, `{"hold_ms":10,"unclassified":"cancel"}`, nil)
+	defer harness.stop(t)
+
+	harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
+		"invocation", "run", "source-stream", 1, coreinteraction.ActInterrupt,
+	))
+	harness.sendAndSync(t, "activity", overlapActivityEnvelope(
+		"activity-start", "continuation-stream", acousticelements.SpeechStarted,
+	))
+	_, observed := receiveOverlapDecision(t, harness.output(t, "decision"))
+	if observed.Kind != OverlapObserved {
+		t.Fatalf("initial overlap = %+v", observed)
+	}
+
+	state := harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
+		"semantic-keep", "continuation-stream", 1, coreinteraction.ActKeepSpeaking,
+	))
+	_, kept := receiveOverlapDecision(t, harness.output(t, "decision"))
+	if kept.Kind != OverlapKept || kept.Trigger != "semantic_revision" ||
+		kept.SourceRevision != 1 || state.OverlapActive || state.ClassificationOpen ||
+		state.Kept != 1 || state.CancelIssued {
+		t.Fatalf("semantic keep decision=%+v state=%+v", kept, state)
+	}
+
+	harness.scheduler.AdvanceNS(uint64(50 * time.Millisecond))
+	assertNoOverlapCancels(t, harness)
+	assertNoEnvelope(t, harness.output(t, "decision"))
+}
+
+func TestOverlapBargeInPublishesExactVoiceOutputLifecycle(t *testing.T) {
+	harness := mountOverlapBargeIn(t, `{"hold_ms":10,"unclassified":"cancel"}`, nil)
+	defer harness.stop(t)
+
+	state := harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
+		"invocation", "run", "stream", 1, coreinteraction.ActInterrupt,
+	))
+	if !state.AgentOutput.Active || !state.AgentOutput.Queued || state.AgentOutput.Audible ||
+		state.AgentOutput.Saying != "" ||
+		state.AgentOutput.InFlight != "voice output active: model=1, segmentation=1, synthesis=0, playback=0" {
+		t.Fatalf("admitted voice output = %+v", state.AgentOutput)
+	}
+
+	const text = "Actually, the deadline is the third."
+	harness.sendAndSync(t, "speech", overlapSpeechEnvelope("speech", "run", "utterance", text))
+	state = harness.sendAndSync(t, "tts", overlapTransitionEnvelope(
+		"tts-generating", "run", "utterance",
+		speechelements.StageSynthesis, speechelements.StateGenerating,
+	))
+	if !state.AgentOutput.Active || !state.AgentOutput.Queued || state.AgentOutput.Audible ||
+		state.AgentOutput.Saying != text ||
+		!strings.Contains(state.AgentOutput.InFlight, "synthesis=1") {
+		t.Fatalf("synthesizing voice output = %+v", state.AgentOutput)
+	}
+
+	state = harness.sendAndSync(t, "playback", overlapTransitionEnvelope(
+		"playback-emitting", "run", "utterance",
+		speechelements.StagePlayback, speechelements.StateEmitting,
+	))
+	if !state.AgentOutput.Active || state.AgentOutput.Queued || !state.AgentOutput.Audible ||
+		state.AgentOutput.Saying != text ||
+		!strings.Contains(state.AgentOutput.InFlight, "playback=1") {
+		t.Fatalf("audible voice output = %+v", state.AgentOutput)
+	}
+
+	harness.sendAndSync(t, "model", overlapModelEnvelope("model-done", "run"))
+	harness.sendAndSync(t, "segmentation", overlapSegmentationEnvelope(
+		"segmentation-done", "run", OutcomeCompleted,
+	))
+	state = harness.sendAndSync(t, "release", overlapReleaseEnvelope(
+		"released", "run", "utterance", text,
+		action.Outcome{Completed: true, PlayedMS: 40},
+	))
+	if state.AgentOutput.Active || state.AgentOutput.Queued || state.AgentOutput.Audible ||
+		state.AgentOutput.Saying != "" || state.AgentOutput.InFlight != "" {
+		t.Fatalf("terminal voice output = %+v", state.AgentOutput)
+	}
+	_ = receive(t, harness.output(t, "safe_release"))
+}
+
 func TestOverlapBargeInAppliesDecisionBeforeReorderedInvocation(t *testing.T) {
 	harness := mountOverlapBargeIn(t, `{"hold_ms":10,"unclassified":"cancel"}`, nil)
 	defer harness.stop(t)
@@ -878,6 +960,11 @@ func mountOverlapBargeIn(
 	if !ok || startup.UserSpeaking || startup.OverlapActive || startup.CancelIssued {
 		t.Fatalf("overlap startup state = %#v", startupEnvelope.Payload)
 	}
+	startupOutput := receive(t, harness.output(t, "agent_output"))
+	if output, ok := startupOutput.Payload.(coreinteraction.AgentOutput); !ok ||
+		output.Revision != 1 || output.Active || output.Queued || output.Audible {
+		t.Fatalf("overlap startup agent output = %#v", startupOutput.Payload)
+	}
 	live := mounted.Live().Nodes["overlap"].Resolution
 	wantCapabilities := 0
 	if decider != nil {
@@ -928,6 +1015,11 @@ func (harness *overlapBargeInHarness) sendAndSync(
 	}
 	if !slices.Contains(stateEnvelope.CausalParents, envelope.ItemID) {
 		t.Fatalf("state %+v does not descend from %q", stateEnvelope, envelope.ItemID)
+	}
+	outputEnvelope := receive(t, harness.output(t, "agent_output"))
+	output, ok := outputEnvelope.Payload.(coreinteraction.AgentOutput)
+	if !ok || !reflect.DeepEqual(output, state.AgentOutput) {
+		t.Fatalf("agent output payload = %#v, state = %#v", outputEnvelope.Payload, state.AgentOutput)
 	}
 	return state
 }

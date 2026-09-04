@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:5"
+	overlapBargeInRuntimeRevision  = "implementation:6"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      5,
+		Revision:      6,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -113,6 +113,8 @@ func OverlapBargeInDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "state", Direction: element.Output, Type: overlapStateType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
+			{Name: "agent_output", Direction: element.Output, Type: coreinteraction.AgentOutputType(),
+				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
 			{Name: "resolved", Direction: element.Output, Type: overlapResolutionType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
 		},
@@ -122,12 +124,12 @@ func OverlapBargeInDescriptor() element.Descriptor {
 			},
 			Outcomes: []string{
 				"model_cancel", "segmentation_cancel", "tts_cancel", "playback_cancel",
-				"safe_result", "safe_release", "decision", "state", "resolved",
+				"safe_result", "safe_release", "decision", "state", "agent_output", "resolved",
 			},
 			MaxConcurrency: 1,
 			BreaksCycles:   true,
 		},
-		StateSchema:  "schema://openrealtime/interaction/overlap-state/v2",
+		StateSchema:  "schema://openrealtime/interaction/overlap-state/v3",
 		ConfigSchema: "schema://openrealtime/interaction/overlap-barge-in-config/v1",
 		Dependencies: []element.Dependency{
 			{Name: graphruntime.ClockServiceName},
@@ -248,6 +250,7 @@ type OverlapState struct {
 	ActiveSegmentations int                             `json:"active_segmentations"`
 	ActiveTTS           int                             `json:"active_tts"`
 	ActivePlayback      int                             `json:"active_playback"`
+	AgentOutput         coreinteraction.AgentOutput     `json:"agent_output"`
 	Observed            uint64                          `json:"observed"`
 	Classified          uint64                          `json:"classified"`
 	Kept                uint64                          `json:"kept"`
@@ -342,7 +345,7 @@ func (overlapBargeInFactory) Mount(
 type overlapPorts struct {
 	activity, transcript, semantic, speech, result, invocation, model, segmentation, tts, playback, release element.InputPort
 	modelCancel, segmentationCancel, ttsCancel, playbackCancel                                              element.OutputPort
-	safeResult, safeRelease, decision, state, resolved                                                      element.OutputPort
+	safeResult, safeRelease, decision, state, agentOutput, resolved                                         element.OutputPort
 }
 
 func overlapPortsFrom(ports element.Ports) (overlapPorts, error) {
@@ -374,7 +377,8 @@ func overlapPortsFrom(ports element.Ports) (overlapPorts, error) {
 		{"model_cancel", &result.modelCancel}, {"segmentation_cancel", &result.segmentationCancel},
 		{"tts_cancel", &result.ttsCancel}, {"playback_cancel", &result.playbackCancel},
 		{"safe_result", &result.safeResult}, {"safe_release", &result.safeRelease},
-		{"decision", &result.decision}, {"state", &result.state}, {"resolved", &result.resolved},
+		{"decision", &result.decision}, {"state", &result.state},
+		{"agent_output", &result.agentOutput}, {"resolved", &result.resolved},
 	} {
 		port, err := ports.Output(output.name)
 		if err != nil {
@@ -408,6 +412,7 @@ type overlapUtterance struct {
 	playbackActive       bool
 	playbackTerminal     bool
 	playbackCancelIssued bool
+	playbackAudible      bool
 }
 
 type overlapInputKind uint8
@@ -497,6 +502,7 @@ type overlapBargeInRunner struct {
 	classifyGeneration     uint64
 	revisionSequence       uint64
 	state                  OverlapState
+	agentOutputRevision    uint64
 }
 
 func (runner *overlapBargeInRunner) Run(parent context.Context) (runErr error) {
@@ -815,6 +821,15 @@ func (runner *overlapBargeInRunner) acceptSemantic(
 		runner.semanticOrder = runner.semanticOrder[1:]
 		delete(runner.semantic, oldest)
 	}
+	if decision.Act == coreinteraction.ActKeepSpeaking && runner.speech != nil &&
+		runner.speech.streamID == decision.StreamID {
+		return runner.keepActive(
+			ctx, envelope, "semantic_revision", decision.SourceRevision,
+			runner.speech.evidence,
+			"the transcript-event policy explicitly kept the active voice output",
+			false,
+		)
+	}
 	runIDs := runner.runsSupersededBy(decision)
 	if len(runIDs) == 0 {
 		return nil
@@ -835,12 +850,14 @@ func (runner *overlapBargeInRunner) runsSupersededBy(
 	}
 	var runIDs []string
 	for runID, run := range runner.runs {
-		if run == nil || run.streamID != decision.StreamID ||
-			run.sourceRevision >= decision.SourceRevision {
+		if run == nil {
 			continue
 		}
-		if decision.Act == coreinteraction.ActStaySilent && deliberateSpokeOver(run.act) {
-			continue
+		if decision.Act == coreinteraction.ActStaySilent {
+			if run.streamID != decision.StreamID || run.sourceRevision >= decision.SourceRevision ||
+				deliberateSpokeOver(run.act) {
+				continue
+			}
 		}
 		if run.modelActive || run.segmentationActive || runner.runHasActiveUtterance(runID) {
 			runIDs = append(runIDs, runID)
@@ -1327,8 +1344,11 @@ func (runner *overlapBargeInRunner) acceptSpeechTransition(
 				return nil
 			}
 			utterance.playbackActive = true
+			utterance.playbackAudible = transition.State == speechelements.StateEmitting ||
+				transition.CrossedBoundary
 		} else {
 			utterance.playbackActive = false
+			utterance.playbackAudible = false
 			utterance.playbackTerminal = true
 		}
 	}
@@ -1428,7 +1448,7 @@ func (runner *overlapBargeInRunner) onDeadline(ctx context.Context, generation u
 	if runner.speech.evidence == coreinteraction.OverlapBackchannel ||
 		runner.speech.evidence == coreinteraction.OverlapSide {
 		return runner.keepActive(ctx, cause, "semantic_deadline", 0,
-			runner.speech.evidence, "overlap was classified as non-directed speech")
+			runner.speech.evidence, "overlap was classified as non-directed speech", true)
 	}
 	return runner.applyFallback(ctx, cause, "hold_timeout")
 }
@@ -1472,7 +1492,7 @@ func (runner *overlapBargeInRunner) onClassification(
 	case coreinteraction.OverlapBackchannel, coreinteraction.OverlapSide:
 		if runner.clock.NowNS() >= runner.speech.deadlineNS {
 			return runner.keepActive(ctx, result.cause, "semantic_transcript",
-				result.revision, result.evidence, "overlap was classified as non-directed speech")
+				result.revision, result.evidence, "overlap was classified as non-directed speech", true)
 		}
 		_, err := runner.publishDecision(ctx, result.cause, OverlapDecision{
 			Kind: OverlapClassified, Trigger: "semantic_transcript", StreamID: result.streamID,
@@ -1500,7 +1520,7 @@ func (runner *overlapBargeInRunner) onClassification(
 
 func (runner *overlapBargeInRunner) keepActive(
 	ctx context.Context, cause element.Envelope, trigger string, revision uint64,
-	evidence coreinteraction.OverlapEvidence, reason string,
+	evidence coreinteraction.OverlapEvidence, reason string, publishState bool,
 ) error {
 	if runner.speech == nil || runner.speech.cancelIssued || runner.speech.classificationEnd {
 		return nil
@@ -1517,7 +1537,10 @@ func (runner *overlapBargeInRunner) keepActive(
 	if err != nil {
 		return err
 	}
-	return runner.publishState(ctx, cause)
+	if publishState {
+		return runner.publishState(ctx, cause)
+	}
+	return nil
 }
 
 func (runner *overlapBargeInRunner) applyFallback(
@@ -1525,7 +1548,7 @@ func (runner *overlapBargeInRunner) applyFallback(
 ) error {
 	if runner.config.Unclassified == OverlapFallbackKeep {
 		return runner.keepActive(ctx, cause, trigger, 0, runner.speech.evidence,
-			"configured unclassified-overlap fallback keeps speaking")
+			"configured unclassified-overlap fallback keeps speaking", true)
 	}
 	return runner.cancelActive(ctx, cause, trigger, 0, runner.speech.evidence,
 		"configured unclassified-overlap fallback yields the floor", true)
@@ -1814,6 +1837,9 @@ func (runner *overlapBargeInRunner) publishState(
 	ctx context.Context, cause element.Envelope,
 ) error {
 	runner.refreshState()
+	runner.agentOutputRevision++
+	runner.state.AgentOutput = runner.agentOutputSnapshot()
+	runner.state.AgentOutput.Revision = runner.agentOutputRevision
 	sequence, err := runner.sequences.Next(runner.instance + ".overlap-state")
 	if err != nil {
 		return err
@@ -1824,7 +1850,14 @@ func (runner *overlapBargeInRunner) publishState(
 	envelope.Sequence = sequence
 	envelope.CausalParents = appendUniqueString(envelope.CausalParents, cause.ItemID)
 	envelope.Payload = runner.state
-	return broadcastInteraction(ctx, runner.ports.state, envelope)
+	if err := broadcastInteraction(ctx, runner.ports.state, envelope); err != nil {
+		return err
+	}
+	output := envelope.Clone()
+	output.Type = runner.ports.agentOutput.Type()
+	output.ItemID = fmt.Sprintf("%s:agent_output:%d", runner.instance, runner.agentOutputRevision)
+	output.Payload = runner.state.AgentOutput
+	return broadcastInteraction(ctx, runner.ports.agentOutput, output)
 }
 
 func (runner *overlapBargeInRunner) publishResolution(ctx context.Context) error {
@@ -1910,7 +1943,8 @@ func (runner *overlapBargeInRunner) refreshState() {
 	if runner.speech != nil {
 		runner.state.UserSpeaking = true
 		runner.state.StreamID = runner.speech.streamID
-		runner.state.OverlapActive = runner.speech.armed && runner.hasActionableOverlapWork()
+		runner.state.OverlapActive = runner.speech.armed && !runner.speech.classificationEnd &&
+			runner.hasActionableOverlapWork()
 		runner.state.OverlapStartedNS = runner.speech.overlapStartedNS
 		runner.state.DeadlineNS = runner.speech.deadlineNS
 		runner.state.Evidence = runner.speech.evidence
@@ -1931,6 +1965,29 @@ func (runner *overlapBargeInRunner) refreshState() {
 		if utterance.playbackActive {
 			runner.state.ActivePlayback++
 		}
+	}
+}
+
+func (runner *overlapBargeInRunner) agentOutputSnapshot() coreinteraction.AgentOutput {
+	active := runner.hasAgentWork()
+	audible := false
+	for _, utterance := range runner.utterances {
+		if utterance != nil && utterance.playbackActive && utterance.playbackAudible {
+			audible = true
+			break
+		}
+	}
+	inFlight := ""
+	if active {
+		inFlight = fmt.Sprintf(
+			"voice output active: model=%d, segmentation=%d, synthesis=%d, playback=%d",
+			runner.state.ActiveModels, runner.state.ActiveSegmentations,
+			runner.state.ActiveTTS, runner.state.ActivePlayback,
+		)
+	}
+	return coreinteraction.AgentOutput{
+		Active: active, Queued: active && !audible, Audible: audible,
+		Saying: runner.activeAgentText(), InFlight: inFlight,
 	}
 }
 
