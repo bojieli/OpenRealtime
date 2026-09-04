@@ -400,6 +400,202 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 	}
 }
 
+func TestRealtimeComputerUseFocusTypeSubmitSettlesUnderContinuousCadence(t *testing.T) {
+	target := computeruse.Target{
+		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
+	}
+	descriptor := testRealtimeCUDescriptor()
+	model := &focusTypeSubmitRealtimeCUModel{
+		descriptor: descriptor, invocations: make(chan int32, 8),
+	}
+	policyDescriptor := testRealtimeCUPolicyDescriptor()
+	policy := &scriptedRealtimeCUDispositionDecider{
+		descriptor: policyDescriptor,
+		choices: []policyelements.IntentDispositionKind{
+			policyelements.IntentDispositionContinue,
+			policyelements.IntentDispositionContinue,
+			policyelements.IntentDispositionSucceeded,
+		},
+		decisions: make(chan policyelements.IntentDispositionKind, 4),
+	}
+	observer := newTestRealtimeCUObserver("focus-type-submit-observer")
+	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
+		RuntimeArtifact: testRealtimeCUArtifact("focus-type-submit-runtime", "1"),
+		SettlementPolicy: realtimecu.PolicyPlugin{
+			Reference:  realtimecu.SettlementPolicyReference,
+			Artifact:   testRealtimeCUArtifact("focus-type-submit-policy", "4"),
+			Descriptor: policyDescriptor,
+			Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+				return policy, nil
+			},
+		},
+		Model: realtimecu.ModelPlugin{
+			Reference: "go://test/realtime-cu/focus-type-submit-model/v1",
+			Artifact:  testRealtimeCUArtifact("focus-type-submit-model", "2"), Descriptor: descriptor,
+			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
+				return model, nil
+			},
+		},
+		Observer: realtimecu.ObserverPlugin{
+			Reference: "go://test/realtime-cu/focus-type-submit-observer/v1", Name: observer.name,
+			Artifact: testRealtimeCUArtifact("focus-type-submit-observer", "3"),
+			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+			) (realtimecu.Observer, error) {
+				observer.retainer = resources.Retainer
+				return observer, nil
+			},
+		},
+		Target: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launched, err := graphlaunch.New(context.Background(), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := newTestRealtimeCUSink()
+	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{
+		Sink: sink, SessionID: "realtime-cu-focus-type-submit",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if closeErr := runtime.Close(ctx, errors.New("test complete")); closeErr != nil {
+			t.Errorf("close focus-type-submit runtime: %v", closeErr)
+		}
+	})
+	if err := runtime.Update(context.Background(), legacy.Settings{
+		Instruction: "focus the field, type alpha-9, and submit it",
+		Tools:       testRealtimeCUToolSpecs(t, target), Observers: []string{observer.name},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 90,
+		Image: []byte{1}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 90)
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 100,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 110,
+		Image: []byte{2}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 110)
+
+	steps := []struct {
+		name        string
+		arguments   string
+		disposition policyelements.IntentDispositionKind
+	}{
+		{name: computeruse.Click, arguments: `{"source":"screen","x":10,"y":20}`,
+			disposition: policyelements.IntentDispositionContinue},
+		{name: computeruse.Type, arguments: `{"source":"screen","text":"alpha-9"}`,
+			disposition: policyelements.IntentDispositionContinue},
+		{name: computeruse.Key, arguments: `{"source":"screen","keys":["ENTER"]}`,
+			disposition: policyelements.IntentDispositionSucceeded},
+	}
+	var previousResultVersion uint64
+	for index, step := range steps {
+		if invocation := receiveRealtimeCU(t, model.invocations, "focus-type-submit model invocation"); invocation != int32(index+1) {
+			t.Fatalf("focus-type-submit invocation = %d, want %d", invocation, index+1)
+		}
+		event := receiveRealtimeCU(t, sink.calls, step.name+" client effect")
+		if len(event.Calls) != 1 || event.Calls[0].Name != step.name ||
+			string(event.Calls[0].Arguments) != step.arguments {
+			t.Fatalf("focus-type-submit step %d = %+v", index+1, event)
+		}
+		call := event.Calls[0]
+		if err := runtime.ToolResult(context.Background(), trajectory.ToolResult{
+			CallID: call.CallID, Name: call.Name,
+			Output: json.RawMessage(fmt.Sprintf(`{"ok":true,"step":%d}`, index+1)),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		consequence := receiveRealtimeCU(t, observer.consequences, step.name+" visual consequence")
+		if consequence.CallID != call.CallID || consequence.Name != step.name ||
+			consequence.CanonicalResultItemID == "" || consequence.StoreVersion <= previousResultVersion {
+			t.Fatalf("focus-type-submit consequence %d = %+v", index+1, consequence)
+		}
+		previousResultVersion = consequence.StoreVersion
+		captured := uint64(200 + index)
+		if err := runtime.Video(context.Background(), perception.Frame{
+			Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: captured,
+			Image: []byte{byte(index + 3)}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, captured)
+		if decision := receiveRealtimeCU(t, policy.decisions, step.name+" settlement decision"); decision != step.disposition {
+			t.Fatalf("focus-type-submit disposition %d = %q, want %q",
+				index+1, decision, step.disposition)
+		}
+	}
+
+	// Terminal settlement must withstand ordinary changing screen cadence. It
+	// suppresses the completed durable intent without imposing a one-action
+	// limit on the three distinct effects that preceded it.
+	for index := 0; index < 5; index++ {
+		captured := uint64(300 + index)
+		if err := runtime.Video(context.Background(), perception.Frame{
+			Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: captured,
+			Image: []byte{byte(10 + index)}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, captured)
+	}
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("terminal focus-type-submit intent reactivated under cadence: %d", invocation)
+	case <-time.After(250 * time.Millisecond):
+	}
+	select {
+	case extra := <-policy.decisions:
+		t.Fatalf("terminal focus-type-submit intent was classified again as %q", extra)
+	default:
+	}
+
+	// A new final user observation resets the terminal latch but still needs its
+	// own post-intent visual evidence before the next cognition run.
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: realtimecu.SourceMicrophone, CapturedNS: 500,
+		PCM16LE: []byte{2, 0}, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("replacement intent activated without fresh screen evidence: %d", invocation)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := runtime.Video(context.Background(), perception.Frame{
+		Kind: perception.FrameImage, Source: realtimecu.SourceScreen, CapturedNS: 600,
+		Image: []byte{20}, MIMEType: "image/jpeg", Width: 320, Height: 240,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, 600)
+	if invocation := receiveRealtimeCU(t, model.invocations, "replacement intent cognition"); invocation != 4 {
+		t.Fatalf("replacement intent invocation = %d, want 4", invocation)
+	}
+}
+
 func TestRealtimeComputerUseToolAdmissionSuppressesPlaceholderAndReleasesNextVisual(t *testing.T) {
 	target := computeruse.Target{
 		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
@@ -893,6 +1089,47 @@ func (testRealtimeCUDispositionDecider) Decide(
 	return coreinteraction.Outcome{Index: index, Option: wanted}, nil
 }
 
+type scriptedRealtimeCUDispositionDecider struct {
+	descriptor policyelements.SemanticDeciderDescriptor
+	mu         sync.Mutex
+	choices    []policyelements.IntentDispositionKind
+	decisions  chan policyelements.IntentDispositionKind
+}
+
+func (*scriptedRealtimeCUDispositionDecider) Name() string {
+	return "scripted-realtime-cu-settlement"
+}
+
+func (decider *scriptedRealtimeCUDispositionDecider) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return decider.descriptor
+}
+
+func (decider *scriptedRealtimeCUDispositionDecider) Decide(
+	ctx context.Context, request coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	if err := context.Cause(ctx); err != nil {
+		return coreinteraction.Outcome{}, err
+	}
+	decider.mu.Lock()
+	if len(decider.choices) == 0 {
+		decider.mu.Unlock()
+		return coreinteraction.Outcome{}, errors.New("scripted settlement has no remaining disposition")
+	}
+	choice := decider.choices[0]
+	decider.choices = decider.choices[1:]
+	decider.mu.Unlock()
+	index := slices.Index(request.Options, string(choice))
+	if index < 0 {
+		return coreinteraction.Outcome{}, fmt.Errorf("settlement decision does not offer %q", choice)
+	}
+	select {
+	case decider.decisions <- choice:
+	case <-ctx.Done():
+		return coreinteraction.Outcome{}, context.Cause(ctx)
+	}
+	return coreinteraction.Outcome{Index: index, Option: string(choice)}, nil
+}
+
 func testRealtimeCUArtifact(name, digit string) inspect.ArtifactIdentity {
 	return inspect.ArtifactIdentity{
 		ID: "artifact://test/realtime-cu/" + name, Revision: "v1",
@@ -916,6 +1153,52 @@ func (*testRealtimeCUModel) Continue(
 	call := trajectory.ToolCall{
 		CallID: request.InvocationID + ":click", Name: computeruse.Click,
 		Arguments: json.RawMessage(`{"source":"screen","x":10,"y":20}`),
+	}
+	if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
+		return continuation.Completion{}, err
+	}
+	return continuation.Completion{StopReason: "tool_call"}, nil
+}
+
+type focusTypeSubmitRealtimeCUModel struct {
+	descriptor  continuation.Descriptor
+	invocations chan int32
+	count       atomic.Int32
+}
+
+func (model *focusTypeSubmitRealtimeCUModel) Descriptor() continuation.Descriptor {
+	return model.descriptor
+}
+
+func (model *focusTypeSubmitRealtimeCUModel) Continue(
+	_ context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	invocation := model.count.Add(1)
+	model.invocations <- invocation
+	results := 0
+	for _, item := range request.Trajectory.Items {
+		if item.Kind == trajectory.KindToolResult {
+			results++
+		}
+	}
+	var name string
+	var arguments json.RawMessage
+	switch results {
+	case 0:
+		name = computeruse.Click
+		arguments = json.RawMessage(`{"source":"screen","x":10,"y":20}`)
+	case 1:
+		name = computeruse.Type
+		arguments = json.RawMessage(`{"source":"screen","text":"alpha-9"}`)
+	case 2:
+		name = computeruse.Key
+		arguments = json.RawMessage(`{"source":"screen","keys":["ENTER"]}`)
+	default:
+		return continuation.Completion{StopReason: "stop"}, nil
+	}
+	call := trajectory.ToolCall{
+		CallID: request.InvocationID + fmt.Sprintf(":step-%d", results+1),
+		Name:   name, Arguments: arguments,
 	}
 	if err := emit(continuation.Event{Kind: continuation.EventToolCall, ToolCall: &call}); err != nil {
 		return continuation.Completion{}, err
