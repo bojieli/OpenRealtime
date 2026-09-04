@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:8"
+	overlapBargeInRuntimeRevision  = "implementation:9"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      8,
+		Revision:      9,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -391,6 +391,7 @@ func overlapPortsFrom(ports element.Ports) (overlapPorts, error) {
 
 type overlapRun struct {
 	streamID                 string
+	protectedStreamID        string
 	sourceRevision           uint64
 	observationRevision      uint64
 	act                      coreinteraction.Act
@@ -823,6 +824,7 @@ func (runner *overlapBargeInRunner) acceptSemantic(
 	}
 	if decision.Act == coreinteraction.ActKeepSpeaking && runner.speech != nil &&
 		runner.speech.streamID == decision.StreamID {
+		runner.protectActiveContinuation(decision.StreamID)
 		return runner.keepActive(
 			ctx, envelope, "semantic_revision", decision.SourceRevision,
 			runner.speech.evidence,
@@ -869,6 +871,21 @@ func (runner *overlapBargeInRunner) runsSupersededBy(
 
 func deliberateSpokeOver(act coreinteraction.Act) bool {
 	return act == coreinteraction.ActSpeakThrough || act == coreinteraction.ActInterrupt
+}
+
+// protectActiveContinuation records the semantic meaning of keep-speaking:
+// the current ASR stream is a continuation through which deliberate output
+// remains valid. Without this transition only the first partial sees the
+// model's decision; every later revision looks unrelated and can oscillate
+// between keep and stop despite carrying the same growing utterance.
+func (runner *overlapBargeInRunner) protectActiveContinuation(streamID string) {
+	for runID, run := range runner.runs {
+		if run == nil || !deliberateSpokeOver(run.act) ||
+			(!run.modelActive && !run.segmentationActive && !runner.runHasActiveUtterance(runID)) {
+			continue
+		}
+		run.protectedStreamID = streamID
+	}
 }
 
 // acceptSpeechSegment retains only the bounded, safe-to-speak text already
@@ -1992,6 +2009,9 @@ func (runner *overlapBargeInRunner) agentOutputSnapshot() coreinteraction.AgentO
 			continue
 		}
 		protected = append(protected, run.streamID)
+		if run.protectedStreamID != "" {
+			protected = append(protected, run.protectedStreamID)
+		}
 	}
 	sort.Strings(protected)
 	protected = slices.Compact(protected)

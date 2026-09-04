@@ -173,8 +173,8 @@
       "reference": "interaction.OverlapBargeIn",
       "identity": {
         "name": "interaction.OverlapBargeIn",
-        "revision": 8,
-        "digest": "sha256:b43f418f5ec3c1f35269cfda6146d5c1b9714e1231288806fe10a8a9930c5522"
+        "revision": 9,
+        "digest": "sha256:7b871e1fb1744d7542954bba1bd10ed0510358ff6b2370dd558dcaafbd5093e9"
       }
     },
     {

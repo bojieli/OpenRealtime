@@ -65,7 +65,7 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 8 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 9 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v4" {
@@ -838,7 +838,9 @@ func TestOverlapBargeInSemanticKeepSpeakingClosesTheAcousticDeadline(t *testing.
 	_, kept := receiveOverlapDecision(t, harness.output(t, "decision"))
 	if kept.Kind != OverlapKept || kept.Trigger != "semantic_revision" ||
 		kept.SourceRevision != 1 || state.OverlapActive || state.ClassificationOpen ||
-		state.Kept != 1 || state.CancelIssued {
+		state.Kept != 1 || state.CancelIssued ||
+		!reflect.DeepEqual(state.AgentOutput.ProtectedStreams,
+			[]string{"continuation-stream", "source-stream"}) {
 		t.Fatalf("semantic keep decision=%+v state=%+v", kept, state)
 	}
 
