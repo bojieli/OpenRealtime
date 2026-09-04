@@ -46,6 +46,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		architectureCell = flags.String("architecture-cell", "", "cell name in -architecture-manifest")
 		launchProfile    = flags.String("launch-profile", "", "strict graph launch profile for a graph-native scenario checklist")
 		inspectionGraph  = flags.String("inspection-graph", "", benchmarkInspectionGraphFlagHelp)
+		subturn          = flags.Bool("subturn", true, "also play the cases outside the gated acceptance contract, reported rather than gated; the resumed-after-interruption case lives here and needs -transcribe-url to be scorable")
 	)
 	if err := flags.Parse(arguments); err != nil {
 		return err
@@ -199,6 +200,23 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	}
 	fmt.Fprintf(output, "  source       %s\n", receipt.ManifestSHA256)
 	fmt.Fprintf(output, "  receipt      %s\n", receiptPath)
+
+	// After the gated contract, and never inside it. These cases have no
+	// registered acceptance baseline, so counting them into a population whose
+	// size and thresholds are checked against one would weaken the gate rather
+	// than extend it.
+	if *subturn {
+		ungated, err := runSubturnCases(
+			context.Background(), output, speaker, config,
+			scenario.SubturnSuite(), runs, *timeout,
+		)
+		if err != nil {
+			return err
+		}
+		if err := writeSubturnRecord(*record, ungated); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

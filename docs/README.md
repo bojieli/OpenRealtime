@@ -108,6 +108,7 @@ written as tutorials.
 | [Measurement](measurement.md) | the full chronological measurement program and claim boundaries |
 | [Response latency](latency.md) | waveform-based methodology, repeated measurements, and bottleneck findings |
 | [Interaction findings](interaction-findings.md) | lessons from building and evaluating the interaction model |
+| [The spoken boundary](spoken-boundary.md) | which of the agent's own words the user actually heard, and what reads it |
 | [Architecture experiments](architecture-experiments.md) | controlled placement/evidence/controller experiments and attestation gates |
 | [Realtime computer-use graph](realtime-computer-use-graph.md) | the locked production graph and its sixteen-case validation suite |
 
