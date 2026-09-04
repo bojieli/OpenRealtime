@@ -35,6 +35,8 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		model            = flags.String("model", "", "model to request; empty selects the server's own")
 		speech           = flags.String("speech-url", "http://127.0.0.1:8081/v1/audio/speech", "speech endpoint that gives the participants voices")
 		voice            = flags.String("speech-model", "fishaudio/s2-pro", "speech model")
+		transcribe       = flags.String("transcribe-url", "", "OpenAI-shaped transcription endpoint used to score what the agent was audibly saying; required by the resumed-after-interruption case, which is scored against the agent's own recorded waveform rather than against the transcript the wire delivered")
+		transcribeModel  = flags.String("transcribe-model", "Systran/faster-whisper-base.en", "recogniser the scoring endpoint should load")
 		timeout          = flags.Duration("timeout", 3*time.Minute, "bound on one scenario")
 		record           = flags.String("record", "", "write the timed record of each scenario to this file")
 		reviewDir        = flags.String("review-dir", "", "create this new directory with per-attempt stereo WAVs, a manifest, and a Markdown review")
@@ -121,6 +123,10 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 
 	speaker := scenario.SpeechVoice{
 		Endpoint: *speech, Model: *voice, Default: "default",
+		// Deliberately a second endpoint rather than the session's own
+		// recogniser. The claim it serves is that nothing involved in
+		// producing the audio gets to say what was in it.
+		Listen: scenario.Hearing{Endpoint: *transcribe, Model: *transcribeModel},
 		// The second party gets a different voice. A phone menu that sounds
 		// exactly like the caller removes the difficulty the case exists to
 		// pose.

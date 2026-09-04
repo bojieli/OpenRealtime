@@ -7,12 +7,17 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/internal/audio"
 )
 
 // SpeechVoice synthesises through an OpenAI-shaped speech endpoint.
@@ -30,6 +35,9 @@ type SpeechVoice struct {
 	Voices  map[string]string
 	Default string
 	Client  *http.Client
+	// Listen is the separate endpoint used to score what the agent was
+	// audibly saying. Unset leaves that claim unmade rather than assumed.
+	Listen Hearing
 }
 
 // CacheDir holds synthesised speech between runs.
@@ -244,3 +252,97 @@ func writeCached(key string, samples []int16) {
 	}
 	_ = os.Rename(temporary, filepath.Join(CacheDir, key+".pcm"))
 }
+
+// Transcribe is where the harness sends the agent's own audio when a check has
+// to be scored against what a loudspeaker produced.
+//
+// It is deliberately a second endpoint rather than the session's recogniser.
+// The point of the check it serves is that nothing involved in producing the
+// audio gets to say what was in it, and the session's recogniser is the most
+// involved thing there is.
+type Hearing struct {
+	Endpoint string
+	Model    string
+	Language string
+	Client   *http.Client
+}
+
+// Hear transcribes one stretch of the agent's audio.
+func (voice SpeechVoice) Hear(ctx context.Context, samples []int16, rateHz int) (string, error) {
+	if voice.Listen.Endpoint == "" {
+		return "", errors.New("no transcription endpoint is configured for the harness")
+	}
+	return voice.Listen.hear(ctx, samples, rateHz)
+}
+
+func (listen Hearing) hear(ctx context.Context, samples []int16, rateHz int) (string, error) {
+	if len(samples) == 0 {
+		return "", nil
+	}
+	pcm := make([]byte, len(samples)*2)
+	for index, sample := range samples {
+		binary.LittleEndian.PutUint16(pcm[index*2:], uint16(sample))
+	}
+	container, err := audio.EncodeWAVMono16(pcm, uint32(rateHz))
+	if err != nil {
+		return "", err
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "agent.wav")
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write(container); err != nil {
+		return "", err
+	}
+	fields := [][2]string{{"model", listen.Model}, {"response_format", "json"}}
+	if listen.Language != "" {
+		fields = append(fields, [2]string{"language", listen.Language})
+	}
+	for _, field := range fields {
+		if field[1] == "" {
+			continue
+		}
+		if err := writer.WriteField(field[0], field[1]); err != nil {
+			return "", err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	timed, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(timed, http.MethodPost, listen.Endpoint, &body)
+	if err != nil {
+		return "", err
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Accept", "application/json")
+	client := listen.Client
+	if client == nil {
+		client = &http.Client{Timeout: 180 * time.Second}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	if err != nil {
+		return "", err
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("transcription endpoint returned %s: %s",
+			response.Status, truncate(payload))
+	}
+	var decoded struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return "", fmt.Errorf("decode transcription response: %w", err)
+	}
+	return strings.TrimSpace(decoded.Text), nil
+}
+
+var _ Ears = SpeechVoice{}

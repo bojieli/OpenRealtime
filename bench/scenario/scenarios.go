@@ -308,3 +308,38 @@ func Suite() []Scenario {
 		},
 	}
 }
+
+// SubturnSuite is the focused extension for behavior whose correctness depends
+// on a boundary inside the assistant's own speech. It remains separate from
+// Suite because Suite is the reviewed eleven-case acceptance contract. Adding
+// an exploratory case to that contract would silently change the required
+// graph fingerprint and the reportable population from 165 to 180 attempts.
+func SubturnSuite() []Scenario {
+	return []Scenario{{
+		Name: "picking up where it was cut off",
+		Note: "an interruption is a boundary inside a sentence, and carrying on means " +
+			"carrying on from the word they heard rather than from the word it wrote",
+		// Counting is the instrument, not the subject. Any long turn can be
+		// interrupted, but only a count makes the boundary legible from outside:
+		// every item is distinct, ordered, and equally long, so where the agent
+		// resumes says exactly what it believed it had already said.
+		Instructions: "You are a voice assistant. Do exactly what the person asks. " +
+			"If they stop you and then ask you to carry on, carry on from where you " +
+			"had actually got to.",
+		Script: []Line{
+			{Speaker: "user", AtMS: 0, Text: "Count out loud from one to forty for me, slowly, one number at a time, and don't say anything else."},
+			{Speaker: "user", AtMS: 15000, Text: "Okay, hold on a moment."},
+			{Speaker: "user", AtMS: 25000, Text: "Right, carry on from where you got to."},
+		},
+		TrailingMS: 14000,
+		Checks: []Check{
+			{Kind: CheckSilent, Line: 1, FromMS: 2500, AfterMS: 8000,
+				Note: "they stopped it, and it has to stay stopped until they say otherwise"},
+			{Kind: CheckSpoke, Line: 2, AfterMS: 6000,
+				Note: "they asked it to carry on"},
+			{Kind: CheckResumed, Line: 2, Interrupted: 1, AfterMS: 12000,
+				Note: "carrying on means from the last number they heard, not from the " +
+					"last one it had written and not from the beginning"},
+		},
+	}}
+}

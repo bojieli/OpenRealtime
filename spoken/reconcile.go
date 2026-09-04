@@ -40,7 +40,7 @@ func Reconcile(reference string, heard []Word, spanMS uint64) Timeline {
 		return Estimate(reference, spanMS)
 	}
 	referenceRunes, referenceOwner := canonicalStream(words)
-	heardRunes, heardStart, heardEnd := heardStream(heard)
+	heardRunes, heardStart, heardEnd, heardOwner := heardStream(heard)
 	if len(referenceRunes) == 0 || len(heardRunes) == 0 ||
 		len(referenceRunes) > alignmentLimit || len(heardRunes) > alignmentLimit {
 		return Estimate(reference, spanMS)
@@ -50,12 +50,34 @@ func Reconcile(reference string, heard []Word, spanMS uint64) Timeline {
 	starts := make([]uint64, len(words))
 	ends := make([]uint64, len(words))
 	known := make([]bool, len(words))
+	covered := make([]int, len(words))
+	length := make([]int, len(words))
+	referenceCanonical := make([]string, len(words))
+	heardCanonical := make([]string, len(heard))
+	for index, word := range words {
+		referenceCanonical[index] = canonical(word)
+	}
+	for index, word := range heard {
+		heardCanonical[index] = canonical(word.Text)
+	}
+	for _, owner := range referenceOwner {
+		length[owner]++
+	}
+	exactMatches := make([]map[int]int, len(words))
 	for referenceIndex, heardIndex := range matched {
 		if heardIndex < 0 {
 			continue
 		}
 		owner := referenceOwner[referenceIndex]
 		start, end := heardStart[heardIndex], heardEnd[heardIndex]
+		covered[owner]++
+		source := heardOwner[heardIndex]
+		if referenceCanonical[owner] != "" && referenceCanonical[owner] == heardCanonical[source] {
+			if exactMatches[owner] == nil {
+				exactMatches[owner] = make(map[int]int)
+			}
+			exactMatches[owner][source]++
+		}
 		if !known[owner] {
 			starts[owner], ends[owner], known[owner] = start, end, true
 			continue
@@ -67,6 +89,44 @@ func Reconcile(reference string, heard []Word, spanMS uint64) Timeline {
 			ends[owner] = end
 		}
 	}
+	// Character alignment deliberately permits split and joined words, but its
+	// equally scoring paths can give the final repeated character of an exact
+	// word to a later reference word. For example, the final "o" in a heard
+	// "two" may align with the "o" in a later "four". When the canonical word
+	// itself is an exact match, snap a majority match back to the recogniser's
+	// whole word interval. That interval is direct timing evidence; leaving the
+	// truncated character slice would claim the word was heard before its last
+	// phoneme was played.
+	for owner, candidates := range exactMatches {
+		best, count := -1, 0
+		for source, candidateCount := range candidates {
+			if candidateCount > count || (candidateCount == count && (best < 0 || source < best)) {
+				best, count = source, candidateCount
+			}
+		}
+		if best >= 0 && count*2 >= length[owner] && (count >= 2 || length[owner] <= 1) {
+			starts[owner] = heard[best].StartMS
+			ends[owner] = heard[best].EndMS
+			if ends[owner] < starts[owner] {
+				ends[owner] = starts[owner]
+			}
+		}
+	}
+	// A global alignment will happily match one stray letter of a word nobody
+	// said to one stray letter of a word somebody did - the final "e" of
+	// "three" against the final "e" of "five" - and a word anchored on a
+	// single coincidence is anchored in the wrong place entirely. Measured, it
+	// put the last two words of a sentence inside audio that had not been
+	// synthesised, which is the one thing the layout must never say. So an
+	// anchor has to be most of a word rather than a letter of one.
+	for index := range known {
+		if !known[index] {
+			continue
+		}
+		if covered[index]*2 < length[index] || (covered[index] < 2 && length[index] > 1) {
+			known[index] = false
+		}
+	}
 	if !anyKnown(known) {
 		return Estimate(reference, spanMS)
 	}
@@ -75,7 +135,20 @@ func Reconcile(reference string, heard []Word, spanMS uint64) Timeline {
 	if last := ends[lastKnown(known)]; last > span {
 		span = last
 	}
-	fillUnmatched(words, starts, ends, known, span)
+	heardExtent := uint64(0)
+	for index, word := range heard {
+		if heardCanonical[index] == "" {
+			continue
+		}
+		end := word.EndMS
+		if end < word.StartMS {
+			end = word.StartMS
+		}
+		if end > heardExtent {
+			heardExtent = end
+		}
+	}
+	fillUnmatched(words, starts, ends, known, span, heardExtent)
 	// The layout may now run past the audio, and it should: words the
 	// recogniser never reached were placed beyond it on purpose. So the order
 	// pass is bounded by where the layout actually ends rather than by where
@@ -126,7 +199,9 @@ func lastKnown(known []bool) int {
 // fillUnmatched gives a time to every reference word the alignment did not
 // anchor, by spreading the gap between the anchors around it in proportion to
 // how long each word takes to say.
-func fillUnmatched(words []string, starts, ends []uint64, known []bool, span uint64) {
+func fillUnmatched(
+	words []string, starts, ends []uint64, known []bool, span, heardExtent uint64,
+) {
 	index := 0
 	for index < len(words) {
 		if known[index] {
@@ -150,6 +225,9 @@ func fillUnmatched(words []string, starts, ends []uint64, known []bool, span uin
 			// audio carrying them does not exist yet. Give them the prior's
 			// duration past whatever it did reach, rather than compressing
 			// them into audio that has already been played.
+			if heardExtent > from {
+				from = heardExtent
+			}
 			if extended := from + PriorDuration(words[index:run]); extended > to {
 				to = extended
 			}
@@ -212,11 +290,12 @@ func canonicalStream(words []string) ([]rune, []int) {
 // exactly as accurate as it needs to be: the interval it subdivides is one word
 // long, so the worst error a subdivision can introduce is a fraction of a word,
 // and the boundary being placed is a boundary between words.
-func heardStream(heard []Word) ([]rune, []uint64, []uint64) {
+func heardStream(heard []Word) ([]rune, []uint64, []uint64, []int) {
 	runes := make([]rune, 0, len(heard)*6)
 	starts := make([]uint64, 0, len(heard)*6)
 	ends := make([]uint64, 0, len(heard)*6)
-	for _, word := range heard {
+	owners := make([]int, 0, len(heard)*6)
+	for owner, word := range heard {
 		text := canonical(word.Text)
 		count := uint64(len([]rune(text)))
 		if count == 0 {
@@ -231,9 +310,10 @@ func heardStream(heard []Word) ([]rune, []uint64, []uint64) {
 			runes = append(runes, character)
 			starts = append(starts, word.StartMS+width*uint64(position)/count)
 			ends = append(ends, word.StartMS+width*uint64(position+1)/count)
+			owners = append(owners, owner)
 		}
 	}
-	return runes, starts, ends
+	return runes, starts, ends, owners
 }
 
 // canonical reduces one word to the sounds it stands for.

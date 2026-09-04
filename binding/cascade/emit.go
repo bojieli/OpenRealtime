@@ -53,9 +53,6 @@ func (sink speechSink) Audio(ctx context.Context, utterance action.Utterance, fr
 
 func (sink speechSink) End(ctx context.Context, utterance action.Utterance, outcome action.Outcome) error {
 	runtime := sink.runtime
-	if err := runtime.sink.SpeechEnd(ctx, utterance, outcome); err != nil {
-		return err
-	}
 	visibility := trajectory.VisibilityCancelled
 	playedMS := uint64(0)
 	if outcome.PlayedMS > 0 {
@@ -77,13 +74,19 @@ func (sink speechSink) End(ctx context.Context, utterance action.Utterance, outc
 			AssistantState: state,
 		})
 	}
-	if len(events) == 0 {
-		return nil
+	if len(events) > 0 {
+		// Queue the canonical heard boundary before publishing SpeechEnd to the
+		// client. The client may begin its next utterance as soon as it observes
+		// that callback; if the callback won the race, the next user observation
+		// could be committed and sent to cognition before this boundary even
+		// entered the event queue. Ordering the internal fact first means both
+		// events may still commit together, but the next model snapshot can never
+		// run ahead of what the user had already heard.
+		if _, err := runtime.coordinator.SubmitBatch(events); err != nil {
+			return err
+		}
 	}
-	if _, err := runtime.coordinator.SubmitBatch(events); err != nil {
-		return err
-	}
-	return nil
+	return runtime.sink.SpeechEnd(ctx, utterance, outcome)
 }
 
 // heardPerItem splits one utterance's boundary back across the assistant items

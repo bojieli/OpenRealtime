@@ -42,8 +42,14 @@ func TestCompletingAMeasuredLayoutKeepsItsAnchors(t *testing.T) {
 		t.Fatal("the layout should be measured")
 	}
 	completed := timeline.Complete(2000)
+	for index := 0; index < 2; index++ {
+		if completed.Words[index] != timeline.Words[index] {
+			t.Fatalf("completion moved a measured anchor: %+v became %+v",
+				timeline.Words[index], completed.Words[index])
+		}
+	}
 	if completed.Words[0].EndMS != 500 || completed.Words[1].EndMS != 1000 {
-		t.Fatalf("completion moved a measured anchor: %+v", completed.Words[:2])
+		t.Fatalf("exact heard words lost their full measured intervals: %+v", completed.Words[:2])
 	}
 	if last := completed.Words[3]; last.EndMS != 2000 {
 		t.Fatalf("the last word does not end with the audio: %+v", last)

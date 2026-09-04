@@ -47,6 +47,10 @@ type Check struct {
 	// Line indexes the script. The window runs from that line's start to its
 	// end, extended by AfterMS. Negative means the whole conversation.
 	Line int
+	// Interrupted indexes the line that cut the agent off, for CheckResumed.
+	// The window before it is what the agent had audibly said by the time
+	// somebody stopped it.
+	Interrupted int
 	// Sight indexes Sees instead, when the moment being checked is something
 	// the agent saw. It is one-based so that the zero value keeps meaning
 	// "use Line", and it can anchor absolutely where a spoken line cannot:
@@ -140,6 +144,21 @@ const (
 	// window. It catches the failure that looks like success: speaking at the
 	// right moment, about the wrong thing.
 	CheckNotSaid CheckKind = "not-said"
+	// CheckResumed asserts the agent carried on from the word the user
+	// actually heard.
+	//
+	// It is the only check here that cannot be scored from the wire. Every
+	// other one asks what the agent said, and the transcript of a turn arrives
+	// with the turn; this asks what the user heard, and the moment somebody
+	// interrupts, those stop being the same thing - the wire carries the whole
+	// sentence and the loudspeaker stopped partway through it.
+	//
+	// So it is scored against the agent's recorded waveform, transcribed by
+	// something that had no part in producing it. Scoring it against the
+	// runtime's own account of where it got to would mark a runtime correct
+	// for carrying on from wherever it believed it had, which is the belief
+	// under test.
+	CheckResumed CheckKind = "resumed"
 )
 
 // saidBetween is what the agent said inside a window, or everything it said
@@ -435,11 +454,26 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	if config.TrailingSilence == 0 {
 		config.TrailingSilence = time.Duration(item.TrailingMS) * time.Millisecond
 	}
+	// The agent's own waveform is kept for the one check that has to be scored
+	// against what a loudspeaker produced rather than against what the wire
+	// said. A host that already captures it keeps its own copy: this wraps that
+	// hook instead of replacing it, because the evidence bundle and the score
+	// need the same bytes and neither owns them.
+	hostCapture := config.CaptureAudio
+	var captured bench.SessionAudioCapture
+	config.CaptureAudio = func(value bench.SessionAudioCapture) error {
+		captured = value
+		if hostCapture != nil {
+			return hostCapture(value)
+		}
+		return nil
+	}
 	transcript, err := bench.PlaySamples(ctx, config, timeline.Samples)
 	if err != nil {
 		return Result{Scenario: item.Name, Transcript: transcript}, err
 	}
-	result := score(item, timeline, transcript, menu)
+	ears, _ := voice.(Ears)
+	result := score(item, timeline, transcript, menu, hearing(ctx, ears, captured))
 	result.Latencies = latencies(item, timeline, transcript)
 	return result, nil
 }
@@ -450,16 +484,18 @@ func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result
 	if item.Menu != nil {
 		menu = item.Menu()
 	}
-	return score(item, timeline, transcript, menu)
+	return score(item, timeline, transcript, menu, nil)
 }
 
 // score is Score against a menu that has already been played, which is the
 // only way the menu checks mean anything: Score building its own would score a
 // call nobody made.
-func score(item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu) Result {
+func score(
+	item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard,
+) Result {
 	result := Result{Scenario: item.Name, Transcript: transcript, Passed: true}
 	for _, check := range item.Checks {
-		if failure := apply(check, timeline, transcript, menu); failure != "" {
+		if failure := apply(check, timeline, transcript, menu, listen); failure != "" {
 			result.Passed = false
 			result.Failures = append(result.Failures, failure)
 		}
@@ -474,7 +510,9 @@ func score(item Scenario, timeline Timeline, transcript bench.Transcript, menu *
 // the room would have heard.
 const audibleMS = 120
 
-func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Menu) string {
+func apply(
+	check Check, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard,
+) string {
 	from, to := 0, timeline.TotalMS
 	switch {
 	case check.Sight > 0 && check.Sight <= len(timeline.Sights):
@@ -595,6 +633,8 @@ func apply(check Check, timeline Timeline, transcript bench.Transcript, menu *Me
 					truncateSaid(said), where, phrase, check.Note)
 			}
 		}
+	case CheckResumed:
+		return resumed(check, timeline, listen)
 	}
 	return ""
 }
