@@ -356,6 +356,10 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	// A second automatic audio turn deterministically selects act-silently.
 	// Silent cognition may still produce an authorized tool action, but its
 	// text port is graph-terminated before segmentation/TTS/playback.
+	policyDecisionsBeforeSilent := fixture.policy.decisions.Load()
+	if !fixture.policy.silentNext.CompareAndSwap(false, true) {
+		t.Fatal("scenario endpoint silent policy decision was already armed")
+	}
 	ttsPlansBeforeSilent := fixture.tts.plans.Load()
 	silentEventStart := len(client.received)
 	for index := 0; index < 3; index++ {
@@ -379,6 +383,12 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	}
 	silentResponseID, _ := silentCall["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, silentResponseID, "completed")
+	if fixture.policy.silentNext.Load() || fixture.policy.silentDecisions.Load() != 1 ||
+		fixture.policy.decisions.Load() != policyDecisionsBeforeSilent+1 {
+		t.Fatalf("scenario endpoint silent policy decision: armed=%t silent=%d decisions=%d, want false/1/%d",
+			fixture.policy.silentNext.Load(), fixture.policy.silentDecisions.Load(),
+			fixture.policy.decisions.Load(), policyDecisionsBeforeSilent+1)
+	}
 	barrier := scenarioEndpointSessionUpdate(t, toolCase)
 	barrier["event_id"] = "evt_final_session_barrier"
 	client.send(barrier)
@@ -394,9 +404,9 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 		}
 	}
 
-	if fixture.model.invocations.Load() != 7 || fixture.policy.decisions.Load() != 7 {
-		t.Fatalf("scenario endpoint model invocations=%d policy decisions=%d, want 7/7",
-			fixture.model.invocations.Load(), fixture.policy.decisions.Load())
+	if fixture.model.invocations.Load() != 7 {
+		t.Fatalf("scenario endpoint model invocations=%d, want 7",
+			fixture.model.invocations.Load())
 	}
 	if fixture.asrFactories.Load() != 2 || fixture.policyFactories.Load() != 2 ||
 		fixture.modelFactories.Load() != 2 || fixture.ttsFactories.Load() != 1 {
@@ -559,7 +569,11 @@ func (provider scenarioSpeechAuthorityProvider) Descriptor() continuation.Descri
 	return provider.descriptor
 }
 
-type scenarioEndpointPolicy struct{ decisions atomic.Int32 }
+type scenarioEndpointPolicy struct {
+	decisions       atomic.Int32
+	silentNext      atomic.Bool
+	silentDecisions atomic.Int32
+}
 
 func (*scenarioEndpointPolicy) Name() string { return "scenario-endpoint-policy" }
 func (*scenarioEndpointPolicy) Descriptor() policyelements.SemanticDeciderDescriptor {
@@ -568,10 +582,12 @@ func (*scenarioEndpointPolicy) Descriptor() policyelements.SemanticDeciderDescri
 func (policy *scenarioEndpointPolicy) Decide(
 	_ context.Context, decision coreinteraction.Decision,
 ) (coreinteraction.Outcome, error) {
-	call := policy.decisions.Add(1)
+	policy.decisions.Add(1)
 	wanted := coreinteraction.ActAnswer
-	if call == 7 {
+	if slices.Contains(decision.Options, string(coreinteraction.ActActSilently)) &&
+		policy.silentNext.CompareAndSwap(true, false) {
 		wanted = coreinteraction.ActActSilently
+		policy.silentDecisions.Add(1)
 	}
 	for index, option := range decision.Options {
 		if option == string(wanted) {
