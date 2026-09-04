@@ -257,6 +257,11 @@ failure to reach or read the evaluator remains an infrastructure failure. A
 protocol `error` from ASR, cognition, the engine, or transport is also
 incomplete: the driver returns a typed session failure with the transcript
 evidence, rather than scoring an unavailable provider as an incapable agent.
+The episode boundary discards ordinary setup chatter but preserves every
+already-collected `MomentError`, rebased to zero on the
+episode clock. This keeps the structured `MomentError` evidence consistent with
+the retained failure string even when the error races session setup; it does
+not turn the unavailable session into a scored attempt.
 
 ## OpenRealtime Realtime-CU v1
 
@@ -394,7 +399,7 @@ successful result was committed before cancellation but its direct consequence
 arrived afterward. Settlement revision 2 now independently authenticates the
 exact canceled intent→call→result→direct-consequence chain and emits a typed
 cleanup control for either result status on a dedicated lossless
-`settlement.cleanup → activation.effect_cleanup` lane. Activation revision 14
+`settlement.cleanup → activation.effect_cleanup` lane. Activation revision 15
 can use that control only for exact local bookkeeping: it never routes through
 ordinary admission, disposition, or cognition. The result consequence is
 verified against its immutable historical trajectory prefix, while the
@@ -411,14 +416,38 @@ may reclaim only a complete effect/tombstone pair that newer final user
 authority has already superseded, and it never evicts an effect that still owes
 a terminal settlement acknowledgement.
 
+The connected outcome copy remains deliberately broader than the cancellation
+transaction itself: every settlement outcome is observable, but only `cancel`
+and `ack` outcomes can advance a cancellation transaction. Coordinator revision
+4 recognizes a valid `cleanup/evidence` outcome as a closed, nontransactional
+observation and emits no cancellation state, progress, or refusal for it; a
+cleanup kind on any other operation is rejected. A mounted processing-barrier
+regression proves the coordinator consumed the valid cleanup without producing
+the former spurious `invalid_settlement_outcome` refusal, rather than inferring
+absence from a timeout or letting an activation-only debug helper discard it.
+
+The same ordering audit found that fresh work could already have selected a
+newer durable intent and reached activation while the old generation was still
+waiting for its delayed cancellation. Activation retained that fresh visual
+admission, but previously cleared the old generation without replaying it, so
+the new task needed an unrelated later frame to make progress. Revision 15 now
+detaches an already-admitted different-intent value, publishes the old
+cancellation and any overtaking cleanup first, and then re-enters the complete
+admission path. The retained value is therefore revalidated against current
+state and opens exactly one new generation without another observation; a
+same-intent deferred value remains canceled.
+
 The locked profile covers cancel-before-failed-consequence,
 cancel-after-success-result-before-consequence, recovery-before-cancel, fresh
 replacement intent, and cadence quiescence. A deterministic production-mounted
 race also holds the coordinator's activation-cancel output, lets cleanup reach
 activation first, and proves the same behavior for both result statuses before
-releasing cancellation. Element-level adversarial tests add malformed and
+releasing cancellation. Its serial processing barrier also proves that valid
+cleanup is nontransactional at the connected coordinator boundary and cannot
+emit a cancellation refusal. Element-level adversarial tests add malformed and
 cross-session control refusal, exact identity/lineage/status checks,
-duplicate/conflicting/reordered delivery, terminal-versus-cleanup ordering, and
+duplicate/conflicting/reordered delivery, terminal-versus-cleanup ordering,
+ordinary and cleanup-first replay of an already-admitted newer intent, and
 one-slot capacity reuse without evicting an effect that still owes a terminal
 acknowledgement. These are implementation regressions, not benchmark rows;
 scorer interpretation and the authored live failed-effect case remain open. No

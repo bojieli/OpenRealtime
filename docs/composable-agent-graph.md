@@ -1865,9 +1865,9 @@ is rerun against that exact candidate. The current critical path is:
 
 | Required cell | Current evidence and diagnosis | Next acceptance gate |
 | --- | --- | --- |
-| Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns | Exercise the landed continuation/admission repairs, fix any remaining behavior, then run 11 cases x 15 |
+| Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns. The branch now also contains upstream repairs for stable ASR streams, split-endpoint and delayed-trigger standing grounding, unowned partial speak-through, partial silent-action grounding, and count/translation instructions, plus deterministic semantic-decision input ownership. None has been exercised by a new immutable live candidate | Exercise the landed continuation/admission repairs on the failed cases, fix any remaining behavior, then run 11 cases x 15 |
 | Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
-| Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable live defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. A distinct typed cleanup lane prevents canceled result consequences from re-entering ordinary activation. Mounted regressions exercise `indeterminate → retry → continue → continue → succeeded`, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, and cleanup overtaking activation cancellation for both statuses without reviving old work or consuming cancellation capacity indefinitely. Focused and stable-endpoint implementation checks pass, but scorer interpretation, the remaining forged/reordered composition matrix, enforceable targets, and live repair campaign remain open | Complete forged/reordered boundary cases and failed-result scorer/live acceptance, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
+| Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable live defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. A distinct typed cleanup lane prevents canceled result consequences from re-entering ordinary activation. Mounted regressions exercise `indeterminate → retry → continue → continue → succeeded`, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, and cleanup overtaking activation cancellation for both statuses. The connected cleanup outcome is now proven nontransactional at the coordinator, and an already-admitted newer intent resumes after the delayed old cancellation without another frame. Focused and stable-endpoint implementation checks pass, but scorer interpretation, the remaining forged/reordered composition matrix, enforceable targets, and live repair campaign remain open | Complete forged/reordered boundary cases and failed-result scorer/live acceptance, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
 | FDB v1.5 (498) | Earlier diagnostic completed 498/498 and passed 355; interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
 | FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result. A full mounted endpoint regression now proves deployment-owned spoken-ID normalization without changing raw proposals, provider schemas, or speech | Run the exact failed task, preregister and run a representative slice, then rerun all 100 from one frozen candidate |
 | FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete; its obsolete executable rejected resume and cannot be mixed with a later candidate | Finish restartable, independently rescored retention and rerun all 21 conditions from one candidate |
@@ -1934,8 +1934,16 @@ production-mounted retry repair closed one more. Failed-effect work is now
 split into ordinary recovery, cancellation/capacity cleanup, and live scorer
 acceptance. The first two are independently mounted, producing the current
 311/381 ledger: seven of ten mounted subgates are checked and three remain
-open. No parent,
-live-behavior, phase-exit, or release item was closed by inference.
+open. A post-checkpoint audit reopened the evidence behind the checked cleanup
+subgate after finding a spurious coordinator refusal and a stranded newer
+admission. Commit `a0b946b` repairs both and re-establishes that same checked
+gate with direct connected-boundary regressions; it does not close any of the
+three separately open subgates, so the numerator and denominator do not change.
+No parent, live-behavior, phase-exit, or release item was closed by inference.
+The four later benchmark/test/Meeting repairs, the semantic-policy ownership
+repair, the Scenario terminal-output repair, and the upstream semantic/stream repairs
+restore already-claimed behavior or evidence integrity; they close no tracker,
+phase-exit, definition-of-done, live, or release box.
 
 The delivered implementation is organized so that each behavioral boundary can
 be reviewed or reverted independently:
@@ -1956,6 +1964,32 @@ be reviewed or reverted independently:
 | Failed-effect recovery | `e85065b` | Repairs a production state-machine stall: an exact canonical failed result plus its linked visual consequence now closes the old effect and immediately opens one recovery cognition turn under the same durable intent. Failed results still bypass the success-disposition policy; a later successful consequence can settle terminally and suppress cadence. Activation advances to revision 13 with refreshed descriptor, lock, runtime, graph, and plan identities |
 | Cascade test synchronization | `038d212` | Makes the background-response regression wait for provider completion and first speech delivery rather than treating provider invocation as output completion; the previously observed full-suite scheduling failure then passes fifty focused repetitions |
 | Canceled-effect consequence cleanup | `d4cf293` | Fixes the connected-boundary retention leak found by the cancellation audit and its successful-result analogue found during final review. Settlement revision 2 verifies the exact canceled intent→call→result→direct-consequence chain and emits `IntentSettlementCleanup` for either status on the dedicated lossless `settlement.cleanup → activation.effect_cleanup` lane. Its generated identity binds the source, evidence-item, cancellation-item, and sequence identities; graph wiring authorizes source-envelope delivery, and activation independently matches the control to mounted local cancellation state. Activation revision 14 can use it only to retire the matching local canceled effect; it never enters admission, cognition, or success-disposition policy. Cleanup may safely overtake activation cancellation, terminal settlement clears a now-redundant held cleanup, and bounded planning reclaims only a complete superseded effect/tombstone pair while protecting an effect with an outstanding terminal acknowledgement. The locked topology covers both result statuses, cancellation orderings, cadence quiescence, and fresh-intent recovery; hostile element tests cover identity, prefix, lineage, status, session, replay, conflict, and one-slot-capacity boundaries |
+| Cleanup outcome and deferred replay audit | `a0b946b` | Closes two connected-boundary defects exposed after the cleanup gate was first checked. Coordinator revision 4 accepts the exact `cleanup/evidence` outcome as closed but nontransactional, emits no cancellation state or refusal for it, and rejects other cleanup-operation pairings. Activation revision 15 detaches a retained different-intent admission only when delayed cancellation actually releases the old active generation, completes any overtaking cleanup, and revalidates the exact admission to start one newer generation without another frame. The locked production test observes both cleanup statuses, uses a same-lane processing barrier to prove refusal absence, admits newer work while activation cancellation is held, and requires automatic replay after release. |
+| Benchmark protocol-error retention | `f6ae84c` | Preserves collector-observed `MomentError` evidence when `beginEpisode` clears ordinary setup moments, rebasing retained errors to the episode's zero point. A protocol failure can no longer retain only its failure string while losing the matching structured moment during setup ordering. |
+| Scenario silent-policy fixture | `ccd9286` | Replaces a global seventh-call assumption with an explicitly armed, atomically consumed `ActActSilently` decision. Legitimate revision coalescing may make the final turn decision six or seven; the fixture now verifies the intended policy choice directly before attributing any audio to a silent-lane leak. |
+| Cascade solicitation observation | `23b06d7` | Repairs two test races without weakening the policy oracle. The tests wait until the second question's assistant item is canonically canceled and until the first question reaches `SpeechText`, rather than treating provider entry as output delivery. A genuinely queued second question cannot satisfy the cancellation barrier. |
+| Meeting pre-cancel response ordering | `a821e34` | Repairs a production cross-port race found by the repository-wide run. A proposal emitted at response sequence 1 could reach the adapter after sequence 3 had caused segmentation cancellation and was incorrectly rejected as late, terminating the session before its empty failed response closed. The adapter now retains the trusted per-run cancellation cutoff, quarantines only positive proposal sequences strictly before it, and remains fail-closed for zero/equal/later proposals, timeout or oversized cutoffs, and every post-cancel safe result. |
+| Upstream Scenario action grounding | `06ec93b` | Uses the whole unanswered endpoint stretch for standing-policy extraction and coverage, suppresses partial speak-through without standing authority, verifies silent actions even on partial transcripts, and tightens count/translation/future-rule instructions. This upstream behavior change is identified by the later local revision/lock repair rather than by its stale intermediate identity. |
+| Upstream stable ASR streams | `9fa7f55` | Keeps successive ASR revisions on their stable stream identity so downstream state and policy can reason over one evolving observation instead of unrelated items. It is part of the rebased base and has not been credited as a new tracker or live-benchmark result. |
+| Upstream delayed-policy grounding | `1ebdbec` | Restores the typed delay when a parsed standing policy is grounded against the user's words, preventing a real delayed trigger from being reduced to an apparently immediate one-shot action. It is part of the final rebased base and receives no tracker or live-benchmark credit. |
+| Semantic decision ownership | `958e3d5` | Seals a deep-copied `AgentOutput` snapshot with every asynchronous decision, eliminating a race and preventing future lifecycle revisions from changing an in-flight policy input. The node now joins its decision worker during normal shutdown; a cancellation-ignoring provider remains visible to the graph's bounded unresponsive-element report. The semantic runtime advances to implementation 9, descriptor revision 7, and a regenerated Scenario lock. |
+| Scenario final-observation terminal | `c81f942` | Exposes the attested-final branch as a typed graph output. The shipped Scenario graph is now warning-free under the conversational profile instead of leaving a declared terminal outcome unconsumed. |
+
+The semantic repair makes the actor boundary explicit. Mutable invocation,
+trajectory, standing-policy, and output-lifecycle state stays on the element's
+serialized input loop; each asynchronous model decision receives one immutable
+launch-time value set. A mutex acquired later in the worker would remove the
+memory race but would still let scheduler timing choose whether an older
+request observes a future output revision, so it is not the semantic contract.
+The worker is also part of node lifetime: shutdown cancels it and waits for it,
+allowing the graph's existing deadline to name a provider that refuses to
+terminate before forced resource disposal.
+
+Strict validation also remains a topology property, not a prose claim. The
+Scenario final-observation gate had both an admitted branch and an attested-final
+branch, but only the first was wired. Publishing the second as
+`final_observations` makes that terminal explicit and inspectable without
+forcing a consumer policy or silently discarding it.
 
 The changes address concrete failure mechanisms found while reviewing retained
 Realtime-CU evidence, but live confirmation remains deliberately separate:
@@ -1965,32 +1999,35 @@ Realtime-CU evidence, but live confirmation remains deliberately separate:
 | Camera actions could use a clear frame captured before the durable smoke intent | Typed post-intent temporal admission is now the only route into production activation | Mounted freshness, cancellation, temporal-admission forgery, multi-source, and stable-endpoint regressions pass; forged cross-node settlement evidence remains open | Run both authored camera variants and verify no pre-cue effect |
 | Moving-target and transient-alert sessions continued proposing after success | Exact result-linked settlement can latch a terminal intent, activation acknowledges clearing the matching effect, and the coordinator cancels the remaining pipeline | Element, ordering, bounded-state, coordinator, and endpoint checks pass | Run both moving-target and both transient-alert variants and verify no post-success loop or horizon timeout |
 | Cancellation could miss queued cognition or return before a selected policy client became quiescent | Queued-run tombstones are durable and the coordinator waits for the actual disposition producer/client outcome | The local locked-profile WebSocket test cancels an in-flight scripted policy-client call and an active scripted model run, then admits a fresh intent after each | Confirm the same behavior with the selected live provider on focused cases |
-| An unrelated same-run trajectory commit could be mistaken for failure of the model-result commit | Coordinator revision 3 ignores only empty `unknown_commit_reply`/`unknown_rejection_reply` fanout diagnostics and still requires exact canonical model-commit evidence | The local locked-profile WebSocket test exposed the race; the repair passes 30 normal and 10 race-enabled repetitions, with exact-shape unit coverage | Preserve this ordering during the remaining mounted cases and live repair campaign |
+| An unrelated same-run trajectory commit could be mistaken for failure of the model-result commit | Coordinator revision 4 retains revision 3's rule: it ignores only empty `unknown_commit_reply`/`unknown_rejection_reply` fanout diagnostics and still requires exact canonical model-commit evidence | The local locked-profile WebSocket test exposed the race; the repair passes 30 normal and 10 race-enabled repetitions, with exact-shape unit coverage | Preserve this ordering during the remaining mounted cases and live repair campaign |
 | Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | The local locked-profile WebSocket test reports `incomplete/action_already_crossed`, commits the mandatory cancellation result, requests visual consequence evidence, suppresses the old epoch, and admits a later intent | Exercise an authored failed-effect case and confirm live scorer behavior |
 | A terminal policy could accidentally become a blanket one-action-per-intent rule | Settlement explicitly chooses continuation or terminal state per canonical consequence | The production graph executes click/focus→type→submit under two continuations, terminates on success, ignores five changing cadence frames, and admits a new intent afterward | Confirm moving-target and transient-alert live behavior |
 | A transient provider, policy, or retained-media failure could strand a durable intent after one `indeterminate` decision | A separate typed retry node immediately forwards the immutable probe, schedules only verified indeterminate outcomes with bounded deterministic backoff, and stops on terminal disposition, cancellation, reset, elapsed-time bound, or attempt exhaustion | Element tests cover exact replay, capped exponential schedules, typed exhaustion, forged/stale/duplicate/reordered inputs, capacity, shutdown, and race behavior; the locked production focus→type→submit test begins with an automatic retry | Exercise the selected live disposition provider in the focused cases; route exhaustion to a different fallback if the application should not drop it |
-| A canonical failed client effect could strand a live intent, while cancellation after either result status could retain effect capacity indefinitely | Ordinary failed evidence opens one recovery turn. After cancellation, settlement revision 2 emits only an independently verified exact result consequence on a distinct typed cleanup lane; activation revision 14 removes only the matching local `canceledEffects` record. Every retained effect keeps its exact tombstone; under memory pressure only a complete pair superseded by newer final user authority may be reclaimed, and a pair with an outstanding terminal acknowledgement is protected | The exact locked topology executes failed click → recovery click → successful terminal settlement; cancel-before-failed-consequence emits `canceled_effect_failed`, cancel-after-success-result-before-consequence emits `canceled_effect_succeeded`, and failure-before-cancel cancels the exact recovery generation. A deterministic mounted gate proves cleanup can arrive while coordinator cancellation is still waiting, for both result statuses, without invoking policy/model or losing the generation acknowledgement. Element tests reject malformed, cross-session, forged, duplicate, and conflicting controls; reclaim one-slot capacity only when safe; and preserve an effect with an outstanding terminal acknowledgement | Prove evaluator interpretation against retained authored evidence, then run the authored failed-effect live case; local tests do not close benchmark acceptance |
+| A canonical failed client effect could strand a live intent, while cancellation after either result status could retain effect capacity indefinitely | Ordinary failed evidence opens one recovery turn. After cancellation, settlement revision 2 emits only an independently verified exact result consequence on a distinct typed cleanup lane; activation revision 15 removes only the matching local `canceledEffects` record and replays an already-admitted different-intent value after the old cancellation/cleanup completes. Every retained effect keeps its exact tombstone; under memory pressure only a complete pair superseded by newer final user authority may be reclaimed, and a pair with an outstanding terminal acknowledgement is protected | The exact locked topology executes failed click → recovery click → successful terminal settlement; cancel-before-failed-consequence emits `canceled_effect_failed`, cancel-after-success-result-before-consequence emits `canceled_effect_succeeded`, and failure-before-cancel cancels the exact recovery generation. A deterministic mounted gate proves cleanup can arrive while coordinator cancellation is still waiting, for both result statuses, without invoking policy/model or losing the generation acknowledgement. It also proves cleanup cannot create a coordinator refusal and that newer admitted work starts after release without another frame. Element tests reject malformed, cross-session, forged, duplicate, and conflicting controls; reclaim one-slot capacity only when safe; and preserve an effect with an outstanding terminal acknowledgement | Prove evaluator interpretation against retained authored evidence, then run the authored failed-effect live case; local tests do not close benchmark acceptance |
 | Session shutdown could deadlock behind media waiting for canonical commit | Observer use and publication/close ordering now have separate lifecycle boundaries; close drains commit waiters | Focused normal and race-enabled close regressions pass | Confirm the live focused cases terminate without running to the evaluation horizon |
 
-Validation at the latest implementation checkpoint passed from this clean
-detached worktree with Go 1.25. Repository-wide `go test ./... -count=1` and
-`go vet ./...` passed. Race-enabled tests passed for `elements/policy`,
-`graph/binding/realtimecu`, and `graphs`. The ordinary failed-effect recovery,
-all three visible canceled-result scenarios, and the deterministic
-cleanup-before-activation-cancel race for both result statuses in the locked
-profile passed twenty repetitions. The focused settlement-verifier,
-activation-ordering, replay/conflict, and bounded-capacity cleanup cases also
-passed twenty repetitions. An earlier repository-wide run exposed one unrelated
-cascade-test scheduling race: provider invocation was used as a proxy for
-completed output, so the assertion could observe zero spoken messages under
-package-level contention. Commit `038d212` waits for the provider's completed
-decision and the first delivered speech; that exact case passes fifty
-repetitions. After that repair, repository-wide and focused checks remained
-green. Canonical Realtime-CU `.ortg` formatting and warning-as-errors
-`computer-use` validation passed with the refreshed descriptor lock. These
-results establish implementation and concurrency properties only. No live or
-paid benchmark was run, no Realtime-CU acceptance target is yet registered, and the final-candidate ledger
-therefore remains 0/7,486.
+Validation at the rebased implementation checkpoint passed with Go 1.25.
+Repository-wide `go test ./... -count=1` and `go vet ./...` passed after the
+seven local commits were rebased onto upstream `1ebdbec`. Race-enabled
+`elements/policy` passed, including the deterministic launch-time
+`AgentOutput` snapshot and bounded shutdown-ownership regressions. The combined
+race command for `graph/binding/realtimecu` and `graphs` also passed without a
+race report. Canonical formatting and warnings-as-errors validation passed for
+both shipped profiles: Realtime-CU retained fingerprint
+`sha256:97652c06e8e35bd445869a514911aaf68bd76fa9c49de91e6941cf4df2a64436`,
+and Scenario reported
+`sha256:e0db009c1eefcb38158224579ff2bc920be3859d7dff4ae5ea2df8808e47fc1f`
+after its attested-final output was made explicit.
+
+Earlier focused evidence remains scoped to the behavior it exercised: the
+ordinary failed-effect recovery, all three visible canceled-result scenarios,
+and the deterministic cleanup-before-activation-cancel race for both result
+statuses passed twenty repetitions; the repaired Meeting mounted case passed
+500 ad hoc focused repetitions; and the cascade regressions passed their
+normal and race-enabled stress runs. Those repetitions are diagnostic
+implementation evidence, not committed benchmark attempts. No live or paid
+benchmark was run, no Realtime-CU acceptance target is yet registered, and the
+final-candidate ledger therefore remains 0/7,486.
 
 The ordered critical path from this checkpoint is:
 
@@ -2045,8 +2082,14 @@ complete effect/tombstone pair only after newer final user authority has made
 that old epoch unreactivatable; an effect carrying an outstanding terminal
 settlement acknowledgement is never evicted. A successful result uses cleanup
 only when its intent is already revoked; otherwise it remains subject to
-terminal disposition and activation acknowledgement. These implementation
-checks are prerequisites to the focused live repair loop, not benchmark
+terminal disposition and activation acknowledgement. Coordinator revision 4
+now recognizes the copied `cleanup/evidence` outcome as a valid
+nontransactional observation instead of emitting a spurious refusal. If a
+newer intent and fresh visual admission reach activation before the old
+cancellation, activation revision 15 publishes cancellation and cleanup first,
+then revalidates and replays that retained different-intent value without
+waiting for another frame. These implementation checks are prerequisites to
+the focused live repair loop, not benchmark
 acceptance, and do not advance the benchmark ledger.
 
 Current checkpoint notes:
@@ -2055,32 +2098,38 @@ Current checkpoint notes:
   branch history and the ledger below. Worktree-only slices remain unchecked
   until their review and required evidence are complete; no hard-coded branch
   or remote position is a completion oracle.
-- This reconciliation pins Scenario Conversation's values-bound graph
-  fingerprint
-  `sha256:30b92db9cb7e912efe135fd1f665b2a3d011363a51d2de2101a342e6a7cb2dc9`.
+- This reconciliation pins Scenario Conversation's source digest
+  `sha256:8f4860bb4f0864bacd4b6f092ca75ba97a751915c42d015b0f5e2000b9bceea9`,
+  lock digest
+  `sha256:7a484bf7c5109dfd89db609d034359a378fc07ed1f72446d8ede4cfc95afaf29`,
+  and strict values/deployment-bound graph fingerprint
+  `sha256:e0db009c1eefcb38158224579ff2bc920be3859d7dff4ae5ea2df8808e47fc1f`.
+  Its semantic-admission element is descriptor revision 7 at
+  `sha256:b64950830cec9bcbfa59be305f9b1cff56c7eecc33c41d7c390f329ae9868c7f`
+  and runtime `implementation:9`.
   The checked Realtime-CU integration fixture in
   `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
   (`benchmark-browser`, one `screen` source at 1280x720, and the test
   model/policy/observer selections) pins source digest
   `sha256:c4e359429b829c4d33aa13771717ed04f239bf6afa2da4275d637936903e6085`,
   lock digest
-  `sha256:c78dab42c909c34d8020f50c2a346552f4cd4a03e046a90111a12b19d360ace8`,
+  `sha256:a718420e2a593b1d4172edd9c85733a389680646322b1a30ee21d05d0d9d763d`,
   values digest
   `sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`,
   graph fingerprint
-  `sha256:2aeb8e6f9d4ab92b071a6d946828ea0b48f2da8c12c23ca247107de1252330c8`,
+  `sha256:7c3e56f79e6e41ffb2263ae3ca0d2c388c030e4da033a6c4da67f5780af89567`,
   and plan fingerprint
-  `sha256:23759a4e03c0f6ac532394b2999f1323fc5ee1ca5f61f74a237d8a56cf5d6ce0`.
-  The activation descriptor is revision 14 at
-  `sha256:66fb30b43914e3983c8c404358f9ecf84d222df0fbab765eef043cc31f8d30b4`,
-  with runtime `/activation/v14` and implementation revision 14. The
+  `sha256:9cbc1b2c4145c9d1b030ce5761947e67c8fad29a5172e36786a29c974b6416d1`.
+  The activation descriptor is revision 15 at
+  `sha256:a829f38214520ef1d8999bb94f5764bd9ef6e72f38d49aede2fc2fb1e3ed77bc`,
+  with runtime `/activation/v15` and implementation revision 15. The
   settlement descriptor is revision 2 at
   `sha256:e5e7925966753b502c6cb1d91918934b1158bdf8ba58d52a3cd6ef3942abb74e`,
   with runtime implementation revision 2. The
   disposition producer is revision 2 at
   `sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`,
-  and the cancellation coordinator is revision 3 at
-  `sha256:fc227d6bac1d353f099dc7555ff52ae87ad099360875f421b5a8a9f9eb9eb648`.
+  and the cancellation coordinator is revision 4 at
+  `sha256:4c88c464aca6cbac08f1739ac7e7ac944117f242135a46499fa016aec72604c4`.
   `action.ToolResultCommit` is revision 4 at
   `sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`.
   `policy.IntentDispositionRetry` is revision 1 at
@@ -2091,20 +2140,22 @@ Current checkpoint notes:
   `sha256:91e7c9bdd498945efc09eb34f0e29679c3de752bbb98455d33fa672a437a8ee8`.
   Strict computer-use graph formatting and profile validation pass, with bound
   check fingerprint
-  `sha256:e3869ea8cff1bf828600d70047085bac99a8062fc7c1c99dedd41a53a09dac4a`.
-  Scenario source is also canonical and locked, and its conversational
-  validation now passes warnings-as-errors because named `flow.Drop` and
-  `flow.IgnoreInterrupt` elements are recognized as explicit terminal sinks;
-  ordinary triggered workers without a declared outcome remain warnings.
-- Go 1.25 checkpoint validation passes repository-wide `go test ./...` and
-  `go vet ./...`; the complete `graphs` package passes ten repetitions. Ten
-  race-enabled repetitions pass across trajectory/provider projection,
-  semantic policy, action and interaction elements, Realtime-CU and Scenario
-  bindings, and the graph-native Meeting runtime. The mounted Realtime-CU
-  proposal-disposition case passes ten normal and ten race-enabled repetitions, and the
-  clean mounted Scenario unchanged-Realtime-endpoint regression passes 100
-  repetitions. These are implementation and concurrency checks only: no live
-  benchmark population or final-candidate gate is inferred from them.
+  `sha256:97652c06e8e35bd445869a514911aaf68bd76fa9c49de91e6941cf4df2a64436`.
+  Scenario source is also canonical and locked. Its conversational validation
+  passes warnings-as-errors because explicit terminal sinks remain recognized
+  and the previously unconsumed `audio_final_gate.finals` branch is now the
+  typed `final_observations` graph output; ordinary triggered workers without a
+  declared outcome remain warnings.
+- At the rebased Go 1.25 checkpoint, repository-wide
+  `go test ./... -count=1` and `go vet ./...` pass. Race-enabled
+  `elements/policy` passes, and one combined race run passes for
+  `graph/binding/realtimecu` and `graphs`. The semantic regressions prove that
+  an in-flight decision cannot observe a later `AgentOutput` revision and that
+  cancellation-ignoring decision work remains owned and visible to bounded
+  graph shutdown. Both Scenario and Realtime-CU strict format and
+  warnings-as-errors checks pass with the fingerprints above. These are
+  implementation and concurrency checks only: no live benchmark population or
+  final-candidate gate is inferred from them.
 - The committed benchmark evaluator settlement/scoring, temporal-policy, and Scenario endpoint
   normalization slices were validated with their focused normal/race/vet
   checks plus repository-wide test and vet gates before they entered branch
@@ -3646,7 +3697,10 @@ the required new 165-attempt sample.
         duplicate/reordered terminal decisions, and failed-result scorer/live
         acceptance still need production-mounted treatment. Failed and
         successful result-consequence cancellation orderings plus bounded
-        canceled-effect cleanup are now mounted.
+        canceled-effect cleanup are now mounted. The cleanup outcome is also
+        validated as nontransactional at the connected coordinator boundary,
+        and replacement evidence admitted while old cancellation is delayed is
+        replayed without requiring a later frame.
         Standalone descriptor, schema, runtime, exact-media, bounded-state, and
         ordering subsets do not close this composed runtime gate or any live
         behavioral gate.
@@ -3701,13 +3755,20 @@ the required new 165-attempt sample.
           exact recovery generation. A deterministic mounted race holds the
           coordinator's activation-cancel lane until cleanup arrives first, for
           both failed and successful results; releasing cancellation still
-          returns the exact generation ID before cleanup retires its record. All
-          three visible orderings remain quiescent under cadence and admit only
-          a fresh replacement intent. Focused element tests prove exact lineage,
+          returns the exact generation ID before cleanup retires its record.
+          The same test observes the copied cleanup/evidence outcome at the
+          coordinator and uses a same-input-lane sentinel to prove it emits no
+          cancellation refusal. It admits a newer intent plus fresh visual
+          evidence while activation cancellation is held; release must start
+          that retained generation without another frame. All three visible
+          orderings remain quiescent under cadence and admit only a fresh
+          replacement intent. Focused element tests prove exact lineage,
           ignore replayed equivalent cleanup, refuse a conflicting witness, and
-          bound overtaking cleanup to one slot. Terminal settlement clears a
-          redundant held cleanup. Cancellation that linearizes after newer final
-          authority with no cleanup retains no obsolete pair. At
+          bound overtaking cleanup to one slot. They separately cover ordinary
+          and cleanup-first replay of a different-intent deferred admission;
+          same-intent deferred work is still canceled. Terminal settlement
+          clears a redundant held cleanup. Cancellation that linearizes after
+          newer final authority with no cleanup retains no obsolete pair. At
           `CancelMemory=1`, no tombstone is pruned while an effect depends on it;
           only a complete superseded pair is reclaimable, and an effect awaiting
           terminal acknowledgement is protected.
@@ -3915,8 +3976,16 @@ the required new 165-attempt sample.
     background quarantines prevent a silent-model result from waiting on a text
     stream that can never arrive. Mounted tests exercise result/text edge
     reordering, serialized-control removal, graph-TTS backpressure, and the
-    zero-text tool-only terminal path; affected descriptor/schema identities
-    and locks are regenerated and reviewed.
+    zero-text tool-only terminal path. A later repository-wide run exposed the
+    remaining cancellation race across those independent ports: an earlier
+    proposal could be drained after a later text frame caused cancellation.
+    The adapter now preserves the trusted gap-free response-sequence cutoff,
+    quarantines the proven earlier proposal, and still rejects unproven or
+    genuinely later output. Direct adversarial coverage and the existing
+    mounted regression cover that boundary; the mounted case passed 500 ad hoc
+    focused repetitions during validation. The descriptor/schema and lock
+    regeneration described above belong to the earlier graph-shape changes
+    and was unaffected by this adapter-only repair.
   - [x] Choose and enforce the production native-audio policy: route only
     sanitized text through TTS, or introduce a separately typed,
     deployment-attested native-audio/control-separation boundary. The Meeting

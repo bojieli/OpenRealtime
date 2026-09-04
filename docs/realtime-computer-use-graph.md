@@ -127,6 +127,13 @@ consequences that arrive after revocation use the dedicated lossless
 ordinary activation or cognition. If cleanup overtakes the independently routed
 activation cancellation, activation holds one exact cleanup witness until
 cancellation returns the exact generation ID, then retires only that generation.
+The copied `cleanup/evidence` outcome is nontransactional at the cancellation
+coordinator: it is validated and ignored for transaction progress without
+emitting cancellation state or a refusal. If a different, newer intent and its
+fresh visual admission have already arrived behind the old generation,
+activation publishes the old cancellation and any pending cleanup first and
+then automatically revalidates and replays that retained admission. The newer
+task does not depend on an unrelated subsequent frame to start.
 
 ## Application profile and plugin registry
 
@@ -280,40 +287,43 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
-The 2026-09-04 canceled-effect-cleanup production-artifact checkpoint pins, for
+The 2026-09-04 canceled-effect-cleanup and deferred-replay production-artifact
+checkpoint pins, for
 the checked integration fixture in
 `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
 (`benchmark-browser`, one `screen` source at 1280x720, and the test
 model/policy/observer selections), graph fingerprint
-`sha256:2aeb8e6f9d4ab92b071a6d946828ea0b48f2da8c12c23ca247107de1252330c8`
+`sha256:7c3e56f79e6e41ffb2263ae3ca0d2c388c030e4da033a6c4da67f5780af89567`
 and plan fingerprint
-`sha256:23759a4e03c0f6ac532394b2999f1323fc5ee1ca5f61f74a237d8a56cf5d6ce0`.
+`sha256:9cbc1b2c4145c9d1b030ce5761947e67c8fad29a5172e36786a29c974b6416d1`.
 Its source, lock, and values digests are respectively
 `sha256:c4e359429b829c4d33aa13771717ed04f239bf6afa2da4275d637936903e6085`,
-`sha256:c78dab42c909c34d8020f50c2a346552f4cd4a03e046a90111a12b19d360ace8`,
+`sha256:a718420e2a593b1d4172edd9c85733a389680646322b1a30ee21d05d0d9d763d`,
 and
 `sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`.
-The lock selects activation revision 14
-(`sha256:66fb30b43914e3983c8c404358f9ecf84d222df0fbab765eef043cc31f8d30b4`),
+The lock selects activation revision 15
+(`sha256:a829f38214520ef1d8999bb94f5764bd9ef6e72f38d49aede2fc2fb1e3ed77bc`),
 settlement revision 2
 (`sha256:e5e7925966753b502c6cb1d91918934b1158bdf8ba58d52a3cd6ef3942abb74e`),
 disposition producer revision 2
 (`sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`),
 disposition retry revision 1
 (`sha256:c15556d5f4f61a5defa5463500eb75d7403711b2cc446b1605c710cfe3785678`),
-and cancellation coordinator revision 3
-(`sha256:fc227d6bac1d353f099dc7555ff52ae87ad099360875f421b5a8a9f9eb9eb648`).
+and cancellation coordinator revision 4
+(`sha256:4c88c464aca6cbac08f1739ac7e7ac944117f242135a46499fa016aec72604c4`).
 It also selects `action.ToolResultCommit` revision 4
 (`sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`).
 The graph template passes canonical formatting and warning-free strict
 `computer-use` validation; the strict bound check reports
-`sha256:e3869ea8cff1bf828600d70047085bac99a8062fc7c1c99dedd41a53a09dac4a`.
+`sha256:97652c06e8e35bd445869a514911aaf68bd76fa9c49de91e6941cf4df2a64436`.
 These identities and checks describe implementation and configuration, not live
 model quality or benchmark non-regression.
 
-Go 1.25 verification for this checkpoint passed repository-wide
-`go test ./... -count=1` and `go vet ./...`. Race-enabled checks passed for
-`elements/policy`, `graph/binding/realtimecu`, and `graphs`. The ordinary
+Go 1.25 verification after rebasing the implementation onto upstream
+`1ebdbec` passed repository-wide `go test ./... -count=1` and
+`go vet ./...`. Race-enabled `elements/policy` passed, and the combined
+`go test -race ./graph/binding/realtimecu ./graphs -count=1` completed without
+a race report. The ordinary
 failed-effect recovery, canceled-result orderings, and deterministic mounted
 cleanup-before-activation-cancel race passed twenty repetitions; the focused
 settlement-verifier and activation ordering, replay/conflict, capacity,
@@ -349,8 +359,12 @@ activation-cancel output until the exact result consequence makes cleanup reach
 activation first. Activation reports `effect_cleanup_waiting_for_cancel` without
 calling policy or model; after release, the cancellation path still acknowledges
 the exact generation ID before cleanup emits `canceled_effect_failed` or
-`canceled_effect_succeeded`. Cadence cannot revive the retired epoch, and a fresh
-intent remains usable.
+`canceled_effect_succeeded`. The test places a uniquely identified invalid
+outcome immediately behind the valid cleanup on the coordinator's serialized
+input lane. Observing only the barrier's expected refusal proves that revision 4
+accepted the preceding `cleanup/evidence` outcome as nontransactional and emitted
+no cancellation refusal for it. Cadence cannot revive the retired epoch, and a
+fresh intent remains usable.
 
 A separate locked-production composition drives one durable intent through
 focus→type→submit. Its scripted disposition sequence is now
@@ -442,7 +456,7 @@ client and gives the producer the observer's exact retained-media resolver;
 configuration or descriptor drift fails before provider work begins.
 
 The producer, revision-2 producer-neutral `policy.IntentSettlement` gate, graph-owned
-`policy.IntentDispositionRetry`, and activation's revision-14 settlement
+`policy.IntentDispositionRetry`, and activation's revision-15 settlement
 consumer/acknowledgement boundary are now connected as independently
 replaceable nodes. The gate independently revalidates the typed
 admission and exact canonical intent→call→successful-result→result-linked
@@ -467,6 +481,10 @@ remove a tombstone still needed by another retained effect, emits
 cognition. An uncanceled successful result remains on the normal disposition
 and acknowledgement path. Invalid, stale, conflicting, or indeterminate
 evidence fails closed without being mislabeled as success.
+The settlement outcome tee also reaches the cancellation coordinator for
+observability. Coordinator revision 4 accepts the closed `cleanup` kind only
+with operation `evidence`, treats that pair as nontransactional, and produces no
+cancellation state, progress, or refusal. Other operation pairings fail closed.
 Activation independently verifies a terminal decision, clears only the exact
 effect without a new cognition turn, retains valid cross-lane reorderings, and
 retries one immutable acknowledgement. The graph has exactly one activation
@@ -531,6 +549,16 @@ happens-before relationship may linearize either way. Lossless output
 publication applies normal graph backpressure and is canceled by graph context,
 not preempted by a later control waiting on another input port.
 
+A different-intent admission may legitimately arrive while that released old
+generation is still waiting for cancellation. Activation retains the newest
+fresh visual value behind the selected newer durable intent. When the delayed
+old cancellation actually clears its generation, revision 15 detaches that
+different-intent value, completes cancellation state and any overtaking cleanup,
+then feeds the exact retained envelope back through `acceptAdmission`. This
+rechecks current trajectory and cancellation state and emits one new trigger
+without another frame. Same-intent deferred work is still discarded with the
+canceled epoch.
+
 Current implementation ledger:
 
 | Slice | Status | Remaining boundary |
@@ -538,8 +566,8 @@ Current implementation ledger:
 | Typed probe, disposition, exact reset/cancel, terminal decision, cleanup control, acknowledgement, state, and outcome contracts | Implemented, locked, and locally verified | Live quality remains unmeasured |
 | Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
 | Reference semantic/vision disposition producer | Profile-bound and locally verified | Exercise quality on focused live cases |
-| Protocol/session cancellation translation | Implemented and adversarially verified through retry, provider, model, idle-action, crossed-action, and failed/successful result-consequence orderings | Complete forged/reordered connected boundaries and confirm live scorer behavior |
-| Activation settlement and cleanup inputs plus acknowledgement output | Connected; the cleanup input is isolated from ordinary admission. Focus→type→submit, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, terminal cadence, and fresh-intent recovery are production-mounted and race-tested | Confirm behavior and scorer interpretation in the focused live cases |
+| Protocol/session cancellation translation | Implemented and adversarially verified through retry, provider, model, idle-action, crossed-action, and failed/successful result-consequence orderings; valid `cleanup/evidence` observations are proven nontransactional and refusal-free at the connected coordinator boundary | Complete forged/reordered connected boundaries and confirm live scorer behavior |
+| Activation settlement and cleanup inputs plus acknowledgement output | Connected; the cleanup input is isolated from ordinary admission. Focus→type→submit, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, terminal cadence, fresh-intent recovery, and ordinary/cleanup-first replay of an already-admitted newer intent are covered without requiring an extra frame | Confirm behavior and scorer interpretation in the focused live cases |
 | Indeterminate settlement retry | Implemented as `policy.IntentDispositionRetry@1`, locked, strictly validated, and production-mounted through `indeterminate → retry → continue → continue → succeeded` | Exercise retry quality and exhaustion policy with the selected live disposition provider |
 | Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Implementation artifacts are pinned with no admission bypass; strict check passes | They are not yet a frozen benchmark candidate and change if later behavioral repair changes code or configuration |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
@@ -611,7 +639,7 @@ without pretending that exhaustion disappeared.
 There is no admission bypass around the settlement gate. On `continue`, the
 gate releases the original verified evidence through `admitted`. On a verified
 terminal disposition, it
-suppresses that evidence and retains the exact terminal latch until revision-14
+suppresses that evidence and retains the exact terminal latch until revision-15
 activation independently reopens the canonical prefix, clears the matching
 generation/effect atomically, and returns the exact acknowledgement. This is
 not a cognition cancellation: the cognition run may already have ended before
@@ -637,8 +665,13 @@ reclaimed; an effect carrying an outstanding terminal acknowledgement contract
 cannot be evicted. If cancellation itself linearizes after newer final authority
 and no delayed cleanup must be retained, it allocates no obsolete pair. After
 effect retirement, a lone tombstone is pruned only after newer final user
-authority exists. The remaining
-mounted matrix is concentrated on forged cross-node evidence,
+authority exists. When a newer intent and its fresh visual admission have
+already overtaken the delayed old cancellation, activation completes the old
+cancellation and pending cleanup before automatically replaying the retained
+different-intent admission through full validation; the new generation starts
+without a further frame, while same-intent deferred work remains canceled.
+
+The remaining mounted matrix is concentrated on forged cross-node evidence,
 duplicate/reordered terminal decisions, and scorer/live acceptance of failed
 lineage. After those cases, machine-enforceable Realtime-CU
 acceptance targets must be registered. Then both camera, both moving-target,
