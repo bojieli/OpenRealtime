@@ -139,14 +139,44 @@ func (policy *TranscriptEventPolicy) Decide(
 	if len(acts) == 1 {
 		return acts[0], Outcome{Index: 0, Option: string(acts[0])}, nil
 	}
-	options := make([]string, len(acts))
-	for index, act := range acts {
-		options[index] = string(act)
-	}
 	if rules.Timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, rules.Timeout)
 		defer cancel()
+	}
+	// Active output presents a narrower decision than a general transcript
+	// event: is this speech directed at the agent, a listener backchannel, or
+	// speech to somebody else? Reuse the model-backed overlap classifier for
+	// that distinction. Its dedicated prompt proved materially more reliable
+	// on incomplete vocatives and floor-taking openers than asking the broader
+	// event prompt to rediscover the same taxonomy. Deliberately triggered
+	// output remains on the event policy because only it sees the protected
+	// same-stream continuation contract.
+	if state.AgentSpeaking && !state.AgentOutputProtected {
+		classifier, err := NewModelOverlapClassifier(policy.decider)
+		if err != nil {
+			return InertialAct(state), Outcome{}, err
+		}
+		evidence := classifier.Classify(ctx, Context{
+			Revision: Revision{
+				ID: 1, StableText: state.Heard, Final: kind == TranscriptFinal,
+			},
+			Situation: &state,
+		})
+		chosen := Act("")
+		switch evidence {
+		case OverlapDirected:
+			chosen = ActStopSpeaking
+		case OverlapBackchannel, OverlapSide:
+			chosen = ActKeepSpeaking
+		}
+		if index := slices.Index(acts, chosen); index >= 0 {
+			return chosen, Outcome{Index: index, Option: string(chosen)}, nil
+		}
+	}
+	options := make([]string, len(acts))
+	for index, act := range acts {
+		options[index] = string(act)
 	}
 	outcome, err := policy.decider.Decide(ctx, Decision{
 		Prompt: rules.Instruction, Options: options, Evidence: state.Render(),

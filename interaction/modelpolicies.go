@@ -395,10 +395,12 @@ func (policy *modelOverlapClassifier) validateOverlapBackchannel(
 		outcome, err := policy.decider.Decide(ctx, Decision{
 			Prompt: "Validate a proposed listener backchannel. A valid backchannel is only one or " +
 				"two acknowledgement or continuer tokens whose entire conversational content is " +
-				"keep going, I am listening. It contains no subject-plus-verb proposition, new " +
+				"keep going, I am listening. Punctuation and capitalization do not change the token " +
+				"meaning. Valid examples are 'mhm', 'yeah', 'mhm yeah', and 'uh-huh'. It contains " +
+				"no subject-plus-verb proposition, new " +
 				"observation, disagreement, question, request, topic shift, or floor-taking marker. " +
-				"I know, I think, it is starting, actually, wait, and by the way are not valid " +
-				"backchannels. Decide only whether the overlapping person's exact words satisfy " +
+				"Invalid examples are 'I know', 'I think', 'it is starting', 'yeah but', 'actually', " +
+				"'wait', and 'by the way'. Decide only whether the overlapping person's exact words satisfy " +
 				"that closed definition.",
 			Options:  []string{overlapValidBackchannel, overlapInvalidBackchannel},
 			Evidence: evidence,

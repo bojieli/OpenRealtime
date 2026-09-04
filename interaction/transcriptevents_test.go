@@ -101,6 +101,150 @@ func TestTranscriptEventPolicyDoesNotChangeTheOrdinarySituation(t *testing.T) {
 	}
 }
 
+func TestTranscriptEventsUseTheOverlapClassifierForOrdinaryActiveOutput(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		heard    string
+		evidence interaction.OverlapEvidence
+		want     interaction.Act
+	}{
+		{
+			name: "floor taking opener", heard: "Hold on, what about tomorrow",
+			evidence: interaction.OverlapDirected, want: interaction.ActStopSpeaking,
+		},
+		{
+			name: "other addressee", heard: "Maria, could you close the window",
+			evidence: interaction.OverlapSide, want: interaction.ActKeepSpeaking,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			decider := &recordingDecider{answer: string(testCase.evidence), confidence: 0.9}
+			policy, err := interaction.NewTranscriptEventPolicy(
+				decider, activeOutputTranscriptOptions(),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := interaction.Situation{
+				AgentSpeaking: true,
+				AgentSaying:   "The answer that is currently audible.",
+				Speaker:       "user",
+				Speaking:      true,
+				Heard:         testCase.heard,
+			}
+			act, outcome, err := policy.Decide(
+				context.Background(), interaction.TranscriptPartial, state,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if act != testCase.want || outcome.Option != string(testCase.want) {
+				t.Fatalf("active-output act = %q, outcome=%+v; want %q", act, outcome, testCase.want)
+			}
+			decisions := decider.decisions()
+			if len(decisions) != 1 ||
+				!strings.HasPrefix(decisions[0].Prompt, "An agent is speaking.") ||
+				!strings.Contains(decisions[0].Evidence, testCase.heard) {
+				t.Fatalf("active-output classifier decisions = %+v", decisions)
+			}
+		})
+	}
+}
+
+func TestTranscriptEventsValidateBackchannelsBeforeKeepingActiveOutput(t *testing.T) {
+	decider := &sequencedDecider{answers: []string{
+		string(interaction.OverlapBackchannel), "valid_backchannel",
+	}}
+	policy, err := interaction.NewTranscriptEventPolicy(decider, activeOutputTranscriptOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	act, _, err := policy.Decide(context.Background(), interaction.TranscriptPartial, interaction.Situation{
+		AgentSpeaking: true, AgentSaying: "A longer answer.",
+		Speaker: "user", Speaking: true, Heard: "mhmm yeah",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if act != interaction.ActKeepSpeaking {
+		t.Fatalf("validated backchannel act = %q", act)
+	}
+	decisions := decider.decisions()
+	if len(decisions) != 2 ||
+		!strings.Contains(decisions[1].Prompt, "Validate a proposed listener backchannel") {
+		t.Fatalf("backchannel validation decisions = %+v", decisions)
+	}
+}
+
+func TestTranscriptEventsFallBackForAmbiguousOrProtectedActiveOutput(t *testing.T) {
+	t.Run("ambiguous", func(t *testing.T) {
+		decider := &sequencedDecider{answers: []string{
+			string(interaction.OverlapAmbiguous), string(interaction.ActKeepSpeaking),
+		}}
+		policy, err := interaction.NewTranscriptEventPolicy(decider, activeOutputTranscriptOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		act, _, err := policy.Decide(context.Background(), interaction.TranscriptPartial, interaction.Situation{
+			AgentSpeaking: true, AgentSaying: "A longer answer.",
+			Speaker: "user", Speaking: true, Heard: "The",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if act != interaction.ActKeepSpeaking {
+			t.Fatalf("ambiguous fallback act = %q", act)
+		}
+		decisions := decider.decisions()
+		if len(decisions) != 2 || decisions[1].Prompt != "partial rules" {
+			t.Fatalf("ambiguous fallback decisions = %+v", decisions)
+		}
+	})
+
+	t.Run("protected same stream", func(t *testing.T) {
+		decider := &recordingDecider{answer: string(interaction.ActKeepSpeaking)}
+		policy, err := interaction.NewTranscriptEventPolicy(decider, activeOutputTranscriptOptions())
+		if err != nil {
+			t.Fatal(err)
+		}
+		act, _, err := policy.Decide(context.Background(), interaction.TranscriptPartial, interaction.Situation{
+			AgentSpeaking: true, AgentOutputProtected: true,
+			AgentSaying: "The correction that was deliberately started.",
+			Speaker:     "user", Speaking: true, Heard: "which gives us",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if act != interaction.ActKeepSpeaking {
+			t.Fatalf("protected-stream act = %q", act)
+		}
+		decisions := decider.decisions()
+		if len(decisions) != 1 || decisions[0].Prompt != "partial rules" {
+			t.Fatalf("protected stream left the event policy: %+v", decisions)
+		}
+	})
+}
+
+func activeOutputTranscriptOptions() interaction.TranscriptEventOptions {
+	return interaction.TranscriptEventOptions{
+		Partial: interaction.TranscriptEventRules{
+			Instruction: "partial rules",
+			Acts: []interaction.Act{
+				interaction.ActStaySilent, interaction.ActSpeakThrough,
+				interaction.ActInterrupt, interaction.ActKeepSpeaking,
+				interaction.ActStopSpeaking,
+			},
+		},
+		Final: interaction.TranscriptEventRules{
+			Instruction: "final rules",
+			Acts: []interaction.Act{
+				interaction.ActStaySilent, interaction.ActAnswer,
+				interaction.ActKeepSpeaking, interaction.ActStopSpeaking,
+			},
+		},
+	}
+}
+
 func TestTranscriptEventRulesRejectActsFromTheOtherObservationSpace(t *testing.T) {
 	decider := &transcriptDecider{}
 	base := interaction.TranscriptEventOptions{

@@ -146,19 +146,28 @@ func (decider *eventChoiceDecider) Decide(
 	decider.mu.Lock()
 	decider.seen = append(decider.seen, decision)
 	decider.mu.Unlock()
-	choice := interaction.ActStaySilent
+	choice := string(interaction.ActStaySilent)
 	if strings.Contains(decision.Evidence, "transcript event: final") {
-		choice = decider.final
+		choice = string(decider.final)
+	}
+	if slices.Contains(decision.Options, string(interaction.OverlapBackchannel)) {
+		choice = string(interaction.OverlapAmbiguous)
+		if strings.Contains(strings.ToLower(decision.Evidence), "mhm") {
+			choice = string(interaction.OverlapBackchannel)
+		}
+	}
+	if slices.Contains(decision.Options, "valid_backchannel") {
+		choice = "valid_backchannel"
 	}
 	// A queued response is represented as speaking so the policy can preserve
 	// it before its first audio frame. In that state listen/answer are not
 	// meaningful and keep-speaking is the inertial event-aware act.
-	if !slices.Contains(decision.Options, string(choice)) &&
+	if !slices.Contains(decision.Options, choice) &&
 		slices.Contains(decision.Options, string(interaction.ActKeepSpeaking)) {
-		choice = interaction.ActKeepSpeaking
+		choice = string(interaction.ActKeepSpeaking)
 	}
 	for index, option := range decision.Options {
-		if option == string(choice) {
+		if option == choice {
 			return interaction.Outcome{Index: index, Option: option}, nil
 		}
 	}
@@ -203,10 +212,14 @@ func transcriptPolicies(t *testing.T, final interaction.Act) (interaction.Polici
 }
 
 func eventASR() func() (v1.PerceptionProvider, error) {
+	return eventASRWithText("please wait for the final words")
+}
+
+func eventASRWithText(text string) func() (v1.PerceptionProvider, error) {
 	return func() (v1.PerceptionProvider, error) {
 		return &scriptedASR{
-			partials: []string{"please wait for the final words"},
-			final:    "please wait for the final words",
+			partials: []string{text},
+			final:    text,
 		}, nil
 	}
 }
@@ -386,7 +399,7 @@ func TestEventPolicyCanKeepAQueuedResponseBeforeItsFirstAudioFrame(t *testing.T)
 		Kind: continuation.EventAssistantDelta, Text: "Here is the detailed answer.",
 	}})
 	runtime, sink := startSession(t, cascade.Config{
-		Perception: eventASR(), Fast: fast, Slow: newSlow(), Speech: speech,
+		Perception: eventASRWithText("mhm"), Fast: fast, Slow: newSlow(), Speech: speech,
 		Policies: policies,
 	}, binding.Settings{})
 
@@ -411,10 +424,9 @@ func TestEventPolicyCanKeepAQueuedResponseBeforeItsFirstAudioFrame(t *testing.T)
 	}
 
 	evidence := strings.Join(decider.evidence(), "\n")
-	if !strings.Contains(evidence, "transcript event: partial") ||
-		!strings.Contains(evidence, "agent: voice output is queued or audible") ||
-		!strings.Contains(evidence, "Available acts right now: keep-speaking, stop-speaking") {
-		t.Fatalf("the policy did not see queued speech as a keep-or-stop decision:\n%s", evidence)
+	if !strings.Contains(evidence, "What the agent is saying now: Here is the detailed answer.") ||
+		!strings.Contains(evidence, "What the overlapping person has said so far: mhm") {
+		t.Fatalf("the overlap classifier did not see the queued voice and listener continuer:\n%s", evidence)
 	}
 }
 

@@ -404,6 +404,15 @@ func TestOverlapClassifierRevalidatesTheBackchannelSemanticContract(t *testing.T
 						t.Fatalf("semantic retry retained the invalid label: %+v", last.Options)
 					}
 				}
+			} else {
+				validation := decisions[1].Prompt
+				for _, contract := range []string{
+					"Punctuation and capitalization", "'mhm yeah'", "'uh-huh'", "'yeah but'",
+				} {
+					if !strings.Contains(validation, contract) {
+						t.Fatalf("backchannel validation lost %q: %s", contract, validation)
+					}
+				}
 			}
 		})
 	}

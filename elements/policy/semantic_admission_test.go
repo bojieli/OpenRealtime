@@ -2668,10 +2668,10 @@ func TestSemanticAdmissionNewerEvidenceCancelsOnlyTheOlderDecision(t *testing.T)
 func TestSemanticAdmissionUsesVoiceLifecycleAcrossTranscriptRevisions(t *testing.T) {
 	decider := &semanticTestDecider{
 		descriptor: semanticTestDescriptor,
-		acts: []coreinteraction.Act{
-			coreinteraction.ActInterrupt,
-			coreinteraction.ActKeepSpeaking,
-			coreinteraction.ActKeepSpeaking,
+		answers: []string{
+			string(coreinteraction.ActInterrupt),
+			string(coreinteraction.ActKeepSpeaking),
+			string(coreinteraction.OverlapSide),
 		},
 	}
 	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
@@ -2775,14 +2775,15 @@ func TestSemanticAdmissionUsesVoiceLifecycleAcrossTranscriptRevisions(t *testing
 	captured := decider.captured()
 	if len(captured) != 3 ||
 		!reflect.DeepEqual(captured[1].Options, []string{"keep-speaking", "stop-speaking"}) ||
-		!reflect.DeepEqual(captured[2].Options, []string{"keep-speaking", "stop-speaking"}) ||
+		!reflect.DeepEqual(captured[2].Options, []string{
+			"directed_speech", "listener_backchannel", "side_speech", "ambiguous_speech",
+		}) ||
 		!strings.Contains(captured[1].Evidence, "agent: voice output is active and still being prepared") ||
 		!strings.Contains(captured[1].Evidence,
 			"agent output was deliberately triggered by an earlier revision of this same transcript stream") ||
 		!strings.Contains(captured[1].Evidence, output.InFlight) ||
-		!strings.Contains(captured[2].Evidence, output.InFlight) ||
-		strings.Contains(captured[2].Evidence,
-			"agent output was deliberately triggered by an earlier revision of this same transcript stream") {
+		!strings.Contains(captured[2].Evidence,
+			"What the overlapping person has said so far: Which gives us plenty of time") {
 		t.Fatalf("transcript lifecycle policy requests = %+v", captured)
 	}
 }
