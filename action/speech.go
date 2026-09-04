@@ -10,6 +10,7 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/internal/clock"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -62,6 +63,15 @@ type Outcome struct {
 	Completed bool   `json:"completed"`
 	PlayedMS  uint64 `json:"played_ms"`
 	Reason    string `json:"reason,omitempty"`
+	// Mark is which of the utterance's words the user actually heard.
+	//
+	// PlayedMS beside it is the same fact in the unit the audio was paced in,
+	// and it is not a substitute for this one. A duration says how long the
+	// agent was audible; only the mark says where in the sentence that landed,
+	// and every decision after an interruption - what to correct, what to
+	// repeat, where to carry on from - is about the sentence rather than about
+	// the clock.
+	Mark spoken.Mark `json:"mark,omitzero"`
 }
 
 // SpeechSink is how paced audio reaches the world.
@@ -106,6 +116,10 @@ type SpeechConfig struct {
 	// FrameDuration is the wire frame size. Zero selects 100 ms, which is what
 	// the Realtime clients in the field expect.
 	FrameDuration time.Duration
+	// Timing follows each utterance's audio and answers which of its words
+	// crossed the boundary. Nil is allowed: without it the outcome carries a
+	// duration and no boundary, which is what this planner reported before.
+	Timing *spoken.Tracker
 	// QueueDepth bounds how many utterances may wait. A bounded horizon is
 	// what keeps a burst of decisions from becoming a backlog of speech that
 	// no longer matches the conversation.
@@ -461,10 +475,17 @@ func (speech *Speech) emit(parent context.Context, utterance Utterance) {
 		cancel(nil)
 	}()
 
+	speech.config.Timing.Begin(utterance.ID, utterance.Text)
 	outcome, err := speech.stream(ctx, utterance)
 	if err != nil && outcome.Reason == "" {
 		outcome.Reason = err.Error()
 	}
+	// The boundary is settled under the session lifetime rather than the
+	// utterance's own cancelled context: an interrupted utterance is exactly
+	// the one whose boundary matters, and deriving it under the context that
+	// was just cancelled would abandon the measurement at the moment it became
+	// worth having.
+	outcome.Mark = speech.config.Timing.End(parent, utterance.ID, outcome.PlayedMS)
 	if outcome.PlayedMS > 0 {
 		_ = speech.config.Ledger.Complete(utterance.ID, outcome.PlayedMS)
 	} else if !outcome.Completed {
@@ -521,6 +542,7 @@ func (speech *Speech) stream(ctx context.Context, utterance Utterance) (Outcome,
 			return err
 		}
 		playedMS += uint64(duration.Milliseconds())
+		speech.config.Timing.Played(utterance.ID, playedMS)
 		now := time.Now()
 		if nextSend.Before(now) {
 			nextSend = now
@@ -545,6 +567,7 @@ func (speech *Speech) stream(ctx context.Context, utterance Utterance) (Outcome,
 		if chunk.SampleRateHz != sampleRate {
 			return errors.New("speech provider changed sample rate within one utterance")
 		}
+		speech.config.Timing.Audio(utterance.ID, chunk.PCM16LE, sampleRate)
 		buffer = append(buffer, chunk.PCM16LE...)
 		for len(buffer) >= frameBytes {
 			if err := emitFrame(buffer[:frameBytes], false); err != nil {
@@ -554,6 +577,14 @@ func (speech *Speech) stream(ctx context.Context, utterance Utterance) (Outcome,
 		}
 		return nil
 	})
+	if streamErr == nil {
+		// The provider produced its last sample, so the utterance's duration
+		// has stopped being a guess. It matters even where nothing listens to
+		// the audio: until this point the layout is stretched over a floor,
+		// and an utterance that ran to its end would otherwise be recorded as
+		// stopping halfway through.
+		speech.config.Timing.Synthesised(utterance.ID)
+	}
 	if streamErr == nil && context.Cause(ctx) != nil {
 		streamErr = context.Cause(ctx)
 	}

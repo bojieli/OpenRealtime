@@ -188,6 +188,29 @@ func (tracker *Tracker) Mark(id string) (Mark, bool) {
 	return state.timeline.At(state.playedMS), true
 }
 
+// MarkAt re-splits a finished utterance at a different playback position.
+//
+// The client is the authority on what was actually heard: the server knows
+// what it sent, and only the client knows where playback stopped. When it says
+// so afterwards, the boundary moves, and the layout that was worked out for
+// the utterance is exactly what makes moving it possible.
+func (tracker *Tracker) MarkAt(id string, playedMS uint64) (Mark, bool) {
+	if tracker == nil || id == "" {
+		return Mark{}, false
+	}
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	state, exists := tracker.states[id]
+	if !exists {
+		return Mark{}, false
+	}
+	mark := state.timeline.At(playedMS)
+	if state.ended {
+		state.final = mark
+	}
+	return mark, true
+}
+
 // Current is the mark of the utterance being spoken now.
 func (tracker *Tracker) Current() (Mark, bool) {
 	if tracker == nil {
