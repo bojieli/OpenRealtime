@@ -15,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
@@ -34,6 +35,7 @@ var dependencyNames = []string{
 	actionelements.TrajectoryStoreService,
 	cognitionelements.MediaResolverService,
 	cognitionelements.ProviderRegistryService,
+	policyelements.SemanticDeciderRegistryService,
 	stateelements.TrajectoryStoreService,
 }
 
@@ -93,8 +95,8 @@ func (plugin *Plugin) Selection() graphlaunch.AdapterSelection {
 }
 
 // AssemblyDependencies returns the exact mount-scoped service metadata. The
-// same composite artifact binds all names because one per-session bundle owns
-// their cross-service identity and lifetime.
+// semantic registry exposes the selected policy artifact directly; the other
+// services use the composite identity of the cross-service session bundle.
 func (plugin *Plugin) AssemblyDependencies() []graphassembly.Dependency {
 	if plugin == nil {
 		return nil
@@ -102,7 +104,7 @@ func (plugin *Plugin) AssemblyDependencies() []graphassembly.Dependency {
 	result := make([]graphassembly.Dependency, len(dependencyNames))
 	for index, name := range dependencyNames {
 		result[index] = graphassembly.Dependency{
-			Name: name, Artifact: plugin.artifact, Scope: graphconfig.DependencyScopeMount,
+			Name: name, Artifact: plugin.dependencyArtifact(name), Scope: graphconfig.DependencyScopeMount,
 		}
 	}
 	return result
@@ -118,19 +120,26 @@ func (plugin *Plugin) MountDependencies() []graphlaunch.MountDependencyPlugin {
 	for index, name := range dependencyNames {
 		name := name
 		result[index] = graphlaunch.MountDependencyPlugin{
-			Name: name, Artifact: plugin.artifact,
+			Name: name, Artifact: plugin.dependencyArtifact(name),
 			Factory: func(ctx context.Context, options legacy.Options) ([]graphruntime.PreparedMountDependency, error) {
 				service, err := plugin.coordinator.service(ctx, options, name)
 				if err != nil {
 					return nil, err
 				}
 				return []graphruntime.PreparedMountDependency{{
-					Name: name, Artifact: plugin.artifact, Service: service,
+					Name: name, Artifact: plugin.dependencyArtifact(name), Service: service,
 				}}, nil
 			},
 		}
 	}
 	return result
+}
+
+func (plugin *Plugin) dependencyArtifact(name string) inspect.ArtifactIdentity {
+	if name == policyelements.SemanticDeciderRegistryService {
+		return plugin.config.SettlementPolicy.Artifact
+	}
+	return plugin.artifact
 }
 
 func clonePluginConfig(source PluginConfig) PluginConfig {
@@ -142,20 +151,26 @@ func clonePluginConfig(source PluginConfig) PluginConfig {
 
 func dependencyArtifact(config PluginConfig) (inspect.ArtifactIdentity, error) {
 	payload, err := json.Marshal(struct {
-		Runtime           inspect.ArtifactIdentity `json:"runtime"`
-		ModelReference    string                   `json:"model_reference"`
-		Model             inspect.ArtifactIdentity `json:"model"`
-		ModelAPI          continuation.Descriptor  `json:"model_descriptor"`
-		Observer          inspect.ArtifactIdentity `json:"observer"`
-		ObserverReference string                   `json:"observer_reference"`
-		ObserverName      string                   `json:"observer_name"`
-		ObserverSources   []string                 `json:"observer_sources"`
-		Target            any                      `json:"target"`
+		Runtime                    inspect.ArtifactIdentity                 `json:"runtime"`
+		ModelReference             string                                   `json:"model_reference"`
+		Model                      inspect.ArtifactIdentity                 `json:"model"`
+		ModelAPI                   continuation.Descriptor                  `json:"model_descriptor"`
+		SettlementPolicyReference  string                                   `json:"settlement_policy_reference"`
+		SettlementPolicy           inspect.ArtifactIdentity                 `json:"settlement_policy"`
+		SettlementPolicyDescriptor policyelements.SemanticDeciderDescriptor `json:"settlement_policy_descriptor"`
+		Observer                   inspect.ArtifactIdentity                 `json:"observer"`
+		ObserverReference          string                                   `json:"observer_reference"`
+		ObserverName               string                                   `json:"observer_name"`
+		ObserverSources            []string                                 `json:"observer_sources"`
+		Target                     any                                      `json:"target"`
 	}{
 		Runtime: config.RuntimeArtifact, ModelReference: config.Model.Reference,
-		Model:    config.Model.Artifact,
-		ModelAPI: config.Model.Descriptor, Observer: config.Observer.Artifact,
-		ObserverReference: config.Observer.Reference, ObserverName: config.Observer.Name,
+		Model: config.Model.Artifact, ModelAPI: config.Model.Descriptor,
+		SettlementPolicyReference:  config.SettlementPolicy.Reference,
+		SettlementPolicy:           config.SettlementPolicy.Artifact,
+		SettlementPolicyDescriptor: config.SettlementPolicy.Descriptor,
+		Observer:                   config.Observer.Artifact,
+		ObserverReference:          config.Observer.Reference, ObserverName: config.Observer.Name,
 		ObserverSources: canonicalStrings(config.Observer.Sources), Target: config.Target,
 	})
 	if err != nil {
@@ -164,7 +179,7 @@ func dependencyArtifact(config PluginConfig) (inspect.ArtifactIdentity, error) {
 	digest := sha256.Sum256(payload)
 	artifact := inspect.ArtifactIdentity{
 		ID:       "profile://openrealtime/realtime-cu/session-dependencies",
-		Revision: "v1", Digest: "sha256:" + hex.EncodeToString(digest[:]),
+		Revision: "v2", Digest: "sha256:" + hex.EncodeToString(digest[:]),
 	}
 	if err := artifact.Validate(); err != nil {
 		return inspect.ArtifactIdentity{}, err
@@ -173,15 +188,19 @@ func dependencyArtifact(config PluginConfig) (inspect.ArtifactIdentity, error) {
 }
 
 type sessionBundle struct {
-	bridge   *clientBridge
-	store    *trajectory.Store
-	media    *sessionmedia.MediaStore
-	services map[string]any
+	bridge        *clientBridge
+	store         *trajectory.Store
+	media         *sessionmedia.MediaStore
+	mediaResolver continuation.MediaResolver
+	services      map[string]any
 }
 
 func newSessionBundle(
 	ctx context.Context, options legacy.Options, config PluginConfig,
 ) (*sessionBundle, error) {
+	if ctx == nil {
+		return nil, errors.New("realtime-CU mount requires a context")
+	}
 	if !canonical(options.SessionID) {
 		return nil, errors.New("realtime-CU mount requires a canonical session ID")
 	}
@@ -220,6 +239,18 @@ func newSessionBundle(
 	}); err != nil {
 		return nil, err
 	}
+	semanticDeciders := policyelements.NewSemanticDeciderRegistry()
+	if err := semanticDeciders.Register(
+		SettlementPolicyReference, config.SettlementPolicy.Descriptor,
+		func() (policyelements.SemanticDecider, error) {
+			if cause := context.Cause(ctx); cause != nil {
+				return nil, cause
+			}
+			return config.SettlementPolicy.Factory(ctx, options)
+		},
+	); err != nil {
+		return nil, err
+	}
 	tools := actionelements.NewToolRegistries()
 	if err := tools.Register(ToolReference, specs); err != nil {
 		return nil, err
@@ -238,25 +269,39 @@ func newSessionBundle(
 	}); err != nil {
 		return nil, err
 	}
+	mediaResolver := continuation.MediaResolver(func(handle string) (continuation.Media, error) {
+		if cause := context.Cause(ctx); cause != nil {
+			return continuation.Media{}, fmt.Errorf(
+				"resolve realtime-CU session media after lifecycle ended: %w", cause,
+			)
+		}
+		resolved, resolveErr := media.Resolve(handle)
+		if resolveErr != nil {
+			return continuation.Media{}, resolveErr
+		}
+		if cause := context.Cause(ctx); cause != nil {
+			return continuation.Media{}, fmt.Errorf(
+				"resolve realtime-CU session media while lifecycle ended: %w", cause,
+			)
+		}
+		return continuation.Media{MIMEType: resolved.Ref.MIMEType, Bytes: resolved.Bytes}, nil
+	})
 	services := map[string]any{
-		actionelements.ConfirmationRegistryService: confirmations,
-		actionelements.LedgerRegistryService:       ledgers,
-		actionelements.TargetRegistryService:       targets,
-		actionelements.ToolRegistryService:         tools,
-		actionelements.TrajectoryStoreService:      store,
-		cognitionelements.MediaResolverService: continuation.MediaResolver(func(handle string) (continuation.Media, error) {
-			resolved, resolveErr := media.Resolve(handle)
-			if resolveErr != nil {
-				return continuation.Media{}, resolveErr
-			}
-			return continuation.Media{MIMEType: resolved.Ref.MIMEType, Bytes: resolved.Bytes}, nil
-		}),
-		cognitionelements.ProviderRegistryService: providers,
+		actionelements.ConfirmationRegistryService:    confirmations,
+		actionelements.LedgerRegistryService:          ledgers,
+		actionelements.TargetRegistryService:          targets,
+		actionelements.ToolRegistryService:            tools,
+		actionelements.TrajectoryStoreService:         store,
+		cognitionelements.MediaResolverService:        mediaResolver,
+		cognitionelements.ProviderRegistryService:     providers,
+		policyelements.SemanticDeciderRegistryService: semanticDeciders,
 		stateelements.TrajectoryStoreService: &stateelements.TrajectoryStoreServiceValue{
 			Store: store, SessionID: options.SessionID,
 		},
 	}
-	return &sessionBundle{bridge: bridge, store: store, media: media, services: services}, nil
+	return &sessionBundle{
+		bridge: bridge, store: store, media: media, mediaResolver: mediaResolver, services: services,
+	}, nil
 }
 
 type denyConfirmation struct{}

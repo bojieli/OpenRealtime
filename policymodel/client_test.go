@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -124,9 +125,66 @@ func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, 
 	return function(request)
 }
 
+type lifecycleTransport struct {
+	roundTrips atomic.Int32
+	closes     atomic.Int32
+}
+
+func (transport *lifecycleTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	transport.roundTrips.Add(1)
+	return nil, errors.New("lifecycle transport should not be reached")
+}
+
+func (transport *lifecycleTransport) CloseIdleConnections() {
+	transport.closes.Add(1)
+}
+
 type failingReader struct{ err error }
 
 func (reader failingReader) Read([]byte) (int, error) { return 0, reader.err }
+
+func TestClientCloseIsIdempotentReleasesTransportAndRejectsNewWork(t *testing.T) {
+	transport := &lifecycleTransport{}
+	client, err := policymodel.New(policymodel.Config{
+		Model: "lifecycle-test", BaseURL: "http://policy.invalid/v1",
+		HTTPClient: &http.Client{Transport: transport},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if transport.closes.Load() != 1 {
+		t.Fatalf("idle transport closes = %d, want 1", transport.closes.Load())
+	}
+	_, err = client.Decide(context.Background(), interaction.Decision{
+		Prompt: "choose", Options: []string{"one", "two"},
+	})
+	if !errors.Is(err, policymodel.ErrClientClosed) {
+		t.Fatalf("Decide after Close error = %v, want ErrClientClosed", err)
+	}
+	if _, err := client.Generate(context.Background(), "extract", "evidence", 8); !errors.Is(
+		err, policymodel.ErrClientClosed,
+	) {
+		t.Fatalf("Generate after Close error = %v, want ErrClientClosed", err)
+	}
+	if transport.roundTrips.Load() != 0 {
+		t.Fatalf("closed client reached HTTP transport %d times", transport.roundTrips.Load())
+	}
+	var nilClient *policymodel.Client
+	if err := nilClient.Close(); err != nil {
+		t.Fatalf("nil Client.Close error = %v", err)
+	}
+	if _, err := nilClient.Decide(context.Background(), interaction.Decision{}); !errors.Is(
+		err, policymodel.ErrClientClosed,
+	) {
+		t.Fatalf("nil Client.Decide error = %v", err)
+	}
+}
 
 func (stub *stubServer) prompts() []string {
 	stub.mu.Lock()

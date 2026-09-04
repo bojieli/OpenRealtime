@@ -7,13 +7,14 @@ import (
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 func TestPluginValidationRejectsAuthorityAndTargetWideningWithoutOpeningFactories(t *testing.T) {
 	base := validTestPluginConfig()
-	var modelOpened, observerOpened bool
+	var modelOpened, policyOpened, observerOpened bool
 	base.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
 		modelOpened = true
 		return nil, nil
@@ -22,10 +23,14 @@ func TestPluginValidationRejectsAuthorityAndTargetWideningWithoutOpeningFactorie
 		observerOpened = true
 		return nil, nil
 	}
+	base.SettlementPolicy.Factory = func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+		policyOpened = true
+		return nil, nil
+	}
 	if _, err := NewPlugin(base); err != nil {
 		t.Fatal(err)
 	}
-	if modelOpened || observerOpened {
+	if modelOpened || policyOpened || observerOpened {
 		t.Fatal("plugin validation acquired a provider resource")
 	}
 
@@ -39,6 +44,12 @@ func TestPluginValidationRejectsAuthorityAndTargetWideningWithoutOpeningFactorie
 		}},
 		{name: "voiced model", want: "silent", mutate: func(config *PluginConfig) {
 			config.Model.Descriptor.SpeechAuthority = continuation.SpeechAuthorityVoice
+		}},
+		{name: "wrong settlement policy reference", want: "exact graph selection", mutate: func(config *PluginConfig) {
+			config.SettlementPolicy.Reference = "deployment.computer-use.other-policy"
+		}},
+		{name: "invalid settlement policy descriptor", want: "configuration digest", mutate: func(config *PluginConfig) {
+			config.SettlementPolicy.Descriptor.ConfigurationDigest = "sha256:bad"
 		}},
 		{name: "missing camera", want: "camera", mutate: func(config *PluginConfig) {
 			config.Observer.Sources = []string{SourceMicrophone, SourceScreen}
@@ -117,6 +128,18 @@ func validTestPluginConfig() PluginConfig {
 				SpeechAuthority: continuation.SpeechAuthoritySilent,
 			},
 			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) { return nil, nil },
+		},
+		SettlementPolicy: PolicyPlugin{
+			Reference: SettlementPolicyReference,
+			Artifact:  testArtifact("settlement-policy", "f"),
+			Descriptor: policyelements.SemanticDeciderDescriptor{
+				Provider: "test", Model: "realtime-cu-settlement", Protocol: "test",
+				Revision: "v1", ConfigurationDigest: "sha256:" + strings.Repeat("6", 64),
+				DecisionTimeoutMS: 1_000, Vision: true,
+			},
+			Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+				return nil, nil
+			},
 		},
 		Observer: ObserverPlugin{
 			Reference: "go://test/realtime-cu/observer/v1", Name: "test-observer",

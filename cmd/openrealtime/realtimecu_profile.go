@@ -13,14 +13,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/gateway"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
@@ -31,6 +34,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graphs"
 	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/policymodel"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -47,6 +51,7 @@ const (
 	realtimeCULocalASRKeyEnvironment   = "OPENREALTIME_ASR_API_KEY"
 
 	realtimeCULocalModelReference    = "provider.openrealtime.realtime-cu.model.vllm.qwen-fast.local.v1"
+	realtimeCULocalPolicyReference   = "provider.openrealtime.realtime-cu.policy.vllm.qwen-fast.local.v1"
 	realtimeCULocalObserverReference = "provider.openrealtime.realtime-cu.observer.whisper-keyframe.local.v3"
 	realtimeCULocalObserverName      = "openrealtime.realtime-cu.local-audiovisual-observer"
 
@@ -139,6 +144,7 @@ func runRealtimeCUProfileFreeze(arguments []string, output io.Writer) error {
 type serveRealtimeCURegistration struct {
 	Application launchprofile.Registration
 	Model       realtimecubinding.ApplicationModelSelection
+	Policy      realtimecubinding.ApplicationPolicySelection
 	Observer    realtimecubinding.ApplicationObserverSelection
 	Provider    inspect.ArtifactIdentity
 	Runtime     inspect.ArtifactIdentity
@@ -171,6 +177,7 @@ type realtimeCULocalConfiguration struct {
 	FormatVersion uint64                        `json:"format_version"`
 	Executable    inspect.ArtifactIdentity      `json:"executable"`
 	Model         realtimeCULocalModelConfig    `json:"model"`
+	Policy        servePolicyConfiguration      `json:"settlement_policy"`
 	Observer      realtimeCULocalObserverConfig `json:"observer"`
 }
 
@@ -238,6 +245,11 @@ func newServeRealtimeCURegistration(
 			Reason:     string(providers.ReasonOff),
 			Deployment: deployments.Model,
 		},
+		Policy: servePolicyConfiguration{
+			FormatVersion: servePolicyConfigurationVersion,
+			Model:         realtimeCULocalModelName, BaseURL: realtimeCULocalModelURL,
+			RequestTimeoutMS: 2_000, Reasoning: string(openaicompat.ReasoningControlTemplateKwargs),
+		},
 		Observer: realtimeCULocalObserverConfig{
 			ASRProvider: realtimeCULocalASRProvider, ASRModel: realtimeCULocalASRModel,
 			ASRBaseURL: realtimeCULocalASRURL, VideoMode: realtimeCUAttachedKeyframeMode,
@@ -245,6 +257,25 @@ func newServeRealtimeCURegistration(
 			ChangeThreshold: realtimeCUVisualChangeThreshold,
 			Gate:            perception.DefaultGateConfig(), ASRDeployment: deployments.ASR,
 		},
+	}
+	policyVision, policyGuided := true, true
+	local.Policy.Vision = &policyVision
+	local.Policy.GuidedChoice = &policyGuided
+	policyConfiguration, err := json.Marshal(local.Policy)
+	if err != nil {
+		return serveRealtimeCURegistration{}, fmt.Errorf("encode Realtime-CU settlement policy configuration: %w", err)
+	}
+	_, policyDescriptor, err := decodeServePolicyConfiguration(
+		realtimeCULocalModelProvider, policyConfiguration,
+	)
+	if err != nil {
+		return serveRealtimeCURegistration{}, fmt.Errorf("describe Realtime-CU settlement policy: %w", err)
+	}
+	policyArtifact, err := realtimeCULocalPolicyArtifact(
+		executable, deployments.Model, policyConfiguration, policyDescriptor,
+	)
+	if err != nil {
+		return serveRealtimeCURegistration{}, err
 	}
 	observerArtifact, err := realtimeCUConfigurationArtifact(
 		"profile://openrealtime/realtime-cu/local-observer-composition", local.Observer, executable,
@@ -268,6 +299,10 @@ func newServeRealtimeCURegistration(
 	}
 	modelSelection := realtimecubinding.ApplicationModelSelection{
 		Reference: realtimeCULocalModelReference, Artifact: deployments.Model, Descriptor: descriptor,
+	}
+	policySelection := realtimecubinding.ApplicationPolicySelection{
+		Reference: realtimeCULocalPolicyReference, Artifact: policyArtifact,
+		Descriptor: policyDescriptor, Configuration: slices.Clone(policyConfiguration),
 	}
 	observerSelection := realtimecubinding.ApplicationObserverSelection{
 		Reference: realtimeCULocalObserverReference, Name: realtimeCULocalObserverName,
@@ -302,6 +337,67 @@ func newServeRealtimeCURegistration(
 					return providers.NewLLM(request)
 				},
 			}},
+			Policies: []realtimecubinding.PolicyFactoryRegistration{{
+				ApplicationPolicySelection: realtimecubinding.ApplicationPolicySelection{
+					Reference: policySelection.Reference, Artifact: policySelection.Artifact,
+				},
+				DescribeConfiguration: func(raw json.RawMessage) (policyelements.SemanticDeciderDescriptor, error) {
+					_, described, describeErr := decodeExactRealtimeCULocalPolicyConfiguration(
+						policyConfiguration, raw,
+					)
+					return described, describeErr
+				},
+				ReadinessConfiguration: func(ctx context.Context, raw json.RawMessage) error {
+					if _, _, decodeErr := decodeExactRealtimeCULocalPolicyConfiguration(
+						policyConfiguration, raw,
+					); decodeErr != nil {
+						return decodeErr
+					}
+					if verifyErr := verifyRealtimeCUModelDeployment(ctx, verifier, deployments); verifyErr != nil {
+						return fmt.Errorf("verify Realtime-CU settlement-policy deployment readiness: %w", verifyErr)
+					}
+					return nil
+				},
+				FactoryConfiguration: func(
+					ctx context.Context, _ legacy.Options, raw json.RawMessage,
+				) (policyelements.SemanticDecider, error) {
+					if ctx == nil {
+						return nil, errors.New("open Realtime-CU settlement policy: nil context")
+					}
+					if cause := context.Cause(ctx); cause != nil {
+						return nil, cause
+					}
+					policy, described, decodeErr := decodeExactRealtimeCULocalPolicyConfiguration(
+						policyConfiguration, raw,
+					)
+					if decodeErr != nil {
+						return nil, decodeErr
+					}
+					// The application registration wraps this selected factory with
+					// ReadinessConfiguration, so the exact model deployment is
+					// re-attested immediately before every client construction. The
+					// local endpoint's key is optional, exactly as it is for the
+					// independently owned continuation client; only the compiled
+					// environment name, never its value, is part of executable identity.
+					credential := os.Getenv(realtimeCULocalModelKeyEnvironment)
+					if policy.TokenEnvironment != "" {
+						credential, decodeErr = profileProviderCredential(policy.TokenEnvironment)
+						if decodeErr != nil {
+							return nil, decodeErr
+						}
+					}
+					client, clientErr := policymodel.New(policymodel.Config{
+						BaseURL: policy.BaseURL, Model: policy.Model, APIKey: credential,
+						Timeout:      time.Duration(policy.RequestTimeoutMS) * time.Millisecond,
+						GuidedChoice: *policy.GuidedChoice,
+						Reasoning:    openaicompat.ReasoningControl(policy.Reasoning),
+					})
+					if clientErr != nil {
+						return nil, clientErr
+					}
+					return &serveSemanticDecider{Client: client, descriptor: described}, nil
+				},
+			}},
 			Observers: []realtimecubinding.ObserverFactoryRegistration{{
 				ApplicationObserverSelection: observerSelection,
 				Readiness: func(ctx context.Context) error {
@@ -322,9 +418,65 @@ func newServeRealtimeCURegistration(
 		return serveRealtimeCURegistration{}, err
 	}
 	return serveRealtimeCURegistration{
-		Application: registration, Model: modelSelection, Observer: observerSelection,
+		Application: registration, Model: modelSelection, Policy: policySelection, Observer: observerSelection,
 		Provider: providerArtifact, Runtime: runtimeArtifact,
 	}, nil
+}
+
+func realtimeCULocalPolicyArtifact(
+	executable, deployment inspect.ArtifactIdentity,
+	configuration json.RawMessage,
+	descriptor policyelements.SemanticDeciderDescriptor,
+) (inspect.ArtifactIdentity, error) {
+	config, derived, err := decodeServePolicyConfiguration(
+		realtimeCULocalModelProvider, configuration,
+	)
+	if err != nil {
+		return inspect.ArtifactIdentity{}, fmt.Errorf(
+			"identify Realtime-CU settlement policy configuration: %w", err,
+		)
+	}
+	canonical, err := json.Marshal(config)
+	if err != nil {
+		return inspect.ArtifactIdentity{}, err
+	}
+	if !bytes.Equal(canonical, configuration) || derived != descriptor {
+		return inspect.ArtifactIdentity{}, errors.New(
+			"identify Realtime-CU settlement policy: configuration and descriptor are not canonical and exact",
+		)
+	}
+	return realtimeCUConfigurationArtifact(
+		"profile://openrealtime/realtime-cu/local-settlement-policy",
+		struct {
+			Provider      string                                   `json:"provider"`
+			Configuration json.RawMessage                          `json:"configuration"`
+			Descriptor    policyelements.SemanticDeciderDescriptor `json:"descriptor"`
+			Deployment    inspect.ArtifactIdentity                 `json:"deployment"`
+		}{
+			Provider: realtimeCULocalModelProvider, Configuration: slices.Clone(canonical),
+			Descriptor: descriptor, Deployment: deployment,
+		},
+		executable,
+	)
+}
+
+func decodeExactRealtimeCULocalPolicyConfiguration(
+	expected, source json.RawMessage,
+) (servePolicyConfiguration, policyelements.SemanticDeciderDescriptor, error) {
+	config, descriptor, err := decodeServePolicyConfiguration(realtimeCULocalModelProvider, source)
+	if err != nil {
+		return servePolicyConfiguration{}, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	canonical, err := json.Marshal(config)
+	if err != nil {
+		return servePolicyConfiguration{}, policyelements.SemanticDeciderDescriptor{}, err
+	}
+	if !bytes.Equal(canonical, expected) {
+		return servePolicyConfiguration{}, policyelements.SemanticDeciderDescriptor{}, errors.New(
+			"Realtime-CU settlement policy configuration differs from its artifact-bound selection",
+		)
+	}
+	return config, descriptor, nil
 }
 
 func verifyRealtimeCUModelDeployment(
@@ -458,7 +610,8 @@ func freezeProductionRealtimeCUProfile(
 	}
 	application := realtimecubinding.ApplicationConfig{
 		FormatVersion: realtimecubinding.ApplicationFormatVersion,
-		Model:         selected.Model, Observer: selected.Observer, Target: target,
+		Model:         selected.Model, SettlementPolicy: selected.Policy,
+		Observer: selected.Observer, Target: target,
 	}
 	payload, err := json.Marshal(application)
 	if err != nil {

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,10 @@ import (
 
 	"github.com/bojieli/OpenRealtime/bench"
 	legacy "github.com/bojieli/OpenRealtime/binding"
+	"github.com/bojieli/OpenRealtime/computeruse"
+	"github.com/bojieli/OpenRealtime/continuation"
+	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/gateway"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphconfig "github.com/bojieli/OpenRealtime/graph/config"
@@ -23,6 +28,8 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/policymodel"
 )
 
 func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *testing.T) {
@@ -503,6 +510,279 @@ func TestProductionProfileHostResolvesFrozenRealtimeCUApplicationWithoutResource
 		host.RealtimeCU == nil || host.RealtimeCU.Application.Reference != realtimecubinding.ApplicationReference {
 		t.Fatal("production profile host did not resolve the exact frozen Realtime-CU application")
 	}
+}
+
+func TestServeRealtimeCURegistrationBindsLazyFreshSettlementPolicyAndSessionMedia(t *testing.T) {
+	deployments := realtimeCUProfileTestDeployments()
+	verifier := &fixtureRealtimeCUDeploymentVerifier{identity: deployments}
+	executable := inspect.ArtifactIdentity{
+		ID:     "go://test/openrealtime/realtime-cu-settlement-host/v1",
+		Digest: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+	}
+	secret := "local-model-secret-must-never-enter-the-profile"
+	t.Setenv(realtimeCULocalModelKeyEnvironment, secret)
+	selected, err := newServeRealtimeCURegistration(
+		context.Background(), executable, deployments, verifier,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifier.combinedChecks.Load() != 1 || verifier.modelChecks.Load() != 0 ||
+		verifier.observerChecks.Load() != 0 {
+		t.Fatalf("registration verification combined=%d model=%d observer=%d",
+			verifier.combinedChecks.Load(), verifier.modelChecks.Load(), verifier.observerChecks.Load())
+	}
+	if selected.Policy.Reference != realtimeCULocalPolicyReference ||
+		selected.Policy.Artifact.ID != "profile://openrealtime/realtime-cu/local-settlement-policy" ||
+		selected.Policy.Artifact == deployments.Model || !selected.Policy.Descriptor.Vision ||
+		selected.Policy.Descriptor.ConfigurationDigest == "" {
+		t.Fatalf("selected settlement policy = %+v", selected.Policy)
+	}
+	if bytes.Contains(selected.Policy.Configuration, []byte(secret)) ||
+		bytes.Contains(selected.Policy.Configuration, []byte(`"api_key"`)) {
+		t.Fatalf("settlement policy configuration contains credential material: %s",
+			selected.Policy.Configuration)
+	}
+	policyConfig, described, err := decodeServePolicyConfiguration(
+		realtimeCULocalModelProvider, selected.Policy.Configuration,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if policyConfig.Model != realtimeCULocalModelName ||
+		policyConfig.BaseURL != realtimeCULocalModelURL || policyConfig.RequestTimeoutMS != 2_000 ||
+		policyConfig.Vision == nil || !*policyConfig.Vision ||
+		policyConfig.GuidedChoice == nil || !*policyConfig.GuidedChoice ||
+		policyConfig.TokenEnvironment != "" || described != selected.Policy.Descriptor {
+		t.Fatalf("serialized settlement configuration=%+v descriptor=%+v", policyConfig, described)
+	}
+
+	applicationPayload, err := json.Marshal(realtimecubinding.ApplicationConfig{
+		FormatVersion: realtimecubinding.ApplicationFormatVersion,
+		Model:         selected.Model, SettlementPolicy: selected.Policy,
+		Observer: selected.Observer,
+		Target: computeruse.Target{
+			Name: "settlement-test-browser", Sources: []string{realtimecubinding.SourceScreen},
+			Width: 1280, Height: 577,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launchConfig, err := selected.Application.Factory(context.Background(), applicationPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifier.modelChecks.Load() != 0 {
+		t.Fatalf("application resolution opened or readied settlement policy %d times",
+			verifier.modelChecks.Load())
+	}
+
+	policyDependency := realtimeCUProfileMountDependency(
+		t, launchConfig, policyelements.SemanticDeciderRegistryService,
+	)
+	if policyDependency.Artifact != selected.Policy.Artifact {
+		t.Fatalf("semantic registry artifact=%+v, want %+v",
+			policyDependency.Artifact, selected.Policy.Artifact)
+	}
+	mediaDependency := realtimeCUProfileMountDependency(
+		t, launchConfig, cognitionelements.MediaResolverService,
+	)
+	sessionContext, cancelSession := context.WithCancel(context.Background())
+	options := legacy.Options{SessionID: "realtime-cu-local-settlement-test"}
+	policyServices, err := policyDependency.Factory(sessionContext, options)
+	if err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	mediaServices, err := mediaDependency.Factory(sessionContext, options)
+	if err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	if len(policyServices) != 1 || len(mediaServices) != 1 {
+		cancelSession()
+		t.Fatalf("mount contributions policy=%d media=%d", len(policyServices), len(mediaServices))
+	}
+	registry, ok := policyServices[0].Service.(*policyelements.SemanticDeciderRegistry)
+	if !ok || registry == nil {
+		cancelSession()
+		t.Fatalf("semantic registry service has type %T", policyServices[0].Service)
+	}
+	resolver, ok := mediaServices[0].Service.(continuation.MediaResolver)
+	if !ok || resolver == nil {
+		cancelSession()
+		t.Fatalf("session media resolver has type %T", mediaServices[0].Service)
+	}
+	registered, err := registry.Describe(realtimecubinding.SettlementPolicyReference)
+	if err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	if registered != selected.Policy.Descriptor || verifier.modelChecks.Load() != 0 {
+		cancelSession()
+		t.Fatalf("lazy registry descriptor=%+v model checks=%d",
+			registered, verifier.modelChecks.Load())
+	}
+	firstValue, firstDescriptor, err := registry.Open(realtimecubinding.SettlementPolicyReference)
+	if err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	secondValue, secondDescriptor, err := registry.Open(realtimecubinding.SettlementPolicyReference)
+	if err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	first, firstOK := firstValue.(*serveSemanticDecider)
+	second, secondOK := secondValue.(*serveSemanticDecider)
+	if !firstOK || !secondOK || first == second || first.Client == second.Client ||
+		firstDescriptor != selected.Policy.Descriptor || secondDescriptor != selected.Policy.Descriptor ||
+		verifier.modelChecks.Load() != 2 {
+		cancelSession()
+		t.Fatalf("fresh settlement clients first=%T/%p second=%T/%p checks=%d",
+			firstValue, first, secondValue, second, verifier.modelChecks.Load())
+	}
+	if err := first.Close(); err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		cancelSession()
+		t.Fatalf("idempotent first settlement client close: %v", err)
+	}
+	if _, err := first.Decide(context.Background(), coreinteraction.Decision{
+		Prompt: "closed client must refuse", Options: []string{"continue", "succeeded"},
+	}); !errors.Is(err, policymodel.ErrClientClosed) {
+		cancelSession()
+		t.Fatalf("first settlement client after close error = %v", err)
+	}
+	if err := second.Close(); err != nil {
+		cancelSession()
+		t.Fatal(err)
+	}
+	if _, err := second.Generate(context.Background(), "closed client must refuse", "", 8); !errors.Is(
+		err, policymodel.ErrClientClosed,
+	) {
+		cancelSession()
+		t.Fatalf("second settlement client after close error = %v", err)
+	}
+
+	drift := errors.New("settlement deployment drifted")
+	verifier.err = drift
+	if _, _, err := registry.Open(realtimecubinding.SettlementPolicyReference); !errors.Is(err, drift) {
+		cancelSession()
+		t.Fatalf("drifted settlement open error = %v", err)
+	}
+	if verifier.modelChecks.Load() != 3 {
+		cancelSession()
+		t.Fatalf("drifted settlement open model checks = %d, want 3", verifier.modelChecks.Load())
+	}
+	cancelSession()
+	if _, err := resolver("unavailable-after-session"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("session resolver after cancellation error = %v", err)
+	}
+	checksBefore := verifier.modelChecks.Load()
+	if _, _, err := registry.Open(realtimecubinding.SettlementPolicyReference); !errors.Is(err, context.Canceled) {
+		t.Fatalf("semantic open after session cancellation error = %v", err)
+	}
+	if verifier.modelChecks.Load() != checksBefore {
+		t.Fatalf("canceled session crossed readiness boundary: before=%d after=%d",
+			checksBefore, verifier.modelChecks.Load())
+	}
+}
+
+func TestServeRealtimeCUSettlementPolicyIdentityExcludesCredentialBytes(t *testing.T) {
+	deployments := realtimeCUProfileTestDeployments()
+	executable := inspect.ArtifactIdentity{
+		ID:     "go://test/openrealtime/realtime-cu-settlement-identity/v1",
+		Digest: "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+	}
+	freeze := func(secret string) serveRealtimeCURegistration {
+		t.Helper()
+		t.Setenv(realtimeCULocalModelKeyEnvironment, secret)
+		selected, err := newServeRealtimeCURegistration(
+			context.Background(), executable, deployments,
+			&fixtureRealtimeCUDeploymentVerifier{identity: deployments},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(selected.Policy.Configuration, []byte(secret)) ||
+			strings.Contains(selected.Policy.Artifact.Digest, secret) ||
+			strings.Contains(selected.Policy.Descriptor.ConfigurationDigest, secret) {
+			t.Fatal("settlement policy identity exposed credential bytes")
+		}
+		return selected
+	}
+	first := freeze("first-local-settlement-secret")
+	second := freeze("second-local-settlement-secret")
+	if first.Policy.Reference != second.Policy.Reference ||
+		first.Policy.Artifact != second.Policy.Artifact ||
+		first.Policy.Descriptor != second.Policy.Descriptor ||
+		!bytes.Equal(first.Policy.Configuration, second.Policy.Configuration) {
+		t.Fatalf("credential rotation changed non-secret policy identity:\nfirst=%+v\nsecond=%+v",
+			first.Policy, second.Policy)
+	}
+	policyConfig, _, err := decodeServePolicyConfiguration(
+		realtimeCULocalModelProvider, first.Policy.Configuration,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policyConfig.RequestTimeoutMS++
+	changedConfiguration, err := json.Marshal(policyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, changedDescriptor, err := decodeServePolicyConfiguration(
+		realtimeCULocalModelProvider, changedConfiguration,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedArtifact, err := realtimeCULocalPolicyArtifact(
+		executable, deployments.Model, changedConfiguration, changedDescriptor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedDescriptor == first.Policy.Descriptor || changedArtifact == first.Policy.Artifact {
+		t.Fatalf("behavioral policy change did not change descriptor and artifact:\noriginal=%+v/%+v\nchanged=%+v/%+v",
+			first.Policy.Descriptor, first.Policy.Artifact, changedDescriptor, changedArtifact)
+	}
+	changedSelection := first.Policy
+	changedSelection.Configuration = changedConfiguration
+	changedSelection.Descriptor = changedDescriptor
+	payload, err := json.Marshal(realtimecubinding.ApplicationConfig{
+		FormatVersion: realtimecubinding.ApplicationFormatVersion,
+		Model:         first.Model, SettlementPolicy: changedSelection,
+		Observer: first.Observer,
+		Target: computeruse.Target{
+			Name: "settlement-artifact-test-browser", Sources: []string{realtimecubinding.SourceScreen},
+			Width: 1280, Height: 577,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.Application.Factory(context.Background(), payload); err == nil ||
+		!strings.Contains(err.Error(), "differs from its artifact-bound selection") {
+		t.Fatalf("config changed under frozen settlement artifact error = %v", err)
+	}
+}
+
+func realtimeCUProfileMountDependency(
+	t *testing.T, config graphlaunch.Config, name string,
+) graphlaunch.MountDependencyPlugin {
+	t.Helper()
+	for _, dependency := range config.Catalog.MountDependencies {
+		if dependency.Name == name {
+			return dependency
+		}
+	}
+	t.Fatalf("Realtime-CU mount dependency %q is missing", name)
+	return graphlaunch.MountDependencyPlugin{}
 }
 
 func realtimeCUProfileTestDeployments() realtimeCUDeploymentIdentities {

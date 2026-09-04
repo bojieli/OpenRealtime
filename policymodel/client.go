@@ -87,11 +87,20 @@ type Client struct {
 	config Config
 	http   *http.Client
 
+	lifecycleMu sync.RWMutex
+	closed      bool
+
 	decisions atomic.Uint64
 	refusals  atomic.Uint64
 	timeouts  atomic.Uint64
 	elapsedNS atomic.Uint64
 }
+
+// ErrClientClosed is returned when a caller tries to start policy work after
+// the independently owned client has left its lifecycle. Close waits for work
+// that already acquired the client, so no request can outlive a completed
+// Close call.
+var ErrClientClosed = errors.New("policy model client is closed")
 
 const dumpPolicyRequests = "OPENREALTIME_DUMP_POLICY_REQUESTS"
 
@@ -171,6 +180,26 @@ func (client *Client) Name() string { return client.config.Model }
 
 // DecisionTimeout is the live deadline retained in architecture evidence.
 func (client *Client) DecisionTimeout() time.Duration { return client.config.Timeout }
+
+// Close releases idle HTTP connections and permanently refuses new policy
+// work. It is safe to call more than once. A caller that closes concurrently
+// with an in-flight request waits for that request's bounded context to finish
+// before the transport is released.
+func (client *Client) Close() error {
+	if client == nil {
+		return nil
+	}
+	client.lifecycleMu.Lock()
+	defer client.lifecycleMu.Unlock()
+	if client.closed {
+		return nil
+	}
+	client.closed = true
+	if client.http != nil {
+		client.http.CloseIdleConnections()
+	}
+	return nil
+}
 
 type chatRequest struct {
 	Model       string        `json:"model"`
@@ -274,6 +303,14 @@ type chatResponse struct {
 
 // Decide answers one enumerated question.
 func (client *Client) Decide(ctx context.Context, decision interaction.Decision) (_ interaction.Outcome, resultErr error) {
+	if client == nil {
+		return interaction.Outcome{}, ErrClientClosed
+	}
+	client.lifecycleMu.RLock()
+	defer client.lifecycleMu.RUnlock()
+	if client.closed {
+		return interaction.Outcome{}, ErrClientClosed
+	}
 	if err := decision.Validate(); err != nil {
 		return interaction.Outcome{}, err
 	}
@@ -486,6 +523,7 @@ func (client *Client) Metrics() Metrics {
 }
 
 var _ interaction.Decider = (*Client)(nil)
+var _ io.Closer = (*Client)(nil)
 
 // Generate asks for a short free-form answer rather than an enumerated one.
 //
@@ -497,6 +535,14 @@ var _ interaction.Decider = (*Client)(nil)
 // bounded to the exact enumerated vocabulary - what it produces is read once
 // per turn rather than five times a second.
 func (client *Client) Generate(ctx context.Context, prompt, evidence string, maxTokens int) (_ string, resultErr error) {
+	if client == nil {
+		return "", ErrClientClosed
+	}
+	client.lifecycleMu.RLock()
+	defer client.lifecycleMu.RUnlock()
+	if client.closed {
+		return "", ErrClientClosed
+	}
 	if strings.TrimSpace(prompt) == "" {
 		return "", errors.New("generation requires a prompt")
 	}

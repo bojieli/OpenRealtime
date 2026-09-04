@@ -18,6 +18,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
 )
@@ -27,10 +28,15 @@ const (
 	ProfileName      = "openrealtime.realtime_computer_use"
 	ProfileRevision  = uint64(1)
 	ModelReference   = "deployment.computer-use"
-	ToolReference    = "deployment.tools"
-	TargetReference  = "deployment.browser"
-	LedgerReference  = "deployment.ledger"
-	ConfirmReference = "deployment.confirmation"
+	// SettlementPolicyReference is the graph-stable semantic-decider
+	// registration used by an independently connected intent-disposition
+	// producer. The application profile's host inventory reference remains a
+	// separate exact identity and is never interpreted by graph elements.
+	SettlementPolicyReference = "deployment.computer-use.settlement-policy"
+	ToolReference             = "deployment.tools"
+	TargetReference           = "deployment.browser"
+	LedgerReference           = "deployment.ledger"
+	ConfirmReference          = "deployment.confirmation"
 
 	SourceMicrophone = "microphone"
 	SourceScreen     = "screen"
@@ -44,6 +50,18 @@ type ModelPlugin struct {
 	Artifact   inspect.ArtifactIdentity
 	Descriptor continuation.Descriptor
 	Factory    func(context.Context, legacy.Options) (continuation.Provider, error)
+}
+
+// PolicyPlugin is the exact, independently owned semantic classifier selected
+// for post-effect intent disposition. It is intentionally distinct from the
+// continuation model even when both factories address the same deployment:
+// each SemanticDeciderRegistry.Open call obtains a fresh client whose caller
+// owns its lifecycle.
+type PolicyPlugin struct {
+	Reference  string
+	Artifact   inspect.ArtifactIdentity
+	Descriptor policyelements.SemanticDeciderDescriptor
+	Factory    func(context.Context, legacy.Options) (policyelements.SemanticDecider, error)
 }
 
 // Observer converts protocol media frames into typed observations. Audio
@@ -99,10 +117,11 @@ type ObserverResources struct {
 // executable material; model and observer artifacts remain separately bound
 // into the dependency profile digest.
 type PluginConfig struct {
-	RuntimeArtifact inspect.ArtifactIdentity
-	Model           ModelPlugin
-	Observer        ObserverPlugin
-	Target          computeruse.Target
+	RuntimeArtifact  inspect.ArtifactIdentity
+	Model            ModelPlugin
+	SettlementPolicy PolicyPlugin
+	Observer         ObserverPlugin
+	Target           computeruse.Target
 }
 
 func validatePluginConfig(config PluginConfig) error {
@@ -126,6 +145,21 @@ func validatePluginConfig(config PluginConfig) error {
 	}
 	if config.Model.Factory == nil {
 		return errors.New("realtime-CU model plugin requires a factory")
+	}
+	if !canonical(config.SettlementPolicy.Reference) || config.SettlementPolicy.Factory == nil {
+		return errors.New("realtime-CU settlement policy plugin requires a canonical reference and factory")
+	}
+	if config.SettlementPolicy.Reference != SettlementPolicyReference {
+		return fmt.Errorf(
+			"realtime-CU settlement policy reference %q, want exact graph selection %q",
+			config.SettlementPolicy.Reference, SettlementPolicyReference,
+		)
+	}
+	if err := config.SettlementPolicy.Artifact.Validate(); err != nil {
+		return fmt.Errorf("realtime-CU settlement policy artifact: %w", err)
+	}
+	if err := config.SettlementPolicy.Descriptor.Validate(); err != nil {
+		return fmt.Errorf("realtime-CU settlement policy descriptor: %w", err)
 	}
 	if err := config.Observer.Artifact.Validate(); err != nil {
 		return fmt.Errorf("realtime-CU observer artifact: %w", err)

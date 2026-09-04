@@ -12,6 +12,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -20,7 +21,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.realtime-computer-use.v1"
-	ApplicationFormatVersion      = uint64(1)
+	ApplicationFormatVersion      = uint64(2)
 	maximumApplicationConfigBytes = 1 << 20
 )
 
@@ -32,6 +33,18 @@ type ApplicationModelSelection struct {
 	Reference  string                   `json:"reference"`
 	Artifact   inspect.ArtifactIdentity `json:"artifact"`
 	Descriptor continuation.Descriptor  `json:"descriptor"`
+}
+
+// ApplicationPolicySelection is the serializable identity of the separately
+// owned semantic classifier used by the reference intent-disposition
+// producer. Configuration is provider-owned, must contain only non-secret
+// behavior and secret-reference data, and is exact-matched to Descriptor by
+// the selected host registration without opening a client.
+type ApplicationPolicySelection struct {
+	Reference     string                                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity                 `json:"artifact"`
+	Descriptor    policyelements.SemanticDeciderDescriptor `json:"descriptor"`
+	Configuration json.RawMessage                          `json:"configuration,omitempty"`
 }
 
 // ApplicationObserverSelection pins the audiovisual observer without placing
@@ -48,10 +61,11 @@ type ApplicationObserverSelection struct {
 // confirmer, client dispatcher, ledger, and trajectory store are derived by
 // RealtimeComputerUseLaunchConfig and are deliberately not mutable selectors.
 type ApplicationConfig struct {
-	FormatVersion uint64                       `json:"format_version"`
-	Model         ApplicationModelSelection    `json:"model"`
-	Observer      ApplicationObserverSelection `json:"observer"`
-	Target        computeruse.Target           `json:"target"`
+	FormatVersion    uint64                       `json:"format_version"`
+	Model            ApplicationModelSelection    `json:"model"`
+	SettlementPolicy ApplicationPolicySelection   `json:"settlement_policy"`
+	Observer         ApplicationObserverSelection `json:"observer"`
+	Target           computeruse.Target           `json:"target"`
 }
 
 // DecodeApplicationConfig rejects duplicate/unknown fields and validates all
@@ -78,6 +92,7 @@ func DecodeApplicationConfig(source json.RawMessage) (ApplicationConfig, error) 
 		return ApplicationConfig{}, fmt.Errorf("decode trailing Realtime-CU application configuration: %w", err)
 	}
 	config.Observer.Sources = slices.Clone(config.Observer.Sources)
+	config.SettlementPolicy.Configuration = slices.Clone(config.SettlementPolicy.Configuration)
 	if err := config.Validate(); err != nil {
 		return ApplicationConfig{}, err
 	}
@@ -94,6 +109,9 @@ func (config ApplicationConfig) Validate() error {
 	if err := validateApplicationModel(config.Model); err != nil {
 		return err
 	}
+	if err := validateApplicationPolicy(config.SettlementPolicy); err != nil {
+		return err
+	}
 	if err := validateApplicationObserver(config.Observer); err != nil {
 		return err
 	}
@@ -102,6 +120,19 @@ func (config ApplicationConfig) Validate() error {
 	}
 	if !canonical(config.Target.Name) || !slices.Equal(config.Target.Sources, []string{SourceScreen}) {
 		return errors.New("Realtime-CU application target must be canonical and own only screen")
+	}
+	return nil
+}
+
+func validateApplicationPolicy(policy ApplicationPolicySelection) error {
+	if !canonical(policy.Reference) {
+		return errors.New("Realtime-CU application settlement policy reference is not canonical")
+	}
+	if err := policy.Artifact.Validate(); err != nil {
+		return fmt.Errorf("Realtime-CU application settlement policy artifact: %w", err)
+	}
+	if err := policy.Descriptor.Validate(); err != nil {
+		return fmt.Errorf("Realtime-CU application settlement policy descriptor: %w", err)
 	}
 	return nil
 }
@@ -152,6 +183,20 @@ type ModelFactoryRegistration struct {
 	Readiness func(context.Context) error
 }
 
+// PolicyFactoryRegistration is one host-installed semantic-decider factory.
+// A registration is either a fully described plain factory or an exact
+// parameterized trio. DescribeConfiguration is resource-free; the selected
+// FactoryConfiguration remains unopened until a producer calls registry.Open
+// after graph Run begins.
+type PolicyFactoryRegistration struct {
+	ApplicationPolicySelection
+	Factory                func(context.Context, legacy.Options) (policyelements.SemanticDecider, error)
+	Readiness              func(context.Context) error
+	DescribeConfiguration  func(json.RawMessage) (policyelements.SemanticDeciderDescriptor, error)
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (policyelements.SemanticDecider, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
+}
+
 // ObserverFactoryRegistration is one host-installed audiovisual observer.
 type ObserverFactoryRegistration struct {
 	ApplicationObserverSelection
@@ -168,6 +213,7 @@ type ApplicationRegistrationConfig struct {
 	ProviderArtifact    inspect.ArtifactIdentity
 	RuntimeArtifact     inspect.ArtifactIdentity
 	Models              []ModelFactoryRegistration
+	Policies            []PolicyFactoryRegistration
 	Observers           []ObserverFactoryRegistration
 }
 
@@ -189,8 +235,8 @@ func NewApplicationRegistration(
 	if err := source.RuntimeArtifact.Validate(); err != nil {
 		return launchprofile.Registration{}, fmt.Errorf("Realtime-CU runtime artifact: %w", err)
 	}
-	if len(source.Models) == 0 || len(source.Observers) == 0 {
-		return launchprofile.Registration{}, errors.New("Realtime-CU application registration requires model and observer factories")
+	if len(source.Models) == 0 || len(source.Policies) == 0 || len(source.Observers) == 0 {
+		return launchprofile.Registration{}, errors.New("Realtime-CU application registration requires model, settlement policy, and observer factories")
 	}
 	models := make(map[string]ModelFactoryRegistration, len(source.Models))
 	for index, registration := range source.Models {
@@ -204,6 +250,10 @@ func NewApplicationRegistration(
 			return launchprofile.Registration{}, fmt.Errorf("Realtime-CU model reference %q is registered more than once", registration.Reference)
 		}
 		models[registration.Reference] = registration
+	}
+	policies, err := snapshotPolicyRegistrations(source.Policies)
+	if err != nil {
+		return launchprofile.Registration{}, err
 	}
 	observers := make(map[string]ObserverFactoryRegistration, len(source.Observers))
 	for index, registration := range source.Observers {
@@ -245,6 +295,23 @@ func NewApplicationRegistration(
 				model.Descriptor != config.Model.Descriptor {
 				return graphlaunch.Config{}, fmt.Errorf("Realtime-CU model %q artifact or descriptor drifted", config.Model.Reference)
 			}
+			policy, found := policies[config.SettlementPolicy.Reference]
+			if !found {
+				return graphlaunch.Config{}, fmt.Errorf(
+					"Realtime-CU settlement policy registry is missing %q", config.SettlementPolicy.Reference,
+				)
+			}
+			if policy.Artifact != config.SettlementPolicy.Artifact {
+				return graphlaunch.Config{}, fmt.Errorf(
+					"Realtime-CU settlement policy %q artifact or descriptor drifted", config.SettlementPolicy.Reference,
+				)
+			}
+			policyDescriptor, policyFactory, policyReadiness, err := resolvePolicyRegistration(
+				policy, config.SettlementPolicy,
+			)
+			if err != nil {
+				return graphlaunch.Config{}, err
+			}
 			observer, found := observers[config.Observer.Reference]
 			if !found {
 				return graphlaunch.Config{}, fmt.Errorf("Realtime-CU observer registry is missing %q", config.Observer.Reference)
@@ -262,6 +329,18 @@ func NewApplicationRegistration(
 				modelFactory = func(ctx context.Context, options legacy.Options) (continuation.Provider, error) {
 					if err := readiness(ctx); err != nil {
 						return nil, fmt.Errorf("Realtime-CU model %q is not ready: %w", model.Reference, err)
+					}
+					return selectedFactory(ctx, options)
+				}
+			}
+			if policyReadiness != nil {
+				selectedFactory, readiness := policyFactory, policyReadiness
+				policyFactory = func(ctx context.Context, options legacy.Options) (policyelements.SemanticDecider, error) {
+					if err := readiness(ctx); err != nil {
+						return nil, fmt.Errorf(
+							"Realtime-CU settlement policy %q is not ready: %w",
+							config.SettlementPolicy.Reference, err,
+						)
 					}
 					return selectedFactory(ctx, options)
 				}
@@ -296,6 +375,10 @@ func NewApplicationRegistration(
 					Reference: model.Reference, Artifact: model.Artifact,
 					Descriptor: model.Descriptor, Factory: modelFactory,
 				},
+				SettlementPolicy: PolicyPlugin{
+					Reference: SettlementPolicyReference, Artifact: policy.Artifact,
+					Descriptor: policyDescriptor, Factory: policyFactory,
+				},
 				Observer: ObserverPlugin{
 					Reference: observer.Reference, Name: observer.Name,
 					Artifact: observer.Artifact, Sources: slices.Clone(observer.Sources),
@@ -314,6 +397,12 @@ func NewApplicationRegistration(
 					Name: "realtime-cu-model:" + model.Reference, Check: model.Readiness,
 				})
 			}
+			if policyReadiness != nil {
+				resolved.Readiness = append(resolved.Readiness, graphlaunch.ReadinessCheck{
+					Name:  "realtime-cu-settlement-policy:" + config.SettlementPolicy.Reference,
+					Check: policyReadiness,
+				})
+			}
 			if observer.Readiness != nil {
 				resolved.Readiness = append(resolved.Readiness, graphlaunch.ReadinessCheck{
 					Name: "realtime-cu-observer:" + observer.Reference, Check: observer.Readiness,
@@ -326,4 +415,95 @@ func NewApplicationRegistration(
 		return launchprofile.Registration{}, fmt.Errorf("validate Realtime-CU application registration: %w", err)
 	}
 	return registration, nil
+}
+
+func snapshotPolicyRegistrations(
+	source []PolicyFactoryRegistration,
+) (map[string]PolicyFactoryRegistration, error) {
+	result := make(map[string]PolicyFactoryRegistration, len(source))
+	for index, registration := range source {
+		if !canonical(registration.Reference) {
+			return nil, fmt.Errorf(
+				"Realtime-CU settlement policy registration %d reference is not canonical", index,
+			)
+		}
+		if err := registration.Artifact.Validate(); err != nil {
+			return nil, fmt.Errorf(
+				"Realtime-CU settlement policy registration %d artifact: %w", index, err,
+			)
+		}
+		parameterized := registration.DescribeConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.DescribeConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil ||
+				registration.Readiness != nil || len(registration.Configuration) != 0 ||
+				registration.Descriptor != (policyelements.SemanticDeciderDescriptor{}) {
+				return nil, fmt.Errorf(
+					"Realtime-CU settlement policy registration %d has a partial or mixed parameterized factory", index,
+				)
+			}
+		} else {
+			if registration.Factory == nil {
+				return nil, fmt.Errorf(
+					"Realtime-CU settlement policy registration %d has a nil factory", index,
+				)
+			}
+			if len(registration.Configuration) != 0 {
+				return nil, fmt.Errorf(
+					"Realtime-CU settlement policy registration %d has configuration without a parameterized factory", index,
+				)
+			}
+			if err := validateApplicationPolicy(registration.ApplicationPolicySelection); err != nil {
+				return nil, fmt.Errorf(
+					"Realtime-CU settlement policy registration %d: %w", index, err,
+				)
+			}
+		}
+		if _, duplicate := result[registration.Reference]; duplicate {
+			return nil, fmt.Errorf(
+				"Realtime-CU settlement policy reference %q is registered more than once", registration.Reference,
+			)
+		}
+		registration.Configuration = slices.Clone(registration.Configuration)
+		result[registration.Reference] = registration
+	}
+	return result, nil
+}
+
+func resolvePolicyRegistration(
+	registration PolicyFactoryRegistration, selection ApplicationPolicySelection,
+) (
+	policyelements.SemanticDeciderDescriptor,
+	func(context.Context, legacy.Options) (policyelements.SemanticDecider, error),
+	func(context.Context) error,
+	error,
+) {
+	if registration.DescribeConfiguration == nil {
+		if len(selection.Configuration) != 0 || registration.Descriptor != selection.Descriptor {
+			return policyelements.SemanticDeciderDescriptor{}, nil, nil, fmt.Errorf(
+				"Realtime-CU settlement policy %q artifact or descriptor drifted", selection.Reference,
+			)
+		}
+		return registration.Descriptor, registration.Factory, registration.Readiness, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	descriptor, err := registration.DescribeConfiguration(slices.Clone(configuration))
+	if err != nil {
+		return policyelements.SemanticDeciderDescriptor{}, nil, nil, fmt.Errorf(
+			"Realtime-CU settlement policy %q configuration: %w", selection.Reference, err,
+		)
+	}
+	if descriptor != selection.Descriptor {
+		return policyelements.SemanticDeciderDescriptor{}, nil, nil, fmt.Errorf(
+			"Realtime-CU settlement policy %q descriptor drifted from its configuration", selection.Reference,
+		)
+	}
+	return descriptor,
+		func(ctx context.Context, options legacy.Options) (policyelements.SemanticDecider, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		},
+		func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
 }
