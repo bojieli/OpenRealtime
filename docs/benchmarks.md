@@ -356,6 +356,20 @@ Focused and stable-endpoint checks establish implementation behavior only. They
 produce no benchmark row and do not show whether the selected live policy
 correctly distinguishes continuation from success on the authored tasks.
 
+The subsequent production-mounted cancellation regression found and repaired
+one real shared-trajectory race before any new live campaign: an unrelated
+same-run canonical-call commit could cause `ModelResultCommit` to emit its
+normal empty `ignored/unknown_commit_reply` diagnostic while session
+cancellation was active, and coordinator revision 2 misclassified that fanout
+as failure of the awaited model-result commit. Revision 3 ignores only that
+exact authority-free diagnostic shape and continues to require the canonical
+model-result acknowledgement. The unchanged WebSocket endpoint now exercises
+in-flight disposition, active-model, and crossed-client-action cancellation,
+including fresh-intent recovery after each. A separate production composition
+executes focus→type→submit under two `continue` decisions, then verifies that a
+terminal `succeeded` latch resists changing visual cadence and reopens only for
+a new intent. These remain local behavioral regressions, not benchmark rows.
+
 The retained live evidence must also be read by checkpoint rather than reduced
 to one headline number. Candidate-05's current settlement-aware exact-sixteen
 artifact reports 8/16. The later clean `b535b15` campaign executed and was

@@ -277,20 +277,20 @@ integration fixture in
 `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
 (`benchmark-browser`, one `screen` source at 1280x720, and the test
 model/policy/observer selections), graph fingerprint
-`sha256:5232b19741c1d699c025631d20cc95e1788612df81f2d7a71f9cc071165240cb`
+`sha256:1b36fed81dbda59ed8298cfe2d632a094352314c4c497b2c78656de4af9a31f1`
 and plan fingerprint
-`sha256:d28b6c83df2272256409dc11aeb1d69318f5c519bdcc56ecd4972bb2f412c4f2`.
+`sha256:9797a77a00cc7579c52e72d0edbc370bf8cc3b58994f833ecc0d10b82e63aea3`.
 Its source, lock, and values digests are respectively
 `sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa`,
-`sha256:2f907ce0d292756fab1b991326249656ef7cb5b45cd73f252575aad4d533413f`,
+`sha256:5a6539e8d7a835c1bf2c3e42303326f05f9b067afef72cb8996765964c8bf66c`,
 and
 `sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93`.
 The lock selects activation revision 12
 (`sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`),
 disposition producer revision 2
 (`sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`),
-and cancellation coordinator revision 2
-(`sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a`).
+and cancellation coordinator revision 3
+(`sha256:fc227d6bac1d353f099dc7555ff52ae87ad099360875f421b5a8a9f9eb9eb648`).
 It also selects `action.ToolResultCommit` revision 4
 (`sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`).
 The graph template passes canonical formatting and warning-free strict
@@ -305,6 +305,26 @@ its canonical commit, and sends forced screen feedback. The same original user
 task authorizes a second call only after that screen is proven to descend from
 both the user item and first result. Both results produce distinct canonical
 visual-consequence checkpoints through the unchanged endpoint.
+
+The same endpoint now exercises three cancellation phases. First it holds the
+real disposition provider in flight after a successful effect, cancels it, and
+proves that a new intent can activate only after its own complete fresh screen/
+camera cohort. Second it cancels a model call before any prepared result and
+again proves replacement-intent recovery. Third it cancels after a client tool
+call crossed the external boundary: the public request receives the honest
+`incomplete/action_already_crossed` result, the mandatory cancellation result
+still becomes canonical and requests visual consequence evidence, the old
+intent remains quiescent, and another new intent remains usable.
+
+That crossed-action sequence exposed a shared-trajectory ordering defect. A
+canonical tool-call append for the same run is broadcast to every commit-aware
+element; `ModelResultCommit` truthfully labels the unrelated reply
+`ignored/unknown_commit_reply`. Coordinator revision 2 could mistake that
+ambient diagnostic for failure of its awaited model-result transaction and
+return `incomplete/model_result_not_committed`. Revision 3 recognizes only the
+exact empty unknown-reply diagnostic as ambient, while any outcome that claims
+a request, store boundary, item identity, or other result still goes through
+the fail-closed canonical verifier.
 
 Separate negative tests cover unknown configuration fields, application/model/
 observer artifact or descriptor drift, source and target widening, schema
@@ -435,8 +455,8 @@ Current implementation ledger:
 | Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented, locked, and locally verified | Live quality remains unmeasured |
 | Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
 | Reference semantic/vision disposition producer | Profile-bound and locally verified | Exercise quality on focused live cases |
-| Protocol/session cancellation translation | Implemented and adversarially verified | Complete the remaining mounted cross-node matrix |
-| Activation settlement input and acknowledgement output | Connected and locally verified | Complete focus→type→submit and continuous-cadence mounted cases |
+| Protocol/session cancellation translation | Implemented and adversarially verified through provider, model, idle-action, and crossed-action phases | Complete the remaining forged/reordered/failed-effect mounted cases |
+| Activation settlement input and acknowledgement output | Connected; focus→type→submit, terminal cadence, and new-intent recovery are production-mounted and race-tested | Confirm behavior in the focused live cases |
 | Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Frozen with no admission bypass; strict check passes | Final identities change if later behavioral repair changes code or configuration |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
 
@@ -493,11 +513,12 @@ not a cognition cancellation: the cognition run may already have ended before
 the result and post-effect observation exist, and a broad generation
 cancellation does not prove which completed effect was settled.
 
-The remaining behavioral sequence is to complete the mounted adversarial
-composition matrix and register machine-enforceable Realtime-CU acceptance
-targets. Then both camera, both moving-target, and both transient-alert
-variants run from one repaired immutable candidate. Each observed failure is
-retained and repaired before all 16 cases are rerun from a newly frozen
-candidate. No live benchmark was run for this settlement/cancellation
-checkpoint, and nothing in its implementation checks advances the project-wide
-0/7,486 final-candidate attempt ledger.
+The remaining mounted matrix is now concentrated on forged cross-node
+evidence, duplicate/reordered terminal decisions, explicit indeterminate retry,
+and failed effects. After those cases, machine-enforceable Realtime-CU
+acceptance targets must be registered. Then both camera, both moving-target,
+and both transient-alert variants run from one repaired immutable candidate.
+Each observed failure is retained and repaired before all 16 cases are rerun
+from a newly frozen candidate. No live benchmark was run for this settlement/
+cancellation checkpoint, and nothing in its implementation checks advances
+the project-wide 0/7,486 final-candidate attempt ledger.

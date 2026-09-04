@@ -1909,6 +1909,8 @@ be reviewed or reverted independently:
 | Crossed-effect honesty | `ab2e29a` | Keeps the first exact cancellation at `ToolResultCommit` until the mandatory result safe point and reports an irreversible crossing as incomplete rather than pretending cancellation succeeded |
 | Shutdown liveness | `15e91b6` | Orders media publication against adapter close without holding the lifecycle lock while waiting for canonical commit, allowing close to drain blocked media waiters |
 | Documentation and evidence ledger | `0931a7b`, `190cdec` | Records the production integration, artifact identities, local verification, checklist movement, and still-open behavioral gates |
+| Commit-acknowledgement isolation | `a75e8c1` | Prevents an unrelated trajectory commit for the same run from masquerading as failure of the canonical model-result transaction; upgrades the coordinator to revision 3 and exercises provider, model, crossed-action, replacement-intent, and stable-endpoint cancellation ordering |
+| Multi-step terminal settlement | `98ecad4` | Executes focus→type→submit under two explicit continuations, latches success after the third effect, resists continuous changing frames, and reopens only for a new intent with fresh evidence |
 
 The changes address concrete failure mechanisms found while reviewing retained
 Realtime-CU evidence, but live confirmation remains deliberately separate:
@@ -1917,8 +1919,10 @@ Realtime-CU evidence, but live confirmation remains deliberately separate:
 | --- | --- | --- | --- |
 | Camera actions could use a clear frame captured before the durable smoke intent | Typed post-intent temporal admission is now the only route into production activation | Mounted freshness, cancellation, forgery, multi-source, and stable-endpoint regressions pass | Run both authored camera variants and verify no pre-cue effect |
 | Moving-target and transient-alert sessions continued proposing after success | Exact result-linked settlement can latch a terminal intent, activation acknowledges clearing the matching effect, and the coordinator cancels the remaining pipeline | Element, ordering, bounded-state, coordinator, and endpoint checks pass | Run both moving-target and both transient-alert variants and verify no post-success loop or horizon timeout |
-| Cancellation could miss queued cognition or return before a real policy call became quiescent | Queued-run tombstones are durable and the coordinator waits for the actual disposition provider outcome | Focused normal and race checks pass | Exercise the full mounted cancellation/replacement and asynchronous-wait cases |
-| Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | Focused reordered, conflicting-cancel, capacity, and race checks pass | Exercise mounted failed-effect and crossed-result behavior through the production graph |
+| Cancellation could miss queued cognition or return before a real policy call became quiescent | Queued-run tombstones are durable and the coordinator waits for the actual disposition provider outcome | The production endpoint now cancels an in-flight policy call and an active model run, then admits a fresh intent after each | Confirm the same behavior on focused live cases |
+| An unrelated same-run trajectory commit could be mistaken for failure of the model-result commit | Coordinator revision 3 ignores only empty `unknown_commit_reply`/`unknown_rejection_reply` fanout diagnostics and still requires exact canonical model-commit evidence | The production endpoint exposed the race; the repair passes 30 normal and 10 race-enabled repetitions, with exact-shape unit coverage | Preserve this ordering during the remaining mounted cases and live repair campaign |
+| Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | The production endpoint reports `incomplete/action_already_crossed`, commits the mandatory cancellation result, requests visual consequence evidence, suppresses the old epoch, and admits a later intent | Exercise an authored failed-effect case and confirm live scorer behavior |
+| A terminal policy could accidentally become a blanket one-action-per-intent rule | Settlement explicitly chooses continuation or terminal state per canonical consequence | The production graph executes click/focus→type→submit under two continuations, terminates on success, ignores five changing cadence frames, and admits a new intent afterward | Confirm moving-target and transient-alert live behavior |
 | Session shutdown could deadlock behind media waiting for canonical commit | Observer use and publication/close ordering now have separate lifecycle boundaries; close drains commit waiters | Focused normal and race-enabled close regressions pass | Confirm the live focused cases terminate without running to the evaluation horizon |
 
 Validation was run from a clean detached worktree at the exact committed code
@@ -1933,25 +1937,23 @@ therefore remains 0/7,486.
 
 The ordered critical path from this checkpoint is:
 
-1. Add a full production-mounted regression that cancels an active durable
-   intent through the real coordinator and every configured action-stage node,
-   including a new intent after cancellation.
-2. Complete the remaining mounted matrix: shared retained-media ownership,
-   forged cross-node evidence, duplicate/reordered decisions, cancellation and
-   replacement, failed and crossed effects, indeterminate retry, asynchronous
-   wait, focus→type→submit, continuous cadence, graph-level race, and the stable
-   WebSocket endpoint.
-3. Register machine-enforceable Realtime-CU aggregate, exact per-case, safety,
+1. Complete the remaining production-mounted matrix for forged cross-node
+   evidence, duplicate/reordered terminal decisions, explicit indeterminate
+   retry, and failed effects. Shared retained media, cancellation/replacement,
+   asynchronous provider/model wait, crossed effects, focus→type→submit,
+   continuous cadence, graph-level race, and stable WebSocket ordering now have
+   production-composition coverage.
+2. Register machine-enforceable Realtime-CU aggregate, exact per-case, safety,
    deadline, and latency targets. An `unavailable` target cannot accept a run.
-4. Freeze a candidate and run the two camera, two moving-target, and two
+3. Freeze a candidate and run the two camera, two moving-target, and two
    transient-alert variants. Retain and inspect every failure rather than
    optimizing a headline pass count.
-5. Repair each observed behavioral defect, rerun its focused cases, and repeat
+4. Repair each observed behavioral defect, rerun its focused cases, and repeat
    until the focused evidence meets the registered constraints.
-6. Run and independently reopen all 16 Realtime-CU cases from one subsequently
+5. Run and independently reopen all 16 Realtime-CU cases from one subsequently
    frozen candidate. Any behavior-affecting repair starts a new candidate and
    requires the affected population again.
-7. Complete the other required suite populations and finally execute all 7,486
+6. Complete the other required suite populations and finally execute all 7,486
    attempts against one shared frozen release candidate. Only accepted results
    from that matrix can close the release.
 
@@ -1970,20 +1972,20 @@ Current checkpoint notes:
   model/policy/observer selections) pins source digest
   `sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa`,
   lock digest
-  `sha256:2f907ce0d292756fab1b991326249656ef7cb5b45cd73f252575aad4d533413f`,
+  `sha256:5a6539e8d7a835c1bf2c3e42303326f05f9b067afef72cb8996765964c8bf66c`,
   values digest
   `sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93`,
   graph fingerprint
-  `sha256:5232b19741c1d699c025631d20cc95e1788612df81f2d7a71f9cc071165240cb`,
+  `sha256:1b36fed81dbda59ed8298cfe2d632a094352314c4c497b2c78656de4af9a31f1`,
   and plan fingerprint
-  `sha256:d28b6c83df2272256409dc11aeb1d69318f5c519bdcc56ecd4972bb2f412c4f2`.
+  `sha256:9797a77a00cc7579c52e72d0edbc370bf8cc3b58994f833ecc0d10b82e63aea3`.
   The activation descriptor is revision 12 at
   `sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`,
   with runtime `/activation/v12` and implementation revision 12. The
   disposition producer is revision 2 at
   `sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`,
-  and the cancellation coordinator is revision 2 at
-  `sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a`.
+  and the cancellation coordinator is revision 3 at
+  `sha256:fc227d6bac1d353f099dc7555ff52ae87ad099360875f421b5a8a9f9eb9eb648`.
   `action.ToolResultCommit` is revision 4 at
   `sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`.
   Their settlement, cancellation, and acknowledgement ports are required and
@@ -3534,10 +3536,14 @@ the required new 165-attempt sample.
         duplicate/reordered decisions, coordinator cancellation/replacement,
         failed effects, indeterminate retry, asynchronous wait,
         focus→type→submit, continuous cadence, graph-level race, and the stable
-        WebSocket endpoint. Standalone producer and activation descriptor,
-        schema, runtime, exact-media, bounded-state, and ordering subsets are
-        checked above; they do not close this composed runtime gate or any live
-        behavioral gate.
+        WebSocket endpoint. The production composition now covers shared media,
+        provider/model waits, replacement intents, crossed action, multi-step
+        continuation, terminal cadence, races, and the endpoint. Forged
+        cross-node evidence, duplicate/reordered terminal decisions, explicit
+        indeterminate retry, and failed-effect behavior still need the same
+        production-mounted treatment. Standalone descriptor, schema, runtime,
+        exact-media, bounded-state, and ordering subsets do not close this
+        composed runtime gate or any live behavioral gate.
       - [ ] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
         `scripts/behavioral-acceptance-targets.json`. Its current
