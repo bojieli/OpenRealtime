@@ -12,6 +12,7 @@ graph realtime_computer_use {
     state.TrajectoryStore :: trajectory;
     policy.TemporalEvidenceAdmission :: temporal_evidence_admission;
     policy.IntentSettlement :: settlement;
+    policy.IntentDispositionRetry :: settlement_retry;
     policy.IntentDispositionProducer :: settlement_producer;
     policy.RealtimeComputerUseActivation :: activation;
     policy.RealtimeComputerUseCancellationCoordinator :: cancellation_coordinator;
@@ -42,6 +43,7 @@ graph realtime_computer_use {
     flow.Tee :: action_cancel_copy;
     flow.Tee :: action_timeout_copy;
     flow.Tee :: settlement_cancel_copy;
+    flow.Tee :: settlement_disposition_copy;
     flow.Tee :: settlement_outcome_copy;
     flow.Tee :: settlement_producer_outcome_copy;
     flow.Tee :: activation_outcome_copy;
@@ -56,6 +58,7 @@ graph realtime_computer_use {
     flow.Tee :: result_commit_outcome_copy;
     flow.Mux :: action_outcome_mux;
     flow.Mux :: effect_terminal_mux;
+    flow.Drop :: settlement_retry_exhausted_sink;
     observation_ingress.out -> observation_input_copy.in;
     observation_input_copy.out -> observation_commit.observations;
     observation_commit.append -> trajectory_append_mux.in;
@@ -83,8 +86,13 @@ graph realtime_computer_use {
     observation_commit.outcome -> observation_outcome_copy.in;
     observation_outcome_copy.out -> temporal_evidence_admission.committed;
     temporal_evidence_admission.admitted -> settlement.evidence;
-    settlement.probe -> settlement_producer.probe;
-    settlement_producer.disposition -> settlement.disposition;
+    settlement.probe -> settlement_retry.probe;
+    settlement_retry.attempt -> settlement_producer.probe;
+    settlement_producer.disposition -> settlement_disposition_copy.in;
+    settlement_disposition_copy.out -> settlement.disposition;
+    settlement_disposition_copy.out -> settlement_retry.disposition;
+    settlement_retry.exhausted -> settlement_retry_exhausted_sink.in;
+    settlement_retry.forwarded_reset -> settlement.reset;
     settlement.admitted -> activation.admitted;
     settlement.terminal -> activation.settlement;
     activation.settlement_ack -> settlement.ack;
@@ -116,7 +124,8 @@ graph realtime_computer_use {
     tool_admission.terminal -> effect_terminal_mux.in;
     repetition_admission.terminal -> effect_terminal_mux.in;
     effect_terminal_mux.out -> activation.effect_terminal;
-    cancellation_coordinator.settlement_cancel -> settlement_cancel_copy.in;
+    cancellation_coordinator.settlement_cancel -> settlement_retry.cancel;
+    settlement_retry.forwarded_cancel -> settlement_cancel_copy.in;
     settlement_cancel_copy.out -> settlement.cancel;
     settlement_cancel_copy.out -> settlement_producer.cancel;
     cancellation_coordinator.activation_cancel -> activation.cancel;
@@ -165,7 +174,7 @@ graph realtime_computer_use {
     input video = observation_ingress.in;
     input text = observation_ingress.in;
     input session_cancel = cancellation_coordinator.request;
-    input settlement_reset = settlement.reset;
+    input settlement_reset = settlement_retry.reset;
     input action_timeout = action_timeout_copy.in;
     output observation_events = observation_input_copy.out;
     output transcript_events = observation_input_copy.out;
@@ -179,6 +188,8 @@ graph realtime_computer_use {
     output settlement_producer_state = settlement_producer.state;
     output settlement_producer_outcome = settlement_producer_outcome_copy.out;
     output settlement_producer_resolution = settlement_producer.resolved;
+    output settlement_retry_state = settlement_retry.state;
+    output settlement_retry_outcome = settlement_retry.outcome;
     output cancellation_state = cancellation_coordinator.state;
     output cancellation_outcome = cancellation_coordinator.outcome;
     output activation_state = activation.state;

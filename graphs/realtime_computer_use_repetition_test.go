@@ -131,17 +131,23 @@ func TestRealtimeComputerUseToolAndRepetitionAdmissionTopologyCompilesUnlocked(t
 	}
 }
 
-func TestRealtimeComputerUseSettlementTopologyHasNoBypassAndExactCancellationRoutes(t *testing.T) {
+func TestRealtimeComputerUseSettlementTopologyHasExplicitRetryNoBypassAndExactCancellationRoutes(t *testing.T) {
 	graph, values := compileRealtimeCUProductionGraphAndValues(t)
 
 	wantEdges := [][4]string{
 		{"temporal_evidence_admission", "admitted", "settlement", "evidence"},
-		{"settlement", "probe", "settlement_producer", "probe"},
-		{"settlement_producer", "disposition", "settlement", "disposition"},
+		{"settlement", "probe", "settlement_retry", "probe"},
+		{"settlement_retry", "attempt", "settlement_producer", "probe"},
+		{"settlement_producer", "disposition", "settlement_disposition_copy", "in"},
+		{"settlement_disposition_copy", "out", "settlement", "disposition"},
+		{"settlement_disposition_copy", "out", "settlement_retry", "disposition"},
+		{"settlement_retry", "exhausted", "settlement_retry_exhausted_sink", "in"},
+		{"settlement_retry", "forwarded_reset", "settlement", "reset"},
 		{"settlement", "admitted", "activation", "admitted"},
 		{"settlement", "terminal", "activation", "settlement"},
 		{"activation", "settlement_ack", "settlement", "ack"},
-		{"cancellation_coordinator", "settlement_cancel", "settlement_cancel_copy", "in"},
+		{"cancellation_coordinator", "settlement_cancel", "settlement_retry", "cancel"},
+		{"settlement_retry", "forwarded_cancel", "settlement_cancel_copy", "in"},
 		{"settlement_cancel_copy", "out", "settlement", "cancel"},
 		{"settlement_cancel_copy", "out", "settlement_producer", "cancel"},
 		{"cancellation_coordinator", "activation_cancel", "activation", "cancel"},
@@ -179,6 +185,12 @@ func TestRealtimeComputerUseSettlementTopologyHasNoBypassAndExactCancellationRou
 	}
 	assertRealtimeCUConsumers(t, graph, "temporal_evidence_admission", "admitted", []string{
 		"settlement.evidence",
+	})
+	assertRealtimeCUConsumers(t, graph, "settlement", "probe", []string{
+		"settlement_retry.probe",
+	})
+	assertRealtimeCUConsumers(t, graph, "settlement_disposition_copy", "out", []string{
+		"settlement.disposition", "settlement_retry.disposition",
 	})
 	assertRealtimeCUConsumers(t, graph, "settlement_cancel_copy", "out", []string{
 		"settlement.cancel", "settlement_producer.cancel",
@@ -220,6 +232,10 @@ func TestRealtimeComputerUseSettlementTopologyHasNoBypassAndExactCancellationRou
 		"cancellation_coordinator", "outcome", graphrealtimecu.SessionCancellationOutcomeType())
 	assertRealtimeCUBoundary(t, graph, "settlement_producer_outcome", ir.OutputBoundary,
 		"settlement_producer_outcome_copy", "out", policyelements.IntentDispositionProducerOutcomeType())
+	assertRealtimeCUBoundary(t, graph, "settlement_retry_outcome", ir.OutputBoundary,
+		"settlement_retry", "outcome", policyelements.IntentDispositionRetryOutcomeType())
+	assertRealtimeCUBoundary(t, graph, "settlement_reset", ir.InputBoundary,
+		"settlement_retry", "reset", policyelements.IntentSettlementResetType())
 
 	var settlement policyelements.IntentSettlementConfig
 	if err := json.Unmarshal(values.Values["settlement"], &settlement); err != nil {
@@ -242,6 +258,16 @@ func TestRealtimeComputerUseSettlementTopologyHasNoBypassAndExactCancellationRou
 	}
 	if settlement.Detector.Reference != graphrealtimecu.SettlementPolicyReference {
 		t.Fatalf("settlement detector reference = %q", settlement.Detector.Reference)
+	}
+	var retry policyelements.IntentDispositionRetryConfig
+	if err := json.Unmarshal(values.Values["settlement_retry"], &retry); err != nil {
+		t.Fatal(err)
+	}
+	if retry != (policyelements.IntentDispositionRetryConfig{
+		InitialDelayMS: 100, BackoffFactor: 2, MaxDelayMS: 1_000, MaxRetries: 3,
+		MaxElapsedMS: 5_000, MaxPending: 64, TerminalMemory: 512, CancelMemory: 256,
+	}) {
+		t.Fatalf("settlement retry policy = %+v", retry)
 	}
 	var coordinator graphrealtimecu.CancellationCoordinatorConfig
 	if err := json.Unmarshal(values.Values["cancellation_coordinator"], &coordinator); err != nil {

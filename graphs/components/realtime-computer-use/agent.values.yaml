@@ -42,6 +42,15 @@ nodes:
     max_pending: 64
     terminal_memory: 512
     cancel_memory: 256
+  settlement_retry:
+    initial_delay_ms: 100
+    backoff_factor: 2
+    max_delay_ms: 1000
+    max_retries: 3
+    max_elapsed_ms: 5000
+    max_pending: 64
+    terminal_memory: 512
+    cancel_memory: 256
   activation:
     role: computer-use
     expected_admission:

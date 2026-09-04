@@ -84,11 +84,11 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 		t.Fatal(err)
 	}
 	identity := launched.Plan.Identity()
-	if identity.SourceDigest != "sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa" ||
-		identity.LockDigest != "sha256:5a6539e8d7a835c1bf2c3e42303326f05f9b067afef72cb8996765964c8bf66c" ||
-		identity.ValuesDigest != "sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93" ||
-		identity.GraphFingerprint != "sha256:1b36fed81dbda59ed8298cfe2d632a094352314c4c497b2c78656de4af9a31f1" ||
-		identity.PlanFingerprint != "sha256:9797a77a00cc7579c52e72d0edbc370bf8cc3b58994f833ecc0d10b82e63aea3" {
+	if identity.SourceDigest != "sha256:661850f3302f4f1e997ebd1f6e2506703e70ea205aabfa035eb098dba682906e" ||
+		identity.LockDigest != "sha256:fc462b47b5176463ceff0357edcfdd95e4a944bf49da7d449891c56625774320" ||
+		identity.ValuesDigest != "sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01" ||
+		identity.GraphFingerprint != "sha256:9aa17db0437959619089dce5a496ef873597886c4d7d4b31f0a30e3a9e4f1979" ||
+		identity.PlanFingerprint != "sha256:7ef628a0cf2a5cf2f94aba6b7cb5ccdaa78f79e6c0be2264f373c83e771cea8c" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -400,7 +400,7 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 	}
 }
 
-func TestRealtimeComputerUseFocusTypeSubmitSettlesUnderContinuousCadence(t *testing.T) {
+func TestRealtimeComputerUseFocusTypeSubmitRetriesIndeterminateAndSettlesUnderContinuousCadence(t *testing.T) {
 	target := computeruse.Target{
 		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen}, Width: 320, Height: 240,
 	}
@@ -412,6 +412,7 @@ func TestRealtimeComputerUseFocusTypeSubmitSettlesUnderContinuousCadence(t *test
 	policy := &scriptedRealtimeCUDispositionDecider{
 		descriptor: policyDescriptor,
 		choices: []policyelements.IntentDispositionKind{
+			policyelements.IntentDispositionIndeterminate,
 			policyelements.IntentDispositionContinue,
 			policyelements.IntentDispositionContinue,
 			policyelements.IntentDispositionSucceeded,
@@ -541,6 +542,11 @@ func TestRealtimeComputerUseFocusTypeSubmitSettlesUnderContinuousCadence(t *test
 			t.Fatal(err)
 		}
 		receiveRealtimeCUObservation(t, sink.observations, realtimecu.SourceScreen, captured)
+		if index == 0 {
+			if decision := receiveRealtimeCU(t, policy.decisions, step.name+" indeterminate settlement decision"); decision != policyelements.IntentDispositionIndeterminate {
+				t.Fatalf("focus-type-submit initial disposition = %q, want indeterminate", decision)
+			}
+		}
 		if decision := receiveRealtimeCU(t, policy.decisions, step.name+" settlement decision"); decision != step.disposition {
 			t.Fatalf("focus-type-submit disposition %d = %q, want %q",
 				index+1, decision, step.disposition)

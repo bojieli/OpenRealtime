@@ -106,6 +106,14 @@
       }
     },
     {
+      "reference": "flow.Drop",
+      "identity": {
+        "name": "flow.Drop",
+        "revision": 1,
+        "digest": "sha256:03b27e94e4488594bce430b7deb5b27f0a42f6bebf69dd613ed98d742426aa7d"
+      }
+    },
+    {
       "reference": "flow.Mux",
       "identity": {
         "name": "flow.Mux",
@@ -143,6 +151,14 @@
         "name": "policy.IntentDispositionProducer",
         "revision": 2,
         "digest": "sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e"
+      }
+    },
+    {
+      "reference": "policy.IntentDispositionRetry",
+      "identity": {
+        "name": "policy.IntentDispositionRetry",
+        "revision": 1,
+        "digest": "sha256:c15556d5f4f61a5defa5463500eb75d7403711b2cc446b1605c710cfe3785678"
       }
     },
     {
