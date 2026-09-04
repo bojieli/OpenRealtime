@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 
+	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -39,6 +42,104 @@ func VerifyIntentSettlementCancellation(
 		item.Producer.Phase != trajectory.PhaseUser || item.Event == nil ||
 		item.Event.Type != item.Event.Source+".endpoint" || item.Event.OccurredNS == 0 {
 		return errors.New("settlement cancellation does not name final timestamped user authority")
+	}
+	return nil
+}
+
+// VerifyIntentSettlementCleanup proves that a cleanup control carries one
+// exact canceled intent, the exact admitted result consequence that triggered
+// cleanup, and payload-bound causal identities for the evidence and
+// cancellation inputs. It does not attest that those source envelopes were
+// delivered on a particular graph edge; graph wiring supplies that authority,
+// while a consumer must independently match the control to its local canceled
+// state. The typed control authorizes bounded bookkeeping retirement only; it
+// does not authorize cognition or terminal disposition.
+func VerifyIntentSettlementCleanup(
+	snapshot trajectory.Snapshot, envelope element.Envelope,
+	cleanup IntentSettlementCleanup, expected IntentSettlementConfig,
+) error {
+	if !envelope.Type.Equal(IntentSettlementCleanupType()) {
+		return fmt.Errorf("settlement cleanup envelope has type %s", envelope.Type.String())
+	}
+	for _, identity := range []struct {
+		label string
+		value string
+	}{
+		{"settlement cleanup item ID", envelope.ItemID},
+		{"settlement cleanup source ID", envelope.SourceID},
+		{"settlement cleanup evidence item ID", cleanup.EvidenceItemID},
+		{"settlement cleanup cancellation item ID", cleanup.CancellationItemID},
+	} {
+		if err := validatePolicyIdentifier(identity.label, identity.value, true); err != nil {
+			return err
+		}
+	}
+	if !strings.HasPrefix(envelope.ItemID, "intent-settlement-cleanup:") {
+		return errors.New("settlement cleanup item ID is outside the reserved output namespace")
+	}
+	if envelope.Sequence == 0 || cleanup.EvidenceItemID == cleanup.CancellationItemID {
+		return errors.New("settlement cleanup lacks a unique sequenced evidence/cancellation identity")
+	}
+	wantItemID := intentSettlementGeneratedItemID(
+		"cleanup", envelope.SourceID,
+		cleanup.EvidenceItemID+"\x00"+cleanup.CancellationItemID, envelope.Sequence,
+	)
+	if envelope.ItemID != wantItemID {
+		return errors.New("settlement cleanup item ID does not bind its exact source payload")
+	}
+	if envelope.SessionID != cleanup.Cancellation.SessionID ||
+		envelope.CancellationScope != cleanup.Cancellation.DurableIntent.TrajectoryItemID {
+		return errors.New("settlement cleanup envelope does not address its exact canceled intent")
+	}
+	if len(envelope.CausalParents) > maximumIntentSettlementCausalParents ||
+		!slices.Contains(envelope.CausalParents, cleanup.EvidenceItemID) ||
+		!slices.Contains(envelope.CausalParents, cleanup.CancellationItemID) ||
+		slices.Contains(envelope.CausalParents, envelope.ItemID) {
+		return errors.New("settlement cleanup lacks exact evidence and cancellation causal parents")
+	}
+	for index, parent := range envelope.CausalParents {
+		if err := validatePolicyIdentifier("settlement cleanup causal parent", parent, true); err != nil {
+			return err
+		}
+		if slices.Contains(envelope.CausalParents[:index], parent) {
+			return errors.New("settlement cleanup repeats a causal parent")
+		}
+	}
+	if cleanup.Evidence.DurableIntent == nil ||
+		*cleanup.Evidence.DurableIntent != cleanup.Cancellation.DurableIntent {
+		return errors.New("settlement cleanup evidence and cancellation name different durable intents")
+	}
+	if err := VerifyIntentSettlementCancellation(snapshot, cleanup.Cancellation); err != nil {
+		return fmt.Errorf("settlement cleanup cancellation: %w", err)
+	}
+	expected = intentSettlementConfigWithDefaults(expected)
+	expected, err := normalizeIntentSettlementConfig(expected)
+	if err != nil {
+		return fmt.Errorf("expected intent settlement contract: %w", err)
+	}
+	if err := preflightIntentSettlementEvidence(cleanup.Evidence); err != nil {
+		return err
+	}
+	prefix, err := trajectory.Prefix(snapshot, cleanup.Evidence.Prefix)
+	if err != nil {
+		return fmt.Errorf("settlement cleanup evidence prefix: %w", err)
+	}
+	if err := VerifyAdmittedTemporalEvidence(
+		prefix, cleanup.Evidence, expected.ExpectedAdmission,
+	); err != nil {
+		return fmt.Errorf("settlement cleanup evidence: %w", err)
+	}
+	if err := validateIntentSettlementEvidenceProjection(cleanup.Evidence); err != nil {
+		return fmt.Errorf("settlement cleanup evidence projection: %w", err)
+	}
+	_, matched, err := intentSettlementCanceledEffectConsequence(
+		prefix, cleanup.Evidence, expected.CandidateSources,
+	)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		return errors.New("settlement cleanup evidence is not an exact result consequence")
 	}
 	return nil
 }

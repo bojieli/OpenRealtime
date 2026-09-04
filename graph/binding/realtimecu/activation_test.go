@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -78,22 +79,27 @@ func TestActivationSettlementWiringRequiresConfigurationAndBothLanes(t *testing.
 		configured             bool
 		settlementInputs       int
 		acknowledgementOutputs int
+		cleanupInputs          int
 		wantError              bool
 	}{
 		{name: "legacy unwired", configured: false},
-		{name: "configured handshake", configured: true, settlementInputs: 1, acknowledgementOutputs: 1},
-		{name: "configured without input", configured: true, acknowledgementOutputs: 1, wantError: true},
-		{name: "configured without acknowledgement", configured: true, settlementInputs: 1, wantError: true},
+		{name: "configured handshake", configured: true, settlementInputs: 1, acknowledgementOutputs: 1, cleanupInputs: 1},
+		{name: "configured without input", configured: true, acknowledgementOutputs: 1, cleanupInputs: 1, wantError: true},
+		{name: "configured without acknowledgement", configured: true, settlementInputs: 1, cleanupInputs: 1, wantError: true},
+		{name: "configured without cleanup", configured: true, settlementInputs: 1, acknowledgementOutputs: 1, wantError: true},
 		{name: "configured without lanes", configured: true, wantError: true},
 		{name: "unconfigured input", settlementInputs: 1, wantError: true},
 		{name: "unconfigured acknowledgement", acknowledgementOutputs: 1, wantError: true},
-		{name: "unconfigured half handshake", settlementInputs: 1, acknowledgementOutputs: 1, wantError: true},
-		{name: "multiple inputs", configured: true, settlementInputs: 2, acknowledgementOutputs: 1, wantError: true},
-		{name: "multiple acknowledgements", configured: true, settlementInputs: 1, acknowledgementOutputs: 2, wantError: true},
+		{name: "unconfigured cleanup", cleanupInputs: 1, wantError: true},
+		{name: "unconfigured complete handshake", settlementInputs: 1, acknowledgementOutputs: 1, cleanupInputs: 1, wantError: true},
+		{name: "multiple inputs", configured: true, settlementInputs: 2, acknowledgementOutputs: 1, cleanupInputs: 1, wantError: true},
+		{name: "multiple acknowledgements", configured: true, settlementInputs: 1, acknowledgementOutputs: 2, cleanupInputs: 1, wantError: true},
+		{name: "multiple cleanups", configured: true, settlementInputs: 1, acknowledgementOutputs: 1, cleanupInputs: 2, wantError: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			err := validateActivationSettlementWiring(
 				testCase.configured, testCase.settlementInputs, testCase.acknowledgementOutputs,
+				testCase.cleanupInputs,
 			)
 			if (err != nil) != testCase.wantError {
 				t.Fatalf("settlement wiring validation error = %v, wantError %t", err, testCase.wantError)
@@ -1102,6 +1108,75 @@ type activationSettlementScenario struct {
 	evidence element.Envelope
 }
 
+type activationCanceledEffectScenario struct {
+	runID          string
+	contextVersion uint64
+	intent         policyelements.TemporalEvidenceItemIdentity
+	proposal       cognitionelements.ToolProposal
+	evidence       element.Envelope
+}
+
+func activationTestEffectCleanupEnvelope(
+	t *testing.T, scenario activationCanceledEffectScenario,
+) element.Envelope {
+	t.Helper()
+	evidence, ok := admittedTemporalEvidencePayload(scenario.evidence.Payload)
+	if !ok {
+		t.Fatalf("effect consequence payload has type %T", scenario.evidence.Payload)
+	}
+	cancellation := policyelements.IntentSettlementCancellation{
+		SessionID: activationTestSession, DurableIntent: scenario.intent,
+		Reason: "participant canceled",
+	}
+	cancellationItemID := "settlement-cancel-" + scenario.runID
+	const sourceID = "settlement-test"
+	const sequence uint64 = 41
+	cause := scenario.evidence.ItemID + "\x00" + cancellationItemID
+	digest := sha256.Sum256([]byte(
+		"openrealtime.policy/intent-settlement/cleanup/v1\x00" + sourceID +
+			"\x00" + cause + "\x00" + strconv.FormatUint(sequence, 10),
+	))
+	return element.Envelope{
+		Type:      policyelements.IntentSettlementCleanupType(),
+		ItemID:    "intent-settlement-cleanup:sha256:" + hex.EncodeToString(digest[:]),
+		SessionID: activationTestSession, SourceID: sourceID, Sequence: sequence,
+		CancellationScope: scenario.intent.TrajectoryItemID,
+		CausalParents:     []string{scenario.evidence.ItemID, cancellationItemID},
+		Payload: policyelements.IntentSettlementCleanup{
+			Evidence: evidence, Cancellation: cancellation,
+			EvidenceItemID:     scenario.evidence.ItemID,
+			CancellationItemID: cancellationItemID,
+		},
+	}
+}
+
+func reissueActivationTestEffectCleanup(
+	t *testing.T, source element.Envelope, sequence uint64,
+	mutate func(*policyelements.IntentSettlementCleanup),
+) element.Envelope {
+	t.Helper()
+	cleanup, ok := intentSettlementCleanupPayload(source.Payload)
+	if !ok {
+		t.Fatalf("effect cleanup payload has type %T", source.Payload)
+	}
+	if mutate != nil {
+		mutate(&cleanup)
+	}
+	result := source.Clone()
+	result.Sequence = sequence
+	result.SessionID = cleanup.Cancellation.SessionID
+	result.CancellationScope = cleanup.Cancellation.DurableIntent.TrajectoryItemID
+	result.CausalParents = []string{cleanup.EvidenceItemID, cleanup.CancellationItemID}
+	cause := cleanup.EvidenceItemID + "\x00" + cleanup.CancellationItemID
+	digest := sha256.Sum256([]byte(
+		"openrealtime.policy/intent-settlement/cleanup/v1\x00" + result.SourceID +
+			"\x00" + cause + "\x00" + strconv.FormatUint(sequence, 10),
+	))
+	result.ItemID = "intent-settlement-cleanup:sha256:" + hex.EncodeToString(digest[:])
+	result.Payload = cleanup
+	return result
+}
+
 type failOnceActivationOutputPort struct {
 	delegate element.OutputPort
 	failed   bool
@@ -1322,6 +1397,87 @@ func (fixture *activationTestFixture) prepareSettlementScenario(
 	}
 	return activationSettlementScenario{
 		decision: decision, terminal: terminal, evidence: consequenceEnvelope,
+	}
+}
+
+func (fixture *activationTestFixture) prepareCanceledEffectScenario(
+	t *testing.T, activationResultSeen, failed bool,
+) activationCanceledEffectScenario {
+	return fixture.prepareNamedCanceledEffectScenario(t, "failed-effect", activationResultSeen, failed)
+}
+
+func (fixture *activationTestFixture) prepareNamedCanceledEffectScenario(
+	t *testing.T, stem string, activationResultSeen, failed bool,
+) activationCanceledEffectScenario {
+	t.Helper()
+	contract := policyelements.IntentSettlementConfig{
+		ExpectedAdmission: policyelements.TemporalEvidenceAdmissionConfig{
+			Mode:      policyelements.TemporalEvidenceAdmissionAfterIntent,
+			SourceSet: policyelements.TemporalEvidenceSourceSetObservedBeforeIntent,
+		},
+		CandidateSources: []policyelements.TemporalEvidenceRequirement{
+			{Observer: "vision", Source: SourceScreen},
+		},
+		Detector: policyelements.IntentDetectorIdentity{
+			Reference: "settlement-primary", Revision: "v1",
+			ConfigurationDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+	}
+	fixture.runner.config.ExpectedAdmission = contract.ExpectedAdmission
+	fixture.runner.config.ExpectedSettlement = &contract
+
+	intentEnvelope, intentCommit := fixture.appendUser(t, stem+"-intent", "click the warning")
+	intent := intentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	initialEnvelope, initialCommit := fixture.appendVisual(
+		t, stem+"-initial-screen", "warning visible", intentCommit.TrajectoryItemID,
+	)
+	initialEnvelope = afterIntentAdmissionEnvelope(initialEnvelope, intent)
+	if err := fixture.runner.acceptAdmission(context.Background(), initialEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	runID := fixture.runner.active.id
+	proposal := activationTestProposal(stem + "-call")
+	if activationResultSeen {
+		if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+			runID, initialCommit.StoreVersion, []cognitionelements.ToolProposal{proposal},
+		)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proposalItem := fixture.appendModelProposal(t, runID, proposal)
+	call := proposal.Call
+	call.Arguments = append(json.RawMessage(nil), proposal.Call.Arguments...)
+	callItem := trajectory.Item{
+		ID: stem + "-call-item", Kind: trajectory.KindToolCall,
+		MonotonicNS: fixture.nextMonotonicNS(), CausalParentIDs: []string{proposalItem.ID},
+		SourceRevision: proposalItem.SourceRevision, InvocationID: runID,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: &call,
+	}
+	fixture.appendRaw(t, callItem)
+	result := trajectory.ToolResult{
+		CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"ok":true}`),
+	}
+	if failed {
+		result.Output = nil
+		result.Error = "target moved before the effect crossed"
+	}
+	resultItem := trajectory.Item{
+		ID: stem + "-result-item", Kind: trajectory.KindToolResult,
+		MonotonicNS: fixture.nextMonotonicNS(), CausalParentIDs: []string{callItem.ID},
+		SourceRevision: proposalItem.SourceRevision, InvocationID: runID,
+		Producer:   trajectory.Producer{Phase: trajectory.PhaseTool},
+		ToolResult: &result,
+	}
+	fixture.appendRaw(t, resultItem)
+	consequence := fixture.visualItem(
+		stem+"-consequence", "warning moved", intentCommit.TrajectoryItemID,
+	)
+	consequence.CausalParentIDs = []string{intentCommit.TrajectoryItemID, resultItem.ID}
+	consequenceEnvelope, _ := fixture.appendObservation(t, consequence, "screen-stream")
+	consequenceEnvelope = afterIntentAdmissionEnvelope(consequenceEnvelope, intent)
+	return activationCanceledEffectScenario{
+		runID: runID, contextVersion: initialCommit.StoreVersion, intent: intent,
+		proposal: proposal, evidence: consequenceEnvelope,
 	}
 }
 
@@ -1771,7 +1927,375 @@ func TestActivationCanceledProposalWithoutSettlementReleasesEffectCapacity(t *te
 	}
 }
 
-func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testing.T) {
+func TestActivationCanceledEffectConsequenceRetiresExactEffectWithoutReactivation(t *testing.T) {
+	for _, failed := range []bool{true, false} {
+		status := "successful"
+		if failed {
+			status = "failed"
+		}
+		for _, resultSeen := range []bool{false, true} {
+			ordering := "consequence before activation result copy"
+			if resultSeen {
+				ordering = "activation result copy before consequence"
+			}
+			t.Run(status+"/"+ordering, func(t *testing.T) {
+				fixture := newActivationTestFixture(t)
+				scenario := fixture.prepareCanceledEffectScenario(t, resultSeen, failed)
+				triggerCount := len(fixture.trigger.snapshot())
+
+				fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+				retained := fixture.runner.canceledEffects[scenario.runID]
+				if retained == nil {
+					t.Fatal("exact cancellation did not retain the effect race window")
+				}
+				cleanup := activationTestEffectCleanupEnvelope(t, scenario)
+				if err := fixture.runner.acceptEffectCleanup(context.Background(), cleanup); err != nil {
+					t.Fatal(err)
+				}
+				if fixture.runner.canceledEffects[scenario.runID] != nil ||
+					len(fixture.runner.canceledEffectOrder) != 0 || fixture.runner.active != nil ||
+					len(fixture.trigger.snapshot()) != triggerCount {
+					t.Fatalf("%s consequence retained or revived canceled work: effects=%+v order=%+v active=%+v triggers=%+v",
+						status, fixture.runner.canceledEffects, fixture.runner.canceledEffectOrder,
+						fixture.runner.active, fixture.trigger.snapshot())
+				}
+				if !fixture.runner.intentCanceled(scenario.intent) {
+					t.Fatal("effect cleanup removed the durable-intent tombstone")
+				}
+				wantCode := "canceled_effect_succeeded"
+				if failed {
+					wantCode = "canceled_effect_failed"
+				}
+				if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationIgnored ||
+					outcome.Code != wantCode || outcome.GenerationID != scenario.runID {
+					t.Fatalf("canceled %s-effect outcome = %+v", status, outcome)
+				}
+
+				// Reordered model-result delivery and duplicate evidence are terminal:
+				// neither may reconstruct the released record or revive the intent.
+				if !resultSeen {
+					if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+						scenario.runID, scenario.contextVersion,
+						[]cognitionelements.ToolProposal{scenario.proposal},
+					)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := fixture.runner.acceptEffectCleanup(context.Background(), cleanup); err != nil {
+					t.Fatal(err)
+				}
+				if fixture.runner.active != nil || fixture.runner.canceledEffects[scenario.runID] != nil ||
+					len(fixture.trigger.snapshot()) != triggerCount {
+					t.Fatalf("reordered or duplicate evidence revived canceled work: effects=%+v active=%+v triggers=%+v",
+						fixture.runner.canceledEffects, fixture.runner.active, fixture.trigger.snapshot())
+				}
+			})
+		}
+	}
+}
+
+func TestActivationEffectCleanupPendingDuplicateConflictAndSessionBoundary(t *testing.T) {
+	t.Run("duplicate replay and conflicting witness", func(t *testing.T) {
+		fixture := newActivationTestFixture(t)
+		scenario := fixture.prepareCanceledEffectScenario(t, true, false)
+		cleanup := activationTestEffectCleanupEnvelope(t, scenario)
+		if err := fixture.runner.acceptEffectCleanup(context.Background(), cleanup); err != nil {
+			t.Fatal(err)
+		}
+		original := fixture.runner.pendingEffectCleanup
+		if original == nil || fixture.runner.active == nil {
+			t.Fatalf("cleanup was not retained before cancellation: pending=%+v active=%+v",
+				original, fixture.runner.active)
+		}
+		duplicate := reissueActivationTestEffectCleanup(t, cleanup, cleanup.Sequence+1, nil)
+		if err := fixture.runner.acceptEffectCleanup(context.Background(), duplicate); err != nil {
+			t.Fatal(err)
+		}
+		if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationIgnored ||
+			outcome.Code != "duplicate_effect_cleanup_pending" ||
+			fixture.runner.pendingEffectCleanup != original {
+			t.Fatalf("sequenced cleanup replay changed pending witness: outcome=%+v pending=%+v",
+				outcome, fixture.runner.pendingEffectCleanup)
+		}
+		conflict := reissueActivationTestEffectCleanup(t, cleanup, cleanup.Sequence+2,
+			func(value *policyelements.IntentSettlementCleanup) {
+				value.Cancellation.Reason = "different valid cancellation witness"
+				value.CancellationItemID += "-different"
+			})
+		if err := fixture.runner.acceptEffectCleanup(context.Background(), conflict); err != nil {
+			t.Fatal(err)
+		}
+		if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+			outcome.Code != "conflicting_effect_cleanup" ||
+			fixture.runner.pendingEffectCleanup != original {
+			t.Fatalf("conflicting cleanup changed pending witness: outcome=%+v pending=%+v",
+				outcome, fixture.runner.pendingEffectCleanup)
+		}
+	})
+
+	t.Run("mounted session is independent authority", func(t *testing.T) {
+		fixture := newActivationTestFixture(t)
+		scenario := fixture.prepareCanceledEffectScenario(t, true, true)
+		fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+		retained := fixture.runner.canceledEffects[scenario.runID]
+		foreign := reissueActivationTestEffectCleanup(t,
+			activationTestEffectCleanupEnvelope(t, scenario), 42,
+			func(value *policyelements.IntentSettlementCleanup) {
+				value.Cancellation.SessionID = "foreign-session"
+			})
+		if err := fixture.runner.acceptEffectCleanup(context.Background(), foreign); err != nil {
+			t.Fatal(err)
+		}
+		if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+			outcome.Code != "effect_cleanup_session_mismatch" ||
+			fixture.runner.canceledEffects[scenario.runID] != retained ||
+			!fixture.runner.intentCanceled(scenario.intent) {
+			t.Fatalf("cross-session cleanup changed local cancellation: outcome=%+v effects=%+v intents=%+v",
+				outcome, fixture.runner.canceledEffects, fixture.runner.canceledIntents)
+		}
+	})
+}
+
+func TestActivationCleanupBeforeCancelSurvivesNewerIntentAndReclaimsPair(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	fixture.runner.config.CancelMemory = 1
+	scenario := fixture.prepareCanceledEffectScenario(t, true, false)
+	cleanup := activationTestEffectCleanupEnvelope(t, scenario)
+	if err := fixture.runner.acceptEffectCleanup(context.Background(), cleanup); err != nil {
+		t.Fatal(err)
+	}
+	triggerCount := len(fixture.trigger.snapshot())
+	newIntentEnvelope, newIntentCommit := fixture.appendUser(
+		t, "cleanup-first-newer-intent", "click the newer warning",
+	)
+	newIntent := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+	if fixture.runner.active != nil || fixture.runner.pendingEffectCleanup != nil ||
+		len(fixture.runner.canceledEffects) != 0 || len(fixture.runner.canceledIntents) != 0 ||
+		len(fixture.trigger.snapshot()) != triggerCount {
+		t.Fatalf("cleanup-first superseded cancellation stranded state: active=%+v pending=%+v effects=%+v intents=%+v",
+			fixture.runner.active, fixture.runner.pendingEffectCleanup,
+			fixture.runner.canceledEffects, fixture.runner.canceledIntents)
+	}
+	newVisual, _ := fixture.appendVisual(
+		t, "cleanup-first-newer-screen", "newer warning visible", newIntentCommit.TrajectoryItemID,
+	)
+	newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+	if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+		t.Fatal(err)
+	}
+	newRun := fixture.runner.active.id
+	fixture.cancelGeneration(t, newRun, fixture.store.Snapshot().Version)
+	if len(fixture.runner.canceledEffects) != 1 || fixture.runner.canceledEffects[newRun] == nil ||
+		!fixture.runner.intentCanceled(newIntent) {
+		t.Fatalf("cleanup-first cancellation did not leave reusable capacity: effects=%+v intents=%+v",
+			fixture.runner.canceledEffects, fixture.runner.canceledIntents)
+	}
+}
+
+func TestActivationCancelAfterNewerIntentNeedsNoCleanupMemory(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	fixture.runner.config.CancelMemory = 1
+	scenario := fixture.prepareCanceledEffectScenario(t, true, false)
+	newIntentEnvelope, newIntentCommit := fixture.appendUser(
+		t, "cancel-after-newer-intent", "click the newer warning",
+	)
+	newIntent := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+	if fixture.runner.active != nil || fixture.runner.pendingEffectCleanup != nil ||
+		len(fixture.runner.canceledEffects) != 0 || len(fixture.runner.canceledIntents) != 0 {
+		t.Fatalf("already-superseded cancellation retained an unnecessary pair: effects=%+v intents=%+v",
+			fixture.runner.canceledEffects, fixture.runner.canceledIntents)
+	}
+	newVisual, _ := fixture.appendVisual(
+		t, "cancel-after-newer-screen", "newer warning visible", newIntentCommit.TrajectoryItemID,
+	)
+	newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+	if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+		t.Fatal(err)
+	}
+	newRun := fixture.runner.active.id
+	fixture.cancelGeneration(t, newRun, fixture.store.Snapshot().Version)
+	if len(fixture.runner.canceledEffects) != 1 || fixture.runner.canceledEffects[newRun] == nil ||
+		!fixture.runner.intentCanceled(newIntent) {
+		t.Fatalf("no-cleanup cancellation did not preserve reusable capacity: effects=%+v intents=%+v",
+			fixture.runner.canceledEffects, fixture.runner.canceledIntents)
+	}
+}
+
+func TestActivationTerminalSettlementClearsOvertakenCleanupSlot(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	cleanupScenario := activationCanceledEffectScenario{
+		runID: scenario.decision.InvocationID, intent: scenario.decision.Probe.DurableIntent,
+		evidence: scenario.evidence,
+	}
+	if err := fixture.runner.acceptEffectCleanup(
+		context.Background(), activationTestEffectCleanupEnvelope(t, cleanupScenario),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.pendingEffectCleanup == nil {
+		t.Fatal("cleanup did not overtake cancellation")
+	}
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.pendingEffectCleanup != nil || fixture.runner.active != nil ||
+		len(fixture.settlementAck.snapshot()) != 1 {
+		t.Fatalf("terminal settlement stranded overtaken cleanup: pending=%+v active=%+v ack=%+v",
+			fixture.runner.pendingEffectCleanup, fixture.runner.active, fixture.settlementAck.snapshot())
+	}
+	intent := scenario.decision.Probe.DurableIntent
+	if err := fixture.runner.acceptCancel(context.Background(), element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: "terminal-winner-late-cancel",
+		SessionID: activationTestSession, Sequence: fixture.store.Snapshot().Version + 1,
+		CancellationScope: intent.TrajectoryItemID,
+		Payload: policyelements.GenerationCancel{
+			StreamID: activationTestSession, Reason: "late cancellation", DurableIntent: &intent,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.pendingEffectCleanup != nil || len(fixture.runner.canceledEffects) != 0 {
+		t.Fatalf("generation-less late cancel revived cleanup state: pending=%+v effects=%+v",
+			fixture.runner.pendingEffectCleanup, fixture.runner.canceledEffects)
+	}
+
+	fresh := fixture.prepareNamedCanceledEffectScenario(t, "fresh-cleanup", true, false)
+	freshCleanup := activationTestEffectCleanupEnvelope(t, fresh)
+	if err := fixture.runner.acceptEffectCleanup(context.Background(), freshCleanup); err != nil {
+		t.Fatal(err)
+	}
+	fixture.cancelGeneration(t, fresh.runID, fixture.store.Snapshot().Version)
+	if fixture.runner.pendingEffectCleanup != nil || fixture.runner.active != nil ||
+		len(fixture.runner.canceledEffects) != 0 {
+		t.Fatalf("fresh cleanup could not reuse terminal-cleared slot: pending=%+v active=%+v effects=%+v",
+			fixture.runner.pendingEffectCleanup, fixture.runner.active, fixture.runner.canceledEffects)
+	}
+}
+
+func TestActivationCanceledFailedEffectForgeryDoesNotReleaseRetainedEffect(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareCanceledEffectScenario(t, true, true)
+	fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+	retained := fixture.runner.canceledEffects[scenario.runID]
+	if retained == nil {
+		t.Fatal("exact cancellation did not retain the failed effect")
+	}
+
+	forged := activationTestEffectCleanupEnvelope(t, scenario)
+	cleanup := forged.Payload.(policyelements.IntentSettlementCleanup)
+	cleanup.Evidence.TriggerCommit.Context.Prefix.Digest = "sha256:forged"
+	forged.Payload = cleanup
+	if err := fixture.runner.acceptEffectCleanup(context.Background(), forged); err != nil {
+		t.Fatal(err)
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+		outcome.Code != "invalid_effect_cleanup" {
+		t.Fatalf("forged failed-effect outcome = %+v", outcome)
+	}
+	if fixture.runner.canceledEffects[scenario.runID] != retained || fixture.runner.active != nil ||
+		len(fixture.trigger.snapshot()) != 1 {
+		t.Fatalf("forged evidence changed canceled work: effects=%+v active=%+v triggers=%+v",
+			fixture.runner.canceledEffects, fixture.runner.active, fixture.trigger.snapshot())
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func([]trajectory.Item, *trajectory.Item, *policyelements.TemporalEvidenceItemIdentity)
+	}{
+		{name: "foreign invocation", mutate: func(items []trajectory.Item, _ *trajectory.Item, _ *policyelements.TemporalEvidenceItemIdentity) {
+			activationFailedResultItem(t, items).InvocationID = "forged-run"
+		}},
+		{name: "wrong call", mutate: func(items []trajectory.Item, _ *trajectory.Item, _ *policyelements.TemporalEvidenceItemIdentity) {
+			activationFailedResultItem(t, items).ToolResult.CallID = "forged-call"
+		}},
+		{name: "wrong tool", mutate: func(items []trajectory.Item, _ *trajectory.Item, _ *policyelements.TemporalEvidenceItemIdentity) {
+			activationFailedResultItem(t, items).ToolResult.Name = "computer.type"
+		}},
+		{name: "result not direct child of call", mutate: func(items []trajectory.Item, _ *trajectory.Item, intent *policyelements.TemporalEvidenceItemIdentity) {
+			activationFailedResultItem(t, items).CausalParentIDs = []string{intent.TrajectoryItemID}
+		}},
+		{name: "consequence not direct child of result", mutate: func(_ []trajectory.Item, current *trajectory.Item, intent *policyelements.TemporalEvidenceItemIdentity) {
+			current.CausalParentIDs = []string{intent.TrajectoryItemID}
+		}},
+		{name: "wrong durable intent", mutate: func(_ []trajectory.Item, _ *trajectory.Item, intent *policyelements.TemporalEvidenceItemIdentity) {
+			intent.TriggerItemID = "forged-intent-trigger"
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			snapshot := fixture.store.Snapshot()
+			admission := scenario.evidence.Payload.(policyelements.AdmittedTemporalEvidence)
+			current := snapshot.Items[admission.TriggerCommit.StoreVersion-1]
+			intent := scenario.intent
+			testCase.mutate(snapshot.Items, &current, &intent)
+			consequence, matched, err := inspectActivationEffectConsequence(
+				snapshot.Items, current, intent,
+			)
+			if err == nil && matched {
+				err = activationEffectConsequenceMatches(consequence, retained.generation, intent)
+			}
+			if err == nil && matched || fixture.runner.canceledEffects[scenario.runID] != retained {
+				t.Fatalf("forged %s lineage retired exact canceled effect", testCase.name)
+			}
+		})
+	}
+}
+
+func activationFailedResultItem(t *testing.T, items []trajectory.Item) *trajectory.Item {
+	t.Helper()
+	for index := range items {
+		if items[index].ID == "failed-effect-result-item" {
+			return &items[index]
+		}
+	}
+	t.Fatal("failed-effect result is absent from the fixture snapshot")
+	return nil
+}
+
+func TestActivationCanceledEffectCleanupReclaimsCapacity(t *testing.T) {
+	for _, failed := range []bool{true, false} {
+		status := "successful"
+		if failed {
+			status = "failed"
+		}
+		t.Run(status, func(t *testing.T) {
+			fixture := newActivationTestFixture(t)
+			fixture.runner.config.CancelMemory = 1
+			scenario := fixture.prepareCanceledEffectScenario(t, true, failed)
+			fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+			cleanup := activationTestEffectCleanupEnvelope(t, scenario)
+			if err := fixture.runner.acceptEffectCleanup(context.Background(), cleanup); err != nil {
+				t.Fatal(err)
+			}
+			if len(fixture.runner.canceledEffects) != 0 {
+				t.Fatalf("%s consequence did not reclaim effect capacity: %+v",
+					status, fixture.runner.canceledEffects)
+			}
+
+			newIntentEnvelope, newIntentCommit := fixture.appendUser(
+				t, status+"-capacity-replacement", "click the replacement warning",
+			)
+			newIntent := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+			newVisual, _ := fixture.appendVisual(
+				t, status+"-capacity-screen", "replacement warning visible", newIntentCommit.TrajectoryItemID,
+			)
+			newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+			if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+				t.Fatal(err)
+			}
+			newRun := fixture.runner.active.id
+			fixture.cancelGeneration(t, newRun, fixture.store.Snapshot().Version)
+			if fixture.runner.active != nil || fixture.runner.canceledEffects[newRun] == nil {
+				t.Fatalf("reclaimed capacity could not retain replacement cancellation: active=%+v effects=%+v",
+					fixture.runner.active, fixture.runner.canceledEffects)
+			}
+		})
+	}
+}
+
+func TestActivationCancellationCapacityReclaimsSupersededPairAtomically(t *testing.T) {
 	fixture := newActivationTestFixture(t)
 	fixture.runner.config.CancelMemory = 1
 	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
@@ -1797,6 +2321,63 @@ func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testin
 	if newActive == nil {
 		t.Fatal("replacement generation was not activated")
 	}
+	secondCancel := element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: "cancel-" + newActive.id,
+		SessionID: activationTestSession, Sequence: fixture.store.Snapshot().Version + 1,
+		CancellationScope: newActive.intent.TrajectoryItemID,
+		Payload: policyelements.GenerationCancel{
+			GenerationID: newActive.id, StreamID: activationTestSession,
+			Reason: "second cancellation", DurableIntent: &newActive.intent,
+		},
+	}
+	if err := fixture.runner.acceptCancel(context.Background(), secondCancel); err != nil {
+		t.Fatalf("second cancellation publication: %v", err)
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationCanceled ||
+		outcome.Code != "intent_revoked" || outcome.GenerationID != newActive.id {
+		t.Fatalf("second cancellation outcome = %+v", outcome)
+	}
+	if len(fixture.runner.canceledEffects) != 1 || fixture.runner.canceledEffects[oldRun] != nil ||
+		fixture.runner.canceledEffects[newActive.id] == nil || fixture.runner.active != nil ||
+		len(fixture.runner.canceledIntents) != 1 || fixture.runner.intentCanceled(scenario.decision.Probe.DurableIntent) ||
+		!fixture.runner.intentCanceled(newActive.intent) {
+		t.Fatalf("capacity reclamation was not an atomic exact-pair replacement: effects=%+v intents=%+v active=%+v",
+			fixture.runner.canceledEffects, fixture.runner.canceledIntents, fixture.runner.active)
+	}
+	if oldEffect == fixture.runner.canceledEffects[newActive.id] {
+		t.Fatal("capacity reclamation reused the superseded effect record")
+	}
+}
+
+func TestActivationCancellationCapacityPreservesPendingSettlementFailureAtomically(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	fixture.runner.config.CancelMemory = 1
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	oldRun := scenario.decision.InvocationID
+	oldContextVersion := fixture.runner.active.contextVersion
+	fixture.runner.active.callID = ""
+	fixture.runner.active.tool = ""
+	fixture.cancelGeneration(t, oldRun, fixture.store.Snapshot().Version)
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	oldEffect := fixture.runner.canceledEffects[oldRun]
+	if oldEffect == nil || oldEffect.settlement == nil {
+		t.Fatalf("old cancellation did not retain its pending terminal contract: %+v", oldEffect)
+	}
+
+	newIntentEnvelope, newIntentCommit := fixture.appendUser(
+		t, "protected-capacity-replacement-intent", "click the replacement warning",
+	)
+	newIntent := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	newVisual, _ := fixture.appendVisual(
+		t, "protected-capacity-replacement-screen", "replacement warning visible", newIntentCommit.TrajectoryItemID,
+	)
+	newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+	if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+		t.Fatal(err)
+	}
+	newActive := cloneActiveGeneration(fixture.runner.active)
 	newIntentBasis := *fixture.runner.intent
 	revokedSequence := fixture.runner.revokedSequence
 	revokedStoreVersion := fixture.runner.revokedStoreVersion
@@ -1830,11 +2411,14 @@ func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testin
 			fixture.runner.state.Canceled)
 	}
 
-	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+	if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+		oldRun, oldContextVersion,
+		[]cognitionelements.ToolProposal{activationTestProposal("settlement-call")},
+	)); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.runner.canceledEffects[oldRun] != nil ||
-		!reflect.DeepEqual(fixture.runner.active, newActive) {
+		!reflect.DeepEqual(fixture.runner.active, newActive) || len(fixture.settlementAck.snapshot()) != 1 {
 		t.Fatalf("old acknowledgement changed replacement generation: canceled=%+v active=%+v",
 			fixture.runner.canceledEffects, fixture.runner.active)
 	}

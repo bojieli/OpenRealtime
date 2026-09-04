@@ -165,16 +165,16 @@
       "reference": "policy.IntentSettlement",
       "identity": {
         "name": "policy.IntentSettlement",
-        "revision": 1,
-        "digest": "sha256:a27213a88f5dce8e656bb182eb27a39037b5e1e34323396a65629a732c3f1990"
+        "revision": 2,
+        "digest": "sha256:e5e7925966753b502c6cb1d91918934b1158bdf8ba58d52a3cd6ef3942abb74e"
       }
     },
     {
       "reference": "policy.RealtimeComputerUseActivation",
       "identity": {
         "name": "policy.RealtimeComputerUseActivation",
-        "revision": 13,
-        "digest": "sha256:245b0826149c31debcbb09e51428f4d7b47ed17bffd701e938d86fc4017f6a5a"
+        "revision": 14,
+        "digest": "sha256:66fb30b43914e3983c8c404358f9ecf84d222df0fbab765eef043cc31f8d30b4"
       }
     },
     {

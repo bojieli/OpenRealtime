@@ -23,7 +23,7 @@ import (
 
 const (
 	intentSettlementRuntimeID          = "builtin://openrealtime/elements/policy.IntentSettlement"
-	intentSettlementRuntimeRevision    = "implementation:1"
+	intentSettlementRuntimeRevision    = "implementation:2"
 	intentSettlementInvalidInputItemID = "intent-settlement-invalid-input"
 )
 
@@ -92,7 +92,7 @@ func (intentSettlementFactory) Mount(
 		config: config, store: storeService.Store,
 		clock: clock, sequences: sequences, resolution: mount.Resolution, ports: ports,
 		records:      make(map[intentSettlementKey]*intentSettlementRecord),
-		revocations:  make(map[intentSettlementKey]TemporalEvidenceItemIdentity),
+		revocations:  make(map[intentSettlementKey]intentSettlementRevocation),
 		acknowledged: make(map[string]struct{}),
 		state: IntentSettlementState{
 			MaxTrackedIntents: config.MaxTrackedIntents, CancellationMemory: config.CancelMemory,
@@ -101,8 +101,8 @@ func (intentSettlementFactory) Mount(
 }
 
 type intentSettlementPorts struct {
-	evidence, disposition, ack, reset, cancel element.InputPort
-	admitted, probe, terminal, state, outcome element.OutputPort
+	evidence, disposition, ack, reset, cancel          element.InputPort
+	admitted, cleanup, probe, terminal, state, outcome element.OutputPort
 }
 
 func intentSettlementPortsFrom(ports element.Ports) (intentSettlementPorts, error) {
@@ -127,7 +127,8 @@ func intentSettlementPortsFrom(ports element.Ports) (intentSettlementPorts, erro
 		name string
 		port *element.OutputPort
 	}{
-		{"admitted", &result.admitted}, {"probe", &result.probe}, {"terminal", &result.terminal},
+		{"admitted", &result.admitted}, {"cleanup", &result.cleanup},
+		{"probe", &result.probe}, {"terminal", &result.terminal},
 		{"state", &result.state}, {"outcome", &result.outcome},
 	} {
 		port, err := ports.Output(entry.name)
@@ -160,6 +161,12 @@ type intentSettlementRecord struct {
 	deferredRetirement *intentSettlementDeferredRetirement
 }
 
+type intentSettlementRevocation struct {
+	intent       TemporalEvidenceItemIdentity
+	cancellation IntentSettlementCancellation
+	envelope     element.Envelope
+}
+
 type intentSettlementDecisionWitness struct {
 	disposition       *IntentDisposition
 	cancellation      *IntentSettlementCancellation
@@ -185,7 +192,7 @@ type intentSettlementRunner struct {
 	ports      intentSettlementPorts
 
 	records           map[intentSettlementKey]*intentSettlementRecord
-	revocations       map[intentSettlementKey]TemporalEvidenceItemIdentity
+	revocations       map[intentSettlementKey]intentSettlementRevocation
 	acknowledged      map[string]struct{}
 	acknowledgedOrder []string
 	state             IntentSettlementState
@@ -296,10 +303,50 @@ func (runner *intentSettlementRunner) acceptEvidence(ctx context.Context, envelo
 	}
 	key := intentSettlementKey{session: envelope.SessionID, intent: evidence.DurableIntent.TrajectoryItemID}
 	if revoked, found := runner.revocations[key]; found {
-		if revoked != *evidence.DurableIntent {
+		if revoked.intent != *evidence.DurableIntent {
 			return runner.refuse(ctx, envelope, "evidence", "revocation_identity_conflict",
 				"the canceled intent item ID resolves to a different canonical identity",
 				IntentSettlementProbe{})
+		}
+		successful, effectConsequence, err := intentSettlementCanceledEffectConsequence(
+			snapshot, evidence, runner.config.CandidateSources,
+		)
+		if err != nil {
+			return runner.refuse(ctx, envelope, "evidence", "invalid_revoked_effect_evidence",
+				err.Error(), IntentSettlementProbe{})
+		}
+		if effectConsequence {
+			// Once an intent is canceled, even a successful canonical effect must
+			// not enter disposition policy or resume cognition. Forward only its
+			// independently verified, directly linked consequence so downstream
+			// activation can retire the matching canceled-effect race record. Keep
+			// the exact intent revocation in this gate: admission here is cleanup
+			// authority, not permission to resume cognition.
+			code := "canceled_failed_effect_cleanup"
+			message := "verified failed-effect consequence forwarded only for canceled bookkeeping cleanup"
+			if successful {
+				code = "canceled_successful_effect_cleanup"
+				message = "verified successful-effect consequence forwarded only for canceled bookkeeping cleanup"
+			}
+			runner.state.Cleanups++
+			before := runner.state.Revision
+			runner.bumpState()
+			cleanup := IntentSettlementCleanup{
+				Evidence:           cloneIntentSettlementEvidence(evidence),
+				Cancellation:       revoked.cancellation,
+				EvidenceItemID:     envelope.ItemID,
+				CancellationItemID: revoked.envelope.ItemID,
+			}
+			if err := runner.publishCleanup(ctx, envelope, cleanup); err != nil {
+				return err
+			}
+			return runner.publishTransition(ctx, envelope, IntentSettlementOutcome{
+				Kind: IntentSettlementCleanupForwarded, Operation: "evidence", SessionID: envelope.SessionID,
+				DurableIntentItemID:      key.intent,
+				TriggerObservationItemID: evidence.TriggerObservation.TrajectoryItemID,
+				Code:                     code,
+				Message:                  message,
+			}, before)
 		}
 		return runner.ignore(ctx, envelope, "evidence", "intent_revoked",
 			"settlement evidence belongs to the exactly canceled durable intent",
@@ -400,6 +447,129 @@ func (runner *intentSettlementRunner) acceptEvidence(ctx context.Context, envelo
 		DurableIntentItemID: key.intent, TriggerObservationItemID: evidence.TriggerObservation.TrajectoryItemID,
 		ResultItemID: result.TrajectoryItemID, ProbeID: probe.ProbeID, Code: "awaiting_disposition",
 	}, before)
+}
+
+// intentSettlementCanceledEffectConsequence recognizes the exact result-linked
+// consequence of an effect whose durable intent is already revoked. No such
+// evidence may enter disposition policy, but cancellation cleanup still needs
+// a rigorously authenticated safe point. This verifier therefore checks the
+// same exact intent -> call -> result -> consequence lineage independently;
+// callers may only use a matched result to forward already-revoked evidence
+// downstream. The first return reports whether that result was successful.
+func intentSettlementCanceledEffectConsequence(
+	snapshot trajectory.Snapshot, evidence AdmittedTemporalEvidence,
+	candidateSources []TemporalEvidenceRequirement,
+) (bool, bool, error) {
+	if evidence.DurableIntent == nil || evidence.Prefix.Version == 0 ||
+		evidence.Prefix.Version > snapshot.Version ||
+		evidence.TriggerObservation.StoreVersion == 0 ||
+		evidence.TriggerObservation.StoreVersion > evidence.Prefix.Version ||
+		evidence.DurableIntent.StoreVersion == 0 ||
+		evidence.DurableIntent.StoreVersion > evidence.Prefix.Version {
+		return false, false, errors.New("revoked effect evidence has invalid intent, trigger, or prefix position")
+	}
+	prefix := snapshot.Items[:evidence.Prefix.Version]
+	triggerIndex := int(evidence.TriggerObservation.StoreVersion - 1)
+	intentIndex := int(evidence.DurableIntent.StoreVersion - 1)
+	trigger := prefix[triggerIndex]
+	intent := prefix[intentIndex]
+	if trigger.ID != evidence.TriggerObservation.TrajectoryItemID || trigger.Observation == nil ||
+		intent.ID != evidence.DurableIntent.TrajectoryItemID || intent.Event == nil {
+		return false, false, errors.New("revoked effect evidence does not name its exact canonical trigger and intent")
+	}
+	pair := TemporalEvidenceRequirement{
+		Observer: trigger.Observation.Observer, Source: trigger.Observation.Source,
+	}
+	if !slices.Contains(candidateSources, pair) {
+		return false, false, nil
+	}
+	resultIndex := -1
+	for _, parentID := range trigger.CausalParentIDs {
+		for index := triggerIndex - 1; index >= 0; index-- {
+			item := prefix[index]
+			if item.ID != parentID || item.Kind != trajectory.KindToolResult || item.ToolResult == nil {
+				continue
+			}
+			if resultIndex != -1 {
+				return false, false, errors.New("revoked effect consequence directly names multiple canonical tool results")
+			}
+			resultIndex = index
+			break
+		}
+	}
+	if resultIndex == -1 {
+		return false, false, nil
+	}
+	result := prefix[resultIndex]
+	successful := result.ToolResult.Error == ""
+	if successful {
+		if len(result.ToolResult.Output) == 0 || !json.Valid(result.ToolResult.Output) {
+			return false, false, errors.New("revoked successful canonical result has no valid output")
+		}
+	} else {
+		if strings.TrimSpace(result.ToolResult.Error) == "" {
+			return false, false, errors.New("revoked failed canonical result has an empty error")
+		}
+		if len(result.ToolResult.Output) != 0 {
+			return false, false, errors.New("revoked failed canonical result also carries successful output")
+		}
+	}
+	for _, identity := range []struct {
+		label string
+		value string
+	}{
+		{"revoked result trajectory item ID", result.ID},
+		{"revoked result invocation ID", result.InvocationID},
+		{"revoked result call ID", result.ToolResult.CallID},
+		{"revoked result tool", result.ToolResult.Name},
+	} {
+		if err := validatePolicyIdentifier(identity.label, identity.value, true); err != nil {
+			return false, false, err
+		}
+	}
+	if resultIndex <= intentIndex || !temporalCausalAncestor(prefix, intentIndex, resultIndex) {
+		return false, false, errors.New("revoked result does not descend from the exact canceled intent")
+	}
+	matchingCalls := 0
+	matchingCallIndex := -1
+	for index := intentIndex + 1; index < resultIndex; index++ {
+		item := prefix[index]
+		if item.Kind == trajectory.KindToolCall && item.ToolCall != nil &&
+			item.InvocationID == result.InvocationID &&
+			item.ToolCall.CallID == result.ToolResult.CallID &&
+			item.ToolCall.Name == result.ToolResult.Name {
+			matchingCalls++
+			matchingCallIndex = index
+		}
+	}
+	if matchingCalls != 1 {
+		return false, false, fmt.Errorf(
+			"revoked result has %d exact canonical calls under the canceled intent", matchingCalls,
+		)
+	}
+	if !temporalCausalAncestor(prefix, intentIndex, matchingCallIndex) ||
+		!slices.Contains(result.CausalParentIDs, prefix[matchingCallIndex].ID) {
+		return false, false, errors.New("revoked result is not a direct child of its exact intent-descended call")
+	}
+	consequences := 0
+	consequenceIndex := -1
+	for index := resultIndex + 1; index <= triggerIndex; index++ {
+		item := prefix[index]
+		if item.Kind != trajectory.KindObservation || item.Observation == nil ||
+			item.Observation.Observer != pair.Observer || item.Observation.Source != pair.Source ||
+			!slices.Contains(item.CausalParentIDs, result.ID) {
+			continue
+		}
+		consequences++
+		consequenceIndex = index
+	}
+	if consequences != 1 || consequenceIndex != triggerIndex {
+		return false, false, fmt.Errorf(
+			"revoked result has %d direct consequences on observer/source %q/%q before the trigger",
+			consequences, pair.Observer, pair.Source,
+		)
+	}
+	return successful, true, nil
 }
 
 func (runner *intentSettlementRunner) acceptDisposition(
@@ -820,7 +990,7 @@ func (runner *intentSettlementRunner) acceptCancel(ctx context.Context, envelope
 		pendingDecision = &decision
 	}
 	revoked, exists := runner.revocations[key]
-	if exists && revoked != cancel.DurableIntent {
+	if exists && revoked.intent != cancel.DurableIntent {
 		return runner.refuse(ctx, envelope, "cancel", "revocation_identity_conflict",
 			"the cancellation item ID conflicts with an existing canonical revocation",
 			IntentSettlementProbe{})
@@ -845,8 +1015,12 @@ func (runner *intentSettlementRunner) acceptCancel(ctx context.Context, envelope
 	for _, candidate := range prunable {
 		delete(runner.revocations, candidate)
 	}
-	if !superseded {
-		runner.revocations[key] = cancel.DurableIntent
+	if !superseded && !exists {
+		retainedEnvelope := envelope.Clone()
+		retainedEnvelope.Payload = cancel
+		runner.revocations[key] = intentSettlementRevocation{
+			intent: cancel.DurableIntent, cancellation: cancel, envelope: retainedEnvelope,
+		}
 	}
 	if newRequest {
 		runner.state.CancellationRequests++
@@ -943,7 +1117,7 @@ func (runner *intentSettlementRunner) pruneSupersededIntentRevocations(
 	sessionID string, current TemporalEvidenceItemIdentity,
 ) {
 	for key, revoked := range runner.revocations {
-		if key.session == sessionID && revoked.StoreVersion < current.StoreVersion {
+		if key.session == sessionID && revoked.intent.StoreVersion < current.StoreVersion {
 			delete(runner.revocations, key)
 		}
 	}
@@ -954,7 +1128,7 @@ func (runner *intentSettlementRunner) canonicalIntentRevocationsToPrune(
 ) []intentSettlementKey {
 	result := make([]intentSettlementKey, 0, len(runner.revocations))
 	for key, revoked := range runner.revocations {
-		if intentSettlementCancellationSuperseded(snapshot, revoked) {
+		if intentSettlementCancellationSuperseded(snapshot, revoked.intent) {
 			result = append(result, key)
 		}
 	}
@@ -1075,7 +1249,8 @@ func validateIntentSettlementInputEnvelope(label string, envelope element.Envelo
 	}
 	for _, prefix := range []string{
 		"intent-settlement-probe:", "intent-settlement-terminal:",
-		"intent-settlement-outcome:", "intent-settlement-state:",
+		"intent-settlement-cleanup:", "intent-settlement-outcome:",
+		"intent-settlement-state:",
 	} {
 		if strings.HasPrefix(envelope.ItemID, prefix) {
 			return fmt.Errorf("%s item ID uses reserved settlement output namespace %q", label, prefix)
@@ -1367,6 +1542,12 @@ func cloneIntentSettlementEvidence(source AdmittedTemporalEvidence) AdmittedTemp
 	return result
 }
 
+func cloneIntentSettlementCleanup(source IntentSettlementCleanup) IntentSettlementCleanup {
+	result := source
+	result.Evidence = cloneIntentSettlementEvidence(source.Evidence)
+	return result
+}
+
 func cloneIntentSettlementProbe(source IntentSettlementProbe) IntentSettlementProbe {
 	result := source
 	result.Evidence = cloneIntentSettlementEvidence(source.Evidence)
@@ -1526,6 +1707,29 @@ func (runner *intentSettlementRunner) publishAdmission(
 	envelope.CausalParents = intentSettlementOutputParents(envelope.ItemID, envelope.CausalParents)
 	envelope.Payload = cloneIntentSettlementEvidence(evidence)
 	return intentSettlementBroadcastExact(ctx, runner.ports.admitted, envelope, "admission")
+}
+
+func (runner *intentSettlementRunner) publishCleanup(
+	ctx context.Context, cause element.Envelope, cleanup IntentSettlementCleanup,
+) error {
+	sequence, err := runner.sequences.Next(runner.instance + ".cleanup")
+	if err != nil {
+		return err
+	}
+	envelope := cause.Clone()
+	envelope.Type = IntentSettlementCleanupType()
+	envelope.SourceID = runner.instance
+	envelope.Sequence = sequence
+	envelope.CancellationScope = cleanup.Cancellation.DurableIntent.TrajectoryItemID
+	envelope.ItemID = intentSettlementGeneratedItemID(
+		"cleanup", runner.instance,
+		cause.ItemID+"\x00"+cleanup.CancellationItemID, sequence,
+	)
+	envelope.CausalParents = intentSettlementOutputParents(envelope.ItemID, append(
+		slices.Clone(cause.CausalParents), cause.ItemID, cleanup.CancellationItemID,
+	))
+	envelope.Payload = cloneIntentSettlementCleanup(cleanup)
+	return intentSettlementBroadcastExact(ctx, runner.ports.cleanup, envelope, "cleanup")
 }
 
 func (runner *intentSettlementRunner) makeReleasedAdmission(

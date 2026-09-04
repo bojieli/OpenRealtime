@@ -144,6 +144,7 @@ func TestRealtimeComputerUseSettlementTopologyHasExplicitRetryNoBypassAndExactCa
 		{"settlement_retry", "exhausted", "settlement_retry_exhausted_sink", "in"},
 		{"settlement_retry", "forwarded_reset", "settlement", "reset"},
 		{"settlement", "admitted", "activation", "admitted"},
+		{"settlement", "cleanup", "activation", "effect_cleanup"},
 		{"settlement", "terminal", "activation", "settlement"},
 		{"activation", "settlement_ack", "settlement", "ack"},
 		{"cancellation_coordinator", "settlement_cancel", "settlement_retry", "cancel"},

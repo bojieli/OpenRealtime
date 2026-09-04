@@ -71,9 +71,15 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 	}
 	activationResolution := realtimeCUResolutionElement(t, frozen.Resolution, "activation")
 	if activationResolution.Runtime.ID !=
-		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v13" ||
-		activationResolution.Runtime.Revision != "implementation:13" {
+		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v14" ||
+		activationResolution.Runtime.Revision != "implementation:14" {
 		t.Fatalf("frozen activation runtime = %+v", activationResolution.Runtime)
+	}
+	settlementResolution := realtimeCUResolutionElement(t, frozen.Resolution, "settlement")
+	if settlementResolution.Runtime.ID !=
+		"builtin://openrealtime/elements/policy.IntentSettlement" ||
+		settlementResolution.Runtime.Revision != "implementation:2" {
+		t.Fatalf("frozen settlement runtime = %+v", settlementResolution.Runtime)
 	}
 	modelResolution := realtimeCUResolutionElement(t, frozen.Resolution, "model")
 	if len(modelResolution.Capabilities) == 0 {

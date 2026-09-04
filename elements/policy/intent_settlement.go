@@ -29,6 +29,7 @@ var (
 	intentSettlementCancelType   = element.Interrupt(element.Named("policy.IntentSettlementCancellation"))
 	intentSettlementDecisionType = element.Event(element.Named("policy.IntentSettlementDecision"))
 	intentSettlementAckType      = element.Event(element.Named("policy.IntentSettlementAcknowledgement"))
+	intentSettlementCleanupType  = element.Event(element.Named("policy.IntentSettlementCleanup"))
 	intentSettlementStateType    = element.State(element.Named("policy.IntentSettlementState"))
 	intentSettlementOutcomeType  = element.Event(element.Named("policy.IntentSettlementOutcome"))
 )
@@ -43,6 +44,7 @@ func IntentSettlementDecisionType() element.Type {
 	return intentSettlementDecisionType.Clone()
 }
 func IntentSettlementAcknowledgementType() element.Type { return intentSettlementAckType.Clone() }
+func IntentSettlementCleanupType() element.Type         { return intentSettlementCleanupType.Clone() }
 func IntentSettlementStateType() element.Type           { return intentSettlementStateType.Clone() }
 func IntentSettlementOutcomeType() element.Type         { return intentSettlementOutcomeType.Clone() }
 
@@ -54,7 +56,7 @@ func IntentSettlementDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "policy.IntentSettlement",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "evidence", Direction: element.Input, Type: temporalEvidenceAdmittedType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
@@ -68,6 +70,8 @@ func IntentSettlementDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "admitted", Direction: element.Output, Type: temporalEvidenceAdmittedType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
+			{Name: "cleanup", Direction: element.Output, Type: intentSettlementCleanupType,
+				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "probe", Direction: element.Output, Type: intentSettlementProbeType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "terminal", Direction: element.Output, Type: intentSettlementDecisionType,
@@ -81,12 +85,12 @@ func IntentSettlementDescriptor() element.Descriptor {
 			Triggers:   []string{"evidence", "disposition", "ack"},
 			Interrupts: []string{"reset", "cancel"},
 			Outcomes: []string{
-				"admitted", "probe", "terminal", "state", "outcome",
+				"admitted", "cleanup", "probe", "terminal", "state", "outcome",
 			},
 			MaxConcurrency: 1,
 			BreaksCycles:   true,
 		},
-		StateSchema:  "schema://openrealtime/policy/intent-settlement-state/v1",
+		StateSchema:  "schema://openrealtime/policy/intent-settlement-state/v2",
 		ConfigSchema: "schema://openrealtime/policy/intent-settlement-config/v1",
 		Dependencies: []element.Dependency{
 			{Name: stateelements.TrajectoryStoreService},
@@ -211,6 +215,18 @@ type IntentSettlementAcknowledgement struct {
 	AcknowledgedNS uint64                   `json:"acknowledged_ns"`
 }
 
+// IntentSettlementCleanup carries a revoked intent's exact result-linked
+// consequence on a control lane that can never be mistaken for ordinary
+// activation evidence. The cancellation payload and its envelope identity let
+// a downstream element verify why the evidence is cleanup-only even when this
+// control overtakes a separately routed generation cancellation.
+type IntentSettlementCleanup struct {
+	Evidence           AdmittedTemporalEvidence     `json:"evidence"`
+	Cancellation       IntentSettlementCancellation `json:"cancellation"`
+	EvidenceItemID     string                       `json:"evidence_item_id"`
+	CancellationItemID string                       `json:"cancellation_item_id"`
+}
+
 // IntentSettlementAddress is an exact administrative/user-policy reset. Both
 // the payload and envelope name the session, and the full durable-intent
 // identity prevents a delayed reset from reopening a newer epoch.
@@ -235,13 +251,14 @@ type IntentSettlementCancellation struct {
 type IntentSettlementOutcomeKind string
 
 const (
-	IntentSettlementAdmitted   IntentSettlementOutcomeKind = "admitted"
-	IntentSettlementHeld       IntentSettlementOutcomeKind = "held"
-	IntentSettlementSuppressed IntentSettlementOutcomeKind = "suppressed"
-	IntentSettlementRefused    IntentSettlementOutcomeKind = "refused"
-	IntentSettlementReset      IntentSettlementOutcomeKind = "reset"
-	IntentSettlementCanceled   IntentSettlementOutcomeKind = "canceled"
-	IntentSettlementIgnored    IntentSettlementOutcomeKind = "ignored"
+	IntentSettlementAdmitted         IntentSettlementOutcomeKind = "admitted"
+	IntentSettlementHeld             IntentSettlementOutcomeKind = "held"
+	IntentSettlementSuppressed       IntentSettlementOutcomeKind = "suppressed"
+	IntentSettlementRefused          IntentSettlementOutcomeKind = "refused"
+	IntentSettlementReset            IntentSettlementOutcomeKind = "reset"
+	IntentSettlementCanceled         IntentSettlementOutcomeKind = "canceled"
+	IntentSettlementCleanupForwarded IntentSettlementOutcomeKind = "cleanup"
+	IntentSettlementIgnored          IntentSettlementOutcomeKind = "ignored"
 )
 
 // IntentSettlementOutcome contains only identities and closed decisions. The
@@ -277,6 +294,7 @@ type IntentSettlementState struct {
 	TerminalIntents        int    `json:"terminal_intents"`
 	AcknowledgedTerminals  int    `json:"acknowledged_terminals"`
 	Admitted               uint64 `json:"admitted"`
+	Cleanups               uint64 `json:"cleanups"`
 	Held                   uint64 `json:"held"`
 	Suppressed             uint64 `json:"suppressed"`
 	Refused                uint64 `json:"refused"`

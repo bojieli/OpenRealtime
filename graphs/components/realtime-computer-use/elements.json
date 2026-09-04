@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 13,
+      "revision": 14,
       "ports": [
         {
           "name": "admitted",
@@ -103,6 +103,20 @@
           },
           "cardinality": "one",
           "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "effect_cleanup",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.IntentSettlementCleanup"
+              }
+            ]
+          },
+          "cardinality": "one",
           "default_depth": 16
         },
         {
@@ -215,6 +229,7 @@
           "admitted",
           "disposition_committed",
           "disposition_rejected",
+          "effect_cleanup",
           "effect_terminal",
           "result",
           "settlement"

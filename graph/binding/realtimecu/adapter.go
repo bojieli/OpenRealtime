@@ -671,9 +671,15 @@ func (session *session) publishDebug(ctx context.Context, name string, envelope 
 	if !ok {
 		return nil
 	}
+	attributes := map[string]any{"run_id": envelope.RunID, "type": envelope.Type.String()}
+	if outcome, found := generationOutcomePayload(envelope.Payload); found {
+		attributes["outcome_kind"] = string(outcome.Kind)
+		attributes["outcome_code"] = outcome.Code
+		attributes["generation_id"] = outcome.GenerationID
+	}
 	return sink.Debug(ctx, legacy.DebugEvent{
 		Category: "graph", Name: name, Phase: "output", CorrelationID: envelope.ItemID,
-		Attributes: map[string]any{"run_id": envelope.RunID, "type": envelope.Type.String()},
+		Attributes: attributes,
 	})
 }
 

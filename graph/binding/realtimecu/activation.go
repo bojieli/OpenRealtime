@@ -29,7 +29,7 @@ import (
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
 	ActivationConfigSchema    = "schema://openrealtime/realtime-cu/activation-config/v2"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v13"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v14"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumDispositionRetries = 8
@@ -50,11 +50,14 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      13,
+		Revision:      14,
 		Ports: []element.Port{
 			{Name: "admitted", Direction: element.Input,
 				Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 32},
+			{Name: "effect_cleanup", Direction: element.Input,
+				Type: policyelements.IntentSettlementCleanupType(), Cardinality: element.One,
+				Required: false, DefaultDepth: 16},
 			{Name: "cancel", Direction: element.Input,
 				Type: policyelements.GenerationCancelType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
@@ -94,7 +97,7 @@ func ActivationDescriptor() element.Descriptor {
 		},
 		Reaction: element.Reaction{
 			Triggers: []string{
-				"admitted", "result", "effect_terminal", "disposition_committed", "disposition_rejected",
+				"admitted", "effect_cleanup", "result", "effect_terminal", "disposition_committed", "disposition_rejected",
 				"settlement",
 			},
 			Interrupts: []string{"cancel"},
@@ -164,6 +167,7 @@ func (activationFactory) Mount(
 	if err := validateActivationSettlementWiring(
 		config.ExpectedSettlement != nil,
 		len(ports.settlement.Lanes()), len(ports.settlementAcknowledgement.Lanes()),
+		len(ports.effectCleanup.Lanes()),
 	); err != nil {
 		return nil, err
 	}
@@ -184,20 +188,20 @@ func (activationFactory) Mount(
 }
 
 func validateActivationSettlementWiring(
-	configured bool, settlementInputs, acknowledgementOutputs int,
+	configured bool, settlementInputs, acknowledgementOutputs, cleanupInputs int,
 ) error {
-	if settlementInputs < 0 || acknowledgementOutputs < 0 ||
-		settlementInputs > 1 || acknowledgementOutputs > 1 {
+	if settlementInputs < 0 || acknowledgementOutputs < 0 || cleanupInputs < 0 ||
+		settlementInputs > 1 || acknowledgementOutputs > 1 || cleanupInputs > 1 {
 		return errors.New("Realtime-CU activation settlement ports must each have at most one lane")
 	}
 	if configured {
-		if settlementInputs != 1 || acknowledgementOutputs != 1 {
+		if settlementInputs != 1 || acknowledgementOutputs != 1 || cleanupInputs != 1 {
 			return errors.New(
-				"Realtime-CU activation expected_settlement requires one settlement input and one settlement_ack output lane")
+				"Realtime-CU activation expected_settlement requires one settlement, effect_cleanup, and settlement_ack lane")
 		}
 		return nil
 	}
-	if settlementInputs != 0 || acknowledgementOutputs != 0 {
+	if settlementInputs != 0 || acknowledgementOutputs != 0 || cleanupInputs != 0 {
 		return errors.New(
 			"Realtime-CU activation settlement lanes require expected_settlement configuration")
 	}
@@ -340,10 +344,10 @@ func cloneActivationSettlementConfig(
 }
 
 type activationPorts struct {
-	admitted, cancel, result, effectTerminal, settlement  element.InputPort
-	dispositionCommitted, dispositionRejected             element.InputPort
-	trigger, candidate, state, outcome, dispositionAppend element.OutputPort
-	settlementAcknowledgement                             element.OutputPort
+	admitted, effectCleanup, cancel, result, effectTerminal, settlement element.InputPort
+	dispositionCommitted, dispositionRejected                           element.InputPort
+	trigger, candidate, state, outcome, dispositionAppend               element.OutputPort
+	settlementAcknowledgement                                           element.OutputPort
 }
 
 func activationPortsFrom(ports element.Ports) (activationPorts, error) {
@@ -355,7 +359,8 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 		name string
 		set  *element.InputPort
 	}{
-		{"admitted", &result.admitted}, {"cancel", &result.cancel},
+		{"admitted", &result.admitted}, {"effect_cleanup", &result.effectCleanup},
+		{"cancel", &result.cancel},
 		{"result", &result.result}, {"effect_terminal", &result.effectTerminal},
 		{"disposition_committed", &result.dispositionCommitted},
 		{"disposition_rejected", &result.dispositionRejected},
@@ -407,6 +412,12 @@ type pendingActivationSettlement struct {
 type canceledActivationEffect struct {
 	generation activeGeneration
 	settlement *pendingActivationSettlement
+}
+
+type pendingActivationEffectCleanup struct {
+	envelope    element.Envelope
+	cleanup     policyelements.IntentSettlementCleanup
+	consequence activationEffectConsequence
 }
 
 type pendingSettlementAcknowledgement struct {
@@ -505,6 +516,7 @@ type activationRunner struct {
 	canceledEffectOrder         []string
 	canceledIntents             map[string]policyelements.TemporalEvidenceItemIdentity
 	canceledIntentOrder         []string
+	pendingEffectCleanup        *pendingActivationEffectCleanup
 	pendingSettlementAcks       map[string]pendingSettlementAcknowledgement
 	acknowledgedSettlement      map[string]struct{}
 	acknowledgedSettlementOrder []string
@@ -518,7 +530,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:13", ActivationDescriptor()); err != nil {
+		"implementation:14", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -527,19 +539,21 @@ func (runner *activationRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	inputs := make(chan activationInput)
-	failures := make(chan error, 7)
+	failures := make(chan error, 8)
 	var wait sync.WaitGroup
 	for _, source := range []struct {
 		kind string
 		port element.InputPort
 	}{
-		{"admitted", runner.ports.admitted}, {"cancel", runner.ports.cancel},
+		{"admitted", runner.ports.admitted}, {"effect_cleanup", runner.ports.effectCleanup},
+		{"cancel", runner.ports.cancel},
 		{"result", runner.ports.result}, {"effect_terminal", runner.ports.effectTerminal},
 		{"disposition_committed", runner.ports.dispositionCommitted},
 		{"disposition_rejected", runner.ports.dispositionRejected},
 		{"settlement", runner.ports.settlement},
 	} {
-		if source.kind == "settlement" && len(source.port.Lanes()) == 0 {
+		if (source.kind == "settlement" || source.kind == "effect_cleanup") &&
+			len(source.port.Lanes()) == 0 {
 			continue
 		}
 		wait.Add(1)
@@ -554,6 +568,7 @@ func (runner *activationRunner) Run(parent context.Context) error {
 		runner.pendingSettlement = nil
 		runner.canceledEffects = nil
 		runner.canceledIntents = nil
+		runner.pendingEffectCleanup = nil
 		runner.pendingSettlementAcks = nil
 		cancel(nil)
 		wait.Wait()
@@ -569,6 +584,8 @@ func (runner *activationRunner) Run(parent context.Context) error {
 			switch input.kind {
 			case "admitted":
 				err = runner.acceptAdmission(ctx, input.envelope)
+			case "effect_cleanup":
+				err = runner.acceptEffectCleanup(ctx, input.envelope)
 			case "cancel":
 				err = runner.acceptCancel(ctx, input.envelope)
 			case "result":
@@ -595,6 +612,140 @@ func (runner *activationRunner) acceptAdmission(
 	ctx context.Context, envelope element.Envelope,
 ) error {
 	return runner.acceptAdmissionAtContext(ctx, envelope, nil)
+}
+
+// acceptEffectCleanup consumes only the typed cleanup control emitted by an
+// independently verified settlement revocation. It never enters the ordinary
+// admission path. If this control overtakes the separately routed activation
+// cancellation, it is retained as a single bounded exact witness until that
+// cancellation installs the local tombstone and exposes the generation ID to
+// the coordinator.
+func (runner *activationRunner) acceptEffectCleanup(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	cleanup, ok := intentSettlementCleanupPayload(envelope.Payload)
+	if !ok {
+		return runner.refuse(ctx, envelope, stateelements.ObservationCommitOutcome{},
+			"invalid_effect_cleanup", fmt.Sprintf("effect cleanup payload has type %T", envelope.Payload))
+	}
+	commit := cleanup.Evidence.TriggerCommit
+	if runner.config.ExpectedSettlement == nil {
+		return runner.refuse(ctx, envelope, commit, "effect_cleanup_not_configured",
+			"activation has no independently pinned settlement cleanup contract")
+	}
+	if envelope.SessionID != runner.sessionID {
+		return runner.refuse(ctx, envelope, commit, "effect_cleanup_session_mismatch",
+			"effect cleanup crossed the mounted trajectory session")
+	}
+	snapshot := runner.store.Snapshot()
+	if err := policyelements.VerifyIntentSettlementCleanup(
+		snapshot, envelope, cleanup, *runner.config.ExpectedSettlement,
+	); err != nil {
+		return runner.refuse(ctx, envelope, commit, "invalid_effect_cleanup", err.Error())
+	}
+	prefix, err := trajectory.Prefix(snapshot, cleanup.Evidence.Prefix)
+	if err != nil {
+		return runner.refuse(ctx, envelope, commit, "invalid_effect_cleanup", err.Error())
+	}
+	attested, err := verifyActivationTemporalAdmission(
+		prefix, cleanup.Evidence, runner.config.ExpectedAdmission,
+	)
+	if err != nil {
+		return runner.refuse(ctx, envelope, commit, "invalid_effect_cleanup", err.Error())
+	}
+	if attested.intent == nil {
+		return runner.refuse(ctx, envelope, commit, "invalid_effect_cleanup",
+			"effect cleanup has no exact durable intent")
+	}
+	consequence, matched, err := inspectActivationEffectConsequence(
+		attested.prefix, attested.trigger, attested.intent.identity,
+	)
+	if err != nil {
+		return runner.refuse(ctx, envelope, commit, "invalid_effect_cleanup", err.Error())
+	}
+	if !matched {
+		return runner.refuse(ctx, envelope, commit, "invalid_effect_cleanup",
+			"effect cleanup does not name an exact canonical result consequence")
+	}
+	if retained := runner.canceledEffects[consequence.generationID]; retained != nil {
+		if !runner.intentCanceled(attested.intent.identity) {
+			return runner.refuse(ctx, envelope, commit, "effect_cleanup_without_local_cancel",
+				"retained effect has no matching local durable-intent tombstone")
+		}
+		if retained.settlement != nil {
+			return runner.refuse(ctx, envelope, commit, "effect_cleanup_settlement_conflict",
+				"effect cleanup conflicts with a verified terminal settlement")
+		}
+		if err := activationEffectConsequenceMatches(
+			consequence, retained.generation, attested.intent.identity,
+		); err != nil {
+			return runner.refuse(ctx, envelope, commit, "effect_cleanup_generation_mismatch", err.Error())
+		}
+		return runner.retireCanceledEffectCleanup(ctx, envelope, commit, consequence)
+	}
+	if runner.active != nil && runner.active.id == consequence.generationID {
+		if err := activationEffectConsequenceMatches(
+			consequence, *runner.active, attested.intent.identity,
+		); err != nil {
+			return runner.refuse(ctx, envelope, commit, "effect_cleanup_generation_mismatch", err.Error())
+		}
+		if runner.pendingDisposition != nil {
+			return runner.ignore(ctx, envelope, commit, "effect_cleanup_pre_effect_terminal",
+				"the exact pre-effect terminal transaction already owns generation retirement")
+		}
+		retainedEnvelope := envelope.Clone()
+		retainedEnvelope.Payload = cleanup
+		pending := &pendingActivationEffectCleanup{
+			envelope: retainedEnvelope, cleanup: cleanup, consequence: consequence,
+		}
+		if runner.pendingEffectCleanup != nil {
+			if reflect.DeepEqual(runner.pendingEffectCleanup.cleanup, pending.cleanup) &&
+				runner.pendingEffectCleanup.consequence == pending.consequence {
+				return runner.ignore(ctx, envelope, commit, "duplicate_effect_cleanup_pending",
+					"the exact cleanup witness is already waiting for activation cancellation")
+			}
+			return runner.refuse(ctx, envelope, commit, "conflicting_effect_cleanup",
+				"a different exact cleanup witness is already retained")
+		}
+		runner.pendingEffectCleanup = pending
+		return runner.ignore(ctx, envelope, commit, "effect_cleanup_waiting_for_cancel",
+			"cleanup control is held until activation receives the exact cancellation")
+	}
+	if runner.pendingEffectCleanup != nil &&
+		runner.pendingEffectCleanup.consequence.generationID == consequence.generationID {
+		return runner.ignore(ctx, envelope, commit, "duplicate_effect_cleanup_pending",
+			"the exact cleanup generation is already waiting for activation cancellation")
+	}
+	return runner.ignore(ctx, envelope, commit, "effect_cleanup_not_retained",
+		"cleanup names no active or cancellation-retained effect")
+}
+
+func (runner *activationRunner) retireCanceledEffectCleanup(
+	ctx context.Context, envelope element.Envelope,
+	commit stateelements.ObservationCommitOutcome,
+	consequence activationEffectConsequence,
+) error {
+	runner.forgetCanceledEffect(consequence.generationID)
+	if runner.pendingEffectCleanup != nil &&
+		runner.pendingEffectCleanup.consequence.generationID == consequence.generationID {
+		runner.pendingEffectCleanup = nil
+	}
+	code := "canceled_effect_failed"
+	message := "exact failed effect consequence retired canceled bookkeeping without reactivation"
+	if consequence.successful {
+		code = "canceled_effect_succeeded"
+		message = "exact successful effect consequence retired canceled bookkeeping without reactivation"
+	}
+	runner.state.Ignored++
+	if err := runner.publishOutcome(ctx, envelope, commit, policyelements.GenerationOutcome{
+		Kind: policyelements.GenerationIgnored, GenerationID: consequence.generationID,
+		Role: runner.config.Role, StreamID: commit.StreamID,
+		SourceRevision: commit.SourceRevision, ContextVersion: commit.StoreVersion,
+		TriggerItemID: commit.TriggerItemID, Code: code, Message: message,
+	}); err != nil {
+		return err
+	}
+	return runner.publishState(ctx, envelope)
 }
 
 // acceptAdmissionAtContext consumes one exact temporal admission. A disposition
@@ -1099,6 +1250,14 @@ func (runner *activationRunner) applyVerifiedSettlement(
 		if runner.intent != nil && runner.intent.identity == decision.Probe.DurableIntent {
 			runner.intent = nil
 		}
+	}
+	if runner.pendingEffectCleanup != nil &&
+		runner.pendingEffectCleanup.consequence.generationID == decision.InvocationID {
+		// Terminal settlement is the stronger exact retirement witness. If it
+		// wins after cleanup was held but before cancellation, discard that held
+		// control in the same linearized retirement so a later generation-less
+		// cancel cannot strand the singleton pending slot.
+		runner.pendingEffectCleanup = nil
 	}
 	runner.state.Ignored++
 	runner.pendingSettlementAcks[decision.TerminalID] = pendingSettlementAcknowledgement{
@@ -1897,23 +2056,27 @@ func (runner *activationRunner) acceptExactIntentCancel(
 		}
 	}
 
-	// Prepare both bounded cancellation memories without touching live state.
-	// A forged generation or either capacity failure therefore cannot leave a
-	// hidden intent tombstone, prune an older entry, or partially revoke work.
-	nextIntents, nextIntentOrder, err := runner.planCanceledIntents(snapshot, intent)
+	// Prepare both bounded cancellation memories as one transaction without
+	// touching live state. A superseded effect remains available to a delayed
+	// terminal/cleanup witness until capacity is actually needed. At that point
+	// newer final user authority is a no-reactivation proof, so the planner may
+	// reclaim only an exact superseded effect+tombstone pair. A forged generation
+	// or capacity failure can therefore neither orphan an effect nor partially
+	// revoke work.
+	var canceledGeneration *activeGeneration
+	if matchingActive && runner.pendingDisposition == nil {
+		copy := *runner.active
+		canceledGeneration = &copy
+	}
+	retainSuperseded := canceledGeneration != nil && runner.pendingEffectCleanup != nil &&
+		runner.pendingEffectCleanup.consequence.generationID == canceledGeneration.id
+	nextIntents, nextIntentOrder, nextEffects, nextEffectOrder, err :=
+		runner.planCanceledState(
+			snapshot, intent, canceledGeneration, runner.pendingSettlement, retainSuperseded,
+		)
 	if err != nil {
 		return runner.refuse(ctx, envelope, stateelements.ObservationCommitOutcome{},
 			"intent_cancel_capacity", err.Error())
-	}
-	nextEffects, nextEffectOrder := runner.canceledEffects, runner.canceledEffectOrder
-	if matchingActive && runner.pendingDisposition == nil {
-		nextEffects, nextEffectOrder, err = runner.planCanceledEffect(
-			*runner.active, runner.pendingSettlement,
-		)
-		if err != nil {
-			return runner.refuse(ctx, envelope, stateelements.ObservationCommitOutcome{},
-				"intent_cancel_capacity", err.Error())
-		}
 	}
 
 	// All fallible identity and capacity checks are complete. Commit the
@@ -1958,7 +2121,39 @@ func (runner *activationRunner) acceptExactIntentCancel(
 		}); err != nil {
 		return err
 	}
-	return runner.publishState(ctx, envelope)
+	if err := runner.publishState(ctx, envelope); err != nil {
+		return err
+	}
+	return runner.completePendingEffectCleanup(ctx, generationID)
+}
+
+func (runner *activationRunner) completePendingEffectCleanup(
+	ctx context.Context, generationID string,
+) error {
+	pending := runner.pendingEffectCleanup
+	if pending == nil || pending.consequence.generationID != generationID {
+		return nil
+	}
+	retained := runner.canceledEffects[generationID]
+	if retained == nil {
+		return errors.New("Realtime-CU activation cleanup lost its exact canceled effect")
+	}
+	intent := pending.cleanup.Cancellation.DurableIntent
+	if !runner.intentCanceled(intent) {
+		return errors.New("Realtime-CU activation cleanup lost its exact intent tombstone")
+	}
+	if retained.settlement != nil {
+		return errors.New("Realtime-CU activation cleanup conflicts with terminal settlement")
+	}
+	if err := activationEffectConsequenceMatches(
+		pending.consequence, retained.generation, intent,
+	); err != nil {
+		return fmt.Errorf("Realtime-CU activation pending cleanup: %w", err)
+	}
+	return runner.retireCanceledEffectCleanup(
+		ctx, pending.envelope, pending.cleanup.Evidence.TriggerCommit,
+		pending.consequence,
+	)
 }
 
 func (runner *activationRunner) refuse(
@@ -2053,45 +2248,6 @@ func (runner *activationRunner) intentCanceled(
 	return found && retained == intent
 }
 
-func (runner *activationRunner) planCanceledIntents(
-	snapshot trajectory.Snapshot, intent policyelements.TemporalEvidenceItemIdentity,
-) (
-	map[string]policyelements.TemporalEvidenceItemIdentity, []string, error,
-) {
-	next := make(map[string]policyelements.TemporalEvidenceItemIdentity, len(runner.canceledIntents)+1)
-	for itemID, retained := range runner.canceledIntents {
-		if !newerFinalUserIntent(snapshot, retained.StoreVersion) {
-			next[itemID] = retained
-		}
-	}
-	nextOrder := make([]string, 0, len(runner.canceledIntentOrder)+1)
-	for _, itemID := range runner.canceledIntentOrder {
-		if _, retained := next[itemID]; retained {
-			nextOrder = append(nextOrder, itemID)
-		}
-	}
-	if retained, found := next[intent.TrajectoryItemID]; found {
-		if retained != intent {
-			return nil, nil, errors.New(
-				"Realtime-CU activation cancellation changed a retained intent identity")
-		}
-		return next, nextOrder, nil
-	}
-	// Once a newer final user-authority item exists, independent temporal
-	// verification permanently rejects evidence for this older epoch. No live
-	// tombstone is needed merely to acknowledge a delayed exact cancellation.
-	if newerFinalUserIntent(snapshot, intent.StoreVersion) {
-		return next, nextOrder, nil
-	}
-	if len(next) >= runner.config.CancelMemory {
-		return nil, nil, errors.New(
-			"Realtime-CU activation cancellation memory is full of unsuperseded intents")
-	}
-	next[intent.TrajectoryItemID] = intent
-	nextOrder = append(nextOrder, intent.TrajectoryItemID)
-	return next, nextOrder, nil
-}
-
 func (runner *activationRunner) pruneCanceledIntents(snapshot trajectory.Snapshot) {
 	kept := runner.canceledIntentOrder[:0]
 	for _, itemID := range runner.canceledIntentOrder {
@@ -2099,7 +2255,8 @@ func (runner *activationRunner) pruneCanceledIntents(snapshot trajectory.Snapsho
 		if !found {
 			continue
 		}
-		if newerFinalUserIntent(snapshot, intent.StoreVersion) {
+		if newerFinalUserIntent(snapshot, intent.StoreVersion) &&
+			!canceledEffectsReferenceIntent(runner.canceledEffects, intent) {
 			delete(runner.canceledIntents, itemID)
 			continue
 		}
@@ -2134,40 +2291,155 @@ func admittedIntentMatches(
 	return admission.TriggerObservation == intent
 }
 
-func (runner *activationRunner) planCanceledEffect(
-	generation activeGeneration, settlement *pendingActivationSettlement,
-) (map[string]*canceledActivationEffect, []string, error) {
-	next := make(map[string]*canceledActivationEffect, len(runner.canceledEffects)+1)
+func (runner *activationRunner) planCanceledState(
+	snapshot trajectory.Snapshot, intent policyelements.TemporalEvidenceItemIdentity,
+	generation *activeGeneration, settlement *pendingActivationSettlement,
+	retainSuperseded bool,
+) (
+	map[string]policyelements.TemporalEvidenceItemIdentity, []string,
+	map[string]*canceledActivationEffect, []string, error,
+) {
+	nextIntents := make(map[string]policyelements.TemporalEvidenceItemIdentity, len(runner.canceledIntents)+1)
+	for itemID, retained := range runner.canceledIntents {
+		nextIntents[itemID] = retained
+	}
+	nextIntentOrder := slices.Clone(runner.canceledIntentOrder)
+	nextEffects := make(map[string]*canceledActivationEffect, len(runner.canceledEffects)+1)
 	for generationID, retained := range runner.canceledEffects {
 		if retained == nil {
-			return nil, nil, errors.New(
+			return nil, nil, nil, nil, errors.New(
 				"Realtime-CU activation cancellation retained a nil effect")
+		}
+		if tombstone, found := nextIntents[retained.generation.intent.TrajectoryItemID]; !found || tombstone != retained.generation.intent {
+			return nil, nil, nil, nil, errors.New(
+				"Realtime-CU activation canceled effect has no exact intent tombstone")
 		}
 		copy := *retained
 		copy.settlement = clonePendingActivationSettlement(retained.settlement)
-		next[generationID] = &copy
+		nextEffects[generationID] = &copy
 	}
-	nextOrder := slices.Clone(runner.canceledEffectOrder)
-	if existing := next[generation.id]; existing != nil {
-		if existing.generation != generation {
-			return nil, nil, errors.New(
+	nextEffectOrder := slices.Clone(runner.canceledEffectOrder)
+
+	currentSuperseded := newerFinalUserIntent(snapshot, intent.StoreVersion)
+	wantIntent := !currentSuperseded || retainSuperseded
+	wantEffect := generation != nil && wantIntent
+	if retained, found := nextIntents[intent.TrajectoryItemID]; found && retained != intent {
+		return nil, nil, nil, nil, errors.New(
+			"Realtime-CU activation cancellation changed a retained intent identity")
+	}
+	if generation != nil {
+		if generation.intent != intent {
+			return nil, nil, nil, nil, errors.New(
+				"Realtime-CU activation cancellation generation changed its durable intent")
+		}
+		if existing := nextEffects[generation.id]; existing != nil && existing.generation != *generation {
+			return nil, nil, nil, nil, errors.New(
 				"Realtime-CU activation cancellation changed a retained effect identity")
 		}
-		if existing.settlement == nil && settlement != nil {
-			existing.settlement = clonePendingActivationSettlement(settlement)
-		}
-		return next, nextOrder, nil
 	}
-	if len(next) >= runner.config.CancelMemory {
-		return nil, nil, errors.New(
+	needIntent := wantIntent
+	if retained, found := nextIntents[intent.TrajectoryItemID]; found && retained == intent {
+		needIntent = false
+	}
+	needEffect := wantEffect && nextEffects[generation.id] == nil
+	underPressure := len(nextIntents)+boolInt(needIntent) > runner.config.CancelMemory ||
+		len(nextEffects)+boolInt(needEffect) > runner.config.CancelMemory
+	if underPressure {
+		// Reclaim oldest complete superseded pairs only while the new exact
+		// cancellation would otherwise exceed a bounded memory. A retained
+		// terminal settlement is already an in-flight acknowledgement contract and
+		// is never reclaimed through this no-reactivation proof.
+		for _, generationID := range slices.Clone(nextEffectOrder) {
+			if len(nextIntents)+boolInt(needIntent) <= runner.config.CancelMemory &&
+				len(nextEffects)+boolInt(needEffect) <= runner.config.CancelMemory {
+				break
+			}
+			retained := nextEffects[generationID]
+			if retained == nil || retained.settlement != nil ||
+				(generation != nil && generationID == generation.id) ||
+				!newerFinalUserIntent(snapshot, retained.generation.intent.StoreVersion) {
+				continue
+			}
+			delete(nextEffects, generationID)
+			nextEffectOrder = removeActivationMemoryID(nextEffectOrder, generationID)
+			retainedIntent := retained.generation.intent
+			if !canceledEffectsReferenceIntent(nextEffects, retainedIntent) &&
+				nextIntents[retainedIntent.TrajectoryItemID] == retainedIntent {
+				delete(nextIntents, retainedIntent.TrajectoryItemID)
+				nextIntentOrder = removeActivationMemoryID(
+					nextIntentOrder, retainedIntent.TrajectoryItemID,
+				)
+			}
+		}
+		// A superseded tombstone with no retained effect is independently safe
+		// to reclaim when intent memory alone is under pressure.
+		for _, itemID := range slices.Clone(nextIntentOrder) {
+			if len(nextIntents)+boolInt(needIntent) <= runner.config.CancelMemory {
+				break
+			}
+			retained := nextIntents[itemID]
+			if retained == intent || canceledEffectsReferenceIntent(nextEffects, retained) ||
+				!newerFinalUserIntent(snapshot, retained.StoreVersion) {
+				continue
+			}
+			delete(nextIntents, itemID)
+			nextIntentOrder = removeActivationMemoryID(nextIntentOrder, itemID)
+		}
+	}
+	if len(nextEffects)+boolInt(needEffect) > runner.config.CancelMemory {
+		return nil, nil, nil, nil, errors.New(
 			"Realtime-CU activation cancellation memory is full of unacknowledged effects")
 	}
-	copy := generation
-	next[generation.id] = &canceledActivationEffect{
-		generation: copy, settlement: clonePendingActivationSettlement(settlement),
+	if len(nextIntents)+boolInt(needIntent) > runner.config.CancelMemory {
+		return nil, nil, nil, nil, errors.New(
+			"Realtime-CU activation cancellation memory is full of unsuperseded intents")
 	}
-	nextOrder = append(nextOrder, generation.id)
-	return next, nextOrder, nil
+	if needIntent {
+		nextIntents[intent.TrajectoryItemID] = intent
+		nextIntentOrder = append(nextIntentOrder, intent.TrajectoryItemID)
+	}
+	if wantEffect {
+		if existing := nextEffects[generation.id]; existing != nil {
+			if existing.settlement == nil && settlement != nil {
+				existing.settlement = clonePendingActivationSettlement(settlement)
+			}
+		} else {
+			copy := *generation
+			nextEffects[generation.id] = &canceledActivationEffect{
+				generation: copy, settlement: clonePendingActivationSettlement(settlement),
+			}
+			nextEffectOrder = append(nextEffectOrder, generation.id)
+		}
+	}
+	return nextIntents, nextIntentOrder, nextEffects, nextEffectOrder, nil
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func canceledEffectsReferenceIntent(
+	effects map[string]*canceledActivationEffect,
+	intent policyelements.TemporalEvidenceItemIdentity,
+) bool {
+	for _, retained := range effects {
+		if retained != nil && retained.generation.intent == intent {
+			return true
+		}
+	}
+	return false
+}
+
+func removeActivationMemoryID(order []string, itemID string) []string {
+	for index, retained := range order {
+		if retained == itemID {
+			return append(order[:index], order[index+1:]...)
+		}
+	}
+	return order
 }
 
 func (runner *activationRunner) forgetCanceledEffect(generationID string) {
@@ -2182,8 +2454,122 @@ func (runner *activationRunner) forgetCanceledEffect(generationID string) {
 		runner.canceledEffectOrder = append(
 			runner.canceledEffectOrder[:index], runner.canceledEffectOrder[index+1:]...,
 		)
-		return
+		break
 	}
+	// A tombstone is never removed while an effect refers to it. Once the last
+	// effect retires, a newer final intent supplies the independent
+	// no-reactivation proof and lets the next safe pass release the pair's intent
+	// half as well.
+	runner.pruneCanceledIntents(runner.store.Snapshot())
+}
+
+type activationEffectConsequence struct {
+	successful   bool
+	generationID string
+	callID       string
+	tool         string
+}
+
+// inspectActivationEffectConsequence recognizes only a complete canonical
+// intent -> call -> result -> observation chain. It does not grant either
+// cancellation or activation authority; callers must separately match the
+// returned identity to active or retained generation state.
+func inspectActivationEffectConsequence(
+	prefix []trajectory.Item, current trajectory.Item,
+	intent policyelements.TemporalEvidenceItemIdentity,
+) (activationEffectConsequence, bool, error) {
+	if current.Kind != trajectory.KindObservation || current.Observation == nil ||
+		trajectory.AuthorityOf(current) != trajectory.AuthorityObserver ||
+		(current.Observation.Source != SourceScreen && current.Observation.Source != SourceCamera) {
+		return activationEffectConsequence{}, false, nil
+	}
+	resultID, err := canonicalResultParent(prefix, current)
+	if err != nil {
+		return activationEffectConsequence{}, false, err
+	}
+	if resultID == "" {
+		return activationEffectConsequence{}, false, nil
+	}
+	resultIndex := -1
+	for index := range prefix {
+		if prefix[index].ID == resultID {
+			resultIndex = index
+			break
+		}
+	}
+	if resultIndex < 0 {
+		return activationEffectConsequence{}, false, errors.New("effect consequence does not name a canonical result in its exact prefix")
+	}
+	result := prefix[resultIndex]
+	if result.Kind != trajectory.KindToolResult || result.ToolResult == nil {
+		return activationEffectConsequence{}, false, errors.New("effect consequence parent is not a canonical tool result")
+	}
+	successful := result.ToolResult.Error == ""
+	if successful {
+		if len(result.ToolResult.Output) == 0 || !json.Valid(result.ToolResult.Output) {
+			return activationEffectConsequence{}, false, errors.New("successful canonical result has no valid output")
+		}
+	} else {
+		if strings.TrimSpace(result.ToolResult.Error) == "" {
+			return activationEffectConsequence{}, false, errors.New("failed canonical result has an empty error")
+		}
+		if len(result.ToolResult.Output) != 0 {
+			return activationEffectConsequence{}, false, errors.New("failed canonical result also carries successful output")
+		}
+	}
+	for _, identity := range []string{
+		result.ID, result.InvocationID, result.ToolResult.CallID, result.ToolResult.Name,
+	} {
+		if !boundedActivationIdentifier(identity, true) {
+			return activationEffectConsequence{}, false, errors.New("canonical result has a noncanonical identity")
+		}
+	}
+	if intent.StoreVersion == 0 || intent.StoreVersion > uint64(len(prefix)) {
+		return activationEffectConsequence{}, false, errors.New("durable intent is outside the result prefix")
+	}
+	intentIndex := int(intent.StoreVersion - 1)
+	intentItem := prefix[intentIndex]
+	if intentItem.ID != intent.TrajectoryItemID || intentItem.SourceRevision != intent.SourceRevision ||
+		intentItem.Event == nil || intentItem.Event.EventID != intent.TriggerItemID ||
+		resultIndex <= intentIndex || !trajectoryCausalAncestor(prefix, intentItem.ID, current.ID) {
+		return activationEffectConsequence{}, false, errors.New("result consequence is not an exact descendant of the durable intent")
+	}
+	matchingCalls := 0
+	matchingCallID := ""
+	for index := intentIndex + 1; index < resultIndex; index++ {
+		item := prefix[index]
+		if item.Kind == trajectory.KindToolCall && item.ToolCall != nil &&
+			item.InvocationID == result.InvocationID &&
+			item.ToolCall.CallID == result.ToolResult.CallID &&
+			item.ToolCall.Name == result.ToolResult.Name {
+			matchingCalls++
+			matchingCallID = item.ID
+		}
+	}
+	if matchingCalls != 1 || !slices.Contains(result.CausalParentIDs, matchingCallID) ||
+		!trajectoryCausalAncestor(prefix, intentItem.ID, matchingCallID) {
+		return activationEffectConsequence{}, false, fmt.Errorf(
+			"result has %d exact canonical calls under the durable intent", matchingCalls,
+		)
+	}
+	return activationEffectConsequence{
+		successful: successful, generationID: result.InvocationID,
+		callID: result.ToolResult.CallID, tool: result.ToolResult.Name,
+	}, true, nil
+}
+
+func activationEffectConsequenceMatches(
+	consequence activationEffectConsequence, generation activeGeneration,
+	intent policyelements.TemporalEvidenceItemIdentity,
+) error {
+	if generation.id != consequence.generationID || generation.intent != intent {
+		return errors.New("canonical result does not address the selected generation and durable intent")
+	}
+	if generation.callID != "" &&
+		(generation.callID != consequence.callID || generation.tool != consequence.tool) {
+		return errors.New("canonical result contradicts the selected generation effect")
+	}
+	return nil
 }
 
 func clonePendingActivationSettlement(
@@ -2234,6 +2620,22 @@ func admittedTemporalEvidencePayload(payload any) (policyelements.AdmittedTempor
 		}
 	}
 	return policyelements.AdmittedTemporalEvidence{}, false
+}
+
+func intentSettlementCleanupPayload(payload any) (policyelements.IntentSettlementCleanup, bool) {
+	clone := func(value policyelements.IntentSettlementCleanup) policyelements.IntentSettlementCleanup {
+		value.Evidence = cloneAdmittedTemporalEvidence(value.Evidence)
+		return value
+	}
+	switch value := payload.(type) {
+	case policyelements.IntentSettlementCleanup:
+		return clone(value), true
+	case *policyelements.IntentSettlementCleanup:
+		if value != nil {
+			return clone(*value), true
+		}
+	}
+	return policyelements.IntentSettlementCleanup{}, false
 }
 
 func cloneAdmittedTemporalEvidence(

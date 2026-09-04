@@ -26,6 +26,7 @@ const intentSettlementGraph = `graph intent_settlement_test {
     input reset = settlement.reset;
     input cancel = settlement.cancel;
     output admitted = settlement.admitted;
+    output cleanup = settlement.cleanup;
     output probe = settlement.probe;
     output terminal = settlement.terminal;
     output state = settlement.state;
@@ -54,7 +55,9 @@ const chainedIntentSettlementGraph = `graph chained_intent_settlement_test {
     output first_terminal = first.terminal;
     output first_state = first.state;
     output first_outcome = first.outcome;
+    output first_cleanup = first.cleanup;
     output admitted = second.admitted;
+    output cleanup = second.cleanup;
     output second_probe = second.probe;
     output second_terminal = second.terminal;
     output second_state = second.state;
@@ -72,9 +75,9 @@ func TestIntentSettlementContractAndConfigAreExplicit(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.IntentSettlement" || descriptor.Revision != 1 ||
+	if descriptor.Name != "policy.IntentSettlement" || descriptor.Revision != 2 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/intent-settlement-config/v1" ||
-		descriptor.StateSchema != "schema://openrealtime/policy/intent-settlement-state/v1" {
+		descriptor.StateSchema != "schema://openrealtime/policy/intent-settlement-state/v2" {
 		t.Fatalf("intent settlement descriptor = %+v", descriptor)
 	}
 	wantPorts := []element.Port{
@@ -84,6 +87,7 @@ func TestIntentSettlementContractAndConfigAreExplicit(t *testing.T) {
 		{Name: "reset", Direction: element.Input, Type: policyelements.IntentSettlementResetType(), Cardinality: element.One, Required: true, DefaultDepth: 16},
 		{Name: "cancel", Direction: element.Input, Type: policyelements.IntentSettlementCancelType(), Cardinality: element.One, Required: true, DefaultDepth: 16},
 		{Name: "admitted", Direction: element.Output, Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One, Required: true, DefaultDepth: 32},
+		{Name: "cleanup", Direction: element.Output, Type: policyelements.IntentSettlementCleanupType(), Cardinality: element.One, Required: true, DefaultDepth: 16},
 		{Name: "probe", Direction: element.Output, Type: policyelements.IntentSettlementProbeType(), Cardinality: element.One, Required: true, DefaultDepth: 16},
 		{Name: "terminal", Direction: element.Output, Type: policyelements.IntentSettlementDecisionType(), Cardinality: element.One, Required: true, DefaultDepth: 16},
 		{Name: "state", Direction: element.Output, Type: policyelements.IntentSettlementStateType(), Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -95,7 +99,7 @@ func TestIntentSettlementContractAndConfigAreExplicit(t *testing.T) {
 	wantReaction := element.Reaction{
 		Triggers:       []string{"evidence", "disposition", "ack"},
 		Interrupts:     []string{"reset", "cancel"},
-		Outcomes:       []string{"admitted", "probe", "terminal", "state", "outcome"},
+		Outcomes:       []string{"admitted", "cleanup", "probe", "terminal", "state", "outcome"},
 		MaxConcurrency: 1, BreaksCycles: true,
 	}
 	if !reflect.DeepEqual(descriptor.Reaction, wantReaction) ||
@@ -120,7 +124,7 @@ func TestIntentSettlementContractAndConfigAreExplicit(t *testing.T) {
 		}
 		if registration.Profile.Artifact.ID !=
 			"builtin://openrealtime/elements/policy.IntentSettlement" ||
-			registration.Profile.Artifact.Revision != "implementation:1" {
+			registration.Profile.Artifact.Revision != "implementation:2" {
 			t.Fatalf("intent settlement registration = %+v", registration.Profile)
 		}
 		validator = registration.Factory.(element.ConfigValidator)
@@ -519,7 +523,7 @@ func TestIntentSettlementActorReceiptLinearizesCancellationAndContinue(t *testin
 		assertNoPolicyEnvelope(t, harness.egress(t, "admitted"))
 	})
 
-	t.Run("continue received first admits once then cancellation tombstones", func(t *testing.T) {
+	t.Run("continue received first then cancellation forwards cleanup only", func(t *testing.T) {
 		store, evidence := settlementEvidenceFixture(t, false, true)
 		harness := mountIntentSettlement(t, store, 4)
 		defer harness.stop(t)
@@ -555,11 +559,15 @@ func TestIntentSettlementActorReceiptLinearizesCancellationAndContinue(t *testin
 		sendPolicy(t, harness.ingress(t, "evidence"), settlementEvidenceEnvelope(
 			"same-intent-after-cancel", "session-a", 11, evidence,
 		))
-		if outcome := intentSettlementOutcome(t, harness); outcome.Kind != policyelements.IntentSettlementIgnored ||
-			outcome.Code != "intent_revoked" {
+		cleanup := receivePolicy(t, harness.egress(t, "cleanup"))
+		assertIntentSettlementCleanup(
+			t, cleanup, evidence, cancellation, "same-intent-after-cancel", "cancel-after-continue",
+		)
+		if outcome := intentSettlementOutcome(t, harness); outcome.Kind != policyelements.IntentSettlementCleanupForwarded ||
+			outcome.Code != "canceled_successful_effect_cleanup" {
 			t.Fatalf("continue-first replay outcome = %+v", outcome)
 		}
-		if state := intentSettlementState(t, harness); state.Admitted != 1 ||
+		if state := intentSettlementState(t, harness); state.Admitted != 1 || state.Cleanups != 1 ||
 			state.CancellationRequests != 1 || state.CancellationsCompleted != 1 {
 			t.Fatalf("continue-first replay state = %+v", state)
 		}
@@ -1441,8 +1449,12 @@ func TestIntentSettlementExactCancellationTombstonesQueuedEvidenceButAllowsNewIn
 	sendPolicy(t, harness.ingress(t, "evidence"), settlementEvidenceEnvelope(
 		"queued-canceled-evidence", "session-a", 10, evidence,
 	))
-	if outcome := intentSettlementOutcome(t, harness); outcome.Kind != policyelements.IntentSettlementIgnored ||
-		outcome.Code != "intent_revoked" {
+	queuedCleanup := receivePolicy(t, harness.egress(t, "cleanup"))
+	assertIntentSettlementCleanup(
+		t, queuedCleanup, evidence, cancellation, "queued-canceled-evidence", "pre-cancel",
+	)
+	if outcome := intentSettlementOutcome(t, harness); outcome.Kind != policyelements.IntentSettlementCleanupForwarded ||
+		outcome.Code != "canceled_successful_effect_cleanup" {
 		t.Fatalf("queued canceled evidence outcome = %+v", outcome)
 	}
 	_ = intentSettlementState(t, harness)
@@ -1987,12 +1999,240 @@ func TestIntentSettlementRejectsCrossSessionInputsWithoutEvictingLiveSafetyState
 	sendPolicy(t, harness.ingress(t, "evidence"), settlementEvidenceEnvelope(
 		"canceled-in-flight", "session-a", 13, evidence,
 	))
-	if outcome := intentSettlementOutcome(t, harness); outcome.Code != "intent_revoked" ||
-		outcome.Kind != policyelements.IntentSettlementIgnored {
+	inFlightCleanup := receivePolicy(t, harness.egress(t, "cleanup"))
+	assertIntentSettlementCleanup(
+		t, inFlightCleanup, evidence, exactCancel, "canceled-in-flight", "exact-cancel",
+	)
+	if outcome := intentSettlementOutcome(t, harness); outcome.Code != "canceled_successful_effect_cleanup" ||
+		outcome.Kind != policyelements.IntentSettlementCleanupForwarded {
 		t.Fatalf("canceled in-flight evidence outcome = %+v", outcome)
 	}
 	_ = intentSettlementState(t, harness)
 	assertNoPolicyEnvelope(t, harness.egress(t, "probe"))
+	assertNoPolicyEnvelope(t, harness.egress(t, "admitted"))
+}
+
+func TestIntentSettlementRevokedIntentForwardsOnlyExactEffectCleanupEvidence(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		failed       bool
+		resultLinked bool
+		forwarded    bool
+		code         string
+	}{
+		{name: "exact failed consequence", failed: true, forwarded: true,
+			code: "canceled_failed_effect_cleanup"},
+		{name: "ordinary cadence", code: "intent_revoked"},
+		{name: "successful consequence", resultLinked: true, forwarded: true,
+			code: "canceled_successful_effect_cleanup"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			store, evidence := settlementEvidenceFixture(t, testCase.failed, testCase.resultLinked)
+			harness := mountIntentSettlement(t, store, 2)
+			defer harness.stop(t)
+			consumeIntentSettlementStartup(t, harness)
+			cancellation := policyelements.IntentSettlementCancellation{
+				SessionID: "session-a", DurableIntent: *evidence.DurableIntent,
+				Reason: "participant canceled",
+			}
+			const cancellationItemID = "effect-cleanup-cancel"
+			sendPolicy(t, harness.ingress(t, "cancel"),
+				settlementCancelEnvelope(cancellationItemID, cancellation))
+			_ = intentSettlementOutcome(t, harness)
+			_ = intentSettlementState(t, harness)
+
+			envelope := settlementEvidenceEnvelope(
+				"revoked-failed-effect-evidence", "session-a", 10, evidence,
+			)
+			sendPolicy(t, harness.ingress(t, "evidence"), envelope)
+			if testCase.forwarded {
+				cleanup := receivePolicy(t, harness.egress(t, "cleanup"))
+				assertIntentSettlementCleanup(
+					t, cleanup, evidence, cancellation, envelope.ItemID, cancellationItemID,
+				)
+				assertNoPolicyEnvelope(t, harness.egress(t, "admitted"))
+			} else {
+				assertNoPolicyEnvelope(t, harness.egress(t, "admitted"))
+				assertNoPolicyEnvelope(t, harness.egress(t, "cleanup"))
+			}
+			outcome := intentSettlementOutcome(t, harness)
+			if outcome.Code != testCase.code ||
+				(testCase.forwarded && outcome.Kind != policyelements.IntentSettlementCleanupForwarded) ||
+				(!testCase.forwarded && outcome.Kind != policyelements.IntentSettlementIgnored) {
+				t.Fatalf("revoked %s outcome = %+v", testCase.name, outcome)
+			}
+			state := intentSettlementState(t, harness)
+			if state.CancellationEntries != 1 || state.TrackedIntents != 0 ||
+				state.PendingIntents != 0 || state.TerminalIntents != 0 {
+				t.Fatalf("revoked %s changed tombstone or settlement records: %+v", testCase.name, state)
+			}
+			assertNoPolicyEnvelope(t, harness.egress(t, "probe"))
+			assertNoPolicyEnvelope(t, harness.egress(t, "terminal"))
+		})
+	}
+}
+
+func TestIntentSettlementCleanupVerifierRejectsHostileControlsAndAcceptsDelayedPrefix(t *testing.T) {
+	store, evidence := settlementEvidenceFixture(t, false, true)
+	harness := mountIntentSettlement(t, store, 4)
+	consumeIntentSettlementStartup(t, harness)
+	cancellation := policyelements.IntentSettlementCancellation{
+		SessionID: "session-a", DurableIntent: *evidence.DurableIntent,
+		Reason: "participant canceled",
+	}
+	const cancellationItemID = "cleanup-verifier-cancel"
+	sendPolicy(t, harness.ingress(t, "cancel"),
+		settlementCancelEnvelope(cancellationItemID, cancellation))
+	_ = intentSettlementOutcome(t, harness)
+	_ = intentSettlementState(t, harness)
+	evidenceEnvelope := settlementEvidenceEnvelope(
+		"cleanup-verifier-evidence", "session-a", 10, evidence,
+	)
+	sendPolicy(t, harness.ingress(t, "evidence"), evidenceEnvelope)
+	validEnvelope := receivePolicy(t, harness.egress(t, "cleanup"))
+	validCleanup := validEnvelope.Payload.(policyelements.IntentSettlementCleanup)
+	_ = intentSettlementOutcome(t, harness)
+	_ = intentSettlementState(t, harness)
+	harness.stop(t)
+
+	config := settlementExpectedConfig()
+	if err := policyelements.VerifyIntentSettlementCleanup(
+		store.Snapshot(), validEnvelope, validCleanup, config,
+	); err != nil {
+		t.Fatalf("verify canonical cleanup: %v", err)
+	}
+	// Cleanup evidence is immutable historical authority. A later final user
+	// intent must not invalidate it; cancellation is still checked against this
+	// complete current snapshot.
+	appendTemporalItems(t, store, temporalIntent("cleanup-newer-intent", "cleanup-newer-event", 40, 6))
+	current := store.Snapshot()
+	if err := policyelements.VerifyIntentSettlementCleanup(
+		current, validEnvelope, validCleanup, config,
+	); err != nil {
+		t.Fatalf("delayed cleanup against current snapshot: %v", err)
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*element.Envelope, *policyelements.IntentSettlementCleanup)
+	}{
+		{name: "envelope type", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.Type = policyelements.AdmittedTemporalEvidenceType()
+		}},
+		{name: "item ID digest", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.ItemID += "-forged"
+		}},
+		{name: "sequence", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.Sequence++
+		}},
+		{name: "source", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.SourceID = "foreign-settlement"
+		}},
+		{name: "cross session envelope", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.SessionID = "session-b"
+		}},
+		{name: "cancellation scope", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.CancellationScope = "other-intent"
+		}},
+		{name: "evidence item identity", mutate: func(_ *element.Envelope, cleanup *policyelements.IntentSettlementCleanup) {
+			cleanup.EvidenceItemID = "other-evidence"
+		}},
+		{name: "cancellation item identity", mutate: func(_ *element.Envelope, cleanup *policyelements.IntentSettlementCleanup) {
+			cleanup.CancellationItemID = "other-cancel"
+		}},
+		{name: "missing evidence parent", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.CausalParents = []string{cancellationItemID}
+		}},
+		{name: "missing cancellation parent", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.CausalParents = []string{evidenceEnvelope.ItemID}
+		}},
+		{name: "duplicate parent", mutate: func(envelope *element.Envelope, _ *policyelements.IntentSettlementCleanup) {
+			envelope.CausalParents = append(envelope.CausalParents, evidenceEnvelope.ItemID)
+		}},
+		{name: "cancellation identity", mutate: func(_ *element.Envelope, cleanup *policyelements.IntentSettlementCleanup) {
+			cleanup.Cancellation.DurableIntent.TriggerItemID = "forged-intent-event"
+		}},
+		{name: "durable intent mismatch", mutate: func(_ *element.Envelope, cleanup *policyelements.IntentSettlementCleanup) {
+			cleanup.Evidence.DurableIntent.SourceRevision++
+		}},
+		{name: "evidence prefix", mutate: func(_ *element.Envelope, cleanup *policyelements.IntentSettlementCleanup) {
+			cleanup.Evidence.Prefix.Digest = "sha256:" + strings.Repeat("0", 64)
+			cleanup.Evidence.TriggerCommit.Context.Prefix = cleanup.Evidence.Prefix
+		}},
+		{name: "evidence trigger", mutate: func(_ *element.Envelope, cleanup *policyelements.IntentSettlementCleanup) {
+			cleanup.Evidence.TriggerObservation.TriggerItemID = "forged-consequence-event"
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			envelope, cleanup := cloneSettlementCleanupControl(validEnvelope, validCleanup)
+			testCase.mutate(&envelope, &cleanup)
+			envelope.Payload = cleanup
+			if err := policyelements.VerifyIntentSettlementCleanup(
+				current, envelope, cleanup, config,
+			); err == nil {
+				t.Fatalf("cleanup verifier accepted hostile %s", testCase.name)
+			}
+		})
+	}
+
+	for _, testCase := range []struct {
+		name   string
+		mutate func(*trajectory.Snapshot)
+	}{
+		{name: "result has both status forms", mutate: func(snapshot *trajectory.Snapshot) {
+			item := settlementTrajectoryItem(t, snapshot.Items, "result-item-1")
+			item.ToolResult.Error = "forged failure alongside output"
+		}},
+		{name: "result has no status", mutate: func(snapshot *trajectory.Snapshot) {
+			item := settlementTrajectoryItem(t, snapshot.Items, "result-item-1")
+			item.ToolResult.Output = nil
+			item.ToolResult.Error = " "
+		}},
+		{name: "result invocation", mutate: func(snapshot *trajectory.Snapshot) {
+			settlementTrajectoryItem(t, snapshot.Items, "result-item-1").InvocationID = "other-generation"
+		}},
+		{name: "result call", mutate: func(snapshot *trajectory.Snapshot) {
+			settlementTrajectoryItem(t, snapshot.Items, "result-item-1").ToolResult.CallID = "other-call"
+		}},
+		{name: "result tool", mutate: func(snapshot *trajectory.Snapshot) {
+			settlementTrajectoryItem(t, snapshot.Items, "result-item-1").ToolResult.Name = "computer.type"
+		}},
+		{name: "result parent lineage", mutate: func(snapshot *trajectory.Snapshot) {
+			settlementTrajectoryItem(t, snapshot.Items, "result-item-1").CausalParentIDs = []string{"intent-1"}
+		}},
+		{name: "consequence parent lineage", mutate: func(snapshot *trajectory.Snapshot) {
+			settlementTrajectoryItem(t, snapshot.Items, "post-screen").CausalParentIDs = []string{"intent-1"}
+		}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			forgedSnapshot := trajectory.Snapshot{
+				Version: current.Version, Items: slices.Clone(current.Items),
+			}
+			// Clone nested trajectory payloads before mutating the defensive test
+			// snapshot; different hostile cases must remain independent.
+			payload, err := json.Marshal(forgedSnapshot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(payload, &forgedSnapshot); err != nil {
+				t.Fatal(err)
+			}
+			testCase.mutate(&forgedSnapshot)
+			identity, err := trajectory.IdentifyPrefix(forgedSnapshot, validCleanup.Evidence.Prefix.Version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			envelope, cleanup := cloneSettlementCleanupControl(validEnvelope, validCleanup)
+			cleanup.Evidence.Prefix = identity
+			cleanup.Evidence.TriggerCommit.Context.Prefix = identity
+			envelope.Payload = cleanup
+			if err := policyelements.VerifyIntentSettlementCleanup(
+				forgedSnapshot, envelope, cleanup, config,
+			); err == nil {
+				t.Fatalf("cleanup verifier accepted hostile %s", testCase.name)
+			}
+		})
+	}
 }
 
 func TestIntentSettlementNewIntentWaitsForExactRetirementAcknowledgement(t *testing.T) {
@@ -2301,6 +2541,53 @@ func settlementEvidenceEnvelope(
 	}
 }
 
+func assertIntentSettlementCleanup(
+	t *testing.T, envelope element.Envelope,
+	evidence policyelements.AdmittedTemporalEvidence,
+	cancellation policyelements.IntentSettlementCancellation,
+	evidenceItemID, cancellationItemID string,
+) {
+	t.Helper()
+	cleanup, ok := envelope.Payload.(policyelements.IntentSettlementCleanup)
+	if !ok || !envelope.Type.Equal(policyelements.IntentSettlementCleanupType()) {
+		t.Fatalf("settlement cleanup has payload/type %T/%s", envelope.Payload, envelope.Type.String())
+	}
+	if !reflect.DeepEqual(cleanup.Evidence, evidence) ||
+		!reflect.DeepEqual(cleanup.Cancellation, cancellation) ||
+		cleanup.CancellationItemID != cancellationItemID ||
+		envelope.CancellationScope != cancellation.DurableIntent.TrajectoryItemID ||
+		!slices.Contains(envelope.CausalParents, evidenceItemID) ||
+		!slices.Contains(envelope.CausalParents, cancellationItemID) {
+		t.Fatalf("settlement cleanup = %+v envelope=%+v", cleanup, envelope)
+	}
+}
+
+func cloneSettlementCleanupControl(
+	envelope element.Envelope, cleanup policyelements.IntentSettlementCleanup,
+) (element.Envelope, policyelements.IntentSettlementCleanup) {
+	result := envelope.Clone()
+	cleanup.Evidence.QualifyingObservations = slices.Clone(cleanup.Evidence.QualifyingObservations)
+	if cleanup.Evidence.DurableIntent != nil {
+		intent := *cleanup.Evidence.DurableIntent
+		cleanup.Evidence.DurableIntent = &intent
+	}
+	result.Payload = cleanup
+	return result, cleanup
+}
+
+func settlementTrajectoryItem(
+	t *testing.T, items []trajectory.Item, itemID string,
+) *trajectory.Item {
+	t.Helper()
+	for index := range items {
+		if items[index].ID == itemID {
+			return &items[index]
+		}
+	}
+	t.Fatalf("trajectory fixture has no item %q", itemID)
+	return nil
+}
+
 func settlementDisposition(
 	probe policyelements.IntentSettlementProbe, kind policyelements.IntentDispositionKind,
 ) policyelements.IntentDisposition {
@@ -2439,7 +2726,7 @@ func assertIntentSettlementLiveResolution(t *testing.T, mounted *graphruntime.Mo
 	resolution := mounted.Live().Nodes["settlement"].Resolution
 	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 		resolution.Runtime.ID != "builtin://openrealtime/elements/policy.IntentSettlement" ||
-		resolution.Runtime.Revision != "implementation:1" ||
+		resolution.Runtime.Revision != "implementation:2" ||
 		resolution.CapabilitiesEvidence != inspect.EvidenceLive || len(resolution.Capabilities) != 0 {
 		t.Fatalf("intent settlement live resolution = %+v", resolution)
 	}

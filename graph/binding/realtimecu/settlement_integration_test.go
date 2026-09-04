@@ -59,6 +59,7 @@ const mountedSettlementGraph = `graph realtime_cu_settlement_integration_test {
     probe_requests.out -> producer.probe;
     producer.disposition -> settlement.disposition;
     settlement.admitted -> activation.admitted;
+    settlement.cleanup -> activation.effect_cleanup;
     settlement.terminal -> activation.settlement;
     activation.settlement_ack -> settlement.ack;
     settlement.state -> settlement_state_sink.in;
@@ -173,6 +174,7 @@ func TestMountedSettlementCompositionTopologyHasNoActivationBypass(t *testing.T)
 		{"probe_requests", "out", "producer", "probe"},
 		{"producer", "disposition", "settlement", "disposition"},
 		{"settlement", "admitted", "activation", "admitted"},
+		{"settlement", "cleanup", "activation", "effect_cleanup"},
 		{"settlement", "terminal", "activation", "settlement"},
 		{"activation", "settlement_ack", "settlement", "ack"},
 	}
