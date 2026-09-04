@@ -8,13 +8,14 @@ graph-launch profile. The graph does not contain a model, ASR implementation,
 vision implementation, browser driver, WebSocket server, or UI.
 
 That separation is intentional. A host supplies one exact proposal-only,
-silent continuation plugin, one exact audiovisual observer plugin, and one
-screen-only `computeruse.Target`. `graph/launch` then seals those identities
-with the topology, target-bound values, descriptor lock, deployment artifact,
-adapter profile, and mount-scoped service artifacts before a session can
-start. Application-profile resolution builds and checks the plan but does not
-open the model or observer factories. Those remain per-session resources and
-are first acquired by `SessionProvider.Start`.
+silent continuation plugin, one exact post-effect semantic disposition policy,
+one exact audiovisual observer plugin, and one screen-only
+`computeruse.Target`. `graph/launch` then seals those identities with the
+topology, target-bound values, descriptor lock, deployment artifact, adapter
+profile, and mount-scoped service artifacts before a session can start.
+Application-profile resolution builds and checks the plan but does not open
+the model, policy, or observer factories. Those remain per-session resources
+and are first acquired after `SessionProvider.Start` mounts the selected graph.
 
 ## Stable protocol surface
 
@@ -46,12 +47,14 @@ The external-effect path is:
 committed user observation + pre-intent observer/source cohort
   -> fresh post-intent causal observations
   -> temporal-evidence admission
+  -> intent settlement gate
   -> durable activation
   -> proposal + canonical provenance
   -> declaration -> confirmation -> target fence
   -> canonical call -> irreversibility ledger
   -> client call -> client result -> canonical result
   -> forced screen consequence observation
+  -> disposition producer -> continue or terminal settlement
 ```
 
 Only `action.Dispatch` has an external effect, and its dispatcher is the
@@ -103,13 +106,19 @@ client completes more effects than the bounded observer path can retain, the
 session fails closed before another consequence notification instead of
 discarding or reparenting causal evidence.
 
-An addressed Realtime cancellation also crosses the graph. The adapter waits
-for the durable-activation cancellation outcome before returning. Activation
-records both the runtime sequence and canonical store-version revocation floors
-in every admission mode, so an admission already in flight cannot reorder
-behind cancellation and revive the old intent even when its runtime sequence is
-absent or newer. A later timestamped user observation may establish a new task
-normally.
+An addressed Realtime cancellation also crosses one typed `session_cancel`
+boundary. The adapter first waits for every earlier accepted observation to
+reach its exact canonical commit, then waits for the coordinator's terminal
+outcome before returning. The coordinator resolves the newest exact durable
+intent and requires both settlement-gate acknowledgement and actual
+disposition-provider quiescence before it cancels activation. It then follows
+the exact activation generation through the model, canonical model-result
+batch, and every configured action stage. An `already_canceled` control response
+is not model quiescence, an already-published model commit is retained for a
+later cancellation, and a partial or forged commit batch cannot authorize
+action cancellation. Activation retains the exact durable-intent tombstone, so
+an in-flight admission cannot reorder behind cancellation and revive old work.
+A later timestamped user observation may establish a new task normally.
 
 ## Application profile and plugin registry
 
@@ -123,6 +132,12 @@ applicationConfig := realtimecu.ApplicationConfig{
         Reference: modelReference,
         Artifact: modelArtifact,
         Descriptor: proposalOnlySilentDescriptor,
+    },
+    SettlementPolicy: realtimecu.ApplicationPolicySelection{
+        Reference: settlementPolicyReference,
+        Artifact: settlementPolicyArtifact,
+        Descriptor: settlementPolicyDescriptor,
+        Configuration: settlementPolicyConfiguration,
     },
     Observer: realtimecu.ApplicationObserverSelection{
         Reference: observerReference,
@@ -151,9 +166,18 @@ registration, err := graphs.RealtimeComputerUseApplicationRegistration(
             ApplicationModelSelection: applicationConfig.Model,
             Factory: modelFactory,
         }},
+        Policies: []realtimecu.PolicyFactoryRegistration{{
+            ApplicationPolicySelection: realtimecu.ApplicationPolicySelection{
+                Reference: applicationConfig.SettlementPolicy.Reference,
+                Artifact: applicationConfig.SettlementPolicy.Artifact,
+            },
+            DescribeConfiguration: settlementPolicyDescriptorForConfiguration,
+            FactoryConfiguration: settlementPolicyFactoryForConfiguration,
+            ReadinessConfiguration: settlementPolicyReadinessForConfiguration,
+        }},
         Observers: []realtimecu.ObserverFactoryRegistration{{
             ApplicationObserverSelection: applicationConfig.Observer,
-            Factory: observerFactory,
+            ResourceFactory: observerFactory,
         }},
     },
 )
@@ -167,8 +191,11 @@ bundle, err := server.NewProfileGraphBundle(ctx, server.ProfileGraphBundleConfig
 })
 ```
 
-`checkedProfile.Application.Configuration` is the canonical JSON encoding of
-`applicationConfig`; the same profile pins the application, session-provider,
+The three parameterized policy callbacks accept the selected raw configuration;
+the descriptor callback must reproduce the exact descriptor pinned by
+`applicationConfig`, and the readiness and factory callbacks remain unopened
+until their documented lifecycle points. `checkedProfile.Application.Configuration`
+is the canonical JSON encoding of `applicationConfig`; the same profile pins the application, session-provider,
 adapter, graph plan, and server gateway artifacts. The host registry supplies
 factories only after exact reference/artifact/descriptor/source matching. It
 does not put credentials, device handles, or executable digests into the
@@ -188,12 +215,18 @@ launchConfig, err := graphs.RealtimeComputerUseLaunchConfig(
             Descriptor: proposalOnlySilentDescriptor,
             Factory: modelFactory,
         },
+        SettlementPolicy: realtimecu.PolicyPlugin{
+            Reference: settlementPolicyReference,
+            Artifact: settlementPolicyArtifact,
+            Descriptor: settlementPolicyDescriptor,
+            Factory: settlementPolicyFactory,
+        },
         Observer: realtimecu.ObserverPlugin{
             Reference: observerReference,
             Name: "audiovisual-observer",
             Artifact: observerArtifact,
             Sources: []string{"camera", "microphone", "screen"},
-            Factory: observerFactory,
+            ResourceFactory: observerFactory,
         },
         Target: computeruse.Target{
             Name: "benchmark-browser",
@@ -239,28 +272,28 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
-The 2026-09-04 production-artifact checkpoint pins graph fingerprint
-`sha256:aae5bfb370f66a1ff3ccb70de8db44df8598982ae45b438969a6e0dee33627bb`
+The 2026-09-04 no-bypass production-artifact checkpoint pins, for the checked
+integration fixture in
+`TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
+(`benchmark-browser`, one `screen` source at 1280x720, and the test
+model/policy/observer selections), graph fingerprint
+`sha256:383cdd413cb168dd0956426fc06ed919b4a5a63e82a2bceea6f196cb2005b021`
 and plan fingerprint
-`sha256:274fda92e64d02d33ff86ac7a76b7d4e5c087aa99c42fca491ea7f4e0d361473`.
-Its lock digest is
-`sha256:852d2e8d39651fafa0cfd9015ab5b34c9e41edbe4f3fed0d17ce5de5f383a3d7`;
-the source and values digests remain unchanged. Its activation
-descriptor/runtime/implementation are revision 10 with descriptor
-digest
-`sha256:e7be8e2fd0169cd9b183ae8865e3d83c7133c97290519a07b90261f809ca325f`;
-the temporal-admission descriptor is revision 1 with digest
-`sha256:91e7c9bdd498945efc09eb34f0e29679c3de752bbb98455d33fa672a437a8ee8`.
-Revision 10 adds optional settlement/acknowledgement ports, but this checkpoint
-does not connect or configure them: the production topology and values remain
-unchanged and still route temporal admission directly to activation.
-The dedicated activation values schema requires the independent admission
-contract without widening the generic generation schema. Focused
-normal/race/vet, strict graph, explicit-source and mode-forgery refusal,
-all-mode cancellation/recovery, multi-source freshness, and stable WebSocket
-endpoint gates pass, followed by repository-wide test and vet from a clean
-detached worktree. These are implementation checks, not live model quality
-evidence.
+`sha256:d10894a463aa78cb0d81ba1414fe46653c6739478e3bb49ce2cfc07592164d62`.
+Its source, lock, and values digests are respectively
+`sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa`,
+`sha256:c03c6bfc1d08094ca18611a0137d77cdc4e7280b8ce050e97c06c5e04f3d26d0`,
+and
+`sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93`.
+The lock selects activation revision 12
+(`sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`),
+disposition producer revision 2
+(`sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`),
+and cancellation coordinator revision 2
+(`sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a`).
+The graph template passes canonical formatting and warning-free strict
+`computer-use` validation. These identities and checks describe implementation
+and configuration, not live model quality or benchmark non-regression.
 
 The WebSocket integration test launches the real locked graph through the
 strict application registration, generic profile registry, and
@@ -306,15 +339,11 @@ four-case observer-repair artifact is incomplete (4/16 attempted) and still
 records large post-success invalid-action loops. No live case has validated the
 settlement composition described below.
 
-The locked production topology also does not yet route an authoritative typed
-fact that the durable user intent itself has succeeded. A planner returning no
-proposal can mean "wait for later evidence," and repetition admission proves
-only that one exact effect already succeeded. Neither fact, elapsed quiet time,
-nor the evaluator's private `PageResult` is a sound generic settlement oracle.
-In particular,
-moving-target retries can use different coordinates and evade exact repetition
-identity, while treating no-proposal as success would break asynchronous and
-multi-step tasks.
+The locked production topology now classifies the durable user intent as
+`continue`, `succeeded`, `failed`, or `indeterminate`. It does not infer that
+fact from a planner returning no proposal, one repeated effect, elapsed quiet
+time, or the evaluator's private `PageResult`: all of those remain unsound
+generic settlement oracles.
 
 The repair architecture keeps two graph-visible, replaceable elements:
 
@@ -326,7 +355,7 @@ successful result-linked post-effect evidence
   -> activation continuation or same-intent quiescence
 ```
 
-The registered `policy.IntentDispositionProducer` classifies a closed
+The profile-bound `policy.IntentDispositionProducer` classifies a closed
 `continue | succeeded | failed | indeterminate` disposition and binds it to the
 exact session, durable intent, canonical prefix, successful result and
 invocation, result-linked observation, producer identity/configuration, and
@@ -334,15 +363,15 @@ measured decision time. An
 application-authoritative producer is preferred when available. The reference
 generic implementation uses a separately owned narrow semantic/vision decision
 over the exact retained post-effect frame, checks media and evidence bounds,
-and fails only to explicit retryable `indeterminate`. It may share the Qwen/VLM
-deployment with continuation, but its production application selection,
-client, digest, media service, and lifecycle are not yet bound in the
-Realtime-CU profile.
+and fails only to explicit retryable `indeterminate`. It may share a deployment
+with continuation, but the application selects its descriptor, artifact, and
+non-secret configuration independently. Each session opens a fresh policy
+client and gives the producer the observer's exact retained-media resolver;
+configuration or descriptor drift fails before provider work begins.
 
-Three independently testable pieces of that architecture now exist: the
-registered producer above, the producer-neutral `policy.IntentSettlement`
-gate, and activation's optional revision-10 settlement consumer/acknowledgement
-boundary. The gate independently revalidates the typed
+The producer, producer-neutral `policy.IntentSettlement` gate, and activation's
+revision-12 settlement consumer/acknowledgement boundary are now connected as
+independently replaceable nodes. The gate independently revalidates the typed
 admission and exact canonical intent→call→successful-result→result-linked
 observation chain, holds a bounded candidate consequence until the matching
 disposition arrives, releases it for `continue`, and retains terminal state
@@ -351,9 +380,8 @@ failed-effect visual evidence remains reactive. Invalid, stale, conflicting,
 or indeterminate evidence fails closed without being mislabeled as success.
 Activation independently verifies a terminal decision, clears only the exact
 effect without a new cognition turn, retains valid cross-lane reorderings, and
-retries one immutable acknowledgement. These pieces are still unwired in the
-production graph, so their standalone guarantees are not mounted-composition
-or behavioral evidence.
+retries one immutable acknowledgement. The graph has exactly one activation
+admission source—`settlement.admitted`—so there is no timing-policy bypass.
 
 The terminal decision is not just a string label. Succeeded and failed
 decisions embed the exact disposition; canceled decisions embed an exact
@@ -369,10 +397,8 @@ Cancellation intentionally has the distinct type
 `GenerationCancel` values address a generation or media stream and are
 compile-time incompatible: copying an observation stream ID or a session ID
 into this boundary would not prove which durable-intent epoch is being
-revoked. The production reference therefore still needs a stateful
-cancellation coordinator that resolves protocol/session authority to the
-exact canonical intent and routes the appropriate downstream activation
-cancellation as an explicit graph choice.
+revoked. The stateful coordinator now performs that explicit translation and
+preserves the full durable-intent identity when it addresses activation.
 
 Independent ports do not acquire a hidden scheduler priority merely because a
 descriptor classifies one as an interrupt. Settlement actor receipt is the
@@ -389,12 +415,12 @@ Current implementation ledger:
 
 | Slice | Status | Remaining boundary |
 | --- | --- | --- |
-| Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented and locally verified | Bind a real producer artifact/configuration in the production lock |
+| Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented, locked, and locally verified | Live quality remains unmeasured |
 | Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
-| Reference semantic/vision disposition producer | Implemented and locally verified | Bind its selected detector, independent client/lifecycle, media resolver, configuration, and artifact identity in the Realtime-CU profile/lock |
-| Protocol/session cancellation translation | Open | Resolve exact canonical intent and explicitly coordinate already released activation |
-| Activation settlement input and acknowledgement output | Implemented and locally verified | Connect both optional ports in the mounted graph and prove coordinator/result/terminal orderings end to end |
-| Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Open | Wire and freeze the complete reference subgraph without an admission bypass |
+| Reference semantic/vision disposition producer | Profile-bound and locally verified | Exercise quality on focused live cases |
+| Protocol/session cancellation translation | Implemented and adversarially verified | Complete the remaining mounted cross-node matrix |
+| Activation settlement input and acknowledgement output | Connected and locally verified | Complete focus→type→submit and continuous-cadence mounted cases |
+| Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Frozen with no admission bypass; strict check passes | Final identities change if later behavioral repair changes code or configuration |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
 
 The implementation checkpoint is also hardened at its untrusted typed-input
@@ -414,40 +440,47 @@ not nominally forbidden, on another settlement gate's evidence input, so
 type-correct gate chaining remains executable; cross-type namespace reuse and
 same-ID/changed-metadata reuse fail closed. Duplicate terminal dispositions do
 not publish a second envelope under the existing terminal ID. These properties
-are local implementation guarantees, not evidence that the still-unwired
-Realtime-CU policy behaves correctly against a live model.
+are implementation guarantees, not evidence that the wired Realtime-CU policy
+behaves correctly against a live model.
 
 Terminal suppression requires an explicit lossless handshake with activation;
 dropping only the post-effect observation would leave activation's active
-generation/result state live. The target reference topology is therefore:
+generation/result state live. The production reference topology contains:
 
 ```ortg
-temporal_evidence_admission.admitted -> intent_settlement.evidence;
-intent_settlement.probe              -> intent_disposition.probe;
-intent_disposition.disposition       -> intent_settlement.disposition;
-intent_settlement.admitted           -> activation.admitted;
-intent_settlement.terminal           -> activation.settlement;
-activation.settlement_ack            -> intent_settlement.ack;
+temporal_evidence_admission.admitted -> settlement.evidence;
+settlement.probe -> settlement_producer.probe;
+settlement_producer.disposition -> settlement.disposition;
+settlement.admitted -> activation.admitted;
+settlement.terminal -> activation.settlement;
+activation.settlement_ack -> settlement.ack;
+
+input session_cancel = cancellation_coordinator.request;
+cancellation_coordinator.settlement_cancel -> settlement_cancel_copy.in;
+settlement_cancel_copy.out -> settlement.cancel;
+settlement_cancel_copy.out -> settlement_producer.cancel;
+settlement_producer.outcome -> settlement_producer_outcome_copy.in;
+settlement_producer_outcome_copy.out -> cancellation_coordinator.settlement_producer_outcome;
+cancellation_coordinator.activation_cancel -> activation.cancel;
+cancellation_coordinator.model_cancel -> model.cancel;
+cancellation_coordinator.action_cancel -> action_cancel_copy.in;
 ```
 
-In the target topology there is no admission bypass around the settlement
-gate. The checked-in production graph still has that bypass because none of
-these six edges has landed. On `continue`, the gate releases the original
-verified evidence through `admitted`. On a verified terminal disposition, it
-suppresses that evidence and retains the exact terminal latch until revision-10
+There is no admission bypass around the settlement gate. On `continue`, the
+gate releases the original verified evidence through `admitted`. On a verified
+terminal disposition, it
+suppresses that evidence and retains the exact terminal latch until revision-12
 activation independently reopens the canonical prefix, clears the matching
 generation/effect atomically, and returns the exact acknowledgement. This is
 not a cognition cancellation: the cognition run may already have ended before
 the result and post-effect observation exist, and a broad generation
 cancellation does not prove which completed effect was settled.
 
-The remaining behavioral sequence is to bind the reference producer deployment,
-implement the stateful exact-intent cancellation coordinator, adversarially
-test the complete mounted composition, wire and lock the no-bypass reference
-subgraph, and register machine-enforceable Realtime-CU acceptance targets.
-Only then should both camera, both moving-target, and both transient-alert
+The remaining behavioral sequence is to complete the mounted adversarial
+composition matrix and register machine-enforceable Realtime-CU acceptance
+targets. Then both camera, both moving-target, and both transient-alert
 variants run from one repaired immutable candidate. Each observed failure is
 retained and repaired before all 16 cases are rerun from a newly frozen
-candidate. No live benchmark was run for this producer/activation checkpoint,
-and nothing in its implementation checks advances the project-wide 0/7,486
-final-candidate attempt ledger.
+candidate. No live benchmark was run for this settlement/cancellation
+checkpoint, and nothing in its implementation checks advances the project-wide
+0/7,486 final-candidate attempt ledger.

@@ -344,16 +344,17 @@ bounds, and latency median/tail limits plus any reasoned exclusions. Diagnostic
 or historical observations are evidence for choosing those targets; the
 runner must not silently convert them into acceptance thresholds.
 
-The settlement implementation checkpoints did not run a live or paid
-Realtime-CU benchmark. The generic `policy.IntentSettlement` gate, the
-registered reference `policy.IntentDispositionProducer`, and activation's
-optional exact settlement/acknowledgement boundary now exist and pass their
-standalone adversarial and race checks. They are not connected in the frozen
-production graph/profile: temporal admission still goes directly to
-activation, the producer has no profile-bound detector/client/media lifecycle,
-and there is no exact protocol/session cancellation coordinator. There is
-therefore no runnable settlement candidate from which a valid benchmark row
-could be produced.
+The settlement/cancellation implementation checkpoint did not run a live or
+paid Realtime-CU benchmark. It now provides a runnable graph-native
+implementation checkpoint, but not a frozen benchmark candidate:
+the profile binds an independently owned reference disposition policy and
+shared retained-media resolver; the locked graph routes temporal admission
+through `policy.IntentSettlement` without an activation bypass; and one exact
+session coordinator requires settlement-gate, producer-quiescence, activation,
+model, canonical model-result, and configured action-stage acknowledgements.
+Focused and stable-endpoint checks establish implementation behavior only. They
+produce no benchmark row and do not show whether the selected live policy
+correctly distinguishes continuation from success on the authored tasks.
 
 The retained live evidence must also be read by checkpoint rather than reduced
 to one headline number. Candidate-05's current settlement-aware exact-sixteen
