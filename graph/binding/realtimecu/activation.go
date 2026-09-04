@@ -29,7 +29,7 @@ import (
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
 	ActivationConfigSchema    = "schema://openrealtime/realtime-cu/activation-config/v2"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v12"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v13"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumDispositionRetries = 8
@@ -50,7 +50,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      12,
+		Revision:      13,
 		Ports: []element.Port{
 			{Name: "admitted", Direction: element.Input,
 				Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One,
@@ -518,7 +518,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:12", ActivationDescriptor()); err != nil {
+		"implementation:13", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -790,17 +790,13 @@ func (runner *activationRunner) acceptAdmissionAtContext(
 				return runner.refuse(ctx, envelope, commit, "effect_result_mismatch",
 					"visual consequence does not settle the one active computer effect")
 			}
+			// Either this is a successful result released by IntentSettlement after
+			// a verified continue decision, or a failed result admitted there as a
+			// non-candidate. In both cases the exact linked visual consequence closes
+			// the old effect and is the context for one next cognition turn.
 			runner.active = nil
-			runner.deferred = nil
 			runner.pendingTerminal = nil
-			if resultItem.ToolResult.Error != "" {
-				// The forced post-effect screen is evidence that the failed call
-				// settled, not new grounds for immediately proposing the same call.
-				// Keep the durable user intent so a later independent camera/screen
-				// change can retry, but consume this exact failed consequence.
-				return runner.ignore(ctx, envelope, commit, "effect_failed",
-					"failed computer effect is terminal until independent visual evidence arrives")
-			}
+			runner.deferred = nil
 		}
 	}
 	generationID := activationGenerationID(runner.config.Role, envelope.SessionID, effectiveCommit, basis.ID)

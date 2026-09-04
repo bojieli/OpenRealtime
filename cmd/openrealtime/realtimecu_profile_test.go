@@ -71,8 +71,8 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 	}
 	activationResolution := realtimeCUResolutionElement(t, frozen.Resolution, "activation")
 	if activationResolution.Runtime.ID !=
-		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v12" ||
-		activationResolution.Runtime.Revision != "implementation:12" {
+		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v13" ||
+		activationResolution.Runtime.Revision != "implementation:13" {
 		t.Fatalf("frozen activation runtime = %+v", activationResolution.Runtime)
 	}
 	modelResolution := realtimeCUResolutionElement(t, frozen.Resolution, "model")
