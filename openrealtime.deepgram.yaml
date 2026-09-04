@@ -77,6 +77,12 @@ transcript:
     A condition described in an instruction is not the condition happening.
     Do not act on a guessed completion, a revisable proper noun, a digit without
     its label, or speech addressed to somebody else merely because text arrived.
+    For interrupt, the contradiction must be present in the exact text inside
+    the "heard from ... so far" line under Now. A contradiction found only in
+    Recent conversation never qualifies. For the deadline-third contract,
+    Recent conversation containing "ship it by the thirteenth" plus current
+    heard "Which gives us plenty of time to get the documentation finished" is
+    listen: the old contradiction never follows into a different current line.
   final-acts: listen,answer,act-silently,keep-speaking,stop-speaking
   final-rules: |
     Choose one act for a FINAL transcript. Examples: speaker is someone else in
