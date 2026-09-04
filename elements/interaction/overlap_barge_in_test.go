@@ -65,10 +65,10 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 6 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 7 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
-		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v3" {
+		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v4" {
 		t.Fatalf("overlap descriptor = %+v", descriptor)
 	}
 
@@ -854,7 +854,8 @@ func TestOverlapBargeInPublishesExactVoiceOutputLifecycle(t *testing.T) {
 	))
 	if !state.AgentOutput.Active || !state.AgentOutput.Queued || state.AgentOutput.Audible ||
 		state.AgentOutput.Saying != "" ||
-		state.AgentOutput.InFlight != "voice output active: model=1, segmentation=1, synthesis=0, playback=0" {
+		state.AgentOutput.InFlight != "voice output active: model=1, segmentation=1, synthesis=0, playback=0" ||
+		!reflect.DeepEqual(state.AgentOutput.ProtectedStreams, []string{"stream"}) {
 		t.Fatalf("admitted voice output = %+v", state.AgentOutput)
 	}
 
@@ -866,7 +867,8 @@ func TestOverlapBargeInPublishesExactVoiceOutputLifecycle(t *testing.T) {
 	))
 	if !state.AgentOutput.Active || !state.AgentOutput.Queued || state.AgentOutput.Audible ||
 		state.AgentOutput.Saying != text ||
-		!strings.Contains(state.AgentOutput.InFlight, "synthesis=1") {
+		!strings.Contains(state.AgentOutput.InFlight, "synthesis=1") ||
+		!reflect.DeepEqual(state.AgentOutput.ProtectedStreams, []string{"stream"}) {
 		t.Fatalf("synthesizing voice output = %+v", state.AgentOutput)
 	}
 
@@ -876,7 +878,8 @@ func TestOverlapBargeInPublishesExactVoiceOutputLifecycle(t *testing.T) {
 	))
 	if !state.AgentOutput.Active || state.AgentOutput.Queued || !state.AgentOutput.Audible ||
 		state.AgentOutput.Saying != text ||
-		!strings.Contains(state.AgentOutput.InFlight, "playback=1") {
+		!strings.Contains(state.AgentOutput.InFlight, "playback=1") ||
+		!reflect.DeepEqual(state.AgentOutput.ProtectedStreams, []string{"stream"}) {
 		t.Fatalf("audible voice output = %+v", state.AgentOutput)
 	}
 
@@ -889,7 +892,8 @@ func TestOverlapBargeInPublishesExactVoiceOutputLifecycle(t *testing.T) {
 		action.Outcome{Completed: true, PlayedMS: 40},
 	))
 	if state.AgentOutput.Active || state.AgentOutput.Queued || state.AgentOutput.Audible ||
-		state.AgentOutput.Saying != "" || state.AgentOutput.InFlight != "" {
+		state.AgentOutput.Saying != "" || state.AgentOutput.InFlight != "" ||
+		len(state.AgentOutput.ProtectedStreams) != 0 {
 		t.Fatalf("terminal voice output = %+v", state.AgentOutput)
 	}
 	_ = receive(t, harness.output(t, "safe_release"))

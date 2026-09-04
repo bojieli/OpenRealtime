@@ -31,14 +31,15 @@ const (
 	// credential, client, and model construction remain provider-plugin state.
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
-	semanticAdmissionRuntimeID       = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision = "implementation:6"
-	defaultSemanticRecentLines       = 12
-	defaultSemanticPending           = 64
-	defaultSemanticTerminalMemory    = 512
-	defaultSemanticCancelMemory      = 256
-	defaultSemanticStandingMemory    = 64
-	maximumSemanticTextBytes         = 1 << 20
+	semanticAdmissionRuntimeID        = "builtin://openrealtime/elements/policy.SemanticAdmission"
+	semanticAdmissionRuntimeRevision  = "implementation:7"
+	defaultSemanticRecentLines        = 12
+	defaultSemanticPending            = 64
+	defaultSemanticTerminalMemory     = 512
+	defaultSemanticCancelMemory       = 256
+	defaultSemanticStandingMemory     = 64
+	maximumSemanticTextBytes          = 1 << 20
+	maximumSemanticAgentOutputStreams = 4096
 )
 
 var (
@@ -237,7 +238,7 @@ func (registry *SemanticDeciderRegistry) Open(
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 4,
+		Name:          "policy.SemanticAdmission", Revision: 5,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},

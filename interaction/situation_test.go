@@ -66,6 +66,23 @@ func TestRenderKeepsWhatWasHeardAfterTheSpeakerStops(t *testing.T) {
 	}
 }
 
+func TestRenderNamesSameStreamDeliberateOutputProvenance(t *testing.T) {
+	block := interaction.Situation{
+		TranscriptEvent:      interaction.TranscriptFinal,
+		AgentSpeaking:        true,
+		AgentOutputProtected: true,
+		Heard:                "And then ship it by the thirteenth.",
+	}.Render()
+	if !strings.Contains(block,
+		"agent output was deliberately triggered by an earlier revision of this same transcript stream") {
+		t.Fatalf("same-stream output provenance did not reach the interaction model:\n%s", block)
+	}
+	other := interaction.Situation{AgentSpeaking: true}.Render()
+	if strings.Contains(other, "same transcript stream") {
+		t.Fatalf("unrelated output claimed same-stream provenance:\n%s", other)
+	}
+}
+
 // Truncating the conversation window must never silently repeal a policy, so
 // pins are rendered outside it.
 func TestRenderPutsStandingInstructionsAheadOfTheWindow(t *testing.T) {

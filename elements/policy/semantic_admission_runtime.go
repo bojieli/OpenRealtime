@@ -461,6 +461,7 @@ func (runner *semanticAdmissionRunner) acceptAgentOutput(
 		return nil
 	}
 	runner.agentOutput = output
+	runner.agentOutput.ProtectedStreams = slices.Clone(output.ProtectedStreams)
 	return nil
 }
 
@@ -1345,7 +1346,10 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 		},
 		AgentSpeaking: runner.agentOutput.Active,
 		AgentSaying:   runner.agentOutput.Saying,
-		InFlight:      runner.agentOutput.InFlight,
+		AgentOutputProtected: slices.Contains(
+			runner.agentOutput.ProtectedStreams, request.streamID,
+		),
+		InFlight: runner.agentOutput.InFlight,
 	}
 	for _, policy := range standing {
 		state.Restricted = state.Restricted || policy.Restricting
@@ -1917,10 +1921,13 @@ func semanticSnapshotPayload(payload any) (trajectory.Snapshot, bool) {
 func semanticAgentOutputPayload(payload any) (coreinteraction.AgentOutput, bool) {
 	switch value := payload.(type) {
 	case coreinteraction.AgentOutput:
+		value.ProtectedStreams = slices.Clone(value.ProtectedStreams)
 		return value, true
 	case *coreinteraction.AgentOutput:
 		if value != nil {
-			return *value, true
+			copy := *value
+			copy.ProtectedStreams = slices.Clone(value.ProtectedStreams)
+			return copy, true
 		}
 	}
 	return coreinteraction.AgentOutput{}, false
@@ -1933,13 +1940,28 @@ func validateSemanticAgentOutput(output coreinteraction.AgentOutput) error {
 	if output.Audible && (!output.Active || output.Queued) {
 		return errors.New("semantic admission audible agent output must be active and not queued")
 	}
-	if !output.Active && (output.Queued || output.Audible || output.Saying != "" || output.InFlight != "") {
+	if !output.Active && (output.Queued || output.Audible || output.Saying != "" || output.InFlight != "" ||
+		len(output.ProtectedStreams) != 0) {
 		return errors.New("semantic admission inactive agent output carries active lifecycle state")
 	}
 	for name, value := range map[string]string{"saying": output.Saying, "in_flight": output.InFlight} {
 		if value != strings.TrimSpace(value) || !utf8.ValidString(value) || len(value) > maximumSemanticTextBytes {
 			return fmt.Errorf("semantic admission agent output %s is not bounded canonical text", name)
 		}
+	}
+	if len(output.ProtectedStreams) > maximumSemanticAgentOutputStreams {
+		return fmt.Errorf("semantic admission agent output carries %d protected streams, maximum is %d",
+			len(output.ProtectedStreams), maximumSemanticAgentOutputStreams)
+	}
+	previous := ""
+	for _, streamID := range output.ProtectedStreams {
+		if err := validatePolicyIdentifier("semantic admission protected stream ID", streamID, true); err != nil {
+			return err
+		}
+		if previous != "" && streamID <= previous {
+			return errors.New("semantic admission protected stream IDs must be sorted and unique")
+		}
+		previous = streamID
 	}
 	return nil
 }

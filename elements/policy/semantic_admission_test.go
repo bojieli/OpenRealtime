@@ -54,7 +54,7 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 4 ||
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 5 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v3" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}
@@ -2080,7 +2080,8 @@ func TestSemanticAdmissionUsesVoiceLifecycleAcrossTranscriptRevisions(t *testing
 
 	output := coreinteraction.AgentOutput{
 		Revision: 2, Active: true, Queued: true,
-		InFlight: "voice output active: model=1, segmentation=1, synthesis=0, playback=0",
+		InFlight:         "voice output active: model=1, segmentation=1, synthesis=0, playback=0",
+		ProtectedStreams: []string{"correction-stream"},
 	}
 	sendPolicy(t, harness.ingress(t, "agent_output"), element.Envelope{
 		Type: coreinteraction.AgentOutputType(), ItemID: "agent-output-2",
@@ -2106,8 +2107,12 @@ func TestSemanticAdmissionUsesVoiceLifecycleAcrossTranscriptRevisions(t *testing
 		!reflect.DeepEqual(captured[1].Options, []string{"keep-speaking", "stop-speaking"}) ||
 		!reflect.DeepEqual(captured[2].Options, []string{"keep-speaking", "stop-speaking"}) ||
 		!strings.Contains(captured[1].Evidence, "agent: voice output is active and still being prepared") ||
+		!strings.Contains(captured[1].Evidence,
+			"agent output was deliberately triggered by an earlier revision of this same transcript stream") ||
 		!strings.Contains(captured[1].Evidence, output.InFlight) ||
-		!strings.Contains(captured[2].Evidence, output.InFlight) {
+		!strings.Contains(captured[2].Evidence, output.InFlight) ||
+		strings.Contains(captured[2].Evidence,
+			"agent output was deliberately triggered by an earlier revision of this same transcript stream") {
 		t.Fatalf("transcript lifecycle policy requests = %+v", captured)
 	}
 }

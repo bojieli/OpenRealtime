@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:6"
+	overlapBargeInRuntimeRevision  = "implementation:7"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      6,
+		Revision:      7,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -129,7 +129,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 			MaxConcurrency: 1,
 			BreaksCycles:   true,
 		},
-		StateSchema:  "schema://openrealtime/interaction/overlap-state/v3",
+		StateSchema:  "schema://openrealtime/interaction/overlap-state/v4",
 		ConfigSchema: "schema://openrealtime/interaction/overlap-barge-in-config/v1",
 		Dependencies: []element.Dependency{
 			{Name: graphruntime.ClockServiceName},
@@ -1985,9 +1985,20 @@ func (runner *overlapBargeInRunner) agentOutputSnapshot() coreinteraction.AgentO
 			runner.state.ActiveTTS, runner.state.ActivePlayback,
 		)
 	}
+	protected := make([]string, 0, len(runner.runs))
+	for runID, run := range runner.runs {
+		if run == nil || run.streamID == "" || !deliberateSpokeOver(run.act) ||
+			(!run.modelActive && !run.segmentationActive && !runner.runHasActiveUtterance(runID)) {
+			continue
+		}
+		protected = append(protected, run.streamID)
+	}
+	sort.Strings(protected)
+	protected = slices.Compact(protected)
 	return coreinteraction.AgentOutput{
 		Active: active, Queued: active && !audible, Audible: audible,
 		Saying: runner.activeAgentText(), InFlight: inFlight,
+		ProtectedStreams: protected,
 	}
 }
 

@@ -16,6 +16,12 @@ type AgentOutput struct {
 	Audible  bool   `json:"audible"`
 	Saying   string `json:"saying,omitempty"`
 	InFlight string `json:"in_flight,omitempty"`
+	// ProtectedStreams are the transcript streams from which active output was
+	// deliberately authorized to interrupt or speak through. The sorted,
+	// duplicate-free identities let a later transcript revision say that it is
+	// from the same stream without asking an interaction model to infer graph
+	// provenance from repeated prose.
+	ProtectedStreams []string `json:"protected_streams,omitempty"`
 }
 
 // AgentOutputType is shared by the lifecycle controller that produces the

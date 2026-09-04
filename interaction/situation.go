@@ -105,6 +105,10 @@ type Situation struct {
 	// start another.
 	AgentSpeaking bool
 	AgentSaying   string
+	// AgentOutputProtected says active output was deliberately authorized by
+	// an earlier revision of the transcript stream being decided now. It is a
+	// relation computed from typed lifecycle provenance, not a model guess.
+	AgentOutputProtected bool
 	// Speaker names whoever else is involved, empty when nobody is. Speaking
 	// says whether they are talking this instant; Heard is what they have
 	// said, whether or not they have finished saying it.
@@ -294,6 +298,9 @@ func (state Situation) Render() string {
 			block.WriteString("agent: voice output is active and still being prepared\n")
 		} else {
 			block.WriteString("agent: voice output is queued or audible, saying \"" + state.AgentSaying + "\"\n")
+		}
+		if state.AgentOutputProtected {
+			block.WriteString("agent output was deliberately triggered by an earlier revision of this same transcript stream\n")
 		}
 	} else {
 		block.WriteString("agent: not speaking\n")
