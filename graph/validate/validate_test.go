@@ -72,6 +72,52 @@ func TestRealtimeProfileSurfacesIncompleteReactionChoices(t *testing.T) {
 	}
 }
 
+func TestRealtimeProfileRecognizesExplicitTerminalSinks(t *testing.T) {
+	value := element.Event(element.Named("test.Value"))
+	sinkIdentity := identityFor(t, "flow.Drop", []element.Port{{
+		Name: "in", Direction: element.Input, Type: value, Cardinality: element.One,
+	}}, nil)
+	workerIdentity := identityFor(t, "test.WorkerWithoutOutcome", []element.Port{{
+		Name: "in", Direction: element.Input, Type: value, Cardinality: element.One,
+	}}, nil)
+	graph, err := ir.Freeze(ir.Graph{
+		FormatVersion: ir.FormatVersion, ID: "terminal-sinks", Revision: 1,
+		Nodes: []ir.Node{
+			{
+				ID: "explicit_sink", Element: sinkIdentity,
+				Ports:    []ir.Port{{Name: "in", Direction: element.Input, Type: value, Cardinality: element.One}},
+				Reaction: element.Reaction{Triggers: []string{"in"}, MaxConcurrency: 1},
+			},
+			{
+				ID: "worker", Element: workerIdentity,
+				Ports:    []ir.Port{{Name: "in", Direction: element.Input, Type: value, Cardinality: element.One}},
+				Reaction: element.Reaction{Triggers: []string{"in"}, MaxConcurrency: 1},
+			},
+		},
+		Boundaries: []ir.Boundary{
+			{Name: "drop", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "explicit_sink", Port: "in"}, Type: value},
+			{Name: "work", Direction: ir.InputBoundary, Endpoint: ir.Endpoint{Node: "worker", Port: "in"}, Type: value},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings := validate.Check(graph, validate.RealtimeAgent)
+	foundWorker := false
+	for _, finding := range findings {
+		if finding.Code != "W_NO_TERMINAL_OUTCOME" {
+			continue
+		}
+		if finding.Node == "explicit_sink" {
+			t.Fatalf("explicit terminal sink was treated as incomplete work: %+v", findings)
+		}
+		foundWorker = foundWorker || finding.Node == "worker"
+	}
+	if !foundWorker {
+		t.Fatalf("ordinary outcome-free worker was not reported: %+v", findings)
+	}
+}
+
 func cycleGraph(t *testing.T, breakCycle bool) ir.Graph {
 	t.Helper()
 	value := element.Event(element.Named("test.Value"))

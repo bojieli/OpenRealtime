@@ -263,7 +263,8 @@ func profileFindings(graph ir.Graph, profile Profile) []Finding {
 		}
 	}
 	for _, node := range graph.Nodes {
-		if profile.RequireTerminalOutcome && len(node.Reaction.Triggers) > 0 && len(node.Reaction.Outcomes) == 0 {
+		if profile.RequireTerminalOutcome && len(node.Reaction.Triggers) > 0 &&
+			len(node.Reaction.Outcomes) == 0 && !explicitTerminalSink(node) {
 			findings = append(findings, Finding{
 				Severity: Warning, Code: "W_NO_TERMINAL_OUTCOME", Node: node.ID,
 				Message: "triggered reaction declares no terminal outcome port for success, cancellation, refusal, timeout, or failure",
@@ -293,6 +294,15 @@ func profileFindings(graph ir.Graph, profile Profile) []Finding {
 		}
 	}
 	return findings
+}
+
+func explicitTerminalSink(node ir.Node) bool {
+	switch node.Element.Name {
+	case "flow.Drop", "flow.IgnoreInterrupt":
+		return true
+	default:
+		return false
+	}
 }
 
 func endpointGroup(endpoint ir.Endpoint) string { return endpoint.Node + "." + endpoint.Port }
