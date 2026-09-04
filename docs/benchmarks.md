@@ -380,15 +380,49 @@ A later locked-profile regression exposed and repaired a separate behavioral
 stall before a live campaign: activation had treated the exact visual
 consequence of a canonical `ToolResult.Error` as consumed terminal evidence,
 leaving the still-achievable durable intent waiting for an unrelated future
-frame. Revision-13 activation now clears only that failed old effect and uses
+frame. Revision-13 activation clears only that failed old effect and uses
 its exact linked frame to open one recovery turn. The mounted case proves that
 the error never reaches success-disposition policy, the recovery effect can
 settle successfully, both result/consequence links remain canonical, and later
-changing frames remain quiescent. Cancellation on both sides of that failed
-consequence, bounded cleanup of canceled known-call retention, and benchmark-
-scorer interpretation remain open. This repair and its focused checks also
-produce no benchmark row. No live or paid Realtime-CU benchmark ran at this
-checkpoint.
+changing frames remain quiescent.
+
+A subsequent connected-boundary regression then reproduced the adjacent
+cancellation leak: the settlement tombstone swallowed an error consequence
+before activation could retire its `canceledEffects` record, so repetition could
+consume `CancelMemory`. Final audit found the same retention window when a
+successful result was committed before cancellation but its direct consequence
+arrived afterward. Settlement revision 2 now independently authenticates the
+exact canceled intent→call→result→direct-consequence chain and emits a typed
+cleanup control for either result status on a dedicated lossless
+`settlement.cleanup → activation.effect_cleanup` lane. Activation revision 14
+can use that control only for exact local bookkeeping: it never routes through
+ordinary admission, disposition, or cognition. The result consequence is
+verified against its immutable historical trajectory prefix, while the
+cancellation's user authority is independently verified against the full
+current snapshot; graph-edge authority supplies the cleanup control's source
+provenance. Activation additionally requires its mounted session, local durable-
+intent tombstone, and retained generation to match. It retains an overtaking
+cleanup in one bounded slot until the separately ordered activation
+cancellation returns the exact generation ID, then retires only that generation
+and emits `canceled_effect_failed` or `canceled_effect_succeeded`. The canceled
+intent remains protected through retirement: no tombstone is removed while a
+retained effect depends on it. Under cancellation-memory pressure, activation
+may reclaim only a complete effect/tombstone pair that newer final user
+authority has already superseded, and it never evicts an effect that still owes
+a terminal settlement acknowledgement.
+
+The locked profile covers cancel-before-failed-consequence,
+cancel-after-success-result-before-consequence, recovery-before-cancel, fresh
+replacement intent, and cadence quiescence. A deterministic production-mounted
+race also holds the coordinator's activation-cancel output, lets cleanup reach
+activation first, and proves the same behavior for both result statuses before
+releasing cancellation. Element-level adversarial tests add malformed and
+cross-session control refusal, exact identity/lineage/status checks,
+duplicate/conflicting/reordered delivery, terminal-versus-cleanup ordering, and
+one-slot capacity reuse without evicting an effect that still owes a terminal
+acknowledgement. These are implementation regressions, not benchmark rows;
+scorer interpretation and the authored live failed-effect case remain open. No
+live or paid Realtime-CU benchmark ran at this checkpoint.
 
 The retained live evidence must also be read by checkpoint rather than reduced
 to one headline number. Candidate-05's current settlement-aware exact-sixteen
@@ -410,9 +444,10 @@ campaign remain open; and the final-candidate ledger remains **0/7,486**.
 The next benchmark run is intentionally gated on behavior, not on producing a
 new headline number. First complete the three remaining shipped-profile
 subgates: forged cross-node evidence, duplicate/reordered terminal decisions,
-and cancellation/capacity/scorer behavior around failed effects. Ordinary
-failed-effect recovery is already production-mounted; the broader gate remains
-open. Then register all five Realtime-CU
+and scorer/live acceptance for canonical failed-result lineage. Ordinary
+failed-effect recovery and the canceled-result cleanup orderings, including
+bounded cleanup, are already production-mounted; the broader gate remains open.
+Then register all five Realtime-CU
 acceptance domains and freeze the exact candidate. Run the two camera, two
 moving-target, and two transient-alert variants as a focused repair set. Every
 failure must be reopened from retained evidence, attributed to code,
