@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,6 +22,120 @@ type eventChoiceDecider struct {
 	final interaction.Act
 	mu    sync.Mutex
 	seen  []interaction.Decision
+}
+
+type serialTranslationDecider struct {
+	standingSeen sync.Once
+	standing     chan struct{}
+	triggerSeen  sync.Once
+	trigger      chan struct{}
+}
+
+func (*serialTranslationDecider) Name() string { return "serial-translation" }
+
+func (decider *serialTranslationDecider) Decide(
+	_ context.Context, decision interaction.Decision,
+) (interaction.Outcome, error) {
+	evidence := decision.Evidence
+	choice := interaction.ActStaySilent
+	if strings.Contains(evidence, "transcript event: partial") &&
+		strings.Contains(evidence, `heard from user so far: "hello"`) &&
+		strings.Contains(evidence, "Standing instructions:") {
+		decider.standingSeen.Do(func() { close(decider.standing) })
+	}
+	if strings.Contains(evidence, "transcript event: final") &&
+		strings.Contains(evidence, `heard from user so far: "hello"`) {
+		choice = interaction.ActAnswer
+	}
+	if strings.Contains(evidence, "transcript event: partial") &&
+		strings.Contains(evidence, `heard from user so far: "tomorrow"`) {
+		choice = interaction.ActSpeakThrough
+		decider.triggerSeen.Do(func() { close(decider.trigger) })
+	}
+	if !slices.Contains(decision.Options, string(choice)) &&
+		slices.Contains(decision.Options, string(interaction.ActKeepSpeaking)) {
+		choice = interaction.ActKeepSpeaking
+	}
+	for index, option := range decision.Options {
+		if option == string(choice) {
+			return interaction.Outcome{Index: index, Option: option}, nil
+		}
+	}
+	return interaction.Outcome{Option: decision.Options[0]}, nil
+}
+
+type translationSetupExtractor struct{}
+
+func (*translationSetupExtractor) Name() string { return "translation-setup" }
+
+func (*translationSetupExtractor) Extract(
+	_ context.Context, _ []interaction.StandingInstruction, _ []string, utterance string,
+) (interaction.Extraction, error) {
+	if !strings.Contains(utterance, "translate") {
+		return interaction.Extraction{}, nil
+	}
+	return interaction.Extraction{Pins: []interaction.StandingInstruction{{
+		Text: "translate each fragment", Scope: interaction.ScopeConversation,
+	}}}, nil
+}
+
+func (*translationSetupExtractor) HasArrived(
+	context.Context, []interaction.StandingInstruction, string,
+) bool {
+	return true
+}
+
+type serialVoiceProvider struct {
+	firstStarted chan struct{}
+	releaseFirst chan struct{}
+	startedOnce  sync.Once
+	mu           sync.Mutex
+	requests     []continuation.Request
+}
+
+func (*serialVoiceProvider) Descriptor() continuation.Descriptor {
+	return continuation.Descriptor{
+		Provider: "test", Model: "serial-voice", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortMinimal, ToolAuthority: continuation.ToolAuthorityPropose,
+		SpeechAuthority: continuation.SpeechAuthorityVoice,
+	}
+}
+
+func (provider *serialVoiceProvider) Continue(
+	ctx context.Context, request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, error) {
+	provider.mu.Lock()
+	index := len(provider.requests)
+	provider.requests = append(provider.requests, request)
+	provider.mu.Unlock()
+	if index == 0 {
+		provider.startedOnce.Do(func() { close(provider.firstStarted) })
+		select {
+		case <-provider.releaseFirst:
+		case <-ctx.Done():
+			return continuation.Completion{}, context.Cause(ctx)
+		}
+	}
+	text := "Tomorrow."
+	if index == 0 {
+		text = "Hello."
+	}
+	if err := emit(continuation.Event{Kind: continuation.EventAssistantDelta, Text: text}); err != nil {
+		return continuation.Completion{}, err
+	}
+	return continuation.Completion{StopReason: "stop"}, nil
+}
+
+func (provider *serialVoiceProvider) invocations() int {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return len(provider.requests)
+}
+
+func (provider *serialVoiceProvider) request(index int) continuation.Request {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return provider.requests[index]
 }
 
 func (decider *eventChoiceDecider) Name() string { return "event-choice" }
@@ -167,6 +282,101 @@ func TestFinalTranscriptAnswerPreservesTheOrdinaryCascadeRollout(t *testing.T) {
 	waitFor(t, func() bool {
 		return fast.invocations() > 0 && slow.invocations() > 0
 	}, "a final answer did not preserve the normal fast+slow rollout")
+}
+
+func TestLiveInterjectionContinuesAfterOrdinaryVoiceSafePoint(t *testing.T) {
+	decider := &serialTranslationDecider{
+		standing: make(chan struct{}), trigger: make(chan struct{}),
+	}
+	policy, err := interaction.NewTranscriptEventPolicy(decider, interaction.TranscriptEventOptions{
+		Partial: interaction.TranscriptEventRules{
+			Instruction: "partial rules",
+			Acts: []interaction.Act{
+				interaction.ActStaySilent, interaction.ActSpeakThrough,
+				interaction.ActKeepSpeaking, interaction.ActStopSpeaking,
+			},
+		},
+		Final: interaction.TranscriptEventRules{
+			Instruction: "final rules",
+			Acts: []interaction.Act{
+				interaction.ActStaySilent, interaction.ActAnswer,
+				interaction.ActKeepSpeaking, interaction.ActStopSpeaking,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policies := interaction.Defaults()
+	policies.TranscriptEvents = policy
+	policies.Extraction = &translationSetupExtractor{}
+	voice := &serialVoiceProvider{
+		firstStarted: make(chan struct{}), releaseFirst: make(chan struct{}),
+	}
+	lines := []string{"translate each fragment", "hello", "tomorrow"}
+	var next atomic.Int32
+	runtime, sink := startSession(t, cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) {
+			index := int(next.Add(1)) - 1
+			if index >= len(lines) {
+				index = len(lines) - 1
+			}
+			return &scriptedASR{partials: []string{lines[index]}, final: lines[index]}, nil
+		},
+		Fast: voice, Slow: newSlow(), Speech: toneSpeech{chunks: 1}, Policies: policies,
+	}, binding.Settings{})
+
+	// Establish the standing policy, then begin the next utterance without
+	// endpointing it so the test can observe that policy before asking for an
+	// ordinary answer.
+	speak(t, runtime, 3)
+	waitFor(t, func() bool {
+		return slices.ContainsFunc(runtime.Trajectory().Items, func(item trajectory.Item) bool {
+			return item.Kind == trajectory.KindObservation && item.Content == "translate each fragment"
+		})
+	}, "the translation setup did not reach the canonical trajectory")
+	pushAudio(t, runtime, tone(2400, 8000), 3)
+	select {
+	case <-decider.standing:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the setup policy was not in force for the next utterance")
+	}
+	pushAudio(t, runtime, silence(2400), 8)
+	select {
+	case <-voice.firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the ordinary voice continuation did not start")
+	}
+
+	// A third utterance triggers speak-through while the ordinary voice is
+	// still generating. The live continuation must wait: taking its snapshot
+	// now would omit the answer about to commit and permit it to repeat it.
+	pushAudio(t, runtime, tone(2400, 8000), 3)
+	select {
+	case <-decider.trigger:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the live speak-through trigger was not decided")
+	}
+	time.Sleep(25 * time.Millisecond)
+	if got := voice.invocations(); got != 1 {
+		t.Fatalf("live voice started before ordinary safe point: invocations=%d", got)
+	}
+	close(voice.releaseFirst)
+	waitFor(t, func() bool { return voice.invocations() == 2 },
+		"the live voice did not continue after the ordinary safe point")
+
+	second := voice.request(1)
+	if !slices.ContainsFunc(second.Trajectory.Items, func(item trajectory.Item) bool {
+		return item.Kind == trajectory.KindAssistant && item.Content == "Hello."
+	}) {
+		t.Fatalf("live continuation omitted preceding ordinary answer: %+v", second.Trajectory.Items)
+	}
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 2 },
+		"the serialized voice turns were not both delivered")
+	spoken := strings.Join(sink.spokenTexts(), " ")
+	if strings.Count(spoken, "Hello.") != 1 || strings.Count(spoken, "Tomorrow.") != 1 {
+		t.Fatalf("serialized voice repeated or lost content: %q", spoken)
+	}
 }
 
 func TestEventPolicyCanKeepAQueuedResponseBeforeItsFirstAudioFrame(t *testing.T) {

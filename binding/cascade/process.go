@@ -1265,8 +1265,8 @@ func (runtime *runtime) runFast(
 	alreadyHandedOn, guardSolicitation bool,
 ) error {
 	if !request.Interjecting {
-		runtime.ordinaryFastRunning.Add(1)
-		defer runtime.ordinaryFastRunning.Add(-1)
+		runtime.beginOrdinaryFast()
+		defer runtime.endOrdinaryFast()
 	}
 	debugBegan := time.Now()
 	runtime.debug(ctx, binding.DebugEvent{
@@ -1378,6 +1378,47 @@ func (runtime *runtime) runFast(
 		signalErr = runtime.signal(interaction.SignalEscalated)
 	}
 	return errors.Join(err, dispatchErr, publishErr, signalErr)
+}
+
+func (runtime *runtime) beginOrdinaryFast() {
+	runtime.ordinaryFastMu.Lock()
+	defer runtime.ordinaryFastMu.Unlock()
+	if runtime.ordinaryFastRunning.Add(1) == 1 {
+		runtime.ordinaryFastDone = make(chan struct{})
+	}
+}
+
+func (runtime *runtime) endOrdinaryFast() {
+	runtime.ordinaryFastMu.Lock()
+	defer runtime.ordinaryFastMu.Unlock()
+	if runtime.ordinaryFastRunning.Add(-1) != 0 {
+		return
+	}
+	if runtime.ordinaryFastDone != nil {
+		close(runtime.ordinaryFastDone)
+		runtime.ordinaryFastDone = nil
+	}
+}
+
+// waitForOrdinaryFast waits until a live voice turn can take a snapshot that
+// includes every ordinary answer already being composed. It loops across a
+// zero-width handoff between ordinary turns, while remaining cancellable by
+// the interjection's existing deadline.
+func (runtime *runtime) waitForOrdinaryFast(ctx context.Context) (waited, ready bool) {
+	for {
+		runtime.ordinaryFastMu.Lock()
+		done := runtime.ordinaryFastDone
+		runtime.ordinaryFastMu.Unlock()
+		if done == nil {
+			return waited, true
+		}
+		waited = true
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return waited, false
+		}
+	}
 }
 
 // runSlow deliberates and acts. It never speaks: what it writes is recorded as

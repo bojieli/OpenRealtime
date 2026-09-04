@@ -83,6 +83,15 @@ type runtime struct {
 	// nevertheless overtaken the response. Deliberate interjections are excluded:
 	// continued user speech is their premise, not a reason to cancel them.
 	ordinaryFastRunning atomic.Int32
+	// ordinaryFastDone closes when every ordinary voice continuation that was
+	// active at the same time reaches its canonical safe point and publication
+	// decision. A live interjection waits on this boundary before taking its
+	// snapshot: otherwise two voice continuations can run from prefixes that both
+	// end before the first answer, and the later one repeats that answer. The
+	// atomic count remains the cheap audio-path observation; this mutex owns only
+	// the waitable zero-to-one/one-to-zero transition.
+	ordinaryFastMu   sync.Mutex
+	ordinaryFastDone chan struct{}
 	// solicitationID is the ordinary spoken/text commitment currently waiting
 	// for the other person to answer. It is claimed synchronously at the action
 	// boundary so a continuation racing the append-only visibility event cannot

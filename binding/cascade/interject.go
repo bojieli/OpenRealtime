@@ -256,10 +256,26 @@ func (runtime *runtime) interjectFor(decision interaction.Context, reason intera
 	go func() {
 		defer runtime.wait.Done()
 		defer runtime.releaseInterjection(claim)
+		// The deadline covers both joining an ordinary voice turn and producing
+		// this one. A slow predecessor must not turn a bounded interjection into
+		// unbounded queued work.
+		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
+		defer cancel()
+		waitedForOrdinary, ready := runtime.waitForOrdinaryFast(ctx)
+		if !ready {
+			runtime.noteInterject("ordinary voice did not finish before the interjection deadline")
+			return
+		}
 		// The state may have moved while this was starting. Speaking into a
 		// turn that has since ended is worse than not speaking: the turn that
 		// ended will produce its own answer, and this would talk over it.
-		if state := runtime.duplex.Snapshot(); !state.UserSpeaking || state.AgentSpeaking {
+		//
+		// One exception is the ordinary voice turn we deliberately joined above.
+		// Its assistant item is now in the canonical trajectory and its audio may
+		// already be playing. The speech planner serializes output, so continuing
+		// from that item queues rather than overlaps the next requested occurrence.
+		if state := runtime.duplex.Snapshot(); !state.UserSpeaking ||
+			(state.AgentSpeaking && !waitedForOrdinary) {
 			runtime.noteInterject("the moment passed while starting")
 			return
 		}
@@ -329,8 +345,6 @@ func (runtime *runtime) interjectFor(decision interaction.Context, reason intera
 		// later moment worth speaking at is refused as "already in flight".
 		// Abandoning it is the honest outcome - what was worth saying was
 		// worth saying then.
-		ctx, cancel := context.WithTimeout(runtime.ctx, interjectionDeadline)
-		defer cancel()
 		err := runtime.runFast(ctx, request, &turnReport{}, true, false)
 		// Silent to the caller and not to the operator. Swallowing it outright
 		// traded a noisy bug for an invisible one, and worse: it made me read
