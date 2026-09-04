@@ -297,6 +297,153 @@ func TestSessionBlockedVisionDoesNotStarveAudioObservation(t *testing.T) {
 	}
 }
 
+type shutdownAdapterObserver struct {
+	name          string
+	videoStarted  chan struct{}
+	videoRelease  chan struct{}
+	closeCalled   chan struct{}
+	videoStart    sync.Once
+	closeOnce     sync.Once
+	audioCalls    atomic.Int32
+	videoCalls    atomic.Int32
+	videoActive   atomic.Bool
+	closeOverlaps atomic.Bool
+}
+
+func (observer *shutdownAdapterObserver) Audio(
+	_ context.Context, frame perception.Frame,
+) ([]perception.Observation, error) {
+	observer.audioCalls.Add(1)
+	return []perception.Observation{{
+		Text: "heard", Observer: observer.name, Source: frame.Source,
+		Authority: trajectory.AuthorityUser, Revision: 1, Final: true,
+	}}, nil
+}
+
+func (observer *shutdownAdapterObserver) Video(
+	ctx context.Context, frame perception.Frame,
+) ([]perception.Observation, error) {
+	observer.videoCalls.Add(1)
+	observer.videoActive.Store(true)
+	defer observer.videoActive.Store(false)
+	observer.videoStart.Do(func() { close(observer.videoStarted) })
+	select {
+	case <-observer.videoRelease:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return []perception.Observation{{
+		Text: "saw", Observer: observer.name, Source: frame.Source,
+		Authority: trajectory.AuthorityObserver, Revision: 1, Final: true,
+	}}, nil
+}
+
+func (*shutdownAdapterObserver) Consequence(context.Context, VisualConsequence) error {
+	return nil
+}
+
+func (observer *shutdownAdapterObserver) Close() error {
+	if observer.videoActive.Load() {
+		observer.closeOverlaps.Store(true)
+	}
+	observer.closeOnce.Do(func() { close(observer.closeCalled) })
+	return nil
+}
+
+func TestSessionCloseWaitsForObserverButNotCanonicalMediaCommit(t *testing.T) {
+	observer := &shutdownAdapterObserver{
+		name: "shutdown-observer", videoStarted: make(chan struct{}),
+		videoRelease: make(chan struct{}), closeCalled: make(chan struct{}),
+	}
+	bridge, _, err := newClientBridge(testTarget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioPort := &recordingOutputPort{name: audioBoundary, typeName: stateelements.ObservationType()}
+	videoPort := &recordingOutputPort{name: videoBoundary, typeName: stateelements.ObservationType()}
+	session := &session{
+		sessionID: "media-shutdown-session", observer: observer,
+		config: PluginConfig{Observer: ObserverPlugin{Name: observer.name}},
+		bundle: &sessionBundle{bridge: bridge}, audio: audioPort, video: videoPort,
+		revisions: make(map[string]uint64), captured: make(map[string]uint64),
+		seenText: make(map[string]struct{}), active: make(map[string]activeCall),
+		observationAcks: make(map[string]chan error), cancelAcks: make(map[string]chan error),
+	}
+	audioCtx, cancelAudio := context.WithCancel(t.Context())
+	defer cancelAudio()
+	videoDone := make(chan error, 1)
+	go func() {
+		videoDone <- session.Video(t.Context(), perception.Frame{
+			Kind: perception.FrameImage, Source: SourceScreen, CapturedNS: 2,
+			Image: []byte{1}, MIMEType: "image/jpeg", Width: 1, Height: 1,
+		})
+	}()
+	select {
+	case <-observer.videoStarted:
+	case <-time.After(time.Second):
+		t.Fatal("video observer did not enter its lifecycle-protected call")
+	}
+	audioDone := make(chan error, 1)
+	go func() {
+		audioDone <- session.Audio(audioCtx, perception.Frame{
+			Kind: perception.FrameAudio, Source: SourceMicrophone, CapturedNS: 1,
+			PCM16LE: []byte{1, 0}, SampleRateHz: 8_000,
+		})
+	}()
+	waitForRecordedEnvelope(t, audioPort, 1)
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- session.Close(t.Context(), nil) }()
+	select {
+	case <-observer.closeCalled:
+		t.Fatal("session closed the observer while its video call was active")
+	case <-time.After(10 * time.Millisecond):
+	}
+	close(observer.videoRelease)
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		// Unblock the old implementation before failing so the regression does
+		// not leave Close permanently waiting on Audio's lifecycle read lock.
+		cancelAudio()
+		<-audioDone
+		<-closeDone
+		t.Fatal("session Close waited for a canonical media commit acknowledgement")
+	}
+	select {
+	case err := <-audioDone:
+		if err == nil || !strings.Contains(err.Error(), "closed before observation committed") {
+			t.Fatalf("audio commit waiter shutdown error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session Close did not release the audio commit waiter")
+	}
+	select {
+	case err := <-videoDone:
+		if err == nil || !strings.Contains(err.Error(), "session is closed") {
+			t.Fatalf("in-flight video shutdown error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-flight video did not stop after observer-safe shutdown")
+	}
+	if observer.closeOverlaps.Load() || observer.audioCalls.Load() != 1 || observer.videoCalls.Load() != 1 {
+		t.Fatalf("observer lifecycle overlap/calls = %t/%d/%d",
+			observer.closeOverlaps.Load(), observer.audioCalls.Load(), observer.videoCalls.Load())
+	}
+	if err := session.Audio(t.Context(), perception.Frame{
+		Kind: perception.FrameAudio, Source: SourceMicrophone, CapturedNS: 3,
+		PCM16LE: []byte{1, 0}, SampleRateHz: 8_000,
+	}); err == nil || !strings.Contains(err.Error(), "session is closed") {
+		t.Fatalf("post-close audio error = %v", err)
+	}
+	if observer.audioCalls.Load() != 1 {
+		t.Fatalf("post-close audio entered observer; calls = %d", observer.audioCalls.Load())
+	}
+}
+
 func TestSessionCancelEmitsOneTypedRequestAndWaitsForExactTerminalOutcome(t *testing.T) {
 	port := &recordingOutputPort{name: sessionCancelBoundary, typeName: SessionCancellationType()}
 	session := &session{

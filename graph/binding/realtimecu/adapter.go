@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/element"
@@ -270,6 +271,11 @@ type activeCall struct {
 	runID string
 }
 
+type observationCommitWaiter struct {
+	itemID string
+	ack    chan error
+}
+
 type session struct {
 	audio, video, text, sessionCancel element.OutputPort
 	outputs                           map[string]element.InputPort
@@ -282,7 +288,7 @@ type session struct {
 	audioObservationMu  sync.Mutex
 	videoObservationMu  sync.Mutex
 	mediaLifecycleMu    sync.RWMutex
-	mediaClosed         bool
+	mediaClosed         atomic.Bool
 	observationMu       sync.Mutex
 	revisions           map[string]uint64
 	captured            map[string]uint64
@@ -641,7 +647,7 @@ func (session *session) queueVisualConsequence(ctx context.Context, feedback Vis
 	defer session.videoObservationMu.Unlock()
 	session.mediaLifecycleMu.RLock()
 	defer session.mediaLifecycleMu.RUnlock()
-	if session.mediaClosed {
+	if session.mediaClosed.Load() {
 		return errors.New("realtime-CU session is closed")
 	}
 	session.observationMu.Lock()
@@ -722,9 +728,7 @@ func (session *session) observe(
 	}
 	sensorMu.Lock()
 	defer sensorMu.Unlock()
-	session.mediaLifecycleMu.RLock()
-	defer session.mediaLifecycleMu.RUnlock()
-	if session.mediaClosed {
+	if session.mediaClosed.Load() {
 		return errors.New("realtime-CU session is closed")
 	}
 	session.observationMu.Lock()
@@ -733,15 +737,9 @@ func (session *session) observe(
 		return fmt.Errorf("realtime-CU %s capture timestamps must increase", frame.Source)
 	}
 	session.observationMu.Unlock()
-	var observations []perception.Observation
-	var err error
-	if frame.Kind == perception.FrameAudio {
-		observations, err = session.observer.Audio(ctx, frame)
-	} else {
-		observations, err = session.observer.Video(ctx, frame)
-	}
+	observations, err := session.observeMedia(ctx, frame)
 	if err != nil {
-		return fmt.Errorf("observe realtime-CU %s frame: %w", frame.Source, err)
+		return err
 	}
 	// Provider work is sensor-local. Only validation and graph commit below take
 	// the shared state lock, so a slow vision model cannot starve microphone ASR.
@@ -794,6 +792,31 @@ func (session *session) observe(
 	return nil
 }
 
+// observeMedia holds the lifecycle read lock only while calling the observer.
+// Close takes the corresponding write lock before Observer.Close, so provider
+// resources cannot be used concurrently with or after their teardown. The
+// canonical graph-commit wait happens later, outside this lock.
+func (session *session) observeMedia(
+	ctx context.Context, frame perception.Frame,
+) ([]perception.Observation, error) {
+	session.mediaLifecycleMu.RLock()
+	defer session.mediaLifecycleMu.RUnlock()
+	if session.mediaClosed.Load() {
+		return nil, errors.New("realtime-CU session is closed")
+	}
+	var observations []perception.Observation
+	var err error
+	if frame.Kind == perception.FrameAudio {
+		observations, err = session.observer.Audio(ctx, frame)
+	} else {
+		observations, err = session.observer.Video(ctx, frame)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("observe realtime-CU %s frame: %w", frame.Source, err)
+	}
+	return observations, nil
+}
+
 func (session *session) Text(ctx context.Context, input legacy.TextInput) error {
 	if err := usableContext(ctx, "send realtime-CU text"); err != nil {
 		return err
@@ -830,6 +853,31 @@ func (session *session) sendObservation(
 	ctx context.Context, port element.OutputPort, observation perception.Observation,
 	capturedNS uint64, parents []string, itemID string,
 ) error {
+	waiter, err := session.beginObservationCommit(ctx, port, observation, capturedNS, parents, itemID)
+	if err != nil {
+		return err
+	}
+	return session.awaitObservationCommit(ctx, waiter)
+}
+
+// beginObservationCommit linearizes an accepted ingress publication against
+// Close. It registers the commit waiter and broadcasts while the session is
+// known to be open. The acknowledgement lock is released when this function
+// returns, before awaitObservationCommit can block on the canonical outcome.
+func (session *session) beginObservationCommit(
+	ctx context.Context, port element.OutputPort, observation perception.Observation,
+	capturedNS uint64, parents []string, itemID string,
+) (observationCommitWaiter, error) {
+	// The acknowledgement registry is also the close/publication
+	// linearization boundary. Close marks the atomic lifecycle closed before
+	// taking this lock; a publication either completes its broadcast first and
+	// leaves a waiter for Close to release, or observes closure and publishes
+	// nothing.
+	session.observationAckMu.Lock()
+	if session.mediaClosed.Load() {
+		session.observationAckMu.Unlock()
+		return observationCommitWaiter{}, errors.New("realtime-CU session is closed")
+	}
 	if itemID == "" {
 		itemID = session.nextItemID("observation")
 	} else {
@@ -844,23 +892,13 @@ func (session *session) sendObservation(
 	var ack chan error
 	if session.observationAcks != nil {
 		ack = make(chan error, 1)
-		session.observationAckMu.Lock()
 		if _, duplicate := session.observationAcks[itemID]; duplicate {
 			session.observationAckMu.Unlock()
-			return fmt.Errorf("Realtime-CU observation %q already awaits canonical commit", itemID)
+			return observationCommitWaiter{}, fmt.Errorf(
+				"Realtime-CU observation %q already awaits canonical commit", itemID,
+			)
 		}
 		session.observationAcks[itemID] = ack
-		session.observationAckMu.Unlock()
-	}
-	removeAck := func() {
-		if ack == nil {
-			return
-		}
-		session.observationAckMu.Lock()
-		if session.observationAcks[itemID] == ack {
-			delete(session.observationAcks, itemID)
-		}
-		session.observationAckMu.Unlock()
 	}
 	result, err := port.Broadcast(ctx, element.Envelope{
 		Type: port.Type(), ItemID: itemID, SessionID: session.sessionID,
@@ -869,25 +907,42 @@ func (session *session) sendObservation(
 		TraceID: itemID, CausalParents: slices.Clone(parents), Payload: observation,
 	})
 	if err != nil {
-		removeAck()
-		return fmt.Errorf("send realtime-CU observation: %w", err)
+		if ack != nil {
+			delete(session.observationAcks, itemID)
+		}
+		session.observationAckMu.Unlock()
+		return observationCommitWaiter{}, fmt.Errorf("send realtime-CU observation: %w", err)
 	}
 	if result.Delivered != 1 || result.Dropped != 0 {
-		removeAck()
-		return fmt.Errorf("send realtime-CU observation delivered %d and dropped %d lanes",
+		if ack != nil {
+			delete(session.observationAcks, itemID)
+		}
+		session.observationAckMu.Unlock()
+		return observationCommitWaiter{}, fmt.Errorf("send realtime-CU observation delivered %d and dropped %d lanes",
 			result.Delivered, result.Dropped)
 	}
-	if ack == nil {
+	session.observationAckMu.Unlock()
+	return observationCommitWaiter{itemID: itemID, ack: ack}, nil
+}
+
+func (session *session) awaitObservationCommit(
+	ctx context.Context, waiter observationCommitWaiter,
+) error {
+	if waiter.ack == nil {
 		return nil
 	}
 	select {
-	case err := <-ack:
+	case err := <-waiter.ack:
 		if err != nil {
 			return fmt.Errorf("commit realtime-CU observation: %w", err)
 		}
 		return nil
 	case <-ctx.Done():
-		removeAck()
+		session.observationAckMu.Lock()
+		if session.observationAcks[waiter.itemID] == waiter.ack {
+			delete(session.observationAcks, waiter.itemID)
+		}
+		session.observationAckMu.Unlock()
 		return context.Cause(ctx)
 	}
 }
@@ -978,7 +1033,7 @@ func (session *session) Close(_ context.Context, cause error) error {
 	session.closeOnce.Do(func() {
 		session.mediaLifecycleMu.Lock()
 		defer session.mediaLifecycleMu.Unlock()
-		session.mediaClosed = true
+		session.mediaClosed.Store(true)
 		session.bundle.bridge.Close(cause)
 		session.observationAckMu.Lock()
 		for id, ack := range session.observationAcks {
