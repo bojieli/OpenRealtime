@@ -155,3 +155,23 @@ historical evidence for the earlier eleven-case contract; it is not reused as a
 threshold for the larger population. The twelve-case release gate requires all
 180 attempts to pass, so adding this case cannot weaken the prior gate by
 allowing it to fail silently.
+
+## Retained twelve-case checkpoint (v28)
+
+The completed Deepgram/Qwen/Gemini checkpoint is retained under
+`.runtime/deepgram-scenario-media-v28`. It contains exactly twelve canonical
+stereo WAVs, one per case, and the deterministic checklist reports 12/12
+passed. The secondary Gemini 3.7 Flash review evaluated all 12/12 recordings
+and also reports 12/12 pass. The portable source and review receipts are,
+respectively:
+
+- `sha256:6be3a0ee4b405af7d543cfa3ff5910ed888481ef6a182bae3487ab62da50bf7e`
+- `sha256:5d8fbd014096e50d56fafe81059f891a5a7ee00be2ae31cc5333de3c73381e26`
+
+The twelfth row is **picking up where it was cut off**, trial 1, behavior
+`passed`. Its canonical recording is
+`12-picking-up-where-it-was-cut-off-trial-01.stereo.wav` with digest
+`sha256:19a9458cf80883850fa342eb664323e97605ac0e6672eefaab7ae630732495b7`.
+The reviewer’s per-case evaluation and receipt are retained alongside the
+other eleven; the source and evaluation bundles reopen successfully with
+`review verify-scenario`.

@@ -74,6 +74,11 @@ authored action surface remains unchanged.
 | `bench meeting` | OpenRealtime Meeting Assistant v1 | concurrent listening, speaking, shared-screen action, correction, and slow document work |
 | `bench dynacu` | DynaCU-Bench | optional independent external validation of dynamic computer use |
 
+The retained twelve-case Deepgram/Qwen/Gemini checkpoint and the focused FDB
+sub-turn comparison are documented in [Sub-turn interaction benchmark study](subturn-benchmark-study.md).
+That note separates deterministic scores from advisory Gemini observations and
+records why the policy is not applied wholesale to every suite.
+
 For an FDB v3 repair loop, `-tasks id-a,id-b` reruns exact released directory
 identities while still exposing the full released tool catalog. The resulting
 partial artifact is diagnostic-only and cannot satisfy the 100-task release
