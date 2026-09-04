@@ -284,6 +284,7 @@ graph scenario_conversation {
     output endpoint_outcome = endpoint_policy.outcome;
     output audio_cancel_observed = audio_cancel_copy.out;
     output perception_outcome = asr_outcome_copy.out;
+    output final_observations = audio_final_gate.finals;
     output final_observation_outcome = audio_final_gate.outcome;
     output asr_resolution = asr.resolved;
     output transcript_events = asr_observation_copy.out;
