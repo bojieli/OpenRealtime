@@ -16,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 const (
@@ -94,6 +95,11 @@ func (playbackFactory) Mount(_ context.Context, mount element.MountContext) (ele
 	if err := verifySink(config.Sink, entry.descriptor, sink); err != nil {
 		return nil, errors.Join(err, closeResource(sink))
 	}
+	timingConfig := spoken.TrackerConfig{}
+	if source, ok := sink.(PlaybackTimingSource); ok {
+		timingConfig = source.PlaybackTiming()
+	}
+	timing := spoken.NewTracker(timingConfig)
 	if err := mount.Lifecycle.Defer("close-playback-sink", func(context.Context) error {
 		return closeResource(sink)
 	}); err != nil {
@@ -161,7 +167,8 @@ func (playbackFactory) Mount(_ context.Context, mount element.MountContext) (ele
 	}
 	return &playbackRunner{
 		instance: mount.InstanceID, config: config, sink: sink, ledger: ledger,
-		scheduler: scheduler, sinkReference: config.Sink, sinkDescriptor: entry.descriptor,
+		scheduler: scheduler, timing: timing,
+		sinkReference: config.Sink, sinkDescriptor: entry.descriptor,
 		audioInput: audioInput, cancelInput: cancelInput,
 		statusOutput: statusOutput, outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
 		reservedOutput: reservedOutput, begunOutput: begunOutput, textOutput: textOutput,
@@ -201,6 +208,7 @@ type playbackRunner struct {
 	sink           PlaybackSink
 	ledger         *action.Ledger
 	scheduler      clock.Scheduler
+	timing         *spoken.Tracker
 	sinkReference  string
 	sinkDescriptor v1.Descriptor
 	audioInput     element.InputPort
@@ -320,6 +328,7 @@ func (runner *playbackRunner) handleAudio(
 		if runner.active == nil || runner.active.utterance.ID != frame.UtteranceID {
 			return runner.unexpectedFrame(ctx, command.envelope, frame, "audio chunk has no matching begin")
 		}
+		runner.timing.Audio(frame.UtteranceID, frame.Chunk.PCM16LE, frame.Chunk.SampleRateHz)
 		return runner.play(ctx, command, interrupts, failures)
 	case AudioEnd:
 		if runner.active == nil || runner.active.utterance.ID != frame.UtteranceID {
@@ -329,6 +338,7 @@ func (runner *playbackRunner) handleAudio(
 		runner.active = nil
 		switch frame.Terminal.Kind {
 		case OutcomeSucceeded:
+			runner.timing.Synthesised(frame.UtteranceID)
 			return runner.finishPlayed(ctx, active)
 		case OutcomeCancelled:
 			return runner.finishCancelled(ctx, active, frame.Terminal.Message)
@@ -414,7 +424,9 @@ func (runner *playbackRunner) begin(
 			return err
 		}
 	}
+	runner.timing.Begin(frame.UtteranceID, frame.Utterance.Text)
 	if err := runner.sink.Begin(ctx, frame.Utterance); err != nil {
+		_ = runner.timing.End(ctx, frame.UtteranceID, 0)
 		runner.discardID = frame.UtteranceID
 		var receiptErr error
 		if active.reserved {
@@ -565,6 +577,9 @@ func (runner *playbackRunner) playChunk(
 			return errors.New("played duration overflow")
 		}
 		active.playedNS += durationNS
+		runner.timing.Played(
+			active.utterance.ID, active.playedNS/uint64(time.Millisecond),
+		)
 		now := runner.scheduler.NowNS()
 		if active.nextSendNS < now {
 			active.nextSendNS = now
@@ -688,6 +703,9 @@ func (runner *playbackRunner) finishFailed(
 func (runner *playbackRunner) endSink(
 	ctx context.Context, active *activePlayback, outcome action.Outcome,
 ) error {
+	if runner.timing != nil {
+		outcome.Mark = runner.timing.End(ctx, active.utterance.ID, outcome.PlayedMS)
+	}
 	if !active.begun {
 		return nil
 	}

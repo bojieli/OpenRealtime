@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
@@ -27,6 +28,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception/voices"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -157,6 +159,7 @@ type sessionBundle struct {
 	store        *trajectory.Store
 	services     map[string]any
 	speaker      io.Closer
+	wordTiming   io.Closer
 }
 
 func newSessionBundle(
@@ -235,9 +238,29 @@ func newSessionBundle(
 		mediaBridge.Close(err)
 		return nil, err
 	}
+	var wordAligner spoken.Aligner
+	var wordTimingCloser io.Closer
+	wordTimingInterval := time.Duration(0)
+	if config.WordTiming != nil {
+		wordAligner, err = config.WordTiming.Factory(ctx, options)
+		if err != nil {
+			mediaBridge.Close(err)
+			return nil, fmt.Errorf("open scenario conversation word timing: %w", err)
+		}
+		if wordAligner == nil {
+			mediaBridge.Close(errors.New("word-timing factory returned nil"))
+			return nil, errors.New("scenario conversation word-timing factory returned nil")
+		}
+		wordTimingInterval = config.WordTiming.Interval
+		wordTimingCloser, _ = wordAligner.(io.Closer)
+	}
 	playback := speechelements.NewPlaybackSinkRegistry()
 	playbackDescriptor := scenarioPlaybackDescriptor()
-	playbackSink := newSessionPlaybackSink(ctx, options.Sink, playbackDescriptor, presentation)
+	playbackSink := newSessionPlaybackSink(
+		ctx, options.Sink, playbackDescriptor, presentation, spoken.TrackerConfig{
+			Aligner: wordAligner, Interval: wordTimingInterval,
+		},
+	)
 	if err := playback.Register(PlaybackReference, playbackDescriptor, func() (speechelements.PlaybackSink, error) {
 		return playbackSink, nil
 	}); err != nil {
@@ -296,7 +319,8 @@ func newSessionBundle(
 	}
 	return &sessionBundle{
 		bridge: bridge, media: mediaBridge, presentation: presentation,
-		playback: playbackSink, store: store, services: services, speaker: speakerCloser,
+		playback: playbackSink, store: store, services: services,
+		speaker: speakerCloser, wordTiming: wordTimingCloser,
 	}, nil
 }
 
@@ -306,14 +330,17 @@ func (bundle *sessionBundle) Close(cause error) error {
 	}
 	bundle.bridge.Close(cause)
 	bundle.media.Close(cause)
-	var playbackErr, speakerErr error
+	var playbackErr, speakerErr, wordTimingErr error
 	if bundle.playback != nil {
 		playbackErr = bundle.playback.Close()
 	}
 	if bundle.speaker != nil {
 		speakerErr = bundle.speaker.Close()
 	}
-	return errors.Join(playbackErr, speakerErr)
+	if bundle.wordTiming != nil {
+		wordTimingErr = bundle.wordTiming.Close()
+	}
+	return errors.Join(playbackErr, speakerErr, wordTimingErr)
 }
 
 type denyUnrequestedConfirmation struct{}

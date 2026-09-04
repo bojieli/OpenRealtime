@@ -14,6 +14,7 @@ import (
 	interactionelements "github.com/bojieli/OpenRealtime/elements/interaction"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 type recordedScenarioCancellation struct {
@@ -361,9 +362,17 @@ func TestPlaybackReceiptTrackingHonorsSequenceAcrossConcurrentBoundaries(t *test
 	if err := playbackSink.End(context.Background(), utterance, action.Outcome{}); err != nil {
 		t.Fatal(err)
 	}
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "assistant-run-a", Kind: trajectory.KindAssistant, InvocationID: "run-a",
+		Producer: trajectory.Producer{Phase: trajectory.PhaseSlow},
+		Content:  "audible response", Visibility: trajectory.VisibilityPrepared,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	session := &session{
 		sessionID: "session-a", playback: make(map[string]playbackReceiptState),
-		speechRuns: make(map[string]int), bundle: &sessionBundle{playback: playbackSink},
+		speechRuns: make(map[string]int), bundle: &sessionBundle{playback: playbackSink, store: store},
 	}
 	// The terminal lane may be scheduled before the earlier audio lane. Its
 	// higher sequence must retain the terminal tombstone.

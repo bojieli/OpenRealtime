@@ -8,14 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/action"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
+	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -155,6 +159,67 @@ func TestResponseCreateContextWaitsForExactPublishedSnapshot(t *testing.T) {
 		Payload: session.bundle.store.Snapshot(),
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPlaybackBoundaryAggregatesReleasedSentencesIntoContinuationProjection(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "assistant-run", Kind: trajectory.KindAssistant, MonotonicNS: 10,
+		InvocationID: "run-spoken", Producer: trajectory.Producer{Phase: trajectory.PhaseSlow},
+		Content: "One two three. Four five six.", Visibility: trajectory.VisibilityPrepared,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session := &session{
+		bundle: &sessionBundle{store: store}, playback: make(map[string]playbackReceiptState),
+		playbackOrder: []string{"speech-1", "speech-2"},
+	}
+	session.playback["speech-1"] = playbackReceiptState{
+		runID: "run-spoken", sourceSequence: 1, kind: speechelements.PlaybackReleased,
+		utterance: action.Utterance{ID: "speech-1", Text: "One two three."},
+		outcome: action.Outcome{Completed: true, PlayedMS: 900, Mark: spoken.Mark{
+			Spoken: "One two three.", Measured: true, PlayedMS: 900,
+		}},
+	}
+	if err := session.recordPlaybackBoundary(t.Context(), "run-spoken"); err != nil {
+		t.Fatal(err)
+	}
+	first := trajectory.AssistantHeard(store.Snapshot())["assistant-run"]
+	if first.Spoken != "One two three." || first.Pending != "Four five six." ||
+		!first.Measured || first.PlayedMS != 900 {
+		t.Fatalf("first released sentence boundary = %+v", first)
+	}
+
+	session.playback["speech-2"] = playbackReceiptState{
+		runID: "run-spoken", sourceSequence: 2, kind: speechelements.PlaybackReleased,
+		utterance: action.Utterance{ID: "speech-2", Text: "Four five six."},
+		outcome: action.Outcome{PlayedMS: 350, Mark: spoken.Mark{
+			Spoken: "Four", Cut: "five", Pending: "five six.",
+			Measured: true, PlayedMS: 350,
+		}},
+	}
+	if err := session.recordPlaybackBoundary(t.Context(), "run-spoken"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := store.Snapshot()
+	mark := trajectory.AssistantHeard(snapshot)["assistant-run"]
+	if mark.Spoken != "One two three. Four" || mark.Cut != "five" ||
+		mark.Pending != "five six." || !mark.Measured || mark.PlayedMS != 1250 {
+		t.Fatalf("aggregated playback boundary = %+v", mark)
+	}
+	var projected string
+	for _, run := range continuation.ProviderRuns(snapshot.Items) {
+		for _, item := range run.Items {
+			if item.ID == "assistant-run" {
+				projected = item.Content
+			}
+		}
+	}
+	heard, pending, annotated := strings.Cut(projected, continuation.HeardPreamble)
+	if !annotated || !strings.Contains(heard, "One two three. Four") ||
+		strings.Contains(heard, "six") || !strings.Contains(pending, "five six.") {
+		t.Fatalf("continuation projection = %q", projected)
 	}
 }
 

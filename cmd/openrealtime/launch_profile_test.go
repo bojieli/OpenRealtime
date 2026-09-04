@@ -229,6 +229,41 @@ func TestScenarioProfileFreezePinsRepeatedDeepgramKeyterms(t *testing.T) {
 	}
 }
 
+func TestScenarioProfileFreezePinsExactWordTimingSelection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", path,
+		"-word-timings-url", "http://127.0.0.1:8003/v1/audio/transcriptions",
+		"-word-timings-model", "whisper-turbo",
+		"-word-timings-language", "en",
+		"-word-timings-interval-ms", "900",
+		"-word-timings-timeout-ms", "12000",
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := launchprofile.ParseYAML(path, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, exact := range []string{
+		`"word_timing":{"artifact":{`,
+		`"reference":"provider.openrealtime.word-timing.openai-compatible.v1"`,
+		`"interval_ms":900`,
+		`"endpoint":"http://127.0.0.1:8003/v1/audio/transcriptions"`,
+		`"model":"whisper-turbo"`,
+		`"language":"en"`,
+		`"request_timeout_ms":12000`,
+	} {
+		if !bytes.Contains(profile.Application.Configuration, []byte(exact)) {
+			t.Fatalf("frozen scenario profile omitted %s: %s", exact, profile.Application.Configuration)
+		}
+	}
+}
+
 func TestScenarioProfileFreezePinsFDBV3ToolUnion(t *testing.T) {
 	root := t.TempDir()
 	dataset := filepath.Join(root, "fdb-v3")

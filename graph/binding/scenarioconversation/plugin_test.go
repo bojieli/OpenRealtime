@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
@@ -18,15 +19,22 @@ import (
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+type pluginWordAligner struct{}
+
+func (pluginWordAligner) Words(context.Context, spoken.Audio) ([]spoken.Word, error) {
+	return []spoken.Word{{Text: "heard", StartMS: 0, EndMS: 100}}, nil
+}
 
 func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) {
 	architecture, err := projectarch.Default().Resolve("cascade.composed-policy@1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var asrOpened, policyOpened, modelOpened, ttsOpened atomic.Int32
+	var asrOpened, policyOpened, modelOpened, ttsOpened, wordTimingOpened atomic.Int32
 	artifact := func(name string) inspect.ArtifactIdentity {
 		return inspect.ArtifactIdentity{ID: "plugin://test/" + name, Revision: "build:1"}
 	}
@@ -87,6 +95,14 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 				return nil, nil
 			},
 		},
+		WordTiming: &WordTimingPlugin{
+			Reference: WordTimingReference, Artifact: artifact("word-timing"),
+			Interval: 900 * time.Millisecond,
+			Factory: func(context.Context, legacy.Options) (spoken.Aligner, error) {
+				wordTimingOpened.Add(1)
+				return pluginWordAligner{}, nil
+			},
+		},
 		Target: computeruse.Target{Name: "browser", Sources: []string{"screen"}, Width: 1280, Height: 720},
 		Gate:   perception.DefaultGateConfig(), MaxOutputTokens: 1024,
 	}
@@ -119,13 +135,26 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 				dependency.Name, dependency.Artifact, mount[index].Artifact, want)
 		}
 	}
-	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 || ttsOpened.Load() != 0 {
-		t.Fatalf("resource-free inventory opened providers: asr=%d policy=%d model=%d tts=%d",
-			asrOpened.Load(), policyOpened.Load(), modelOpened.Load(), ttsOpened.Load())
+	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 ||
+		ttsOpened.Load() != 0 || wordTimingOpened.Load() != 0 {
+		t.Fatalf("resource-free inventory opened providers: asr=%d policy=%d model=%d tts=%d timing=%d",
+			asrOpened.Load(), policyOpened.Load(), modelOpened.Load(), ttsOpened.Load(), wordTimingOpened.Load())
 	}
 
-	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 || ttsOpened.Load() != 0 {
+	if asrOpened.Load() != 0 || policyOpened.Load() != 0 || modelOpened.Load() != 0 ||
+		ttsOpened.Load() != 0 || wordTimingOpened.Load() != 0 {
 		t.Fatal("reading resource-free graph inventory opened a provider")
+	}
+	bundle, err := newSessionBundle(context.Background(), legacy.Options{
+		SessionID: "word-timing-session", Sink: &playbackClientSink{},
+	}, plugin.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bundle.Close(nil)
+	timing := bundle.playback.PlaybackTiming()
+	if wordTimingOpened.Load() != 1 || timing.Aligner == nil || timing.Interval != 900*time.Millisecond {
+		t.Fatalf("session-local word timing = opened %d config %+v", wordTimingOpened.Load(), timing)
 	}
 }
 

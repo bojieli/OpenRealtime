@@ -13,6 +13,7 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 const (
@@ -66,6 +67,7 @@ type sessionPlaybackSink struct {
 	sink         legacy.Sink
 	descriptor   v1.Descriptor
 	presentation *presentationState
+	timing       spoken.TrackerConfig
 	mu           sync.Mutex
 	turns        map[string]playbackTurn
 	released     map[string]playbackRelease
@@ -90,13 +92,28 @@ type playbackRelease struct {
 
 func newSessionPlaybackSink(
 	ctx context.Context, sink legacy.Sink, descriptor v1.Descriptor,
-	presentation *presentationState,
+	presentation *presentationState, timing ...spoken.TrackerConfig,
 ) *sessionPlaybackSink {
 	descriptor.Capabilities = maps.Clone(descriptor.Capabilities)
+	configured := spoken.TrackerConfig{}
+	if len(timing) > 0 {
+		configured = timing[0]
+	}
 	return &sessionPlaybackSink{
 		ctx: ctx, sink: sink, descriptor: descriptor, presentation: presentation,
-		turns: make(map[string]playbackTurn), released: make(map[string]playbackRelease),
+		timing: configured, turns: make(map[string]playbackTurn),
+		released: make(map[string]playbackRelease),
 	}
+}
+
+// PlaybackTiming gives speech.Playback the exact session-local aligner. The
+// graph playback element owns the tracker because it sees both all synthesised
+// audio and the frames that actually crossed the presentation boundary.
+func (sink *sessionPlaybackSink) PlaybackTiming() spoken.TrackerConfig {
+	if sink == nil {
+		return spoken.TrackerConfig{}
+	}
+	return sink.timing
 }
 
 func (sink *sessionPlaybackSink) Descriptor() v1.Descriptor {
@@ -398,3 +415,4 @@ func (sink *sessionPlaybackSink) deleteTurn(utteranceID string) {
 
 var _ action.SpeechSink = (*sessionPlaybackSink)(nil)
 var _ action.SpeechReservationSink = (*sessionPlaybackSink)(nil)
+var _ speechelements.PlaybackTimingSource = (*sessionPlaybackSink)(nil)

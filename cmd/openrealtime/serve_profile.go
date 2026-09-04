@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/bysentence"
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/adapters/speakerid"
+	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	graphnative "github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
@@ -37,6 +38,7 @@ import (
 	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
 	serverprofile "github.com/bojieli/OpenRealtime/server"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 const (
@@ -100,6 +102,7 @@ type serveScenarioProviders struct {
 	Policies        []scenarioconversation.PolicyFactoryRegistration
 	Models          []scenarioconversation.ModelFactoryRegistration
 	TTS             []scenarioconversation.TTSFactoryRegistration
+	WordTiming      []scenarioconversation.WordTimingFactoryRegistration
 	Recogniser      *asrbuffer.Accumulator
 }
 
@@ -149,6 +152,47 @@ func newServeScenarioProviders(artifacts serveProfileArtifacts) (serveScenarioPr
 					return err
 				}
 				return readySpeakerIdentity(ctx, config)
+			},
+		})
+	const wordTimingProvider = "openai-compatible"
+	wordTimingArtifact, err := serveProviderArtifact(
+		artifacts.Gateway, "word-timing", wordTimingProvider,
+	)
+	if err != nil {
+		return serveScenarioProviders{}, err
+	}
+	result.WordTiming = append(result.WordTiming,
+		scenarioconversation.WordTimingFactoryRegistration{
+			Reference: serveProviderReference("word-timing", wordTimingProvider),
+			Artifact:  wordTimingArtifact,
+			ValidateConfiguration: func(raw json.RawMessage) error {
+				_, err := decodeServeWordTimingConfiguration(raw)
+				return err
+			},
+			FactoryConfiguration: func(
+				ctx context.Context, _ legacy.Options, raw json.RawMessage,
+			) (spoken.Aligner, error) {
+				if err := profileProviderContext(ctx); err != nil {
+					return nil, err
+				}
+				config, err := decodeServeWordTimingConfiguration(raw)
+				if err != nil {
+					return nil, err
+				}
+				return wordtimings.New(wordtimings.Config{
+					Endpoint: config.Endpoint, Model: config.Model, Language: config.Language,
+					RequestTimeout: time.Duration(config.RequestTimeoutMS) * time.Millisecond,
+				})
+			},
+			ReadinessConfiguration: func(ctx context.Context, raw json.RawMessage) error {
+				if err := profileProviderContext(ctx); err != nil {
+					return err
+				}
+				config, err := decodeServeWordTimingConfiguration(raw)
+				if err != nil {
+					return err
+				}
+				return readyWordTiming(ctx, config)
 			},
 		})
 	const policyProvider = "vllm"
@@ -380,6 +424,38 @@ func readySpeakerIdentity(ctx context.Context, config serveSpeakerIdentityConfig
 	return nil
 }
 
+func readyWordTiming(ctx context.Context, config serveWordTimingConfiguration) error {
+	health, err := url.Parse(config.Endpoint)
+	if err != nil {
+		return err
+	}
+	health.Path, health.RawPath, health.RawQuery = "/health", "", ""
+	timed, cancel := context.WithTimeout(
+		ctx, time.Duration(config.RequestTimeoutMS)*time.Millisecond,
+	)
+	defer cancel()
+	request, err := http.NewRequestWithContext(timed, http.MethodGet, health.String(), nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if readErr != nil {
+		return readErr
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf(
+			"word-timing readiness returned %s: %s",
+			response.Status, strings.TrimSpace(string(body)),
+		)
+	}
+	return nil
+}
+
 func serveProviderReference(role, name string) string {
 	return "provider.openrealtime." + role + "." + name + ".v1"
 }
@@ -469,6 +545,7 @@ func newServeProfileHost(
 			Policies:            providerInventory.Policies,
 			Models:              providerInventory.Models,
 			TTS:                 providerInventory.TTS,
+			WordTiming:          providerInventory.WordTiming,
 		},
 	)
 	if err != nil {

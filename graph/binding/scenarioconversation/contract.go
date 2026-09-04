@@ -14,6 +14,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 const (
@@ -40,6 +42,7 @@ const (
 	ModelReference           = "deployment.scenario-conversation.model"
 	SilentModelReference     = "deployment.scenario-conversation.model-silent"
 	TTSReference             = "deployment.scenario-conversation.tts"
+	WordTimingReference      = "deployment.scenario-conversation.word-timing"
 	PlaybackReference        = "deployment.scenario-conversation.playback"
 	ToolReference            = "deployment.scenario-conversation.tools"
 	TargetReference          = "deployment.scenario-conversation.target"
@@ -140,6 +143,17 @@ type TTSPlugin struct {
 	Factory    func(context.Context, legacy.Options) (v1.SpeechProvider, error)
 }
 
+// WordTimingPlugin is the optional recogniser that locates words inside the
+// agent's own synthesised audio. It is deliberately separate from ASR: ASR
+// decides what the user said, while this provider only times text the agent
+// already knows exactly because it generated that text itself.
+type WordTimingPlugin struct {
+	Reference string
+	Artifact  inspect.ArtifactIdentity
+	Interval  time.Duration
+	Factory   func(context.Context, legacy.Options) (spoken.Aligner, error)
+}
+
 // SpeakerIdentityPlugin is the optional exact speaker-embedding selection.
 // The factory creates one embedder per session; the recogniser that enrols and
 // compares voices is also session-local and is never shared across calls.
@@ -234,6 +248,7 @@ type PluginConfig struct {
 	Model                   ModelPlugin
 	SilentModel             ModelPlugin
 	TTS                     TTSPlugin
+	WordTiming              *WordTimingPlugin
 	Tools                   []ToolDeclaration
 	Target                  computeruse.Target
 	Gate                    perception.GateConfig
@@ -283,6 +298,10 @@ func clonePluginConfig(source PluginConfig) PluginConfig {
 		speaker := *source.SpeakerIdentity
 		speaker.Descriptor = cloneV1Descriptor(source.SpeakerIdentity.Descriptor)
 		result.SpeakerIdentity = &speaker
+	}
+	if source.WordTiming != nil {
+		wordTiming := *source.WordTiming
+		result.WordTiming = &wordTiming
 	}
 	result.TTS.Descriptor.Capabilities = maps.Clone(source.TTS.Descriptor.Capabilities)
 	result.Tools = cloneToolDeclarations(source.Tools)
@@ -339,6 +358,11 @@ func validatePluginConfig(config PluginConfig) error {
 	}
 	if err := validateTTSPlugin(config.TTS); err != nil {
 		return err
+	}
+	if config.WordTiming != nil {
+		if err := validateWordTimingPlugin(*config.WordTiming); err != nil {
+			return err
+		}
 	}
 	tools, err := normalizeToolDeclarations(config.Tools)
 	if err != nil {
@@ -507,6 +531,25 @@ func validateTTSPlugin(plugin TTSPlugin) error {
 	}
 	if !canonicalIdentity(plugin.Voice) {
 		return errors.New("scenario conversation TTS plugin requires a canonical fixed voice")
+	}
+	return nil
+}
+
+func validateWordTimingPlugin(plugin WordTimingPlugin) error {
+	if !canonicalIdentity(plugin.Reference) || plugin.Factory == nil {
+		return errors.New("scenario conversation word-timing plugin requires a canonical reference and factory")
+	}
+	if plugin.Reference != WordTimingReference {
+		return fmt.Errorf(
+			"scenario conversation word-timing reference %q, want exact playback selection %q",
+			plugin.Reference, WordTimingReference,
+		)
+	}
+	if err := plugin.Artifact.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation word-timing artifact: %w", err)
+	}
+	if plugin.Interval <= 0 || plugin.Interval > time.Hour {
+		return errors.New("scenario conversation word-timing interval must be in (0,1h]")
 	}
 	return nil
 }

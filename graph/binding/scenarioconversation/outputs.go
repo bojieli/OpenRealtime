@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,6 +22,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -215,7 +217,8 @@ func (session *session) acceptPlaybackReceipt(
 	}
 	state := playbackReceiptState{
 		runID: envelope.RunID, utterance: utterance, sequence: receipt.Sequence,
-		kind: receipt.Kind, active: active, terminal: terminal || found && previous.terminal,
+		sourceSequence: envelope.Sequence, kind: receipt.Kind, outcome: receipt.Outcome,
+		active: active, terminal: terminal || found && previous.terminal,
 	}
 	becameTerminal := state.terminal && (!found || !previous.terminal)
 	session.playback[utterance.ID] = state
@@ -224,14 +227,163 @@ func (session *session) acceptPlaybackReceipt(
 	}
 	session.activityMu.Unlock()
 	if receipt.Kind == speechelements.PlaybackReleased {
-		if session.bundle == nil || session.bundle.playback == nil {
-			return errors.New("scenario conversation playback release has no sink barrier")
+		if session.bundle == nil || session.bundle.playback == nil || session.bundle.store == nil {
+			return errors.New("scenario conversation playback release has no sink or trajectory barrier")
+		}
+		if err := session.recordPlaybackBoundary(ctx, envelope.RunID); err != nil {
+			return fmt.Errorf("record scenario conversation playback boundary: %w", err)
 		}
 		if err := session.bundle.playback.Release(ctx, envelope.RunID, receipt); err != nil {
 			return fmt.Errorf("complete scenario conversation playback release: %w", err)
 		}
 	}
 	return nil
+}
+
+// recordPlaybackBoundary commits what the user had actually heard before the
+// release exposes TurnEnd. Model-result commit and playback drain on separate
+// graph lanes, so this waits for the canonical assistant items rather than
+// guessing their identities from streamed sentence text.
+func (session *session) recordPlaybackBoundary(ctx context.Context, runID string) error {
+	if ctx == nil {
+		return errors.New("playback boundary has nil context")
+	}
+	assistant, snapshot, err := session.awaitAssistantRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+
+	session.activityMu.Lock()
+	releases := make([]playbackReceiptState, 0, len(session.playback))
+	order := make(map[string]int, len(session.playbackOrder))
+	for index, utteranceID := range session.playbackOrder {
+		order[utteranceID] = index
+	}
+	for _, state := range session.playback {
+		if state.runID == runID && state.kind == speechelements.PlaybackReleased {
+			releases = append(releases, state)
+		}
+	}
+	session.activityMu.Unlock()
+	if len(releases) == 0 {
+		return fmt.Errorf("run %q has no released playback receipt", runID)
+	}
+	sort.SliceStable(releases, func(left, right int) bool {
+		leftSequence, rightSequence := releases[left].sourceSequence, releases[right].sourceSequence
+		if leftSequence != 0 && rightSequence != 0 && leftSequence != rightSequence {
+			return leftSequence < rightSequence
+		}
+		return order[releases[left].utterance.ID] < order[releases[right].utterance.ID]
+	})
+
+	contents := make([]string, len(assistant))
+	fullWords := make([]string, 0)
+	for index, item := range assistant {
+		contents[index] = item.Content
+		fullWords = append(fullWords, spoken.Words(item.Content)...)
+	}
+	heardWords := 0
+	cut := false
+	measured := true
+	playedMS := uint64(0)
+	boundaryReached := false
+	for _, release := range releases {
+		mark := release.outcome.Mark
+		segmentWords := spoken.Words(release.utterance.Text)
+		segmentHeard := len(spoken.Words(mark.Spoken))
+		if segmentHeard > len(segmentWords) {
+			return fmt.Errorf("utterance %q reports %d heard words for %d generated words",
+				release.utterance.ID, segmentHeard, len(segmentWords))
+		}
+		if release.outcome.PlayedMS > ^uint64(0)-playedMS {
+			return errors.New("playback boundary duration overflow")
+		}
+		playedMS += release.outcome.PlayedMS
+		heardWords += segmentHeard
+		measured = measured && mark.Measured
+		if !mark.Complete() {
+			cut = strings.TrimSpace(mark.Cut) != ""
+			boundaryReached = true
+			break
+		}
+	}
+	if heardWords > len(fullWords) {
+		return fmt.Errorf("run %q reports %d heard words for %d committed words",
+			runID, heardWords, len(fullWords))
+	}
+	// A completed prefix of sentence releases still leaves every not-yet-
+	// released sentence pending. The complete model result is already durable,
+	// so the aggregate split can state that fact exactly.
+	if !boundaryReached && heardWords < len(fullWords) {
+		boundaryReached = true
+	}
+	aggregate := spoken.Mark{
+		Spoken:   strings.Join(fullWords[:heardWords], " "),
+		Pending:  strings.Join(fullWords[heardWords:], " "),
+		Measured: measured, PlayedMS: playedMS,
+	}
+	if cut && heardWords < len(fullWords) {
+		aggregate.Cut = fullWords[heardWords]
+	}
+	if !boundaryReached {
+		aggregate.Pending = ""
+	}
+	distributed := spoken.Distribute(aggregate, contents)
+	visibility := trajectory.VisibilityPlayed
+	if playedMS == 0 && !aggregate.Started() {
+		visibility = trajectory.VisibilityCancelled
+	}
+	monotonicNS := uint64(0)
+	if len(snapshot.Items) > 0 {
+		monotonicNS = snapshot.Items[len(snapshot.Items)-1].MonotonicNS
+	}
+	items := make([]trajectory.Item, len(assistant))
+	for index, source := range assistant {
+		mark := distributed[index]
+		items[index] = trajectory.Item{
+			ID: session.nextItemID("playback-boundary"), Kind: trajectory.KindAssistantState,
+			MonotonicNS: monotonicNS, CausalParentIDs: []string{source.ID},
+			SourceRevision: source.SourceRevision, InvocationID: runID,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime},
+			AssistantState: &trajectory.AssistantState{
+				AssistantItemID: source.ID, Visibility: visibility,
+				PlayedAudioMS: playedMS, Heard: &mark,
+			},
+		}
+	}
+	if err := session.bundle.store.AppendBatch(items); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (session *session) awaitAssistantRun(
+	ctx context.Context, runID string,
+) ([]trajectory.Item, trajectory.Snapshot, error) {
+	for {
+		session.contentMu.Lock()
+		changed := session.snapshotChanged
+		session.contentMu.Unlock()
+		snapshot := session.bundle.store.Snapshot()
+		assistant := make([]trajectory.Item, 0)
+		for _, item := range snapshot.Items {
+			if item.Kind == trajectory.KindAssistant && item.InvocationID == runID {
+				assistant = append(assistant, item)
+			}
+		}
+		if len(assistant) > 0 {
+			return assistant, snapshot, nil
+		}
+		if changed == nil {
+			return nil, trajectory.Snapshot{}, fmt.Errorf(
+				"run %q has no assistant items and no trajectory publication barrier", runID)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, trajectory.Snapshot{}, context.Cause(ctx)
+		case <-changed:
+		}
+	}
 }
 
 func validatePlaybackReceipt(

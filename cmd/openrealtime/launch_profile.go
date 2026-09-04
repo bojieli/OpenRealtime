@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
+	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/bench"
 	"github.com/bojieli/OpenRealtime/bench/fdbv3"
@@ -96,6 +97,11 @@ type scenarioProfileOptions struct {
 	ttsTimeoutMS           int64
 	ttsSentenceWrap        bool
 	ttsSentenceMinimum     int
+	wordTimingsURL         string
+	wordTimingsModel       string
+	wordTimingsLanguage    string
+	wordTimingsIntervalMS  int64
+	wordTimingsTimeoutMS   int64
 
 	gateThreshold           float64
 	gatePrefixMS            int
@@ -131,6 +137,8 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		ttsProvider:           "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
 		ttsURL: "http://127.0.0.1:8123/v1/tts", ttsVoice: "default",
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
+		wordTimingsModel:      wordtimings.DefaultModel,
+		wordTimingsIntervalMS: 1_000, wordTimingsTimeoutMS: 10_000,
 		gateThreshold: 0.5, gatePrefixMS: 300, gateSilenceMS: 500,
 		// The acknowledgement scenario deliberately asks for a long answer,
 		// then speaks over it. A 512-token response took 176 seconds to finish
@@ -229,6 +237,16 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.Int64Var(&options.ttsTimeoutMS, "tts-timeout-ms", options.ttsTimeoutMS, "TTS request timeout")
 	flags.BoolVar(&options.ttsSentenceWrap, "tts-sentence-wrapping", options.ttsSentenceWrap, "synthesize prepared text by sentence")
 	flags.IntVar(&options.ttsSentenceMinimum, "tts-sentence-minimum-runes", options.ttsSentenceMinimum, "minimum sentence size")
+	flags.StringVar(&options.wordTimingsURL, "word-timings-url", options.wordTimingsURL,
+		"optional OpenAI-shaped transcription endpoint that returns word timestamps")
+	flags.StringVar(&options.wordTimingsModel, "word-timings-model", options.wordTimingsModel,
+		"exact recogniser served by the word-timing endpoint")
+	flags.StringVar(&options.wordTimingsLanguage, "word-timings-language", options.wordTimingsLanguage,
+		"word-timing recogniser language hint")
+	flags.Int64Var(&options.wordTimingsIntervalMS, "word-timings-interval-ms", options.wordTimingsIntervalMS,
+		"new synthesised audio required before refreshing word timings")
+	flags.Int64Var(&options.wordTimingsTimeoutMS, "word-timings-timeout-ms", options.wordTimingsTimeoutMS,
+		"word-timing request timeout")
 	flags.Float64Var(&options.gateThreshold, "gate-threshold", options.gateThreshold, "acoustic energy threshold")
 	flags.IntVar(&options.gatePrefixMS, "gate-prefix-ms", options.gatePrefixMS, "acoustic prefix padding")
 	flags.IntVar(&options.gateSilenceMS, "gate-silence-ms", options.gateSilenceMS, "silence that closes one utterance")
@@ -415,6 +433,10 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
+	wordTiming, err := scenarioProfileWordTimingSelection(inventory, options)
+	if err != nil {
+		return launchprofile.Document{}, graphlaunch.Result{}, err
+	}
 	contract, err := graphnative.BuildContract()
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
@@ -436,6 +458,7 @@ func freezeProductionScenarioProfile(
 		Architecture:  architecture.Identity(),
 		ASR:           asr, SpeakerIdentity: speakerIdentity,
 		Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
+		WordTiming: wordTiming,
 		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
 			StandingExtraction: true, VerifyVoiceActivation: true, VerifySilentAction: true,
 			MinimumActivationConfidence: 0.7, StandingMemory: 64,
@@ -801,6 +824,41 @@ func scenarioProfileTTSSelection(
 		}, nil
 	}
 	return scenarioconversation.ApplicationTTSSelection{}, fmt.Errorf("scenario TTS inventory is missing %q", reference)
+}
+
+func scenarioProfileWordTimingSelection(
+	inventory serveScenarioProviders, options scenarioProfileOptions,
+) (*scenarioconversation.ApplicationWordTimingSelection, error) {
+	if strings.TrimSpace(options.wordTimingsURL) == "" {
+		return nil, nil
+	}
+	reference := serveProviderReference("word-timing", "openai-compatible")
+	for _, registration := range inventory.WordTiming {
+		if registration.Reference != reference {
+			continue
+		}
+		raw, err := json.Marshal(serveWordTimingConfiguration{
+			FormatVersion:    serveProviderConfigurationVersion,
+			Endpoint:         options.wordTimingsURL,
+			Model:            options.wordTimingsModel,
+			Language:         options.wordTimingsLanguage,
+			RequestTimeoutMS: options.wordTimingsTimeoutMS,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if registration.ValidateConfiguration == nil {
+			return nil, errors.New("scenario word-timing inventory has no configuration validator")
+		}
+		if err := registration.ValidateConfiguration(raw); err != nil {
+			return nil, fmt.Errorf("describe scenario word timing: %w", err)
+		}
+		return &scenarioconversation.ApplicationWordTimingSelection{
+			Reference: reference, Artifact: registration.Artifact,
+			IntervalMS: options.wordTimingsIntervalMS, Configuration: raw,
+		}, nil
+	}
+	return nil, fmt.Errorf("scenario word-timing inventory is missing %q", reference)
 }
 
 func writeCreateOnlyLaunchProfile(path string, payload []byte) (resultErr error) {

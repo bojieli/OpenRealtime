@@ -526,12 +526,14 @@ type pendingAudio struct {
 }
 
 type playbackReceiptState struct {
-	runID     string
-	utterance action.Utterance
-	sequence  uint64
-	kind      speechelements.PlaybackReceiptKind
-	active    bool
-	terminal  bool
+	runID          string
+	utterance      action.Utterance
+	sequence       uint64
+	sourceSequence uint64
+	kind           speechelements.PlaybackReceiptKind
+	outcome        action.Outcome
+	active         bool
+	terminal       bool
 }
 
 type session struct {

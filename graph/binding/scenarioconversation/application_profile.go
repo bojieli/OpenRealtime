@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
@@ -21,11 +22,12 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(8)
+	ApplicationFormatVersion      = uint64(9)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -79,6 +81,17 @@ type ApplicationTTSSelection struct {
 	Configuration json.RawMessage          `json:"configuration,omitempty"`
 }
 
+// ApplicationWordTimingSelection pins the optional recogniser used only to
+// locate word boundaries in the agent's own audio. Configuration remains
+// plugin-owned; IntervalMS is application policy because it determines how
+// often playback asks the provider to refresh a still-growing utterance.
+type ApplicationWordTimingSelection struct {
+	Reference     string                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity `json:"artifact"`
+	IntervalMS    int64                    `json:"interval_ms"`
+	Configuration json.RawMessage          `json:"configuration,omitempty"`
+}
+
 // ApplicationGateSelection is the JSON-stable acoustic admission policy.
 type ApplicationGateSelection struct {
 	Threshold         float64 `json:"threshold"`
@@ -106,6 +119,7 @@ type ApplicationConfig struct {
 	Model                   ApplicationModelSelection            `json:"model"`
 	SilentModel             ApplicationModelSelection            `json:"silent_model"`
 	TTS                     ApplicationTTSSelection              `json:"tts"`
+	WordTiming              *ApplicationWordTimingSelection      `json:"word_timing,omitempty"`
 	Tools                   []ToolDeclaration                    `json:"tools"`
 	Target                  computeruse.Target                   `json:"target"`
 	Gate                    ApplicationGateSelection             `json:"gate"`
@@ -180,6 +194,11 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 	}
 	if err := validateApplicationTTS(config.TTS); err != nil {
 		return ApplicationConfig{}, err
+	}
+	if config.WordTiming != nil {
+		if err := validateApplicationWordTiming(*config.WordTiming); err != nil {
+			return ApplicationConfig{}, err
+		}
 	}
 	config.Tools, err = normalizeToolDeclarations(config.Tools)
 	if err != nil {
@@ -286,6 +305,21 @@ func validateApplicationTTS(selection ApplicationTTSSelection) error {
 	return nil
 }
 
+func validateApplicationWordTiming(selection ApplicationWordTimingSelection) error {
+	if err := validateApplicationProviderIdentity(
+		selection.Reference, selection.Artifact, "word-timing",
+	); err != nil {
+		return err
+	}
+	if selection.IntervalMS < 1 || selection.IntervalMS > int64(time.Hour/time.Millisecond) {
+		return fmt.Errorf(
+			"scenario conversation application word-timing interval_ms must be between 1 and %d",
+			time.Hour/time.Millisecond,
+		)
+	}
+	return nil
+}
+
 // ASRFactoryRegistration is one broad host inventory entry. The factory is
 // retained but remains unopened until the selected session starts.
 type ASRFactoryRegistration struct {
@@ -328,6 +362,19 @@ type TTSFactoryRegistration struct {
 	ReadinessConfiguration func(context.Context, json.RawMessage) error
 }
 
+// WordTimingFactoryRegistration has no graph descriptor because the provider
+// emits no graph payload. Exact configuration bytes and the linked artifact
+// still remain profile-pinned, and the factory stays unopened until a session
+// constructs its playback sink.
+type WordTimingFactoryRegistration struct {
+	Reference              string
+	Artifact               inspect.ArtifactIdentity
+	Factory                func(context.Context, legacy.Options) (spoken.Aligner, error)
+	ValidateConfiguration  func(json.RawMessage) error
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (spoken.Aligner, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
+}
+
 // ApplicationRegistrationConfig is process-private executable inventory. The
 // supplied artifacts are host/build identities; this package never invents a
 // provider, adapter, or dependency artifact from configuration bytes.
@@ -341,6 +388,7 @@ type ApplicationRegistrationConfig struct {
 	Policies            []PolicyFactoryRegistration
 	Models              []ModelFactoryRegistration
 	TTS                 []TTSFactoryRegistration
+	WordTiming          []WordTimingFactoryRegistration
 }
 
 // NewApplicationRegistration creates the generic strict-profile application
@@ -373,7 +421,8 @@ func NewApplicationRegistration(
 	}
 	if len(source.ASR) == 0 || len(source.Policies) == 0 || len(source.Models) == 0 || len(source.TTS) == 0 ||
 		len(source.ASR) > maximumApplicationProviders || len(source.Policies) > maximumApplicationProviders || len(source.Models) > maximumApplicationProviders ||
-		len(source.TTS) > maximumApplicationProviders || len(source.SpeakerIdentity) > maximumApplicationProviders {
+		len(source.TTS) > maximumApplicationProviders || len(source.SpeakerIdentity) > maximumApplicationProviders ||
+		len(source.WordTiming) > maximumApplicationProviders {
 		return launchprofile.Registration{}, errors.New(
 			"scenario conversation application registration requires bounded ASR, policy, model, and TTS inventories",
 		)
@@ -395,6 +444,10 @@ func NewApplicationRegistration(
 		return launchprofile.Registration{}, err
 	}
 	tts, err := snapshotTTSRegistrations(source.TTS)
+	if err != nil {
+		return launchprofile.Registration{}, err
+	}
+	wordTimings, err := snapshotWordTimingRegistrations(source.WordTiming)
 	if err != nil {
 		return launchprofile.Registration{}, err
 	}
@@ -520,6 +573,33 @@ func NewApplicationRegistration(
 			if err != nil {
 				return graphlaunch.Config{}, err
 			}
+			var wordTimingPlugin *WordTimingPlugin
+			var wordTimingReady func(context.Context) error
+			if config.WordTiming != nil {
+				wordTimingRegistration, found := wordTimings[config.WordTiming.Reference]
+				if !found {
+					return graphlaunch.Config{}, fmt.Errorf(
+						"scenario conversation word-timing registry is missing %q", config.WordTiming.Reference,
+					)
+				}
+				if wordTimingRegistration.Artifact != config.WordTiming.Artifact {
+					return graphlaunch.Config{}, fmt.Errorf(
+						"scenario conversation word-timing %q artifact drifted", config.WordTiming.Reference,
+					)
+				}
+				wordTimingFactory, ready, resolveErr := resolveWordTimingRegistration(
+					wordTimingRegistration, *config.WordTiming,
+				)
+				if resolveErr != nil {
+					return graphlaunch.Config{}, resolveErr
+				}
+				wordTimingReady = ready
+				wordTimingPlugin = &WordTimingPlugin{
+					Reference: WordTimingReference, Artifact: wordTimingRegistration.Artifact,
+					Interval: time.Duration(config.WordTiming.IntervalMS) * time.Millisecond,
+					Factory:  wordTimingFactory,
+				}
+			}
 			if err := context.Cause(ctx); err != nil {
 				return graphlaunch.Config{}, err
 			}
@@ -543,7 +623,8 @@ func NewApplicationRegistration(
 				TTS: TTSPlugin{Reference: TTSReference, Artifact: ttsRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(ttsDescriptor), Voice: ttsVoice,
 					Factory: ttsFactory},
-				Tools: cloneToolDeclarations(config.Tools), Target: cloneTarget(config.Target),
+				WordTiming: wordTimingPlugin,
+				Tools:      cloneToolDeclarations(config.Tools), Target: cloneTarget(config.Target),
 				Gate: config.Gate.gateConfig(), Media: config.Media,
 				MaxOutputTokens:         config.MaxOutputTokens,
 				ContinuationInstruction: config.ContinuationInstruction,
@@ -575,6 +656,10 @@ func NewApplicationRegistration(
 				if ttsReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
 						graphlaunch.ReadinessCheck{Name: "tts:" + config.TTS.Reference, Check: ttsReady})
+				}
+				if wordTimingReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "word-timing:" + config.WordTiming.Reference, Check: wordTimingReady})
 				}
 			}
 			return resolved, constructorErr
@@ -784,6 +869,30 @@ func resolveTTSRegistration(
 		}, nil
 }
 
+func resolveWordTimingRegistration(
+	registration WordTimingFactoryRegistration, selection ApplicationWordTimingSelection,
+) (func(context.Context, legacy.Options) (spoken.Aligner, error), func(context.Context) error, error) {
+	if registration.ValidateConfiguration == nil {
+		if len(selection.Configuration) != 0 || registration.Factory == nil {
+			return nil, nil, fmt.Errorf(
+				"scenario conversation word-timing %q artifact or configuration drifted", selection.Reference,
+			)
+		}
+		return registration.Factory, nil, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	if err := registration.ValidateConfiguration(configuration); err != nil {
+		return nil, nil, fmt.Errorf(
+			"scenario conversation word-timing %q configuration: %w", selection.Reference, err,
+		)
+	}
+	return func(ctx context.Context, options legacy.Options) (spoken.Aligner, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		}, func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
+}
+
 func snapshotASRRegistrations(source []ASRFactoryRegistration) (map[string]ASRFactoryRegistration, error) {
 	result := make(map[string]ASRFactoryRegistration, len(source))
 	for index, registration := range source {
@@ -930,6 +1039,44 @@ func snapshotTTSRegistrations(source []TTSFactoryRegistration) (map[string]TTSFa
 	return result, nil
 }
 
+func snapshotWordTimingRegistrations(
+	source []WordTimingFactoryRegistration,
+) (map[string]WordTimingFactoryRegistration, error) {
+	result := make(map[string]WordTimingFactoryRegistration, len(source))
+	for index, registration := range source {
+		if err := validateApplicationProviderIdentity(
+			registration.Reference, registration.Artifact, "word-timing",
+		); err != nil {
+			return nil, fmt.Errorf(
+				"scenario conversation word-timing registration %d: %w", index, err,
+			)
+		}
+		parameterized := registration.ValidateConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.ValidateConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil {
+				return nil, fmt.Errorf(
+					"scenario conversation word-timing registration %d has a partial or mixed parameterized factory",
+					index,
+				)
+			}
+		} else if registration.Factory == nil {
+			return nil, fmt.Errorf(
+				"scenario conversation word-timing registration %d has a nil factory", index,
+			)
+		}
+		if _, duplicate := result[registration.Reference]; duplicate {
+			return nil, fmt.Errorf(
+				"scenario conversation word-timing reference %q is registered more than once",
+				registration.Reference,
+			)
+		}
+		result[registration.Reference] = registration
+	}
+	return result, nil
+}
+
 func validateApplicationProviderIdentity(
 	reference string, artifact inspect.ArtifactIdentity, role string,
 ) error {
@@ -963,6 +1110,11 @@ func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
 		speaker.Descriptor = cloneV1Descriptor(source.SpeakerIdentity.Descriptor)
 		speaker.Configuration = slices.Clone(source.SpeakerIdentity.Configuration)
 		result.SpeakerIdentity = &speaker
+	}
+	if source.WordTiming != nil {
+		wordTiming := *source.WordTiming
+		wordTiming.Configuration = slices.Clone(source.WordTiming.Configuration)
+		result.WordTiming = &wordTiming
 	}
 	result.Policy.Configuration = slices.Clone(source.Policy.Configuration)
 	result.Model.Configuration = slices.Clone(source.Model.Configuration)

@@ -78,6 +78,14 @@ type serveTTSConfiguration struct {
 	SentenceMinimumRunes int    `json:"sentence_minimum_runes"`
 }
 
+type serveWordTimingConfiguration struct {
+	FormatVersion    uint64 `json:"format_version"`
+	Endpoint         string `json:"endpoint"`
+	Model            string `json:"model"`
+	Language         string `json:"language"`
+	RequestTimeoutMS int64  `json:"request_timeout_ms"`
+}
+
 func decodeServeASRConfiguration(
 	provider string, source json.RawMessage,
 ) (serveASRConfiguration, providers.ASRRequest, error) {
@@ -314,6 +322,37 @@ func decodeServeTTSConfiguration(
 		OutputSampleRateHz: config.OutputSampleRateHz,
 		RequestTimeout:     time.Duration(config.RequestTimeoutMS) * time.Millisecond,
 	}, nil
+}
+
+func decodeServeWordTimingConfiguration(
+	source json.RawMessage,
+) (serveWordTimingConfiguration, error) {
+	var config serveWordTimingConfiguration
+	if err := elementconfig.Decode(source, &config); err != nil {
+		return config, fmt.Errorf("decode word-timing configuration: %w", err)
+	}
+	if config.FormatVersion != serveProviderConfigurationVersion {
+		return config, fmt.Errorf(
+			"word-timing configuration format is %d, want %d",
+			config.FormatVersion, serveProviderConfigurationVersion,
+		)
+	}
+	if err := exactEndpoint("word-timing endpoint", config.Endpoint, false); err != nil {
+		return config, err
+	}
+	if err := exactNonempty("word-timing model", config.Model); err != nil {
+		return config, err
+	}
+	if config.Language != strings.TrimSpace(config.Language) ||
+		strings.ContainsAny(config.Language, "\x00\r\n") {
+		return config, errors.New("word-timing language is not canonical")
+	}
+	if err := boundedMilliseconds(
+		"word-timing request_timeout_ms", config.RequestTimeoutMS, false,
+	); err != nil {
+		return config, err
+	}
+	return config, nil
 }
 
 func exactNonempty(label, value string) error {

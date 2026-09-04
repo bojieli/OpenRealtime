@@ -11,6 +11,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 type TTSProviderFactory func() (v1.SpeechProvider, error)
@@ -81,6 +82,14 @@ func (registry *TTSProviderRegistry) resolve(reference string) (ttsProviderEntry
 type PlaybackSink interface {
 	action.SpeechSink
 	Descriptor() v1.Descriptor
+}
+
+// PlaybackTimingSource is the optional deployment seam through which an exact
+// playback sink supplies its session-local word aligner. The graph element
+// owns the Tracker because it alone sees both all synthesised audio and the
+// exact frames that crossed the playback boundary.
+type PlaybackTimingSource interface {
+	PlaybackTiming() spoken.TrackerConfig
 }
 
 type PlaybackSinkFactory func() (PlaybackSink, error)

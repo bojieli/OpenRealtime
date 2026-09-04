@@ -12,7 +12,17 @@ import (
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/element"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
+
+type receiptWordAligner struct{}
+
+func (receiptWordAligner) Words(context.Context, spoken.Audio) ([]spoken.Word, error) {
+	return []spoken.Word{
+		{Text: "partly", StartMS: 0, EndMS: 1},
+		{Text: "presented", StartMS: 1, EndMS: 2},
+	}, nil
+}
 
 func TestPlaybackReceiptsAttestExactPostEffectOrder(t *testing.T) {
 	sink := newReceiptSink("")
@@ -196,6 +206,38 @@ func TestPlaybackReceiptsPreserveCancellationEffectPrefixes(t *testing.T) {
 	})
 }
 
+func TestCancelledPlaybackReleaseCarriesMeasuredIncompleteWordBoundary(t *testing.T) {
+	provider := newBlockingProvider(true)
+	sink := newReceiptSink("")
+	sink.timing = spoken.TrackerConfig{
+		Aligner: receiptWordAligner{}, Interval: time.Nanosecond, Timeout: time.Second,
+	}
+	fixture := mountSpeech(t, providerDescriptor, func() v1.SpeechProvider { return provider },
+		sinkDescriptor, func() speechelements.PlaybackSink { return sink }, nil)
+	defer fixture.stop(t)
+	fixture.receiveResolutions(t)
+	fixture.sendText(t, speechelements.TextSegment{ID: "measured-cancel", Text: "partly presented"})
+	waitSignal(t, sink.audioDelivered, "measured cancellation emitted no audio")
+	fixture.sendCancel(t, "playback_cancel", "measured-cancel", "barge-in")
+	fixture.sendCancel(t, "tts_cancel", "measured-cancel", "barge-in")
+	if outcome := receiveMatchingPlayback(t, fixture.egress(t, "playback_outcome"), "measured-cancel"); outcome.Kind != speechelements.OutcomeCancelled {
+		t.Fatalf("playback outcome = %+v", outcome)
+	}
+	for _, boundary := range []string{
+		"playback_reserved", "playback_begun", "playback_text_committed",
+		"playback_audio_emitted", "playback_ended", "playback_released",
+	} {
+		receipt := receive(t, fixture.egress(t, boundary)).Payload.(speechelements.PlaybackReceipt)
+		if boundary != "playback_released" {
+			continue
+		}
+		if receipt.Outcome.Completed || receipt.Outcome.Mark.Complete() ||
+			!receipt.Outcome.Mark.Measured || receipt.Outcome.Mark.Pending == "" {
+			t.Fatalf("released measured boundary = %+v", receipt.Outcome)
+		}
+	}
+}
+
 func assertPlaybackReceipts(
 	t *testing.T, fixture *speechFixture, firstSequence uint64, terminalReason string,
 	expected []struct {
@@ -245,9 +287,10 @@ func assertNoPlaybackReceipt(t *testing.T, input element.InputPort, boundary str
 
 type receiptSink struct {
 	*recordingSink
-	fail string
-	mu   sync.Mutex
-	seen []string
+	fail   string
+	timing spoken.TrackerConfig
+	mu     sync.Mutex
+	seen   []string
 }
 
 func newReceiptSink(fail string) *receiptSink {
@@ -303,5 +346,8 @@ func (sink *receiptSink) effectsSnapshot() []string {
 	return slices.Clone(sink.seen)
 }
 
+func (sink *receiptSink) PlaybackTiming() spoken.TrackerConfig { return sink.timing }
+
 var _ speechelements.PlaybackSink = (*receiptSink)(nil)
+var _ speechelements.PlaybackTimingSource = (*receiptSink)(nil)
 var _ action.SpeechReservationSink = (*receiptSink)(nil)
