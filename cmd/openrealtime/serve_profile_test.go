@@ -319,6 +319,49 @@ func TestProductionServeProfileDescriptorsMatchLazyLiveFactories(t *testing.T) {
 	}
 }
 
+func TestServeASRConfigurationPinsDeepgramKeyterms(t *testing.T) {
+	raw := mustJSON(t, serveASRConfiguration{
+		FormatVersion: 1, Model: "nova-3", BaseURL: "wss://api.deepgram.com/v1/listen",
+		Language: "en-US", Keyterms: []string{"sea bass", "fennel"},
+		RequestTimeoutMS: 30_000, CadenceMS: 100,
+	})
+	config, request, err := decodeServeASRConfiguration("deepgram", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"sea bass", "fennel"}
+	if !reflect.DeepEqual(config.Keyterms, want) || !reflect.DeepEqual(request.Keyterms, want) {
+		t.Fatalf("Deepgram keyterms drifted across profile decode: config=%q request=%q",
+			config.Keyterms, request.Keyterms)
+	}
+	request.Keyterms[0] = "mutated"
+	if config.Keyterms[0] != "sea bass" {
+		t.Fatal("decoded provider request aliases immutable profile keyterms")
+	}
+
+	for _, testCase := range []struct {
+		name     string
+		provider string
+		keyterms []string
+		want     string
+	}{
+		{name: "wrong provider", provider: "qwen-asr", keyterms: []string{"sea bass"}, want: "require the deepgram"},
+		{name: "noncanonical", provider: "deepgram", keyterms: []string{" sea bass"}, want: "non-canonical"},
+		{name: "duplicate", provider: "deepgram", keyterms: []string{"sea bass", "sea bass"}, want: "repeat"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			invalid := mustJSON(t, serveASRConfiguration{
+				FormatVersion: 1, Model: "nova-3", BaseURL: "wss://api.deepgram.com/v1/listen",
+				Keyterms: testCase.keyterms, RequestTimeoutMS: 30_000, CadenceMS: 100,
+			})
+			_, _, decodeErr := decodeServeASRConfiguration(testCase.provider, invalid)
+			if decodeErr == nil || !strings.Contains(decodeErr.Error(), testCase.want) {
+				t.Fatalf("keyterm validation error = %v, want %q", decodeErr, testCase.want)
+			}
+		})
+	}
+}
+
 func TestProfiledServePreflightIsLazyAndKeepsRealtimeEndpoint(t *testing.T) {
 	artifacts, err := executableServeProfileArtifacts()
 	if err != nil {

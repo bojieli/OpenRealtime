@@ -114,9 +114,11 @@ const DefaultMinimum = 1500 * time.Millisecond
 //	   2000ms   0.571..0.616      0.114..0.168
 //	   3000ms   0.576..0.667      0.091..0.147
 //
-// Three seconds buys nothing over two, and two buys little over one and a
-// half, which already clears the threshold by a tenth on one side and three
-// tenths on the other.
+// Three seconds buys nothing over two. One and a half seconds usually clears
+// the threshold, but a short phrase is still content-dominated: in the live
+// correction scenario, enrolling from "Right. So" scored only 0.359 against
+// a later utterance by the same speaker. Waiting for two seconds moved the
+// same-speaker comparison to 0.531 while the other speaker remained at 0.154.
 //
 // What three seconds cost is the whole mechanism, because the buffer is per
 // utterance and nobody speaks in three-second sentences on purpose. A person
@@ -127,9 +129,10 @@ const DefaultMinimum = 1500 * time.Millisecond
 // somebody else about the milk was read as the user, twice, and the agent
 // answered a question that was not addressed to it in every run.
 //
-// Failing to enrol is worse than enrolling on less, and the measurement says
-// less is enough.
-const DefaultEnrolment = DefaultMinimum
+// Failing to enrol is worse than waiting indefinitely, but two seconds is
+// reached by the next substantive utterance in that conversation and gives a
+// stable reference instead of permanently enrolling from a filler phrase.
+const DefaultEnrolment = 2 * time.Second
 
 // Recogniser watches one session.
 type Recogniser struct {

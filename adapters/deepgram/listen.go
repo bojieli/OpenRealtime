@@ -72,6 +72,11 @@ type ListenConfig struct {
 	VADEvents *bool
 	// Keywords biases recognition toward expected vocabulary.
 	Keywords []string
+	// Keyterms biases Nova-3 toward exact words or phrases. Deepgram accepts
+	// this option as a repeated singular keyterm query parameter; keeping it
+	// distinct from the legacy weighted keywords option prevents a frozen
+	// deployment from silently changing wire semantics.
+	Keyterms []string
 	// Extra adds query parameters this adapter does not model.
 	Extra map[string]string
 	// Header adds request headers.
@@ -290,6 +295,9 @@ func (listener *Listener) dial(ctx context.Context, sampleRateHz uint32) error {
 	}
 	for _, keyword := range listener.config.Keywords {
 		query.Add("keywords", keyword)
+	}
+	for _, keyterm := range listener.config.Keyterms {
+		query.Add("keyterm", keyterm)
 	}
 	for name, value := range listener.config.Extra {
 		query.Set(name, value)

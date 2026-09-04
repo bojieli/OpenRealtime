@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,14 +24,15 @@ const (
 )
 
 type serveASRConfiguration struct {
-	FormatVersion     uint64 `json:"format_version"`
-	Model             string `json:"model"`
-	BaseURL           string `json:"base_url"`
-	Language          string `json:"language"`
-	PartialIntervalMS int64  `json:"partial_interval_ms"`
-	EndpointingMS     int64  `json:"endpointing_ms"`
-	RequestTimeoutMS  int64  `json:"request_timeout_ms"`
-	CadenceMS         int64  `json:"cadence_ms"`
+	FormatVersion     uint64   `json:"format_version"`
+	Model             string   `json:"model"`
+	BaseURL           string   `json:"base_url"`
+	Language          string   `json:"language"`
+	Keyterms          []string `json:"keyterms,omitempty"`
+	PartialIntervalMS int64    `json:"partial_interval_ms"`
+	EndpointingMS     int64    `json:"endpointing_ms"`
+	RequestTimeoutMS  int64    `json:"request_timeout_ms"`
+	CadenceMS         int64    `json:"cadence_ms"`
 }
 
 type serveModelConfiguration struct {
@@ -88,6 +90,25 @@ func decodeServeASRConfiguration(
 	if config.Language != strings.TrimSpace(config.Language) {
 		return config, providers.ASRRequest{}, errors.New("ASR language is not canonical")
 	}
+	if len(config.Keyterms) > 0 && provider != "deepgram" {
+		return config, providers.ASRRequest{}, errors.New("ASR keyterms require the deepgram provider")
+	}
+	if len(config.Keyterms) > 100 {
+		return config, providers.ASRRequest{}, errors.New("ASR keyterms cannot contain more than 100 entries")
+	}
+	seenKeyterms := make(map[string]struct{}, len(config.Keyterms))
+	for index, keyterm := range config.Keyterms {
+		if err := exactNonempty(fmt.Sprintf("ASR keyterm %d", index), keyterm); err != nil {
+			return config, providers.ASRRequest{}, err
+		}
+		if len(keyterm) > 256 {
+			return config, providers.ASRRequest{}, fmt.Errorf("ASR keyterm %d exceeds 256 bytes", index)
+		}
+		if _, duplicate := seenKeyterms[keyterm]; duplicate {
+			return config, providers.ASRRequest{}, fmt.Errorf("ASR keyterms repeat %q", keyterm)
+		}
+		seenKeyterms[keyterm] = struct{}{}
+	}
 	if err := boundedMilliseconds("ASR partial_interval_ms", config.PartialIntervalMS, true); err != nil {
 		return config, providers.ASRRequest{}, err
 	}
@@ -102,7 +123,7 @@ func decodeServeASRConfiguration(
 	}
 	return config, providers.ASRRequest{
 		Provider: provider, Model: config.Model, BaseURL: config.BaseURL,
-		Language:        config.Language,
+		Language: config.Language, Keyterms: slices.Clone(config.Keyterms),
 		PartialInterval: time.Duration(config.PartialIntervalMS) * time.Millisecond,
 		Endpointing:     time.Duration(config.EndpointingMS) * time.Millisecond,
 		RequestTimeout:  time.Duration(config.RequestTimeoutMS) * time.Millisecond,

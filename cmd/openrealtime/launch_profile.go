@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
@@ -54,6 +55,7 @@ type scenarioProfileOptions struct {
 	asrModel           string
 	asrURL             string
 	asrLanguage        string
+	asrKeyterms        []string
 	asrPartialMS       int64
 	asrEndpointingMS   int64
 	asrTimeoutMS       int64
@@ -164,6 +166,10 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.asrModel, "asr-model", options.asrModel, "exact ASR model")
 	flags.StringVar(&options.asrURL, "asr-url", options.asrURL, "exact ASR base URL")
 	flags.StringVar(&options.asrLanguage, "asr-language", options.asrLanguage, "ASR language hint")
+	flags.Func("asr-keyterm", "Deepgram Nova-3 vocabulary hint; repeat for multiple phrases", func(value string) error {
+		options.asrKeyterms = append(options.asrKeyterms, value)
+		return nil
+	})
 	flags.Int64Var(&options.asrPartialMS, "asr-partial-ms", options.asrPartialMS, "batch partial-transcription interval")
 	flags.Int64Var(&options.asrEndpointingMS, "asr-endpointing-ms", options.asrEndpointingMS, "streaming-provider endpointing")
 	flags.Int64Var(&options.asrTimeoutMS, "asr-timeout-ms", options.asrTimeoutMS, "ASR request timeout")
@@ -581,7 +587,8 @@ func scenarioProfileASRSelection(
 		}
 		raw, err := json.Marshal(serveASRConfiguration{
 			FormatVersion: 1, Model: options.asrModel, BaseURL: options.asrURL,
-			Language: options.asrLanguage, PartialIntervalMS: options.asrPartialMS,
+			Language: options.asrLanguage, Keyterms: slices.Clone(options.asrKeyterms),
+			PartialIntervalMS: options.asrPartialMS,
 			EndpointingMS: options.asrEndpointingMS, RequestTimeoutMS: options.asrTimeoutMS,
 			CadenceMS: options.asrCadenceMS,
 		})

@@ -202,6 +202,33 @@ func TestScenarioProfileFreezeRejectsInvalidContinuationInstructionBeforeOutput(
 	}
 }
 
+func TestScenarioProfileFreezePinsRepeatedDeepgramKeyterms(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
+	if err := runLaunchProfile([]string{
+		"scenario", "-out", path,
+		"-asr-provider", "deepgram",
+		"-asr-model", "nova-3",
+		"-asr-url", "wss://api.deepgram.com/v1/listen",
+		"-asr-keyterm", "sea bass",
+		"-asr-keyterm", "fennel",
+	}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := launchprofile.ParseYAML(path, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(profile.Application.Configuration,
+		[]byte(`"keyterms":["sea bass","fennel"]`)) {
+		t.Fatalf("frozen scenario profile omitted ordered Deepgram keyterms: %s",
+			profile.Application.Configuration)
+	}
+}
+
 func TestScenarioProfileFreezePinsFDBV3ToolUnion(t *testing.T) {
 	root := t.TempDir()
 	dataset := filepath.Join(root, "fdb-v3")

@@ -155,3 +155,27 @@ func TestEnrollingNeedsMoreThanComparing(t *testing.T) {
 		t.Fatalf("four seconds did not enrol anybody: %q", got)
 	}
 }
+
+// A short opening acknowledgement must not become the session's permanent
+// voice reference. Real ECAPA embeddings put "Right. So" below the
+// same-speaker threshold when compared with a later substantive utterance;
+// the following longer utterance is the first reliable enrolment window.
+func TestShortOpeningPhraseDoesNotBecomeTheVoiceReference(t *testing.T) {
+	embedder := &scripted{vectors: [][]float32{{1, 0, 0}}}
+	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
+
+	recogniser.Begin("acknowledgement")
+	recogniser.Hear(context.Background(), speech(1.6))
+	if got := recogniser.Verdict(); got != voices.Unknown {
+		t.Fatalf("a 1.6 second opening phrase enrolled somebody: %q", got)
+	}
+	if embedder.calls != 0 {
+		t.Fatalf("the embedder was asked %d times about the short opening phrase", embedder.calls)
+	}
+
+	recogniser.Begin("substantive")
+	recogniser.Hear(context.Background(), speech(2.1))
+	if got := settle(t, recogniser, voices.Familiar); got != voices.Familiar {
+		t.Fatalf("the substantive utterance did not establish the reference: %q", got)
+	}
+}

@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -162,6 +164,7 @@ func TestTheStreamDeclaresTheCallersOwnSampleRate(t *testing.T) {
 	fake := newFakeDeepgram(t, []string{results("hi", true)})
 	listener, err := NewListener(ListenConfig{
 		URL: fake.url(), APIKey: "secret", Model: "nova-test", Language: "en-US",
+		Keyterms: []string{"sea bass", "fennel"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -170,6 +173,13 @@ func TestTheStreamDeclaresTheCallersOwnSampleRate(t *testing.T) {
 	push(t, listener, 0, 0, 400)
 
 	query := <-fake.query
+	values, err := url.ParseQuery(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := values["keyterm"]; !reflect.DeepEqual(got, []string{"sea bass", "fennel"}) {
+		t.Fatalf("Deepgram keyterm query values = %q", got)
+	}
 	for _, want := range []string{
 		"encoding=linear16", "sample_rate=16000", "channels=1",
 		"interim_results=true", "model=nova-test", "language=en-US",

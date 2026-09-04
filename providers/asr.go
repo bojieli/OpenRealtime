@@ -164,6 +164,10 @@ type ASRRequest struct {
 	APIKey   string
 	KeyEnv   string
 	Language string
+	// Keyterms are exact streaming-recognizer vocabulary hints. They are
+	// currently implemented by Deepgram Nova-3 as repeated keyterm query
+	// parameters and ignored by no other provider.
+	Keyterms []string
 	// PartialInterval asks a batch endpoint for hypotheses this often, by
 	// re-transcribing the utterance. It is ignored by a streaming provider,
 	// which produces them for free.
@@ -240,7 +244,7 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 		return func() (v1.PerceptionProvider, error) {
 			return deepgram.NewListener(deepgram.ListenConfig{
 				URL: baseURL, Model: model, APIKey: key, Language: request.Language,
-				Header: request.Header, Endpointing: request.Endpointing,
+				Keyterms: request.Keyterms, Header: request.Header, Endpointing: request.Endpointing,
 			})
 		}, nil
 	case DialectOpenAITranscriptions, DialectElevenLabsSTT:
