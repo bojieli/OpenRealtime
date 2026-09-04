@@ -42,7 +42,9 @@ const productionScenarioContinuationInstruction = "Ground every response in cano
 	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
 	"When carrying out a request deferred until an event or time condition, preserve the requested action, subject, and key wording; " +
 	"do not substitute a related check or narrate the setup. " +
-	"For a running count, emit exactly one updated count for the current occurrence and never repeat it."
+	"For an event-driven running count, emit exactly one updated count for each new occurrence and never repeat it. " +
+	"For a direct request to count through a numeric range, emit the requested sequence, one number per sentence, until interrupted. " +
+	"When resuming that sequence, begin after the last number the user actually heard; do not skip numbers that were prepared but not audible."
 
 type scenarioProfileOptions struct {
 	out           string

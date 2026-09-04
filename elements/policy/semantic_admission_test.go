@@ -334,7 +334,7 @@ func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesIt
 		descriptor: descriptor,
 		answers: []string{
 			"wait", "covered",
-			"wait", string(coreinteraction.ActAnswer),
+			"wait", string(coreinteraction.ActAnswer), "wait",
 			"condition-met", "covered", string(coreinteraction.ActStaySilent),
 		},
 		generationAnswers: []string{
@@ -472,10 +472,11 @@ func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesIt
 		t.Fatalf("animal decision=%+v outcome=%+v state=%+v", decision, outcome, state)
 	}
 	captured := decider.captured()
-	if len(captured) != 7 || !strings.Contains(captured[4].Evidence, "Standing instructions:") ||
+	if len(captured) != 8 || !strings.Contains(captured[4].Prompt, "unanswered-request guard") ||
+		!strings.Contains(captured[4].Evidence, "Standing instructions:") ||
 		!strings.Contains(captured[4].Evidence, "count the animals") ||
-		!strings.Contains(captured[6].Evidence, "Standing instructions:") ||
-		!strings.Contains(captured[6].Evidence, "count the animals") {
+		!strings.Contains(captured[7].Evidence, "Standing instructions:") ||
+		!strings.Contains(captured[7].Evidence, "count the animals") {
 		t.Fatalf("semantic decision inputs = %+v", captured)
 	}
 }
@@ -690,6 +691,118 @@ func TestSemanticAdmissionVoiceActivationCannotReuseAnEarlierCondition(t *testin
 		strings.Contains(captured[0].Evidence, "Recent conversation:") ||
 		!strings.Contains(captured[1].Evidence, "thirteenth") {
 		t.Fatalf("activation did not isolate current evidence: %+v", captured)
+	}
+}
+
+func TestSemanticAdmissionUnansweredStretchRecoveryIsNarrow(t *testing.T) {
+	tests := []struct {
+		name               string
+		first              string
+		current            string
+		recovery           string
+		recoveryConfidence float64
+		wantAct            coreinteraction.Act
+		wantStage          string
+		wantActivation     string
+		wantKind           policyelements.SemanticAdmissionOutcomeKind
+	}{
+		{
+			name:     "split immediate request is admitted",
+			first:    "Count out loud from one to forty for me.",
+			current:  "Slowly, one number at a time, and don't say anything else.",
+			recovery: "direct-request", recoveryConfidence: 0.98,
+			wantAct: coreinteraction.ActAnswer, wantStage: "unanswered_request",
+			wantActivation: "direct-request", wantKind: policyelements.SemanticAdmissionAdmitted,
+		},
+		{
+			name:     "low confidence aggregate cannot bypass current-only wait",
+			first:    "Count out loud from one to forty for me.",
+			current:  "Slowly, one number at a time, and don't say anything else.",
+			recovery: "direct-request", recoveryConfidence: 0.60,
+			wantAct: coreinteraction.ActStaySilent, wantStage: "voice_activation",
+			wantActivation: "wait", wantKind: policyelements.SemanticAdmissionSuppressed,
+		},
+		{
+			name:     "split future policy remains suppressed",
+			first:    "If I am quiet for fifteen seconds,",
+			current:  "ask whether I am still here.",
+			recovery: "wait", recoveryConfidence: 0.99,
+			wantAct: coreinteraction.ActStaySilent, wantStage: "voice_activation",
+			wantActivation: "wait", wantKind: policyelements.SemanticAdmissionSuppressed,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			decider := &semanticTestDecider{
+				descriptor: semanticTestDescriptor,
+				// The current-only activation guard runs before the primary
+				// transcript policy. The narrow aggregate guard runs only when
+				// those two disagree with a confident wait and answer.
+				answers: []string{
+					"wait", string(coreinteraction.ActAnswer), testCase.recovery,
+				},
+				confidences: []float64{0.95, 0.95, testCase.recoveryConfidence},
+			}
+			config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+				Decider: "semantic-primary", VerifyVoiceActivation: true,
+				MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+				TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			harness := mountSemanticAdmission(t, decider, config)
+			defer harness.stop(t)
+			consumeSemanticStartup(t, harness)
+			installSemanticInvocation(t, harness, 1, false)
+
+			first := semanticEndpointObservation("split-first", 1, 1, testCase.first)
+			current := semanticEndpointObservation("split-current", 2, 2, testCase.current)
+			snapshot := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{first, current}}
+			prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sendSemanticContext(t, harness, "state-2", snapshot)
+			sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+				Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-split-current",
+				SessionID: "semantic-session",
+				Payload: semanticCommittedOutcome(
+					current, "split-current", prefix, "state-2", snapshot.Version,
+				),
+			})
+			_ = receivePolicy(t, harness.egress(t, "state"))
+			decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+			if testCase.wantAct == coreinteraction.ActAnswer {
+				_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+			}
+			outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+			state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+			if decision.Act != testCase.wantAct || decision.DecisionStage != testCase.wantStage ||
+				decision.Activation != testCase.wantActivation || outcome.Kind != testCase.wantKind {
+				t.Fatalf("split decision=%+v outcome=%+v state=%+v", decision, outcome, state)
+			}
+			if testCase.wantAct == coreinteraction.ActAnswer {
+				if state.AdmittedVoice != 1 || state.Suppressed != 0 ||
+					decision.ActivationConfidence != testCase.recoveryConfidence {
+					t.Fatalf("recovered split state=%+v decision=%+v", state, decision)
+				}
+			} else if state.AdmittedVoice != 0 || state.Suppressed != 1 {
+				t.Fatalf("suppressed split state=%+v decision=%+v", state, decision)
+			}
+
+			captured := decider.captured()
+			if len(captured) != 3 ||
+				!strings.Contains(captured[0].Evidence, testCase.current) ||
+				strings.Contains(captured[0].Evidence, testCase.first) ||
+				strings.Contains(captured[0].Evidence, "Recent conversation:") ||
+				!strings.Contains(captured[2].Prompt, "unanswered-request guard") ||
+				!strings.Contains(captured[2].Evidence, testCase.first) ||
+				!strings.Contains(captured[2].Evidence, testCase.current) ||
+				!reflect.DeepEqual(captured[2].Options, []string{"direct-request", "wait"}) {
+				t.Fatalf("unanswered stretch inputs=%+v", captured)
+			}
+		})
 	}
 }
 

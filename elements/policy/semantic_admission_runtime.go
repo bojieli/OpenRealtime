@@ -1135,6 +1135,31 @@ func (runner *semanticAdmissionRunner) decide(
 					act = coreinteraction.ActStaySilent
 					stage = "voice_addressing"
 				case activation == semanticVoiceWait && confident && act == coreinteraction.ActAnswer:
+					// Deepgram can endpoint one immediate request at a breath. The
+					// current-only guard must not reuse an old condition, but it also
+					// cannot tell that a trailing constraint such as "slowly, one
+					// number at a time" completes the still-unanswered request in the
+					// preceding endpoint. Ask a second, narrower question over the
+					// exact same-speaker stretch reconstructed since the last audible
+					// assistant boundary. It may recover only a confident immediate
+					// request; past conditions and future-policy setup remain wait.
+					if semanticHasUnansweredStretch(situation) {
+						var unanswered coreinteraction.Outcome
+						unanswered, err = runner.verifyUnansweredRequest(decisionCtx, situation)
+						if err != nil {
+							failure = "unanswered_request_failed"
+							break
+						}
+						if strings.TrimSpace(unanswered.Option) == semanticVoiceDirectRequest &&
+							semanticActivationConfident(
+								unanswered, runner.config.MinimumActivationConfidence,
+							) {
+							activation = semanticVoiceDirectRequest
+							activationOutcome = unanswered
+							stage = "unanswered_request"
+							break
+						}
+					}
 					act = coreinteraction.ActStaySilent
 					stage = "voice_activation"
 				case activation == semanticVoiceConditionMet && confident &&
@@ -1326,6 +1351,16 @@ const semanticStandingCoverageInstruction = "The policy extractor listed the sta
 	"Reply with one label only. Examples: 'I want fish tonight; order when the waiter names something that fits' is covered by the listed ordering policy. " +
 	"'From now on answer briefly; what is the capital of France?' has additional-work outside the brevity policy."
 
+const semanticUnansweredRequestInstruction = "You are an unanswered-request guard. " +
+	"The CURRENT ENDPOINT alone was classified wait. Decide whether the UNANSWERED SAME-SPEAKER STRETCH joins endpoint fragments into one explicit, complete question or imperative request addressed to the assistant whose work must start now. " +
+	"direct-request means it does. A trailing manner or output constraint completes an earlier immediate request. " +
+	"wait means the stretch is declarative planning or narration, an acknowledgement, a future policy or condition being established, or a past event or condition mentioned only in an earlier endpoint. " +
+	"Do not infer a request from the agent contract. An earlier condition is not current evidence and never counts here. " +
+	"A declarative statement such as 'ship it by Friday' followed by 'which gives us time to finish' is wait. " +
+	"'If I am quiet for fifteen seconds' followed by 'ask if I am here' is wait because it establishes a future trigger. " +
+	"'Count to forty' followed by 'slowly, one number at a time' is direct-request because it completes a current imperative. " +
+	"Reply with one label only."
+
 const semanticVoiceActivationInstruction = "You are an activation guard, not a conversational agent. " +
 	"Classify whether the CURRENT EVIDENCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT and any STANDING POLICIES. " +
 	"Current evidence may be a completed utterance, an image or visual observation, or elapsed silence explicitly named by a standing policy. " +
@@ -1404,6 +1439,31 @@ func (runner *semanticAdmissionRunner) verifyVoiceActivation(
 		err = validateSemanticOutcome(outcome, options)
 	}
 	return outcome, err
+}
+
+func (runner *semanticAdmissionRunner) verifyUnansweredRequest(
+	ctx context.Context, situation coreinteraction.Situation,
+) (coreinteraction.Outcome, error) {
+	options := []string{semanticVoiceDirectRequest, semanticVoiceWait}
+	activation := situation
+	activation.Recent = nil
+	activation.Seen = ""
+	activation.Seeing = nil
+	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
+		Prompt: semanticUnansweredRequestInstruction, Options: options,
+		Evidence: activation.Render(),
+	})
+	if err == nil {
+		err = validateSemanticOutcome(outcome, options)
+	}
+	return outcome, err
+}
+
+func semanticHasUnansweredStretch(situation coreinteraction.Situation) bool {
+	current := strings.TrimSpace(situation.Heard)
+	stretch := strings.TrimSpace(situation.HeardSince)
+	return situation.TranscriptEvent == coreinteraction.TranscriptFinal &&
+		current != "" && stretch != "" && stretch != current
 }
 
 // semanticVoiceActivationSituation makes the activation guard's evidence
@@ -1831,7 +1891,7 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	if result.stage == "standing_coverage" {
 		confidence = result.coverageOutcome
 	} else if result.stage == "voice_activation" || result.stage == "voice_addressing" ||
-		result.stage == "silent_action_activation" {
+		result.stage == "unanswered_request" || result.stage == "silent_action_activation" {
 		confidence = result.activationOutcome
 	}
 	decision := SemanticDecision{
