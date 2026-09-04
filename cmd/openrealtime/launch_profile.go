@@ -40,7 +40,8 @@ credential. Use this same executable to serve the resulting file.`
 const productionScenarioContinuationInstruction = "Ground every response in canonical evidence already received. " +
 	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
 	"When carrying out a request deferred until an event or time condition, preserve the requested action, subject, and key wording; " +
-	"do not substitute a related check or narrate the setup."
+	"do not substitute a related check or narrate the setup. " +
+	"For a running count, emit exactly one updated count for the current occurrence and never repeat it."
 
 type scenarioProfileOptions struct {
 	out           string

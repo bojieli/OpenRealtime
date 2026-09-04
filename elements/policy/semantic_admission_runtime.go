@@ -949,11 +949,12 @@ func (runner *semanticAdmissionRunner) decide(
 		runner.extractor != nil && request.operation == "committed" {
 		current := currentSemanticItem(request, prefix)
 		if semanticExtractableObservation(current) {
+			utterance := semanticStandingUtterance(situation, current)
 			var extraction coreinteraction.Extraction
 			extraction, err = runner.extractor.Extract(
 				decisionCtx, slices.Clone(standing),
 				semanticRecentBefore(prefix.Items, current.ID, runner.config.RecentLines),
-				strings.TrimSpace(current.Content),
+				utterance,
 			)
 			if err != nil {
 				failure = "standing_extraction_failed"
@@ -964,7 +965,7 @@ func (runner *semanticAdmissionRunner) decide(
 				if err != nil {
 					failure = "standing_memory_exhausted"
 				} else if len(extraction.Pins) > 0 {
-					coverageOutcome, err = runner.verifyStandingCoverage(decisionCtx, current.Content, extraction.Pins)
+					coverageOutcome, err = runner.verifyStandingCoverage(decisionCtx, utterance, extraction.Pins)
 					if err != nil {
 						failure = "standing_coverage_failed"
 					} else {
@@ -989,6 +990,17 @@ func (runner *semanticAdmissionRunner) decide(
 				failure = "invalid_decider_outcome"
 			}
 		}
+	}
+	// Speak-through is the act for carrying out a standing arrangement while
+	// another person keeps the floor. Without an arrangement in force, a live
+	// transcript that merely describes one is not authority to speak: the model
+	// repeatedly selected this act halfway through "count the animals as I
+	// mention them" and made the setup sentence the first count. Interrupt is
+	// deliberately not constrained here; a deployment contract can itself
+	// authorize an immediate correction without a policy spoken in-session.
+	if err == nil && stage == "primary" && act == coreinteraction.ActSpeakThrough && len(standing) == 0 {
+		act = coreinteraction.ActStaySilent
+		stage = "standing_authority"
 	}
 	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation {
 		answerAvailable := slices.Contains(situation.AvailableActs(), coreinteraction.ActAnswer)
@@ -1032,7 +1044,7 @@ func (runner *semanticAdmissionRunner) decide(
 	if err == nil && stage == "primary" && runner.config.VerifySilentAction &&
 		act == coreinteraction.ActActSilently {
 		current := currentSemanticItem(request, prefix)
-		if semanticExtractableObservation(current) {
+		if semanticSpokenObservation(current) {
 			activationOutcome, err = runner.verifySilentAction(decisionCtx, situation)
 			if err != nil {
 				failure = "silent_action_activation_failed"
@@ -1227,6 +1239,7 @@ const semanticVoiceActivationInstruction = "You are an activation guard, not a c
 	"current 'say the count out loud' is wait, while current 'a heron landed' is condition-met. Standing policy 'tell me when the build finishes'; " +
 	"an image still showing the build in progress is wait, while an image proving it finished is condition-met. Contract 'answer briefly'; " +
 	"current 'what is the capital of France' is direct-request. Contract 'You are Alex, a support assistant'; current 'Alex, please help with the printer' is direct-request. " +
+	"Standing policy 'translate everything a Mandarin-speaking colleague says into English'; current colleague speech '你好，很高兴见到你' is condition-met, not a direct request and not wait. " +
 	"Current 'Tim, the printer is jammed again - help?', 'Officer, is this the right form?', and 'Doctor Smith, could you check this?' are addressed-elsewhere when those are other people; " +
 	"current 'Can we talk about something else?' is direct-request."
 
@@ -1477,10 +1490,35 @@ func currentSemanticItem(request semanticRequest, prefix trajectory.Snapshot) tr
 }
 
 func semanticExtractableObservation(item trajectory.Item) bool {
+	return semanticSpokenObservation(item) && strings.HasSuffix(item.Event.Type, ".endpoint")
+}
+
+// semanticSpokenObservation reports whether an item is current speech evidence
+// that a transcript policy may act on. Standing extraction still waits for an
+// endpoint, but a silent action can be selected from a partial and therefore
+// must be verified there too. Otherwise "Press two for" can open the tool lane
+// before the recording has named the option the user wanted.
+func semanticSpokenObservation(item trajectory.Item) bool {
 	return item.Kind == trajectory.KindObservation &&
 		trajectory.AuthorityOf(item) == trajectory.AuthorityUser &&
-		item.Event != nil && strings.HasSuffix(item.Event.Type, ".endpoint") &&
+		item.Event != nil &&
+		(strings.HasSuffix(item.Event.Type, ".revision") || strings.HasSuffix(item.Event.Type, ".endpoint")) &&
 		strings.TrimSpace(item.Content) != ""
+}
+
+// semanticStandingUtterance returns the whole unanswered stretch that the
+// current endpoint completes. Deepgram may endpoint at a breath, splitting
+// "if I am quiet for fifteen seconds" from "ask whether I am still there".
+// The extractor can reconstruct that policy from recent context, but grounding
+// it against only the last fragment rejects the correct reconstruction. The
+// situation already carries the exact same-speaker, post-playback stretch; use
+// that one value for extraction and grounding so those two checks cannot
+// disagree about what was said.
+func semanticStandingUtterance(situation coreinteraction.Situation, current trajectory.Item) string {
+	if heard := strings.TrimSpace(situation.HeardSince); heard != "" {
+		return heard
+	}
+	return strings.TrimSpace(current.Content)
 }
 
 func semanticActivationEvidence(situation coreinteraction.Situation) bool {

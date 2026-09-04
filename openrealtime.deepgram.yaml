@@ -69,7 +69,12 @@ transcript:
          or the final event;
        - standing count plus "A capybara" -> speak-through; after the agent
          said 1, standing count plus "Then a heron" -> speak-through;
+       - standing translate into English plus colleague says "你好，很高兴见到你"
+         -> speak-through, even when the recogniser labels that voice user;
        - standing translate plus new speech -> speak-through.
+       If no standing instruction is listed, choose listen: words such as
+       "count" or "translate" in the current partial are still the person
+       setting the policy up, not authority to carry it out.
     4. Choose interrupt only when the exact wrong fact is already in "heard"
        and the contract says delay is harmful. Never predict a contradiction.
     5. Otherwise choose listen. Ordinary questions wait for their final event.
@@ -106,9 +111,14 @@ transcript:
        rule whose condition occurs now; otherwise listen, even for a direct
        question or command. Never answer them.
     4. A request establishing behavior for a future event is listen, especially
-       when it says nothing else.
+       when it says nothing else. This remains listen when Deepgram split the
+       request and the current fragment sounds imperative: "after fifteen
+       seconds" followed by "ask whether I am still there" is one future rule,
+       not a request to ask immediately.
     5. If a partial already handled this occurrence, listen; if a required count
-       or translation was missed, answer.
+       or translation was missed, answer. In particular, with a standing rule
+       to translate a Mandarin-speaking colleague into English, final Chinese
+       speech such as "你好，很高兴见到你" is answer, not listen.
     6. A completed question or request addressed to the agent is answer.
        Otherwise listen.
 

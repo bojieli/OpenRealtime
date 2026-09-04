@@ -976,6 +976,197 @@ func TestSemanticAdmissionSilentActionGuardRequiresTheCurrentEvidenceToGroundThe
 	}
 }
 
+func TestSemanticAdmissionPartialSpeakThroughRequiresStandingAuthority(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		answers:    []string{string(coreinteraction.ActSpeakThrough)},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+		TranscriptEvents: &policyelements.SemanticTranscriptEventConfig{
+			Partial: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this partial transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough,
+				},
+			},
+			Final: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this final transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	item := semanticTranscriptObservation(
+		"policy-setup", "asr.revision", 1,
+		"I am going to tell you a story. Count the animals out loud as I mention",
+	)
+	snapshot := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{item}}
+	prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-1", snapshot)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-policy-setup",
+		SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(
+			item, "policy-setup", prefix, "state-1", snapshot.Version,
+		),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if decision.Act != coreinteraction.ActStaySilent || decision.DecisionStage != "standing_authority" ||
+		outcome.Kind != policyelements.SemanticAdmissionSuppressed || state.AdmittedVoice != 0 {
+		t.Fatalf("unowned speak-through decision=%+v outcome=%+v state=%+v", decision, outcome, state)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "voice_committed"))
+}
+
+func TestSemanticAdmissionVerifiesSilentActionOnAPartialTranscript(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		answers: []string{
+			string(coreinteraction.ActActSilently), "wait",
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", VerifySilentAction: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+		TranscriptEvents: &policyelements.SemanticTranscriptEventConfig{
+			Partial: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this partial transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActActSilently,
+				},
+			},
+			Final: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this final transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, true)
+
+	item := semanticTranscriptObservation("menu", "asr.revision", 1, "Press two for")
+	snapshot := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{item}}
+	prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-1", snapshot)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-menu-partial",
+		SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(
+			item, "menu", prefix, "state-1", snapshot.Version,
+		),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if decision.Act != coreinteraction.ActStaySilent || decision.DecisionStage != "silent_action_activation" ||
+		decision.Activation != "wait" || outcome.Kind != policyelements.SemanticAdmissionSuppressed {
+		t.Fatalf("partial silent-action decision=%+v outcome=%+v", decision, outcome)
+	}
+	captured := decider.captured()
+	if len(captured) != 2 || !strings.Contains(captured[1].Prompt, "silent-action activation guard") ||
+		!strings.Contains(captured[1].Evidence, "Press two for") {
+		t.Fatalf("partial silent-action guard inputs = %+v", captured)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "silent_committed"))
+}
+
+func TestSemanticAdmissionGroundsAStandingPolicyAcrossSplitEndpoints(t *testing.T) {
+	descriptor := semanticTestDescriptor
+	descriptor.StandingExtraction = true
+	decider := &semanticTestDecider{
+		descriptor: descriptor,
+		answers:    []string{"covered"},
+		generationAnswers: []string{
+			"pin conversation after 15s ask whether they are still there", "yes", "no", "no",
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", StandingExtraction: true,
+		RecentLines: 12, MaxPending: 8, TerminalMemory: 8,
+		CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := mountSemanticAdmissionRegistered(t, descriptor, decider, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	first := semanticEndpointObservation(
+		"quiet-prefix", 1, 1, "If I have not said anything for about fifteen seconds,",
+	)
+	last := semanticEndpointObservation(
+		"quiet-tail", 2, 2, "Ask whether I am still there.",
+	)
+	snapshot := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{first, last}}
+	prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-2", snapshot)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-quiet-tail",
+		SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(
+			last, "quiet", prefix, "state-2", snapshot.Version,
+		),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if decision.Act != coreinteraction.ActStaySilent || decision.DecisionStage != "standing_coverage" ||
+		decision.StandingAfter != 1 || decision.StandingPinned != 1 ||
+		outcome.Kind != policyelements.SemanticAdmissionSuppressed || state.StandingPolicies != 1 {
+		t.Fatalf("split standing decision=%+v outcome=%+v state=%+v", decision, outcome, state)
+	}
+	decider.mu.Lock()
+	generations := append([]string(nil), decider.generations...)
+	decider.mu.Unlock()
+	want := "If I have not said anything for about fifteen seconds, Ask whether I am still there."
+	if len(generations) != 4 || !strings.Contains(generations[0], want) ||
+		!strings.Contains(generations[1], want) {
+		t.Fatalf("split standing extraction inputs = %+v", generations)
+	}
+}
+
 func TestSupersededStandingExtractionCannotLeakIntoNewerDecision(t *testing.T) {
 	descriptor := semanticTestDescriptor
 	descriptor.StandingExtraction = true

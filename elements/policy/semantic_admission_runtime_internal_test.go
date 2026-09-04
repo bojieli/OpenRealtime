@@ -204,6 +204,20 @@ func TestSemanticHeardSinceUsesOnlyCompletedSpeechAfterTheLastAudibleBoundary(t 
 	}
 }
 
+func TestSemanticStandingUtteranceUsesTheWholeUnansweredEndpointStretch(t *testing.T) {
+	current := trajectory.Item{Content: "ask whether I am still there"}
+	situation := interaction.Situation{
+		HeardSince: "If I have been quiet for fifteen seconds, ask whether I am still there",
+	}
+	if got := semanticStandingUtterance(situation, current); got != situation.HeardSince {
+		t.Fatalf("standing utterance = %q, want %q", got, situation.HeardSince)
+	}
+	situation.HeardSince = ""
+	if got := semanticStandingUtterance(situation, current); got != current.Content {
+		t.Fatalf("standing utterance fallback = %q, want %q", got, current.Content)
+	}
+}
+
 func TestSemanticVoiceActivationReceivesExactVisualEvidenceWithoutMutableBytes(t *testing.T) {
 	imageBytes := []byte("sealed current frame")
 	wantImage := append([]byte(nil), imageBytes...)
