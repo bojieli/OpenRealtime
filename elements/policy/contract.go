@@ -111,6 +111,13 @@ type GenerationCancel struct {
 	GenerationID string `json:"generation_id,omitempty"`
 	StreamID     string `json:"stream_id,omitempty"`
 	Reason       string `json:"reason,omitempty"`
+	// DurableIntent optionally narrows cancellation to one exact canonical
+	// user-authority epoch. Generic generation policies may ignore it, but a
+	// policy that retains durable intent across several observations must
+	// independently verify this identity before clearing state. The pointer
+	// preserves the historical stream/generation-addressed wire shape for
+	// policies that do not opt into durable-intent coordination.
+	DurableIntent *TemporalEvidenceItemIdentity `json:"durable_intent,omitempty"`
 }
 
 type GenerationOutcomeKind string

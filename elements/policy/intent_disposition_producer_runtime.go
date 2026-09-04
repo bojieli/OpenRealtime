@@ -35,6 +35,8 @@ var intentDispositionOptions = []string{
 	string(IntentDispositionIndeterminate),
 }
 
+var errIntentDispositionCanceled = errors.New("intent disposition canceled")
+
 type intentDispositionProducerFactory struct{}
 
 var (
@@ -209,9 +211,10 @@ func (request intentDispositionProducerRequest) address() intentDispositionCance
 }
 
 type activeIntentDisposition struct {
-	request  intentDispositionProducerRequest
-	cancel   context.CancelCauseFunc
-	canceled bool
+	request     intentDispositionProducerRequest
+	cancel      context.CancelCauseFunc
+	canceled    bool
+	cancelCause element.Envelope
 }
 
 type intentDispositionEvaluation struct {
@@ -470,6 +473,16 @@ func (runner *intentDispositionProducerRunner) acceptCancellation(
 	}
 	if _, duplicate := runner.cancellations[address]; duplicate {
 		runner.state.Ignored++
+		if runner.active != nil && runner.active.request.address() == address &&
+			runner.active.canceled {
+			return envelope.ItemID, runner.publishOutcome(ctx, envelope.ItemID,
+				IntentDispositionProducerOutcome{
+					Kind:                IntentDispositionProducerIgnored,
+					DurableIntentItemID: cancellation.DurableIntent.TrajectoryItemID,
+					Code:                "cancellation_pending_decision",
+					Message:             "the exact active decision has received cancellation but has not returned",
+				})
+		}
 		return envelope.ItemID, runner.publishOutcome(ctx, envelope.ItemID, IntentDispositionProducerOutcome{
 			Kind:                IntentDispositionProducerIgnored,
 			DurableIntentItemID: cancellation.DurableIntent.TrajectoryItemID,
@@ -485,11 +498,21 @@ func (runner *intentDispositionProducerRunner) acceptCancellation(
 	}
 	runner.pending = retained
 	runner.state.Pending = len(runner.pending)
-	if runner.active != nil && runner.active.request.address() == address && !runner.active.canceled {
+	active := runner.active != nil && runner.active.request.address() == address
+	if active && !runner.active.canceled {
 		runner.active.canceled = true
-		runner.active.cancel(errors.New("intent disposition canceled"))
+		runner.active.cancelCause = envelope.Clone()
+		runner.active.cancel(errIntentDispositionCanceled)
 	}
 	runner.state.Canceled++
+	if active {
+		// Cancellation acceptance and decision quiescence are different facts.
+		// The actor publishes state now, but the terminal canceled outcome is
+		// withheld until acceptEvaluation observes that the exact Decide call has
+		// returned. A coordinator must never interpret mere context cancellation
+		// as proof that provider work stopped.
+		return envelope.ItemID, nil
+	}
 	return envelope.ItemID, runner.publishOutcome(ctx, envelope.ItemID, IntentDispositionProducerOutcome{
 		Kind:                IntentDispositionProducerCanceled,
 		DurableIntentItemID: cancellation.DurableIntent.TrajectoryItemID,
@@ -628,7 +651,20 @@ func (runner *intentDispositionProducerRunner) acceptEvaluation(
 	runner.active = nil
 	runner.state.Active = false
 	if active.canceled {
-		return runner.finishEvaluation(ctx, result.request.probe.ProbeID, results)
+		if active.cancelCause.ItemID == "" {
+			return errors.New("intent disposition producer lost the exact cancellation cause")
+		}
+		probe := result.request.probe
+		if err := runner.publishOutcome(ctx, active.cancelCause.ItemID,
+			IntentDispositionProducerOutcome{
+				Kind: IntentDispositionProducerCanceled, ProbeID: probe.ProbeID,
+				DurableIntentItemID: probe.DurableIntent.TrajectoryItemID,
+				Code:                "canceled",
+				Message:             "the exact canceled intent disposition decision is quiescent",
+			}); err != nil {
+			return err
+		}
+		return runner.finishEvaluation(ctx, active.cancelCause.ItemID, results)
 	}
 	if result.deciderTimedOut {
 		// Do not issue another call on a client that ignored its deadline: the
@@ -893,7 +929,16 @@ func decideIntentDisposition(
 	case decided := <-result:
 		return decided.outcome, decided.err
 	case <-ctx.Done():
-		return coreinteraction.Outcome{}, context.Cause(ctx)
+		cause := context.Cause(ctx)
+		if errors.Is(cause, errIntentDispositionCanceled) {
+			// Calling CancelFunc proves only that cancellation was requested. The
+			// terminal producer acknowledgement is used as quiescence evidence by
+			// the graph coordinator, so do not return until the provider call has
+			// actually unwound. Its result is obsolete regardless of whether the
+			// provider reports success or the cancellation cause.
+			<-result
+		}
+		return coreinteraction.Outcome{}, cause
 	}
 }
 

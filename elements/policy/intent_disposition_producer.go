@@ -15,7 +15,7 @@ import (
 
 const (
 	intentDispositionProducerRuntimeID       = "builtin://openrealtime/elements/policy.IntentDispositionProducer"
-	intentDispositionProducerRuntimeRevision = "implementation:1"
+	intentDispositionProducerRuntimeRevision = "implementation:2"
 
 	defaultIntentDispositionEvidenceBytes = 64 << 10
 	defaultIntentDispositionMediaBytes    = 16 << 20
@@ -65,7 +65,7 @@ func IntentDispositionProducerDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "policy.IntentDispositionProducer",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "probe", Direction: element.Input, Type: intentSettlementProbeType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -123,9 +123,13 @@ const (
 	IntentDispositionProducerIgnored  IntentDispositionProducerOutcomeKind = "ignored"
 )
 
-// IntentDispositionProducerOutcome is inspection-only. Control flows solely
-// through the strongly typed disposition output; failures never masquerade as
-// a succeeded or failed user intent.
+// IntentDispositionProducerOutcome exposes both inspection evidence and the
+// exact cancellation acknowledgement consumed by an external coordinator.
+// A canceled outcome that directly names the cancel envelope is published only
+// after a matching in-flight decision has returned; it is therefore positive
+// quiescence evidence. Ordinary classification control still flows solely
+// through the strongly typed disposition output, and failures never masquerade
+// as a succeeded or failed user intent.
 type IntentDispositionProducerOutcome struct {
 	Kind                IntentDispositionProducerOutcomeKind `json:"kind"`
 	ProbeID             string                               `json:"probe_id,omitempty"`

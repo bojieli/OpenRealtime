@@ -413,6 +413,7 @@ func TestIntentDispositionProducerExactCancellationSuppressesInflightResult(t *t
 	case <-time.After(time.Second):
 		t.Fatal("decider was not entered")
 	}
+	_ = receiveIntentDispositionProducer(t, harness, "state")
 	cancellation := IntentSettlementCancellation{
 		SessionID: probe.SessionID, DurableIntent: probe.DurableIntent, Reason: "user canceled",
 	}
@@ -421,17 +422,15 @@ func TestIntentDispositionProducerExactCancellationSuppressesInflightResult(t *t
 		SessionID: probe.SessionID, CancellationScope: probe.DurableIntent.TrajectoryItemID,
 		Payload: cancellation,
 	})
+	_ = receiveIntentDispositionProducer(t, harness, "state")
 	outcome := receiveIntentDispositionProducer(t, harness, "outcome").Payload.(IntentDispositionProducerOutcome)
 	if outcome.Kind != IntentDispositionProducerCanceled || outcome.Code != "canceled" ||
 		outcome.DurableIntentItemID != probe.DurableIntent.TrajectoryItemID {
 		t.Fatalf("cancellation outcome = %+v", outcome)
 	}
-	// One state follows accepting the probe and another follows cancellation;
-	// a final state retires the canceled model result. None may be accompanied
-	// by a disposition for the obsolete probe.
-	for range 3 {
-		_ = receiveIntentDispositionProducer(t, harness, "state")
-	}
+	// The final state retires the canceled model result. It may not be
+	// accompanied by a disposition for the obsolete probe.
+	_ = receiveIntentDispositionProducer(t, harness, "state")
 	assertNoIntentDispositionProducerEnvelope(t, harness, "disposition", 50*time.Millisecond)
 
 	// Replaying the canceled exact probe is explicitly suppressed by the
@@ -446,6 +445,73 @@ func TestIntentDispositionProducerExactCancellationSuppressesInflightResult(t *t
 	if requests := decider.recordedRequests(); len(requests) != 1 {
 		t.Fatalf("canceled probe replay reached decider: %d requests", len(requests))
 	}
+}
+
+func TestIntentDispositionProducerCancellationWaitsForDecisionQuiescenceAndParentsCancel(t *testing.T) {
+	store, probe := intentDispositionProducerFixture(t, false)
+	entered := make(chan struct{}, 1)
+	canceled := make(chan struct{}, 1)
+	release := make(chan struct{})
+	released := false
+	decider := &intentDispositionTestDecider{
+		descriptor: intentDispositionProducerTestDescriptor(time.Second),
+		decide: func(ctx context.Context, _ coreinteraction.Decision) (coreinteraction.Outcome, error) {
+			entered <- struct{}{}
+			<-ctx.Done()
+			canceled <- struct{}{}
+			// Model transports are not entitled to claim cancellation merely
+			// because their context closed. This deliberately stubborn client
+			// does not become quiescent until its call actually returns.
+			<-release
+			return coreinteraction.Outcome{}, context.Cause(ctx)
+		},
+	}
+	harness := mountIntentDispositionProducer(t, store, decider, nil, nil, false, nil)
+	defer harness.stop(t)
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	consumeIntentDispositionProducerStartup(t, harness)
+
+	sendIntentDispositionProducer(t, harness, "probe", intentDispositionProbeEnvelope(probe))
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("decider was not entered")
+	}
+	_ = receiveIntentDispositionProducer(t, harness, "state")
+	cancelEnvelope := element.Envelope{
+		Type: IntentSettlementCancelType(), ItemID: "cancel-await-quiescence",
+		SessionID: probe.SessionID, CancellationScope: probe.DurableIntent.TrajectoryItemID,
+		Payload: IntentSettlementCancellation{
+			SessionID: probe.SessionID, DurableIntent: probe.DurableIntent, Reason: "user canceled",
+		},
+	}
+	sendIntentDispositionProducer(t, harness, "cancel", cancelEnvelope)
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("decider did not receive cancellation")
+	}
+	_ = receiveIntentDispositionProducer(t, harness, "state")
+	assertNoIntentDispositionProducerEnvelope(t, harness, "outcome", 50*time.Millisecond)
+
+	close(release)
+	released = true
+	envelope := receiveIntentDispositionProducer(t, harness, "outcome")
+	outcome := envelope.Payload.(IntentDispositionProducerOutcome)
+	if outcome.Kind != IntentDispositionProducerCanceled || outcome.Code != "canceled" ||
+		outcome.ProbeID != probe.ProbeID ||
+		outcome.DurableIntentItemID != probe.DurableIntent.TrajectoryItemID {
+		t.Fatalf("quiescent cancellation outcome = %+v", outcome)
+	}
+	if !slices.Contains(envelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("quiescent cancellation parents = %v, want exact cancel %q",
+			envelope.CausalParents, cancelEnvelope.ItemID)
+	}
+	assertNoIntentDispositionProducerEnvelope(t, harness, "disposition", 20*time.Millisecond)
 }
 
 func TestIntentDispositionProducerLifecycleClosesItsFreshClient(t *testing.T) {
