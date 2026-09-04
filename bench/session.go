@@ -845,7 +845,16 @@ func (recorder *recorder) beginEpisode() {
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
 	recorder.started = time.Now()
-	recorder.moments = nil
+	// Setup events are outside the episode clock, but a terminal protocol error
+	// may race this transition and must remain in the returned evidence.
+	var retained []Moment
+	for _, moment := range recorder.moments {
+		if moment.Kind == MomentError {
+			moment.AtMS = 0
+			retained = append(retained, moment)
+		}
+	}
+	recorder.moments = retained
 	recorder.lastActivity = time.Time{}
 	recorder.audio.beginEpisode()
 }
