@@ -2,7 +2,10 @@ package realtimecu
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -27,8 +30,8 @@ func TestActivationConfigRequiresIndependentTemporalAdmissionContract(t *testing
 	validator := activationFactory{}
 	for _, source := range []string{
 		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"immediate"}}`,
-		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"}}`,
-		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"expected_settlement":{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]},"expected_settlement":{"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]},"candidate_sources":[{"observer":"vision","source":"camera"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
 	} {
 		if err := validator.ValidateConfig(json.RawMessage(source)); err != nil {
 			t.Errorf("valid activation config %s: %v", source, err)
@@ -36,12 +39,66 @@ func TestActivationConfigRequiresIndependentTemporalAdmissionContract(t *testing
 	}
 	for _, source := range []string{
 		`{"role":"computer-use","invocation":{"instruction":"act"}}`,
-		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"explicit"}}`,
-		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"immediate","source_set":"explicit"}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"immediate"},"expected_settlement":{"expected_admission":{"mode":"immediate"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"expected_settlement":null}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"expected_settlement":{"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
+		`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"expected_settlement":{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"candidate_sources":[],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
 	} {
 		if err := validator.ValidateConfig(json.RawMessage(source)); err == nil {
 			t.Errorf("invalid activation config was accepted: %s", source)
 		}
+	}
+}
+
+func TestActivationMountRequiresTrustedTrajectorySession(t *testing.T) {
+	services := graphruntime.NewServiceSet()
+	for name, value := range map[string]any{
+		graphruntime.ClockServiceName:        graphruntime.ClockFunc(func() uint64 { return 1 }),
+		graphruntime.SequenceServiceName:     graphruntime.NewSequenceAllocator(),
+		stateelements.TrajectoryStoreService: &stateelements.TrajectoryStoreServiceValue{Store: trajectory.NewStore()},
+	} {
+		if _, err := services.Set(name, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := (activationFactory{}).Mount(context.Background(), element.MountContext{
+		InstanceID: "activation", Services: services,
+		Config: json.RawMessage(
+			`{"role":"computer-use","invocation":{"instruction":"act"},"expected_admission":{"mode":"immediate"}}`,
+		),
+	})
+	if err == nil || !strings.Contains(err.Error(), "trusted canonical session ID") {
+		t.Fatalf("activation mount without trusted trajectory session error = %v", err)
+	}
+}
+
+func TestActivationSettlementWiringRequiresConfigurationAndBothLanes(t *testing.T) {
+	for _, testCase := range []struct {
+		name                   string
+		configured             bool
+		settlementInputs       int
+		acknowledgementOutputs int
+		wantError              bool
+	}{
+		{name: "legacy unwired", configured: false},
+		{name: "configured handshake", configured: true, settlementInputs: 1, acknowledgementOutputs: 1},
+		{name: "configured without input", configured: true, acknowledgementOutputs: 1, wantError: true},
+		{name: "configured without acknowledgement", configured: true, settlementInputs: 1, wantError: true},
+		{name: "configured without lanes", configured: true, wantError: true},
+		{name: "unconfigured input", settlementInputs: 1, wantError: true},
+		{name: "unconfigured acknowledgement", acknowledgementOutputs: 1, wantError: true},
+		{name: "unconfigured half handshake", settlementInputs: 1, acknowledgementOutputs: 1, wantError: true},
+		{name: "multiple inputs", configured: true, settlementInputs: 2, acknowledgementOutputs: 1, wantError: true},
+		{name: "multiple acknowledgements", configured: true, settlementInputs: 1, acknowledgementOutputs: 2, wantError: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := validateActivationSettlementWiring(
+				testCase.configured, testCase.settlementInputs, testCase.acknowledgementOutputs,
+			)
+			if (err != nil) != testCase.wantError {
+				t.Fatalf("settlement wiring validation error = %v, wantError %t", err, testCase.wantError)
+			}
+		})
 	}
 }
 
@@ -1027,15 +1084,76 @@ func TestActivationCancellationAndNewIntentClearDeferredVisual(t *testing.T) {
 }
 
 type activationTestFixture struct {
-	runner    *activationRunner
-	store     *trajectory.Store
-	append    *recordingOutputPort
-	trigger   *recordingOutputPort
-	authority *recordingOutputPort
-	state     *recordingOutputPort
-	outcome   *recordingOutputPort
-	nextNS    uint64
-	nextRev   uint64
+	runner        *activationRunner
+	store         *trajectory.Store
+	append        *recordingOutputPort
+	trigger       *recordingOutputPort
+	authority     *recordingOutputPort
+	state         *recordingOutputPort
+	outcome       *recordingOutputPort
+	settlementAck *recordingOutputPort
+	nextNS        uint64
+	nextRev       uint64
+}
+
+type activationSettlementScenario struct {
+	decision policyelements.IntentSettlementDecision
+	terminal element.Envelope
+	evidence element.Envelope
+}
+
+type failOnceActivationOutputPort struct {
+	delegate element.OutputPort
+	failed   bool
+	attempts int
+	first    element.Envelope
+}
+
+func (port *failOnceActivationOutputPort) Name() string { return port.delegate.Name() }
+
+func (port *failOnceActivationOutputPort) Type() element.Type { return port.delegate.Type() }
+
+func (port *failOnceActivationOutputPort) Lanes() []element.Sender { return port.delegate.Lanes() }
+
+func (port *failOnceActivationOutputPort) Broadcast(
+	ctx context.Context, envelope element.Envelope,
+) (element.SendResult, error) {
+	port.attempts++
+	if !port.failed {
+		port.failed = true
+		port.first = envelope.Clone()
+		return element.SendResult{}, errors.New("injected settlement acknowledgement failure")
+	}
+	return port.delegate.Broadcast(ctx, envelope)
+}
+
+type undeliverableActivationOutputPort struct {
+	delegate  element.OutputPort
+	zero      bool
+	attempts  int
+	envelopes []element.Envelope
+}
+
+func (port *undeliverableActivationOutputPort) Name() string { return port.delegate.Name() }
+
+func (port *undeliverableActivationOutputPort) Type() element.Type { return port.delegate.Type() }
+
+func (port *undeliverableActivationOutputPort) Lanes() []element.Sender {
+	return port.delegate.Lanes()
+}
+
+func (port *undeliverableActivationOutputPort) Broadcast(
+	ctx context.Context, envelope element.Envelope,
+) (element.SendResult, error) {
+	port.attempts++
+	port.envelopes = append(port.envelopes, envelope.Clone())
+	if err := context.Cause(ctx); err != nil {
+		return element.SendResult{}, err
+	}
+	if port.zero {
+		return element.SendResult{}, nil
+	}
+	return element.SendResult{}, errors.New("injected persistent acknowledgement failure")
 }
 
 func newActivationTestFixture(t *testing.T) *activationTestFixture {
@@ -1058,9 +1176,12 @@ func newActivationTestFixture(t *testing.T) *activationTestFixture {
 		outcome: &recordingOutputPort{
 			name: "outcome", typeName: policyelements.GenerationOutcomeType(),
 		},
+		settlementAck: &recordingOutputPort{
+			name: "settlement_ack", typeName: policyelements.IntentSettlementAcknowledgementType(),
+		},
 	}
 	fixture.runner = &activationRunner{
-		instance: "activation-test",
+		instance: "activation-test", sessionID: activationTestSession,
 		config: ActivationConfig{
 			GenerateOnObservationConfig: policyelements.GenerateOnObservationConfig{
 				Role: "computer-use",
@@ -1081,15 +1202,196 @@ func newActivationTestFixture(t *testing.T) *activationTestFixture {
 		ports: activationPorts{
 			trigger: fixture.trigger, candidate: fixture.authority,
 			state: fixture.state, outcome: fixture.outcome,
-			dispositionAppend: fixture.append,
+			dispositionAppend:         fixture.append,
+			settlementAcknowledgement: fixture.settlementAck,
 		},
-		terminal: make(map[string]struct{}),
+		terminal:               make(map[string]struct{}),
+		canceledEffects:        make(map[string]*canceledActivationEffect),
+		pendingSettlementAcks:  make(map[string]pendingSettlementAcknowledgement),
+		acknowledgedSettlement: make(map[string]struct{}),
 		state: policyelements.GenerationState{
 			Role: "computer-use", TerminalMemory: 32, CancellationMemory: 16,
 		},
 	}
 	fixture.appendRaw(t, fixture.visualItem("screen-72", "72 C", ""))
 	return fixture
+}
+
+func (fixture *activationTestFixture) prepareSettlementScenario(
+	t *testing.T, kind policyelements.IntentSettlementDecisionKind,
+) activationSettlementScenario {
+	t.Helper()
+	contract := policyelements.IntentSettlementConfig{
+		ExpectedAdmission: policyelements.TemporalEvidenceAdmissionConfig{
+			Mode:      policyelements.TemporalEvidenceAdmissionAfterIntent,
+			SourceSet: policyelements.TemporalEvidenceSourceSetObservedBeforeIntent,
+		},
+		CandidateSources: []policyelements.TemporalEvidenceRequirement{
+			{Observer: "vision", Source: SourceScreen},
+		},
+		Detector: policyelements.IntentDetectorIdentity{
+			Reference: "settlement-primary", Revision: "v1",
+			ConfigurationDigest: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		},
+	}
+	fixture.runner.config.ExpectedAdmission = contract.ExpectedAdmission
+	fixture.runner.config.ExpectedSettlement = &contract
+
+	intentEnvelope, intentCommit := fixture.appendUser(t, "settlement-intent", "click the warning")
+	intent := intentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	initialEnvelope, initialCommit := fixture.appendVisual(
+		t, "settlement-initial-screen", "warning visible", intentCommit.TrajectoryItemID,
+	)
+	initialEnvelope = afterIntentAdmissionEnvelope(initialEnvelope, intent)
+	if err := fixture.runner.acceptAdmission(context.Background(), initialEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	runID := fixture.runner.active.id
+	proposal := activationTestProposal("settlement-call")
+	if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+		runID, initialCommit.StoreVersion, []cognitionelements.ToolProposal{proposal},
+	)); err != nil {
+		t.Fatal(err)
+	}
+	proposalItem := fixture.appendModelProposal(t, runID, proposal)
+	call := proposal.Call
+	call.Arguments = append(json.RawMessage(nil), proposal.Call.Arguments...)
+	callItem := trajectory.Item{
+		ID: "settlement-call-item", Kind: trajectory.KindToolCall,
+		MonotonicNS: fixture.nextMonotonicNS(), CausalParentIDs: []string{proposalItem.ID},
+		SourceRevision: proposalItem.SourceRevision, InvocationID: runID,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, ToolCall: &call,
+	}
+	fixture.appendRaw(t, callItem)
+	resultItem := trajectory.Item{
+		ID: "settlement-result-item", Kind: trajectory.KindToolResult,
+		MonotonicNS: fixture.nextMonotonicNS(), CausalParentIDs: []string{callItem.ID},
+		SourceRevision: proposalItem.SourceRevision, InvocationID: runID,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseTool},
+		ToolResult: &trajectory.ToolResult{
+			CallID: call.CallID, Name: call.Name, Output: json.RawMessage(`{"ok":true}`),
+		},
+	}
+	fixture.appendRaw(t, resultItem)
+	consequence := fixture.visualItem(
+		"settlement-consequence", "warning dismissed", intentCommit.TrajectoryItemID,
+	)
+	consequence.CausalParentIDs = []string{intentCommit.TrajectoryItemID, resultItem.ID}
+	consequenceEnvelope, _ := fixture.appendObservation(t, consequence, "screen-stream")
+	consequenceEnvelope = afterIntentAdmissionEnvelope(consequenceEnvelope, intent)
+	evidence := consequenceEnvelope.Payload.(policyelements.AdmittedTemporalEvidence)
+	resultVersion := evidence.TriggerCommit.StoreVersion - 1
+	issuedNS := fixture.nextMonotonicNS()
+	probe := policyelements.IntentSettlementProbe{
+		Issuer: "settlement", Sequence: 1, SessionID: activationTestSession,
+		Evidence: evidence, DurableIntent: intent,
+		TriggerObservation: evidence.TriggerObservation,
+		Result: policyelements.IntentSettlementResultIdentity{
+			TrajectoryItemID: resultItem.ID, StoreVersion: resultVersion,
+			InvocationID: runID, CallID: call.CallID, Tool: call.Name,
+		},
+		Prefix: evidence.Prefix, Detector: contract.Detector, IssuedNS: issuedNS,
+	}
+	probe.ProbeID = activationTestSettlementProbeID(t, probe)
+	dispositionKind := policyelements.IntentDispositionSucceeded
+	if kind == policyelements.IntentSettlementDecisionFailed {
+		dispositionKind = policyelements.IntentDispositionFailed
+	}
+	disposition := policyelements.IntentDisposition{
+		Probe: probe, Detector: contract.Detector, Kind: dispositionKind,
+		DecisionStartedNS:  fixture.nextMonotonicNS(),
+		DecisionFinishedNS: fixture.nextMonotonicNS(),
+	}
+	decision := policyelements.IntentSettlementDecision{
+		Kind: kind, SessionID: activationTestSession, Evidence: evidence, Probe: probe,
+		Disposition: &disposition, InvocationID: runID,
+		StateRevisionBefore: 4, StateRevisionAfter: 5,
+		FinishedNS: fixture.nextMonotonicNS(),
+	}
+	decision.TerminalID = activationTestSettlementTerminalID(t, decision)
+	if err := policyelements.VerifyIntentSettlementDecision(
+		fixture.store.Snapshot(), decision, contract,
+	); err != nil {
+		t.Fatalf("prepare settlement decision: %v", err)
+	}
+	terminal := element.Envelope{
+		Type: policyelements.IntentSettlementDecisionType(), ItemID: decision.TerminalID,
+		SessionID: activationTestSession, RunID: runID, CancellationScope: runID,
+		CausalParents: []string{"settlement-disposition", probe.ProbeID}, Payload: decision,
+	}
+	return activationSettlementScenario{
+		decision: decision, terminal: terminal, evidence: consequenceEnvelope,
+	}
+}
+
+func (fixture *activationTestFixture) cancelGeneration(
+	t *testing.T, generationID string, sequence uint64,
+) {
+	t.Helper()
+	if err := fixture.runner.acceptCancel(context.Background(), element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: "cancel-" + generationID,
+		SessionID: activationTestSession, Sequence: sequence,
+		Payload: policyelements.GenerationCancel{
+			GenerationID: generationID, Reason: "participant canceled",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func activationTestSettlementProbeID(
+	t *testing.T, probe policyelements.IntentSettlementProbe,
+) string {
+	t.Helper()
+	probe.ProbeID = ""
+	payload, err := json.Marshal(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(payload)
+	return "intent-settlement-probe:sha256:" + hex.EncodeToString(digest[:])
+}
+
+func activationTestSettlementTerminalID(
+	t *testing.T, decision policyelements.IntentSettlementDecision,
+) string {
+	t.Helper()
+	decision.TerminalID = ""
+	payload, err := json.Marshal(decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(payload)
+	return "intent-settlement-terminal:sha256:" + hex.EncodeToString(digest[:])
+}
+
+func readdressActivationSettlementScenario(
+	t *testing.T, scenario *activationSettlementScenario, sessionID string,
+) {
+	t.Helper()
+	probe := cloneActivationSettlementProbe(scenario.decision.Probe)
+	probe.SessionID = sessionID
+	probe.ProbeID = activationTestSettlementProbeID(t, probe)
+	scenario.decision.SessionID = sessionID
+	scenario.decision.Probe = probe
+	if scenario.decision.Disposition != nil {
+		disposition := *scenario.decision.Disposition
+		disposition.Probe = probe
+		scenario.decision.Disposition = &disposition
+	}
+	scenario.decision.TerminalID = activationTestSettlementTerminalID(t, scenario.decision)
+	scenario.terminal.ItemID = scenario.decision.TerminalID
+	scenario.terminal.SessionID = sessionID
+	scenario.terminal.CausalParents = []string{"settlement-disposition", probe.ProbeID}
+	scenario.terminal.Payload = scenario.decision
+}
+
+func cloneActiveGeneration(source *activeGeneration) *activeGeneration {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
 }
 
 func (fixture *activationTestFixture) appendModelProposal(
@@ -1255,6 +1557,443 @@ func (fixture *activationTestFixture) visualItem(itemID, content, intentID strin
 			EventID: itemID + "-event", Type: "vision.endpoint", Source: "vision",
 			Channel: SourceScreen, OccurredNS: fixture.nextNS,
 		},
+	}
+}
+
+func TestActivationSettlementTerminalClearsExactEffectAndAcknowledgesWithoutReactivation(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	oldActive := *fixture.runner.active
+	fixture.runner.revokedSequence = 17
+	fixture.runner.revokedStoreVersion = 3
+	triggerCount := len(fixture.trigger.snapshot())
+
+	decision := cloneActivationSettlementDecision(scenario.decision)
+	envelope := scenario.terminal.Clone()
+	envelope.Payload = &decision
+	if err := fixture.runner.acceptSettlement(context.Background(), envelope); err != nil {
+		t.Fatal(err)
+	}
+	// Mutation after receipt must not change the echoed acknowledgement.
+	decision.TerminalID = "mutated-by-caller"
+	decision.Evidence.QualifyingObservations[0].TrajectoryItemID = "mutated-by-caller"
+
+	if fixture.runner.active != nil || fixture.runner.intent != nil || fixture.runner.deferred != nil ||
+		fixture.runner.pendingTerminal != nil || fixture.runner.pendingDisposition != nil {
+		t.Fatalf("terminal settlement retained work: active=%+v intent=%+v deferred=%+v pending=%+v disposition=%+v",
+			fixture.runner.active, fixture.runner.intent, fixture.runner.deferred,
+			fixture.runner.pendingTerminal, fixture.runner.pendingDisposition)
+	}
+	if got := len(fixture.trigger.snapshot()); got != triggerCount {
+		t.Fatalf("terminal consequence created a cognition turn: triggers=%d, want %d", got, triggerCount)
+	}
+	if fixture.runner.revokedSequence != 17 || fixture.runner.revokedStoreVersion != 3 {
+		t.Fatalf("terminal settlement changed cancellation floors: sequence=%d store=%d",
+			fixture.runner.revokedSequence, fixture.runner.revokedStoreVersion)
+	}
+
+	acks := fixture.settlementAck.snapshot()
+	if len(acks) != 1 {
+		t.Fatalf("settlement acknowledgements = %d, want 1", len(acks))
+	}
+	ackEnvelope := acks[0]
+	ack, ok := ackEnvelope.Payload.(policyelements.IntentSettlementAcknowledgement)
+	if !ok {
+		t.Fatalf("settlement acknowledgement payload = %T", ackEnvelope.Payload)
+	}
+	if !reflect.DeepEqual(ack.Decision, scenario.decision) ||
+		ack.GenerationID != scenario.decision.InvocationID ||
+		ack.AcknowledgedNS < scenario.decision.FinishedNS || ack.AcknowledgedNS == 0 {
+		t.Fatalf("settlement acknowledgement = %+v", ack)
+	}
+	if ackEnvelope.SessionID != activationTestSession || ackEnvelope.RunID != scenario.decision.InvocationID ||
+		ackEnvelope.CancellationScope != scenario.decision.InvocationID || ackEnvelope.Sequence == 0 ||
+		!slices.Equal(ackEnvelope.CausalParents, []string{
+			scenario.decision.TerminalID, scenario.decision.Probe.ProbeID,
+			scenario.decision.Probe.Result.TrajectoryItemID,
+		}) {
+		t.Fatalf("settlement acknowledgement envelope = %+v", ackEnvelope)
+	}
+	wantID, err := activationSettlementAcknowledgementID(
+		fixture.runner.instance, ackEnvelope.Sequence, ack,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ackEnvelope.ItemID != wantID {
+		t.Fatalf("settlement acknowledgement ID = %q, want %q", ackEnvelope.ItemID, wantID)
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationIgnored ||
+		outcome.GenerationID != oldActive.id || outcome.Code != "intent_succeeded" ||
+		outcome.ContextVersion != oldActive.contextVersion {
+		t.Fatalf("terminal settlement outcome = %+v", outcome)
+	}
+}
+
+func TestActivationSettlementWaitsForIndependentModelResultCopy(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	contextVersion := fixture.runner.active.contextVersion
+	fixture.runner.active.callID = ""
+	fixture.runner.active.tool = ""
+
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.pendingSettlement == nil || fixture.runner.active == nil ||
+		len(fixture.settlementAck.snapshot()) != 0 {
+		t.Fatalf("early settlement state: pending=%+v active=%+v acknowledgements=%+v",
+			fixture.runner.pendingSettlement, fixture.runner.active, fixture.settlementAck.snapshot())
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Code != "settlement_waiting_for_model_result" {
+		t.Fatalf("early settlement outcome = %+v", outcome)
+	}
+
+	if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+		scenario.decision.InvocationID, contextVersion,
+		[]cognitionelements.ToolProposal{activationTestProposal("settlement-call")},
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.pendingSettlement != nil || fixture.runner.active != nil ||
+		len(fixture.settlementAck.snapshot()) != 1 {
+		t.Fatalf("settlement after result copy: pending=%+v active=%+v acknowledgements=%+v",
+			fixture.runner.pendingSettlement, fixture.runner.active, fixture.settlementAck.snapshot())
+	}
+}
+
+func TestActivationSettlementAcknowledgesCanceledExactEffectAcrossOrdering(t *testing.T) {
+	t.Run("cancel after model result before terminal", func(t *testing.T) {
+		fixture := newActivationTestFixture(t)
+		scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+		fixture.cancelGeneration(t, scenario.decision.InvocationID, fixture.store.Snapshot().Version)
+		if fixture.runner.active != nil || fixture.runner.canceledEffects[scenario.decision.InvocationID] == nil {
+			t.Fatalf("cancellation did not retain exact effect: active=%+v canceled=%+v",
+				fixture.runner.active, fixture.runner.canceledEffects)
+		}
+		newIntentEnvelope, newIntentCommit := fixture.appendUser(
+			t, "replacement-intent", "click the replacement warning",
+		)
+		newIntent := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+		newVisual, _ := fixture.appendVisual(
+			t, "replacement-screen", "replacement warning visible", newIntentCommit.TrajectoryItemID,
+		)
+		newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+		if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+			t.Fatal(err)
+		}
+		newRun := fixture.runner.active.id
+		if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.runner.canceledEffects[scenario.decision.InvocationID] != nil ||
+			len(fixture.settlementAck.snapshot()) != 1 || len(fixture.trigger.snapshot()) != 2 ||
+			fixture.runner.active == nil || fixture.runner.active.id != newRun {
+			t.Fatalf("late terminal changed replacement work: canceled=%+v ack=%+v triggers=%+v active=%+v",
+				fixture.runner.canceledEffects, fixture.settlementAck.snapshot(),
+				fixture.trigger.snapshot(), fixture.runner.active)
+		}
+	})
+
+	t.Run("cancel and terminal before model result", func(t *testing.T) {
+		fixture := newActivationTestFixture(t)
+		scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionFailed)
+		contextVersion := fixture.runner.active.contextVersion
+		fixture.runner.active.callID = ""
+		fixture.runner.active.tool = ""
+		fixture.cancelGeneration(t, scenario.decision.InvocationID, 51)
+		if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+			t.Fatal(err)
+		}
+		retained := fixture.runner.canceledEffects[scenario.decision.InvocationID]
+		if retained == nil || retained.settlement == nil || len(fixture.settlementAck.snapshot()) != 0 {
+			t.Fatalf("canceled early terminal was not retained: %+v", retained)
+		}
+		if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+			scenario.decision.InvocationID, contextVersion,
+			[]cognitionelements.ToolProposal{activationTestProposal("settlement-call")},
+		)); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.runner.canceledEffects[scenario.decision.InvocationID] != nil ||
+			len(fixture.settlementAck.snapshot()) != 1 || len(fixture.trigger.snapshot()) != 1 {
+			t.Fatalf("result copy did not settle canceled terminal: canceled=%+v ack=%+v triggers=%+v",
+				fixture.runner.canceledEffects, fixture.settlementAck.snapshot(), fixture.trigger.snapshot())
+		}
+	})
+}
+
+func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	fixture.runner.config.CancelMemory = 1
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	oldRun := scenario.decision.InvocationID
+	fixture.cancelGeneration(t, oldRun, fixture.store.Snapshot().Version)
+	oldEffect := fixture.runner.canceledEffects[oldRun]
+	if oldEffect == nil {
+		t.Fatal("first cancellation did not retain its exact effect")
+	}
+
+	newIntentEnvelope, newIntentCommit := fixture.appendUser(
+		t, "capacity-replacement-intent", "click the replacement warning",
+	)
+	newIntent := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence).TriggerObservation
+	newVisual, _ := fixture.appendVisual(
+		t, "capacity-replacement-screen", "replacement warning visible", newIntentCommit.TrajectoryItemID,
+	)
+	newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+	if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+		t.Fatal(err)
+	}
+	newActive := cloneActiveGeneration(fixture.runner.active)
+	if newActive == nil {
+		t.Fatal("replacement generation was not activated")
+	}
+	newIntentBasis := *fixture.runner.intent
+	revokedSequence := fixture.runner.revokedSequence
+	revokedStoreVersion := fixture.runner.revokedStoreVersion
+	canceledCount := fixture.runner.state.Canceled
+	secondCancel := element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: "cancel-" + newActive.id,
+		SessionID: activationTestSession, Sequence: fixture.store.Snapshot().Version + 1,
+		Payload: policyelements.GenerationCancel{
+			GenerationID: newActive.id, Reason: "second cancellation",
+		},
+	}
+	if err := fixture.runner.acceptCancel(context.Background(), secondCancel); err == nil ||
+		!strings.Contains(err.Error(), "full of unacknowledged effects") {
+		t.Fatalf("second cancellation capacity error = %v", err)
+	}
+	if len(fixture.runner.canceledEffects) != 1 || fixture.runner.canceledEffects[oldRun] != oldEffect ||
+		!reflect.DeepEqual(fixture.runner.active, newActive) ||
+		!reflect.DeepEqual(*fixture.runner.intent, newIntentBasis) ||
+		fixture.runner.revokedSequence != revokedSequence ||
+		fixture.runner.revokedStoreVersion != revokedStoreVersion ||
+		fixture.runner.state.Canceled != canceledCount {
+		t.Fatalf("capacity failure displaced live state: canceled=%+v active=%+v intent=%+v sequence=%d store=%d count=%d",
+			fixture.runner.canceledEffects, fixture.runner.active, fixture.runner.intent,
+			fixture.runner.revokedSequence, fixture.runner.revokedStoreVersion,
+			fixture.runner.state.Canceled)
+	}
+
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.canceledEffects[oldRun] != nil ||
+		!reflect.DeepEqual(fixture.runner.active, newActive) {
+		t.Fatalf("old acknowledgement changed replacement generation: canceled=%+v active=%+v",
+			fixture.runner.canceledEffects, fixture.runner.active)
+	}
+	if err := fixture.runner.acceptCancel(context.Background(), secondCancel); err != nil {
+		t.Fatalf("second cancellation after exact acknowledgement: %v", err)
+	}
+	if fixture.runner.active != nil || fixture.runner.canceledEffects[newActive.id] == nil {
+		t.Fatalf("reclaimed capacity did not retain the second effect: canceled=%+v active=%+v",
+			fixture.runner.canceledEffects, fixture.runner.active)
+	}
+}
+
+func TestActivationSettlementRetriesExactAcknowledgementAfterDeliveryFailure(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	flaky := &failOnceActivationOutputPort{
+		delegate: fixture.settlementAck,
+	}
+	fixture.runner.ports.settlementAcknowledgement = flaky
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	delivered := fixture.settlementAck.snapshot()
+	if len(fixture.runner.pendingSettlementAcks) != 0 || len(delivered) != 1 ||
+		fixture.runner.active != nil || fixture.runner.intent != nil ||
+		len(fixture.trigger.snapshot()) != 1 || flaky.attempts != 2 {
+		t.Fatalf("acknowledgement retry changed lifecycle: pending=%+v ack=%+v active=%+v triggers=%+v",
+			fixture.runner.pendingSettlementAcks, fixture.settlementAck.snapshot(),
+			fixture.runner.active, fixture.trigger.snapshot())
+	}
+	if !reflect.DeepEqual(flaky.first, delivered[0]) {
+		t.Fatalf("acknowledgement retry changed the exact envelope: first=%+v delivered=%+v",
+			flaky.first, delivered[0])
+	}
+}
+
+func TestActivationSettlementRetainsClearedEffectReceiptAfterBoundedAcknowledgementFailure(t *testing.T) {
+	for _, testCase := range []struct {
+		name string
+		zero bool
+	}{
+		{name: "persistent error"},
+		{name: "zero delivery", zero: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newActivationTestFixture(t)
+			scenario := fixture.prepareSettlementScenario(
+				t, policyelements.IntentSettlementDecisionSucceeded,
+			)
+			blocked := &undeliverableActivationOutputPort{
+				delegate: fixture.settlementAck, zero: testCase.zero,
+			}
+			fixture.runner.ports.settlementAcknowledgement = blocked
+			err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal)
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf(
+				"failed after %d bounded attempts", maximumSettlementAckTries,
+			)) {
+				t.Fatalf("bounded acknowledgement error = %v", err)
+			}
+			pending, found := fixture.runner.pendingSettlementAcks[scenario.decision.TerminalID]
+			if !found || blocked.attempts != maximumSettlementAckTries ||
+				fixture.runner.active != nil || fixture.runner.intent != nil ||
+				len(fixture.settlementAck.snapshot()) != 0 || len(fixture.trigger.snapshot()) != 1 {
+				t.Fatalf("bounded failure lost receipt or revived work: pending=%+v attempts=%d active=%+v intent=%+v ack=%+v triggers=%+v",
+					fixture.runner.pendingSettlementAcks, blocked.attempts, fixture.runner.active,
+					fixture.runner.intent, fixture.settlementAck.snapshot(), fixture.trigger.snapshot())
+			}
+			for index, attempted := range blocked.envelopes {
+				if !reflect.DeepEqual(attempted, pending.envelope) {
+					t.Fatalf("attempt %d changed retained acknowledgement: attempted=%+v retained=%+v",
+						index, attempted, pending.envelope)
+				}
+			}
+
+			fixture.runner.ports.settlementAcknowledgement = fixture.settlementAck
+			if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+				t.Fatal(err)
+			}
+			delivered := fixture.settlementAck.snapshot()
+			if len(delivered) != 1 || !reflect.DeepEqual(delivered[0], pending.envelope) ||
+				len(fixture.runner.pendingSettlementAcks) != 0 || fixture.runner.active != nil ||
+				len(fixture.trigger.snapshot()) != 1 {
+				t.Fatalf("retained acknowledgement recovery = ack=%+v pending=%+v active=%+v triggers=%+v",
+					delivered, fixture.runner.pendingSettlementAcks,
+					fixture.runner.active, fixture.trigger.snapshot())
+			}
+		})
+	}
+}
+
+func TestActivationSettlementContinueUsesAdmissionPathAndDoesNotAcknowledge(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	oldRun := fixture.runner.active.id
+	released := scenario.evidence.Clone()
+	released.ItemID = "intent-settlement-admitted:sha256:continue-test"
+	released.CausalParents = []string{"continued-disposition", scenario.decision.Probe.ProbeID}
+	if err := fixture.runner.acceptAdmission(context.Background(), released); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.active == nil || fixture.runner.active.id == oldRun ||
+		fixture.runner.active.contextVersion != scenario.decision.Evidence.TriggerCommit.StoreVersion ||
+		fixture.runner.intent == nil ||
+		fixture.runner.intent.identity != scenario.decision.Probe.DurableIntent {
+		t.Fatalf("continued settlement did not activate the next exact turn: active=%+v intent=%+v",
+			fixture.runner.active, fixture.runner.intent)
+	}
+	if triggers := fixture.trigger.snapshot(); len(triggers) != 2 || triggers[1].RunID != fixture.runner.active.id {
+		t.Fatalf("continued settlement triggers = %+v", triggers)
+	}
+	if acknowledgements := fixture.settlementAck.snapshot(); len(acknowledgements) != 0 {
+		t.Fatalf("continuation emitted terminal acknowledgement: %+v", acknowledgements)
+	}
+}
+
+func TestActivationSettlementFailsClosedOnUntrustedOrMisorderedControl(t *testing.T) {
+	testCases := []struct {
+		name     string
+		mutate   func(*activationTestFixture, *activationSettlementScenario)
+		wantCode string
+	}{
+		{
+			name: "unconfigured settlement contract",
+			mutate: func(fixture *activationTestFixture, _ *activationSettlementScenario) {
+				fixture.runner.config.ExpectedSettlement = nil
+			},
+			wantCode: "settlement_not_configured",
+		},
+		{
+			name: "forged terminal identity",
+			mutate: func(_ *activationTestFixture, scenario *activationSettlementScenario) {
+				scenario.decision.TerminalID = "intent-settlement-terminal:sha256:" + strings.Repeat("0", 64)
+				scenario.terminal.ItemID = scenario.decision.TerminalID
+				scenario.terminal.Payload = scenario.decision
+			},
+			wantCode: "invalid_settlement_decision",
+		},
+		{
+			name: "stale generation",
+			mutate: func(fixture *activationTestFixture, _ *activationSettlementScenario) {
+				fixture.runner.active = nil
+			},
+			wantCode: "stale_settlement_decision",
+		},
+		{
+			name: "wrong active effect",
+			mutate: func(fixture *activationTestFixture, _ *activationSettlementScenario) {
+				fixture.runner.active.callID = "another-call"
+			},
+			wantCode: "settlement_effect_mismatch",
+		},
+		{
+			name: "cross session",
+			mutate: func(_ *activationTestFixture, scenario *activationSettlementScenario) {
+				readdressActivationSettlementScenario(t, scenario, "foreign-session")
+			},
+			wantCode: "settlement_session_mismatch",
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newActivationTestFixture(t)
+			scenario := fixture.prepareSettlementScenario(
+				t, policyelements.IntentSettlementDecisionSucceeded,
+			)
+			originalActive := cloneActiveGeneration(fixture.runner.active)
+			originalIntent := *fixture.runner.intent
+			testCase.mutate(fixture, &scenario)
+			expectedActive := cloneActiveGeneration(fixture.runner.active)
+			if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(fixture.runner.active, expectedActive) ||
+				!reflect.DeepEqual(*fixture.runner.intent, originalIntent) {
+				t.Fatalf("refused settlement mutated work: before=%+v original=%+v after=%+v intent=%+v",
+					expectedActive, originalActive, fixture.runner.active, fixture.runner.intent)
+			}
+			if len(fixture.settlementAck.snapshot()) != 0 || len(fixture.trigger.snapshot()) != 1 {
+				t.Fatalf("refused settlement emitted control: ack=%+v triggers=%+v",
+					fixture.settlementAck.snapshot(), fixture.trigger.snapshot())
+			}
+			if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+				outcome.Code != testCase.wantCode {
+				t.Fatalf("refused settlement outcome = %+v, want %q", outcome, testCase.wantCode)
+			}
+		})
+	}
+}
+
+func TestActivationSettlementDuplicateDoesNotReacknowledgeOrReactivate(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionFailed)
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	firstAck := fixture.settlementAck.snapshot()
+	if len(firstAck) != 1 {
+		t.Fatalf("first acknowledgement = %+v", firstAck)
+	}
+	if err := fixture.runner.acceptSettlement(context.Background(), scenario.terminal); err != nil {
+		t.Fatal(err)
+	}
+	if acknowledgements := fixture.settlementAck.snapshot(); len(acknowledgements) != 1 ||
+		!reflect.DeepEqual(acknowledgements[0], firstAck[0]) {
+		t.Fatalf("duplicate terminal was reacknowledged: %+v", acknowledgements)
+	}
+	if len(fixture.trigger.snapshot()) != 1 || fixture.runner.active != nil || fixture.runner.intent != nil {
+		t.Fatalf("duplicate terminal changed lifecycle: triggers=%+v active=%+v intent=%+v",
+			fixture.trigger.snapshot(), fixture.runner.active, fixture.runner.intent)
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationIgnored ||
+		outcome.Code != "duplicate_settlement_decision" {
+		t.Fatalf("duplicate settlement outcome = %+v", outcome)
 	}
 }
 

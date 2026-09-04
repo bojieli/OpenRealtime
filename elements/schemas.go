@@ -495,12 +495,13 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"cancel_memory":       integerSchema(1, 4096),
 			}, "expected_settlement",
 		),
-		"schema://openrealtime/realtime-cu/activation-config/v1": standardObject(
-			"schema://openrealtime/realtime-cu/activation-config/v1",
+		"schema://openrealtime/realtime-cu/activation-config/v2": standardObject(
+			"schema://openrealtime/realtime-cu/activation-config/v2",
 			schemaObject{
 				"role": identifier(256), "invocation": invocation,
 				"max_pending": largeBoundedState, "terminal_memory": largeBoundedState,
 				"cancel_memory": largeBoundedState, "expected_admission": temporalEvidenceConfig,
+				"expected_settlement": intentSettlementConfig,
 			}, "role", "invocation", "expected_admission",
 		),
 		"schema://openrealtime/policy/semantic-admission-config/v3": standardObject(

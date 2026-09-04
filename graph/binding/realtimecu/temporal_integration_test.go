@@ -313,7 +313,7 @@ func mountTemporalActivation(
 	}
 	services := graphruntime.NewServiceSet()
 	if _, err := services.Set(stateelements.TrajectoryStoreService,
-		&stateelements.TrajectoryStoreServiceValue{Store: store}); err != nil {
+		&stateelements.TrajectoryStoreServiceValue{Store: store, SessionID: activationTestSession}); err != nil {
 		t.Fatal(err)
 	}
 	values := map[string]json.RawMessage{

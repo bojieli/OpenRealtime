@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 9,
+      "revision": 10,
       "ports": [
         {
           "name": "admitted",
@@ -151,6 +151,34 @@
           "default_depth": 16
         },
         {
+          "name": "settlement",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.IntentSettlementDecision"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "default_depth": 16
+        },
+        {
+          "name": "settlement_ack",
+          "direction": "output",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.IntentSettlementAcknowledgement"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "default_depth": 16
+        },
+        {
           "name": "state",
           "direction": "output",
           "type": {
@@ -188,7 +216,8 @@
           "disposition_committed",
           "disposition_rejected",
           "effect_terminal",
-          "result"
+          "result",
+          "settlement"
         ],
         "interrupts": [
           "cancel"
@@ -204,7 +233,7 @@
         "breaks_cycles": true
       },
       "state_schema": "schema://openrealtime/realtime-cu/durable-activation-state/v1",
-      "config_schema": "schema://openrealtime/realtime-cu/activation-config/v1",
+      "config_schema": "schema://openrealtime/realtime-cu/activation-config/v2",
       "dependencies": [
         {
           "name": "runtime.clock"

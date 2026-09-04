@@ -1,6 +1,7 @@
 package realtimecu
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -27,11 +28,12 @@ import (
 
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
-	ActivationConfigSchema    = "schema://openrealtime/realtime-cu/activation-config/v1"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v9"
+	ActivationConfigSchema    = "schema://openrealtime/realtime-cu/activation-config/v2"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v10"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumDispositionRetries = 8
+	maximumSettlementAckTries = 3
 	maximumActivationMemory   = 1_000_000
 	maximumInstructionBytes   = 1 << 20
 )
@@ -48,7 +50,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      9,
+		Revision:      10,
 		Ports: []element.Port{
 			{Name: "admitted", Direction: element.Input,
 				Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One,
@@ -68,6 +70,9 @@ func ActivationDescriptor() element.Descriptor {
 			{Name: "disposition_rejected", Direction: element.Input,
 				Type: stateelements.RejectionType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
+			{Name: "settlement", Direction: element.Input,
+				Type: policyelements.IntentSettlementDecisionType(), Cardinality: element.One,
+				Required: false, DefaultDepth: 16},
 			{Name: "trigger", Direction: element.Output,
 				Type: cognitionelements.GenerateType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
@@ -83,10 +88,14 @@ func ActivationDescriptor() element.Descriptor {
 			{Name: "disposition_append", Direction: element.Output,
 				Type: stateelements.AppendType(), Cardinality: element.One,
 				Required: true, DefaultDepth: 16},
+			{Name: "settlement_ack", Direction: element.Output,
+				Type: policyelements.IntentSettlementAcknowledgementType(), Cardinality: element.One,
+				Required: false, DefaultDepth: 16},
 		},
 		Reaction: element.Reaction{
 			Triggers: []string{
 				"admitted", "result", "effect_terminal", "disposition_committed", "disposition_rejected",
+				"settlement",
 			},
 			Interrupts: []string{"cancel"},
 			Outcomes: []string{
@@ -145,14 +154,27 @@ func (activationFactory) Mount(
 	if !ok || storeService == nil || storeService.Store == nil {
 		return nil, fmt.Errorf("Realtime-CU activation trajectory store has type %T", storeValue)
 	}
+	if !boundedActivationIdentifier(storeService.SessionID, true) {
+		return nil, errors.New("Realtime-CU activation trajectory store has no trusted canonical session ID")
+	}
 	ports, err := activationPortsFrom(mount.Ports)
 	if err != nil {
 		return nil, err
 	}
+	if err := validateActivationSettlementWiring(
+		config.ExpectedSettlement != nil,
+		len(ports.settlement.Lanes()), len(ports.settlementAcknowledgement.Lanes()),
+	); err != nil {
+		return nil, err
+	}
 	return &activationRunner{
-		instance: mount.InstanceID, config: config, clock: clock, sequences: sequences,
+		instance: mount.InstanceID, sessionID: storeService.SessionID,
+		config: config, clock: clock, sequences: sequences,
 		store: storeService.Store, resolution: mount.Resolution, ports: ports,
-		terminal: make(map[string]struct{}),
+		terminal:               make(map[string]struct{}),
+		canceledEffects:        make(map[string]*canceledActivationEffect),
+		pendingSettlementAcks:  make(map[string]pendingSettlementAcknowledgement),
+		acknowledgedSettlement: make(map[string]struct{}),
 		state: policyelements.GenerationState{
 			Role: config.Role, TerminalMemory: config.TerminalMemory,
 			CancellationMemory: config.CancelMemory,
@@ -160,14 +182,38 @@ func (activationFactory) Mount(
 	}, nil
 }
 
-// ActivationConfig pins both cognition parameters and the exact temporal
-// admission contract expected at the consumer boundary. Repeating the policy
-// contract here is intentional: typed payloads prove shape, while an
-// independently configured expectation prevents a forged or miswired producer
-// from weakening timing or explicit source requirements.
+func validateActivationSettlementWiring(
+	configured bool, settlementInputs, acknowledgementOutputs int,
+) error {
+	if settlementInputs < 0 || acknowledgementOutputs < 0 ||
+		settlementInputs > 1 || acknowledgementOutputs > 1 {
+		return errors.New("Realtime-CU activation settlement ports must each have at most one lane")
+	}
+	if configured {
+		if settlementInputs != 1 || acknowledgementOutputs != 1 {
+			return errors.New(
+				"Realtime-CU activation expected_settlement requires one settlement input and one settlement_ack output lane")
+		}
+		return nil
+	}
+	if settlementInputs != 0 || acknowledgementOutputs != 0 {
+		return errors.New(
+			"Realtime-CU activation settlement lanes require expected_settlement configuration")
+	}
+	return nil
+}
+
+// ActivationConfig pins cognition parameters and the temporal admission
+// contract expected at the consumer boundary. ExpectedSettlement enables the
+// optional terminal handshake and independently repeats the complete upstream
+// gate contract: typed payloads prove shape, while this expectation prevents a
+// forged or miswired producer from weakening source, candidate, or detector
+// requirements. Its nested admission contract must be semantically identical
+// to ExpectedAdmission, which continues to cover ordinary and released evidence.
 type ActivationConfig struct {
 	policyelements.GenerateOnObservationConfig
-	ExpectedAdmission policyelements.TemporalEvidenceAdmissionConfig `json:"expected_admission"`
+	ExpectedAdmission  policyelements.TemporalEvidenceAdmissionConfig `json:"expected_admission"`
+	ExpectedSettlement *policyelements.IntentSettlementConfig         `json:"expected_settlement,omitempty"`
 }
 
 func decodeActivationConfig(source json.RawMessage) (ActivationConfig, error) {
@@ -179,6 +225,14 @@ func decodeActivationConfig(source json.RawMessage) (ActivationConfig, error) {
 	}
 	if err := decodeExactJSON(source, &config); err != nil {
 		return ActivationConfig{}, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(source, &fields); err != nil {
+		return ActivationConfig{}, err
+	}
+	if raw, found := fields["expected_settlement"]; found &&
+		bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return ActivationConfig{}, errors.New("expected_settlement cannot be null")
 	}
 	if !canonical(config.Role) || len(config.Role) > 256 {
 		return ActivationConfig{}, errors.New("activation role must be a canonical identifier")
@@ -219,14 +273,76 @@ func decodeActivationConfig(source json.RawMessage) (ActivationConfig, error) {
 	if err := policyelements.ValidateTemporalEvidenceAdmissionConfig(config.ExpectedAdmission); err != nil {
 		return ActivationConfig{}, fmt.Errorf("expected_admission: %w", err)
 	}
+	if config.ExpectedSettlement != nil {
+		if err := validateActivationSettlementConfig(*config.ExpectedSettlement); err != nil {
+			return ActivationConfig{}, fmt.Errorf("expected_settlement: %w", err)
+		}
+		if !equalActivationAdmissionContracts(
+			config.ExpectedAdmission, config.ExpectedSettlement.ExpectedAdmission,
+		) {
+			return ActivationConfig{}, errors.New(
+				"expected_settlement admission differs from expected_admission")
+		}
+		copy := cloneActivationSettlementConfig(*config.ExpectedSettlement)
+		config.ExpectedSettlement = &copy
+	}
 	config.Invocation = cloneInvocation(config.Invocation)
 	return config, nil
 }
 
+func validateActivationSettlementConfig(config policyelements.IntentSettlementConfig) error {
+	payload, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	registrations, err := policyelements.FactoryRegistrations()
+	if err != nil {
+		return err
+	}
+	reference := policyelements.IntentSettlementDescriptor().Name
+	for _, registration := range registrations {
+		if registration.Profile.Reference != reference {
+			continue
+		}
+		validator, ok := registration.Factory.(element.ConfigValidator)
+		if !ok {
+			return errors.New("intent settlement factory has no configuration validator")
+		}
+		return validator.ValidateConfig(payload)
+	}
+	return errors.New("intent settlement factory is absent from the policy registry")
+}
+
+func equalActivationAdmissionContracts(
+	left, right policyelements.TemporalEvidenceAdmissionConfig,
+) bool {
+	canonicalize := func(
+		value policyelements.TemporalEvidenceAdmissionConfig,
+	) policyelements.TemporalEvidenceAdmissionConfig {
+		if value.Mode == policyelements.TemporalEvidenceAdmissionAfterIntent &&
+			value.SourceSet == "" {
+			value.SourceSet = policyelements.TemporalEvidenceSourceSetExplicit
+		}
+		value.Required = slices.Clone(value.Required)
+		return value
+	}
+	return reflect.DeepEqual(canonicalize(left), canonicalize(right))
+}
+
+func cloneActivationSettlementConfig(
+	source policyelements.IntentSettlementConfig,
+) policyelements.IntentSettlementConfig {
+	result := source
+	result.ExpectedAdmission.Required = slices.Clone(source.ExpectedAdmission.Required)
+	result.CandidateSources = slices.Clone(source.CandidateSources)
+	return result
+}
+
 type activationPorts struct {
-	admitted, cancel, result, effectTerminal              element.InputPort
+	admitted, cancel, result, effectTerminal, settlement  element.InputPort
 	dispositionCommitted, dispositionRejected             element.InputPort
 	trigger, candidate, state, outcome, dispositionAppend element.OutputPort
+	settlementAcknowledgement                             element.OutputPort
 }
 
 func activationPortsFrom(ports element.Ports) (activationPorts, error) {
@@ -242,6 +358,7 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 		{"result", &result.result}, {"effect_terminal", &result.effectTerminal},
 		{"disposition_committed", &result.dispositionCommitted},
 		{"disposition_rejected", &result.dispositionRejected},
+		{"settlement", &result.settlement},
 	} {
 		port, err := ports.Input(input.name)
 		if err != nil {
@@ -256,6 +373,7 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 		{"trigger", &result.trigger}, {"authority", &result.candidate},
 		{"state", &result.state}, {"outcome", &result.outcome},
 		{"disposition_append", &result.dispositionAppend},
+		{"settlement_ack", &result.settlementAcknowledgement},
 	} {
 		port, err := ports.Output(output.name)
 		if err != nil {
@@ -269,12 +387,31 @@ func activationPortsFrom(ports element.Ports) (activationPorts, error) {
 type userIntentBasis struct {
 	itemID, triggerItemID string
 	sourceRevision        uint64
+	identity              policyelements.TemporalEvidenceItemIdentity
 }
 
 type activeGeneration struct {
 	id             string
 	contextVersion uint64
 	callID         string
+	tool           string
+	intent         policyelements.TemporalEvidenceItemIdentity
+}
+
+type pendingActivationSettlement struct {
+	envelope element.Envelope
+	decision policyelements.IntentSettlementDecision
+}
+
+type canceledActivationEffect struct {
+	generation activeGeneration
+	settlement *pendingActivationSettlement
+}
+
+type pendingSettlementAcknowledgement struct {
+	envelope   element.Envelope
+	decision   policyelements.IntentSettlementDecision
+	generation activeGeneration
 }
 
 // deferredVisualCommit is the newest committed observation that arrived while
@@ -336,7 +473,7 @@ func verifyActivationTemporalAdmission(
 		intent := prefix[admission.DurableIntent.StoreVersion-1]
 		verified.intent = &userIntentBasis{
 			itemID: intent.ID, triggerItemID: intent.Event.EventID,
-			sourceRevision: intent.SourceRevision,
+			sourceRevision: intent.SourceRevision, identity: *admission.DurableIntent,
 		}
 		verified.intentStoreVersion = admission.DurableIntent.StoreVersion
 	}
@@ -345,6 +482,7 @@ func verifyActivationTemporalAdmission(
 
 type activationRunner struct {
 	instance   string
+	sessionID  string
 	config     ActivationConfig
 	clock      graphruntime.Clock
 	sequences  *graphruntime.SequenceAllocator
@@ -352,16 +490,22 @@ type activationRunner struct {
 	resolution element.ResolutionReporter
 	ports      activationPorts
 
-	intent              *userIntentBasis
-	active              *activeGeneration
-	deferred            *deferredVisualCommit
-	pendingTerminal     *pendingEffectTerminal
-	pendingDisposition  *pendingProposalDisposition
-	revokedSequence     uint64
-	revokedStoreVersion uint64
-	terminal            map[string]struct{}
-	terminalOrder       []string
-	state               policyelements.GenerationState
+	intent                      *userIntentBasis
+	active                      *activeGeneration
+	deferred                    *deferredVisualCommit
+	pendingTerminal             *pendingEffectTerminal
+	pendingDisposition          *pendingProposalDisposition
+	pendingSettlement           *pendingActivationSettlement
+	revokedSequence             uint64
+	revokedStoreVersion         uint64
+	terminal                    map[string]struct{}
+	terminalOrder               []string
+	canceledEffects             map[string]*canceledActivationEffect
+	canceledEffectOrder         []string
+	pendingSettlementAcks       map[string]pendingSettlementAcknowledgement
+	acknowledgedSettlement      map[string]struct{}
+	acknowledgedSettlementOrder []string
+	state                       policyelements.GenerationState
 }
 
 type activationInput struct {
@@ -371,7 +515,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:9", ActivationDescriptor()); err != nil {
+		"implementation:10", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -380,7 +524,7 @@ func (runner *activationRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
 	inputs := make(chan activationInput)
-	failures := make(chan error, 6)
+	failures := make(chan error, 7)
 	var wait sync.WaitGroup
 	for _, source := range []struct {
 		kind string
@@ -390,7 +534,11 @@ func (runner *activationRunner) Run(parent context.Context) error {
 		{"result", runner.ports.result}, {"effect_terminal", runner.ports.effectTerminal},
 		{"disposition_committed", runner.ports.dispositionCommitted},
 		{"disposition_rejected", runner.ports.dispositionRejected},
+		{"settlement", runner.ports.settlement},
 	} {
+		if source.kind == "settlement" && len(source.port.Lanes()) == 0 {
+			continue
+		}
 		wait.Add(1)
 		go receiveActivationInputs(ctx, source.kind, source.port, inputs, failures, &wait)
 	}
@@ -400,6 +548,9 @@ func (runner *activationRunner) Run(parent context.Context) error {
 		runner.deferred = nil
 		runner.pendingTerminal = nil
 		runner.pendingDisposition = nil
+		runner.pendingSettlement = nil
+		runner.canceledEffects = nil
+		runner.pendingSettlementAcks = nil
 		cancel(nil)
 		wait.Wait()
 	}()
@@ -424,6 +575,8 @@ func (runner *activationRunner) Run(parent context.Context) error {
 				err = runner.acceptDispositionCommit(ctx, input.envelope)
 			case "disposition_rejected":
 				err = runner.acceptDispositionRejection(ctx, input.envelope)
+			case "settlement":
+				err = runner.acceptSettlement(ctx, input.envelope)
 			default:
 				err = fmt.Errorf("unknown Realtime-CU activation input %q", input.kind)
 			}
@@ -457,6 +610,10 @@ func (runner *activationRunner) acceptAdmissionAtContext(
 	if !envelope.Type.Equal(policyelements.AdmittedTemporalEvidenceType()) {
 		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission",
 			fmt.Sprintf("temporal admission envelope has type %s", envelope.Type.String()))
+	}
+	if envelope.SessionID != runner.sessionID {
+		return runner.refuse(ctx, envelope, commit, "session_mismatch",
+			"temporal admission crossed the mounted trajectory session")
 	}
 	if commit.Kind != stateelements.ObservationCommitted {
 		return runner.refuse(ctx, envelope, commit, "invalid_temporal_admission",
@@ -545,7 +702,7 @@ func (runner *activationRunner) acceptAdmissionAtContext(
 		}
 		nextIntent := userIntentBasis{
 			itemID: current.ID, triggerItemID: current.Event.EventID,
-			sourceRevision: current.SourceRevision,
+			sourceRevision: current.SourceRevision, identity: admission.TriggerObservation,
 		}
 		runner.selectIntent(nextIntent)
 	} else if authorityValue != trajectory.AuthorityObserver {
@@ -647,7 +804,10 @@ func (runner *activationRunner) acceptAdmissionAtContext(
 		}
 		return runner.publishState(ctx, envelope)
 	}
-	runner.active = &activeGeneration{id: generationID, contextVersion: effectiveCommit.StoreVersion}
+	runner.active = &activeGeneration{
+		id: generationID, contextVersion: effectiveCommit.StoreVersion,
+		intent: runner.intent.identity,
+	}
 	if err := runner.emit(ctx, envelope, admission, generationID, effectiveCommit, *runner.intent, contextTailID); err != nil {
 		runner.active = nil
 		return err
@@ -670,11 +830,18 @@ func (runner *activationRunner) acceptResult(
 	ctx context.Context, envelope element.Envelope,
 ) error {
 	result, ok := cognitionResultPayload(envelope.Payload)
-	if !ok || !canonical(envelope.SessionID) || !canonical(envelope.RunID) ||
+	if !ok || envelope.SessionID != runner.sessionID || !canonical(envelope.RunID) ||
 		result.RunID != envelope.RunID {
 		return fmt.Errorf("Realtime-CU activation model result has invalid identity or payload %T", envelope.Payload)
 	}
-	if runner.active == nil || runner.active.id != result.RunID {
+	var effect *activeGeneration
+	var canceled *canceledActivationEffect
+	if runner.active != nil && runner.active.id == result.RunID {
+		effect = runner.active
+	} else if retained := runner.canceledEffects[result.RunID]; retained != nil {
+		canceled = retained
+		effect = &retained.generation
+	} else {
 		// A result can race a user cancellation. It carries no authority by itself,
 		// so an already-terminal generation is safe to discard and cannot release a
 		// newer turn.
@@ -683,15 +850,25 @@ func (runner *activationRunner) acceptResult(
 		}
 		return fmt.Errorf("Realtime-CU activation received result for unknown run %q", result.RunID)
 	}
-	if result.ContextVersion != runner.active.contextVersion {
+	if result.ContextVersion != effect.contextVersion {
 		return fmt.Errorf("Realtime-CU activation result context is %d, want %d",
-			result.ContextVersion, runner.active.contextVersion)
+			result.ContextVersion, effect.contextVersion)
 	}
 	if len(result.ToolProposals) > 1 {
 		return fmt.Errorf("Realtime-CU activation result has %d proposals; profile allows one",
 			len(result.ToolProposals))
 	}
 	if len(result.ToolProposals) == 0 {
+		if canceled != nil {
+			if canceled.settlement != nil {
+				return errors.New("Realtime-CU activation retained a verified settlement for a canceled result with no proposal")
+			}
+			runner.forgetCanceledEffect(result.RunID)
+			return nil
+		}
+		if runner.pendingSettlement != nil {
+			return errors.New("Realtime-CU activation retained a verified settlement for a model result with no proposal")
+		}
 		if runner.pendingTerminal != nil {
 			return errors.New("Realtime-CU activation received a pre-effect terminal for a model result with no proposal")
 		}
@@ -711,15 +888,32 @@ func (runner *activationRunner) acceptResult(
 		return nil
 	} else {
 		callID := result.ToolProposals[0].Call.CallID
-		if !canonical(callID) {
-			return errors.New("Realtime-CU activation result proposal has a noncanonical call ID")
+		tool := result.ToolProposals[0].Call.Name
+		if !canonical(callID) || !canonical(tool) {
+			return errors.New("Realtime-CU activation result proposal has a noncanonical call or tool ID")
+		}
+		if effect.callID != "" && (effect.callID != callID || effect.tool != tool) {
+			return errors.New("Realtime-CU activation received conflicting model-result copies for one generation")
 		}
 		// Retain the latest changed visual prefix until the proposal reaches a
 		// terminal disposition. A real result-linked consequence discards it as
 		// pre-effect evidence; a pre-effect suppression replays it because no
 		// external action occurred.
-		runner.active.callID = callID
+		effect.callID = callID
+		effect.tool = tool
+		if canceled != nil {
+			if canceled.settlement == nil {
+				return nil
+			}
+			pending := canceled.settlement
+			return runner.applyVerifiedSettlement(
+				ctx, pending.envelope, pending.decision, *effect, true,
+			)
+		}
 		if runner.pendingTerminal != nil {
+			if runner.pendingSettlement != nil {
+				return errors.New("Realtime-CU activation received conflicting pre-effect and post-effect terminals")
+			}
 			pending := runner.pendingTerminal
 			if pending.envelope.SessionID != envelope.SessionID ||
 				pending.envelope.RunID != envelope.RunID || pending.terminal.CallID != callID {
@@ -728,15 +922,304 @@ func (runner *activationRunner) acceptResult(
 			}
 			return runner.applyEffectTerminal(ctx, pending.envelope, pending.terminal)
 		}
+		if runner.pendingSettlement != nil {
+			pending := runner.pendingSettlement
+			return runner.applyVerifiedSettlement(
+				ctx, pending.envelope, pending.decision, *effect, false,
+			)
+		}
 	}
 	return runner.publishState(ctx, envelope)
+}
+
+// acceptSettlement is the terminal half of the settlement handshake. A
+// continuation never enters here: it remains an AdmittedTemporalEvidence value
+// and follows acceptAdmission, which may release a new cognition turn. Terminal
+// evidence is deliberately not replayed through admission; after independent
+// verification this method clears only the exact active effect and acknowledges
+// that cleanup to the gate.
+func (runner *activationRunner) acceptSettlement(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	decision, ok := intentSettlementDecisionPayload(envelope.Payload)
+	if !ok || !envelope.Type.Equal(policyelements.IntentSettlementDecisionType()) {
+		return runner.refuseSettlement(ctx, "invalid_settlement_decision",
+			"settlement input has the wrong envelope type or payload")
+	}
+	if err := validateActivationSettlementEnvelope(envelope, decision); err != nil {
+		return runner.refuseSettlement(ctx, "invalid_settlement_envelope", err.Error())
+	}
+	if envelope.SessionID != runner.sessionID || decision.SessionID != runner.sessionID ||
+		decision.Probe.SessionID != runner.sessionID {
+		return runner.refuseSettlement(ctx, "settlement_session_mismatch",
+			"settlement input crossed the mounted trajectory session")
+	}
+	if runner.config.ExpectedSettlement == nil {
+		return runner.refuseSettlement(ctx, "settlement_not_configured",
+			"activation has no independently pinned settlement contract")
+	}
+	if err := policyelements.VerifyIntentSettlementDecision(
+		runner.store.Snapshot(), decision, *runner.config.ExpectedSettlement,
+	); err != nil {
+		return runner.refuseSettlement(ctx, "invalid_settlement_decision", err.Error())
+	}
+	decision = cloneActivationSettlementDecision(decision)
+	if pending, found := runner.pendingSettlementAcks[decision.TerminalID]; found {
+		if !reflect.DeepEqual(pending.decision, decision) {
+			return runner.refuseSettlement(ctx, "conflicting_settlement_decision",
+				"a cleared effect retained a different terminal acknowledgement")
+		}
+		return runner.completePendingSettlementAcknowledgement(ctx, decision.TerminalID)
+	}
+	if _, duplicate := runner.acknowledgedSettlement[decision.TerminalID]; duplicate {
+		return runner.ignoreSettlement(ctx, decision, "duplicate_settlement_decision",
+			"the exact terminal decision was already acknowledged")
+	}
+	var effect *activeGeneration
+	canceled := false
+	if runner.active != nil && runner.active.id == decision.InvocationID {
+		effect = runner.active
+	} else if retained := runner.canceledEffects[decision.InvocationID]; retained != nil {
+		effect = &retained.generation
+		canceled = true
+	}
+	if effect == nil {
+		return runner.refuseSettlement(ctx, "stale_settlement_decision",
+			"settlement decision does not address an active generation")
+	}
+	if !canceled && (runner.pendingTerminal != nil || runner.pendingDisposition != nil) {
+		return runner.refuseSettlement(ctx, "conflicting_settlement_decision",
+			"the active effect is already awaiting a pre-effect terminal disposition")
+	}
+	if effect.id != decision.InvocationID || effect.intent != decision.Probe.DurableIntent ||
+		effect.contextVersion >= decision.Probe.Result.StoreVersion {
+		return runner.refuseSettlement(ctx, "settlement_effect_mismatch",
+			"settlement decision does not exactly address the active generation, effect, and durable intent")
+	}
+	if effect.callID == "" {
+		return runner.retainVerifiedSettlement(ctx, envelope, decision, canceled)
+	}
+	if effect.callID != decision.Probe.Result.CallID || effect.tool != decision.Probe.Result.Tool {
+		return runner.refuseSettlement(ctx, "settlement_effect_mismatch",
+			"settlement decision does not exactly address the active generation, effect, and durable intent")
+	}
+	return runner.applyVerifiedSettlement(ctx, envelope, decision, *effect, canceled)
+}
+
+func (runner *activationRunner) retainVerifiedSettlement(
+	ctx context.Context, envelope element.Envelope,
+	decision policyelements.IntentSettlementDecision, canceled bool,
+) error {
+	var retained **pendingActivationSettlement
+	if canceled {
+		effect := runner.canceledEffects[decision.InvocationID]
+		if effect == nil {
+			return runner.refuseSettlement(ctx, "stale_settlement_decision",
+				"canceled settlement effect disappeared before retention")
+		}
+		retained = &effect.settlement
+	} else {
+		retained = &runner.pendingSettlement
+	}
+	if *retained != nil {
+		if reflect.DeepEqual((*retained).decision, decision) {
+			return runner.ignoreSettlement(ctx, decision, "duplicate_pending_settlement",
+				"the exact settlement decision is already waiting for its model-result copy")
+		}
+		return runner.refuseSettlement(ctx, "conflicting_settlement_decision",
+			"a different verified settlement decision is already waiting for this generation")
+	}
+	copy := cloneActivationSettlementDecision(decision)
+	retainedEnvelope := envelope.Clone()
+	retainedEnvelope.Payload = copy
+	*retained = &pendingActivationSettlement{envelope: retainedEnvelope, decision: copy}
+	return runner.ignoreSettlement(ctx, decision, "settlement_waiting_for_model_result",
+		"the verified terminal settlement is retained until the exact model-result copy arrives")
+}
+
+func (runner *activationRunner) applyVerifiedSettlement(
+	ctx context.Context, _ element.Envelope,
+	decision policyelements.IntentSettlementDecision,
+	generation activeGeneration, canceled bool,
+) error {
+	if generation.id != decision.InvocationID || generation.callID != decision.Probe.Result.CallID ||
+		generation.tool != decision.Probe.Result.Tool || generation.intent != decision.Probe.DurableIntent ||
+		generation.contextVersion >= decision.Probe.Result.StoreVersion {
+		return runner.refuseSettlement(ctx, "settlement_effect_mismatch",
+			"settlement decision no longer addresses the retained exact effect")
+	}
+	ackEnvelope, err := runner.makeSettlementAcknowledgement(decision)
+	if err != nil {
+		return runner.refuseSettlement(ctx, "invalid_settlement_acknowledgement", err.Error())
+	}
+
+	if _, exists := runner.pendingSettlementAcks[decision.TerminalID]; !exists &&
+		len(runner.pendingSettlementAcks) >= runner.config.TerminalMemory {
+		return runner.refuseSettlement(ctx, "settlement_ack_capacity",
+			"activation cannot retain another undelivered settlement acknowledgement")
+	}
+
+	// The actor is the linearization point. All validation and acknowledgement
+	// construction complete before this single mutation block. The exact ack is
+	// retained before its lossless send, so an ambiguous or failed delivery can
+	// be retried without reviving the already-cleared effect.
+	if canceled {
+		retained := runner.canceledEffects[decision.InvocationID]
+		if retained == nil || retained.generation != generation {
+			return runner.refuseSettlement(ctx, "stale_settlement_decision",
+				"canceled settlement effect changed before acknowledgement")
+		}
+		runner.forgetCanceledEffect(decision.InvocationID)
+	} else {
+		if runner.active == nil || *runner.active != generation {
+			return runner.refuseSettlement(ctx, "stale_settlement_decision",
+				"active settlement effect changed before acknowledgement")
+		}
+		runner.active = nil
+		runner.deferred = nil
+		runner.pendingTerminal = nil
+		runner.pendingDisposition = nil
+		runner.pendingSettlement = nil
+		if runner.intent != nil && runner.intent.identity == decision.Probe.DurableIntent {
+			runner.intent = nil
+		}
+	}
+	runner.state.Ignored++
+	runner.pendingSettlementAcks[decision.TerminalID] = pendingSettlementAcknowledgement{
+		envelope: ackEnvelope.Clone(), decision: cloneActivationSettlementDecision(decision),
+		generation: generation,
+	}
+	return runner.completePendingSettlementAcknowledgement(ctx, decision.TerminalID)
+}
+
+func (runner *activationRunner) completePendingSettlementAcknowledgement(
+	ctx context.Context, terminalID string,
+) error {
+	pending, found := runner.pendingSettlementAcks[terminalID]
+	if !found {
+		return errors.New("Realtime-CU activation has no pending settlement acknowledgement")
+	}
+	var deliveryErr error
+	for attempt := 0; attempt < maximumSettlementAckTries; attempt++ {
+		deliveryErr = runner.publishSettlementAcknowledgement(ctx, pending.envelope)
+		if deliveryErr == nil {
+			break
+		}
+		if context.Cause(ctx) != nil {
+			return deliveryErr
+		}
+	}
+	if deliveryErr != nil {
+		return fmt.Errorf(
+			"Realtime-CU settlement acknowledgement failed after %d bounded attempts: %w",
+			maximumSettlementAckTries, deliveryErr,
+		)
+	}
+	delete(runner.pendingSettlementAcks, terminalID)
+	runner.rememberAcknowledgedSettlement(terminalID)
+	decision := pending.decision
+	code := "intent_" + string(decision.Kind)
+	if err := runner.publishOutcome(ctx, pending.envelope, stateelements.ObservationCommitOutcome{},
+		policyelements.GenerationOutcome{
+			Kind: policyelements.GenerationIgnored, GenerationID: decision.InvocationID,
+			Role: runner.config.Role, ContextVersion: pending.generation.contextVersion,
+			TriggerItemID: decision.Probe.TriggerObservation.TriggerItemID,
+			Code:          code, Message: "terminal settlement cleared the exact effect without reactivating cognition",
+		}); err != nil {
+		return err
+	}
+	return runner.publishState(ctx, pending.envelope)
+}
+
+func (runner *activationRunner) makeSettlementAcknowledgement(
+	decision policyelements.IntentSettlementDecision,
+) (element.Envelope, error) {
+	acknowledgedNS := runner.clock.NowNS()
+	if acknowledgedNS == 0 || acknowledgedNS < decision.FinishedNS {
+		return element.Envelope{}, errors.New(
+			"activation clock is earlier than the terminal settlement decision")
+	}
+	sequence, err := runner.sequences.Next(runner.instance + ".settlement-ack")
+	if err != nil {
+		return element.Envelope{}, err
+	}
+	acknowledgement := policyelements.IntentSettlementAcknowledgement{
+		Decision:     cloneActivationSettlementDecision(decision),
+		GenerationID: decision.InvocationID, AcknowledgedNS: acknowledgedNS,
+	}
+	itemID, err := activationSettlementAcknowledgementID(
+		runner.instance, sequence, acknowledgement,
+	)
+	if err != nil {
+		return element.Envelope{}, err
+	}
+	return element.Envelope{
+		Type: policyelements.IntentSettlementAcknowledgementType(), ItemID: itemID,
+		SessionID: runner.sessionID, RunID: decision.InvocationID, Sequence: sequence,
+		CancellationScope: decision.InvocationID,
+		CausalParents: []string{
+			decision.TerminalID, decision.Probe.ProbeID,
+			decision.Probe.Result.TrajectoryItemID,
+		},
+		Payload: acknowledgement,
+	}, nil
+}
+
+func (runner *activationRunner) publishSettlementAcknowledgement(
+	ctx context.Context, envelope element.Envelope,
+) error {
+	delivery, err := runner.ports.settlementAcknowledgement.Broadcast(ctx, envelope)
+	if err != nil {
+		return err
+	}
+	if delivery.Delivered != 1 || delivery.Dropped != 0 {
+		return fmt.Errorf("Realtime-CU settlement acknowledgement delivered %d and dropped %d lanes",
+			delivery.Delivered, delivery.Dropped)
+	}
+	return nil
+}
+
+func (runner *activationRunner) refuseSettlement(
+	ctx context.Context, code, message string,
+) error {
+	runner.state.Refused++
+	cause := element.Envelope{
+		ItemID: "realtime-cu-settlement-invalid-input", SessionID: runner.sessionID,
+	}
+	if err := runner.publishOutcome(ctx, cause, stateelements.ObservationCommitOutcome{},
+		policyelements.GenerationOutcome{
+			Kind: policyelements.GenerationRefused, Role: runner.config.Role,
+			Code: code, Message: boundedReason(message),
+		}); err != nil {
+		return err
+	}
+	return runner.publishState(ctx, cause)
+}
+
+func (runner *activationRunner) ignoreSettlement(
+	ctx context.Context, decision policyelements.IntentSettlementDecision, code, message string,
+) error {
+	runner.state.Ignored++
+	cause := element.Envelope{
+		ItemID: decision.TerminalID, SessionID: runner.sessionID,
+		RunID: decision.InvocationID, CancellationScope: decision.InvocationID,
+		CausalParents: []string{decision.Probe.ProbeID},
+	}
+	if err := runner.publishOutcome(ctx, cause, stateelements.ObservationCommitOutcome{},
+		policyelements.GenerationOutcome{
+			Kind: policyelements.GenerationIgnored, GenerationID: decision.InvocationID,
+			Role: runner.config.Role, Code: code, Message: message,
+		}); err != nil {
+		return err
+	}
+	return runner.publishState(ctx, cause)
 }
 
 func (runner *activationRunner) acceptEffectTerminal(
 	ctx context.Context, envelope element.Envelope,
 ) error {
 	terminal, ok := preEffectTerminalPayload(envelope.Payload)
-	if !ok || !canonical(envelope.SessionID) || !canonical(envelope.RunID) ||
+	if !ok || envelope.SessionID != runner.sessionID || !canonical(envelope.RunID) ||
 		!canonical(terminal.CallID) || !supportedPreEffectTerminalKind(terminal.Kind) {
 		return runner.refuseEffectTerminal(ctx, envelope, terminal,
 			"invalid_effect_terminal", "pre-effect terminal requires canonical session, run, call, and kind")
@@ -1318,16 +1801,23 @@ func (runner *activationRunner) acceptCancel(
 	ctx context.Context, envelope element.Envelope,
 ) error {
 	cancel, ok := generationCancelPayload(envelope.Payload)
-	if !ok || !canonical(envelope.SessionID) ||
+	if !ok || envelope.SessionID != runner.sessionID ||
 		(cancel.GenerationID == "" && cancel.StreamID == "") {
 		return runner.refuse(ctx, envelope, stateelements.ObservationCommitOutcome{},
 			"invalid_cancel", "intent cancellation requires canonical session and address")
+	}
+	if runner.config.ExpectedSettlement != nil && runner.active != nil &&
+		runner.pendingDisposition == nil {
+		if err := runner.rememberCanceledEffect(*runner.active, runner.pendingSettlement); err != nil {
+			return err
+		}
 	}
 	runner.intent = nil
 	runner.deferred = nil
 	runner.pendingTerminal = nil
 	if runner.pendingDisposition == nil {
 		runner.active = nil
+		runner.pendingSettlement = nil
 	}
 	if envelope.Sequence > runner.revokedSequence {
 		runner.revokedSequence = envelope.Sequence
@@ -1419,6 +1909,72 @@ func (runner *activationRunner) rememberTerminal(generationID string) {
 	}
 }
 
+func (runner *activationRunner) rememberAcknowledgedSettlement(terminalID string) {
+	if _, found := runner.acknowledgedSettlement[terminalID]; found {
+		return
+	}
+	runner.acknowledgedSettlement[terminalID] = struct{}{}
+	runner.acknowledgedSettlementOrder = append(runner.acknowledgedSettlementOrder, terminalID)
+	for len(runner.acknowledgedSettlementOrder) > runner.config.TerminalMemory {
+		oldest := runner.acknowledgedSettlementOrder[0]
+		runner.acknowledgedSettlementOrder = runner.acknowledgedSettlementOrder[1:]
+		delete(runner.acknowledgedSettlement, oldest)
+	}
+}
+
+func (runner *activationRunner) rememberCanceledEffect(
+	generation activeGeneration, settlement *pendingActivationSettlement,
+) error {
+	if existing := runner.canceledEffects[generation.id]; existing != nil {
+		if existing.generation != generation {
+			return errors.New("Realtime-CU activation cancellation changed a retained effect identity")
+		}
+		if existing.settlement == nil && settlement != nil {
+			existing.settlement = clonePendingActivationSettlement(settlement)
+		}
+		return nil
+	}
+	if len(runner.canceledEffects) >= runner.config.CancelMemory {
+		return errors.New(
+			"Realtime-CU activation cancellation memory is full of unacknowledged effects")
+	}
+	copy := generation
+	runner.canceledEffects[generation.id] = &canceledActivationEffect{
+		generation: copy, settlement: clonePendingActivationSettlement(settlement),
+	}
+	runner.canceledEffectOrder = append(runner.canceledEffectOrder, generation.id)
+	return nil
+}
+
+func (runner *activationRunner) forgetCanceledEffect(generationID string) {
+	if _, found := runner.canceledEffects[generationID]; !found {
+		return
+	}
+	delete(runner.canceledEffects, generationID)
+	for index, retained := range runner.canceledEffectOrder {
+		if retained != generationID {
+			continue
+		}
+		runner.canceledEffectOrder = append(
+			runner.canceledEffectOrder[:index], runner.canceledEffectOrder[index+1:]...,
+		)
+		return
+	}
+}
+
+func clonePendingActivationSettlement(
+	source *pendingActivationSettlement,
+) *pendingActivationSettlement {
+	if source == nil {
+		return nil
+	}
+	result := *source
+	result.envelope = source.envelope.Clone()
+	result.decision = cloneActivationSettlementDecision(source.decision)
+	result.envelope.Payload = result.decision
+	return &result
+}
+
 func receiveActivationInputs(
 	ctx context.Context, kind string, input element.InputPort,
 	output chan<- activationInput, failures chan<- error, wait *sync.WaitGroup,
@@ -1501,6 +2057,119 @@ func preEffectTerminalPayload(payload any) (actionelements.PreEffectTerminal, bo
 		}
 	}
 	return actionelements.PreEffectTerminal{}, false
+}
+
+func intentSettlementDecisionPayload(
+	payload any,
+) (policyelements.IntentSettlementDecision, bool) {
+	switch value := payload.(type) {
+	case policyelements.IntentSettlementDecision:
+		return value, true
+	case *policyelements.IntentSettlementDecision:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return policyelements.IntentSettlementDecision{}, false
+}
+
+func validateActivationSettlementEnvelope(
+	envelope element.Envelope, decision policyelements.IntentSettlementDecision,
+) error {
+	for _, identity := range []struct {
+		value    string
+		required bool
+	}{
+		{envelope.ItemID, true}, {envelope.SessionID, true},
+		{envelope.SourceID, false}, {envelope.OpportunityID, false},
+		{envelope.RunID, true}, {envelope.TraceID, false},
+		{envelope.CancellationScope, true},
+		{decision.TerminalID, true}, {decision.SessionID, true},
+		{decision.InvocationID, true}, {decision.Probe.ProbeID, true},
+		{decision.Probe.SessionID, true},
+	} {
+		if !boundedActivationIdentifier(identity.value, identity.required) {
+			return errors.New("settlement envelope contains an invalid or oversized identity")
+		}
+	}
+	if envelope.ItemID != decision.TerminalID || envelope.SessionID != decision.SessionID ||
+		envelope.RunID != decision.InvocationID ||
+		envelope.CancellationScope != decision.InvocationID {
+		return errors.New("settlement envelope does not exactly address its terminal decision")
+	}
+	if len(envelope.CausalParents) == 0 || len(envelope.CausalParents) > 64 {
+		return errors.New("settlement envelope has invalid causal lineage")
+	}
+	seen := make(map[string]struct{}, len(envelope.CausalParents))
+	for _, parent := range envelope.CausalParents {
+		if !boundedActivationIdentifier(parent, true) || parent == envelope.ItemID {
+			return errors.New("settlement envelope has invalid causal lineage")
+		}
+		if _, duplicate := seen[parent]; duplicate {
+			return errors.New("settlement envelope has duplicate causal lineage")
+		}
+		seen[parent] = struct{}{}
+	}
+	if _, found := seen[decision.Probe.ProbeID]; !found {
+		return errors.New("settlement envelope does not directly name its verified probe")
+	}
+	return nil
+}
+
+func boundedActivationIdentifier(value string, required bool) bool {
+	if value == "" {
+		return !required
+	}
+	return len(value) <= 256 && utf8.ValidString(value) && canonical(value)
+}
+
+func cloneActivationSettlementDecision(
+	source policyelements.IntentSettlementDecision,
+) policyelements.IntentSettlementDecision {
+	result := source
+	result.Evidence = cloneAdmittedTemporalEvidence(source.Evidence)
+	result.Probe = cloneActivationSettlementProbe(source.Probe)
+	if source.Disposition != nil {
+		copy := *source.Disposition
+		copy.Probe = cloneActivationSettlementProbe(source.Disposition.Probe)
+		result.Disposition = &copy
+	}
+	if source.Cancellation != nil {
+		copy := *source.Cancellation
+		result.Cancellation = &copy
+	}
+	if source.Reset != nil {
+		copy := *source.Reset
+		result.Reset = &copy
+	}
+	if source.SupersedingIntent != nil {
+		copy := *source.SupersedingIntent
+		result.SupersedingIntent = &copy
+	}
+	return result
+}
+
+func cloneActivationSettlementProbe(
+	source policyelements.IntentSettlementProbe,
+) policyelements.IntentSettlementProbe {
+	result := source
+	result.Evidence = cloneAdmittedTemporalEvidence(source.Evidence)
+	return result
+}
+
+func activationSettlementAcknowledgementID(
+	instance string, sequence uint64,
+	acknowledgement policyelements.IntentSettlementAcknowledgement,
+) (string, error) {
+	payload, err := json.Marshal(acknowledgement)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("openrealtime.realtime-cu/settlement-ack/v1\x00"))
+	_, _ = fmt.Fprintf(hash, "%d:%s:%d:", len(instance), instance, sequence)
+	_, _ = hash.Write(payload)
+	return "realtime-cu-settlement-ack:sha256:" + hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func activationGenerationID(
