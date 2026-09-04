@@ -495,6 +495,19 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"cancel_memory":       integerSchema(1, 4096),
 			}, "expected_settlement",
 		),
+		"schema://openrealtime/policy/intent-disposition-retry-config/v1": standardObject(
+			"schema://openrealtime/policy/intent-disposition-retry-config/v1",
+			schemaObject{
+				"initial_delay_ms": integerSchema(1, 600_000),
+				"backoff_factor":   integerSchema(1, 16),
+				"max_delay_ms":     integerSchema(1, 600_000),
+				"max_retries":      integerSchema(1, 64),
+				"max_elapsed_ms":   integerSchema(1, 3_600_000),
+				"max_pending":      integerSchema(1, 4096),
+				"terminal_memory":  integerSchema(1, 65536),
+				"cancel_memory":    integerSchema(1, 4096),
+			},
+		),
 		"schema://openrealtime/realtime-cu/activation-config/v2": standardObject(
 			"schema://openrealtime/realtime-cu/activation-config/v2",
 			schemaObject{

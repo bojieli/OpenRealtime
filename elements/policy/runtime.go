@@ -580,6 +580,10 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 }
 
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
+	retry, err := intentDispositionRetryRegistration()
+	if err != nil {
+		return nil, err
+	}
 	return factoryprofile.Registrations(
 		factoryprofile.Entry{
 			Factory: generateOnObservationFactory{}, Artifact: inspect.ArtifactIdentity{
@@ -612,6 +616,7 @@ func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 				Revision: intentDispositionProducerRuntimeRevision,
 			},
 		},
+		retry,
 	)
 }
 
