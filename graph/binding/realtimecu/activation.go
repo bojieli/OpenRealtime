@@ -29,7 +29,7 @@ import (
 const (
 	ActivationReference       = "policy.RealtimeComputerUseActivation"
 	ActivationConfigSchema    = "schema://openrealtime/realtime-cu/activation-config/v2"
-	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v14"
+	activationRuntimeID       = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/activation/v15"
 	defaultTerminalMemory     = 512
 	defaultCancellationMemory = 256
 	maximumDispositionRetries = 8
@@ -50,7 +50,7 @@ func ActivationDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          ActivationReference,
-		Revision:      14,
+		Revision:      15,
 		Ports: []element.Port{
 			{Name: "admitted", Direction: element.Input,
 				Type: policyelements.AdmittedTemporalEvidenceType(), Cardinality: element.One,
@@ -530,7 +530,7 @@ type activationInput struct {
 
 func (runner *activationRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, activationRuntimeID,
-		"implementation:14", ActivationDescriptor()); err != nil {
+		"implementation:15", ActivationDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -2085,6 +2085,7 @@ func (runner *activationRunner) acceptExactIntentCancel(
 	runner.canceledIntentOrder = nextIntentOrder
 	runner.canceledEffects = nextEffects
 	runner.canceledEffectOrder = nextEffectOrder
+	var deferred *deferredVisualCommit
 	if matchingActive && runner.pendingDisposition == nil {
 		// A compare-and-append proposal disposition is already an irreversible
 		// internal safe point. Let that exact transaction finish, but retain the
@@ -2092,6 +2093,14 @@ func (runner *activationRunner) acceptExactIntentCancel(
 		runner.active = nil
 		runner.pendingTerminal = nil
 		runner.pendingSettlement = nil
+		if runner.deferred != nil && !admittedIntentMatches(runner.deferred.admission, intent) {
+			// The released generation can briefly sit behind a newer selected
+			// intent and its retained visual admission. Detach that exact value so
+			// cancellation and any overtaking cleanup publish first, then re-enter
+			// the complete admission path to revalidate it against current state.
+			deferred = runner.deferred
+			runner.deferred = nil
+		}
 	}
 	if matchingIntent {
 		runner.intent = nil
@@ -2124,7 +2133,13 @@ func (runner *activationRunner) acceptExactIntentCancel(
 	if err := runner.publishState(ctx, envelope); err != nil {
 		return err
 	}
-	return runner.completePendingEffectCleanup(ctx, generationID)
+	if err := runner.completePendingEffectCleanup(ctx, generationID); err != nil {
+		return err
+	}
+	if deferred != nil {
+		return runner.acceptAdmission(ctx, deferred.envelope)
+	}
+	return nil
 }
 
 func (runner *activationRunner) completePendingEffectCleanup(

@@ -652,6 +652,53 @@ func TestCancellationCoordinatorRejectsOversizedAcknowledgementWithoutProgress(t
 	}
 }
 
+func TestCancellationCoordinatorAcceptsNonTransactionalCleanupOutcomeWithoutRefusal(t *testing.T) {
+	fixture := newCancellationCoordinatorTestFixture(t, true)
+	before := fixture.runner.state
+	if err := fixture.runner.acceptSettlementOutcome(context.Background(), element.Envelope{
+		Type: policyelements.IntentSettlementOutcomeType(), ItemID: "settlement-cleanup-outcome",
+		SessionID: cancellationCoordinatorTestSession, Sequence: 2,
+		CausalParents: []string{"settlement-cleanup-control"},
+		Payload: policyelements.IntentSettlementOutcome{
+			Kind: policyelements.IntentSettlementCleanupForwarded, Operation: "evidence",
+			SessionID:                cancellationCoordinatorTestSession,
+			DurableIntentItemID:      "durable-user-intent",
+			TriggerObservationItemID: "cleanup-trigger",
+			Code:                     "canceled_failed_effect_cleanup",
+			StateRevisionBefore:      1,
+			StateRevisionAfter:       2,
+			FinishedNS:               3,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fixture.runner.state, before) ||
+		len(fixture.outcome.snapshot()) != 0 || len(fixture.state.snapshot()) != 0 {
+		t.Fatalf("non-transactional cleanup emitted a cancellation refusal: state=%+v outcomes=%+v states=%+v",
+			fixture.runner.state, fixture.outcome.snapshot(), fixture.state.snapshot())
+	}
+}
+
+func TestCancellationCoordinatorRejectsCleanupOutcomeOutsideEvidenceLane(t *testing.T) {
+	fixture := newCancellationCoordinatorTestFixture(t, true)
+	if err := fixture.runner.acceptSettlementOutcome(context.Background(), element.Envelope{
+		Type: policyelements.IntentSettlementOutcomeType(), ItemID: "settlement-cleanup-outcome",
+		SessionID: cancellationCoordinatorTestSession, Sequence: 2,
+		CausalParents: []string{"settlement-cleanup-control"},
+		Payload: policyelements.IntentSettlementOutcome{
+			Kind: policyelements.IntentSettlementCleanupForwarded, Operation: "cancel",
+			SessionID: cancellationCoordinatorTestSession, DurableIntentItemID: "durable-user-intent",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outcome := fixture.lastOutcome(t)
+	if outcome.Kind != SessionCancellationRefused || outcome.Code != "invalid_settlement_outcome" ||
+		!strings.Contains(outcome.Message, "must be evidence") {
+		t.Fatalf("cleanup outside evidence lane = %+v", outcome)
+	}
+}
+
 func TestCancellationCoordinatorPayloadValidatorsBoundAllAcknowledgementFamilies(t *testing.T) {
 	bad := strings.Repeat("x", 257)
 	checks := []struct {

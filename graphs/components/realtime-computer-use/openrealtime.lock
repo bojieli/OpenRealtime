@@ -173,16 +173,16 @@
       "reference": "policy.RealtimeComputerUseActivation",
       "identity": {
         "name": "policy.RealtimeComputerUseActivation",
-        "revision": 14,
-        "digest": "sha256:66fb30b43914e3983c8c404358f9ecf84d222df0fbab765eef043cc31f8d30b4"
+        "revision": 15,
+        "digest": "sha256:a829f38214520ef1d8999bb94f5764bd9ef6e72f38d49aede2fc2fb1e3ed77bc"
       }
     },
     {
       "reference": "policy.RealtimeComputerUseCancellationCoordinator",
       "identity": {
         "name": "policy.RealtimeComputerUseCancellationCoordinator",
-        "revision": 3,
-        "digest": "sha256:fc227d6bac1d353f099dc7555ff52ae87ad099360875f421b5a8a9f9eb9eb648"
+        "revision": 4,
+        "digest": "sha256:4c88c464aca6cbac08f1739ac7e7ac944117f242135a46499fa016aec72604c4"
       }
     },
     {

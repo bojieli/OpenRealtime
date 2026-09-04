@@ -2056,6 +2056,66 @@ func TestActivationEffectCleanupPendingDuplicateConflictAndSessionBoundary(t *te
 	})
 }
 
+func TestActivationDelayedOldIntentCancellationReplaysNewerDeferredAdmission(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		cleanupFirst bool
+	}{
+		{name: "ordinary"},
+		{name: "cleanup first", cleanupFirst: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := newActivationTestFixture(t)
+			scenario := fixture.prepareCanceledEffectScenario(t, true, false)
+			if testCase.cleanupFirst {
+				if err := fixture.runner.acceptEffectCleanup(
+					context.Background(), activationTestEffectCleanupEnvelope(t, scenario),
+				); err != nil {
+					t.Fatal(err)
+				}
+				if fixture.runner.pendingEffectCleanup == nil {
+					t.Fatal("cleanup did not overtake delayed activation cancellation")
+				}
+			}
+
+			triggerCount := len(fixture.trigger.snapshot())
+			newIntentEnvelope, newIntentCommit := fixture.appendUser(
+				t, "delayed-cancel-newer-intent", "click the newer warning",
+			)
+			newIntentAdmission := newIntentEnvelope.Payload.(policyelements.AdmittedTemporalEvidence)
+			newIntent := newIntentAdmission.TriggerObservation
+			newVisual, _ := fixture.appendVisual(
+				t, "delayed-cancel-newer-screen", "newer warning visible",
+				newIntentCommit.TrajectoryItemID,
+			)
+			newVisual = afterIntentAdmissionEnvelope(newVisual, newIntent)
+			if err := fixture.runner.acceptAdmission(context.Background(), newVisual); err != nil {
+				t.Fatal(err)
+			}
+			if fixture.runner.active == nil || fixture.runner.active.id != scenario.runID ||
+				fixture.runner.intent == nil || fixture.runner.intent.identity != newIntent ||
+				fixture.runner.deferred == nil ||
+				!admittedIntentMatches(fixture.runner.deferred.admission, newIntent) ||
+				len(fixture.trigger.snapshot()) != triggerCount {
+				t.Fatalf("newer admission was not deferred behind old effect: active=%+v intent=%+v deferred=%+v triggers=%d",
+					fixture.runner.active, fixture.runner.intent, fixture.runner.deferred,
+					len(fixture.trigger.snapshot()))
+			}
+
+			fixture.cancelGeneration(t, scenario.runID, fixture.store.Snapshot().Version)
+			if fixture.runner.deferred != nil || fixture.runner.active == nil ||
+				fixture.runner.active.id == scenario.runID || fixture.runner.active.intent != newIntent ||
+				len(fixture.trigger.snapshot()) != triggerCount+1 ||
+				fixture.runner.canceledEffects[scenario.runID] != nil ||
+				fixture.runner.pendingEffectCleanup != nil {
+				t.Fatalf("delayed cancellation stranded or lost newer admission: active=%+v deferred=%+v triggers=%d effects=%+v pending=%+v",
+					fixture.runner.active, fixture.runner.deferred, len(fixture.trigger.snapshot()),
+					fixture.runner.canceledEffects, fixture.runner.pendingEffectCleanup)
+			}
+		})
+	}
+}
+
 func TestActivationCleanupBeforeCancelSurvivesNewerIntentAndReclaimsPair(t *testing.T) {
 	fixture := newActivationTestFixture(t)
 	fixture.runner.config.CancelMemory = 1

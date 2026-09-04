@@ -194,20 +194,31 @@ func TestRealtimeComputerUseFailedEffectRemainsReactiveUntilSuccessfulSettlement
 	)
 }
 
-// This regression mounts the exact locked production graph and interposes only
-// on the cancellation coordinator's production activation_cancel output port.
-// Settlement cancellation and consequence processing remain live while that
-// one delivery is held, making the otherwise timing-dependent cross-port race
-// deterministic: settlement.cleanup must reach activation.effect_cleanup
-// before activation.cancel is released.
+// This regression mounts the exact locked production graph and wraps the
+// cancellation coordinator at its existing ports. It holds activation_cancel
+// while settlement cancellation and consequence processing remain live,
+// making the otherwise timing-dependent cross-port race deterministic:
+// settlement.cleanup must reach activation.effect_cleanup before
+// activation.cancel is released. The same wrapper observes the settlement
+// outcome at the coordinator and uses a same-lane processing barrier to prove
+// that a valid cleanup inspection is not refused there. A newer intent and
+// fresh visual admission then overtake the held cancel; releasing it must
+// activate that retained work without another frame.
 func TestRealtimeComputerUseSettlementCleanupOvertakesActivationCancellation(t *testing.T) {
 	for _, testCase := range []struct {
-		name        string
-		failed      bool
-		cleanupCode string
+		name                  string
+		failed                bool
+		cleanupCode           string
+		settlementCleanupCode string
 	}{
-		{name: "failed canonical result", failed: true, cleanupCode: "canceled_effect_failed"},
-		{name: "successful canonical result", cleanupCode: "canceled_effect_succeeded"},
+		{
+			name: "failed canonical result", failed: true,
+			cleanupCode: "canceled_effect_failed", settlementCleanupCode: "canceled_failed_effect_cleanup",
+		},
+		{
+			name:        "successful canonical result",
+			cleanupCode: "canceled_effect_succeeded", settlementCleanupCode: "canceled_successful_effect_cleanup",
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			gate := newRealtimeCUActivationCancelGate()
@@ -274,9 +285,23 @@ func TestRealtimeComputerUseSettlementCleanupOvertakesActivationCancellation(t *
 			if waiting.Attributes["outcome_kind"] != string(policyelements.GenerationIgnored) {
 				t.Fatalf("cleanup-first activation outcome = %+v", waiting)
 			}
+			cleanupOutcome := receiveRealtimeCU(
+				t, gate.settlementCleanup, "settlement cleanup outcome at cancellation coordinator",
+			)
+			assertRealtimeCUSettlementCleanupOutcome(
+				t, cleanupOutcome, testCase.settlementCleanupCode,
+			)
+			sendRealtimeCUIntentWithFreshScreen(t, fixture.runtime, fixture.sink, 300, 310, 320)
+			deferred := receiveRealtimeCUActivationOutcome(t, fixture.sink, "effect_pending")
+			if deferred.Attributes["outcome_kind"] != string(policyelements.GenerationIgnored) {
+				t.Fatalf("newer admission while old cancellation is held = %+v", deferred)
+			}
 			assertRealtimeCUCancellationSilence(t, fixture, 150*time.Millisecond)
 
 			gate.releaseCancellation()
+			assertRealtimeCUSettlementCleanupDidNotProduceCancellationRefusal(
+				t, gate, cleanupOutcome.ItemID,
+			)
 			canceled := receiveRealtimeCUActivationOutcome(t, fixture.sink, "intent_revoked")
 			if canceled.Attributes["outcome_kind"] != string(policyelements.GenerationCanceled) ||
 				canceled.Attributes["generation_id"] != call.InvocationID {
@@ -297,11 +322,10 @@ func TestRealtimeComputerUseSettlementCleanupOvertakesActivationCancellation(t *
 			}
 			cancel()
 
-			sendRealtimeCUIntentWithFreshScreen(t, fixture.runtime, fixture.sink, 300, 310, 320)
-			if invocation := receiveRealtimeCU(t, fixture.model.invocations, "fresh intent after cleanup-first cancellation"); invocation != 2 {
+			if invocation := receiveRealtimeCU(t, fixture.model.invocations, "deferred fresh intent after cleanup-first cancellation"); invocation != 2 {
 				t.Fatalf("fresh-intent invocation = %d, want 2", invocation)
 			}
-			freshCall := receiveRealtimeCU(t, fixture.sink.calls, "fresh effect after cleanup-first cancellation")
+			freshCall := receiveRealtimeCU(t, fixture.sink.calls, "deferred fresh effect after cleanup-first cancellation")
 			completeRealtimeCUEffectSuccessfully(t, fixture, freshCall, 330)
 			freshSettled := receiveRealtimeCUActivationOutcome(t, fixture.sink, "intent_succeeded")
 			if freshSettled.Attributes["generation_id"] != freshCall.InvocationID {
@@ -555,14 +579,20 @@ func newFailedEffectCancellationFixtureWithGate(
 }
 
 type realtimeCUActivationCancelGate struct {
-	held        chan element.Envelope
-	release     chan struct{}
-	releaseOnce sync.Once
+	held                chan element.Envelope
+	release             chan struct{}
+	releaseOnce         sync.Once
+	settlementCleanup   chan element.Envelope
+	coordinatorOutcomes chan element.Envelope
 }
+
+const realtimeCUSettlementCleanupBarrierItemID = "test-settlement-cleanup-processing-barrier"
 
 func newRealtimeCUActivationCancelGate() *realtimeCUActivationCancelGate {
 	return &realtimeCUActivationCancelGate{
 		held: make(chan element.Envelope, 1), release: make(chan struct{}),
+		settlementCleanup:   make(chan element.Envelope, 1),
+		coordinatorOutcomes: make(chan element.Envelope, 128),
 	}
 }
 
@@ -614,12 +644,75 @@ type realtimeCUActivationCancelGatePorts struct {
 	gate *realtimeCUActivationCancelGate
 }
 
+func (ports realtimeCUActivationCancelGatePorts) Input(name string) (element.InputPort, error) {
+	input, err := ports.Ports.Input(name)
+	if err != nil || name != "settlement_outcome" {
+		return input, err
+	}
+	return &realtimeCUSettlementCleanupBarrierInput{InputPort: input, gate: ports.gate}, nil
+}
+
 func (ports realtimeCUActivationCancelGatePorts) Output(name string) (element.OutputPort, error) {
 	output, err := ports.Ports.Output(name)
-	if err != nil || name != "activation_cancel" {
+	if err != nil {
 		return output, err
 	}
-	return realtimeCUActivationCancelGateOutput{OutputPort: output, gate: ports.gate}, nil
+	switch name {
+	case "activation_cancel":
+		return realtimeCUActivationCancelGateOutput{OutputPort: output, gate: ports.gate}, nil
+	case "outcome":
+		return realtimeCUCancellationOutcomeTap{OutputPort: output, gate: ports.gate}, nil
+	default:
+		return output, nil
+	}
+}
+
+// realtimeCUSettlementCleanupBarrierInput inserts one deliberately invalid,
+// uniquely identified outcome immediately behind the valid cleanup outcome on
+// the coordinator's single settlement-outcome lane. The coordinator consumes
+// inputs serially, so observing the sentinel's refusal proves that it finished
+// handling the cleanup first without relying on a timeout to prove absence.
+type realtimeCUSettlementCleanupBarrierInput struct {
+	element.InputPort
+	gate     *realtimeCUActivationCancelGate
+	barrier  *element.Envelope
+	injected bool
+}
+
+func (input *realtimeCUSettlementCleanupBarrierInput) Receive(
+	ctx context.Context,
+) (element.Envelope, error) {
+	if input.barrier != nil {
+		barrier := input.barrier.Clone()
+		input.barrier = nil
+		return barrier, nil
+	}
+	envelope, err := input.InputPort.Receive(ctx)
+	if err != nil {
+		return element.Envelope{}, err
+	}
+	outcome, ok := envelope.Payload.(policyelements.IntentSettlementOutcome)
+	if !ok || input.injected || outcome.Kind != policyelements.IntentSettlementCleanupForwarded ||
+		outcome.Operation != "evidence" {
+		return envelope, nil
+	}
+	input.injected = true
+	select {
+	case input.gate.settlementCleanup <- envelope.Clone():
+	case <-ctx.Done():
+		return element.Envelope{}, context.Cause(ctx)
+	}
+	barrier := envelope.Clone()
+	barrier.ItemID = realtimeCUSettlementCleanupBarrierItemID
+	barrier.Sequence++
+	barrier.CausalParents = []string{envelope.ItemID}
+	barrier.Payload = policyelements.IntentSettlementOutcome{
+		Kind:      policyelements.IntentSettlementOutcomeKind("test-processing-barrier"),
+		Operation: "evidence", SessionID: envelope.SessionID,
+		Code: "test_processing_barrier",
+	}
+	input.barrier = &barrier
+	return envelope, nil
 }
 
 type realtimeCUActivationCancelGateOutput struct {
@@ -641,6 +734,69 @@ func (output realtimeCUActivationCancelGateOutput) Broadcast(
 		return element.SendResult{}, context.Cause(ctx)
 	}
 	return output.OutputPort.Broadcast(ctx, envelope)
+}
+
+type realtimeCUCancellationOutcomeTap struct {
+	element.OutputPort
+	gate *realtimeCUActivationCancelGate
+}
+
+func (output realtimeCUCancellationOutcomeTap) Broadcast(
+	ctx context.Context, envelope element.Envelope,
+) (element.SendResult, error) {
+	result, err := output.OutputPort.Broadcast(ctx, envelope)
+	if err != nil {
+		return result, err
+	}
+	select {
+	case output.gate.coordinatorOutcomes <- envelope.Clone():
+		return result, nil
+	case <-ctx.Done():
+		return element.SendResult{}, context.Cause(ctx)
+	}
+}
+
+func assertRealtimeCUSettlementCleanupOutcome(
+	t *testing.T, envelope element.Envelope, wantCode string,
+) {
+	t.Helper()
+	outcome, ok := envelope.Payload.(policyelements.IntentSettlementOutcome)
+	if !ok || !envelope.Type.Equal(policyelements.IntentSettlementOutcomeType()) ||
+		outcome.Kind != policyelements.IntentSettlementCleanupForwarded ||
+		outcome.Operation != "evidence" || outcome.Code != wantCode ||
+		outcome.SessionID == "" || outcome.DurableIntentItemID == "" ||
+		outcome.TriggerObservationItemID == "" ||
+		outcome.StateRevisionAfter != outcome.StateRevisionBefore+1 || outcome.FinishedNS == 0 {
+		t.Fatalf("settlement cleanup outcome = envelope=%+v payload=%+v, want valid cleanup/evidence/%s",
+			envelope, outcome, wantCode)
+	}
+}
+
+func assertRealtimeCUSettlementCleanupDidNotProduceCancellationRefusal(
+	t *testing.T, gate *realtimeCUActivationCancelGate, cleanupItemID string,
+) {
+	t.Helper()
+	for {
+		envelope := receiveRealtimeCU(
+			t, gate.coordinatorOutcomes, "cancellation coordinator cleanup processing barrier",
+		)
+		outcome, ok := envelope.Payload.(realtimecu.SessionCancellationOutcome)
+		if !ok {
+			t.Fatalf("cancellation coordinator outcome payload = %T", envelope.Payload)
+		}
+		if outcome.RequestItemID == cleanupItemID {
+			t.Fatalf("valid settlement cleanup emitted a cancellation outcome: %+v", outcome)
+		}
+		if outcome.RequestItemID != realtimeCUSettlementCleanupBarrierItemID {
+			continue
+		}
+		if outcome.Kind != realtimecu.SessionCancellationRefused ||
+			outcome.Operation != "settlement_outcome" ||
+			outcome.Code != "invalid_settlement_outcome" {
+			t.Fatalf("settlement cleanup processing barrier = %+v", outcome)
+		}
+		return
+	}
 }
 
 func assertRealtimeCUCanonicalCancellationResult(

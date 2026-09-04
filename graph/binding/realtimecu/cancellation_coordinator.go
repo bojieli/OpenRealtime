@@ -28,7 +28,7 @@ import (
 const (
 	CancellationCoordinatorReference    = "policy.RealtimeComputerUseCancellationCoordinator"
 	CancellationCoordinatorConfigSchema = "schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1"
-	cancellationCoordinatorRuntimeID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v3"
+	cancellationCoordinatorRuntimeID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v4"
 
 	defaultCancellationTransactions = 64
 	defaultCancellationTombstones   = 256
@@ -68,7 +68,7 @@ func CancellationCoordinatorDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          CancellationCoordinatorReference,
-		Revision:      3,
+		Revision:      4,
 		Ports: []element.Port{
 			{Name: "request", Direction: element.Input, Type: sessionCancellationType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -488,7 +488,7 @@ type cancellationCoordinatorRunner struct {
 
 func (runner *cancellationCoordinatorRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, cancellationCoordinatorRuntimeID,
-		"implementation:3", CancellationCoordinatorDescriptor()); err != nil {
+		"implementation:4", CancellationCoordinatorDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -2184,6 +2184,7 @@ func validateSessionCancellationRequest(
 func validateIntentSettlementOutcome(outcome policyelements.IntentSettlementOutcome) error {
 	switch outcome.Kind {
 	case policyelements.IntentSettlementAdmitted, policyelements.IntentSettlementHeld,
+		policyelements.IntentSettlementCleanupForwarded,
 		policyelements.IntentSettlementSuppressed, policyelements.IntentSettlementRefused,
 		policyelements.IntentSettlementReset, policyelements.IntentSettlementCanceled,
 		policyelements.IntentSettlementIgnored:
@@ -2194,6 +2195,9 @@ func validateIntentSettlementOutcome(outcome policyelements.IntentSettlementOutc
 	case "evidence", "disposition", "ack", "reset", "cancel":
 	default:
 		return fmt.Errorf("settlement outcome operation %q is not closed", outcome.Operation)
+	}
+	if outcome.Kind == policyelements.IntentSettlementCleanupForwarded && outcome.Operation != "evidence" {
+		return fmt.Errorf("settlement cleanup outcome operation %q must be evidence", outcome.Operation)
 	}
 	if outcome.Disposition != "" {
 		switch outcome.Disposition {
