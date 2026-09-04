@@ -221,3 +221,68 @@ func TestTheRetainedTailIsBoundedAndKeepsTheLiveUtterance(t *testing.T) {
 		t.Fatal("eviction dropped the utterance being spoken")
 	}
 }
+
+// A synthesiser is paced to realtime by the planner consuming it, so the audio
+// that exists tracks the audio that has played almost exactly. Laying the text
+// out over the audio that exists therefore reports every utterance as nearly
+// finished at every moment of its life - and an agent that believes it has
+// finished carries on past words nobody heard, which is the failure this
+// package removes.
+func TestAnUtteranceStillBeingSynthesisedIsNeverReportedAsFinished(t *testing.T) {
+	const text = "one two three four five six seven eight nine ten"
+	tracker := NewTracker(TrackerConfig{})
+	tracker.Begin("speech-1", text)
+	for played := 100; played <= 1500; played += 100 {
+		tracker.Audio("speech-1", silence(100), testRate)
+		tracker.Played("speech-1", uint64(played))
+		mark, _ := tracker.Current()
+		if mark.Complete() {
+			t.Fatalf("at %dms of an utterance still being produced, it claimed to have said everything", played)
+		}
+		if !strings.HasPrefix(text, mark.Spoken) {
+			t.Fatalf("at %dms the spoken part was %q", played, mark.Spoken)
+		}
+	}
+	// And the moment synthesis ends, the guess is replaced by the truth: an
+	// utterance that ran to its end must read as finished, or the agent
+	// resumes mid-sentence after saying the whole thing.
+	tracker.Synthesised("speech-1")
+	final := tracker.End(context.Background(), "speech-1", 1500)
+	if !final.Complete() {
+		t.Fatalf("the utterance ended and %q was still reported unsaid", final.Pending)
+	}
+}
+
+// The same invariant on the measured path. A recogniser listening partway
+// through an utterance can only report the words that exist, and the ones it
+// did not reach must not be squeezed into audio that has already played.
+func TestWordsTheRecogniserCouldNotReachAreNotReportedAsSpoken(t *testing.T) {
+	// It heard the first four words of a ten-word sentence, because those are
+	// the only four that have been synthesised.
+	aligner := &scriptedAligner{words: heardAt(300, "one", "two", "three", "four")}
+	tracker := NewTracker(TrackerConfig{Aligner: aligner, Interval: 10 * time.Millisecond})
+	const text = "one two three four five six seven eight nine ten"
+	tracker.Begin("speech-1", text)
+	tracker.Audio("speech-1", silence(1200), testRate)
+	tracker.Played("speech-1", 1200)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if timeline, _ := tracker.Timeline("speech-1"); timeline.Measured {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no listen ever landed")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mark, _ := tracker.Current()
+	if !mark.Measured {
+		t.Fatalf("the boundary is not measured: %+v", mark)
+	}
+	if mark.Spoken != "one two three four" {
+		t.Fatalf("heard %q, want the four words that were synthesised", mark.Spoken)
+	}
+	if mark.Pending != "five six seven eight nine ten" {
+		t.Fatalf("what is left is %q", mark.Pending)
+	}
+}

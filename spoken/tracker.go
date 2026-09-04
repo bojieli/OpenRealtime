@@ -73,9 +73,15 @@ type utteranceState struct {
 	audioMS  uint64
 	playedMS uint64
 	// synthesised says the provider finished producing audio, which is what
-	// turns the prior in the estimated layout from a floor into a fact.
+	// turns the expected duration in the layout into the real one.
 	synthesised bool
 	timeline    Timeline
+	// heard is the last thing a recogniser reported about this audio. It is
+	// kept because the layout has to be rebuilt whenever the utterance's
+	// believed duration changes, and rebuilding it from the recogniser's words
+	// is exact where rebuilding it from the previous layout would be a rescale
+	// of a rescale.
+	heard []Word
 	// coveredMS is how much audio the current measured layout listened to.
 	coveredMS uint64
 	// aligning is closed when the listen in flight finishes, so that the end
@@ -126,15 +132,10 @@ func (tracker *Tracker) Audio(id string, chunk []byte, sampleRateHz uint32) {
 	state.rate = sampleRateHz
 	state.pcm = append(state.pcm, chunk...)
 	state.audioMS = durationMS(len(state.pcm), sampleRateHz)
-	if !state.timeline.Measured {
-		// The prior is a floor, so a longer utterance overrides it as soon as
-		// the audio proves it is longer. Without this the layout stays frozen
-		// at the prior's duration and every long utterance reports itself as
-		// finished halfway through.
-		if state.audioMS > state.timeline.AudioMS {
-			state.timeline = Estimate(state.text, state.audioMS)
-		}
-	}
+	// The expected duration moves with the audio, so the layout is rebuilt.
+	// Without this it stays frozen at the prior and every utterance the prior
+	// underestimated reports itself as finished partway through.
+	state.relayout()
 	tracker.maybeListen(id, state)
 	tracker.mu.Unlock()
 }
@@ -154,7 +155,7 @@ func (tracker *Tracker) Synthesised(id string) {
 		return
 	}
 	state.synthesised = true
-	state.timeline = state.timeline.Complete(state.audioMS)
+	state.relayout()
 	tracker.maybeListen(id, state)
 	tracker.mu.Unlock()
 }
@@ -339,16 +340,44 @@ func (tracker *Tracker) listen(id, text string, audio Audio, coveredMS uint64, d
 	if !exists || state.ended {
 		return
 	}
-	timeline := Reconcile(text, heard, coveredMS)
-	if !timeline.Measured || coveredMS < state.coveredMS {
+	if coveredMS < state.coveredMS {
 		// A later listen already covered more of this utterance. Replacing it
 		// with an earlier, shorter one would move every boundary backwards.
 		return
 	}
-	state.timeline, state.coveredMS = timeline, coveredMS
+	state.heard, state.coveredMS = heard, coveredMS
+	state.relayout()
+	if !state.timeline.Measured {
+		// Nothing in the transcript could be matched to the text, so the
+		// proportional layout stands and this listen taught us nothing.
+		state.heard = nil
+	}
 	// More audio arrived while this listen was running, or the utterance
 	// finished; either way there is a longer one to do.
 	tracker.maybeListen(id, state)
+}
+
+// relayout rebuilds this utterance's layout for its current believed duration.
+//
+// Every input to a layout can change while an utterance is in flight - more
+// audio arrives, synthesis ends, a recogniser answers - and each of them moves
+// where the words sit. Rebuilding from the recogniser's own words is exact;
+// rescaling the previous layout would be a rescale of a rescale.
+func (state *utteranceState) relayout() {
+	if len(state.heard) > 0 {
+		if state.synthesised {
+			state.timeline = Reconcile(state.text, state.heard, state.audioMS).
+				Complete(state.audioMS)
+			return
+		}
+		state.timeline = Reconcile(state.text, state.heard, ExpectedSpan(state.text, state.audioMS))
+		return
+	}
+	if state.synthesised {
+		state.timeline = Estimate(state.text, state.audioMS).Complete(state.audioMS)
+		return
+	}
+	state.timeline = Estimate(state.text, state.audioMS)
 }
 
 // evict keeps the retained tail bounded. It is called with the lock held.

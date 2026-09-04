@@ -38,16 +38,31 @@ const PriorMSPerWeight = 33
 // Complete is what replaces all of this with the truth once there is one.
 func Estimate(text string, audioMS uint64) Timeline {
 	words := Words(text)
-	prior := PriorDuration(words)
-	span := prior
-	if len(words) > 0 {
-		if headroom := audioMS + prior/uint64(len(words)); headroom > span {
-			span = headroom
-		}
-	}
-	timeline := layout(text, words, span)
+	timeline := layout(text, words, ExpectedSpan(text, audioMS))
 	timeline.AudioMS = audioMS
 	return timeline
+}
+
+// ExpectedSpan is how long an utterance whose synthesis is still running is
+// believed to run in total.
+//
+// It is the prior, or the audio that already exists plus one prior word,
+// whichever is longer. The second term carries the invariant that matters:
+// audio nobody has produced cannot have been played, so while more is coming
+// the last word of the utterance must sit past everything that exists.
+func ExpectedSpan(text string, audioMS uint64) uint64 {
+	words := Words(text)
+	prior := PriorDuration(words)
+	if len(words) == 0 {
+		if audioMS > prior {
+			return audioMS
+		}
+		return prior
+	}
+	if headroom := audioMS + prior/uint64(len(words)); headroom > prior {
+		return headroom
+	}
+	return prior
 }
 
 // Complete rebuilds a layout once the utterance's real duration is known.

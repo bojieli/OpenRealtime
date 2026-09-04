@@ -47,9 +47,9 @@ type Word struct {
 //
 // Words carries the utterance's own words in order, with the punctuation and
 // casing the synthesiser was given, because what a Timeline is for is
-// reconstructing sayable text on either side of a cut. AudioMS is how much
-// audio the whole utterance turned out to be; a Timeline built while synthesis
-// is still running carries what is known so far.
+// reconstructing sayable text on either side of a cut. AudioMS is the duration
+// the layout covers: the utterance's real length once synthesis has ended, and
+// before that the length it is expected to reach.
 type Timeline struct {
 	Text    string `json:"text"`
 	Words   []Word `json:"words,omitempty"`
