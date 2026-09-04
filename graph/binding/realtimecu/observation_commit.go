@@ -406,8 +406,9 @@ func (runner *observationCommitRunner) startObservation(
 			Source:     queued.observation.Observer,
 			Channel:    firstCanonical(queued.observation.Source, queued.envelope.SourceID, "observation"),
 			OccurredNS: occurredNS,
-			CorrelationID: firstCanonical(queued.envelope.OpportunityID,
-				queued.envelope.SourceID, queued.streamID),
+			// The recognizer stream is stable while text, language, and speaker
+			// attribution remain revisable evidence.
+			CorrelationID:      queued.streamID,
 			SupersedesRevision: superseded.canonicalRevision,
 		},
 	}

@@ -342,8 +342,12 @@ func (runner *observationCommitRunner) startAppend(
 		Event: &trajectory.EventMetadata{
 			EventID: trigger.ItemID, Type: observationEventType(observation),
 			Source: observation.Observer, Channel: observationChannel(observation, trigger),
-			OccurredNS:         observation.OccurredNS,
-			CorrelationID:      firstNonempty(trigger.OpportunityID, trigger.SourceID, streamID),
+			OccurredNS: observation.OccurredNS,
+			// CorrelationID is the durable identity of this revision stream,
+			// not the frame/flush operation that happened to expose one view of
+			// it. Text and speaker attribution may both change between ASR
+			// revisions; neither change forks the recognizer's ordered lane.
+			CorrelationID:      streamID,
 			SupersedesRevision: superseded.canonicalRevision,
 		},
 	}

@@ -223,11 +223,14 @@ func TestFinalObservationGateCommitsEveryRevisionAndOnlyFlushAttestedFinal(t *te
 		t.Fatalf("final-gate store seed = %+v", seed)
 	}
 
+	// Speaker attribution is itself provisional. The first live hypothesis can
+	// look like the session user and the corrected revision can be attributed to
+	// somebody else without becoming a different ASR revision stream.
 	partial := gateObservationEnvelope("session-a", "stream-a", "observe-a", "partial-a",
 		coreperception.Observation{
-			Text: "weather", Observer: "audio", Source: "microphone",
+			Text: "A copy by", Observer: "audio", Source: "microphone",
 			Authority: trajectory.AuthorityUser, Revision: 1,
-			StableText: "weather", Provisional: true,
+			StableText: "A copy by", Provisional: true,
 		})
 	sendGate(t, observations, partial)
 	partialGate := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
@@ -238,16 +241,16 @@ func TestFinalObservationGateCommitsEveryRevisionAndOnlyFlushAttestedFinal(t *te
 	partialCommit := receive(t, commitOutcomes).Payload.(stateelements.ObservationCommitOutcome)
 	if partialCommit.Kind != stateelements.ObservationCommitted || partialCommit.ObservationRevision != 1 ||
 		partialSnapshot.Version != 1 || len(partialSnapshot.Items) != 1 ||
-		partialSnapshot.Items[0].Content != "weather" || partialSnapshot.Items[0].Event == nil ||
+		partialSnapshot.Items[0].Content != "A copy by" || partialSnapshot.Items[0].Event == nil ||
 		partialSnapshot.Items[0].Event.Type != "audio.revision" {
 		t.Fatalf("provisional commit = %+v / %+v", partialCommit, partialSnapshot)
 	}
 
 	final := gateObservationEnvelope("session-a", "stream-a", "flush-a", "final-a",
 		coreperception.Observation{
-			Text: "weather in Paris", Observer: "audio", Source: "microphone",
+			Text: "A capybara wandered over", Observer: "audio", Source: "someone else in the room",
 			Authority: trajectory.AuthorityUser, Revision: 2, Supersedes: 1,
-			StableText: "weather in Paris", Final: true,
+			StableText: "A capybara wandered over", Final: true,
 		})
 	sendGate(t, observations, final)
 	pending := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
@@ -272,7 +275,8 @@ func TestFinalObservationGateCommitsEveryRevisionAndOnlyFlushAttestedFinal(t *te
 			emitted, committed, committedSnapshot)
 	}
 	item := committedSnapshot.Items[1]
-	if item.Content != "weather in Paris" || item.Event == nil ||
+	if item.Content != "A capybara wandered over" || item.Event == nil ||
+		item.Event.CorrelationID != "stream-a" ||
 		item.Event.SupersedesRevision != partialCommit.SourceRevision || item.SourceRevision != committed.SourceRevision {
 		t.Fatalf("flush-attested trajectory item = %+v", item)
 	}

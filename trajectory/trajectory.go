@@ -1223,6 +1223,14 @@ func sameObservationStream(left, right Item) bool {
 	if left.Event == nil || right.Event == nil {
 		return true
 	}
+	// Graph-native observation commits place the explicit recognizer/source
+	// stream identity here. Prefer it whenever both sides carry one: Channel is
+	// model-visible attribution and may legitimately change when a later ASR
+	// revision corrects who was speaking. Treating that correction as a new
+	// stream rejects the correction itself, then every dependent final.
+	if left.Event.CorrelationID != "" && right.Event.CorrelationID != "" {
+		return left.Event.CorrelationID == right.Event.CorrelationID
+	}
 	if left.Event.Channel != right.Event.Channel {
 		return false
 	}
