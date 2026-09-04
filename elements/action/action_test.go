@@ -1382,13 +1382,18 @@ func TestCancellationDuringCanonicalAppendClosesPrefixWithoutLedgerPromotion(t *
 	if len(promotion.Items) != 1 || promotion.Items[0].Kind != trajectory.KindToolCall {
 		t.Fatalf("promotion append = %+v", promotion)
 	}
-	send(t, mustIngressAction(t, mounted, "cancel"), element.Envelope{
+	cancelEnvelope := element.Envelope{
 		Type: InterruptType(), ItemID: "cancel-during-append", SessionID: "ledger-session", RunID: "model-run",
 		Payload: Interrupt{CallID: "attested-call", Reason: "user withdrew action"},
-	})
-	pending := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	}
+	send(t, mustIngressAction(t, mounted, "cancel"), cancelEnvelope)
+	pendingEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+	pending := pendingEnvelope.Payload.(Outcome)
 	if pending.Kind != OutcomeIgnored || pending.Code != "cancellation_pending_commit" {
 		t.Fatalf("in-flight cancellation outcome = %+v", pending)
+	}
+	if !slices.Contains(pendingEnvelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("in-flight cancellation parents = %v, want exact cancel", pendingEnvelope.CausalParents)
 	}
 	commitAppendForTest(t, controlled, mounted, promotionRequest, promotion)
 	placeholderRequest := receive(t, mustEgressAction(t, mounted, "append"))
@@ -1399,9 +1404,13 @@ func TestCancellationDuringCanonicalAppendClosesPrefixWithoutLedgerPromotion(t *
 		t.Fatalf("cancellation placeholder append = %+v", placeholder)
 	}
 	commitAppendForTest(t, controlled, mounted, placeholderRequest, placeholder)
-	terminal := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	terminalEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+	terminal := terminalEnvelope.Payload.(Outcome)
 	if terminal.Kind != OutcomeCanceled || terminal.Code != "canceled_before_ledger" {
 		t.Fatalf("canonical cancellation terminal outcome = %+v", terminal)
+	}
+	if !slices.Contains(terminalEnvelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("canonical cancellation parents = %v, want exact cancel", terminalEnvelope.CausalParents)
 	}
 	assertNoEnvelope(t, mustEgressAction(t, mounted, "canonical"))
 	snapshot := controlled.Snapshot()
@@ -1433,11 +1442,15 @@ func TestCancellationPlaceholderRetriesAConcurrentVersionConflict(t *testing.T) 
 	})
 	promotionRequest := receive(t, mustEgressAction(t, mounted, "append"))
 	promotion := promotionRequest.Payload.(stateelements.Append)
-	send(t, mustIngressAction(t, mounted, "cancel"), element.Envelope{
+	cancelEnvelope := element.Envelope{
 		Type: InterruptType(), ItemID: "cancel-during-append", SessionID: "ledger-session", RunID: "model-run",
 		Payload: Interrupt{CallID: "attested-call", Reason: "user withdrew action"},
-	})
-	_ = receive(t, mustEgressAction(t, mounted, "outcome"))
+	}
+	send(t, mustIngressAction(t, mounted, "cancel"), cancelEnvelope)
+	pendingEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+	if !slices.Contains(pendingEnvelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("initial cancellation parents = %v, want exact cancel", pendingEnvelope.CausalParents)
+	}
 	commitAppendForTest(t, controlled, mounted, promotionRequest, promotion)
 	placeholderRequest := receive(t, mustEgressAction(t, mounted, "append"))
 	placeholder := placeholderRequest.Payload.(stateelements.Append)
@@ -1458,9 +1471,13 @@ func TestCancellationPlaceholderRetriesAConcurrentVersionConflict(t *testing.T) 
 			ExpectedVersion: placeholder.ExpectedVersion, CurrentVersion: controlled.Snapshot().Version,
 		},
 	})
-	retrying := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	retryingEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+	retrying := retryingEnvelope.Payload.(Outcome)
 	if retrying.Kind != OutcomeIgnored || retrying.Code != "version_conflict" {
 		t.Fatalf("placeholder retry outcome = %+v", retrying)
+	}
+	if !slices.Contains(retryingEnvelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("placeholder retry parents = %v, want exact cancel", retryingEnvelope.CausalParents)
 	}
 	send(t, mustIngressAction(t, mounted, "context"), element.Envelope{
 		Type: stateelements.SnapshotType(), ItemID: "context-after-conflict",
@@ -1474,9 +1491,13 @@ func TestCancellationPlaceholderRetriesAConcurrentVersionConflict(t *testing.T) 
 		t.Fatalf("retried placeholder append = %+v", retried)
 	}
 	commitAppendForTest(t, controlled, mounted, retriedRequest, retried)
-	terminal := receive(t, mustEgressAction(t, mounted, "outcome")).Payload.(Outcome)
+	terminalEnvelope := receive(t, mustEgressAction(t, mounted, "outcome"))
+	terminal := terminalEnvelope.Payload.(Outcome)
 	if terminal.Kind != OutcomeCanceled || terminal.Code != "canceled_before_ledger" {
 		t.Fatalf("retried cancellation terminal outcome = %+v", terminal)
+	}
+	if !slices.Contains(terminalEnvelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("retried cancellation parents = %v, want exact cancel", terminalEnvelope.CausalParents)
 	}
 	assertNoEnvelope(t, mustEgressAction(t, mounted, "canonical"))
 	if unresolved := trajectory.UnresolvedToolCalls(controlled.Snapshot()); len(unresolved) != 0 {
@@ -1872,9 +1893,9 @@ func TestDescriptorsExposeFifteenDistinctBoundariesAndOnlyDispatchIsExternal(t *
 		"action.NormalizeArguments":      1,
 		"action.ToolAdmission":           1,
 		"action.RepetitionAdmission":     1,
-		"authority.Confirmation":         2,
+		"authority.Confirmation":         3,
 		"authority.TargetFence":          2,
-		"action.AuthorizedCallCommit":    3,
+		"action.AuthorizedCallCommit":    4,
 		"action.ClientToolResultIngress": 2,
 		"action.ClientToolResultJoin":    1,
 		"action.LedgerCommit":            2,
@@ -2306,9 +2327,13 @@ func TestConfirmationCancellationIsAddressedAndClosesProvider(t *testing.T) {
 		Type: InterruptType(), ItemID: "cancel-confirmation", RunID: "confirm-cancel",
 		Payload: Interrupt{CallID: "confirm-cancel", Reason: "user withdrew approval"},
 	})
-	outcome := receive(t, fixture.egress(t, "confirmation_outcome")).Payload.(Outcome)
+	outcomeEnvelope := receive(t, fixture.egress(t, "confirmation_outcome"))
+	outcome := outcomeEnvelope.Payload.(Outcome)
 	if outcome.Kind != OutcomeCanceled || outcome.CallID != "confirm-cancel" || outcome.Code != "canceled" {
 		t.Fatalf("confirmation cancellation = %+v", outcome)
+	}
+	if !slices.Contains(outcomeEnvelope.CausalParents, "cancel-confirmation") {
+		t.Fatalf("confirmation cancellation parents = %v, want exact cancel", outcomeEnvelope.CausalParents)
 	}
 	if fixture.dispatcher.calls.Load() != 0 {
 		t.Fatalf("canceled confirmation executed %d times", fixture.dispatcher.calls.Load())

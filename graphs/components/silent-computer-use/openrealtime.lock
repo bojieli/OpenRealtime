@@ -5,8 +5,8 @@
       "reference": "action.AuthorizedCallCommit",
       "identity": {
         "name": "action.AuthorizedCallCommit",
-        "revision": 3,
-        "digest": "sha256:89cea860e7881e2bfa669cb2573a7371cdc4731d1a438955f210a8364be90f28"
+        "revision": 4,
+        "digest": "sha256:370afcb26b5c434c69fe8b7896ad4a66f45c7eac221add2d0ee00951af9c5feb"
       }
     },
     {
@@ -45,8 +45,8 @@
       "reference": "authority.Confirmation",
       "identity": {
         "name": "authority.Confirmation",
-        "revision": 2,
-        "digest": "sha256:403b62b3c3a44fb93a4d77cc4cd2c0e6ab18a3595a1cbb189def1d479e9eb184"
+        "revision": 3,
+        "digest": "sha256:152370cb35f3f2bf8273bedf3ccee0ba893fef92dbd10225cf102dadf4def775"
       }
     },
     {
@@ -77,8 +77,8 @@
       "reference": "cognition.TextModel",
       "identity": {
         "name": "cognition.TextModel",
-        "revision": 2,
-        "digest": "sha256:2d2e3e9848fd63da995721c81c5eec6a8fcb969fe69585ad4e96630f31b37f31"
+        "revision": 3,
+        "digest": "sha256:1596e62d7da68f20107787c8b627b1cc32ba6ff5f3f0c1b3f4f3a5a7a7bf52df"
       }
     },
     {

@@ -816,7 +816,7 @@ func RepetitionAdmissionDescriptor() element.Descriptor {
 
 func ConfirmationDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "authority.Confirmation", Revision: 2,
+		FormatVersion: element.DescriptorFormatVersion, Name: "authority.Confirmation", Revision: 3,
 		Ports: []element.Port{port("action", element.Input, declaredType, 32), port("cancel", element.Input, interruptType, 16),
 			port("timeout", element.Input, interruptType, 16), port("confirmed", element.Output, confirmedType, 32),
 			port("outcome", element.Output, outcomeType, 32), statePort("resolved", element.Output, resolutionType)},
@@ -863,7 +863,7 @@ func LedgerCommitDescriptor() element.Descriptor {
 // target authorization and irreversibility-ledger admission.
 func AuthorizedCallCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.AuthorizedCallCommit", Revision: 3,
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.AuthorizedCallCommit", Revision: 4,
 		Ports: []element.Port{
 			port("action", element.Input, authorizedType, 32), port("context", element.Input, snapshotType, 1),
 			port("committed", element.Input, commitType, 16), port("rejected", element.Input, rejectionType, 16),

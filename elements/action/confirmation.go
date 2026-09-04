@@ -112,10 +112,12 @@ var (
 )
 
 type confirmationJob struct {
-	envelope element.Envelope
-	action   DeclaredAction
-	started  uint64
-	cancel   context.CancelCauseFunc
+	envelope           element.Envelope
+	action             DeclaredAction
+	started            uint64
+	cancel             context.CancelCauseFunc
+	interrupt          element.Envelope
+	interruptOperation string
 }
 
 type confirmationCompletion struct {
@@ -340,6 +342,19 @@ func (runner *confirmationRunner) complete(
 	runner.terminal.add(actionIdentity(job.action.Admitted))
 	var err error
 	switch {
+	case job.interrupt.ItemID != "":
+		kind, code := OutcomeCanceled, "canceled"
+		if job.interruptOperation == "timeout" {
+			kind, code = OutcomeTimedOut, "timed_out"
+		}
+		message := "confirmation provider acknowledged " + job.interruptOperation
+		if completion.err != nil {
+			message = completion.err.Error()
+		}
+		err = publishOutcome(ctx, runner.emit, runner.outcomeOutput, job.interrupt, Outcome{
+			Kind: kind, Stage: "confirmation", Operation: job.interruptOperation, CallID: call.CallID,
+			Code: code, Message: message, StartedNS: job.started, FinishedNS: completion.finished,
+		})
 	case errors.Is(completion.err, errConfirmationTimedOut):
 		err = publishOutcome(ctx, runner.emit, runner.outcomeOutput, job.envelope, Outcome{
 			Kind: OutcomeTimedOut, Stage: "confirmation", Operation: "timeout", CallID: call.CallID,
@@ -415,6 +430,15 @@ func (runner *confirmationRunner) interrupt(
 	found := false
 	if runner.active != nil && actionIdentity(runner.active.action.Admitted) == identity {
 		found = true
+		if runner.active.interrupt.ItemID != "" {
+			return publishOutcome(ctx, runner.emit, runner.outcomeOutput, envelope, Outcome{
+				Kind: OutcomeIgnored, Stage: "confirmation", Operation: operation, CallID: interrupt.CallID,
+				Code:    "cancellation_already_pending",
+				Message: "confirmation provider cancellation is already pending quiescence",
+			})
+		}
+		runner.active.interrupt = envelope.Clone()
+		runner.active.interruptOperation = operation
 		runner.active.cancel(cause)
 	}
 	for index := 0; index < len(runner.queue); index++ {

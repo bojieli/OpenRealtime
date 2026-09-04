@@ -113,6 +113,7 @@ type retainedTrajectorySnapshot struct {
 
 type pendingAuthorizedCommit struct {
 	cause           element.Envelope
+	cancelCause     element.Envelope
 	action          AuthorizedAction
 	cancelKind      OutcomeKind
 	cancelOperation string
@@ -402,7 +403,7 @@ func (runner *authorizedCallCommitRunner) acceptCommit(
 		if pending.trajectoryItem.Kind != trajectory.KindToolPlaceholder {
 			return fmt.Errorf("canceled authorized call committed unexpected item kind %q", pending.trajectoryItem.Kind)
 		}
-		cause := pending.cause.Clone()
+		cause := pending.cancelCause.Clone()
 		cause.CausalParents = appendUnique(cause.CausalParents, requestID)
 		cause.CausalParents = appendUnique(cause.CausalParents, envelope.ItemID)
 		cause.CausalParents = appendUnique(cause.CausalParents, pending.promotedItemID)
@@ -457,7 +458,7 @@ func (runner *authorizedCallCommitRunner) acceptRejection(
 		if pending.cancelKind != "" {
 			if pending.promotedItemID != "" {
 				pending.waitVersion = rejection.CurrentVersion
-				if err := runner.publishOutcome(ctx, pending.cause, OutcomeIgnored, "retry", callID,
+				if err := runner.publishOutcome(ctx, pending.cancelCause, OutcomeIgnored, "retry", callID,
 					"version_conflict", "cancellation placeholder will retry on the newer canonical prefix"); err != nil {
 					return err
 				}
@@ -466,7 +467,7 @@ func (runner *authorizedCallCommitRunner) acceptRejection(
 			kind, operation, reason := pending.cancelKind, pending.cancelOperation, pending.cancelReason
 			runner.finish(identity, pending)
 			runner.terminal.add(identity)
-			return runner.publishOutcome(ctx, pending.cause, kind, operation, callID,
+			return runner.publishOutcome(ctx, pending.cancelCause, kind, operation, callID,
 				"canceled_before_commit", reason)
 		}
 		pending.waitVersion = rejection.CurrentVersion
@@ -480,14 +481,14 @@ func (runner *authorizedCallCommitRunner) acceptRejection(
 		if pending.promotedItemID != "" {
 			runner.finish(identity, pending)
 			runner.terminal.add(identity)
-			return runner.publishOutcome(ctx, pending.cause, OutcomeRejected, "cancel", callID,
+			return runner.publishOutcome(ctx, pending.cancelCause, OutcomeRejected, "cancel", callID,
 				"cancellation_placeholder_rejected",
 				"canonical tool call crossed, but its mandatory cancellation placeholder was rejected: "+rejection.Message)
 		}
 		kind, operation, reason := pending.cancelKind, pending.cancelOperation, pending.cancelReason
 		runner.finish(identity, pending)
 		runner.terminal.add(identity)
-		return runner.publishOutcome(ctx, pending.cause, kind, operation, callID,
+		return runner.publishOutcome(ctx, pending.cancelCause, kind, operation, callID,
 			"canceled_before_commit", reason)
 	}
 	runner.finish(identity, pending)
@@ -540,6 +541,7 @@ func (runner *authorizedCallCommitRunner) interrupt(
 			pending.cancelKind = kind
 			pending.cancelOperation = operation
 			pending.cancelReason = interrupt.Reason
+			pending.cancelCause = envelope.Clone()
 			if pending.cancelReason == "" {
 				pending.cancelReason = operation
 			}
@@ -579,12 +581,12 @@ func (runner *authorizedCallCommitRunner) startCancellationPlaceholder(
 			kind, operation, reason := pending.cancelKind, pending.cancelOperation, pending.cancelReason
 			runner.finish(identity, pending)
 			runner.terminal.add(identity)
-			return runner.publishOutcome(ctx, pending.cause, kind, operation, call.CallID,
+			return runner.publishOutcome(ctx, pending.cancelCause, kind, operation, call.CallID,
 				"canceled_before_ledger", reason)
 		}
 		runner.finish(identity, pending)
 		runner.terminal.add(identity)
-		return runner.publishOutcome(ctx, pending.cause, OutcomeRejected, "cancel", call.CallID,
+		return runner.publishOutcome(ctx, pending.cancelCause, OutcomeRejected, "cancel", call.CallID,
 			"trajectory_id_collision", fmt.Sprintf("canonical tool-placeholder item ID %q is already occupied", itemID))
 	}
 	placeholder := trajectory.ToolPlaceholder{CallID: call.CallID, Name: call.Name, Reason: pending.cancelReason}
@@ -606,10 +608,10 @@ func (runner *authorizedCallCommitRunner) startCancellationPlaceholder(
 	pending.prefixDigest = digestTrajectoryItemsForAction(snapshot.Items)
 	pending.trajectoryItem = cloneTrajectoryItemForAction(item)
 	runner.requests[requestID] = identity
-	appendEnvelope := pending.cause.Clone()
+	appendEnvelope := pending.cancelCause.Clone()
 	appendEnvelope.Type = appendType.Clone()
 	appendEnvelope.ItemID = requestID
-	appendEnvelope.CausalParents = appendUnique(appendEnvelope.CausalParents, pending.cause.ItemID)
+	appendEnvelope.CausalParents = appendUnique(appendEnvelope.CausalParents, pending.cancelCause.ItemID)
 	appendEnvelope.CausalParents = appendUnique(appendEnvelope.CausalParents, pending.promotedItemID)
 	appendEnvelope.Payload = stateelements.Append{
 		Compare: true, ExpectedVersion: pending.expected,
