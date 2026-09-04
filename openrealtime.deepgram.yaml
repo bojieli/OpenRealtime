@@ -48,6 +48,10 @@ transcript:
        a restatement, extension, or finalization of those words; stop-speaking
        only if the current words explicitly retract/correct them or start a new
        request.
+       A new ASR stream is not automatically a new request. A grammatical
+       continuation fragment is keep-speaking. Example: active correction for
+       prior words "ship it by the thirteenth" plus current heard "Which gives
+       us" -> keep-speaking; it is neither a correction nor a request.
     2. For a recorded menu, act-silently only when the current transcript has
        both the digit and the option label matching the user's stated goal.
        "Press 1 for billing" is listen when the goal is order status; "Press
