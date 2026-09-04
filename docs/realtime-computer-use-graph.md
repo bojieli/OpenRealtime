@@ -277,12 +277,12 @@ integration fixture in
 `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
 (`benchmark-browser`, one `screen` source at 1280x720, and the test
 model/policy/observer selections), graph fingerprint
-`sha256:383cdd413cb168dd0956426fc06ed919b4a5a63e82a2bceea6f196cb2005b021`
+`sha256:5232b19741c1d699c025631d20cc95e1788612df81f2d7a71f9cc071165240cb`
 and plan fingerprint
-`sha256:d10894a463aa78cb0d81ba1414fe46653c6739478e3bb49ce2cfc07592164d62`.
+`sha256:d28b6c83df2272256409dc11aeb1d69318f5c519bdcc56ecd4972bb2f412c4f2`.
 Its source, lock, and values digests are respectively
 `sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa`,
-`sha256:c03c6bfc1d08094ca18611a0137d77cdc4e7280b8ce050e97c06c5e04f3d26d0`,
+`sha256:2f907ce0d292756fab1b991326249656ef7cb5b45cd73f252575aad4d533413f`,
 and
 `sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93`.
 The lock selects activation revision 12
@@ -291,6 +291,8 @@ disposition producer revision 2
 (`sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`),
 and cancellation coordinator revision 2
 (`sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a`).
+It also selects `action.ToolResultCommit` revision 4
+(`sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`).
 The graph template passes canonical formatting and warning-free strict
 `computer-use` validation. These identities and checks describe implementation
 and configuration, not live model quality or benchmark non-regression.
@@ -399,6 +401,21 @@ compile-time incompatible: copying an observation stream ID or a session ID
 into this boundary would not prove which durable-intent epoch is being
 revoked. The stateful coordinator now performs that explicit translation and
 preserves the full durable-intent identity when it addresses activation.
+
+Action-stage acknowledgement is quiescence-sensitive. In particular,
+`action.ToolResultCommit` immediately acknowledges cancellation only when its
+ledger proves that no result is pending and the external boundary has not
+crossed. If an authenticated result is pending—or the ledger already proves a
+crossing while its result is still in transit—the element retains the first
+exact cancellation without eviction, finishes the mandatory canonical result
+safe point, and then reports a direct-parent terminal outcome with `Crossed`
+set. Conflicting cancellation authority cannot rebind the retained result.
+
+Session shutdown has a separate lifecycle barrier. `Audio` and `Video` protect
+only active observer calls with the media lifecycle lock; observation
+publication is atomically ordered against `Close`, and waiting for canonical
+commit holds no lifecycle lock. `Close` can therefore wait for observer safety,
+drain a registered commit waiter, and reject later media without deadlocking.
 
 Independent ports do not acquire a hidden scheduler priority merely because a
 descriptor classifies one as an interrupt. Settlement actor receipt is the

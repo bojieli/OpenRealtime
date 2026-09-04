@@ -1896,20 +1896,20 @@ Current checkpoint notes:
   or remote position is a completion oracle.
 - This reconciliation pins Scenario Conversation's values-bound graph
   fingerprint
-  `sha256:024037771cdd306628ab50a7bbc22ed6907ff233b801f5c6831f70d1a8fe541e`.
+  `sha256:30b92db9cb7e912efe135fd1f665b2a3d011363a51d2de2101a342e6a7cb2dc9`.
   The checked Realtime-CU integration fixture in
   `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
   (`benchmark-browser`, one `screen` source at 1280x720, and the test
   model/policy/observer selections) pins source digest
   `sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa`,
   lock digest
-  `sha256:c03c6bfc1d08094ca18611a0137d77cdc4e7280b8ce050e97c06c5e04f3d26d0`,
+  `sha256:2f907ce0d292756fab1b991326249656ef7cb5b45cd73f252575aad4d533413f`,
   values digest
   `sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93`,
   graph fingerprint
-  `sha256:383cdd413cb168dd0956426fc06ed919b4a5a63e82a2bceea6f196cb2005b021`,
+  `sha256:5232b19741c1d699c025631d20cc95e1788612df81f2d7a71f9cc071165240cb`,
   and plan fingerprint
-  `sha256:d10894a463aa78cb0d81ba1414fe46653c6739478e3bb49ce2cfc07592164d62`.
+  `sha256:d28b6c83df2272256409dc11aeb1d69318f5c519bdcc56ecd4972bb2f412c4f2`.
   The activation descriptor is revision 12 at
   `sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`,
   with runtime `/activation/v12` and implementation revision 12. The
@@ -1917,6 +1917,8 @@ Current checkpoint notes:
   `sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`,
   and the cancellation coordinator is revision 2 at
   `sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a`.
+  `action.ToolResultCommit` is revision 4 at
+  `sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95`.
   Their settlement, cancellation, and acknowledgement ports are required and
   connected in the production profile. The reusable
   temporal-admission descriptor is revision 1 at
@@ -2057,7 +2059,13 @@ Current checkpoint notes:
   `cancel/already_canceled` as nonterminal while a provider may still run, and
   preserves every authorizing item ID in downstream lineage. The adapter's
   canonical observation-commit barrier prevents an earlier accepted observation
-  from being overtaken by cancellation. These production integration checks do
+  from being overtaken by cancellation. Adapter shutdown waits for active
+  observer calls but can release a media ingress blocked on canonical commit,
+  avoiding a lifecycle-lock deadlock. `ToolResultCommit` acknowledges an idle,
+  non-crossed stage immediately, but retains the first exact cancellation for a
+  crossed or pending result until its mandatory canonical safe point; a later
+  terminal outcome reports that irreversible crossing honestly. These
+  production integration checks do
   not close the still-open complete mounted focus→type→submit and adversarial
   matrix, acceptance targets, focused live six-case campaign, repaired
   exact-sixteen campaign, or final 7,486-attempt matrix.
