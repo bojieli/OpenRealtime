@@ -40,6 +40,39 @@ func TestParsePinRefusesToGuess(t *testing.T) {
 	}
 }
 
+func TestExtractorTreatsAnExactBareEchoOfAnExistingPolicyAsNoMutation(t *testing.T) {
+	existing := []interaction.StandingInstruction{{
+		Text:  "translate everything he says into English as he goes and do not wait for him to finish",
+		Scope: interaction.ScopeConversation,
+	}}
+	generator := &standingScriptGenerator{
+		extraction: "translate everything he says into English as he goes and do not wait for him to finish",
+	}
+	extractor, err := interaction.NewExtractor(generator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := extractor.Extract(context.Background(), existing, nil, "很高兴见到你")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Pins) != 0 || len(got.Revokes) != 0 {
+		t.Fatalf("bare existing-policy echo mutated the pinboard: %+v", got)
+	}
+	generator.assertCalls(t, "很高兴见到你", 1, 0, 0, 0, 0)
+}
+
+func TestExtractorStillRefusesUnknownBarePolicyText(t *testing.T) {
+	generator := &standingScriptGenerator{extraction: "tell them when the build finishes"}
+	extractor, err := interaction.NewExtractor(generator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := extractor.Extract(context.Background(), nil, nil, "Tell me when the build finishes."); err == nil {
+		t.Fatal("unknown bare policy text was accepted")
+	}
+}
+
 // A revocation is only recognisable against the thing it lifts.
 func TestRenderForExtractionShowsWhatIsInForce(t *testing.T) {
 	block := interaction.RenderForExtraction([]interaction.StandingInstruction{

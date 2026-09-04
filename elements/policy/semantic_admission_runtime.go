@@ -1113,7 +1113,8 @@ func (runner *semanticAdmissionRunner) decide(
 	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation {
 		answerAvailable := slices.Contains(situation.AvailableActs(), coreinteraction.ActAnswer)
 		verify := act == coreinteraction.ActAnswer ||
-			act == coreinteraction.ActStaySilent && len(standing) > 0 && answerAvailable
+			act == coreinteraction.ActStaySilent && answerAvailable &&
+				(len(standing) > 0 || semanticHasUnansweredStretch(situation))
 		if verify && semanticActivationEvidence(situation) {
 			if !activationChecked {
 				activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
@@ -1134,7 +1135,9 @@ func (runner *semanticAdmissionRunner) decide(
 					act == coreinteraction.ActAnswer:
 					act = coreinteraction.ActStaySilent
 					stage = "voice_addressing"
-				case activation == semanticVoiceWait && confident && act == coreinteraction.ActAnswer:
+				case activation == semanticVoiceWait && confident && answerAvailable &&
+					semanticHasUnansweredStretch(situation) &&
+					(act == coreinteraction.ActAnswer || act == coreinteraction.ActStaySilent):
 					// Deepgram can endpoint one immediate request at a breath. The
 					// current-only guard must not reuse an old condition, but it also
 					// cannot tell that a trailing constraint such as "slowly, one
@@ -1142,24 +1145,29 @@ func (runner *semanticAdmissionRunner) decide(
 					// preceding endpoint. Ask a second, narrower question over the
 					// exact same-speaker stretch reconstructed since the last audible
 					// assistant boundary. It may recover only a confident immediate
-					// request; past conditions and future-policy setup remain wait.
-					if semanticHasUnansweredStretch(situation) {
-						var unanswered coreinteraction.Outcome
-						unanswered, err = runner.verifyUnansweredRequest(decisionCtx, situation)
-						if err != nil {
-							failure = "unanswered_request_failed"
-							break
-						}
-						if strings.TrimSpace(unanswered.Option) == semanticVoiceDirectRequest &&
-							semanticActivationConfident(
-								unanswered, runner.config.MinimumActivationConfidence,
-							) {
-							activation = semanticVoiceDirectRequest
-							activationOutcome = unanswered
-							stage = "unanswered_request"
-							break
-						}
+					// request, even when the general transcript policy also chose to
+					// listen; past conditions and future-policy setup remain wait.
+					var unanswered coreinteraction.Outcome
+					unanswered, err = runner.verifyUnansweredRequest(decisionCtx, situation)
+					if err != nil {
+						failure = "unanswered_request_failed"
+						break
 					}
+					if strings.TrimSpace(unanswered.Option) == semanticVoiceDirectRequest &&
+						semanticActivationConfident(
+							unanswered, runner.config.MinimumActivationConfidence,
+						) {
+						act = coreinteraction.ActAnswer
+						activation = semanticVoiceDirectRequest
+						activationOutcome = unanswered
+						stage = "unanswered_request"
+						break
+					}
+					if act == coreinteraction.ActAnswer {
+						act = coreinteraction.ActStaySilent
+						stage = "voice_activation"
+					}
+				case activation == semanticVoiceWait && confident && act == coreinteraction.ActAnswer:
 					act = coreinteraction.ActStaySilent
 					stage = "voice_activation"
 				case activation == semanticVoiceConditionMet && confident &&

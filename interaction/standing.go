@@ -478,6 +478,14 @@ func (extractor *modelExtractor) Extract(
 	}
 	extraction, err := ParseExtraction(answer)
 	if err != nil {
+		// Some small local models occasionally echo one policy already in
+		// force while omitting the required "pin conversation" prefix. That
+		// cannot authorize a mutation, but an exact echo is unambiguously a
+		// no-op: accepting it as such avoids failing the live turn while still
+		// refusing every unknown or newly invented free-form answer.
+		if extractionEchoesExistingPolicy(answer, existing) {
+			return Extraction{}, nil
+		}
 		return Extraction{}, err
 	}
 	grounded := extraction.Pins[:0]
@@ -500,6 +508,19 @@ func (extractor *modelExtractor) Extract(
 	}
 	extraction.Pins = grounded
 	return extraction, nil
+}
+
+func extractionEchoesExistingPolicy(answer string, existing []StandingInstruction) bool {
+	trimmed := strings.TrimSpace(answer)
+	if trimmed == "" || strings.Contains(trimmed, "\n") {
+		return false
+	}
+	for _, policy := range existing {
+		if strings.EqualFold(trimmed, strings.TrimSpace(policy.Text)) {
+			return true
+		}
+	}
+	return false
 }
 
 // StandingPolicyGroundingInstruction verifies the one fact an extraction

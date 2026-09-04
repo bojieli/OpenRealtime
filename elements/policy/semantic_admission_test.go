@@ -637,7 +637,10 @@ func TestSemanticAdmissionVoiceActivationVerifierSuppressesOnlyUnmetConditions(t
 func TestSemanticAdmissionVoiceActivationCannotReuseAnEarlierCondition(t *testing.T) {
 	decider := &semanticTestDecider{
 		descriptor: semanticTestDescriptor,
-		answers:    []string{"wait", string(coreinteraction.ActStaySilent)},
+		answers: []string{
+			"wait", string(coreinteraction.ActStaySilent), "direct-request",
+		},
+		confidences: []float64{0.95, 0.95, 0.62},
 	}
 	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
 		Decider: "semantic-primary", VerifyVoiceActivation: true,
@@ -685,11 +688,13 @@ func TestSemanticAdmissionVoiceActivationCannotReuseAnEarlierCondition(t *testin
 	assertNoSemanticGeneration(t, harness)
 
 	captured := decider.captured()
-	if len(captured) != 2 ||
+	if len(captured) != 3 ||
 		!strings.Contains(captured[0].Evidence, "Which gives us plenty of time") ||
 		strings.Contains(captured[0].Evidence, "thirteenth") ||
 		strings.Contains(captured[0].Evidence, "Recent conversation:") ||
-		!strings.Contains(captured[1].Evidence, "thirteenth") {
+		!strings.Contains(captured[1].Evidence, "thirteenth") ||
+		!strings.Contains(captured[2].Prompt, "unanswered-request guard") ||
+		!strings.Contains(captured[2].Evidence, "thirteenth") {
 		t.Fatalf("activation did not isolate current evidence: %+v", captured)
 	}
 }
@@ -699,6 +704,7 @@ func TestSemanticAdmissionUnansweredStretchRecoveryIsNarrow(t *testing.T) {
 		name               string
 		first              string
 		current            string
+		primaryAct         coreinteraction.Act
 		recovery           string
 		recoveryConfidence float64
 		wantAct            coreinteraction.Act
@@ -707,26 +713,29 @@ func TestSemanticAdmissionUnansweredStretchRecoveryIsNarrow(t *testing.T) {
 		wantKind           policyelements.SemanticAdmissionOutcomeKind
 	}{
 		{
-			name:     "split immediate request is admitted",
-			first:    "Count out loud from one to forty for me.",
-			current:  "Slowly, one number at a time, and don't say anything else.",
-			recovery: "direct-request", recoveryConfidence: 0.98,
+			name:       "split immediate request is admitted",
+			first:      "Count out loud from one to forty for me.",
+			current:    "Slowly, one number at a time, and don't say anything else.",
+			primaryAct: coreinteraction.ActStaySilent,
+			recovery:   "direct-request", recoveryConfidence: 0.98,
 			wantAct: coreinteraction.ActAnswer, wantStage: "unanswered_request",
 			wantActivation: "direct-request", wantKind: policyelements.SemanticAdmissionAdmitted,
 		},
 		{
-			name:     "low confidence aggregate cannot bypass current-only wait",
-			first:    "Count out loud from one to forty for me.",
-			current:  "Slowly, one number at a time, and don't say anything else.",
-			recovery: "direct-request", recoveryConfidence: 0.60,
+			name:       "low confidence aggregate cannot bypass current-only wait",
+			first:      "Count out loud from one to forty for me.",
+			current:    "Slowly, one number at a time, and don't say anything else.",
+			primaryAct: coreinteraction.ActAnswer,
+			recovery:   "direct-request", recoveryConfidence: 0.60,
 			wantAct: coreinteraction.ActStaySilent, wantStage: "voice_activation",
 			wantActivation: "wait", wantKind: policyelements.SemanticAdmissionSuppressed,
 		},
 		{
-			name:     "split future policy remains suppressed",
-			first:    "If I am quiet for fifteen seconds,",
-			current:  "ask whether I am still here.",
-			recovery: "wait", recoveryConfidence: 0.99,
+			name:       "split future policy remains suppressed",
+			first:      "If I am quiet for fifteen seconds,",
+			current:    "ask whether I am still here.",
+			primaryAct: coreinteraction.ActAnswer,
+			recovery:   "wait", recoveryConfidence: 0.99,
 			wantAct: coreinteraction.ActStaySilent, wantStage: "voice_activation",
 			wantActivation: "wait", wantKind: policyelements.SemanticAdmissionSuppressed,
 		},
@@ -736,10 +745,10 @@ func TestSemanticAdmissionUnansweredStretchRecoveryIsNarrow(t *testing.T) {
 			decider := &semanticTestDecider{
 				descriptor: semanticTestDescriptor,
 				// The current-only activation guard runs before the primary
-				// transcript policy. The narrow aggregate guard runs only when
-				// those two disagree with a confident wait and answer.
+				// transcript policy. The narrow aggregate guard can recover a
+				// complete split request even when the general policy listens.
 				answers: []string{
-					"wait", string(coreinteraction.ActAnswer), testCase.recovery,
+					"wait", string(testCase.primaryAct), testCase.recovery,
 				},
 				confidences: []float64{0.95, 0.95, testCase.recoveryConfidence},
 			}
@@ -773,13 +782,16 @@ func TestSemanticAdmissionUnansweredStretchRecoveryIsNarrow(t *testing.T) {
 			})
 			_ = receivePolicy(t, harness.egress(t, "state"))
 			decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+			if decision.Act != testCase.wantAct || decision.DecisionStage != testCase.wantStage ||
+				decision.Activation != testCase.wantActivation {
+				t.Fatalf("split decision=%+v", decision)
+			}
 			if testCase.wantAct == coreinteraction.ActAnswer {
 				_ = receivePolicy(t, harness.egress(t, "voice_committed"))
 			}
 			outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
 			state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
-			if decision.Act != testCase.wantAct || decision.DecisionStage != testCase.wantStage ||
-				decision.Activation != testCase.wantActivation || outcome.Kind != testCase.wantKind {
+			if outcome.Kind != testCase.wantKind {
 				t.Fatalf("split decision=%+v outcome=%+v state=%+v", decision, outcome, state)
 			}
 			if testCase.wantAct == coreinteraction.ActAnswer {
