@@ -1888,6 +1888,73 @@ deadline, and latency targets and their evidence is independently reopened.
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
+### 2026-09-04 delivery report: production settlement and cancellation
+
+This checkpoint advances the architecture checklist from 301/371 (81.1%) to
+304/371 (81.9%). The three newly closed items are narrowly scoped: bind the
+reference disposition producer in the Realtime-CU profile, implement the exact
+session-cancellation coordinator, and connect and lock the producer, settlement
+gate, activation handshake, and coordinator without an admission bypass. No
+parent, mounted-composition, live-behavior, phase-exit, or release item was
+closed by inference.
+
+The delivered implementation is organized so that each behavioral boundary can
+be reviewed or reverted independently:
+
+| Concern | Commits | Delivered boundary |
+| --- | --- | --- |
+| Production policy binding | `20a0466` | Selects the disposition artifact and configuration, opens a lifecycle-owned client, and shares only the explicit retained-media service |
+| Durable cancellation semantics | `4b35d41`, `81fe94a`, `6ed9e01` | Makes queued cognition cancellation durable, waits for actual producer quiescence, and preserves exact authorization lineage through action acknowledgement |
+| Production graph coordination | `5ed3f63`, `3f230c0` | Coordinates settlement, activation, model, canonical model-result, and configured action-stage cancellation; refreshes the locked activation/profile identity |
+| Crossed-effect honesty | `ab2e29a` | Keeps the first exact cancellation at `ToolResultCommit` until the mandatory result safe point and reports an irreversible crossing as incomplete rather than pretending cancellation succeeded |
+| Shutdown liveness | `15e91b6` | Orders media publication against adapter close without holding the lifecycle lock while waiting for canonical commit, allowing close to drain blocked media waiters |
+| Documentation and evidence ledger | `0931a7b`, `190cdec` | Records the production integration, artifact identities, local verification, checklist movement, and still-open behavioral gates |
+
+The changes address concrete failure mechanisms found while reviewing retained
+Realtime-CU evidence, but live confirmation remains deliberately separate:
+
+| Observed defect or risk | Implemented repair | Evidence at this checkpoint | Still required |
+| --- | --- | --- | --- |
+| Camera actions could use a clear frame captured before the durable smoke intent | Typed post-intent temporal admission is now the only route into production activation | Mounted freshness, cancellation, forgery, multi-source, and stable-endpoint regressions pass | Run both authored camera variants and verify no pre-cue effect |
+| Moving-target and transient-alert sessions continued proposing after success | Exact result-linked settlement can latch a terminal intent, activation acknowledges clearing the matching effect, and the coordinator cancels the remaining pipeline | Element, ordering, bounded-state, coordinator, and endpoint checks pass | Run both moving-target and both transient-alert variants and verify no post-success loop or horizon timeout |
+| Cancellation could miss queued cognition or return before a real policy call became quiescent | Queued-run tombstones are durable and the coordinator waits for the actual disposition provider outcome | Focused normal and race checks pass | Exercise the full mounted cancellation/replacement and asynchronous-wait cases |
+| Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | Focused reordered, conflicting-cancel, capacity, and race checks pass | Exercise mounted failed-effect and crossed-result behavior through the production graph |
+| Session shutdown could deadlock behind media waiting for canonical commit | Observer use and publication/close ordering now have separate lifecycle boundaries; close drains commit waiters | Focused normal and race-enabled close regressions pass | Confirm the live focused cases terminate without running to the evaluation horizon |
+
+Validation was run from a clean detached worktree at the exact committed code
+checkpoint with Go 1.25. Repository-wide `go test ./... -count=1` and
+`go vet ./...` passed. Race-enabled tests passed for cognition, policy, action,
+Realtime-CU binding, and graph packages. Canonical `.ortg` formatting, strict
+warning-free `computer-use` profile validation, and lock/descriptor/profile/
+graph/plan identity checks also passed. These results establish implementation
+and concurrency properties only. No live or paid benchmark was run, no
+Realtime-CU acceptance target is yet registered, and the final-candidate ledger
+therefore remains 0/7,486.
+
+The ordered critical path from this checkpoint is:
+
+1. Add a full production-mounted regression that cancels an active durable
+   intent through the real coordinator and every configured action-stage node,
+   including a new intent after cancellation.
+2. Complete the remaining mounted matrix: shared retained-media ownership,
+   forged cross-node evidence, duplicate/reordered decisions, cancellation and
+   replacement, failed and crossed effects, indeterminate retry, asynchronous
+   wait, focus→type→submit, continuous cadence, graph-level race, and the stable
+   WebSocket endpoint.
+3. Register machine-enforceable Realtime-CU aggregate, exact per-case, safety,
+   deadline, and latency targets. An `unavailable` target cannot accept a run.
+4. Freeze a candidate and run the two camera, two moving-target, and two
+   transient-alert variants. Retain and inspect every failure rather than
+   optimizing a headline pass count.
+5. Repair each observed behavioral defect, rerun its focused cases, and repeat
+   until the focused evidence meets the registered constraints.
+6. Run and independently reopen all 16 Realtime-CU cases from one subsequently
+   frozen candidate. Any behavior-affecting repair starts a new candidate and
+   requires the affected population again.
+7. Complete the other required suite populations and finally execute all 7,486
+   attempts against one shared frozen release candidate. Only accepted results
+   from that matrix can close the release.
+
 Current checkpoint notes:
 
 - Accepted implementation checkpoints are the commits already in the current
