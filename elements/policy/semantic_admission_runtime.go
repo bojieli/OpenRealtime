@@ -1079,12 +1079,24 @@ func (runner *semanticAdmissionRunner) decide(
 		}
 	}
 	if err == nil && stage == "primary" {
-		act, outcome, err = runner.decideAct(decisionCtx, request, situation)
-		if err == nil {
-			options := runner.semanticActOptions(request, situation)
-			err = validateSemanticOutcome(outcome, options)
-			if err != nil {
-				failure = "invalid_decider_outcome"
+		if request.operation == "quiet" && !situation.Quiet {
+			// PostCommitSilence is an unowned graph clock unless an exact,
+			// due standing policy promoted it to evidence. In particular, an
+			// unrelated tick must not intersect listen-only admission with an
+			// active output's keep/stop controls: that set is empty, and the
+			// clock has no authority to disturb the voice run in either case.
+			act = coreinteraction.ActStaySilent
+			outcome = coreinteraction.Outcome{
+				Index: 0, Option: string(coreinteraction.ActStaySilent),
+			}
+		} else {
+			act, outcome, err = runner.decideAct(decisionCtx, request, situation)
+			if err == nil {
+				options := runner.semanticActOptions(request, situation)
+				err = validateSemanticOutcome(outcome, options)
+				if err != nil {
+					failure = "invalid_decider_outcome"
+				}
 			}
 		}
 	}

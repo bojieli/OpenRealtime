@@ -2388,6 +2388,49 @@ func TestSemanticAdmissionRoutesManualAndQuietCreatesThroughTheSamePolicy(t *tes
 	}
 }
 
+func TestSemanticAdmissionUnownedQuietTickDoesNotDisturbActiveOutput(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActStopSpeaking},
+	}
+	harness := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	snapshot, _ := semanticObservation(t, "Count slowly from one to ten.", "speech", 1)
+	sendSemanticContext(t, harness, "state-1", snapshot)
+
+	output := coreinteraction.AgentOutput{
+		Revision: 2, Active: true, Audible: true, Saying: "One. Two. Three.",
+		InFlight: "voice output active: playback=1",
+	}
+	sendPolicy(t, harness.ingress(t, "agent_output"), element.Envelope{
+		Type: coreinteraction.AgentOutputType(), ItemID: "agent-output-active",
+		SessionID: "semantic-session", Payload: output,
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+
+	version := uint64(1)
+	create := policyelements.ResponseCreate{
+		ResponseID: "response-unowned-quiet", ExpectedContextVersion: &version,
+		ExpectedContextItemID: "state-1",
+	}
+	sendPolicy(t, harness.ingress(t, "quiet"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "request-unowned-quiet",
+		SessionID: "semantic-session", Payload: create,
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if decision.Operation != "quiet" || decision.Act != coreinteraction.ActStaySilent || decision.Measured ||
+		outcome.Kind != policyelements.SemanticAdmissionSuppressed || outcome.Code != "listen" ||
+		state.AdmittedVoice != 0 || state.Failed != 0 || state.Active || len(decider.captured()) != 0 {
+		t.Fatalf("active-output quiet decision=%+v outcome=%+v state=%+v captured=%+v",
+			decision, outcome, state, decider.captured())
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "voice_create"))
+}
+
 func TestSemanticAdmissionQuietTickActsOnlyForAnExactDueStandingPolicy(t *testing.T) {
 	descriptor := semanticTestDescriptor
 	descriptor.StandingExtraction = true
