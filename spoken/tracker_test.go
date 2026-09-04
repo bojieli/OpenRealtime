@@ -184,7 +184,8 @@ func TestAFailedListenIsReportedAndLeavesTheEstimateStanding(t *testing.T) {
 // audio than exists by the time it lands. Accepting a shorter answer over a
 // longer one moves every boundary backwards.
 func TestAShorterListenNeverReplacesALongerOne(t *testing.T) {
-	tracker := NewTracker(TrackerConfig{})
+	stale := &scriptedAligner{words: heardAt(450, "one", "two")}
+	tracker := NewTracker(TrackerConfig{Aligner: stale})
 	tracker.Begin("speech-1", "one two three four")
 	tracker.mu.Lock()
 	state := tracker.states["speech-1"]
