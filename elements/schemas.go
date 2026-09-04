@@ -238,6 +238,25 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 			"properties": schemaObject{"required": explicitRequired},
 		},
 	)}
+	intentSettlementConfig := objectSchema(
+		schemaObject{
+			"expected_admission": settlementExpectedAdmission,
+			"candidate_sources": func() schemaObject {
+				result := arraySchema(settlementRequirement, 1, 32)
+				result["uniqueItems"] = true
+				return result
+			}(),
+			"detector": objectSchema(schemaObject{
+				"reference": settlementIdentifier, "revision": settlementIdentifier,
+				"configuration_digest": schemaObject{
+					"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`,
+				},
+			}, "reference", "revision", "configuration_digest"),
+			"max_tracked_intents": integerSchema(1, 4096),
+			"cancel_memory":       integerSchema(1, 4096),
+		},
+		"expected_admission", "candidate_sources", "detector",
+	)
 	documents := map[string]schemaObject{
 		"schema://openrealtime/acoustic/admission-config/v1": standardObject(
 			"schema://openrealtime/acoustic/admission-config/v1",
@@ -460,22 +479,21 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		),
 		"schema://openrealtime/policy/intent-settlement-config/v1": standardObject(
 			"schema://openrealtime/policy/intent-settlement-config/v1",
+			intentSettlementConfig["properties"].(schemaObject),
+			"expected_admission", "candidate_sources", "detector",
+		),
+		"schema://openrealtime/policy/intent-disposition-producer-config/v1": standardObject(
+			"schema://openrealtime/policy/intent-disposition-producer-config/v1",
 			schemaObject{
-				"expected_admission": settlementExpectedAdmission,
-				"candidate_sources": func() schemaObject {
-					result := arraySchema(settlementRequirement, 1, 32)
-					result["uniqueItems"] = true
-					return result
-				}(),
-				"detector": objectSchema(schemaObject{
-					"reference": settlementIdentifier, "revision": settlementIdentifier,
-					"configuration_digest": schemaObject{
-						"type": "string", "pattern": `^sha256:[0-9a-f]{64}$`,
-					},
-				}, "reference", "revision", "configuration_digest"),
-				"max_tracked_intents": integerSchema(1, 4096),
+				"expected_settlement": intentSettlementConfig,
+				"direct_visual_input": schemaObject{"type": "boolean"},
+				"max_evidence_bytes":  integerSchema(1, 1<<20),
+				"max_media_bytes":     integerSchema(1, 64<<20),
+				"max_media_items":     integerSchema(1, 16),
+				"max_pending":         integerSchema(1, 4096),
+				"terminal_memory":     integerSchema(1, 65536),
 				"cancel_memory":       integerSchema(1, 4096),
-			}, "expected_admission", "candidate_sources", "detector",
+			}, "expected_settlement",
 		),
 		"schema://openrealtime/realtime-cu/activation-config/v1": standardObject(
 			"schema://openrealtime/realtime-cu/activation-config/v1",

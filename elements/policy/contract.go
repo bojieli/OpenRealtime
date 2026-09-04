@@ -289,6 +289,7 @@ func Descriptors() []element.Descriptor {
 	return []element.Descriptor{
 		GenerateOnObservationDescriptor(), SessionInvocationDescriptor(), SemanticAdmissionDescriptor(),
 		TemporalEvidenceAdmissionDescriptor(), IntentSettlementDescriptor(),
+		IntentDispositionProducerDescriptor(),
 	}
 }
 

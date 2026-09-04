@@ -606,6 +606,12 @@ func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 				ID: intentSettlementRuntimeID, Revision: intentSettlementRuntimeRevision,
 			},
 		},
+		factoryprofile.Entry{
+			Factory: intentDispositionProducerFactory{}, Artifact: inspect.ArtifactIdentity{
+				ID:       intentDispositionProducerRuntimeID,
+				Revision: intentDispositionProducerRuntimeRevision,
+			},
+		},
 	)
 }
 
