@@ -495,7 +495,18 @@ func TestBackgroundResultDoesNotAskASecondQuestionBeforeTheFirstIsAnswered(t *te
 	runtime, sink := startSession(t, cascade.Config{Fast: fast, Slow: slow}, binding.Settings{})
 
 	speak(t, runtime, 3)
-	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the background result was never considered")
+	waitFor(t, func() bool {
+		snapshot := runtime.Trajectory()
+		visibility := trajectory.AssistantVisibility(snapshot)
+		for _, item := range snapshot.Items {
+			if item.Kind == trajectory.KindAssistant && item.Content == second &&
+				visibility[item.ID] == trajectory.VisibilityCancelled {
+				return true
+			}
+		}
+		return false
+	}, "the background result's second question was not withheld")
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 1 }, "the first question was never voiced")
 	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != first {
 		t.Fatalf("one observation stacked questions before the caller could answer: %#v", spoken)
 	}
@@ -677,7 +688,18 @@ func TestFailedToolDoesNotAskASecondQuestionBeforeTheFirstIsAnswered(t *testing.
 	}, binding.Settings{})
 
 	speak(t, runtime, 3)
-	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the failed result was not returned to the voice")
+	waitFor(t, func() bool {
+		snapshot := runtime.Trajectory()
+		visibility := trajectory.AssistantVisibility(snapshot)
+		for _, item := range snapshot.Items {
+			if item.Kind == trajectory.KindAssistant && item.Content == second &&
+				visibility[item.ID] == trajectory.VisibilityCancelled {
+				return true
+			}
+		}
+		return false
+	}, "the failed result's second question was not withheld")
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 1 }, "the first question was never voiced")
 	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != first {
 		t.Fatalf("a failed tool stacked a second question without user evidence: %#v", spoken)
 	}
