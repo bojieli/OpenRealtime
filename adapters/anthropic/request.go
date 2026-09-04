@@ -50,6 +50,10 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 	resolved := resolvedToolCalls(request.Trajectory)
 	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)
 	cancelledInvocations := trajectory.CancelledAssistantInvocations(request.Trajectory)
+	// Content the user heard only part of is projected down to the part they
+	// heard. Retained native state is the whole turn, so replaying it would put
+	// the unheard half back.
+	partlyHeardInvocations := trajectory.PartlyHeardAssistantInvocations(request.Trajectory)
 	native, err := adapter.nativeInvocations(request, resolved)
 	if err != nil {
 		return messagesRequest{}, err
@@ -111,7 +115,9 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (messagesRequ
 			continue
 		}
 		modelItem := isModelOutputItem(item.Kind)
-		if content, retained := native[item.InvocationID]; modelItem && retained && item.InvocationID != "" {
+		_, partlyHeard := partlyHeardInvocations[item.InvocationID]
+		if content, retained := native[item.InvocationID]; modelItem && retained &&
+			item.InvocationID != "" && !partlyHeard {
 			if _, already := consumed[item.InvocationID]; !already {
 				// Retained state is what this provider itself emitted, so it
 				// arrives already shaped as an assistant turn. An answer that

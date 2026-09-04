@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -41,15 +42,73 @@ type ProviderRun struct {
 	UserObservations bool
 }
 
+// HeardPreamble opens the runtime note that follows a turn the user did not
+// hear all of. It is exported so a caller can tell the note apart from
+// anything a model wrote.
+const HeardPreamble = "[runtime: "
+
+// AssistantHeardContent renders an assistant turn as the user received it.
+//
+// An interrupted turn is two facts, and a projection that carries only one of
+// them is wrong in a specific, reproducible way. Carry only the whole text and
+// the agent believes it said words that were cut off before they were audible:
+// asked to read a long list and interrupted partway, it resumes after the last
+// item it wrote rather than after the last one anybody heard. Carry only the
+// heard part and the words it had prepared are gone, so it either invents a
+// different continuation or starts the list again.
+//
+// So the turn becomes what was heard, and what was not heard follows it as a
+// runtime note that is unmistakably not speech. The words are still there for
+// the model to continue from; they are simply no longer presented as something
+// the user was told.
+func AssistantHeardContent(content string, mark spoken.Mark) string {
+	pending := strings.TrimSpace(mark.Pending)
+	if pending == "" {
+		return content
+	}
+	var note strings.Builder
+	spokenText := strings.TrimSpace(mark.Spoken)
+	if spokenText != "" {
+		note.WriteString(spokenText)
+		note.WriteString("\n\n")
+	}
+	note.WriteString(HeardPreamble)
+	switch {
+	case spokenText == "":
+		note.WriteString("this turn was prepared and never became audible; the user heard none of it")
+	case mark.Cut != "":
+		note.WriteString("playback stopped here, in the middle of " + quote(mark.Cut) +
+			". The user heard everything above and nothing after it")
+	default:
+		note.WriteString("playback stopped here. The user heard everything above and nothing after it")
+	}
+	note.WriteString(". Prepared but never spoken: " + quote(pending) + "]")
+	return note.String()
+}
+
+func quote(text string) string { return "\"" + strings.TrimSpace(text) + "\"" }
+
 // ProviderRuns groups only adjacent user-authority observations.
 //
 // Assistant, tool, observer, instruction, and runtime-state items are hard
 // boundaries. The returned values are a projection over copies of the item
 // structs; this function never rewrites the supplied canonical slice.
+//
+// It is also where an assistant turn becomes what the user heard of it. That
+// belongs here rather than in each provider adapter for the same reason
+// superseded partials do: it is one rule about what a conversation looked like,
+// three adapters would implement it three times, and the one that forgot would
+// be the one whose agent talked past words nobody heard.
 func ProviderRuns(items []trajectory.Item) []ProviderRun {
+	heard := trajectory.AssistantHeard(trajectory.Snapshot{Items: items})
 	runs := make([]ProviderRun, 0, len(items))
 	starts := make([]int, 0, len(items))
 	for itemIndex, item := range items {
+		if item.Kind == trajectory.KindAssistant {
+			if mark, known := heard[item.ID]; known {
+				item.Content = AssistantHeardContent(item.Content, mark)
+			}
+		}
 		userObservation := item.Kind == trajectory.KindObservation &&
 			trajectory.AuthorityOf(item) == trajectory.AuthorityUser
 		if userObservation && len(runs) > 0 && runs[len(runs)-1].UserObservations {

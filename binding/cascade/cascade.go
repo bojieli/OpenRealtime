@@ -28,6 +28,7 @@ import (
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/session"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -145,6 +146,19 @@ type Config struct {
 
 	// Speech synthesises what the fast provider says.
 	Speech v1.StreamingSpeechProvider
+	// WordTimings listens to the agent's own synthesised audio and reports
+	// where each word sat inside it.
+	//
+	// It is what turns "the agent was audible for 2.1 seconds" into "the agent
+	// said these six words and not the four after them", which is the fact
+	// every decision after an interruption actually needs. Nil is a supported
+	// deployment: the boundary is then modelled proportionally from the same
+	// audio, which is within about a word and is recorded as an estimate
+	// rather than as a measurement.
+	WordTimings spoken.Aligner
+	// WordTimingInterval is how much new audio is worth another listen while
+	// an utterance is still being synthesised. Zero selects one second.
+	WordTimingInterval time.Duration
 	// Voice names the voice that synthesiser was built with. It is reported
 	// to clients and cannot be changed per session: a speech plan carries text
 	// and nothing else, so the voice is fixed when the provider is created.

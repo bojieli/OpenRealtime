@@ -256,6 +256,15 @@ const (
 		"this part, you have already said it, and the answer is " + WaitToken + ". What you have already " +
 		"spoken for is:"
 
+	// SpeakingNowInstruction introduces the turn the agent is in the middle of.
+	//
+	// A voice that cannot see where its own audio has got to is guessing about
+	// the one thing it is in a position to know. Asked to read a long list and
+	// interrupted partway, it either carries on from the end of what it wrote -
+	// past numbers nobody heard - or starts the list again. Neither is a
+	// mistake about the conversation; both are the same missing fact.
+	SpeakingNowInstruction = "You are in the middle of saying something right now. Do not say the audible part again, and do not assume the part that is not audible yet was heard."
+
 	HeardInstruction = "They are still speaking. What they have said so far in this sentence, which is not yet in the conversation above, is:"
 	// ObservedInstruction introduces something the runtime noticed rather than
 	// something anybody said.

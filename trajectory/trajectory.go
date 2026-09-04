@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/element"
+	"github.com/bojieli/OpenRealtime/spoken"
 )
 
 // ErrVersionConflict means a writer tried to publish work derived from a
@@ -170,6 +171,20 @@ type AssistantState struct {
 	AssistantItemID string     `json:"assistant_item_id"`
 	Visibility      Visibility `json:"visibility"`
 	PlayedAudioMS   uint64     `json:"played_audio_ms,omitempty"`
+	// Heard is which of this item's words the user actually received.
+	//
+	// PlayedAudioMS beside it says how long the agent was audible, which is
+	// what a repair policy needs and is not what a provider projection needs.
+	// A duration cannot say where in the sentence the audio stopped, so a
+	// projection built from it alone has two options and both are wrong: show
+	// the whole turn, and the agent believes it said words nobody heard; show
+	// none of it, and it says the heard half again. This is the third option,
+	// and it is a fact rather than an inference.
+	//
+	// A pointer because most transitions have no boundary to report - queueing
+	// is not playing - and because the log's existing entries must decode
+	// unchanged.
+	Heard *spoken.Mark `json:"heard,omitempty"`
 }
 
 type RepairStatus string
@@ -381,6 +396,31 @@ func AssistantVisibility(snapshot Snapshot) map[string]Visibility {
 	return result
 }
 
+// AssistantHeard resolves, for each assistant item, which of its words the
+// user actually received.
+//
+// Only items with an explicit boundary appear. Absence is not "nothing was
+// heard": a text-only binding, an upstream provider, and every trajectory
+// written before boundaries existed all deliver content nobody measured, and a
+// caller must fall back to the item's own text there rather than to silence.
+//
+// Later transitions win, because that is what append-only means here and
+// because the last word on how much was heard belongs to the client: the
+// server knows what it sent, and only the client knows where playback stopped.
+func AssistantHeard(snapshot Snapshot) map[string]spoken.Mark {
+	result := make(map[string]spoken.Mark)
+	for _, item := range snapshot.Items {
+		if item.Kind != KindAssistantState || item.AssistantState == nil {
+			continue
+		}
+		if item.AssistantState.Heard == nil {
+			continue
+		}
+		result[item.AssistantState.AssistantItemID] = *item.AssistantState.Heard
+	}
+	return result
+}
+
 // CancelledAssistantInvocations returns invocations whose visible assistant
 // content was later cancelled. Provider-native state for these invocations
 // must not be replayed because it can contain the cancelled text.
@@ -389,6 +429,30 @@ func CancelledAssistantInvocations(snapshot Snapshot) map[string]struct{} {
 	result := make(map[string]struct{})
 	for _, item := range snapshot.Items {
 		if item.Kind == KindAssistant && item.InvocationID != "" && visibility[item.ID] == VisibilityCancelled {
+			result[item.InvocationID] = struct{}{}
+		}
+	}
+	return result
+}
+
+// PartlyHeardAssistantInvocations returns invocations whose assistant content
+// the user heard only part of.
+//
+// A provider that retains its own native message for an invocation replays that
+// message verbatim, and the native message is the whole turn - every word,
+// including the ones playback never reached. Replaying it undoes the projection
+// that made the turn honest, so these invocations fall back to the portable
+// projection exactly as cancelled ones do. The difference is only in why: a
+// cancelled turn is content nobody heard at all, and this is content somebody
+// heard some of, which is the harder case and the one worth being careful about.
+func PartlyHeardAssistantInvocations(snapshot Snapshot) map[string]struct{} {
+	heard := AssistantHeard(snapshot)
+	result := make(map[string]struct{})
+	for _, item := range snapshot.Items {
+		if item.Kind != KindAssistant || item.InvocationID == "" {
+			continue
+		}
+		if mark, known := heard[item.ID]; known && !mark.Complete() {
 			result[item.InvocationID] = struct{}{}
 		}
 	}
@@ -1392,6 +1456,10 @@ func cloneItem(item Item) Item {
 	}
 	if item.AssistantState != nil {
 		copy := *item.AssistantState
+		if copy.Heard != nil {
+			heard := *copy.Heard
+			copy.Heard = &heard
+		}
 		item.AssistantState = &copy
 	}
 	if item.Repair != nil {

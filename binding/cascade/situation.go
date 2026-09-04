@@ -45,6 +45,13 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 	}
 	if state.AgentSpeaking {
 		state.AgentSaying = speakingNow(snapshot)
+		// The live boundary, not the recorded one. A decision taken while the
+		// voice is still speaking is taken about audio that is still moving,
+		// and the trajectory cannot answer that: it records where playback
+		// ended, and playback has not ended.
+		if mark, known := runtime.timing.Current(); known && mark.Started() {
+			state.AgentSpoken, state.AgentPending = mark.Spoken, mark.Pending
+		}
 	}
 	return state
 }

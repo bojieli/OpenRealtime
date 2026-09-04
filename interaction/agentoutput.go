@@ -16,6 +16,12 @@ type AgentOutput struct {
 	Audible  bool   `json:"audible"`
 	Saying   string `json:"saying,omitempty"`
 	InFlight string `json:"in_flight,omitempty"`
+	// Spoken and Pending split Saying at the audio that has actually reached
+	// the user. They are empty when nothing established a boundary, which is
+	// different from a boundary at the start: a policy must be able to tell
+	// "nothing has been heard" from "nobody measured".
+	Spoken  string `json:"spoken,omitempty"`
+	Pending string `json:"pending,omitempty"`
 	// ProtectedStreams are the transcript streams from which active output was
 	// deliberately authorized to interrupt or speak through. The sorted,
 	// duplicate-free identities let a later transcript revision say that it is

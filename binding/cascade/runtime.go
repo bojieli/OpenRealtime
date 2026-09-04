@@ -22,6 +22,7 @@ import (
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/session"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -47,6 +48,7 @@ type runtime struct {
 	engine      *cognition.Engine
 	ledger      *action.Ledger
 	speech      *action.Speech
+	timing      *spoken.Tracker
 	tools       *action.Tools
 	registry    *action.Registry
 	observers   *perception.Set
@@ -420,9 +422,24 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 	}
 	result.engine = engine
 
+	// One tracker per session, because it holds one session's audio. It is
+	// created whether or not a word-timing recogniser is configured: without
+	// one every boundary is proportional, which is the same lifecycle at lower
+	// resolution rather than the feature switched off.
+	result.timing = spoken.NewTracker(spoken.TrackerConfig{
+		Aligner:  bind.config.WordTimings,
+		Interval: bind.config.WordTimingInterval,
+		Report: func(err error) {
+			result.debug(result.ctx, binding.DebugEvent{
+				Category: "speech", Name: "speech.word_timing_failed", Phase: "error",
+				Attributes: map[string]any{"error": err.Error()},
+			})
+		},
+	})
 	speech, err := action.NewSpeech(action.SpeechConfig{
 		Provider: bind.config.Speech, Sink: speechSink{runtime: result}, Ledger: result.ledger,
 		Playback: result.duplex, FrameDuration: bind.config.FrameDuration, Scheduler: scheduler,
+		Timing: result.timing,
 	})
 	if err != nil {
 		cancel(err)

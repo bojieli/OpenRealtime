@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -307,6 +308,16 @@ type Request struct {
 	// while somebody else keeps the floor. What that calls for is the shortest
 	// thing that serves, not a reply.
 	Interjecting bool
+	// Speaking is the utterance the agent is in the middle of, split at the
+	// audio that has actually reached the user.
+	//
+	// The trajectory can only tell a model about turns that have ended. A turn
+	// decided while the previous one is still coming out of the loudspeaker is
+	// exactly where that matters: the words already audible cannot be unsaid
+	// and must not be said again, and the words still queued are about to be
+	// said and must not be said twice either. Without this the voice is asked
+	// what to say next while being shown neither.
+	Speaking spoken.Mark
 	// Because names the act this turn exists to carry out.
 	//
 	// The decision layer knows why it called: a standing policy's condition
@@ -494,6 +505,34 @@ func (engine *Engine) instruction(prompt string, request Request) string {
 	return Instruct(prompt, request)
 }
 
+// describeSpeaking states what the agent is in the middle of saying, and how
+// much of it the user has actually heard.
+//
+// The two halves are separate sentences because they license opposite things.
+// What is audible has happened and cannot be taken back, so a turn decided now
+// must not repeat it. What is queued has not happened, so a turn decided now
+// must not act as though it had - and if this turn replaces the queued speech,
+// those words still need saying.
+func describeSpeaking(mark spoken.Mark) string {
+	heard := strings.TrimSpace(mark.Spoken)
+	queued := strings.TrimSpace(mark.Pending)
+	if heard == "" && queued == "" {
+		return ""
+	}
+	line := SpeakingNowInstruction
+	if heard != "" {
+		line += "\nAlready audible, and they heard it: \"" + heard + "\""
+	} else {
+		line += "\nNothing of it has been audible yet."
+	}
+	if queued != "" {
+		line += "\nWritten but not yet audible: \"" + queued + "\""
+	} else {
+		line += "\nAll of it has been said."
+	}
+	return line
+}
+
 // Instruct renders what a request adds to a phase prompt.
 //
 // It is a function rather than a method because it uses nothing from the
@@ -540,6 +579,9 @@ func Instruct(prompt string, request Request) string {
 	}
 	if answered := strings.TrimSpace(request.Answered); answered != "" {
 		prompt += "\n\n" + AnsweredInstruction + " \"" + answered + "\""
+	}
+	if speaking := describeSpeaking(request.Speaking); speaking != "" {
+		prompt += "\n\n" + speaking
 	}
 	if len(request.InFlight) > 0 {
 		prompt += "\n\nWork already in flight: " + strings.Join(request.InFlight, ", ") +

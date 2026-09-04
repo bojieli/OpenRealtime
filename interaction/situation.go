@@ -105,6 +105,17 @@ type Situation struct {
 	// start another.
 	AgentSpeaking bool
 	AgentSaying   string
+	// AgentSpoken is how much of AgentSaying has actually reached the user,
+	// and AgentPending is the rest: written, queued, and not yet audible.
+	//
+	// A decision about whether to carry on or stop turns on this and has never
+	// been able to see it. "Keep speaking" and "stop speaking" are different
+	// acts depending on whether the thing worth saying has already been said:
+	// stopping after the sentence landed costs nothing, and stopping two words
+	// in throws away the reason the agent spoke. Both are empty where no
+	// boundary is known, and the block then reads exactly as it did before.
+	AgentSpoken  string
+	AgentPending string
 	// AgentOutputProtected says active output was deliberately authorized by
 	// an earlier revision of the transcript stream being decided now. It is a
 	// relation computed from typed lifecycle provenance, not a model guess.
@@ -298,6 +309,21 @@ func (state Situation) Render() string {
 			block.WriteString("agent: voice output is active and still being prepared\n")
 		} else {
 			block.WriteString("agent: voice output is queued or audible, saying \"" + state.AgentSaying + "\"\n")
+		}
+		// Only when a boundary is actually known. Saying "they have heard none
+		// of it" because nothing measured it would be the runtime inventing
+		// the one fact these lines exist to supply.
+		if strings.TrimSpace(state.AgentSpoken) != "" || strings.TrimSpace(state.AgentPending) != "" {
+			if heard := strings.TrimSpace(state.AgentSpoken); heard != "" {
+				block.WriteString("the user has already heard: \"" + heard + "\"\n")
+			} else {
+				block.WriteString("none of it has reached the user yet\n")
+			}
+			if queued := strings.TrimSpace(state.AgentPending); queued != "" {
+				block.WriteString("not audible yet: \"" + queued + "\"\n")
+			} else {
+				block.WriteString("all of it has reached the user\n")
+			}
 		}
 		if state.AgentOutputProtected {
 			block.WriteString("agent output was deliberately triggered by an earlier revision of this same transcript stream\n")

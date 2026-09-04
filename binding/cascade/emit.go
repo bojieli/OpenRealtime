@@ -8,6 +8,7 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/eventloop"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -60,14 +61,20 @@ func (sink speechSink) End(ctx context.Context, utterance action.Utterance, outc
 	if outcome.PlayedMS > 0 {
 		visibility, playedMS = trajectory.VisibilityPlayed, outcome.PlayedMS
 	}
+	heard := runtime.heardPerItem(utterance.AssistantItemIDs, outcome.Mark)
 	events := make([]eventloop.Event, 0, len(utterance.AssistantItemIDs))
-	for _, id := range utterance.AssistantItemIDs {
+	for index, id := range utterance.AssistantItemIDs {
+		state := &trajectory.AssistantState{
+			AssistantItemID: id, Visibility: visibility, PlayedAudioMS: playedMS,
+		}
+		if index < len(heard) {
+			mark := heard[index]
+			state.Heard = &mark
+		}
 		events = append(events, eventloop.Event{
 			Type: "speech.completed", Source: "action", Channel: "voice",
 			Priority: eventloop.PriorityRoutine, Kind: trajectory.KindAssistantState,
-			AssistantState: &trajectory.AssistantState{
-				AssistantItemID: id, Visibility: visibility, PlayedAudioMS: playedMS,
-			},
+			AssistantState: state,
 		})
 	}
 	if len(events) == 0 {
@@ -77,6 +84,38 @@ func (sink speechSink) End(ctx context.Context, utterance action.Utterance, outc
 		return err
 	}
 	return nil
+}
+
+// heardPerItem splits one utterance's boundary back across the assistant items
+// it covered.
+//
+// One utterance is one thing to say out loud and may be several items in the
+// log. The cut is a fact about the audio, so it is discovered once and then
+// recorded against each item it touches - an item that was fully spoken and an
+// item that was never reached must not both be marked with whatever happened to
+// the utterance as a whole.
+//
+// An utterance whose layout was never established reports nothing rather than
+// reporting that nothing was heard: absence means "not measured here", and a
+// caller falls back to the item's own text, while a recorded empty boundary
+// would erase a turn the user did hear.
+func (runtime *runtime) heardPerItem(ids []string, mark spoken.Mark) []spoken.Mark {
+	if len(ids) == 0 || (!mark.Started() && strings.TrimSpace(mark.Pending) == "") {
+		return nil
+	}
+	snapshot := runtime.store.Snapshot()
+	contents := make([]string, 0, len(ids))
+	for _, id := range ids {
+		content := ""
+		for _, item := range snapshot.Items {
+			if item.Kind == trajectory.KindAssistant && item.ID == id {
+				content = item.Content
+				break
+			}
+		}
+		contents = append(contents, content)
+	}
+	return spoken.Distribute(mark, contents)
 }
 
 // Truncate reports client-side playback truncation.
@@ -98,14 +137,28 @@ func (runtime *runtime) Truncate(ctx context.Context, truncation binding.Truncat
 	if truncation.AudioEndMS > 0 {
 		visibility, playedMS = trajectory.VisibilityPlayed, uint64(truncation.AudioEndMS)
 	}
+	// The client's number replaces the server's, so the boundary derived from
+	// the server's number has to move with it. The layout worked out for this
+	// utterance is exactly what makes moving it possible: without one, a
+	// truncation could only shorten a duration and would leave the words the
+	// user is now known not to have heard still recorded as heard.
+	var heard []spoken.Mark
+	if mark, known := runtime.timing.MarkAt(truncation.ItemID, playedMS); known {
+		heard = runtime.heardPerItem(commitment.AssistantItemIDs, mark)
+	}
 	events := make([]eventloop.Event, 0, len(commitment.AssistantItemIDs)+1)
-	for _, id := range commitment.AssistantItemIDs {
+	for index, id := range commitment.AssistantItemIDs {
+		state := &trajectory.AssistantState{
+			AssistantItemID: id, Visibility: visibility, PlayedAudioMS: playedMS,
+		}
+		if index < len(heard) {
+			mark := heard[index]
+			state.Heard = &mark
+		}
 		events = append(events, eventloop.Event{
 			Type: "playback.truncated", Source: "client", Channel: "voice",
 			Priority: eventloop.PriorityRoutine, Kind: trajectory.KindAssistantState,
-			AssistantState: &trajectory.AssistantState{
-				AssistantItemID: id, Visibility: visibility, PlayedAudioMS: playedMS,
-			},
+			AssistantState: state,
 		})
 	}
 	if len(events) > 0 {

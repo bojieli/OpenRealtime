@@ -430,9 +430,16 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 	}
 	assistantVisibility := trajectory.AssistantVisibility(request.Trajectory)
 	cancelledInvocations := trajectory.CancelledAssistantInvocations(request.Trajectory)
+	// Content the user heard only part of is projected down to the part they
+	// heard. Retained native state is the whole turn, so replaying it would put
+	// the unheard half back.
+	partlyHeardInvocations := trajectory.PartlyHeardAssistantInvocations(request.Trajectory)
 	nativeInvocations := make(map[string]geminiContent)
 	for _, item := range request.Trajectory.Items {
 		if _, cancelled := cancelledInvocations[item.InvocationID]; cancelled {
+			continue
+		}
+		if _, partly := partlyHeardInvocations[item.InvocationID]; partly {
 			continue
 		}
 		if item.ProviderStateType == ProviderStateType && len(item.ProviderState) > 0 &&
