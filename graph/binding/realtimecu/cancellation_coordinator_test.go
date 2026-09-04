@@ -480,6 +480,98 @@ func TestCancellationCoordinatorAlreadyCanceledControlIsNotModelQuiescence(t *te
 	}
 }
 
+func TestCancellationCoordinatorIgnoresAmbientTrajectoryRepliesForSameRun(t *testing.T) {
+	for _, code := range []string{"unknown_commit_reply", "unknown_rejection_reply"} {
+		t.Run(code, func(t *testing.T) {
+			fixture := newCancellationCoordinatorTestFixture(t, true)
+			const runID = "model-run"
+			fixture.appendCanonicalModelInstruction(t, runID)
+			fixture.appendCanonicalToolProposal(t, runID, "ambient-reply-call")
+			fixture.request(t, "cancel-request")
+			transaction := fixture.acknowledgeThroughActivation(t, runID)
+
+			before := len(fixture.outcome.snapshot())
+			ambient := element.Envelope{
+				Type:   interactionelements.ModelCommitOutcomeType(),
+				ItemID: "ambient-" + code, SessionID: cancellationCoordinatorTestSession,
+				RunID: runID, Sequence: 4,
+				Payload: interactionelements.ModelCommitOutcome{
+					Kind: interactionelements.ModelIgnored, RunID: runID, Code: code,
+					Message: "trajectory commit has no pending request",
+				},
+			}
+			if err := fixture.runner.acceptModelCommitOutcome(context.Background(), ambient); err != nil {
+				t.Fatal(err)
+			}
+			if len(fixture.outcome.snapshot()) != before || transaction.completion != nil ||
+				fixture.runner.transactions[transaction.id] != transaction || transaction.modelCommitDone {
+				t.Fatalf("ambient %s changed cancellation transaction: %+v", code, transaction)
+			}
+
+			commit := fixture.modelCommitOutcomeEnvelope(transaction, runID)
+			if err := fixture.runner.acceptModelCommitOutcome(context.Background(), commit); err != nil {
+				t.Fatal(err)
+			}
+			if err := fixture.runner.acceptModelOutcome(context.Background(), fixture.modelOutcomeEnvelope(
+				transaction, cognitionelements.Outcome{
+					Kind: cognitionelements.OutcomeCanceled, Operation: "generate", RunID: runID,
+					Code: "canceled", StartedNS: fixture.nextNS + 1, FinishedNS: fixture.nextNS + 2,
+				},
+			)); err != nil {
+				t.Fatal(err)
+			}
+			target := transaction.actions[cancellationActionKey(runID, "ambient-reply-call")]
+			if target == nil || !target.sent {
+				t.Fatalf("exact model commit after ambient %s did not release action cancellation: %+v",
+					code, transaction)
+			}
+		})
+	}
+}
+
+func TestAmbientModelCommitReplyRequiresExactEmptyDiagnosticShape(t *testing.T) {
+	base := interactionelements.ModelCommitOutcome{
+		Kind: interactionelements.ModelIgnored, RunID: "model-run", Code: "unknown_commit_reply",
+		Message: "trajectory commit has no pending request",
+	}
+	if !ambientModelCommitReply(base) {
+		t.Fatal("exact unknown commit diagnostic was not recognized as ambient fanout")
+	}
+	rejection := base
+	rejection.Code = "unknown_rejection_reply"
+	if !ambientModelCommitReply(rejection) {
+		t.Fatal("exact unknown rejection diagnostic was not recognized as ambient fanout")
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*interactionelements.ModelCommitOutcome)
+	}{
+		{name: "committed kind", mutate: func(outcome *interactionelements.ModelCommitOutcome) {
+			outcome.Kind = interactionelements.ModelCommitted
+		}},
+		{name: "request identity", mutate: func(outcome *interactionelements.ModelCommitOutcome) {
+			outcome.RequestID = "claimed-model-request"
+		}},
+		{name: "store boundary", mutate: func(outcome *interactionelements.ModelCommitOutcome) {
+			outcome.StoreVersion = 1
+		}},
+		{name: "item identity", mutate: func(outcome *interactionelements.ModelCommitOutcome) {
+			outcome.ItemIDs = []string{"claimed-model-item"}
+		}},
+		{name: "different code", mutate: func(outcome *interactionelements.ModelCommitOutcome) {
+			outcome.Code = "already_pending"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := base
+			test.mutate(&candidate)
+			if ambientModelCommitReply(candidate) {
+				t.Fatalf("non-ambient model commit outcome was ignored: %+v", candidate)
+			}
+		})
+	}
+}
+
 func TestCancellationCoordinatorRetainsPreRequestModelCommitForLaterExactCancellation(t *testing.T) {
 	fixture := newCancellationCoordinatorTestFixture(t, true)
 	fixture.appendCanonicalModelInstruction(t, "model-run")

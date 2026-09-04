@@ -28,7 +28,7 @@ import (
 const (
 	CancellationCoordinatorReference    = "policy.RealtimeComputerUseCancellationCoordinator"
 	CancellationCoordinatorConfigSchema = "schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1"
-	cancellationCoordinatorRuntimeID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v2"
+	cancellationCoordinatorRuntimeID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v3"
 
 	defaultCancellationTransactions = 64
 	defaultCancellationTombstones   = 256
@@ -68,7 +68,7 @@ func CancellationCoordinatorDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          CancellationCoordinatorReference,
-		Revision:      2,
+		Revision:      3,
 		Ports: []element.Port{
 			{Name: "request", Direction: element.Input, Type: sessionCancellationType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -488,7 +488,7 @@ type cancellationCoordinatorRunner struct {
 
 func (runner *cancellationCoordinatorRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, cancellationCoordinatorRuntimeID,
-		"implementation:2", CancellationCoordinatorDescriptor()); err != nil {
+		"implementation:3", CancellationCoordinatorDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -1025,6 +1025,18 @@ func (runner *cancellationCoordinatorRunner) acceptModelCommitOutcome(
 		return runner.incomplete(ctx, transaction, envelope, "model_commit_identity_mismatch",
 			"model commit outcome crossed the exact session or generation transaction")
 	}
+	if ambientModelCommitReply(outcome) {
+		// Every trajectory commit/rejection is fanned out to every commit-aware
+		// element. ModelResultCommit therefore reports unknown_commit_reply or
+		// unknown_rejection_reply for another element's append transaction. The
+		// ambient reply may legitimately carry this generation's RunID (for
+		// example, canonical tool-call commit) while cancellation is active. It
+		// says nothing about the model-result transaction and must neither
+		// acknowledge it nor turn the session cancellation permanently
+		// incomplete. The exact ModelCommitted/ModelRejected outcome for the
+		// model append remains independently required below.
+		return nil
+	}
 	if outcome.Kind != interactionelements.ModelCommitted {
 		return runner.incomplete(ctx, transaction, envelope, "model_result_not_committed", outcome.Message)
 	}
@@ -1055,6 +1067,14 @@ func (runner *cancellationCoordinatorRunner) acceptModelCommitOutcome(
 		GenerationID: transaction.generationID, Code: "model_result_committed",
 		Message: "the terminal model result is now canonical before action reconciliation",
 	})
+}
+
+func ambientModelCommitReply(outcome interactionelements.ModelCommitOutcome) bool {
+	if outcome.Kind != interactionelements.ModelIgnored || outcome.RequestID != "" ||
+		outcome.StoreVersion != 0 || len(outcome.ItemIDs) != 0 {
+		return false
+	}
+	return outcome.Code == "unknown_commit_reply" || outcome.Code == "unknown_rejection_reply"
 }
 
 func (runner *cancellationCoordinatorRunner) acceptActionOutcome(

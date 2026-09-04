@@ -23,6 +23,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/graphs"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	serverplugin "github.com/bojieli/OpenRealtime/server"
@@ -40,6 +41,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	model := &multiStepRealtimeCUModel{
 		descriptor: descriptor, invocations: make(chan int32, 8),
 		secondContexts: make(chan multiStepRealtimeCUContext, 1),
+		blockAt:        3, blocked: make(chan int32, 1),
 	}
 	var modelFactories, policyFactories, observerFactories atomic.Int32
 	applicationArtifact := testRealtimeCUArtifact("endpoint-application", "1")
@@ -67,9 +69,12 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		return observer, nil
 	}
 	policyDescriptor := testRealtimeCUPolicyDescriptor()
+	policy := &cancellableRealtimeCUDispositionDecider{
+		descriptor: policyDescriptor, blockAt: 2, blocked: make(chan int32, 1),
+	}
 	policyFactory := func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
 		policyFactories.Add(1)
-		return testRealtimeCUDispositionDecider{descriptor: policyDescriptor}, nil
+		return policy, nil
 	}
 	registration, err := graphs.RealtimeComputerUseApplicationRegistration(
 		realtimecu.ApplicationRegistrationConfig{
@@ -420,13 +425,36 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		t.Fatalf("second endpoint visual consequence = %+v", secondConsequence)
 	}
 
-	// Cancel while the durable intent and its second successful effect still
-	// await post-effect settlement. The next frame can be observed only after
-	// the gateway's serial response.cancel handler receives the coordinator's
-	// terminal outcome. It must not reactivate the canceled intent.
+	// Present the second result-linked visual consequence and hold the real
+	// disposition provider in flight. Cancellation must stop that provider and
+	// wait for its exact quiescence outcome before moving on to activation,
+	// model, model-commit, and all configured action stages.
+	time.Sleep(350 * time.Millisecond)
+	settlementTimestampMS := postEffectTimestampMS + 1
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
+		"frame": frame, "timestamp_ms": settlementTimestampMS,
+	})
+	client.await(5*time.Second, func(message map[string]any) bool {
+		return message["type"] == openrealtime.EventObservationAdded &&
+			message["source"] == realtimecu.SourceScreen &&
+			message["timestamp_ms"] == float64(settlementTimestampMS)
+	})
+	if decision := receiveRealtimeCU(t, policy.blocked, "in-flight settlement decision"); decision != 2 {
+		t.Fatalf("blocked settlement decision sequence = %d, want 2", decision)
+	}
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("unsettled second effect reactivated model invocation %d", invocation)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	// The next frame can be observed only after the gateway's serial
+	// response.cancel handler receives the coordinator's terminal outcome. It
+	// must not reactivate the canceled intent.
 	client.send(map[string]any{"type": "response.cancel"})
 	time.Sleep(350 * time.Millisecond)
-	afterCancelTimestampMS := postEffectTimestampMS + 1
+	afterCancelTimestampMS := settlementTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
 		"frame": frame, "timestamp_ms": afterCancelTimestampMS,
@@ -441,6 +469,206 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		t.Fatalf("post-cancel observation reactivated model invocation %d", invocation)
 	case <-time.After(250 * time.Millisecond):
 	}
+
+	// Cancellation is scoped to the exact durable-intent epoch rather than the
+	// whole session. A later final user transcript must establish a new intent,
+	// but it still cannot reuse either source's pre-intent frame. Refreshing only
+	// screen remains insufficient because the production after-intent policy
+	// froze both observer/source pairs; the fresh camera frame completes the new
+	// cohort and activates exactly one new model run.
+	firstTranscriptItemID, _ := transcript["item_id"].(string)
+	if firstTranscriptItemID == "" {
+		t.Fatalf("first endpoint transcript omitted item identity: %+v", transcript)
+	}
+	client.send(map[string]any{
+		"type":  "input_audio_buffer.append",
+		"audio": base64.StdEncoding.EncodeToString([]byte{3, 0, 4, 0}),
+	})
+	newTranscript := client.await(5*time.Second, func(message map[string]any) bool {
+		itemID, _ := message["item_id"].(string)
+		return message["type"] == "conversation.item.input_audio_transcription.completed" &&
+			itemID != "" && itemID != firstTranscriptItemID
+	})
+	if newTranscript["transcript"] != "click the visible control" {
+		t.Fatalf("new-intent endpoint transcript = %+v", newTranscript)
+	}
+
+	time.Sleep(350 * time.Millisecond)
+	newIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
+	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
+		client.send(map[string]any{
+			"type": openrealtime.EventVideoFrameAppend, "source": source,
+			"frame": frame, "timestamp_ms": newIntentTimestampMS,
+		})
+		client.await(5*time.Second, func(message map[string]any) bool {
+			return message["type"] == openrealtime.EventObservationAdded &&
+				message["source"] == source &&
+				message["timestamp_ms"] == float64(newIntentTimestampMS)
+		})
+		if index == 0 {
+			select {
+			case invocation := <-model.invocations:
+				t.Fatalf("new intent reused stale camera for model invocation %d", invocation)
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
+	if invocation := receiveRealtimeCU(t, model.invocations, "post-cancel new-intent invocation"); invocation != 3 {
+		t.Fatalf("post-cancel new-intent invocation sequence = %d, want 3", invocation)
+	}
+	if invocation := receiveRealtimeCU(t, model.blocked, "active replacement model run"); invocation != 3 {
+		t.Fatalf("blocked replacement model invocation = %d, want 3", invocation)
+	}
+
+	// Exercise a second cancellation with cognition itself in flight and no
+	// model result yet. The coordinator must wait for the model cancellation
+	// outcome, then settle every idle action stage. A later frame is again the
+	// serial gateway witness that the terminal coordinator outcome was received.
+	client.send(map[string]any{"type": "response.cancel"})
+	time.Sleep(350 * time.Millisecond)
+	afterModelCancelTimestampMS := newIntentTimestampMS + 1
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
+		"frame": frame, "timestamp_ms": afterModelCancelTimestampMS,
+	})
+	client.await(5*time.Second, func(message map[string]any) bool {
+		return message["type"] == openrealtime.EventObservationAdded &&
+			message["source"] == realtimecu.SourceScreen &&
+			message["timestamp_ms"] == float64(afterModelCancelTimestampMS)
+	})
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("post-model-cancel cadence reactivated invocation %d", invocation)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	secondTranscriptItemID, _ := newTranscript["item_id"].(string)
+	client.send(map[string]any{
+		"type":  "input_audio_buffer.append",
+		"audio": base64.StdEncoding.EncodeToString([]byte{5, 0, 6, 0}),
+	})
+	thirdTranscript := client.await(5*time.Second, func(message map[string]any) bool {
+		itemID, _ := message["item_id"].(string)
+		return message["type"] == "conversation.item.input_audio_transcription.completed" &&
+			itemID != "" && itemID != firstTranscriptItemID && itemID != secondTranscriptItemID
+	})
+	if thirdTranscript["transcript"] != "click the visible control" {
+		t.Fatalf("post-model-cancel endpoint transcript = %+v", thirdTranscript)
+	}
+	time.Sleep(350 * time.Millisecond)
+	thirdIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
+	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
+		client.send(map[string]any{
+			"type": openrealtime.EventVideoFrameAppend, "source": source,
+			"frame": frame, "timestamp_ms": thirdIntentTimestampMS,
+		})
+		client.await(5*time.Second, func(message map[string]any) bool {
+			return message["type"] == openrealtime.EventObservationAdded &&
+				message["source"] == source &&
+				message["timestamp_ms"] == float64(thirdIntentTimestampMS)
+		})
+		if index == 0 {
+			select {
+			case invocation := <-model.invocations:
+				t.Fatalf("third intent reused stale camera for model invocation %d", invocation)
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
+	if invocation := receiveRealtimeCU(t, model.invocations, "post-model-cancel new-intent invocation"); invocation != 4 {
+		t.Fatalf("post-model-cancel new-intent invocation sequence = %d, want 4", invocation)
+	}
+	crossedCall := client.await(10*time.Second, func(message map[string]any) bool {
+		return message["type"] == "response.function_call_arguments.done" &&
+			message["call_id"] != callID && message["call_id"] != secondCallID
+	})
+	crossedCallID, _ := crossedCall["call_id"].(string)
+	if crossedCallID == "" || crossedCall["name"] != computeruse.Click ||
+		crossedCall["arguments"] != `{"source":"screen","x":50,"y":60}` {
+		t.Fatalf("crossed endpoint client action = %+v", crossedCall)
+	}
+
+	// The dispatcher has crossed the external client boundary, so cancellation
+	// cannot truthfully claim that no effect happened. The graph returns an
+	// explicit incomplete result, while the dispatch cancellation still creates
+	// the mandatory canonical error result and requests visual consequence
+	// observation for whatever the client may already have changed.
+	client.send(map[string]any{
+		"type": "response.cancel", "event_id": "cancel_crossed_client_effect",
+	})
+	cancelError := client.awaitAllowError(5*time.Second, func(message map[string]any) bool {
+		if message["type"] != "error" {
+			return false
+		}
+		failure, _ := message["error"].(map[string]any)
+		return failure["event_id"] == "cancel_crossed_client_effect"
+	})
+	failure, _ := cancelError["error"].(map[string]any)
+	if failure["code"] != "invalid_request_error" ||
+		!strings.Contains(fmt.Sprint(failure["message"]), "action_already_crossed") {
+		t.Fatalf("crossed-action cancellation error = %+v", cancelError)
+	}
+	canceledConsequence := receiveRealtimeCU(t, observer.consequences, "canceled crossed-action consequence")
+	if canceledConsequence.CallID != crossedCallID || canceledConsequence.Name != computeruse.Click ||
+		canceledConsequence.CanonicalResultItemID == "" ||
+		canceledConsequence.StoreVersion <= secondConsequence.StoreVersion {
+		t.Fatalf("canceled crossed-action consequence = %+v", canceledConsequence)
+	}
+
+	time.Sleep(350 * time.Millisecond)
+	afterCrossedCancelTimestampMS := thirdIntentTimestampMS + 1
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
+		"frame": frame, "timestamp_ms": afterCrossedCancelTimestampMS,
+	})
+	client.await(5*time.Second, func(message map[string]any) bool {
+		return message["type"] == openrealtime.EventObservationAdded &&
+			message["source"] == realtimecu.SourceScreen &&
+			message["timestamp_ms"] == float64(afterCrossedCancelTimestampMS)
+	})
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("crossed-action cancellation reactivated invocation %d", invocation)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	thirdTranscriptItemID, _ := thirdTranscript["item_id"].(string)
+	client.send(map[string]any{
+		"type":  "input_audio_buffer.append",
+		"audio": base64.StdEncoding.EncodeToString([]byte{7, 0, 8, 0}),
+	})
+	fourthTranscript := client.await(5*time.Second, func(message map[string]any) bool {
+		itemID, _ := message["item_id"].(string)
+		return message["type"] == "conversation.item.input_audio_transcription.completed" &&
+			itemID != "" && itemID != firstTranscriptItemID &&
+			itemID != secondTranscriptItemID && itemID != thirdTranscriptItemID
+	})
+	if fourthTranscript["transcript"] != "click the visible control" {
+		t.Fatalf("post-crossed-cancel endpoint transcript = %+v", fourthTranscript)
+	}
+	time.Sleep(350 * time.Millisecond)
+	fourthIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
+	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
+		client.send(map[string]any{
+			"type": openrealtime.EventVideoFrameAppend, "source": source,
+			"frame": frame, "timestamp_ms": fourthIntentTimestampMS,
+		})
+		client.await(5*time.Second, func(message map[string]any) bool {
+			return message["type"] == openrealtime.EventObservationAdded &&
+				message["source"] == source &&
+				message["timestamp_ms"] == float64(fourthIntentTimestampMS)
+		})
+		if index == 0 {
+			select {
+			case invocation := <-model.invocations:
+				t.Fatalf("fourth intent reused stale camera for model invocation %d", invocation)
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}
+	if invocation := receiveRealtimeCU(t, model.invocations, "post-crossed-cancel new-intent invocation"); invocation != 5 {
+		t.Fatalf("post-crossed-cancel new-intent invocation sequence = %d, want 5", invocation)
+	}
 }
 
 type multiStepRealtimeCUContext struct {
@@ -450,11 +678,49 @@ type multiStepRealtimeCUContext struct {
 	ScreenParents []string
 }
 
+type cancellableRealtimeCUDispositionDecider struct {
+	descriptor  policyelements.SemanticDeciderDescriptor
+	invocations atomic.Int32
+	blockAt     int32
+	blocked     chan int32
+}
+
+func (*cancellableRealtimeCUDispositionDecider) Name() string {
+	return "cancellable-realtime-cu-settlement"
+}
+
+func (decider *cancellableRealtimeCUDispositionDecider) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return decider.descriptor
+}
+
+func (decider *cancellableRealtimeCUDispositionDecider) Decide(
+	ctx context.Context, request coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	invocation := decider.invocations.Add(1)
+	if invocation == decider.blockAt {
+		select {
+		case decider.blocked <- invocation:
+		case <-ctx.Done():
+			return coreinteraction.Outcome{}, context.Cause(ctx)
+		}
+		<-ctx.Done()
+		return coreinteraction.Outcome{}, context.Cause(ctx)
+	}
+	wanted := string(policyelements.IntentDispositionContinue)
+	index := slices.Index(request.Options, wanted)
+	if index < 0 {
+		return coreinteraction.Outcome{}, fmt.Errorf("settlement decision does not offer %q", wanted)
+	}
+	return coreinteraction.Outcome{Index: index, Option: wanted}, nil
+}
+
 type multiStepRealtimeCUModel struct {
 	descriptor      continuation.Descriptor
 	invocationCount atomic.Int32
 	invocations     chan int32
 	secondContexts  chan multiStepRealtimeCUContext
+	blockAt         int32
+	blocked         chan int32
 }
 
 func (model *multiStepRealtimeCUModel) Descriptor() continuation.Descriptor {
@@ -462,11 +728,20 @@ func (model *multiStepRealtimeCUModel) Descriptor() continuation.Descriptor {
 }
 
 func (model *multiStepRealtimeCUModel) Continue(
-	_ context.Context, request continuation.Request, emit continuation.Emit,
+	ctx context.Context, request continuation.Request, emit continuation.Emit,
 ) (continuation.Completion, error) {
 	invocation := model.invocationCount.Add(1)
 	if model.invocations != nil {
 		model.invocations <- invocation
+	}
+	if model.blockAt == invocation {
+		select {
+		case model.blocked <- invocation:
+		case <-ctx.Done():
+			return continuation.Completion{}, context.Cause(ctx)
+		}
+		<-ctx.Done()
+		return continuation.Completion{}, context.Cause(ctx)
 	}
 	if len(request.Trajectory.Items) == 0 {
 		return continuation.Completion{StopReason: "stop"}, nil
@@ -487,6 +762,9 @@ func (model *multiStepRealtimeCUModel) Continue(
 	arguments := json.RawMessage(`{"source":"screen","x":10,"y":20}`)
 	step := 1
 	switch {
+	case invocation == 4:
+		step = 3
+		arguments = json.RawMessage(`{"source":"screen","x":50,"y":60}`)
 	case results == 0 && last.Kind == trajectory.KindObservation &&
 		last.Observation != nil && last.Observation.Source == realtimecu.SourceCamera:
 	case results == 1 && last.Kind == trajectory.KindObservation &&
@@ -531,6 +809,18 @@ func (client *realtimeCUWireClient) send(message map[string]any) {
 func (client *realtimeCUWireClient) await(
 	timeout time.Duration, matches func(map[string]any) bool,
 ) map[string]any {
+	return client.awaitMessage(timeout, false, matches)
+}
+
+func (client *realtimeCUWireClient) awaitAllowError(
+	timeout time.Duration, matches func(map[string]any) bool,
+) map[string]any {
+	return client.awaitMessage(timeout, true, matches)
+}
+
+func (client *realtimeCUWireClient) awaitMessage(
+	timeout time.Duration, allowError bool, matches func(map[string]any) bool,
+) map[string]any {
 	client.t.Helper()
 	for _, message := range client.received {
 		if matches(message) {
@@ -559,7 +849,7 @@ func (client *realtimeCUWireClient) await(
 				client.t.Fatalf("pinned Realtime schema rejected server event %q: %v", eventType, err)
 			}
 		}
-		if eventType == "error" {
+		if eventType == "error" && !allowError {
 			client.t.Fatalf("Realtime-CU endpoint error: %+v", message["error"])
 		}
 		if matches(message) {
