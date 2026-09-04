@@ -185,3 +185,24 @@ func TestAnOversizedUtteranceFallsBackInsteadOfPayingForTheMatrix(t *testing.T) 
 		t.Fatalf("the fallback laid out %d of 500 words", len(timeline.Words))
 	}
 }
+
+// A recogniser listening partway through an utterance reports the words that
+// exist and nothing about the ones that do not. Laying those into the audio it
+// listened to would report them as heard the moment playback caught up, which
+// is the whole failure this package removes - so they go past it instead.
+func TestWordsPastTheAudioAreLaidOutPastTheAudio(t *testing.T) {
+	// The listen covered 1200ms and the caller believed the utterance was
+	// shorter than that, which is the case where a naive layout has nowhere to
+	// put the remaining words except inside audio that has already played.
+	timeline := Reconcile("one two three four five", heardAt(400, "one", "two", "three"), 900)
+	mark := timeline.At(1200)
+	if mark.Spoken != "one two three" {
+		t.Fatalf("heard %q", mark.Spoken)
+	}
+	if mark.Pending != "four five" {
+		t.Fatalf("the words nobody has synthesised yet are %q", mark.Pending)
+	}
+	if timeline.Words[3].StartMS < 1200 {
+		t.Fatalf("a word with no audio starts at %dms, inside audio already played", timeline.Words[3].StartMS)
+	}
+}

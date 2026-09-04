@@ -28,16 +28,22 @@ import (
 // mangled past recognition - are interpolated between their neighbours, which
 // is what the estimated layout would have done for the whole utterance anyway.
 // The result is measured because its anchors came from the audio.
-func Reconcile(reference string, heard []Word, audioMS uint64) Timeline {
+// spanMS is how long the whole utterance is believed to run, which while
+// synthesis is still going is longer than the audio that was listened to. Words
+// the recogniser never reached are laid out past that audio rather than
+// squeezed inside it: audio that does not exist yet cannot have been played,
+// and a layout that puts the tail of a sentence inside the first second of it
+// reports the whole sentence as spoken one second in.
+func Reconcile(reference string, heard []Word, spanMS uint64) Timeline {
 	words := Words(reference)
 	if len(words) == 0 || len(heard) == 0 {
-		return Estimate(reference, audioMS).Complete(audioMS)
+		return Estimate(reference, spanMS)
 	}
 	referenceRunes, referenceOwner := canonicalStream(words)
 	heardRunes, heardStart, heardEnd := heardStream(heard)
 	if len(referenceRunes) == 0 || len(heardRunes) == 0 ||
 		len(referenceRunes) > alignmentLimit || len(heardRunes) > alignmentLimit {
-		return Estimate(reference, audioMS).Complete(audioMS)
+		return Estimate(reference, spanMS)
 	}
 	matched := align(referenceRunes, heardRunes)
 
@@ -62,18 +68,27 @@ func Reconcile(reference string, heard []Word, audioMS uint64) Timeline {
 		}
 	}
 	if !anyKnown(known) {
-		return Estimate(reference, audioMS).Complete(audioMS)
+		return Estimate(reference, spanMS)
 	}
 
-	span := audioMS
+	span := spanMS
 	if last := ends[lastKnown(known)]; last > span {
 		span = last
 	}
 	fillUnmatched(words, starts, ends, known, span)
-	enforceOrder(starts, ends, span)
+	// The layout may now run past the audio, and it should: words the
+	// recogniser never reached were placed beyond it on purpose. So the order
+	// pass is bounded by where the layout actually ends rather than by where
+	// the audio does, or it would pull those words straight back inside it.
+	limit := span
+	if last := ends[len(ends)-1]; last > limit {
+		limit = last
+	}
+	enforceOrder(starts, ends, limit)
+	span = limit
 
 	timeline := Timeline{
-		Text: strings.TrimSpace(reference), AudioMS: audioMS,
+		Text: strings.TrimSpace(reference), AudioMS: span,
 		Words: make([]Word, 0, len(words)), Measured: true,
 	}
 	for index, word := range words {
@@ -130,25 +145,22 @@ func fillUnmatched(words []string, starts, ends []uint64, known []bool, span uin
 		if run < len(words) {
 			to = starts[run]
 		}
+		if run == len(words) {
+			// The recogniser never reached these, which usually means the
+			// audio carrying them does not exist yet. Give them the prior's
+			// duration past whatever it did reach, rather than compressing
+			// them into audio that has already been played.
+			if extended := from + PriorDuration(words[index:run]); extended > to {
+				to = extended
+			}
+		}
 		if to < from {
 			to = from
 		}
-		total := 0
-		for _, word := range words[index:run] {
-			total += weigh(word)
-		}
-		covered := 0
-		for offset, word := range words[index:run] {
-			start := from
-			if total > 0 {
-				start = from + uint64(covered)*(to-from)/uint64(total)
-			}
-			covered += weigh(word)
-			end := to
-			if total > 0 {
-				end = from + uint64(covered)*(to-from)/uint64(total)
-			}
-			starts[index+offset], ends[index+offset] = start, end
+		filled := make([]Word, run-index)
+		spread(filled, words[index:run], from, to)
+		for offset, word := range filled {
+			starts[index+offset], ends[index+offset] = word.StartMS, word.EndMS
 		}
 		index = run
 	}
