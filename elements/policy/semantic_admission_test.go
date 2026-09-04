@@ -1035,6 +1035,131 @@ func TestSemanticAdmissionPartialSpeakThroughRequiresStandingAuthority(t *testin
 	assertNoPolicyEnvelope(t, harness.egress(t, "voice_committed"))
 }
 
+func TestSemanticAdmissionPartialSpeakThroughRequiresTheStandingTrigger(t *testing.T) {
+	descriptor := semanticTestDescriptor
+	descriptor.StandingExtraction = true
+	decider := &semanticTestDecider{
+		descriptor: descriptor,
+		answers: []string{
+			"wait", "covered",
+			string(coreinteraction.ActSpeakThrough),
+			string(coreinteraction.ActSpeakThrough),
+		},
+		generationAnswers: []string{
+			"pin conversation translate everything they say into English as they go",
+			"yes", "no", "no", "standing",
+			"no", "yes",
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", StandingExtraction: true, VerifyVoiceActivation: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+		TranscriptEvents: &policyelements.SemanticTranscriptEventConfig{
+			Partial: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this partial transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough,
+				},
+			},
+			Final: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this final transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := mountSemanticAdmissionRegistered(t, descriptor, decider, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- mounted.Run(ctx) }()
+	harness := policyHarness{mounted: mounted, done: done, cancel: cancel}
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	setup := semanticTranscriptObservation(
+		"translation-setup", "asr.endpoint", 1,
+		"Translate everything my colleague says into English as they go.",
+	)
+	snapshot := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{setup}}
+	sendSemanticContext(t, harness, "state-1", snapshot)
+	prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-setup",
+		SessionID: "semantic-session",
+		Payload:   semanticCommittedOutcome(setup, "translation-setup", prefix, "state-1", 1),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	setupDecision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "outcome"))
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if setupDecision.DecisionStage != "standing_coverage" || setupDecision.StandingAfter != 1 {
+		t.Fatalf("setup decision = %+v", setupDecision)
+	}
+
+	refinement := semanticTranscriptObservation(
+		"translation-refinement", "asr.revision", 2,
+		"And do not wait for them to finish.",
+	)
+	snapshot = trajectory.Snapshot{Version: 2, Items: []trajectory.Item{setup, refinement}}
+	sendSemanticContext(t, harness, "state-2", snapshot)
+	prefix, err = trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-refinement",
+		SessionID: "semantic-session",
+		Payload:   semanticCommittedOutcome(refinement, "translation-refinement", prefix, "state-2", 2),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	refinementDecision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	refinementOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if refinementDecision.Act != coreinteraction.ActStaySilent ||
+		refinementDecision.DecisionStage != "standing_trigger" ||
+		refinementOutcome.Kind != policyelements.SemanticAdmissionSuppressed {
+		t.Fatalf("refinement decision=%+v outcome=%+v", refinementDecision, refinementOutcome)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "voice_committed"))
+
+	greeting := semanticTranscriptObservation(
+		"translation-greeting", "asr.revision", 3, "你好，很高兴见到你",
+	)
+	snapshot = trajectory.Snapshot{Version: 3, Items: []trajectory.Item{setup, refinement, greeting}}
+	sendSemanticContext(t, harness, "state-3", snapshot)
+	prefix, err = trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-greeting",
+		SessionID: "semantic-session",
+		Payload:   semanticCommittedOutcome(greeting, "translation-greeting", prefix, "state-3", 3),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	greetingDecision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "voice_committed"))
+	greetingOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if greetingDecision.Act != coreinteraction.ActSpeakThrough ||
+		greetingDecision.DecisionStage != "primary" ||
+		greetingOutcome.Kind != policyelements.SemanticAdmissionAdmitted {
+		t.Fatalf("greeting decision=%+v outcome=%+v", greetingDecision, greetingOutcome)
+	}
+}
+
 func TestSemanticAdmissionVerifiesSilentActionOnAPartialTranscript(t *testing.T) {
 	decider := &semanticTestDecider{
 		descriptor: semanticTestDescriptor,

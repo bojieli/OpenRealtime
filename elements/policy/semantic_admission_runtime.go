@@ -1009,9 +1009,20 @@ func (runner *semanticAdmissionRunner) decide(
 	// mention them" and made the setup sentence the first count. Interrupt is
 	// deliberately not constrained here; a deployment contract can itself
 	// authorize an immediate correction without a policy spoken in-session.
-	if err == nil && stage == "primary" && act == coreinteraction.ActSpeakThrough && len(standing) == 0 {
-		act = coreinteraction.ActStaySilent
-		stage = "standing_authority"
+	if err == nil && stage == "primary" && act == coreinteraction.ActSpeakThrough {
+		switch {
+		case len(standing) == 0:
+			act = coreinteraction.ActStaySilent
+			stage = "standing_authority"
+		case runner.extractor != nil && situation.TranscriptEvent == coreinteraction.TranscriptPartial &&
+			!runner.extractor.HasArrived(decisionCtx, slices.Clone(standing), situation.Heard):
+			// A standing policy grants authority to react to its future trigger,
+			// not to speak while the user is still refining that policy. Ask the
+			// extractor's deliberately narrow trigger question against only the
+			// current partial, rather than letting earlier setup words satisfy it.
+			act = coreinteraction.ActStaySilent
+			stage = "standing_trigger"
+		}
 	}
 	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation {
 		answerAvailable := slices.Contains(situation.AvailableActs(), coreinteraction.ActAnswer)
