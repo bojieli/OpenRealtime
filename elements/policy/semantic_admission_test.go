@@ -54,7 +54,7 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 5 ||
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 6 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v3" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}
@@ -626,6 +626,66 @@ func TestSemanticAdmissionVoiceActivationVerifierSuppressesOnlyUnmetConditions(t
 	if decision.Act != coreinteraction.ActAnswer || decision.DecisionStage != "primary" ||
 		decision.Activation != "condition-met" {
 		t.Fatalf("met condition decision = %+v", decision)
+	}
+}
+
+func TestSemanticAdmissionVoiceActivationCannotReuseAnEarlierCondition(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		answers:    []string{"wait", string(coreinteraction.ActStaySilent)},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", VerifyVoiceActivation: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	contradiction := semanticEndpointObservation(
+		"deadline-error", 1, 1, "And then ship it by the thirteenth.",
+	)
+	continuation := semanticEndpointObservation(
+		"deadline-continuation", 2, 2,
+		"Which gives us plenty of time to get the documentation finished.",
+	)
+	snapshot := trajectory.Snapshot{
+		Version: 2, Items: []trajectory.Item{contradiction, continuation},
+	}
+	prefix, err := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sendSemanticContext(t, harness, "state-2", snapshot)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-continuation",
+		SessionID: "semantic-session",
+		Payload: semanticCommittedOutcome(
+			continuation, "deadline-continuation", prefix, "state-2", snapshot.Version,
+		),
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if decision.Act != coreinteraction.ActStaySilent || decision.Activation != "wait" ||
+		outcome.Kind != policyelements.SemanticAdmissionSuppressed {
+		t.Fatalf("stale-condition decision=%+v outcome=%+v", decision, outcome)
+	}
+	assertNoSemanticGeneration(t, harness)
+
+	captured := decider.captured()
+	if len(captured) != 2 ||
+		!strings.Contains(captured[0].Evidence, "Which gives us plenty of time") ||
+		strings.Contains(captured[0].Evidence, "thirteenth") ||
+		strings.Contains(captured[0].Evidence, "Recent conversation:") ||
+		!strings.Contains(captured[1].Evidence, "thirteenth") {
+		t.Fatalf("activation did not isolate current evidence: %+v", captured)
 	}
 }
 

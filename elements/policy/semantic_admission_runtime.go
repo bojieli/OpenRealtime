@@ -1271,14 +1271,30 @@ func (runner *semanticAdmissionRunner) verifyVoiceActivation(
 		semanticVoiceConditionMet, semanticVoiceDirectRequest,
 		semanticVoiceAddressedElsewhere, semanticVoiceWait,
 	}
+	activation := semanticVoiceActivationSituation(situation)
 	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
 		Prompt: semanticVoiceActivationInstruction, Options: options,
-		Evidence: situation.Render(), Images: cloneSemanticImages(situation.Seeing),
+		Evidence: activation.Render(), Images: cloneSemanticImages(activation.Seeing),
 	})
 	if err == nil {
 		err = validateSemanticOutcome(outcome, options)
 	}
 	return outcome, err
+}
+
+// semanticVoiceActivationSituation makes the activation guard's evidence
+// boundary match its prompt. Recent conversation is useful to the primary
+// interaction decision, but an earlier occurrence must never satisfy a
+// condition for the current event. Standing instructions and the agent
+// contract already carry the durable context this guard is authorized to
+// enforce; the current heard/seen/quiet evidence is kept intact.
+func semanticVoiceActivationSituation(situation coreinteraction.Situation) coreinteraction.Situation {
+	activation := situation
+	activation.Recent = nil
+	if strings.TrimSpace(activation.Heard) != "" {
+		activation.HeardSince = activation.Heard
+	}
+	return activation
 }
 
 func (runner *semanticAdmissionRunner) verifySilentAction(
