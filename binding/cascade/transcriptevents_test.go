@@ -202,7 +202,8 @@ func TestEventPolicyCanKeepAQueuedResponseBeforeItsFirstAudioFrame(t *testing.T)
 
 	evidence := strings.Join(decider.evidence(), "\n")
 	if !strings.Contains(evidence, "transcript event: partial") ||
-		!strings.Contains(evidence, "agent: speaking out loud right now") {
+		!strings.Contains(evidence, "agent: voice output is queued or audible") ||
+		!strings.Contains(evidence, "Available acts right now: keep-speaking, stop-speaking") {
 		t.Fatalf("the policy did not see queued speech as a keep-or-stop decision:\n%s", evidence)
 	}
 }
