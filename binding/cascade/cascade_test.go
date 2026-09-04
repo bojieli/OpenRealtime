@@ -58,6 +58,7 @@ type scriptedProvider struct {
 	mu         sync.Mutex
 	turns      [][]continuation.Event
 	calls      int
+	completed  int
 	requests   []continuation.Request
 }
 
@@ -74,6 +75,11 @@ func (provider *scriptedProvider) Descriptor() continuation.Descriptor { return 
 func (provider *scriptedProvider) Continue(
 	_ context.Context, request continuation.Request, emit continuation.Emit,
 ) (continuation.Completion, error) {
+	defer func() {
+		provider.mu.Lock()
+		provider.completed++
+		provider.mu.Unlock()
+	}()
 	provider.mu.Lock()
 	index := provider.calls
 	provider.calls++
@@ -98,6 +104,12 @@ func (provider *scriptedProvider) invocations() int {
 	provider.mu.Lock()
 	defer provider.mu.Unlock()
 	return provider.calls
+}
+
+func (provider *scriptedProvider) completions() int {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	return provider.completed
 }
 
 func newFast(turns ...[]continuation.Event) *scriptedProvider {
@@ -444,7 +456,8 @@ func TestBackgroundResultDoesNotRepeatTheSameResponseForOneRevision(t *testing.T
 	runtime, sink := startSession(t, cascade.Config{Fast: fast, Slow: slow}, binding.Settings{})
 
 	speak(t, runtime, 3)
-	waitFor(t, func() bool { return fast.invocations() >= 2 }, "the first background result was never voiced")
+	waitFor(t, func() bool { return fast.completions() >= 2 }, "the first background result was never processed")
+	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 1 }, "the first response was never voiced")
 	if spoken := sink.spokenTexts(); len(spoken) != 1 || spoken[0] != initial {
 		t.Fatalf("one observation repeated the same response: %#v", spoken)
 	}
@@ -452,7 +465,7 @@ func TestBackgroundResultDoesNotRepeatTheSameResponseForOneRevision(t *testing.T
 	// The text is identical, but this is a new user observation and therefore
 	// a new answer rather than a duplicate of the first one.
 	speak(t, runtime, 3)
-	waitFor(t, func() bool { return fast.invocations() >= 4 }, "the second background result was never voiced")
+	waitFor(t, func() bool { return fast.completions() >= 4 }, "the second background result was never processed")
 	waitFor(t, func() bool { return len(sink.spokenTexts()) >= 2 }, "the new observation's response was suppressed")
 	if spoken := sink.spokenTexts(); len(spoken) != 2 || spoken[0] != initial || spoken[1] != initial {
 		t.Fatalf("revision-scoped suppression produced %#v", spoken)
