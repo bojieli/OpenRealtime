@@ -518,6 +518,7 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		{"segment", "model_cancel", "segment_model_cancel_copy", "in"},
 		{"segment_model_cancel_copy", "out", "model_cancel_mux", "in"},
 		{"overlap_barge_in", "model_cancel", "model_cancel_mux", "in"},
+		{"semantic_admission", "silent_cancel", "model_cancel_mux", "in"},
 		{"model_cancel_mux", "out", "model_cancel_copy", "in"},
 		{"overlap_barge_in", "segmentation_cancel", "segmentation_cancel_mux", "in"},
 		{"segmentation_cancel_mux", "out", "segment", "cancel"},

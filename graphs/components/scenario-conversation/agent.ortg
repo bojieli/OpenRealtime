@@ -158,6 +158,7 @@ graph scenario_conversation {
     semantic_admission.silent_create -> silent_session_invocation.create;
     semantic_admission.decision -> semantic_decision_copy.in;
     semantic_decision_copy.out -> overlap_barge_in.semantic;
+    semantic_admission.silent_cancel -> model_cancel_mux.in;
     overlap_barge_in.agent_output -> semantic_admission.agent_output;
     voice_session_invocation.trigger -> voice_model.trigger;
     silent_session_invocation.trigger -> silent_model.trigger;

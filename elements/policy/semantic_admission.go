@@ -32,7 +32,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID        = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision  = "implementation:9"
+	semanticAdmissionRuntimeRevision  = "implementation:10"
 	defaultSemanticRecentLines        = 12
 	defaultSemanticPending            = 64
 	defaultSemanticTerminalMemory     = 512
@@ -238,7 +238,7 @@ func (registry *SemanticDeciderRegistry) Open(
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 7,
+		Name:          "policy.SemanticAdmission", Revision: 8,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -262,6 +262,8 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "silent_create", Direction: element.Output, Type: semanticCreateType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			{Name: "silent_cancel", Direction: element.Output, Type: cognitionelements.CancelType(),
+				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "decision", Direction: element.Output, Type: semanticDecisionType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "state", Direction: element.Output, Type: semanticStateType,
@@ -274,7 +276,7 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 		Reaction: element.Reaction{
 			Triggers: []string{"committed", "create", "quiet"}, SampledState: []string{"context", "update", "agent_output"},
 			Interrupts:     []string{"cancel"},
-			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "decision", "state", "outcome", "resolved"},
+			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "silent_cancel", "decision", "state", "outcome", "resolved"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/policy/semantic-admission-state/v2",

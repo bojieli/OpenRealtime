@@ -106,15 +106,16 @@ func (semanticAdmissionFactory) Mount(
 		entry: entry, registryRevision: registryRevision, handle: handle,
 		clock: clock, sequences: sequences, resolution: mount.Resolution, ports: ports, media: media,
 		contexts: make(map[semanticContextAddress]semanticContextSample),
-		terminal: make(map[string]struct{}), canceledStreams: make(map[cancellationAddress]string),
-		pinboard: &coreinteraction.Pinboard{},
+		terminal: make(map[string]struct{}), silentRuns: make(map[cancellationAddress]semanticSilentRun),
+		canceledStreams: make(map[cancellationAddress]string),
+		pinboard:        &coreinteraction.Pinboard{},
 	}, nil
 }
 
 type semanticAdmissionPorts struct {
 	context, update, agentOutput, committed, create, quiet, cancel element.InputPort
 	voiceCommitted, silentCommitted, voiceCreate, silentCreate     element.OutputPort
-	decision, state, outcome, resolved                             element.OutputPort
+	silentCancel, decision, state, outcome, resolved               element.OutputPort
 }
 
 func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, error) {
@@ -143,6 +144,7 @@ func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, er
 	}{
 		{"voice_committed", &result.voiceCommitted}, {"silent_committed", &result.silentCommitted},
 		{"voice_create", &result.voiceCreate}, {"silent_create", &result.silentCreate},
+		{"silent_cancel", &result.silentCancel},
 		{"decision", &result.decision}, {"state", &result.state},
 		{"outcome", &result.outcome}, {"resolved", &result.resolved},
 	} {
@@ -206,6 +208,12 @@ type semanticDecisionResult struct {
 	timedOut          bool
 }
 
+type semanticSilentRun struct {
+	generationID   string
+	decisionItemID string
+	sourceRevision uint64
+}
+
 type activeSemanticDecision struct {
 	request     semanticRequest
 	cancel      context.CancelCauseFunc
@@ -259,6 +267,8 @@ type semanticAdmissionRunner struct {
 	active           *activeSemanticDecision
 	terminal         map[string]struct{}
 	terminalOrder    []string
+	silentRuns       map[cancellationAddress]semanticSilentRun
+	silentRunOrder   []cancellationAddress
 	canceledStreams  map[cancellationAddress]string
 	canceledOrder    []cancellationAddress
 	pinboard         *coreinteraction.Pinboard
@@ -576,7 +586,77 @@ func (runner *semanticAdmissionRunner) enqueueCommit(ctx context.Context, envelo
 		version: commit.StoreVersion, stateItem: commit.Context.StateItemID,
 		streamID: commit.StreamID, sourceRev: commit.SourceRevision,
 	}
+	if err := runner.supersedeSilentRun(ctx, request); err != nil {
+		return err
+	}
 	return runner.enqueue(ctx, request)
+}
+
+// supersedeSilentRun prevents a provisional silent generation from occupying
+// the single-concurrency cognition lane after newer canonical evidence for the
+// same transcript stream has arrived. The cancellation is addressed to the
+// exact generation derived by SessionInvocation; unrelated streams and voice
+// generations are never touched. It is emitted before classifying the newer
+// revision so even a slow or mistaken earlier action cannot delay the evidence
+// that should replace it.
+func (runner *semanticAdmissionRunner) supersedeSilentRun(
+	ctx context.Context, request semanticRequest,
+) error {
+	if request.streamID == "" || request.sourceRev == 0 {
+		return nil
+	}
+	address := cancellationAddress{
+		streamID: request.streamID, sessionID: request.envelope.SessionID,
+	}
+	previous, found := runner.silentRuns[address]
+	if !found || previous.sourceRevision >= request.sourceRev {
+		return nil
+	}
+	delete(runner.silentRuns, address)
+	if index := slices.Index(runner.silentRunOrder, address); index >= 0 {
+		runner.silentRunOrder = slices.Delete(runner.silentRunOrder, index, index+1)
+	}
+	sequence, err := runner.sequences.Next(runner.instance + ".silent_supersession")
+	if err != nil {
+		return err
+	}
+	envelope := request.envelope.Clone()
+	envelope.Type = runner.ports.silentCancel.Type()
+	envelope.ItemID = fmt.Sprintf("%s:silent_cancel:%d", runner.instance, sequence)
+	envelope.Sequence = sequence
+	envelope.RunID = previous.generationID
+	envelope.CancellationScope = previous.generationID
+	envelope.CausalParents = appendUnique(envelope.CausalParents, request.envelope.ItemID)
+	envelope.CausalParents = appendUnique(envelope.CausalParents, previous.decisionItemID)
+	envelope.Payload = cognitionelements.Cancel{
+		RunID:  previous.generationID,
+		Reason: "newer transcript evidence superseded an earlier silent generation",
+	}
+	_, err = runner.ports.silentCancel.Broadcast(ctx, envelope)
+	return err
+}
+
+func (runner *semanticAdmissionRunner) rememberSilentRun(
+	request semanticRequest, decisionItemID string,
+) {
+	if request.streamID == "" || request.sourceRev == 0 {
+		return
+	}
+	address := cancellationAddress{
+		streamID: request.streamID, sessionID: request.envelope.SessionID,
+	}
+	if _, found := runner.silentRuns[address]; !found {
+		runner.silentRunOrder = append(runner.silentRunOrder, address)
+	}
+	runner.silentRuns[address] = semanticSilentRun{
+		generationID:   generationIdentifier("silent", request.envelope.SessionID, request.commit),
+		decisionItemID: decisionItemID, sourceRevision: request.sourceRev,
+	}
+	for len(runner.silentRunOrder) > runner.config.TerminalMemory {
+		oldest := runner.silentRunOrder[0]
+		runner.silentRunOrder = runner.silentRunOrder[1:]
+		delete(runner.silentRuns, oldest)
+	}
 }
 
 func (runner *semanticAdmissionRunner) enqueueCreate(
@@ -1275,9 +1355,12 @@ const semanticSilentActionInstruction = "You are a silent-action activation guar
 	"Decide whether the CURRENT instant fully grounds some action using an AVAILABLE SILENT TOOL now. " +
 	"action-ready means the current evidence supplies the event, option, or parameters needed to use a listed tool now under the AGENT CONTRACT, " +
 	"standing policies, and recent conversation. wait means it does not: the person is still describing a goal, a recording has not offered a matching option, " +
-	"or an offered option conflicts with the requested goal. Never invent a missing option or parameter. Reply with one label only. " +
+	"or an offered option conflicts with the requested goal. A provisional transcript may end halfway through an option label or parameter: require the words " +
+	"that complete the matching label or parameter, even when a shared head noun makes the unfinished fragment look relevant. Never autocomplete, infer, or invent " +
+	"a missing option word or parameter. Reply with one label only. " +
 	"Examples: tool 'press_key'; person says 'call support and find my order' is wait. The recording says 'press one for billing' while the goal is order status is wait. " +
-	"The recording says 'press two for order status' while that goal stands is action-ready."
+	"With that same goal, provisional 'press two for order' is wait because the option label is unfinished; 'press two for order status' is action-ready, " +
+	"even when that complete phrase is still provisional."
 
 func (runner *semanticAdmissionRunner) verifyStandingCoverage(
 	ctx context.Context, utterance string, policies []coreinteraction.StandingInstruction,
@@ -1847,6 +1930,9 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	}
 	if _, err := output.Broadcast(ctx, branch); err != nil {
 		return err
+	}
+	if request.operation == "committed" && result.act == coreinteraction.ActActSilently {
+		runner.rememberSilentRun(request, decisionItemID)
 	}
 	return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
 		Kind: SemanticAdmissionAdmitted, Operation: request.operation, Act: result.act,

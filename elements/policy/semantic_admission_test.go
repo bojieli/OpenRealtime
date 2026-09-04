@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +37,7 @@ const semanticAdmissionGraph = `graph semantic_admission_test {
     output silent_committed = admission.silent_committed;
     output voice_create = admission.voice_create;
     output silent_create = admission.silent_create;
+    output silent_cancel = admission.silent_cancel;
     output decision = admission.decision;
     output state = admission.state;
     output outcome = admission.outcome;
@@ -54,7 +56,7 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 7 ||
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 8 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v3" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}
@@ -1224,6 +1226,121 @@ func TestSemanticAdmissionVerifiesSilentActionOnAPartialTranscript(t *testing.T)
 		t.Fatalf("partial silent-action guard inputs = %+v", captured)
 	}
 	assertNoPolicyEnvelope(t, harness.egress(t, "silent_committed"))
+}
+
+func TestSemanticAdmissionNewerTranscriptRevisionCancelsAdmittedSilentGeneration(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		answers: []string{
+			string(coreinteraction.ActActSilently), "action-ready",
+			string(coreinteraction.ActStaySilent),
+		},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", VerifySilentAction: true,
+		MinimumActivationConfidence: 0.7, RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+		TranscriptEvents: &policyelements.SemanticTranscriptEventConfig{
+			Partial: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this partial transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActActSilently,
+				},
+			},
+			Final: policyelements.SemanticTranscriptEventRules{
+				Instruction: "Classify this final transcript.", TimeoutMS: 1_000,
+				Acts: []coreinteraction.Act{
+					coreinteraction.ActStaySilent, coreinteraction.ActActSilently,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, true)
+
+	partial := semanticTranscriptObservation("menu-1", "asr.revision", 1, "Press two for order")
+	partial.ID = "observation-menu-1"
+	partial.Event.EventID = "event-menu-1"
+	partial.Event.CorrelationID = "menu"
+	first := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{partial}}
+	firstPrefix, err := trajectory.IdentifyPrefix(first, first.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCommit := semanticCommittedOutcome(partial, "menu", firstPrefix, "state-1", first.Version)
+	sendSemanticContext(t, harness, "state-1", first)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-menu-1",
+		SessionID: "semantic-session", Payload: firstCommit,
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	firstDecisionEnvelope := receivePolicy(t, harness.egress(t, "decision"))
+	firstDecision := firstDecisionEnvelope.Payload.(policyelements.SemanticDecision)
+	_ = receivePolicy(t, harness.egress(t, "silent_committed"))
+	firstOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if firstDecision.Act != coreinteraction.ActActSilently ||
+		firstDecision.Activation != "action-ready" ||
+		firstOutcome.Kind != policyelements.SemanticAdmissionAdmitted {
+		t.Fatalf("admitted partial decision=%+v outcome=%+v", firstDecision, firstOutcome)
+	}
+
+	final := semanticTranscriptObservation("menu-2", "asr.endpoint", 2, "Press two for order status.")
+	final.ID = "observation-menu-2"
+	final.CausalParentIDs = []string{partial.ID}
+	final.Event.EventID = "event-menu-2"
+	final.Event.CorrelationID = "menu"
+	final.Event.SupersedesRevision = partial.SourceRevision
+	second := trajectory.Snapshot{Version: 2, Items: []trajectory.Item{partial, final}}
+	secondPrefix, err := trajectory.IdentifyPrefix(second, second.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondCommit := semanticCommittedOutcome(final, "menu", secondPrefix, "state-2", second.Version)
+	secondCommit.ObservationRevision = 2
+	sendSemanticContext(t, harness, "state-2", second)
+	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-menu-2",
+		SessionID: "semantic-session", Payload: secondCommit,
+	})
+
+	cancelEnvelope := receivePolicy(t, harness.egress(t, "silent_cancel"))
+	cancel, ok := cancelEnvelope.Payload.(cognitionelements.Cancel)
+	wantRunID := semanticSilentGenerationID("semantic-session", firstCommit)
+	if !ok || cancel.RunID != wantRunID || cancelEnvelope.RunID != wantRunID ||
+		cancelEnvelope.CancellationScope != wantRunID ||
+		!strings.Contains(cancel.Reason, "newer transcript evidence") ||
+		!slices.Contains(cancelEnvelope.CausalParents, "commit-menu-2") ||
+		!slices.Contains(cancelEnvelope.CausalParents, firstDecisionEnvelope.ItemID) {
+		t.Fatalf("silent supersession cancellation = %+v payload=%+v, want run %q",
+			cancelEnvelope, cancel, wantRunID)
+	}
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	secondDecision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+	secondOutcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	if secondDecision.Act != coreinteraction.ActStaySilent ||
+		secondOutcome.Kind != policyelements.SemanticAdmissionSuppressed {
+		t.Fatalf("newer final decision=%+v outcome=%+v", secondDecision, secondOutcome)
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "silent_committed"))
+}
+
+func semanticSilentGenerationID(
+	sessionID string, commit stateelements.ObservationCommitOutcome,
+) string {
+	hash := sha256.New()
+	for _, identity := range []string{"silent", sessionID, commit.StreamID, commit.TriggerItemID} {
+		_, _ = fmt.Fprintf(hash, "%d:", len(identity))
+		_, _ = hash.Write([]byte(identity))
+	}
+	_, _ = fmt.Fprintf(hash, "%d:%d", commit.SourceRevision, commit.StoreVersion)
+	return fmt.Sprintf("generation:sha256:%x", hash.Sum(nil))
 }
 
 func TestSemanticAdmissionGroundsAStandingPolicyAcrossSplitEndpoints(t *testing.T) {
@@ -2932,7 +3049,7 @@ func mountSemanticAdmissionRegisteredWithMediaAndShutdown(
 func assertNoSemanticGeneration(t *testing.T, harness policyHarness) {
 	t.Helper()
 	for _, output := range []string{
-		"decision", "voice_committed", "silent_committed", "voice_create", "silent_create",
+		"decision", "voice_committed", "silent_committed", "voice_create", "silent_create", "silent_cancel",
 	} {
 		assertNoPolicyEnvelope(t, harness.egress(t, output))
 	}
