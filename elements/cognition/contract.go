@@ -77,7 +77,7 @@ func TextModelDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "cognition.TextModel",
-		Revision:      2,
+		Revision:      3,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: contextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},

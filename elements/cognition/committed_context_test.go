@@ -216,6 +216,49 @@ func TestTextModelCommittedTriggerWaitsForStateAndCanceledRunStaysTerminal(t *te
 	}
 }
 
+func TestTextModelCommittedCancelBeforeQueuedTriggerTombstonesExactRun(t *testing.T) {
+	provider := &scriptedProvider{
+		descriptor: testDescriptor,
+		seen:       make(chan continuation.Request, 1),
+	}
+	mounted, done, stop := mountCommittedTextModel(t, provider)
+	defer stopTextModel(t, mounted, done, stop)
+
+	const runID = "cancel-before-trigger"
+	send(t, mustIngress(t, mounted, "cancel"), element.Envelope{
+		Type: cognitionelements.CancelType(), ItemID: "cancel-before-trigger-control",
+		SessionID: "session-a", RunID: runID, CancellationScope: runID,
+		Payload: cognitionelements.Cancel{RunID: runID, Reason: "withdrawn before dequeue"},
+	})
+	canceled := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
+	if canceled.Kind != cognitionelements.OutcomeCanceled ||
+		canceled.Code != "canceled_before_start" || canceled.RunID != runID {
+		t.Fatalf("idle pre-cancel outcome = %+v", canceled)
+	}
+
+	snapshot := committedTestSnapshot()
+	binding := committedContext(t, snapshot, 1, "context-v1")
+	sendCommittedSnapshot(t, mounted,
+		trajectory.Snapshot{Version: 1, Items: snapshot.Items[:1]}, "context-v1", "session-a")
+	sendCommittedGenerate(t, mounted, runID, "session-a", binding)
+	replay := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
+	if replay.Kind != cognitionelements.OutcomeRefused ||
+		replay.Code != "committed_run_replay" || replay.RunID != runID {
+		t.Fatalf("pre-canceled queued trigger outcome = %+v", replay)
+	}
+	assertNoProviderRequest(t, provider.seen)
+
+	send(t, mustIngress(t, mounted, "cancel"), element.Envelope{
+		Type: cognitionelements.CancelType(), ItemID: "duplicate-pre-cancel",
+		SessionID: "session-a", RunID: runID, CancellationScope: runID,
+		Payload: cognitionelements.Cancel{RunID: runID},
+	})
+	duplicate := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
+	if duplicate.Kind != cognitionelements.OutcomeIgnored || duplicate.Code != "already_canceled" {
+		t.Fatalf("duplicate idle pre-cancel outcome = %+v", duplicate)
+	}
+}
+
 func TestTextModelCommittedTriggerBeforeStateRunsAfterVerifiedPrefixArrives(t *testing.T) {
 	provider := &scriptedProvider{descriptor: testDescriptor, seen: make(chan continuation.Request, 1)}
 	mounted, done, stop := mountCommittedTextModel(t, provider)

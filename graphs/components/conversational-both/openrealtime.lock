@@ -29,8 +29,8 @@
       "reference": "cognition.TextModel",
       "identity": {
         "name": "cognition.TextModel",
-        "revision": 2,
-        "digest": "sha256:2d2e3e9848fd63da995721c81c5eec6a8fcb969fe69585ad4e96630f31b37f31"
+        "revision": 3,
+        "digest": "sha256:1596e62d7da68f20107787c8b627b1cc32ba6ff5f3f0c1b3f4f3a5a7a7bf52df"
       }
     },
     {

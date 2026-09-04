@@ -745,10 +745,22 @@ func (runner *textModelRunner) cancelIdle(ctx context.Context, envelope element.
 	if err != nil {
 		return runner.publishOutcome(ctx, envelope, cancelAddressOutcome(runner.reference, envelope, err))
 	}
+	if runner.wasCommittedRunCanceled(envelope.SessionID, address) {
+		return runner.publishOutcome(ctx, envelope, Outcome{
+			Kind: OutcomeIgnored, Operation: "cancel", RunID: address,
+			ProviderReference: runner.reference, Code: "already_canceled",
+			Message: "the exact committed-context run is already canceled",
+		})
+	}
+	// A lossless cancellation lane can overtake its independently queued
+	// committed-context trigger. Retain the exact run tombstone before
+	// acknowledging quiescence so that a later trigger is refused before any
+	// provider work. Legacy triggers do not consult this memory.
+	runner.rememberCommittedCanceledRun(envelope.SessionID, address)
 	return runner.publishOutcome(ctx, envelope, Outcome{
-		Kind: OutcomeIgnored, Operation: "cancel", RunID: address,
-		ProviderReference: runner.reference, Code: "run_not_active",
-		Message: "no cognition generation is active",
+		Kind: OutcomeCanceled, Operation: "generate", RunID: address,
+		ProviderReference: runner.reference, Code: "canceled_before_start",
+		Message: strings.TrimSpace(request.Reason), FinishedNS: runner.clock.NowNS(),
 	})
 }
 
