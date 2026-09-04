@@ -387,6 +387,35 @@ deadline, and latency acceptance remain unavailable; the focused
 two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
 campaign remain open; and the final-candidate ledger remains **0/7,486**.
 
+The next benchmark run is intentionally gated on behavior, not on producing a
+new headline number. First complete the four remaining shipped-profile cases:
+forged cross-node evidence, duplicate/reordered terminal decisions, explicit
+indeterminate retry, and failed effects. Then register all five Realtime-CU
+acceptance domains and freeze the exact candidate. Run the two camera, two
+moving-target, and two transient-alert variants as a focused repair set. Every
+failure must be reopened from retained evidence, attributed to code,
+configuration, policy, provider, or evaluator behavior, and repaired before
+the affected focused case is repeated. Only after that loop meets the
+registered constraints should all sixteen cases run and be independently
+reopened from one newly frozen candidate. A behavior-affecting repair
+invalidates affected candidate evidence; it is never hidden by averaging more
+attempts into an aggregate.
+
+The following is a status mirror of the master implementation tracker, not a
+second acceptance source of truth:
+
+| Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
+| --- | ---: | --- | ---: |
+| Interaction scenarios | 165 | Latest sealed 11-case diagnostic passed 8/11 | 0/165 |
+| Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
+| Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
+| FDB v1.5 | 498 | Historical diagnostic passed 355/498 and exposed severe interruption-latency failure | 0/498 |
+| FDB v3 | 100 | Historical 9/100 is acceptance-invalid because the scorer admitted extra effects | 0/100 |
+| FD-Bench | 6,147 | 1,546 completions and one interrupted attempt are retained; the population is incomplete | 0/6,147 |
+| tau-Voice control | 278 | Older nonreportable diagnostic passed 160/278 | 0/278 |
+| tau-Voice regular | 278 | No graph-native campaign has started | 0/278 |
+| **Total** | **7,486** | Earlier checkpoints remain diagnostic only | **0/7,486** |
+
 The report also retains cue-to-first-tool, cue-to-effectful-action,
 speech-end-to-action, cue/frame-to-observation, action execution, and total
 completion latency, with sample counts and distributions. Screenshot, wait,

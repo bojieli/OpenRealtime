@@ -297,19 +297,21 @@ The graph template passes canonical formatting and warning-free strict
 `computer-use` validation. These identities and checks describe implementation
 and configuration, not live model quality or benchmark non-regression.
 
-The WebSocket integration test launches the real locked graph through the
-strict application registration, generic profile registry, and
-`server.NewProfileGraphBundle`. It then sends microphone evidence, observes a
+The local `httptest` WebSocket integration launches the locked production
+graph through the strict application registration, generic profile registry,
+and `server.NewProfileGraphBundle`. It then sends microphone evidence, observes a
 graph-authorized ordinary function call, returns the client result, waits for
 its canonical commit, and sends forced screen feedback. The same original user
 task authorizes a second call only after that screen is proven to descend from
 both the user item and first result. Both results produce distinct canonical
 visual-consequence checkpoints through the unchanged endpoint.
 
-The same endpoint now exercises three cancellation phases. First it holds the
-real disposition provider in flight after a successful effect, cancels it, and
-proves that a new intent can activate only after its own complete fresh screen/
-camera cohort. Second it cancels a model call before any prepared result and
+The same local endpoint now exercises three cancellation phases with scripted
+model, observer, and semantic-decider implementations. First it holds the
+production disposition element's cancellable client in flight after a
+successful effect, cancels it, and proves that a new intent can activate only
+after its own complete fresh screen/camera cohort. Second it cancels a model
+call before any prepared result and
 again proves replacement-intent recovery. Third it cancels after a client tool
 call crossed the external boundary: the public request receives the honest
 `incomplete/action_already_crossed` result, the mandatory cancellation result
@@ -457,7 +459,8 @@ Current implementation ledger:
 | Reference semantic/vision disposition producer | Profile-bound and locally verified | Exercise quality on focused live cases |
 | Protocol/session cancellation translation | Implemented and adversarially verified through provider, model, idle-action, and crossed-action phases | Complete the remaining forged/reordered/failed-effect mounted cases |
 | Activation settlement input and acknowledgement output | Connected; focus→type→submit, terminal cadence, and new-intent recovery are production-mounted and race-tested | Confirm behavior in the focused live cases |
-| Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Frozen with no admission bypass; strict check passes | Final identities change if later behavioral repair changes code or configuration |
+| Indeterminate settlement retry | Open: the gate retains retryable evidence, but the shipped graph submits each probe only once | Add explicit bounded graph policy and exercise it through the production mount |
+| Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Implementation artifacts are pinned with no admission bypass; strict check passes | They are not yet a frozen benchmark candidate and change if later behavioral repair changes code or configuration |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
 
 The implementation checkpoint is also hardened at its untrusted typed-input
@@ -503,6 +506,18 @@ cancellation_coordinator.model_cancel -> model.cancel;
 cancellation_coordinator.action_cancel -> action_cancel_copy.in;
 ```
 
+This topology currently has no retry edge after an `indeterminate` producer
+outcome. That absence is an open production behavior, not an implicit promise
+that the producer retries internally. A retry design belongs in the graph as a
+reusable policy element (or equivalent explicit composed control path) so its
+trigger, delay/backoff, attempt/deadline bounds, cancellation, and terminal
+outcome are visible to validation and inspection. It must replay the exact
+immutable probe and lineage, never invoke the semantic client concurrently,
+and stop on a verified terminal decision or exact cancellation/reset. Adding a
+hidden timer to either `IntentSettlement` or `IntentDispositionProducer` would
+erase a developer-visible interaction-policy choice and is therefore not the
+reference design.
+
 There is no admission bypass around the settlement gate. On `continue`, the
 gate releases the original verified evidence through `admitted`. On a verified
 terminal disposition, it
@@ -522,3 +537,9 @@ Each observed failure is retained and repaired before all 16 cases are rerun
 from a newly frozen candidate. No live benchmark was run for this settlement/
 cancellation checkpoint, and nothing in its implementation checks advances
 the project-wide 0/7,486 final-candidate attempt ledger.
+
+Here, the existing cadence regression means five sequential changing screen
+frames after terminal settlement; it does not claim sustained live-stream
+coverage. Likewise, existing mounted forgery checks cover temporal-admission
+source/mode trust. Forged cross-node settlement evidence remains one of the
+four open full-composition cases above.

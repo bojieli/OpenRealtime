@@ -1849,10 +1849,12 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this reconciliation, 304 of 371 explicit tracker boxes are checked (81.9%)
-and 67 remain open. The percentage records completed reviewable slices; it does
-not dilute an open parent, benchmark population, platform gate, or definition-
-of-done requirement.
+At this reconciliation, 308 of 379 explicit tracker boxes are checked (81.3%)
+and 71 remain open. The denominator grew because the broad mounted Realtime-CU
+composition item was split into four evidenced and four still-open subgates;
+the lower percentage is added resolution, not lost implementation. The
+percentage records completed reviewable slices; it does not dilute an open
+parent, benchmark population, platform gate, or definition-of-done requirement.
 
 The release-acceptance numerator is separately **0 of 7,486 final-candidate
 attempts**. This does not erase the substantial diagnostic execution below; it
@@ -1876,6 +1878,36 @@ implemented slices, but it is not a release percentage. The release remains
 open until all rows above meet their preregistered aggregate, per-case, safety,
 deadline, and latency targets and their evidence is independently reopened.
 
+Checkpoint accounting is intentionally split so that implementation progress
+cannot be mistaken for behavioral acceptance:
+
+| Ledger | Current state | Meaning |
+| --- | --- | --- |
+| Architecture implementation | 308/379 boxes checked (81.3%); 71 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
+| Phase exits | Phases 0, 3, and 4 are marked complete; phases 1, 2, 5, 6, 7, and 8 remain open | A phase closes only through its own checked exit gate |
+| Realtime-CU mounted composition | Seven named dimensions exercised; four remain: forgery, reordered/duplicate terminal evidence, indeterminate retry, and failed effect | The parent mounted-composition box remains unchecked until every dimension runs through the shipped profile |
+| Realtime-CU target registry | All five domains remain `unavailable` | No result can yet satisfy aggregate, exact-case, safety, deadline, and latency acceptance |
+| Repaired-candidate live work | Focused six variants and the subsequent exact sixteen have not run | Historical 8/16 and 14/16 checkpoints remain diagnostic, not candidate credit |
+| Definition of done | 8/15 top-level outcomes checked; 17/24 including nested subgates | Seven top-level release outcomes remain open regardless of lower-level implementation progress |
+| Final release matrix | 0/7,486 final-candidate attempts | No prior, filtered, synthetic, or differently versioned attempt is carried into this ledger |
+
+The exact checkbox distribution is:
+
+| Tracker section | Checked | Open | Total |
+| --- | ---: | ---: | ---: |
+| Delivery and acceptance ledger | 139 | 44 | 183 |
+| Phase 0 | 4 | 0 | 4 |
+| Phase 1 | 7 | 1 | 8 |
+| Phase 2 | 14 | 7 | 21 |
+| Phase 3 | 5 | 0 | 5 |
+| Phase 4 | 10 | 0 | 10 |
+| Phase 5 | 11 | 2 | 13 |
+| Phase 6 | 88 | 4 | 92 |
+| Phase 7 | 9 | 4 | 13 |
+| Phase 8 | 4 | 2 | 6 |
+| Definition of done, including subgates | 17 | 7 | 24 |
+| **Total** | **308** | **71** | **379** |
+
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
@@ -1890,13 +1922,16 @@ deadline, and latency targets and their evidence is independently reopened.
 
 ### 2026-09-04 delivery report: production settlement and cancellation
 
-This checkpoint advances the architecture checklist from 301/371 (81.1%) to
-304/371 (81.9%). The three newly closed items are narrowly scoped: bind the
-reference disposition producer in the Realtime-CU profile, implement the exact
-session-cancellation coordinator, and connect and lock the producer, settlement
-gate, activation handshake, and coordinator without an admission bypass. No
-parent, mounted-composition, live-behavior, phase-exit, or release item was
-closed by inference.
+The initial production-integration checkpoint advanced the then-current
+architecture checklist from 301/371 (81.1%) to 304/371 (81.9%). The three
+closed items were narrowly scoped: bind the reference disposition producer in
+the Realtime-CU profile, implement the exact session-cancellation coordinator,
+and connect and lock the producer, settlement gate, activation handshake, and
+coordinator without an admission bypass. This reconciliation adds eight
+mounted-composition subgates: four checked for later evidenced work and four
+open for the cases that are still missing, producing the current 308/379
+ledger. No parent, live-behavior, phase-exit, or release item was closed by
+inference.
 
 The delivered implementation is organized so that each behavioral boundary can
 be reviewed or reverted independently:
@@ -1908,7 +1943,7 @@ be reviewed or reverted independently:
 | Production graph coordination | `5ed3f63`, `3f230c0` | Coordinates settlement, activation, model, canonical model-result, and configured action-stage cancellation; refreshes the locked activation/profile identity |
 | Crossed-effect honesty | `ab2e29a` | Keeps the first exact cancellation at `ToolResultCommit` until the mandatory result safe point and reports an irreversible crossing as incomplete rather than pretending cancellation succeeded |
 | Shutdown liveness | `15e91b6` | Orders media publication against adapter close without holding the lifecycle lock while waiting for canonical commit, allowing close to drain blocked media waiters |
-| Documentation and evidence ledger | `0931a7b`, `190cdec` | Records the production integration, artifact identities, local verification, checklist movement, and still-open behavioral gates |
+| Documentation and evidence ledger | `0931a7b`, `190cdec`, `1413722`, `a5d42ad` | Records the production integration, artifact identities, local verification, checklist movement, cancellation/multi-step evidence, and still-open behavioral gates |
 | Commit-acknowledgement isolation | `a75e8c1` | Prevents an unrelated trajectory commit for the same run from masquerading as failure of the canonical model-result transaction; upgrades the coordinator to revision 3 and exercises provider, model, crossed-action, replacement-intent, and stable-endpoint cancellation ordering |
 | Multi-step terminal settlement | `98ecad4` | Executes focus→type→submit under two explicit continuations, latches success after the third effect, resists continuous changing frames, and reopens only for a new intent with fresh evidence |
 
@@ -1917,11 +1952,11 @@ Realtime-CU evidence, but live confirmation remains deliberately separate:
 
 | Observed defect or risk | Implemented repair | Evidence at this checkpoint | Still required |
 | --- | --- | --- | --- |
-| Camera actions could use a clear frame captured before the durable smoke intent | Typed post-intent temporal admission is now the only route into production activation | Mounted freshness, cancellation, forgery, multi-source, and stable-endpoint regressions pass | Run both authored camera variants and verify no pre-cue effect |
+| Camera actions could use a clear frame captured before the durable smoke intent | Typed post-intent temporal admission is now the only route into production activation | Mounted freshness, cancellation, temporal-admission forgery, multi-source, and stable-endpoint regressions pass; forged cross-node settlement evidence remains open | Run both authored camera variants and verify no pre-cue effect |
 | Moving-target and transient-alert sessions continued proposing after success | Exact result-linked settlement can latch a terminal intent, activation acknowledges clearing the matching effect, and the coordinator cancels the remaining pipeline | Element, ordering, bounded-state, coordinator, and endpoint checks pass | Run both moving-target and both transient-alert variants and verify no post-success loop or horizon timeout |
-| Cancellation could miss queued cognition or return before a real policy call became quiescent | Queued-run tombstones are durable and the coordinator waits for the actual disposition provider outcome | The production endpoint now cancels an in-flight policy call and an active model run, then admits a fresh intent after each | Confirm the same behavior on focused live cases |
-| An unrelated same-run trajectory commit could be mistaken for failure of the model-result commit | Coordinator revision 3 ignores only empty `unknown_commit_reply`/`unknown_rejection_reply` fanout diagnostics and still requires exact canonical model-commit evidence | The production endpoint exposed the race; the repair passes 30 normal and 10 race-enabled repetitions, with exact-shape unit coverage | Preserve this ordering during the remaining mounted cases and live repair campaign |
-| Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | The production endpoint reports `incomplete/action_already_crossed`, commits the mandatory cancellation result, requests visual consequence evidence, suppresses the old epoch, and admits a later intent | Exercise an authored failed-effect case and confirm live scorer behavior |
+| Cancellation could miss queued cognition or return before a selected policy client became quiescent | Queued-run tombstones are durable and the coordinator waits for the actual disposition producer/client outcome | The local locked-profile WebSocket test cancels an in-flight scripted policy-client call and an active scripted model run, then admits a fresh intent after each | Confirm the same behavior with the selected live provider on focused cases |
+| An unrelated same-run trajectory commit could be mistaken for failure of the model-result commit | Coordinator revision 3 ignores only empty `unknown_commit_reply`/`unknown_rejection_reply` fanout diagnostics and still requires exact canonical model-commit evidence | The local locked-profile WebSocket test exposed the race; the repair passes 30 normal and 10 race-enabled repetitions, with exact-shape unit coverage | Preserve this ordering during the remaining mounted cases and live repair campaign |
+| Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | The local locked-profile WebSocket test reports `incomplete/action_already_crossed`, commits the mandatory cancellation result, requests visual consequence evidence, suppresses the old epoch, and admits a later intent | Exercise an authored failed-effect case and confirm live scorer behavior |
 | A terminal policy could accidentally become a blanket one-action-per-intent rule | Settlement explicitly chooses continuation or terminal state per canonical consequence | The production graph executes click/focus→type→submit under two continuations, terminates on success, ignores five changing cadence frames, and admits a new intent afterward | Confirm moving-target and transient-alert live behavior |
 | Session shutdown could deadlock behind media waiting for canonical commit | Observer use and publication/close ordering now have separate lifecycle boundaries; close drains commit waiters | Focused normal and race-enabled close regressions pass | Confirm the live focused cases terminate without running to the evaluation horizon |
 
@@ -1941,8 +1976,8 @@ The ordered critical path from this checkpoint is:
    evidence, duplicate/reordered terminal decisions, explicit indeterminate
    retry, and failed effects. Shared retained media, cancellation/replacement,
    asynchronous provider/model wait, crossed effects, focus→type→submit,
-   continuous cadence, graph-level race, and stable WebSocket ordering now have
-   production-composition coverage.
+   five sequential changing cadence frames, graph-level race, and stable local
+   WebSocket ordering now have production-composition coverage.
 2. Register machine-enforceable Realtime-CU aggregate, exact per-case, safety,
    deadline, and latency targets. An `unavailable` target cannot accept a run.
 3. Freeze a candidate and run the two camera, two moving-target, and two
@@ -1956,6 +1991,18 @@ The ordered critical path from this checkpoint is:
 6. Complete the other required suite populations and finally execute all 7,486
    attempts against one shared frozen release candidate. Only accepted results
    from that matrix can close the release.
+
+The first open implementation blocker is explicit `indeterminate` settlement
+retry. The shipped graph sends each immutable probe to the disposition producer
+once. The gate correctly retains retryable evidence after an indeterminate
+outcome, but no production-authored element resubmits that exact probe, so a
+transient provider, policy, or retained-media failure can strand a durable
+intent. The repair must remain graph policy rather than a hidden producer timer:
+it must preserve exact probe identity and lineage, serialize access to the
+semantic client, bound attempts/backoff/deadline/state, stop on verified
+terminal disposition or cancellation/reset, publish inspectable timing and
+outcomes, and be reusable outside Realtime-CU. Only its complete mounted test
+can close the corresponding portion of the open composition item.
 
 Current checkpoint notes:
 
@@ -2135,8 +2182,8 @@ Current checkpoint notes:
   crossed or pending result until its mandatory canonical safe point; a later
   terminal outcome reports that irreversible crossing honestly. These
   production integration checks do
-  not close the still-open complete mounted focus→type→submit and adversarial
-  matrix, acceptance targets, focused live six-case campaign, repaired
+  not close the still-open complete mounted adversarial matrix, acceptance
+  targets, focused live six-case campaign, repaired
   exact-sixteen campaign, or final 7,486-attempt matrix.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
@@ -2194,8 +2241,9 @@ Current checkpoint notes:
   server/native presentation lifecycle evidence rather than visual mutation.
 - Eight of the fifteen project-level definition-of-done outcomes are proven end
   to end. The remaining seven have named completed subgates, but direct
-  benchmark execution, production inspection, reconciliation, native-client
-  evidence, and obsolete-path deletion are still outstanding.
+  benchmark execution, universal inspection identity for the remaining legacy
+  launch paths, reconciliation, native-client evidence, and obsolete-path
+  deletion are still outstanding.
 
 Integrated checkpoint ledger:
 
@@ -3544,6 +3592,31 @@ the required new 165-attempt sample.
         production-mounted treatment. Standalone descriptor, schema, runtime,
         exact-media, bounded-state, and ordering subsets do not close this
         composed runtime gate or any live behavioral gate.
+        - [x] Exercise exact cancellation and canonical result settlement
+          through in-flight policy-client, active-model, idle-action, and
+          crossed-action phases; require fresh evidence for each replacement
+          intent and report an irreversible crossing honestly.
+        - [x] Exercise adapter close while media waits for canonical commit;
+          prove observer exclusion and waiter release in normal and race-enabled
+          runs without holding the lifecycle lock across the commit wait.
+        - [x] Isolate the canonical model-result acknowledgement from an
+          unrelated same-run trajectory fanout diagnostic, including exact
+          authority-free and adversarial authority-bearing outcome shapes.
+        - [x] Exercise focus→type→submit through two `continue` decisions and
+          one terminal `succeeded` decision, then suppress five changing screen
+          frames and admit a new durable intent only with fresh visual evidence.
+        - [ ] Exercise forged cross-node settlement evidence through the full
+          locked production profile; temporal-admission source/mode forgery
+          coverage alone does not close this case.
+        - [ ] Exercise duplicate and reordered terminal decisions through the
+          full locked production profile, including terminal/result and
+          cancellation/terminal reorderings at every connected boundary.
+        - [ ] Implement and exercise explicit bounded `indeterminate` retry as
+          graph policy while preserving the immutable probe, serialized client
+          use, cancellation, terminal stop, and inspectable timing/outcomes.
+        - [ ] Exercise failed-effect behavior through the full locked
+          production profile and verify result-linked visual consequence,
+          retry/terminal policy, cancellation, scorer evidence, and quiescence.
       - [ ] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
         `scripts/behavioral-acceptance-targets.json`. Its current
@@ -5347,8 +5420,9 @@ questions. The remaining choices are:
 
 - Whether TypeScript is the first supported external builder SDK and how its
   generated port handles are versioned.
-- How much topology editing the first visual UI supports versus read-only
-  inspection.
+- Which node/subgraph creation and removal, channel configuration, topology
+  reconciliation, and non-semantic layout-persistence operations extend the
+  implemented compiler-backed node rename and edge removal/creation surface.
 - Whether visual layout is a sidecar artifact or a non-semantic graph
   annotation.
 - Which topology and state-schema changes, and which routing safe points,
@@ -5447,8 +5521,9 @@ checked from foundation work alone; each requires end-to-end release evidence.
     followed by a complete-suite rerun. Historical per-attempt artifacts are
     not reconstructed or required.
   - [x] Complete, independently reopened graph-native diagnostic populations
-    now exist for Meeting Assistant (4/4 accepted in its historical campaign)
-    and Realtime-CU (16/16 executed and reopened, 14/16 scored), with exact
+    now exist for Meeting Assistant (4/4 passed and independently reopened in
+    its historical diagnostic campaign) and Realtime-CU (16/16 executed and
+    reopened, 14/16 scored), with exact
     live graph evidence, retained media, deterministic outcomes, exact-model
     advisory review, and create-only source/evaluation receipts. The prior FDB
     v3 100-attempt campaign remains retained but is acceptance-invalid because
