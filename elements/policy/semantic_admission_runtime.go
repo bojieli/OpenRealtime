@@ -929,6 +929,7 @@ func (runner *semanticAdmissionRunner) decide(
 	// policy setup and cannot safely prove that the words belong to somebody
 	// else's conversation.
 	activationChecked := false
+	standingConditionMet := false
 	skipStandingMutation := false
 	if err == nil && request.operation == "committed" &&
 		runner.config.VerifyVoiceActivation && semanticActivationEvidence(situation) {
@@ -943,6 +944,8 @@ func (runner *semanticAdmissionRunner) decide(
 				confident := semanticActivationConfident(
 					activationOutcome, runner.config.MinimumActivationConfidence,
 				)
+				standingConditionMet = activation == semanticVoiceConditionMet &&
+					confident && len(standing) > 0
 				if activation == semanticVoiceAddressedElsewhere {
 					// Even an uncertain other-addressee verdict cannot authorize a
 					// durable pin or revocation. Confidence only decides whether this
@@ -981,9 +984,12 @@ func (runner *semanticAdmissionRunner) decide(
 						failure = "standing_coverage_failed"
 					} else {
 						standingCoverage = strings.TrimSpace(coverageOutcome.Option)
-						if standingCoverage == semanticStandingCovered ||
+						if !standingConditionMet && (standingCoverage == semanticStandingCovered ||
 							standingCoverage == semanticStandingAdditional && coverageOutcome.Measured &&
-								coverageOutcome.Confidence < runner.config.MinimumActivationConfidence {
+								coverageOutcome.Confidence < runner.config.MinimumActivationConfidence) {
+							// Extraction describes durable policy mutation. It may not erase an
+							// immediate trigger that the activation guard already grounded in
+							// the current evidence under a policy that was in force beforehand.
 							act = coreinteraction.ActStaySilent
 							stage = "standing_coverage"
 						}

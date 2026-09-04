@@ -333,11 +333,13 @@ func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesIt
 		answers: []string{
 			"wait", "covered",
 			"wait", string(coreinteraction.ActAnswer),
-			"condition-met", string(coreinteraction.ActStaySilent),
+			"condition-met", "covered", string(coreinteraction.ActStaySilent),
 		},
 		generationAnswers: []string{
 			"pin conversation count the animals out loud as they mention them and say nothing else",
-			"yes", "yes", "yes", "standing", "none", "none",
+			"yes", "yes", "yes", "standing", "none",
+			"pin conversation count the animals out loud as they mention them and say nothing else",
+			"yes",
 		},
 	}
 	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
@@ -468,10 +470,10 @@ func TestSemanticAdmissionPinsStandingPolicyBeforeTheNextDecisionAndSuppressesIt
 		t.Fatalf("animal decision=%+v outcome=%+v state=%+v", decision, outcome, state)
 	}
 	captured := decider.captured()
-	if len(captured) != 6 || !strings.Contains(captured[4].Evidence, "Standing instructions:") ||
+	if len(captured) != 7 || !strings.Contains(captured[4].Evidence, "Standing instructions:") ||
 		!strings.Contains(captured[4].Evidence, "count the animals") ||
-		!strings.Contains(captured[5].Evidence, "Standing instructions:") ||
-		!strings.Contains(captured[5].Evidence, "count the animals") {
+		!strings.Contains(captured[6].Evidence, "Standing instructions:") ||
+		!strings.Contains(captured[6].Evidence, "count the animals") {
 		t.Fatalf("semantic decision inputs = %+v", captured)
 	}
 }
