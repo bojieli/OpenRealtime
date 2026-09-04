@@ -65,7 +65,7 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 7 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 8 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v4" {
@@ -822,15 +822,17 @@ func TestOverlapBargeInSemanticKeepSpeakingClosesTheAcousticDeadline(t *testing.
 	harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
 		"invocation", "run", "source-stream", 1, coreinteraction.ActInterrupt,
 	))
-	harness.sendAndSync(t, "activity", overlapActivityEnvelope(
+	state := harness.sendAndSync(t, "activity", overlapActivityEnvelope(
 		"activity-start", "continuation-stream", acousticelements.SpeechStarted,
 	))
-	_, observed := receiveOverlapDecision(t, harness.output(t, "decision"))
-	if observed.Kind != OverlapObserved {
-		t.Fatalf("initial overlap = %+v", observed)
+	if state.OverlapActive || state.CancelIssued {
+		t.Fatalf("deliberate output armed acoustic cancellation before semantic evidence: %+v", state)
 	}
+	harness.scheduler.AdvanceNS(uint64(50 * time.Millisecond))
+	assertNoOverlapCancels(t, harness)
+	assertNoEnvelope(t, harness.output(t, "decision"))
 
-	state := harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
+	state = harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
 		"semantic-keep", "continuation-stream", 1, coreinteraction.ActKeepSpeaking,
 	))
 	_, kept := receiveOverlapDecision(t, harness.output(t, "decision"))
@@ -840,7 +842,6 @@ func TestOverlapBargeInSemanticKeepSpeakingClosesTheAcousticDeadline(t *testing.
 		t.Fatalf("semantic keep decision=%+v state=%+v", kept, state)
 	}
 
-	harness.scheduler.AdvanceNS(uint64(50 * time.Millisecond))
 	assertNoOverlapCancels(t, harness)
 	assertNoEnvelope(t, harness.output(t, "decision"))
 }

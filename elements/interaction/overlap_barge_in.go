@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:7"
+	overlapBargeInRuntimeRevision  = "implementation:8"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      7,
+		Revision:      8,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -2063,9 +2063,12 @@ func (runner *overlapBargeInRunner) hasAgentWork() bool {
 }
 
 // hasActionableOverlapWork excludes output which was explicitly authorized to
-// coexist with the currently active source stream. Acoustic onset and generic
-// overlap classification must not undo that semantic decision; a later typed
-// stop-speaking decision still addresses it through cancelSelectedRuns.
+// interrupt or speak through. Acoustic onset cannot tell whether a following
+// ASR stream is a continuation, acknowledgement, correction, or new request;
+// canceling before its first transcript revision defeats the semantic policy
+// that can. A later typed stop-speaking decision still addresses deliberate
+// output through cancelSelectedRuns, while ordinary answers retain the bounded
+// acoustic fallback.
 func (runner *overlapBargeInRunner) hasActionableOverlapWork() bool {
 	for _, run := range runner.runs {
 		if runner.runProtectedFromCurrentSpeech(run) {
@@ -2087,8 +2090,7 @@ func (runner *overlapBargeInRunner) hasActionableOverlapWork() bool {
 }
 
 func (runner *overlapBargeInRunner) runProtectedFromCurrentSpeech(run *overlapRun) bool {
-	return run != nil && runner.speech != nil && run.streamID != "" &&
-		run.streamID == runner.speech.streamID && deliberateSpokeOver(run.act)
+	return run != nil && runner.speech != nil && run.streamID != "" && deliberateSpokeOver(run.act)
 }
 
 func (runner *overlapBargeInRunner) ensureRun(runID string) (*overlapRun, error) {
