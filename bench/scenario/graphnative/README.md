@@ -6,7 +6,7 @@ It decorates an explicitly selected `graph/launch` adapter plugin, checks the
 adapter against the exact immutable plan, and returns the prepared
 `NativeBinding` for a host to compose as its `server.SessionProvider`.
 
-The complete contract covers the eleven repository-owned interaction cases.
+The complete contract covers the twelve repository-owned interaction cases.
 The ordinary path requires:
 
 - session settings (`gateway.input.update`);
@@ -43,8 +43,8 @@ artifacts before it can open a listener or start a session. Presentation hosts
 remain clients of the same Realtime and management APIs; this package installs
 no HTTP or UI route.
 
-`TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract` is the
-credential-free protocol checkpoint. It starts eleven independent sessions
+`TestProfiledGraphNativeWebSocketExercisesExactTwelveScenarioContract` is the
+credential-free protocol checkpoint. It starts twelve independent sessions
 through that generic profile registry and exact graph-native server path. Every
 case crosses session configuration, realtime PCM input, concurrent input/output,
 and a complete response lifecycle. The recorded-menu case additionally crosses
@@ -68,7 +68,7 @@ Static launch compatibility is not behavioral evidence. In particular, it
 does not prove that the graph waits through requested silence, interrupts at
 the right moment, distinguishes nearby speakers, handles acknowledgements,
 chooses the correct tool, understands the image, or meets a latency bound.
-Those claims still require the preregistered live run of all eleven scenarios
+Those claims still require the preregistered live run of all twelve scenarios
 at the required repetitions with authenticated runtime evidence. Provider
 credentials and live results are intentionally outside this package.
 
@@ -90,6 +90,8 @@ bundle, speech service, and fifteen repetitions per case:
 go run ./cmd/openrealtime scenario \
   -url "$OPENREALTIME_BENCH_ENDPOINT" \
   -speech-url "$OPENREALTIME_SPEECH_ENDPOINT" \
+  -transcribe-url "$OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT" \
+  -transcribe-model "$OPENREALTIME_SCENARIO_TRANSCRIBE_MODEL" \
   -repeat 15 \
   -architecture-manifest "$OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST" \
   -architecture-cell "$OPENREALTIME_SCENARIO_ARCHITECTURE_CELL" \
@@ -121,7 +123,7 @@ portable receipt selected by `-review-receipt` is written outside the review
 directory and is required to reopen the source bundle; its default is
 `<review-dir>.receipt.json`.
 
-A checklist is reportable only when all 165 attempts have exact live graph
+A checklist is reportable only when all 180 attempts have exact live graph
 evidence and verifier-backed media; a smaller diagnostic run is labeled
 non-reportable even when its individual behavior checks pass. Behavioral
 failures are still published case by case with their recordings. The
@@ -169,5 +171,5 @@ evaluation bytes; a local manifest by itself is not authority.
 Missing endpoints, provider credentials, reviewed manifests, inspection
 authority, or sealed review publication are an unavailable provisioned gate—not a
 passing synthetic result. The credential-free WebSocket test above must never
-be substituted for the required 165 live candidate attempts or the documented
+be substituted for the required 180 live candidate attempts or the documented
 comparison with the benchmark owner's trusted historical result.

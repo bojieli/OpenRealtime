@@ -190,31 +190,32 @@
       "id": "scenario",
       "result_kind": "architecture_result",
       "suite": "scenario",
-      "expected_population": 165,
+      "expected_population": 180,
       "case_key": "before_final_hash",
       "aggregate": {
         "registration": {
           "status": "registered",
-          "source": "docs/measurement.md, F63: accepted fifteen-repeat baseline 140/165"
+          "source": "docs/spoken-boundary.md: twelve-case promotion requires all 180 attempts to pass"
         },
-        "minimum_passed": 140
+        "minimum_passed": 180
       },
       "cases": {
         "registration": {
           "status": "registered",
-          "source": "docs/measurement.md, F63: accepted fifteen-repeat per-scenario baseline"
+          "source": "docs/spoken-boundary.md: twelve-case promotion requires all 15 attempts per case to pass"
         },
         "targets": [
           {"case": "a recorded menu", "expected_attempts": 15, "minimum_passed": 15},
           {"case": "an acknowledgement is not an interruption", "expected_attempts": 15, "minimum_passed": 15},
           {"case": "an ordinary question", "expected_attempts": 15, "minimum_passed": 15},
           {"case": "asked not to be interrupted", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "count-as-they-go", "expected_attempts": 15, "minimum_passed": 8},
-          {"case": "cutting in on something wrong", "expected_attempts": 15, "minimum_passed": 13},
-          {"case": "ordering from a waiter", "expected_attempts": 15, "minimum_passed": 8},
-          {"case": "somebody else's conversation", "expected_attempts": 15, "minimum_passed": 14},
-          {"case": "telling them what it saw", "expected_attempts": 15, "minimum_passed": 11},
-          {"case": "translating as they speak", "expected_attempts": 15, "minimum_passed": 11},
+          {"case": "count-as-they-go", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "cutting in on something wrong", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "ordering from a waiter", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "picking up where it was cut off", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "somebody else's conversation", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "telling them what it saw", "expected_attempts": 15, "minimum_passed": 15},
+          {"case": "translating as they speak", "expected_attempts": 15, "minimum_passed": 15},
           {"case": "waiting out a silence they asked for", "expected_attempts": 15, "minimum_passed": 15}
         ]
       },

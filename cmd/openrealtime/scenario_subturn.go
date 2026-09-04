@@ -15,20 +15,11 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 )
 
-// runSubturnCases plays the cases that sit outside the gated acceptance
-// contract, and reports them as exactly that.
-//
-// They are separate for a reason worth stating rather than leaving implicit.
-// The gated suite is fingerprinted: its case list decides a graph contract
-// digest and its accepted pass thresholds were measured over that exact list,
-// at a documented population. Dropping a new case into it changes both, and the
-// thresholds do not move with it - a suite that grew from eleven cases to
-// twelve while keeping a minimum of 140 out of 165 is a weaker gate wearing the
-// same number, and one that would pass with the new case failing every time.
-//
-// So the new case runs here, in full, and is reported with its own heading and
-// no claim of acceptance. When it has a measured baseline of its own it can be
-// registered and moved; until then, "reported" is what it actually is.
+// runSubturnCases is the focused authoring runner for a selected sub-turn slab.
+// The production scenario command does not use it: promoted sub-turn cases run
+// through the graph-native checklist, media verifier, and source receipt. It is
+// retained as a small diagnostic seam for developing future boundary checks
+// before they are admitted to the canonical contract.
 // scenarioPlayer is the one seam in this file. Everything else here is
 // bookkeeping around a live session, and a test that had to open one to check
 // the bookkeeping would be checking the session instead.
@@ -102,8 +93,8 @@ func report(output io.Writer, attempt subturnOutcome) {
 	}
 }
 
-// writeSubturnRecord stores the ungated attempts beside the architecture
-// record rather than inside it.
+// writeSubturnRecord stores focused authoring attempts beside an architecture
+// record rather than presenting them as graph-native checklist rows.
 //
 // Inside it they would join a population whose size is checked against a
 // registered expectation, and an ungated case counted into a gated population

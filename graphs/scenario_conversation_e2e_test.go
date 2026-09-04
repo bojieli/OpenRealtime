@@ -117,8 +117,8 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(contract.Cases) != 11 {
-		t.Fatalf("graph-native scenario contract has %d cases, want 11", len(contract.Cases))
+	if len(contract.Cases) != 12 {
+		t.Fatalf("graph-native scenario contract has %d cases, want 12", len(contract.Cases))
 	}
 	delegate, err := graphs.ScenarioConversationApplicationRegistration(fixture.registration)
 	if err != nil {

@@ -88,7 +88,7 @@ func TestScenarioApplicationPluginFreezesExactResourceFreeProfile(t *testing.T) 
 	wantNames := scenarioNames(fixture.contract)
 	if configured.FormatVersion != graphnative.ApplicationConfigurationFormatVersion ||
 		configured.ContractFingerprint != fixture.contract.Fingerprint ||
-		!slices.Equal(configured.Cases, wantNames) || len(configured.Cases) != 11 ||
+		!slices.Equal(configured.Cases, wantNames) || len(configured.Cases) != 12 ||
 		configured.Delegate.Reference != fixture.delegate.Reference ||
 		configured.Delegate.Artifact != fixture.delegate.Artifact ||
 		configured.Delegate.ProviderArtifact != fixture.delegate.ProviderArtifact ||
@@ -244,12 +244,12 @@ func TestScenarioApplicationPluginRejectsProfileDriftBeforeDelegateOrResources(t
 	}
 }
 
-func TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract(t *testing.T) {
+func TestProfiledGraphNativeWebSocketExercisesExactTwelveScenarioContract(t *testing.T) {
 	contract, err := graphnative.BuildContract()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if contract.Fingerprint != "sha256:b450d1e6147c50b114be3f676ec2cb53cbcc1dcfea2c7b1d52fae71eb222d44f" {
+	if contract.Fingerprint != strings.TrimSpace(mustReadScenarioContractFingerprint(t)) {
 		t.Fatalf("full scenario contract fingerprint = %s", contract.Fingerprint)
 	}
 	probe := newScenarioProtocolProbe(contract)
@@ -363,15 +363,24 @@ func TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract(t *tes
 			t.Errorf("full scenario suite did not exercise %s", operation)
 		}
 	}
-	if probe.sessionCount.Load() != 11 {
-		t.Fatalf("scenario adapter sessions = %d, want 11", probe.sessionCount.Load())
+	if probe.sessionCount.Load() != 12 {
+		t.Fatalf("scenario adapter sessions = %d, want 12", probe.sessionCount.Load())
 	}
-	if fixture.launch.counters.elementMounts.Load() != 11 {
-		t.Fatalf("scenario graph mounts = %d, want 11", fixture.launch.counters.elementMounts.Load())
+	if fixture.launch.counters.elementMounts.Load() != 12 {
+		t.Fatalf("scenario graph mounts = %d, want 12", fixture.launch.counters.elementMounts.Load())
 	}
-	if fixture.launch.counters.adapterFactories.Load() != 11 {
-		t.Fatalf("scenario adapter factories = %d, want 11", fixture.launch.counters.adapterFactories.Load())
+	if fixture.launch.counters.adapterFactories.Load() != 12 {
+		t.Fatalf("scenario adapter factories = %d, want 12", fixture.launch.counters.adapterFactories.Load())
 	}
+}
+
+func mustReadScenarioContractFingerprint(t testing.TB) string {
+	t.Helper()
+	payload, err := os.ReadFile("testdata/full-suite-contract.sha256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(payload)
 }
 
 func newProfiledScenarioFixture(

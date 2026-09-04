@@ -23,10 +23,10 @@ import (
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 )
 
-func TestChecklistRunsCompleteElevenCaseMatrixWithIndependentEvidenceAndMedia(t *testing.T) {
+func TestChecklistRunsCompleteTwelveCaseMatrixWithIndependentEvidenceAndMedia(t *testing.T) {
 	fixture := newChecklistFixture(t, graphnative.MinimumReportableRepetitions)
 	var executed, verified, retained atomic.Int64
-	retainedKeys := make([]graphnative.AttemptKey, 0, 11*graphnative.MinimumReportableRepetitions)
+	retainedKeys := make([]graphnative.AttemptKey, 0, 12*graphnative.MinimumReportableRepetitions)
 	fixture.config.Executor = func(
 		_ context.Context, key graphnative.AttemptKey, item scenario.Scenario,
 	) (graphnative.AttemptObservation, error) {
@@ -59,7 +59,7 @@ func TestChecklistRunsCompleteElevenCaseMatrixWithIndependentEvidenceAndMedia(t 
 			return nil
 		},
 		Finalize: func(_ context.Context, checklist graphnative.Checklist) error {
-			if checklist.Executed != 11*graphnative.MinimumReportableRepetitions {
+			if checklist.Executed != 12*graphnative.MinimumReportableRepetitions {
 				return errors.New("sink saw an incomplete final checklist")
 			}
 			checklist.Cases[0].Name = "sink mutation"
@@ -71,7 +71,7 @@ func TestChecklistRunsCompleteElevenCaseMatrixWithIndependentEvidenceAndMedia(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAttempts := 11 * graphnative.MinimumReportableRepetitions
+	wantAttempts := 12 * graphnative.MinimumReportableRepetitions
 	if executed.Load() != int64(wantAttempts) || verified.Load() != int64(wantAttempts) ||
 		retained.Load() != int64(wantAttempts) || len(retainedKeys) != wantAttempts {
 		t.Fatalf("checklist callbacks execute=%d verify=%d retain=%d keys=%d, want %d",
@@ -81,7 +81,7 @@ func TestChecklistRunsCompleteElevenCaseMatrixWithIndependentEvidenceAndMedia(t 
 		checklist.Expected != wantAttempts || checklist.Executed != wantAttempts ||
 		checklist.ReportableAttempts != wantAttempts || checklist.PassedAttempts != wantAttempts ||
 		checklist.FailedAttempts != 0 || checklist.InfrastructureFailures != 0 ||
-		len(checklist.Cases) != 11 || len(checklist.Attempts) != wantAttempts {
+		len(checklist.Cases) != 12 || len(checklist.Attempts) != wantAttempts {
 		t.Fatalf("complete scenario checklist = %+v", checklist)
 	}
 	for index, item := range checklist.Cases {
@@ -165,8 +165,8 @@ func TestChecklistSeparatesBehaviorFailureFromInfrastructureAndContinues(t *test
 		t.Fatal(err)
 	}
 	if !checklist.Complete || checklist.Reportable || checklist.Passed ||
-		checklist.Executed != 11 || checklist.ReportableAttempts != 8 ||
-		checklist.PassedAttempts != 9 || checklist.FailedAttempts != 1 ||
+		checklist.Executed != 12 || checklist.ReportableAttempts != 9 ||
+		checklist.PassedAttempts != 10 || checklist.FailedAttempts != 1 ||
 		checklist.InfrastructureFailures != 3 {
 		t.Fatalf("mixed checklist summary = %+v", checklist)
 	}
@@ -475,7 +475,7 @@ func TestChecklistDoesNotExposeAuthoredOrAttestedStateToPlugins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checklist.Executed != 11 || checklist.ReportableAttempts != 11 ||
+	if checklist.Executed != 12 || checklist.ReportableAttempts != 12 ||
 		checklist.InfrastructureFailures != 0 {
 		t.Fatalf("plugin mutation changed checklist authority: %+v", checklist)
 	}
@@ -558,7 +558,7 @@ func TestChecklistMediaVerifierFailsClosedWithoutChangingBehaviorOrEvidence(t *t
 			first := checklist.Attempts[0]
 			if first.Behavior != graphnative.BehaviorPassed || !first.Execution.Validated ||
 				first.Reportable || first.Media != nil || !attemptHasFailure(first, test.code) ||
-				checklist.ReportableAttempts != 10 || calls != 11 {
+				checklist.ReportableAttempts != 11 || calls != 12 {
 				t.Fatalf("failed-closed media attempt = %+v; checklist=%+v calls=%d",
 					first, checklist, calls)
 			}
@@ -575,7 +575,7 @@ func TestChecklistUnattestedDiagnosticModeCannotBecomeReportable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if checklist.MediaPolicy != graphnative.MediaPolicyUnattested || checklist.Reportable ||
-		checklist.Passed || checklist.ReportableAttempts != 0 || checklist.PassedAttempts != 11 {
+		checklist.Passed || checklist.ReportableAttempts != 0 || checklist.PassedAttempts != 12 {
 		t.Fatalf("unattested diagnostic checklist = %+v", checklist)
 	}
 	for _, attempt := range checklist.Attempts {
@@ -604,7 +604,7 @@ func TestChecklistRetainsUnencodableScorerOutputAsTypedInfrastructureFailure(t *
 	first := checklist.Attempts[0]
 	if first.Behavior != graphnative.BehaviorUnscored || first.Reportable ||
 		first.Execution.ResultSHA256 != "" || !first.Execution.Validated ||
-		!attemptHasFailure(first, "result.encoding") || checklist.ReportableAttempts != 10 {
+		!attemptHasFailure(first, "result.encoding") || checklist.ReportableAttempts != 11 {
 		t.Fatalf("unencodable scorer result = %+v; checklist=%+v", first, checklist)
 	}
 	if err := checklist.Validate(); err != nil {

@@ -73,11 +73,11 @@ func TestLiveExecutorRetainsExactSuccessfulScenarioAudioAndStills(t *testing.T) 
 	}
 }
 
-func TestLiveExecutorInvokesAndRetainsExactElevenCaseSuite(t *testing.T) {
+func TestLiveExecutorInvokesAndRetainsExactTwelveCaseSuite(t *testing.T) {
 	t.Chdir("../../..")
 	suite := scenario.Suite()
-	if len(suite) != 11 {
-		t.Fatalf("canonical scenario count = %d, want 11", len(suite))
+	if len(suite) != 12 {
+		t.Fatalf("canonical scenario count = %d, want 12", len(suite))
 	}
 	retained := make([]AttemptKey, 0, len(suite))
 	executor, err := newLiveExecutor(liveExecutorFixture(func(
@@ -105,8 +105,8 @@ func TestLiveExecutorInvokesAndRetainsExactElevenCaseSuite(t *testing.T) {
 			t.Fatalf("case %d %q observation = %+v", index+1, item.Name, observation)
 		}
 	}
-	if len(retained) != 11 {
-		t.Fatalf("retained attempts = %d, want 11", len(retained))
+	if len(retained) != 12 {
+		t.Fatalf("retained attempts = %d, want 12", len(retained))
 	}
 	for index, key := range retained {
 		if key.CaseOrdinal != index+1 || key.CaseName != suite[index].Name ||

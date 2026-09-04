@@ -11,7 +11,7 @@ package scenario
 // The control scenario is not padding. Most of these ask the agent to stay
 // quiet, and a system that had simply stopped talking would pass all of them.
 func Suite() []Scenario {
-	return []Scenario{
+	base := []Scenario{
 		{
 			Name:         "count-as-they-go",
 			Note:         "a policy set out loud, honoured while the speaker keeps talking and ignored in their pauses",
@@ -307,13 +307,13 @@ func Suite() []Scenario {
 			},
 		},
 	}
+	return append(base, SubturnSuite()...)
 }
 
 // SubturnSuite is the focused extension for behavior whose correctness depends
-// on a boundary inside the assistant's own speech. It remains separate from
-// Suite because Suite is the reviewed eleven-case acceptance contract. Adding
-// an exploratory case to that contract would silently change the required
-// graph fingerprint and the reportable population from 165 to 180 attempts.
+// on a boundary inside the assistant's own speech. It remains a named group so
+// focused diagnostics can select it, but Suite includes it in the reviewed
+// twelve-case acceptance contract and its 180-attempt reportable population.
 func SubturnSuite() []Scenario {
 	return []Scenario{{
 		Name: "picking up where it was cut off",

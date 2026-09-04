@@ -110,21 +110,16 @@ type stubVoice struct{}
 
 func (stubVoice) Speak(context.Context, string, string) ([]int16, error) { return nil, nil }
 
-// The ungated runner passing its own tests says nothing about whether anything
-// calls it, and an ungated section that silently stopped running would look
-// exactly like one where every case passed. The command is read for the call.
-func TestTheScenarioCommandStillRunsTheUngatedCases(t *testing.T) {
-	source, err := os.ReadFile("scenario.go")
-	if err != nil {
-		t.Fatal(err)
+// The focused grouping stays independently selectable, while every case in it
+// must also be present in the canonical graph-native evidence population.
+func TestEverySubturnCaseIsInTheCanonicalSuite(t *testing.T) {
+	canonical := map[string]bool{}
+	for _, item := range scenario.Suite() {
+		canonical[item.Name] = true
 	}
-	body := string(source)
-	for _, required := range []string{
-		"runSubturnCases(", "scenario.SubturnSuite()", "writeSubturnRecord(",
-	} {
-		if !strings.Contains(body, required) {
-			t.Fatalf("the scenario command no longer calls %s, so the cases outside the "+
-				"gated contract are never played", required)
+	for _, item := range scenario.SubturnSuite() {
+		if !canonical[item.Name] {
+			t.Fatalf("sub-turn case %q is absent from the canonical evidence suite", item.Name)
 		}
 	}
 }

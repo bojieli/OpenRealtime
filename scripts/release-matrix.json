@@ -219,12 +219,12 @@
     },
     {
       "id": "external.benchmark.scenario",
-      "description": "Retain the graph-native candidate for all eleven owned scenarios at fifteen repetitions",
+      "description": "Retain the graph-native candidate for all twelve owned scenarios at fifteen repetitions",
       "availability": "provisioned",
       "selection": "opt_in",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-launch-profile", "{env:OPENREALTIME_SCENARIO_LAUNCH_PROFILE}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-dir", "{artifacts}/candidate-scenario-review", "-review-receipt", "{artifacts}/candidate-scenario-review.receipt.json", "-record", "{artifacts}/candidate-scenario.json"],
+      "command": ["{go}", "run", "./cmd/openrealtime", "scenario", "-url", "{env:OPENREALTIME_BENCH_ENDPOINT}", "-speech-url", "{env:OPENREALTIME_SPEECH_ENDPOINT}", "-transcribe-url", "{env:OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT}", "-transcribe-model", "{env:OPENREALTIME_SCENARIO_TRANSCRIBE_MODEL}", "-repeat", "15", "-architecture-manifest", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST}", "-architecture-cell", "{env:OPENREALTIME_SCENARIO_ARCHITECTURE_CELL}", "-launch-profile", "{env:OPENREALTIME_SCENARIO_LAUNCH_PROFILE}", "-inspection-graph", "{env:OPENREALTIME_BENCH_INSPECTION_GRAPH}", "-review-dir", "{artifacts}/candidate-scenario-review", "-review-receipt", "{artifacts}/candidate-scenario-review.receipt.json", "-record", "{artifacts}/candidate-scenario.json"],
       "timeout": "24h",
       "skip_policy": "forbid",
       "prerequisites": [
@@ -233,7 +233,9 @@
         {"kind": "env_file", "value": "OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST", "description": "the reviewed graph architecture manifest is supplied"},
         {"kind": "env", "value": "OPENREALTIME_SCENARIO_ARCHITECTURE_CELL", "description": "the exact runnable architecture cell is named"},
         {"kind": "env_file", "value": "OPENREALTIME_SCENARIO_LAUNCH_PROFILE", "description": "the immutable graph-native scenario launch profile is supplied"},
-        {"kind": "env_url", "value": "OPENREALTIME_SPEECH_ENDPOINT", "description": "the speech synthesis endpoint is supplied"}
+        {"kind": "env_url", "value": "OPENREALTIME_SPEECH_ENDPOINT", "description": "the speech synthesis endpoint is supplied"},
+        {"kind": "env_url", "value": "OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT", "description": "an independent word recognizer can score the agent waveform"},
+        {"kind": "env", "value": "OPENREALTIME_SCENARIO_TRANSCRIBE_MODEL", "description": "the exact independent transcription model is supplied"}
       ],
       "assertions": [
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario.json"},
@@ -246,7 +248,7 @@
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-review.receipt.json"},
         {"kind": "stdout_regex", "value": "(?m)^  reportable graph-native checklist$"},
         {"kind": "stdout_regex", "value": "(?m)^  reportable architecture cell$"},
-        {"kind": "stdout_regex", "value": "(?m)^  scenarios 165/165$"},
+        {"kind": "stdout_regex", "value": "(?m)^  scenarios 180/180$"},
         {"kind": "stdout_regex", "value": "(?m)^  source       sha256:[a-f0-9]{64}$"},
         {"kind": "stdout_regex", "value": "(?m)^  receipt      .+/candidate-scenario-review\\.receipt\\.json$"}
       ]
@@ -335,7 +337,7 @@
         {"kind": "file", "value": "{artifacts}/candidate-fdb3.closure.json", "description": "the complete 100-example FDB v3 campaign closure is present"},
         {"kind": "file", "value": "{artifacts}/candidate-meeting-cascade.closure.json", "description": "the complete four-case cascade Meeting Assistant campaign closure is present"},
         {"kind": "file", "value": "{artifacts}/candidate-realtime-cu.closure.json", "description": "the complete sixteen-case Realtime-CU campaign closure is present"},
-        {"kind": "file", "value": "{artifacts}/candidate-scenario.closure.json", "description": "the complete 165-attempt scenario campaign closure is present"},
+        {"kind": "file", "value": "{artifacts}/candidate-scenario.closure.json", "description": "the complete 180-attempt scenario campaign closure is present"},
         {"kind": "file", "value": "{artifacts}/candidate-tau-control.closure.json", "description": "the complete 278-task tau control campaign closure is present"},
         {"kind": "file", "value": "{artifacts}/candidate-tau-regular.closure.json", "description": "the complete 278-task tau regular campaign closure is present"}
       ],
@@ -431,7 +433,7 @@
     },
     {
       "id": "external.model.scenario-review",
-      "description": "Review all 165 sealed graph-native scenario attempts with the exact Gemini 3.7 Flash plug-in",
+      "description": "Review all 180 sealed graph-native scenario attempts with the exact Gemini 3.7 Flash plug-in",
       "availability": "provisioned",
       "selection": "opt_in",
       "required": true,
@@ -447,13 +449,13 @@
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/REVIEW.md"},
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.evaluation/media-001.wav"},
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.receipt.json"},
-        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.evaluation/media-001.wav"},
-        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.receipt.json"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0180-case-12-trial-015.evaluation/media-001.wav"},
+        {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations/0180-case-12-trial-015.receipt.json"},
         {"kind": "file_nonempty", "value": "{artifacts}/candidate-scenario-evaluations.receipt.json"},
         {"kind": "stdout_regex", "value": "(?m)^  provider     google\\.gemini-3\\.7-flash$"},
-        {"kind": "stdout_regex", "value": "(?m)^  evaluations  165/165$"}
+        {"kind": "stdout_regex", "value": "(?m)^  evaluations  180/180$"}
       ],
-      "covers": ["scenario-review:gemini-3.7-flash:165"]
+      "covers": ["scenario-review:gemini-3.7-flash:180"]
     },
     {
       "id": "external.tau.upstream",
@@ -950,12 +952,12 @@
     },
     {
       "id": "local.scenario.profiled-websocket",
-      "description": "Exercise the exact eleven-case graph-native scenario contract through profiled WebSocket sessions",
+      "description": "Exercise the exact twelve-case graph-native scenario contract through profiled WebSocket sessions",
       "availability": "local",
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-count=1", "-v", "./bench/scenario/graphnative", "-run", "^TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract$"],
+      "command": ["{go}", "test", "-count=1", "-v", "./bench/scenario/graphnative", "-run", "^TestProfiledGraphNativeWebSocketExercisesExactTwelveScenarioContract$"],
       "timeout": "5m",
       "skip_policy": "forbid"
     },

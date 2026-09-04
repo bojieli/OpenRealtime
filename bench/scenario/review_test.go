@@ -48,10 +48,10 @@ func TestEncodeReviewStereoWAVAlignsChannelsAndSaturatesOverlaps(t *testing.T) {
 	}
 }
 
-func TestReviewRunWritesCompleteElevenCaseMultimodalBundle(t *testing.T) {
+func TestReviewRunWritesCompleteTwelveCaseMultimodalBundle(t *testing.T) {
 	suite := reviewTestSuite(t)
-	if len(suite) != 11 {
-		t.Fatalf("scenario suite has %d cases, want the reviewed eleven", len(suite))
+	if len(suite) != 12 {
+		t.Fatalf("scenario suite has %d cases, want the reviewed twelve", len(suite))
 	}
 	secret := "fixture-session-token-must-not-leak"
 	querySecret := "fixture-query-secret-must-not-leak"
@@ -114,8 +114,8 @@ func TestReviewRunWritesCompleteElevenCaseMultimodalBundle(t *testing.T) {
 	manifest := readReviewManifest(t, directory)
 	if manifest.Format != "openrealtime.review" || manifest.FormatVersion != 1 ||
 		!manifest.Complete || manifest.Reportable || manifest.EvidencePolicy != "unattested" ||
-		manifest.Expected != 22 || len(manifest.Attempts) != 22 ||
-		len(manifest.Cases) != 11 || len(manifest.Missing) != 0 {
+		manifest.Expected != 24 || len(manifest.Attempts) != 24 ||
+		len(manifest.Cases) != 12 || len(manifest.Missing) != 0 {
 		t.Fatalf("review manifest completeness = %+v", manifest)
 	}
 	for index, item := range suite {
@@ -179,7 +179,7 @@ func TestReviewRunWritesCompleteElevenCaseMultimodalBundle(t *testing.T) {
 
 	review := string(mustReadFile(t, filepath.Join(directory, "REVIEW.md")))
 	for _, want := range []string{
-		"Complete: yes (22/22 attempts retained)", "left channel", "right channel",
+		"Complete: yes (24/24 attempts retained)", "left channel", "right channel",
 		"Behavioral reportable: no",
 		"Scripted visual inputs", "submitted", "User: review user turn",
 		"Agent: review agent turn", "Tool call", "Latency after", "fixture failure",

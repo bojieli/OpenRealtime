@@ -24,15 +24,15 @@ import (
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
-func TestScenarioGraphAttestorCoversAllElevenExactSessionScopes(t *testing.T) {
+func TestScenarioGraphAttestorCoversAllTwelveExactSessionScopes(t *testing.T) {
 	fixture := writeGraphExecutionFixture(t)
 	requirement := requirementForGraphFixture(t, fixture)
 	snapshot := inspectionSnapshotForFixture(fixture, requirement)
 	const deploymentBearer = "scenario-deployment-bearer"
 
 	suite := scenario.Suite()
-	if len(suite) != 11 {
-		t.Fatalf("scenario suite has %d paths, want the reviewed eleven", len(suite))
+	if len(suite) != 12 {
+		t.Fatalf("scenario suite has %d paths, want the reviewed twelve", len(suite))
 	}
 	accessByPath := make(map[string]openrealtime.InspectionAccess, len(suite))
 	accessByScenario := make(map[string]openrealtime.InspectionAccess, len(suite))

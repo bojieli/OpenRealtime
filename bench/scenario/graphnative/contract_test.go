@@ -11,7 +11,7 @@ import (
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 )
 
-func TestFullSuiteContractCoversTheReviewedElevenCasesAndOnlyTheirWireSeams(t *testing.T) {
+func TestFullSuiteContractCoversTheReviewedTwelveCasesAndOnlyTheirWireSeams(t *testing.T) {
 	contract, err := graphnative.BuildContract()
 	if err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func TestFullSuiteContractCoversTheReviewedElevenCasesAndOnlyTheirWireSeams(t *t
 		t.Fatal(err)
 	}
 	suite := scenario.Suite()
-	if len(contract.Cases) != 11 || len(contract.Cases) != len(suite) {
+	if len(contract.Cases) != 12 || len(contract.Cases) != len(suite) {
 		t.Fatalf("scenario graph contract has %d cases; suite has %d", len(contract.Cases), len(suite))
 	}
 	for index, item := range suite {

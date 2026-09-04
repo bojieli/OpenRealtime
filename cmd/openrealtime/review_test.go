@@ -168,7 +168,7 @@ func TestScenarioEvaluationLeavesCredentialScanningToSelectedProvider(t *testing
 	}, &bytes.Buffer{}, registry); err != nil {
 		t.Fatal(err)
 	}
-	if provider.reviewCalls.Load() != 11 || provider.closeCalls.Load() != 1 {
+	if provider.reviewCalls.Load() != 12 || provider.closeCalls.Load() != 1 {
 		t.Fatalf("provider-owned credential run = review %d close %d",
 			provider.reviewCalls.Load(), provider.closeCalls.Load())
 	}
@@ -301,7 +301,7 @@ func TestScenarioEvaluationRejectsOutOfMediaTimestampBeforeRetention(t *testing.
 	}
 }
 
-func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
+func TestScenarioEvaluationPublishesAndReopensAllTwelveAttempts(t *testing.T) {
 	t.Chdir("../..")
 	sourceDirectory, sourceReceipt, _ := publishScenarioGraphPopulationFixture(t, 1, true)
 	outputDirectory := filepath.Join(t.TempDir(), "scenario-evaluations")
@@ -318,11 +318,11 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.reviewCalls.Load() != 11 || provider.closeCalls.Load() != 1 {
+	if provider.reviewCalls.Load() != 12 || provider.closeCalls.Load() != 1 {
 		t.Fatalf("fixture provider calls = review %d close %d", provider.reviewCalls.Load(), provider.closeCalls.Load())
 	}
-	if strings.Count(output.String(), "  reviewed     ") != 11 ||
-		!strings.Contains(output.String(), "evaluations  11/11") ||
+	if strings.Count(output.String(), "  reviewed     ") != 12 ||
+		!strings.Contains(output.String(), "evaluations  12/12") ||
 		!strings.Contains(output.String(), sourceReceipt.ReceiptSHA256) {
 		t.Fatalf("scenario evaluation output = %q", output.String())
 	}
@@ -334,7 +334,7 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(index.Entries) != 11 || index.Entries[0].DeterministicBehavior != graphnative.BehaviorFailed ||
+	if len(index.Entries) != 12 || index.Entries[0].DeterministicBehavior != graphnative.BehaviorFailed ||
 		index.Entries[0].Assessment.ObservedOutcome != "fail" ||
 		index.Entries[1].DeterministicBehavior != graphnative.BehaviorPassed ||
 		index.Entries[1].Assessment.ObservedOutcome != "pass" {
@@ -372,13 +372,13 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 	}, &verifyOutput); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(verifyOutput.String(), "evaluations  11/11 verified") ||
+	if !strings.Contains(verifyOutput.String(), "evaluations  12/12 verified") ||
 		!strings.Contains(verifyOutput.String(), receipt.ReceiptSHA256) {
 		t.Fatalf("scenario verification output = %q", verifyOutput.String())
 	}
 	entries, err := os.ReadDir(outputDirectory)
-	if err != nil || len(entries) != 24 {
-		t.Fatalf("scenario evaluation root entries = %d, %v; want 24", len(entries), err)
+	if err != nil || len(entries) != 26 {
+		t.Fatalf("scenario evaluation root entries = %d, %v; want 26", len(entries), err)
 	}
 	review, err := os.ReadFile(filepath.Join(outputDirectory, "REVIEW.md"))
 	if err != nil || !bytes.Contains(review, []byte("## Case —")) ||
@@ -406,15 +406,15 @@ func TestScenarioEvaluationPublishesAndReopensAllElevenAttempts(t *testing.T) {
 	}
 }
 
-func TestScenarioEvaluationPublishesOneHundredSixtyFiveAttemptPopulation(t *testing.T) {
+func TestScenarioEvaluationPublishesOneHundredEightyAttemptPopulation(t *testing.T) {
 	t.Chdir("../..")
 	sourceDirectory, sourceReceipt, outcome := publishScenarioGraphPopulationFixture(
 		t, graphnative.MinimumReportableRepetitions, true,
 	)
-	if outcome.Checklist.Expected != 165 || outcome.Checklist.FailedAttempts != 1 {
+	if outcome.Checklist.Expected != 180 || outcome.Checklist.FailedAttempts != 1 {
 		t.Fatalf("sealed source checklist = %+v", outcome.Checklist)
 	}
-	outputDirectory := filepath.Join(t.TempDir(), "scenario-evaluations-165")
+	outputDirectory := filepath.Join(t.TempDir(), "scenario-evaluations-180")
 	registry, provider := scenarioEvaluationFixtureRegistry(t, false)
 	var output bytes.Buffer
 	if err := runScenarioEvaluation([]string{
@@ -427,10 +427,10 @@ func TestScenarioEvaluationPublishesOneHundredSixtyFiveAttemptPopulation(t *test
 	}, &output, registry); err != nil {
 		t.Fatal(err)
 	}
-	if provider.reviewCalls.Load() != 165 || provider.closeCalls.Load() != 1 ||
-		strings.Count(output.String(), "  reviewed     ") != 165 ||
-		!strings.Contains(output.String(), "evaluations  165/165") {
-		t.Fatalf("165 evaluation calls = %d close=%d output=%q",
+	if provider.reviewCalls.Load() != 180 || provider.closeCalls.Load() != 1 ||
+		strings.Count(output.String(), "  reviewed     ") != 180 ||
+		!strings.Contains(output.String(), "evaluations  180/180") {
+		t.Fatalf("180 evaluation calls = %d close=%d output=%q",
 			provider.reviewCalls.Load(), provider.closeCalls.Load(), output.String())
 	}
 	manifestPayload, err := os.ReadFile(filepath.Join(outputDirectory, "manifest.json"))
@@ -441,14 +441,14 @@ func TestScenarioEvaluationPublishesOneHundredSixtyFiveAttemptPopulation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if index.Expected != 165 || len(index.Entries) != 165 ||
+	if index.Expected != 180 || len(index.Entries) != 180 ||
 		index.Entries[0].DeterministicBehavior != graphnative.BehaviorFailed ||
-		index.Entries[164].Ordinal != 165 {
-		t.Fatalf("165 scenario evaluation index = %+v", index)
+		index.Entries[179].Ordinal != 180 {
+		t.Fatalf("180 scenario evaluation index = %+v", index)
 	}
 	entries, err := os.ReadDir(outputDirectory)
-	if err != nil || len(entries) != 332 {
-		t.Fatalf("165 scenario evaluation root entries = %d, %v; want 332", len(entries), err)
+	if err != nil || len(entries) != 362 {
+		t.Fatalf("180 scenario evaluation root entries = %d, %v; want 362", len(entries), err)
 	}
 	receiptPayload, err := os.ReadFile(outputDirectory + ".receipt.json")
 	if err != nil {
@@ -478,7 +478,7 @@ func TestScenarioEvaluationPublishesOneHundredSixtyFiveAttemptPopulation(t *test
 		t.Fatal(allocationErr)
 	}
 	if allocations > 2_350_000 {
-		t.Fatalf("165 evaluation verification allocations = %.0f, want <= 2350000", allocations)
+		t.Fatalf("180 evaluation verification allocations = %.0f, want <= 2350000", allocations)
 	}
 }
 
@@ -561,12 +561,12 @@ func TestScenarioEvaluationProviderFailureLeavesSourceValidAndNoAggregateMarker(
 	}
 }
 
-func BenchmarkScenarioEvaluationVerifyOneHundredSixtyFiveAttempts(b *testing.B) {
+func BenchmarkScenarioEvaluationVerifyOneHundredEightyAttempts(b *testing.B) {
 	b.Chdir("../..")
 	sourceDirectory, sourceReceipt, _ := publishScenarioGraphPopulationFixture(
 		b, graphnative.MinimumReportableRepetitions, true,
 	)
-	outputDirectory := filepath.Join(b.TempDir(), "scenario-evaluations-165")
+	outputDirectory := filepath.Join(b.TempDir(), "scenario-evaluations-180")
 	registry, _ := scenarioEvaluationFixtureRegistry(b, false)
 	if err := runScenarioEvaluation([]string{
 		"-source-dir", sourceDirectory,
@@ -592,7 +592,7 @@ func BenchmarkScenarioEvaluationVerifyOneHundredSixtyFiveAttempts(b *testing.B) 
 		Provider: "fixture.scenario-review", Parallel: 8, Timeout: time.Minute,
 	}
 	b.ReportAllocs()
-	b.ReportMetric(165, "attempts/op")
+	b.ReportMetric(180, "attempts/op")
 	b.ResetTimer()
 	for range b.N {
 		if err := verifyScenarioEvaluationCollection(

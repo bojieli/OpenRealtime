@@ -147,11 +147,11 @@ openrealtime bench scenario \
 
 Without `-transcribe-url` the case reports `NOT VERIFIED` and does not pass.
 
-It runs **outside** the gated acceptance contract, and that separation is
-deliberate. `scenario.Suite()` is fingerprinted: its case list decides a graph
-contract digest, and its accepted pass thresholds were measured over that exact
-list at a documented population. A suite that grew from eleven cases to twelve
-while keeping a minimum of 140 out of 165 would be a weaker gate wearing the same
-number — one that passes with the new case failing every time. So the new case is
-reported in full, with its own heading and no claim of acceptance, until it has a
-measured baseline of its own. `-subturn=false` skips it.
+The case is part of the fingerprinted twelve-case graph-native contract. Its
+promotion changes the reportable population from 165 to 180 attempts and gives
+it the same retained scorer result, stereo WAV, checklist row, source manifest,
+and portable receipt as every other case. The historical 140/165 result remains
+historical evidence for the earlier eleven-case contract; it is not reused as a
+threshold for the larger population. The twelve-case release gate requires all
+180 attempts to pass, so adding this case cannot weaken the prior gate by
+allowing it to fail silently.

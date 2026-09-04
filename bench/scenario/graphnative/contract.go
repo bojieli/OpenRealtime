@@ -87,7 +87,7 @@ type CaseRequirement struct {
 }
 
 // Contract is the immutable aggregate for a selected scenario slab. An empty
-// selection passed to BuildContract means the reviewed eleven-case suite.
+// selection passed to BuildContract means the reviewed twelve-case suite.
 type Contract struct {
 	FormatVersion uint64                          `json:"format_version"`
 	Suite         string                          `json:"suite"`

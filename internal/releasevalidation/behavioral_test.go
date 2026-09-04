@@ -303,7 +303,7 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 		"fdb-v3":          {ResultKindBench, "fdb-v3", 100},
 		"meeting-cascade": {ResultKindBench, "openrealtime-meeting-assistant-v1", 4},
 		"realtime-cu":     {ResultKindBench, "openrealtime-realtime-cu-v1", 16},
-		"scenario":        {ResultKindArchitecture, "scenario", 165},
+		"scenario":        {ResultKindArchitecture, "scenario", 180},
 		"tau-control":     {ResultKindBench, "tau-voice", 278},
 		"tau-regular":     {ResultKindBench, "tau-voice", 278},
 	}
@@ -333,12 +333,12 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 	if len(want) != 0 {
 		t.Fatalf("checked targets omit final suites: %+v", want)
 	}
-	if population != 7486 {
-		t.Fatalf("checked final population = %d, want 7486", population)
+	if population != 7501 {
+		t.Fatalf("checked final population = %d, want 7501", population)
 	}
 	if scenarioTarget == nil || scenarioTarget.Aggregate.MinimumPassed == nil ||
-		*scenarioTarget.Aggregate.MinimumPassed != 140 || len(scenarioTarget.Cases.Targets) != 11 {
-		t.Fatalf("scenario acceptance target is not the exact 140/165, eleven-case baseline: %+v",
+		*scenarioTarget.Aggregate.MinimumPassed != 180 || len(scenarioTarget.Cases.Targets) != 12 {
+		t.Fatalf("scenario acceptance target is not the exact 180/180, twelve-case gate: %+v",
 			scenarioTarget)
 	}
 	minimumTotal := 0
@@ -352,8 +352,8 @@ func TestCheckedBehavioralTargetsDeclareExactFinalMatrix(t *testing.T) {
 			countMinimum = target.MinimumPassed
 		}
 	}
-	if minimumTotal != 140 || countMinimum != 8 {
-		t.Fatalf("scenario per-case minima sum/count-as-they-go = %d/%d, want 140/8",
+	if minimumTotal != 180 || countMinimum != 15 {
+		t.Fatalf("scenario per-case minima sum/count-as-they-go = %d/%d, want 180/15",
 			minimumTotal, countMinimum)
 	}
 }

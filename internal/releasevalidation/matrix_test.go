@@ -414,7 +414,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		scenarioWebSocket.SkipPolicy != SkipForbid ||
 		!slices.Equal(scenarioWebSocket.Command, []string{
 			"{go}", "test", "-count=1", "-v", "./bench/scenario/graphnative", "-run",
-			"^TestProfiledGraphNativeWebSocketExercisesExactElevenScenarioContract$",
+			"^TestProfiledGraphNativeWebSocketExercisesExactTwelveScenarioContract$",
 		}) {
 		t.Fatalf("profiled scenario WebSocket gate was weakened: %+v", scenarioWebSocket)
 	}
@@ -478,6 +478,16 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		if !slices.Contains(byID[id].Command, "-inspection-graph") {
 			t.Errorf("graph-native candidate gate %s has no authenticated inspection input", id)
 		}
+	}
+	scenarioCandidate := byID["external.benchmark.scenario"]
+	if argumentAfter(scenarioCandidate.Command, "-transcribe-url") !=
+		"{env:OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT}" ||
+		argumentAfter(scenarioCandidate.Command, "-transcribe-model") !=
+			"{env:OPENREALTIME_SCENARIO_TRANSCRIBE_MODEL}" ||
+		!gateHasPrerequisite(scenarioCandidate, "env_url", "OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT") ||
+		!gateHasPrerequisite(scenarioCandidate, "env", "OPENREALTIME_SCENARIO_TRANSCRIBE_MODEL") ||
+		!gateHasAssertion(scenarioCandidate, "stdout_regex", `(?m)^  scenarios 180/180$`) {
+		t.Fatalf("twelve-case scenario evidence wiring was weakened: %+v", scenarioCandidate)
 	}
 	meetingCascade := byID["external.benchmark.meeting.cascade"]
 	if argumentAfter(meetingCascade.Command, "-review-dir") !=
@@ -610,8 +620,8 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"{artifacts}/candidate-scenario-evaluations/REVIEW.md",
 		"{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.evaluation/media-001.wav",
 		"{artifacts}/candidate-scenario-evaluations/0001-case-01-trial-001.receipt.json",
-		"{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.evaluation/media-001.wav",
-		"{artifacts}/candidate-scenario-evaluations/0165-case-11-trial-015.receipt.json",
+		"{artifacts}/candidate-scenario-evaluations/0180-case-12-trial-015.evaluation/media-001.wav",
+		"{artifacts}/candidate-scenario-evaluations/0180-case-12-trial-015.receipt.json",
 		"{artifacts}/candidate-scenario-evaluations.receipt.json",
 	} {
 		if !gateHasAssertion(scenarioReview, "file_nonempty", artifact) {

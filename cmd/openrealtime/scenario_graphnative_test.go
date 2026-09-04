@@ -32,7 +32,7 @@ import (
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
-func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *testing.T) {
+func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllTwelveAttempts(t *testing.T) {
 	t.Chdir("../..")
 	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(t)
 	directory := filepath.Join(t.TempDir(), "review")
@@ -78,9 +78,9 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if executorBuilds.Load() != 1 || executorCalls.Load() != 11 ||
-		outcome.Checklist.Executed != 11 || outcome.Checklist.ReportableAttempts != 11 ||
-		outcome.Checklist.PassedAttempts != 11 || !outcome.Checklist.Complete ||
+	if executorBuilds.Load() != 1 || executorCalls.Load() != 12 ||
+		outcome.Checklist.Executed != 12 || outcome.Checklist.ReportableAttempts != 12 ||
+		outcome.Checklist.PassedAttempts != 12 || !outcome.Checklist.Complete ||
 		outcome.Checklist.Reportable {
 		t.Fatalf("graph checklist outcome = %+v builds=%d calls=%d",
 			outcome.Checklist, executorBuilds.Load(), executorCalls.Load())
@@ -134,10 +134,18 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.Manifest.ExpectedAttempts != 11 || len(source.Manifest.Attempts) != 11 ||
+	if source.Manifest.ExpectedAttempts != 12 || len(source.Manifest.Attempts) != 12 ||
 		source.Checklist.Fingerprint != outcome.Checklist.Fingerprint ||
-		len(source.ArchitectureResult.Records) != 11 {
+		len(source.ArchitectureResult.Records) != 12 {
 		t.Fatalf("verified scenario source bundle = %+v", source.Manifest)
+	}
+	last := source.Manifest.Attempts[11]
+	if source.Manifest.Cases != 12 || len(source.Checklist.Cases) != 12 ||
+		source.Checklist.Cases[11].Name != "picking up where it was cut off" ||
+		last.Record.Key.CaseOrdinal != 12 ||
+		last.Record.Key.CaseName != "picking up where it was cut off" ||
+		last.Audio.Path != "12-picking-up-where-it-was-cut-off-trial-01.stereo.wav" {
+		t.Fatalf("twelfth source evidence row = case %+v attempt %+v", source.Checklist.Cases[11], last)
 	}
 	if retainedArchitecture, err := os.ReadFile(
 		filepath.Join(directory, graphnative.SourceArchitectureName),
@@ -169,7 +177,8 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if err := json.Unmarshal(payload, &review); err != nil {
 		t.Fatal(err)
 	}
-	if !review.Complete || !review.Reportable || len(review.Attempts) != 11 {
+	if !review.Complete || !review.Reportable || len(review.Attempts) != 12 ||
+		len(review.Cases) != 12 || review.Cases[11].Name != "picking up where it was cut off" {
 		t.Fatalf("human review manifest = %+v", review)
 	}
 	if markdown, err := os.ReadFile(filepath.Join(directory, "REVIEW.md")); err != nil ||
@@ -215,8 +224,8 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if counts["audio"] != 11 || counts["media"] != 11 || counts["result"] != 11 ||
-		counts["attempt"] != 11 ||
+	if counts["audio"] != 12 || counts["media"] != 12 || counts["result"] != 12 ||
+		counts["attempt"] != 12 ||
 		counts["submitted"] != 2 {
 		t.Fatalf("review evidence counts = %+v", counts)
 	}
@@ -237,14 +246,14 @@ func TestScenarioGraphChecklistRetainsVerifiesAndIndexesAllElevenAttempts(t *tes
 	}
 }
 
-func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulation(t *testing.T) {
+func TestScenarioGraphReviewPublishesHermeticOneHundredEightyAttemptPopulation(t *testing.T) {
 	t.Chdir("../..")
 	const repetitions = graphnative.MinimumReportableRepetitions
 	directory, receipt, outcome := publishScenarioGraphPopulationFixture(t, repetitions, true)
-	if outcome.Checklist.Expected != 165 || outcome.Checklist.Executed != 165 ||
-		outcome.Checklist.ReportableAttempts != 165 || !outcome.Checklist.Reportable ||
+	if outcome.Checklist.Expected != 180 || outcome.Checklist.Executed != 180 ||
+		outcome.Checklist.ReportableAttempts != 180 || !outcome.Checklist.Reportable ||
 		outcome.Checklist.Passed || outcome.Checklist.FailedAttempts != 1 {
-		t.Fatalf("165-attempt checklist = %+v", outcome.Checklist)
+		t.Fatalf("180-attempt checklist = %+v", outcome.Checklist)
 	}
 	verified, err := graphnative.VerifySourceBundle(
 		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
@@ -252,10 +261,10 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verified.Manifest.ExpectedAttempts != 165 || len(verified.Manifest.Attempts) != 165 ||
-		len(verified.ArchitectureResult.Records) != 165 ||
+	if verified.Manifest.ExpectedAttempts != 180 || len(verified.Manifest.Attempts) != 180 ||
+		len(verified.ArchitectureResult.Records) != 180 ||
 		verified.Manifest.ArchitectureReportable {
-		t.Fatalf("verified hermetic 165-attempt source = %+v", verified.Manifest)
+		t.Fatalf("verified hermetic 180-attempt source = %+v", verified.Manifest)
 	}
 	requests, err := graphnative.BuildSourceReviewRequests(
 		context.Background(), graphnative.SourceBundleOptions{Directory: directory}, receipt,
@@ -263,7 +272,7 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(requests) != 165 || requests[0].AttemptID != verified.Manifest.Attempts[0].Record.Fingerprint ||
+	if len(requests) != 180 || requests[0].AttemptID != verified.Manifest.Attempts[0].Record.Fingerprint ||
 		requests[0].Case != verified.Manifest.Attempts[0].Record.Key.CaseName ||
 		len(requests[0].Media) != 1 || len(requests[9*repetitions].Media) != 3 {
 		t.Fatalf("scenario source review requests = first %+v visual %+v count %d",
@@ -299,18 +308,18 @@ func TestScenarioGraphReviewPublishesHermeticOneHundredSixtyFiveAttemptPopulatio
 		t.Fatal(allocationErr)
 	}
 	if allocations > 250_000 {
-		t.Fatalf("165-attempt source verification allocations = %.0f, want <= 250000", allocations)
+		t.Fatalf("180-attempt source verification allocations = %.0f, want <= 250000", allocations)
 	}
 }
 
-func BenchmarkScenarioGraphSourceVerifyOneHundredSixtyFiveAttempts(b *testing.B) {
+func BenchmarkScenarioGraphSourceVerifyOneHundredEightyAttempts(b *testing.B) {
 	b.Chdir("../..")
 	directory, receipt, _ := publishScenarioGraphPopulationFixture(
 		b, graphnative.MinimumReportableRepetitions, true,
 	)
 	options := graphnative.SourceBundleOptions{Directory: directory}
 	b.ReportAllocs()
-	b.ReportMetric(165, "attempts/op")
+	b.ReportMetric(180, "attempts/op")
 	b.ResetTimer()
 	for range b.N {
 		if _, err := graphnative.VerifySourceBundle(context.Background(), options, receipt); err != nil {
@@ -427,7 +436,7 @@ func TestScenarioGraphReviewRejectsSensitiveScorerResultBeforeAttemptWrites(t *t
 			t.Fatalf("sensitive attempt wrote %q", entry.Name())
 		}
 	}
-	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 0 of 11") {
+	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 0 of 12") {
 		t.Fatalf("incomplete sensitive bundle close error = %v", err)
 	}
 }
@@ -569,10 +578,10 @@ func TestScenarioGraphMediaVerifierRejectsRetainedByteTampering(t *testing.T) {
 	); err == nil || !strings.Contains(err.Error(), "exact regular file") {
 		t.Fatalf("tampered media verification error = %v", err)
 	}
-	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 1 of 11") {
+	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 1 of 12") {
 		t.Fatalf("partial review close error = %v", err)
 	}
-	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 1 of 11") {
+	if err := bundle.Close(); err == nil || !strings.Contains(err.Error(), "retained 1 of 12") {
 		t.Fatalf("idempotent partial review close error = %v", err)
 	}
 }

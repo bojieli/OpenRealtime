@@ -96,8 +96,8 @@ numbers are quality targets for the case-by-case review; neither is a
 production arm, command, registry, or runtime dependency.
 
 The required direct candidates are FDB v1.5, FDB v3, FD-Bench, Meeting
-Assistant cascade, Realtime-CU, the eleven-scenario profile, tau control, and
-tau regular. Together they contain exactly 7,486 required attempts. Each gate
+Assistant cascade, Realtime-CU, the twelve-scenario profile, tau control, and
+tau regular. Together they contain exactly 7,501 required attempts. Each gate
 must run its complete declared population against the shared Realtime API with
 an exact execution requirement and authenticated live graph inspection.
 Diagnostic subsets remain useful for iteration but cannot satisfy a release
@@ -350,7 +350,7 @@ report can close the behavioral benchmark gates.
 
 The graph-native scenario candidate also owns a create-only human/media review
 directory and an external source receipt. The source manifest is published
-only after all 165 checklist rows, exact scorer results, stereo WAVs, submitted
+only after all 180 checklist rows, exact scorer results, stereo WAVs, submitted
 visual inputs, candidate review indexes, and the finished architecture result are
 closed and cross-bound. The release gate requires both the committed source
 manifest and the portable receipt outside that directory; `CHECKLIST.md` or an
@@ -371,7 +371,7 @@ population and all retained receipts were actually produced and verified.
 The required `external.model.scenario-review` gate consumes the candidate
 scenario source in the same fresh release artifact directory and asserts the
 first and last per-attempt WAVs and receipts as well as the aggregate review;
-the command's receipt verifier binds all 165 attempts between those endpoints.
+the command's receipt verifier binds all 180 attempts between those endpoints.
 `openrealtime review verify-scenario` provides the credential-free reopening
 path for a copied source/evaluation pair and both external receipts.
 
@@ -385,9 +385,10 @@ variables are:
 - `OPENREALTIME_MEETING_CASCADE_ENDPOINT` for the required Meeting Assistant
   reference and `OPENREALTIME_MEETING_OMNI_ENDPOINT` only when selecting its
   optional native-audio validation;
-- `OPENREALTIME_SPEECH_ENDPOINT`,
+- `OPENREALTIME_SPEECH_ENDPOINT`, `OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT`,
+  `OPENREALTIME_SCENARIO_TRANSCRIBE_MODEL`,
   `OPENREALTIME_SCENARIO_ARCHITECTURE_MANIFEST`, and
-  `OPENREALTIME_SCENARIO_ARCHITECTURE_CELL` for all 11 scenarios at 15
+  `OPENREALTIME_SCENARIO_ARCHITECTURE_CELL` for all 12 scenarios at 15
   repetitions;
 - `OPENREALTIME_TAU_USER_MODEL_ENDPOINT` and
   `OPENREALTIME_TAU_SYNTHESIS_ENDPOINT` for both complete 278-task tau2 speech
@@ -437,11 +438,11 @@ external checkout are not offline repository inputs.
 - FDB v1.5 requires 498 completed recordings, FDB v3 requires 100, FD-Bench
   requires all 6,147 across the checked 21 partitions, Realtime-CU requires 16,
   the cascade Meeting Assistant reference requires four, tau2 requires 278 in
-  each of control and regular, and the owned scenario run requires 165/165
+  each of control and regular, and the owned scenario run requires 180/180
   attempts plus its externally anchored, reopenable source/media receipt. The
   optional omni Meeting run still requires all four cases when selected, and
   the optional DynaCU run still requires all 150 tasks when selected; neither
-  enters the required 7,486-attempt acceptance population.
+  enters the required 7,501-attempt acceptance population.
 - Tests discover every `Fuzz*` function and every non-runtime Go module and
   compare them with matrix coverage. Adding one without a normal/race/vet or
   exact fuzz gate breaks `go test ./internal/releasevalidation`.

@@ -170,7 +170,7 @@ type CaseChecklist struct {
 
 // Checklist is the deterministic case-by-case review index. Complete means
 // every configured attempt returned a record. Reportable additionally needs
-// the complete eleven-case contract, the reviewed repetition floor, exact
+// the complete twelve-case contract, the reviewed repetition floor, exact
 // graph evidence, and verifier-backed media for every row. Passed is only the
 // behavioral result after those evidence conditions hold.
 type Checklist struct {
