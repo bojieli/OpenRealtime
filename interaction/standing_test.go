@@ -73,6 +73,39 @@ func TestADelayedPolicyStandsWithoutBeingAsked(t *testing.T) {
 	}
 }
 
+// ParsePin turns the natural-language delay into typed runtime state before
+// grounding. The verifier still needs to see that trigger: otherwise it is
+// asked whether the remaining one-shot action is itself a standing policy.
+func TestExtractorGroundingRetainsDelayedTrigger(t *testing.T) {
+	generator := &standingScriptGenerator{
+		extraction:  "pin conversation after 15s ask whether they are still there",
+		grounding:   "yes",
+		counting:    "no",
+		restricting: "no",
+	}
+	extractor, err := interaction.NewExtractor(generator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := extractor.Extract(context.Background(), nil, nil,
+		"If I have not said anything for about fifteen seconds, ask whether I am still there.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Pins) != 1 || got.Pins[0].After.String() != "15s" ||
+		got.Pins[0].Text != "ask whether they are still there" ||
+		got.Pins[0].Scope != interaction.ScopeConversation {
+		t.Fatalf("delayed extraction = %+v", got)
+	}
+	for _, call := range generator.calls {
+		if call.prompt == interaction.StandingPolicyGroundingInstruction &&
+			!strings.Contains(call.evidence,
+				"Proposed standing policy:\nafter 15s ask whether they are still there") {
+			t.Fatalf("grounding lost typed delay:\n%s", call.evidence)
+		}
+	}
+}
+
 func TestExtractorRejectsPoliciesInventedFromImmediateSpeech(t *testing.T) {
 	tests := []struct {
 		name       string

@@ -489,7 +489,7 @@ func (extractor *modelExtractor) Extract(
 		// into later turns and can outrank the deployment contract; a rejected
 		// real policy can be restated by the person, so uncertainty must fail
 		// closed here.
-		if !extractor.groundsStandingPolicy(ctx, utterance, instruction.Text) {
+		if !extractor.groundsStandingPolicy(ctx, utterance, instruction) {
 			continue
 		}
 		reading := extractor.readingOf(ctx, instruction)
@@ -547,12 +547,21 @@ var StandingPolicyGroundingInstruction = "An extractor proposed a standing inter
 // hedged prose, and malformed output all reject the proposal: inventing a
 // durable instruction is the dangerous side of this boundary.
 func (extractor *modelExtractor) groundsStandingPolicy(
-	ctx context.Context, utterance, policy string,
+	ctx context.Context, utterance string, instruction StandingInstruction,
 ) bool {
 	utterance = strings.TrimSpace(utterance)
-	policy = strings.TrimSpace(policy)
+	policy := strings.TrimSpace(instruction.Text)
 	if utterance == "" || policy == "" {
 		return false
+	}
+	// ParsePin lifts a leading delay into typed runtime state before this
+	// boundary runs. Put it back into the proposal shown to the grounding
+	// model: without it, "after 15s ask whether they are still there" is
+	// reduced to an apparent immediate command and a correctly cautious
+	// grounding pass rejects the real standing policy.
+	if instruction.After > 0 {
+		seconds := int64(instruction.After / time.Second)
+		policy = "after " + strconv.FormatInt(seconds, 10) + "s " + policy
 	}
 	evidence := "Exact utterance:\n" + utterance + "\n\nProposed standing policy:\n" + policy
 	answer, err := extractor.generator.Generate(ctx, StandingPolicyGroundingInstruction, evidence, 3)
