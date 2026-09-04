@@ -1803,7 +1803,7 @@ reconstruction, or alternate benchmark path.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-09-03**. This is the progress
+Last reconciled with the repository on **2026-09-04**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
 ledger and the reconciled commits already present in branch history identify
@@ -1849,8 +1849,8 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this reconciliation, 299 of 368 explicit tracker boxes are checked (81.3%)
-and 69 remain open. The percentage records completed reviewable slices; it does
+At this reconciliation, 301 of 371 explicit tracker boxes are checked (81.1%)
+and 70 remain open. The percentage records completed reviewable slices; it does
 not dilute an open parent, benchmark population, platform gate, or definition-
 of-done requirement.
 
@@ -1864,7 +1864,7 @@ is rerun against that exact candidate. The current critical path is:
 | --- | --- | --- |
 | Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns | Exercise the landed continuation/admission repairs, fix any remaining behavior, then run 11 cases x 15 |
 | Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
-| Realtime-CU (16) | Clean `b535b15` campaign executed and reviewed 16/16 but scored 14/16; both camera tasks acted before fresh hazard evidence, and moving-target/transient cases exposed post-success continuation. Production timestamps durable intent and re-attests typed temporal admission. A generic typed, bounded `policy.IntentSettlement` gate now exists and is locally verified, but no reference disposition producer, session-cancel translator, activation handshake, production graph wiring, or live repaired-camera/settlement benchmark exists yet | Implement and lock the producer, cancellation coordinator, activation settlement/ack ports, and reference graph; register enforceable targets; run both camera, both moving-target, and both transient cases; repair failures; then rerun all 16 from one frozen candidate |
+| Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. Production timestamps durable intent and re-attests typed temporal admission. The generic settlement gate, registered reference producer, and activation-side exact terminal/ack boundary now exist as independently verified primitives, but the production graph still bypasses them. Detector/profile binding, exact session-cancel coordination, topology/values/lock integration, mounted behavior, targets, and live repair remain open | Bind the producer deployment, implement the exact cancellation coordinator, wire and lock the no-bypass reference graph, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
 | FDB v1.5 (498) | Earlier diagnostic completed 498/498 and passed 355; interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
 | FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result. A full mounted endpoint regression now proves deployment-owned spoken-ID normalization without changing raw proposals, provider schemas, or speech | Run the exact failed task, preregister and run a representative slice, then rerun all 100 from one frozen candidate |
 | FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete; its obsolete executable rejected resume and cannot be mixed with a later candidate | Finish restartable, independently rescored retention and rerun all 21 conditions from one candidate |
@@ -1880,7 +1880,7 @@ deadline, and latency targets and their evidence is independently reopened.
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, the producer-neutral typed and bounded intent-settlement gate, production Realtime-CU admission/activation composition with timestamped intent and mounted shared-server endpoint coverage, cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Reference settlement producer, exact session-cancel translation, activation settlement/ack handshake, locked production wiring, focused live repair, and measured behavioral quality; the retained diagnostic records current divergence rather than claiming completion |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, the producer-neutral typed and bounded intent-settlement gate, the locally registered reference disposition producer, the optional unwired activation settlement/ack handshake, production Realtime-CU admission/activation composition with timestamped intent and mounted shared-server endpoint coverage, cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison | Profile-bound disposition-decider selection and lifecycle, exact session-cancel coordination, no-bypass production wiring and lock, complete mounted integration, acceptance targets, focused live repair, and measured behavioral quality; retained diagnostics record current divergence rather than claiming completion |
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
@@ -1899,16 +1899,18 @@ Current checkpoint notes:
   Realtime-CU now pins source digest
   `sha256:cd9eb5452f6fefe3ae4ed1ce3b728de9e747d94c6581f660840950b0449e64f0`,
   lock digest
-  `sha256:040c8a904306de16527536241a9ccc805be65ccac08c3a3c1327837522ae19bb`,
+  `sha256:852d2e8d39651fafa0cfd9015ab5b34c9e41edbe4f3fed0d17ce5de5f383a3d7`,
   values digest
   `sha256:c98cb622506aec8e3a4bb0246b5e67b881d76ee2561da47ef790b4a083e0c4bc`,
   graph fingerprint
-  `sha256:7f7a2d7d93231236350b9eec8f774c6c1c74451a0be5eb447225e491bea6eb1c`,
+  `sha256:aae5bfb370f66a1ff3ccb70de8db44df8598982ae45b438969a6e0dee33627bb`,
   and plan fingerprint
-  `sha256:0384b009fb10d90742f31e7585de2a30bfb5706fc10f1e078f34dbe16704490d`.
-  The activation descriptor is revision 9 at
-  `sha256:3f110646c31efba255c5a3b6d089a95bb648f0584e1acffb269d119e4631baf0`,
-  with runtime `/activation/v9` and implementation revision 9. The reusable
+  `sha256:274fda92e64d02d33ff86ac7a76b7d4e5c087aa99c42fca491ea7f4e0d361473`.
+  The activation descriptor is revision 10 at
+  `sha256:e7be8e2fd0169cd9b183ae8865e3d83c7133c97290519a07b90261f809ca325f`,
+  with runtime `/activation/v10` and implementation revision 10. Its new
+  settlement ports are optional and remain unwired in this topologically
+  unchanged production checkpoint. The reusable
   temporal-admission descriptor is revision 1 at
   `sha256:91e7c9bdd498945efc09eb34f0e29679c3de752bbb98455d33fa672a437a8ee8`.
   Strict computer-use graph formatting and profile validation pass. Scenario
@@ -1986,6 +1988,37 @@ Current checkpoint notes:
   wiring or behavioral benchmark item below. The affected-package and
   repository-wide test/vet gates also pass at this checkpoint; those remain
   implementation regression checks, not substitutes for the live campaigns.
+- Implementation commit `313b85f` adds and registers the standalone
+  `policy.IntentDispositionProducer` reference element. It opens a fresh,
+  lifecycle-owned semantic-decider client only at `Run`, pins the detector
+  revision and configuration digest, verifies the exact settlement probe both
+  before and after classification, and resolves only the exact retained media
+  on the result-linked trigger observation. Evidence, media, pending work,
+  terminal probes, and cancellation tombstones are bounded. Provider, media,
+  timeout, or invalid-enum failures can emit only explicit `indeterminate`,
+  never fabricated task success or failure; that response remains retryable
+  with monotonic measured timing. Exact cancellation suppresses queued,
+  in-flight, and replayed probes. The producer descriptor is revision 1 at
+  `sha256:f77337f0efc2773713d6173d9a55a6307108f771557d08eb38142012d9381afc`.
+  This commit registers a reusable implementation and schema; it does not bind
+  a provider deployment or put the producer in the Realtime-CU profile.
+- Implementation commit `e62fdc9` adds the revision-10 activation consumer
+  half of the terminal handshake. A configured mount requires exactly one
+  settlement input and one acknowledgement output, while the existing
+  unconfigured/unwired production graph remains mount-compatible. Activation
+  independently verifies the exact terminal decision and effect identity,
+  retains valid terminal-before-result and cancel-before-terminal reorderings,
+  never evicts an unacknowledged canceled-effect tombstone, clears the exact
+  effect without feeding terminal evidence back into cognition, and publishes
+  one immutable lossless acknowledgement. Transient publication retries reuse
+  the same envelope, sequence, and content-addressed ID; persistent failure
+  retains the cleared-effect receipt without reactivation. The checked-in
+  descriptor bundle, lock, runtime identity, graph fingerprint, and plan
+  fingerprint were refreshed without changing topology, values, deployment,
+  or enabling the optional ports. Focused normal/race, legacy mounted temporal
+  activation, strict graph/profile, schema/catalog, affected package, and vet
+  checks pass. These are local implementation and compatibility results, not
+  mounted settlement-composition or live behavioral evidence.
 - Settlement cancellation deliberately uses
   `Interrupt<policy.IntentSettlementCancellation>`, not the existing
   `GenerationCancel`. The latter names a generation or media stream and cannot
@@ -2000,13 +2033,14 @@ Current checkpoint notes:
   cancellable only through graph context; `Reaction.Interrupts` does not
   preempt a broadcast already waiting for downstream capacity.
 - This settlement checkpoint is an implementation/local-verification result,
-  not production Realtime-CU validation. The reference disposition producer,
-  graph-lock binding of its identity/configuration, cancellation translator,
-  activation settlement input and exact acknowledgement output, locked
-  graph/profile fingerprints, focus→type→submit and terminal-quiescence
-  mounted cases, stable endpoint regression, acceptance targets, focused live
-  six-case campaign, repaired exact-sixteen campaign, and final 7,486-attempt
-  matrix all remain open.
+  not production Realtime-CU validation. The production graph still connects
+  temporal admission directly to activation and does not instantiate the gate
+  or producer; activation's new ports are optional and unwired. Provider/profile
+  binding of the producer identity and client, the exact cancellation
+  coordinator, no-bypass topology/values/lock integration, complete mounted
+  focus→type→submit and terminal-quiescence cases, stable endpoint regression,
+  acceptance targets, focused live six-case campaign, repaired exact-sixteen
+  campaign, and final 7,486-attempt matrix all remain open.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
@@ -3357,27 +3391,50 @@ the required new 165-attempt sample.
         stale, conflicting, or indeterminate evidence. New durable intent and
         exactly addressed cancellation/reset must have explicit race-safe
         semantics; capacity exhaustion must not evict a live safety latch.
-      - [ ] Implement and lock the replaceable reference disposition producer.
-        Prefer an application-authoritative completion producer where one
-        exists; the general Realtime-CU reference uses a narrow enum/vision
-        decision over the exact retained result-linked frame. Even if it reuses
-        the continuation model deployment, it owns a separate semantic-decider
-        client, selection, descriptor/configuration digest, lifecycle, and
-        measured decision latency. A no-proposal heuristic may exist only as an
-        explicitly selected, documented alternative.
-      - [ ] Wire the producer and settlement gate as replaceable nodes in the
-        Realtime-CU reference subgraph, including explicit channels, values,
-        descriptors, lock, Graph IR/profile fingerprints, inspection metadata,
-        service ownership, and addressed cognition/activation cancellation.
-        Activation must clear the completed effect for both continuation and
-        terminal decisions without admitting a terminal consequence as new
-        work.
-      - [ ] Execute deterministic descriptor/schema/runtime, forged-evidence,
-        exact-media, duplicate/reordered-decision, cancellation/replacement,
-        bounded-state, failed-effect, indeterminate, asynchronous-wait,
-        focus-type-submit, continuous-cadence, mounted graph, race, and stable
-        WebSocket endpoint tests. These checks close only their implementation
-        slices, never the live behavioral gate.
+      - [x] Implement, register, and locally verify the replaceable reference
+        `policy.IntentDispositionProducer`. It owns a fresh semantic-decider
+        client and lifecycle, pins exact detector identity, verifies the probe
+        before and after classification, resolves only the exact retained
+        result-linked media, measures decision latency, bounds all retained
+        state, makes `indeterminate` retryable, and never converts provider or
+        media failure into success. Application-authoritative producers remain
+        preferable where available; a no-proposal heuristic may exist only as
+        an explicitly selected, documented alternative.
+      - [ ] Bind the reference producer's selected detector, independently
+        owned client, media resolver, configuration, descriptor, and artifact
+        identity into the Realtime-CU application profile and lock. The generic
+        registration alone does not prove a provider can be acquired or that
+        the production profile has selected this policy.
+      - [x] Add and locally verify activation's optional exact settlement input
+        and lossless acknowledgement output. A configured mount independently
+        verifies terminal lineage, clears only the matching effect without
+        creating another cognition turn, handles terminal/result and
+        cancellation/terminal reorderings with bounded non-evicting live
+        tombstones, and retries one immutable acknowledgement receipt.
+        Unconfigured legacy mounts skip both optional ports.
+      - [ ] Implement the stateful protocol/session cancellation coordinator.
+        It must resolve the newest exact canonical durable-intent epoch at one
+        actor linearization point, emit an explicit no-current-intent outcome,
+        route typed settlement cancellation and downstream activation/model/
+        action cancellation, and retain bounded transaction state through the
+        required acknowledgements for both cancel-before-continuation and
+        continuation-before-cancel orderings.
+      - [ ] Connect the producer, settlement gate, activation handshake, and
+        coordinator as replaceable nodes in the Realtime-CU reference subgraph,
+        including explicit channels, values, descriptors, lock, Graph
+        IR/profile fingerprints, inspection metadata, and service ownership.
+        Remove the current temporal-admission-to-activation bypass. Activation
+        must receive continuation only through the gate and must never admit a
+        terminal consequence as new work.
+      - [ ] Execute the complete mounted-composition test matrix: shared
+        retained-media service ownership, forged cross-node evidence,
+        duplicate/reordered decisions, coordinator cancellation/replacement,
+        failed effects, indeterminate retry, asynchronous wait,
+        focus→type→submit, continuous cadence, graph-level race, and the stable
+        WebSocket endpoint. Standalone producer and activation descriptor,
+        schema, runtime, exact-media, bounded-state, and ordering subsets are
+        checked above; they do not close this composed runtime gate or any live
+        behavioral gate.
       - [ ] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
         `scripts/behavioral-acceptance-targets.json`. Its current

@@ -239,15 +239,21 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
-The 2026-09-03 production checkpoint pins graph fingerprint
-`sha256:7f7a2d7d93231236350b9eec8f774c6c1c74451a0be5eb447225e491bea6eb1c`
+The 2026-09-04 production-artifact checkpoint pins graph fingerprint
+`sha256:aae5bfb370f66a1ff3ccb70de8db44df8598982ae45b438969a6e0dee33627bb`
 and plan fingerprint
-`sha256:0384b009fb10d90742f31e7585de2a30bfb5706fc10f1e078f34dbe16704490d`.
-Its activation descriptor/runtime/implementation are revision 9 with descriptor
+`sha256:274fda92e64d02d33ff86ac7a76b7d4e5c087aa99c42fca491ea7f4e0d361473`.
+Its lock digest is
+`sha256:852d2e8d39651fafa0cfd9015ab5b34c9e41edbe4f3fed0d17ce5de5f383a3d7`;
+the source and values digests remain unchanged. Its activation
+descriptor/runtime/implementation are revision 10 with descriptor
 digest
-`sha256:3f110646c31efba255c5a3b6d089a95bb648f0584e1acffb269d119e4631baf0`;
+`sha256:e7be8e2fd0169cd9b183ae8865e3d83c7133c97290519a07b90261f809ca325f`;
 the temporal-admission descriptor is revision 1 with digest
 `sha256:91e7c9bdd498945efc09eb34f0e29679c3de752bbb98455d33fa672a437a8ee8`.
+Revision 10 adds optional settlement/acknowledgement ports, but this checkpoint
+does not connect or configure them: the production topology and values remain
+unchanged and still route temporal admission directly to activation.
 The dedicated activation values schema requires the independent admission
 contract without widening the generic generation schema. Focused
 normal/race/vet, strict graph, explicit-source and mode-forgery refusal,
@@ -289,16 +295,23 @@ model quality or benchmark non-regression; publish performance only after the
 full sixteen live cases finish against the exact candidate endpoint and their
 result artifact passes the repository's release validation.
 
-The latest retained live diagnostic predates this production wiring: it ran all
-16 cases and scored 14/16, with both camera cases acting before fresh hazard
-evidence and moving-target/transient cases exposing post-success continuation.
-No live case has yet validated this temporal repair.
+Two retained live checkpoints answer different historical questions and must
+not be conflated. Candidate-05's current settlement-aware artifact reports
+8/16. The later clean `b535b15` campaign executed and was independently
+reviewed 16/16, and its then-current evaluator scored 14/16. Both camera cases
+acted before fresh hazard evidence; moving-target and transient tasks continued
+after the page effect; some cases repeated invalid actions until authority was
+exhausted; and several sessions ran through the evaluation horizon. The later
+four-case observer-repair artifact is incomplete (4/16 attempted) and still
+records large post-success invalid-action loops. No live case has validated the
+settlement composition described below.
 
-Production also does not yet have an authoritative typed fact that the durable
-user intent itself has succeeded. A planner returning no proposal can mean
-"wait for later evidence," and repetition admission proves only that one exact
-effect already succeeded. Neither fact, elapsed quiet time, nor the evaluator's
-private `PageResult` is a sound generic settlement oracle. In particular,
+The locked production topology also does not yet route an authoritative typed
+fact that the durable user intent itself has succeeded. A planner returning no
+proposal can mean "wait for later evidence," and repetition admission proves
+only that one exact effect already succeeded. Neither fact, elapsed quiet time,
+nor the evaluator's private `PageResult` is a sound generic settlement oracle.
+In particular,
 moving-target retries can use different coordinates and evade exact repetition
 identity, while treating no-proposal as success would break asynchronous and
 multi-step tasks.
@@ -313,25 +326,34 @@ successful result-linked post-effect evidence
   -> activation continuation or same-intent quiescence
 ```
 
-The producer classifies a closed `continue | succeeded | failed |
-indeterminate` disposition and binds it to the exact session, durable intent,
-canonical prefix, successful result and invocation, result-linked observation,
-producer identity/configuration, and measured decision time. An
+The registered `policy.IntentDispositionProducer` classifies a closed
+`continue | succeeded | failed | indeterminate` disposition and binds it to the
+exact session, durable intent, canonical prefix, successful result and
+invocation, result-linked observation, producer identity/configuration, and
+measured decision time. An
 application-authoritative producer is preferred when available. The reference
-generic producer will instead use a separately locked narrow semantic/vision
-decision over the exact retained post-effect frame. It may share the Qwen/VLM
-deployment with continuation, but it must own a distinct semantic-decider
-client, selection, digest, and lifecycle so its policy and latency remain
-independently inspectable.
+generic implementation uses a separately owned narrow semantic/vision decision
+over the exact retained post-effect frame, checks media and evidence bounds,
+and fails only to explicit retryable `indeterminate`. It may share the Qwen/VLM
+deployment with continuation, but its production application selection,
+client, digest, media service, and lifecycle are not yet bound in the
+Realtime-CU profile.
 
-The producer-neutral half of that architecture now exists as the registered
-`policy.IntentSettlement` element. It independently revalidates the typed
+Three independently testable pieces of that architecture now exist: the
+registered producer above, the producer-neutral `policy.IntentSettlement`
+gate, and activation's optional revision-10 settlement consumer/acknowledgement
+boundary. The gate independently revalidates the typed
 admission and exact canonical intent→call→successful-result→result-linked
 observation chain, holds a bounded candidate consequence until the matching
 disposition arrives, releases it for `continue`, and retains terminal state
 until downstream activation acknowledges exact cleanup. Ordinary and
 failed-effect visual evidence remains reactive. Invalid, stale, conflicting,
 or indeterminate evidence fails closed without being mislabeled as success.
+Activation independently verifies a terminal decision, clears only the exact
+effect without a new cognition turn, retains valid cross-lane reorderings, and
+retries one immutable acknowledgement. These pieces are still unwired in the
+production graph, so their standalone guarantees are not mounted-composition
+or behavioral evidence.
 
 The terminal decision is not just a string label. Succeeded and failed
 decisions embed the exact disposition; canceled decisions embed an exact
@@ -369,9 +391,9 @@ Current implementation ledger:
 | --- | --- | --- |
 | Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented and locally verified | Bind a real producer artifact/configuration in the production lock |
 | Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
-| Reference semantic/vision disposition producer | Open | Implement its separate client, lifecycle, exact-media resolution, and measured latency |
+| Reference semantic/vision disposition producer | Implemented and locally verified | Bind its selected detector, independent client/lifecycle, media resolver, configuration, and artifact identity in the Realtime-CU profile/lock |
 | Protocol/session cancellation translation | Open | Resolve exact canonical intent and explicitly coordinate already released activation |
-| Activation settlement input and acknowledgement output | Open | Independently verify the decision, atomically clear the matching effect, and return exact terminal lineage |
+| Activation settlement input and acknowledgement output | Implemented and locally verified | Connect both optional ports in the mounted graph and prove coordinator/result/terminal orderings end to end |
 | Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Open | Wire and freeze the complete reference subgraph without an admission bypass |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
 
@@ -408,22 +430,24 @@ intent_settlement.terminal           -> activation.settlement;
 activation.settlement_ack            -> intent_settlement.ack;
 ```
 
-There is no admission bypass around the settlement gate. On `continue`, the
-gate releases the original verified evidence through `admitted`. On a verified
-terminal disposition, it suppresses that evidence and retains the exact
-terminal latch until activation independently reopens the canonical prefix,
-clears the matching generation/effect atomically, and returns the exact
-acknowledgement. This is not a cognition cancellation: the cognition run may
-already have ended before the result and post-effect observation exist, and a
-broad generation cancellation does not prove which completed effect was
-settled.
+In the target topology there is no admission bypass around the settlement
+gate. The checked-in production graph still has that bypass because none of
+these six edges has landed. On `continue`, the gate releases the original
+verified evidence through `admitted`. On a verified terminal disposition, it
+suppresses that evidence and retains the exact terminal latch until revision-10
+activation independently reopens the canonical prefix, clears the matching
+generation/effect atomically, and returns the exact acknowledgement. This is
+not a cognition cancellation: the cognition run may already have ended before
+the result and post-effect observation exist, and a broad generation
+cancellation does not prove which completed effect was settled.
 
-The remaining behavioral sequence is to implement the producer, translator,
-and activation handshake; adversarially test their mounted composition; wire
-and lock the reference subgraph; register machine-enforceable Realtime-CU
-acceptance targets; and then run both camera, both moving-target, and both
-transient-alert variants from one repaired immutable candidate. Any failure is
+The remaining behavioral sequence is to bind the reference producer deployment,
+implement the stateful exact-intent cancellation coordinator, adversarially
+test the complete mounted composition, wire and lock the no-bypass reference
+subgraph, and register machine-enforceable Realtime-CU acceptance targets.
+Only then should both camera, both moving-target, and both transient-alert
+variants run from one repaired immutable candidate. Each observed failure is
 retained and repaired before all 16 cases are rerun from a newly frozen
-candidate. No live benchmark was run for this generic checkpoint, and nothing
-in its implementation checks advances the project-wide 0/7,486 final-candidate
-attempt ledger.
+candidate. No live benchmark was run for this producer/activation checkpoint,
+and nothing in its implementation checks advances the project-wide 0/7,486
+final-candidate attempt ledger.

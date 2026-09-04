@@ -334,7 +334,7 @@ case-level `Passed` bit is the conjunction of settled task success and no
 deadline miss. Realtime aggregate acceptance therefore uses `minimum_passed`
 rather than treating `task_success_rate` alone as the pass oracle.
 
-As of 2026-09-03, the release registry deliberately marks all five
+As of 2026-09-04, the release registry deliberately marks all five
 Realtime-CU behavioral domains—aggregate, exact per-case, safety, deadline,
 and latency—`unavailable`. A complete result can therefore be retained,
 reviewed, and independently reopened, but it cannot pass behavioral
@@ -344,20 +344,33 @@ bounds, and latency median/tail limits plus any reasoned exclusions. Diagnostic
 or historical observations are evidence for choosing those targets; the
 runner must not silently convert them into acceptance thresholds.
 
-The generic `policy.IntentSettlement` checkpoint did not run a live or paid
-Realtime-CU benchmark. It is not yet connected to a reference disposition
-producer, protocol/session cancellation translator, activation
-settlement/acknowledgement boundary, or frozen production graph/profile, so
-there is no runnable settlement candidate from which a valid benchmark row
-could be produced. Its focused unit, adversarial, race, schema, catalog, and
-affected-package checks—including rejected-input allocation, failure-atomicity,
-trusted-session attribution, generated-lineage integrity, and a mounted
-type-correct two-settlement-gate composition—are
-implementation evidence only. Aggregate, exact-per-case, safety, deadline,
-and latency acceptance remain unavailable;
-the focused two-camera/two-moving-target/two-transient campaign and repaired
-exact-sixteen campaign remain open; and the final-candidate ledger remains
-**0/7,486**.
+The settlement implementation checkpoints did not run a live or paid
+Realtime-CU benchmark. The generic `policy.IntentSettlement` gate, the
+registered reference `policy.IntentDispositionProducer`, and activation's
+optional exact settlement/acknowledgement boundary now exist and pass their
+standalone adversarial and race checks. They are not connected in the frozen
+production graph/profile: temporal admission still goes directly to
+activation, the producer has no profile-bound detector/client/media lifecycle,
+and there is no exact protocol/session cancellation coordinator. There is
+therefore no runnable settlement candidate from which a valid benchmark row
+could be produced.
+
+The retained live evidence must also be read by checkpoint rather than reduced
+to one headline number. Candidate-05's current settlement-aware exact-sixteen
+artifact reports 8/16. The later clean `b535b15` campaign executed and was
+reviewed 16/16 and was scored 14/16 by its then-current evaluator. Concrete
+defects—not either headline—drive the remaining work: camera actions lacked
+fresh hazard evidence; moving-target and transient cases continued after the
+page effect; repeated invalid actions exhausted authority; and sessions ran to
+the evaluation horizon. The observer-repair artifact attempted only 4/16 and
+still contains large post-success invalid-action loops.
+
+Focused unit, exact-media, lifecycle, bounded-state, event-reordering,
+acknowledgement-retry, schema/catalog, strict-profile, race, and affected-package
+checks are implementation evidence only. Aggregate, exact-per-case, safety,
+deadline, and latency acceptance remain unavailable; the focused
+two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
+campaign remain open; and the final-candidate ledger remains **0/7,486**.
 
 The report also retains cue-to-first-tool, cue-to-effectful-action,
 speech-end-to-action, cue/frame-to-observation, action execution, and total
