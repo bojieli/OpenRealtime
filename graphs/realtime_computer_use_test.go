@@ -18,10 +18,12 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/graphs"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -35,7 +37,8 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	observer.audioFinal.Store(false)
 	var modelFactories, observerFactories atomic.Int32
 	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
-		RuntimeArtifact: testRealtimeCUArtifact("runtime", "1"),
+		RuntimeArtifact:  testRealtimeCUArtifact("runtime", "1"),
+		SettlementPolicy: testRealtimeCUPolicyPlugin(),
 		Model: realtimecu.ModelPlugin{
 			Reference: "go://test/realtime-cu/model/v1",
 			Artifact:  testRealtimeCUArtifact("model", "2"), Descriptor: descriptor,
@@ -48,8 +51,11 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 			Reference: "go://test/realtime-cu/observer/v1", Name: observer.name,
 			Artifact: testRealtimeCUArtifact("observer", "3"),
 			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
-			Factory: func(context.Context, legacy.Options) (realtimecu.Observer, error) {
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+			) (realtimecu.Observer, error) {
 				observerFactories.Add(1)
+				observer.retainer = resources.Retainer
 				return observer, nil
 			},
 		},
@@ -78,11 +84,11 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 		t.Fatal(err)
 	}
 	identity := launched.Plan.Identity()
-	if identity.SourceDigest != "sha256:cd9eb5452f6fefe3ae4ed1ce3b728de9e747d94c6581f660840950b0449e64f0" ||
-		identity.LockDigest != "sha256:852d2e8d39651fafa0cfd9015ab5b34c9e41edbe4f3fed0d17ce5de5f383a3d7" ||
-		identity.ValuesDigest != "sha256:c98cb622506aec8e3a4bb0246b5e67b881d76ee2561da47ef790b4a083e0c4bc" ||
-		identity.GraphFingerprint != "sha256:aae5bfb370f66a1ff3ccb70de8db44df8598982ae45b438969a6e0dee33627bb" ||
-		identity.PlanFingerprint != "sha256:274fda92e64d02d33ff86ac7a76b7d4e5c087aa99c42fca491ea7f4e0d361473" {
+	if identity.SourceDigest != "sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa" ||
+		identity.LockDigest != "sha256:c03c6bfc1d08094ca18611a0137d77cdc4e7280b8ce050e97c06c5e04f3d26d0" ||
+		identity.ValuesDigest != "sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93" ||
+		identity.GraphFingerprint != "sha256:383cdd413cb168dd0956426fc06ed919b4a5a63e82a2bceea6f196cb2005b021" ||
+		identity.PlanFingerprint != "sha256:d10894a463aa78cb0d81ba1414fe46653c6739478e3bb49ce2cfc07592164d62" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
@@ -223,7 +229,8 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 	}
 	observer := newTestRealtimeCUObserver("visual-reactivation-observer")
 	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
-		RuntimeArtifact: testRealtimeCUArtifact("visual-reactivation-runtime", "1"),
+		RuntimeArtifact:  testRealtimeCUArtifact("visual-reactivation-runtime", "1"),
+		SettlementPolicy: testRealtimeCUPolicyPlugin(),
 		Model: realtimecu.ModelPlugin{
 			Reference: "go://test/realtime-cu/visual-reactivation-model/v1",
 			Artifact:  testRealtimeCUArtifact("visual-reactivation-model", "2"), Descriptor: descriptor,
@@ -235,7 +242,10 @@ func TestRealtimeComputerUseChangedCameraReactivatesDurableIntentOneEffectAtATim
 			Reference: "go://test/realtime-cu/visual-reactivation-observer/v1", Name: observer.name,
 			Artifact: testRealtimeCUArtifact("visual-reactivation-observer", "3"),
 			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
-			Factory: func(context.Context, legacy.Options) (realtimecu.Observer, error) {
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+			) (realtimecu.Observer, error) {
+				observer.retainer = resources.Retainer
 				return observer, nil
 			},
 		},
@@ -400,7 +410,8 @@ func TestRealtimeComputerUseToolAdmissionSuppressesPlaceholderAndReleasesNextVis
 	}
 	observer := newTestRealtimeCUObserver("tool-admission-observer")
 	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
-		RuntimeArtifact: testRealtimeCUArtifact("tool-admission-runtime", "1"),
+		RuntimeArtifact:  testRealtimeCUArtifact("tool-admission-runtime", "1"),
+		SettlementPolicy: testRealtimeCUPolicyPlugin(),
 		Model: realtimecu.ModelPlugin{
 			Reference: "go://test/realtime-cu/tool-admission-model/v1",
 			Artifact:  testRealtimeCUArtifact("tool-admission-model", "2"), Descriptor: descriptor,
@@ -412,7 +423,12 @@ func TestRealtimeComputerUseToolAdmissionSuppressesPlaceholderAndReleasesNextVis
 			Reference: "go://test/realtime-cu/tool-admission-observer/v1", Name: observer.name,
 			Artifact: testRealtimeCUArtifact("tool-admission-observer", "3"),
 			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
-			Factory:  func(context.Context, legacy.Options) (realtimecu.Observer, error) { return observer, nil },
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+			) (realtimecu.Observer, error) {
+				observer.retainer = resources.Retainer
+				return observer, nil
+			},
 		},
 		Target: target,
 	})
@@ -562,7 +578,8 @@ func TestRealtimeComputerUseGraphNormalizesOnlyTheDeclaredCoordinatePairShape(t 
 	descriptor := testRealtimeCUDescriptor()
 	observer := newTestRealtimeCUObserver("coordinate-pair-observer")
 	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
-		RuntimeArtifact: testRealtimeCUArtifact("coordinate-pair-runtime", "1"),
+		RuntimeArtifact:  testRealtimeCUArtifact("coordinate-pair-runtime", "1"),
+		SettlementPolicy: testRealtimeCUPolicyPlugin(),
 		Model: realtimecu.ModelPlugin{
 			Reference: "go://test/realtime-cu/coordinate-pair-model/v1",
 			Artifact:  testRealtimeCUArtifact("coordinate-pair-model", "2"), Descriptor: descriptor,
@@ -574,7 +591,12 @@ func TestRealtimeComputerUseGraphNormalizesOnlyTheDeclaredCoordinatePairShape(t 
 			Reference: "go://test/realtime-cu/coordinate-pair-observer/v1", Name: observer.name,
 			Artifact: testRealtimeCUArtifact("coordinate-pair-observer", "3"),
 			Sources:  []string{realtimecu.SourceScreen, realtimecu.SourceCamera, realtimecu.SourceMicrophone},
-			Factory:  func(context.Context, legacy.Options) (realtimecu.Observer, error) { return observer, nil },
+			ResourceFactory: func(
+				_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+			) (realtimecu.Observer, error) {
+				observer.retainer = resources.Retainer
+				return observer, nil
+			},
 		},
 		Target: target,
 	})
@@ -700,7 +722,8 @@ func TestRealtimeComputerUseResourceAwareObserverSharesExactSessionMediaWithMode
 	seenMedia := make(chan []byte, 1)
 	var observerFactories atomic.Int32
 	config, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
-		RuntimeArtifact: testRealtimeCUArtifact("resource-runtime", "1"),
+		RuntimeArtifact:  testRealtimeCUArtifact("resource-runtime", "1"),
+		SettlementPolicy: testRealtimeCUPolicyPlugin(),
 		Model: realtimecu.ModelPlugin{
 			Reference: "go://test/realtime-cu/resource-model/v1",
 			Artifact:  testRealtimeCUArtifact("resource-model", "2"), Descriptor: descriptor,
@@ -824,6 +847,50 @@ func testRealtimeCUDescriptor() continuation.Descriptor {
 		ToolAuthority:   continuation.ToolAuthorityPropose,
 		SpeechAuthority: continuation.SpeechAuthoritySilent,
 	}
+}
+
+func testRealtimeCUPolicyPlugin() realtimecu.PolicyPlugin {
+	descriptor := testRealtimeCUPolicyDescriptor()
+	return realtimecu.PolicyPlugin{
+		Reference:  realtimecu.SettlementPolicyReference,
+		Artifact:   testRealtimeCUArtifact("settlement-policy", "4"),
+		Descriptor: descriptor,
+		Factory: func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+			return testRealtimeCUDispositionDecider{descriptor: descriptor}, nil
+		},
+	}
+}
+
+func testRealtimeCUPolicyDescriptor() policyelements.SemanticDeciderDescriptor {
+	return policyelements.SemanticDeciderDescriptor{
+		Provider: "test", Model: "realtime-cu-settlement", Protocol: "enum-v1",
+		Revision: "v1", ConfigurationDigest: "sha256:" + strings.Repeat("9", 64),
+		Vision: true, DecisionTimeoutMS: 1_000,
+	}
+}
+
+type testRealtimeCUDispositionDecider struct {
+	descriptor policyelements.SemanticDeciderDescriptor
+}
+
+func (testRealtimeCUDispositionDecider) Name() string { return "test-realtime-cu-settlement" }
+
+func (decider testRealtimeCUDispositionDecider) Descriptor() policyelements.SemanticDeciderDescriptor {
+	return decider.descriptor
+}
+
+func (testRealtimeCUDispositionDecider) Decide(
+	ctx context.Context, request coreinteraction.Decision,
+) (coreinteraction.Outcome, error) {
+	if err := context.Cause(ctx); err != nil {
+		return coreinteraction.Outcome{}, err
+	}
+	wanted := string(policyelements.IntentDispositionContinue)
+	index := slices.Index(request.Options, wanted)
+	if index < 0 {
+		return coreinteraction.Outcome{}, fmt.Errorf("settlement decision does not offer %q", wanted)
+	}
+	return coreinteraction.Outcome{Index: index, Option: wanted}, nil
 }
 
 func testRealtimeCUArtifact(name, digit string) inspect.ArtifactIdentity {

@@ -122,7 +122,7 @@ func TestStandardAssemblyInventoryNamesEveryExternalPluginGap(t *testing.T) {
 	if !slices.Equal(inventory.ExternalRequiredDependencies, wantRequired) ||
 		!slices.Equal(inventory.ExternalOptionalDependencies, wantOptional) ||
 		!slices.Equal(inventory.RuntimeDependencies, wantRuntime) ||
-		len(inventory.Implementations) != 49 || len(inventory.ConfigSchemas) != 40 ||
+		len(inventory.Implementations) != 49 || len(inventory.ConfigSchemas) != 41 ||
 		len(inventory.UnresolvedConfigSchemas) != 0 {
 		t.Fatalf("standard assembly inventory = %+v", inventory)
 	}

@@ -297,6 +297,243 @@ func TestSessionBlockedVisionDoesNotStarveAudioObservation(t *testing.T) {
 	}
 }
 
+func TestSessionCancelEmitsOneTypedRequestAndWaitsForExactTerminalOutcome(t *testing.T) {
+	port := &recordingOutputPort{name: sessionCancelBoundary, typeName: SessionCancellationType()}
+	session := &session{
+		sessionID: "adapter-cancellation-session", sessionCancel: port,
+		cancelAcks: make(map[string]chan error),
+	}
+	done := make(chan error, 1)
+	go func() { done <- session.Cancel(t.Context(), " stop now ") }()
+	request := waitForRecordedEnvelope(t, port, 1)[0]
+	payload, ok := sessionCancellationPayload(request.Payload)
+	if !ok || payload.SessionID != session.sessionID || payload.Reason != "stop now" ||
+		request.SessionID != session.sessionID || request.CancellationScope != session.sessionID ||
+		request.Sequence == 0 || request.ItemID == "" {
+		t.Fatalf("adapter cancellation request = %+v payload=%+v", request, request.Payload)
+	}
+
+	// A terminal-looking outcome addressed to another request must not release
+	// this waiter.
+	if err := session.acceptCancellationOutcome(cancellationAdapterOutcomeEnvelope(
+		session.sessionID, "different-request", SessionCancellationCompleted,
+		"all_required_acknowledgements",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	assertAdapterCancelPending(t, done)
+	if err := session.acceptCancellationOutcome(cancellationAdapterOutcomeEnvelope(
+		session.sessionID, request.ItemID, SessionCancellationProgress, "activation_acknowledged",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	assertAdapterCancelPending(t, done)
+	if err := session.acceptCancellationOutcome(cancellationAdapterOutcomeEnvelope(
+		session.sessionID, request.ItemID, SessionCancellationCompleted,
+		"all_required_acknowledgements",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("exact terminal cancellation outcome did not release adapter waiter")
+	}
+	if len(port.snapshot()) != 1 || len(session.cancelAcks) != 0 {
+		t.Fatalf("adapter cancellation fanout/waiters = %d/%d", len(port.snapshot()), len(session.cancelAcks))
+	}
+}
+
+func TestSessionCancelWaitsBehindEarlierCanonicalObservationCommit(t *testing.T) {
+	textPort := &recordingOutputPort{name: textBoundary, typeName: stateelements.ObservationType()}
+	cancelPort := &recordingOutputPort{name: sessionCancelBoundary, typeName: SessionCancellationType()}
+	session := &session{
+		sessionID: "adapter-observation-barrier", text: textPort, sessionCancel: cancelPort,
+		revisions: make(map[string]uint64), captured: make(map[string]uint64),
+		seenText: make(map[string]struct{}), active: make(map[string]activeCall),
+		observationAcks: make(map[string]chan error), cancelAcks: make(map[string]chan error),
+	}
+	textDone := make(chan error, 1)
+	go func() {
+		textDone <- session.Text(t.Context(), legacy.TextInput{
+			ItemID: "user-before-cancel", Role: "user", Text: "stop after this request",
+			OccurredNS: 10,
+		})
+	}()
+	observation := waitForRecordedEnvelope(t, textPort, 1)[0]
+	assertAdapterCancelPending(t, textDone)
+
+	cancelDone := make(chan error, 1)
+	go func() { cancelDone <- session.Cancel(t.Context(), "stop") }()
+	// Cancel takes the same ingress ordering barrier and therefore cannot even
+	// publish its request while the earlier user observation lacks canonical
+	// commit evidence.
+	time.Sleep(10 * time.Millisecond)
+	if envelopes := cancelPort.snapshot(); len(envelopes) != 0 {
+		t.Fatalf("cancellation overtook uncommitted observation: %+v", envelopes)
+	}
+	if err := session.acceptObservationOutcome(element.Envelope{
+		Type:   stateelements.ObservationCommitOutcomeType(),
+		ItemID: observation.ItemID + ":commit", SessionID: session.sessionID, Sequence: 1,
+		CausalParents: []string{observation.ItemID},
+		Payload: stateelements.ObservationCommitOutcome{
+			Kind: stateelements.ObservationCommitted, TriggerItemID: observation.ItemID,
+			TrajectoryItemID: "canonical-user-before-cancel", StoreVersion: 1,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-textDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("text input did not return after exact canonical commit")
+	}
+	request := waitForRecordedEnvelope(t, cancelPort, 1)[0]
+	if err := session.acceptCancellationOutcome(cancellationAdapterOutcomeEnvelope(
+		session.sessionID, request.ItemID, SessionCancellationCompleted,
+		"all_required_acknowledgements",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-cancelDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation did not complete after the ingress barrier")
+	}
+}
+
+func TestObservationCommitRejectionReleasesIngressWithError(t *testing.T) {
+	textPort := &recordingOutputPort{name: textBoundary, typeName: stateelements.ObservationType()}
+	session := &session{
+		sessionID: "adapter-observation-rejection", text: textPort,
+		revisions: make(map[string]uint64), captured: make(map[string]uint64),
+		seenText: make(map[string]struct{}), active: make(map[string]activeCall),
+		observationAcks: make(map[string]chan error),
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Text(t.Context(), legacy.TextInput{
+			ItemID: "rejected-user-observation", Role: "user", Text: "reject me",
+		})
+	}()
+	observation := waitForRecordedEnvelope(t, textPort, 1)[0]
+	if err := session.acceptObservationOutcome(element.Envelope{
+		Type:          stateelements.ObservationCommitOutcomeType(),
+		ItemID:        observation.ItemID + ":rejected",
+		SessionID:     session.sessionID,
+		Sequence:      1,
+		CausalParents: []string{observation.ItemID},
+		Payload: stateelements.ObservationCommitOutcome{
+			Kind: stateelements.ObservationRejected, TriggerItemID: observation.ItemID,
+			Code: "invalid_observation", Message: "fixture rejection",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "invalid_observation") {
+			t.Fatalf("observation rejection error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("observation rejection did not release ingress waiter")
+	}
+	if len(session.observationAcks) != 0 || len(session.seenText) != 0 {
+		t.Fatalf("rejected observation left waiter/text state: %d/%d",
+			len(session.observationAcks), len(session.seenText))
+	}
+}
+
+func TestConcurrentSessionCancelDoesNotReportInProgressIntentAsQuiescent(t *testing.T) {
+	port := &recordingOutputPort{name: sessionCancelBoundary, typeName: SessionCancellationType()}
+	session := &session{
+		sessionID: "adapter-concurrent-cancellation", sessionCancel: port,
+		cancelAcks: make(map[string]chan error),
+	}
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- session.Cancel(t.Context(), "first") }()
+	first := waitForRecordedEnvelope(t, port, 1)[0]
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- session.Cancel(t.Context(), "second") }()
+	second := waitForRecordedEnvelope(t, port, 2)[1]
+
+	if err := session.acceptCancellationOutcome(cancellationAdapterOutcomeEnvelope(
+		session.sessionID, second.ItemID, SessionCancellationIgnored,
+		"intent_cancellation_in_progress",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-secondDone:
+		if err == nil || !strings.Contains(err.Error(), "still in progress") {
+			t.Fatalf("concurrent cancellation error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("in-progress cancellation did not return an explicit retry error")
+	}
+	assertAdapterCancelPending(t, firstDone)
+	if err := session.acceptCancellationOutcome(cancellationAdapterOutcomeEnvelope(
+		session.sessionID, first.ItemID, SessionCancellationCompleted,
+		"all_required_acknowledgements",
+	)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first cancellation did not await exact completion")
+	}
+}
+
+func cancellationAdapterOutcomeEnvelope(
+	sessionID, requestItemID string, kind SessionCancellationOutcomeKind, code string,
+) element.Envelope {
+	return element.Envelope{
+		Type: SessionCancellationOutcomeType(), ItemID: requestItemID + ":outcome",
+		SessionID: sessionID, Sequence: 1,
+		Payload: SessionCancellationOutcome{
+			Kind: kind, Operation: "complete", RequestItemID: requestItemID,
+			SessionID: sessionID, Code: code, FinishedNS: 1,
+		},
+	}
+}
+
+func waitForRecordedEnvelope(
+	t *testing.T, port *recordingOutputPort, count int,
+) []element.Envelope {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if envelopes := port.snapshot(); len(envelopes) >= count {
+			return envelopes
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("recorded envelopes = %d, want at least %d", len(port.snapshot()), count)
+	return nil
+}
+
+func assertAdapterCancelPending(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case err := <-done:
+		t.Fatalf("cancellation returned before exact terminal outcome: %v", err)
+	case <-time.After(10 * time.Millisecond):
+	}
+}
+
 type adapterTestObserver struct {
 	name         string
 	authority    trajectory.Authority

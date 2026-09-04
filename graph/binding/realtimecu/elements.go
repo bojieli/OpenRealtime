@@ -9,14 +9,15 @@ import (
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
 
-// RegisterElementDescriptors contributes only the two Realtime-CU-specific
-// state/policy contracts to a caller-owned graph catalog.
+// RegisterElementDescriptors contributes the Realtime-CU-specific state and
+// policy contracts to a caller-owned graph catalog.
 func RegisterElementDescriptors(catalog *resolve.Catalog) error {
 	if catalog == nil {
 		return fmt.Errorf("register Realtime-CU element descriptors: nil catalog")
 	}
 	for _, descriptor := range []element.Descriptor{
 		ObservationCommitDescriptor(), ActivationDescriptor(),
+		CancellationCoordinatorDescriptor(),
 	} {
 		if err := catalog.Register(descriptor); err != nil {
 			return fmt.Errorf("register Realtime-CU descriptor %s: %w", descriptor.Name, err)
@@ -29,7 +30,9 @@ func RegisterElementDescriptors(catalog *resolve.Catalog) error {
 // registrations. Mount is still the first operation permitted to touch the
 // session trajectory store.
 func ElementFactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
-	factories := []element.Factory{observationCommitFactory{}, activationFactory{}}
+	factories := []element.Factory{
+		observationCommitFactory{}, activationFactory{}, cancellationCoordinatorFactory{},
+	}
 	result := make([]graphruntime.FactoryRegistration, len(factories))
 	for index, factory := range factories {
 		descriptor := factory.Descriptor()

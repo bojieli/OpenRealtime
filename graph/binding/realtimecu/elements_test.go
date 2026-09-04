@@ -16,7 +16,8 @@ func TestRealtimeCUElementDescriptorIdentitiesAreStable(t *testing.T) {
 		digest     string
 	}{
 		{ObservationCommitDescriptor(), "sha256:3f6a2ed8c53bf3e8ef8e4e645b25691332f3b6c6f93283a839b4bb03088cbd28"},
-		{ActivationDescriptor(), "sha256:e7be8e2fd0169cd9b183ae8865e3d83c7133c97290519a07b90261f809ca325f"},
+		{ActivationDescriptor(), "sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce"},
+		{CancellationCoordinatorDescriptor(), "sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a"},
 	} {
 		identity, err := test.descriptor.Identity()
 		if err != nil {
@@ -24,7 +25,9 @@ func TestRealtimeCUElementDescriptorIdentitiesAreStable(t *testing.T) {
 		}
 		wantRevision := uint64(1)
 		if identity.Name == ActivationReference {
-			wantRevision = 10
+			wantRevision = 12
+		} else if identity.Name == CancellationCoordinatorReference {
+			wantRevision = 2
 		}
 		if identity.Revision != wantRevision || identity.Digest != test.digest {
 			t.Fatalf("%s identity = %+v, want revision %d digest %s",
@@ -36,6 +39,7 @@ func TestRealtimeCUElementDescriptorIdentitiesAreStable(t *testing.T) {
 func TestRealtimeCUElementDescriptorBundleMatchesImplementations(t *testing.T) {
 	want, err := codec.MarshalJSON(codec.New(
 		ObservationCommitDescriptor(), ActivationDescriptor(),
+		CancellationCoordinatorDescriptor(),
 	))
 	if err != nil {
 		t.Fatal(err)

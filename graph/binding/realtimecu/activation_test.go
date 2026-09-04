@@ -1207,6 +1207,7 @@ func newActivationTestFixture(t *testing.T) *activationTestFixture {
 		},
 		terminal:               make(map[string]struct{}),
 		canceledEffects:        make(map[string]*canceledActivationEffect),
+		canceledIntents:        make(map[string]policyelements.TemporalEvidenceItemIdentity),
 		pendingSettlementAcks:  make(map[string]pendingSettlementAcknowledgement),
 		acknowledgedSettlement: make(map[string]struct{}),
 		state: policyelements.GenerationState{
@@ -1328,13 +1329,30 @@ func (fixture *activationTestFixture) cancelGeneration(
 	t *testing.T, generationID string, sequence uint64,
 ) {
 	t.Helper()
-	if err := fixture.runner.acceptCancel(context.Background(), element.Envelope{
+	envelope := element.Envelope{
 		Type: policyelements.GenerationCancelType(), ItemID: "cancel-" + generationID,
 		SessionID: activationTestSession, Sequence: sequence,
 		Payload: policyelements.GenerationCancel{
 			GenerationID: generationID, Reason: "participant canceled",
 		},
-	}); err != nil {
+	}
+	if fixture.runner.config.ExpectedSettlement != nil {
+		var intent policyelements.TemporalEvidenceItemIdentity
+		switch {
+		case fixture.runner.active != nil && fixture.runner.active.id == generationID:
+			intent = fixture.runner.active.intent
+		case fixture.runner.canceledEffects[generationID] != nil:
+			intent = fixture.runner.canceledEffects[generationID].generation.intent
+		default:
+			t.Fatal("settlement-aware cancellation has no exact generation intent")
+		}
+		envelope.CancellationScope = intent.TrajectoryItemID
+		envelope.Payload = policyelements.GenerationCancel{
+			GenerationID: generationID, StreamID: activationTestSession,
+			Reason: "participant canceled", DurableIntent: &intent,
+		}
+	}
+	if err := fixture.runner.acceptCancel(context.Background(), envelope); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -1723,6 +1741,36 @@ func TestActivationSettlementAcknowledgesCanceledExactEffectAcrossOrdering(t *te
 	})
 }
 
+func TestActivationCanceledProposalWithoutSettlementReleasesEffectCapacity(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	contextVersion := fixture.runner.active.contextVersion
+	fixture.runner.active.callID = ""
+	fixture.runner.active.tool = ""
+	triggerCount := len(fixture.trigger.snapshot())
+
+	fixture.cancelGeneration(t, scenario.decision.InvocationID, fixture.store.Snapshot().Version)
+	if fixture.runner.canceledEffects[scenario.decision.InvocationID] == nil {
+		t.Fatal("exact cancellation did not retain the model-result race window")
+	}
+	if err := fixture.runner.acceptResult(context.Background(), activationResultEnvelope(
+		scenario.decision.InvocationID, contextVersion,
+		[]cognitionelements.ToolProposal{activationTestProposal("late-canceled-proposal")},
+	)); err != nil {
+		t.Fatal(err)
+	}
+	if fixture.runner.canceledEffects[scenario.decision.InvocationID] != nil ||
+		len(fixture.runner.canceledEffectOrder) != 0 || fixture.runner.active != nil ||
+		len(fixture.settlementAck.snapshot()) != 0 || len(fixture.trigger.snapshot()) != triggerCount {
+		t.Fatalf("late canceled proposal retained capacity or revived work: effects=%+v order=%+v active=%+v ack=%+v triggers=%+v",
+			fixture.runner.canceledEffects, fixture.runner.canceledEffectOrder,
+			fixture.runner.active, fixture.settlementAck.snapshot(), fixture.trigger.snapshot())
+	}
+	if !fixture.runner.intentCanceled(scenario.decision.Probe.DurableIntent) {
+		t.Fatal("releasing the heavy canceled effect also lost the durable-intent tombstone")
+	}
+}
+
 func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testing.T) {
 	fixture := newActivationTestFixture(t)
 	fixture.runner.config.CancelMemory = 1
@@ -1756,13 +1804,19 @@ func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testin
 	secondCancel := element.Envelope{
 		Type: policyelements.GenerationCancelType(), ItemID: "cancel-" + newActive.id,
 		SessionID: activationTestSession, Sequence: fixture.store.Snapshot().Version + 1,
+		CancellationScope: newActive.intent.TrajectoryItemID,
 		Payload: policyelements.GenerationCancel{
-			GenerationID: newActive.id, Reason: "second cancellation",
+			GenerationID: newActive.id, StreamID: activationTestSession,
+			Reason: "second cancellation", DurableIntent: &newActive.intent,
 		},
 	}
-	if err := fixture.runner.acceptCancel(context.Background(), secondCancel); err == nil ||
-		!strings.Contains(err.Error(), "full of unacknowledged effects") {
-		t.Fatalf("second cancellation capacity error = %v", err)
+	if err := fixture.runner.acceptCancel(context.Background(), secondCancel); err != nil {
+		t.Fatalf("second cancellation refusal publication: %v", err)
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+		outcome.Code != "intent_cancel_capacity" ||
+		!strings.Contains(outcome.Message, "full of unacknowledged effects") {
+		t.Fatalf("second cancellation capacity outcome = %+v", outcome)
 	}
 	if len(fixture.runner.canceledEffects) != 1 || fixture.runner.canceledEffects[oldRun] != oldEffect ||
 		!reflect.DeepEqual(fixture.runner.active, newActive) ||
@@ -1790,6 +1844,61 @@ func TestActivationCancellationCapacityCannotEvictUnacknowledgedEffect(t *testin
 	if fixture.runner.active != nil || fixture.runner.canceledEffects[newActive.id] == nil {
 		t.Fatalf("reclaimed capacity did not retain the second effect: canceled=%+v active=%+v",
 			fixture.runner.canceledEffects, fixture.runner.active)
+	}
+}
+
+func TestActivationExactCancellationGenerationMismatchIsFailureAtomic(t *testing.T) {
+	fixture := newActivationTestFixture(t)
+	scenario := fixture.prepareSettlementScenario(t, policyelements.IntentSettlementDecisionSucceeded)
+	activeBefore := cloneActiveGeneration(fixture.runner.active)
+	intentBefore := *fixture.runner.intent
+	deferredBefore := fixture.runner.deferred
+	pendingTerminalBefore := fixture.runner.pendingTerminal
+	pendingDispositionBefore := fixture.runner.pendingDisposition
+	pendingSettlementBefore := clonePendingActivationSettlement(fixture.runner.pendingSettlement)
+	canceledEffectsBefore := len(fixture.runner.canceledEffects)
+	canceledEffectOrderBefore := slices.Clone(fixture.runner.canceledEffectOrder)
+	canceledIntentsBefore := len(fixture.runner.canceledIntents)
+	canceledIntentOrderBefore := slices.Clone(fixture.runner.canceledIntentOrder)
+	revokedSequenceBefore := fixture.runner.revokedSequence
+	revokedStoreVersionBefore := fixture.runner.revokedStoreVersion
+	canceledCountBefore := fixture.runner.state.Canceled
+	refusedBefore := fixture.runner.state.Refused
+	intent := scenario.decision.Probe.DurableIntent
+
+	if err := fixture.runner.acceptCancel(context.Background(), element.Envelope{
+		Type: policyelements.GenerationCancelType(), ItemID: "forged-generation-cancel",
+		SessionID: activationTestSession, Sequence: 71,
+		CancellationScope: intent.TrajectoryItemID,
+		Payload: policyelements.GenerationCancel{
+			GenerationID: "forged-generation", StreamID: activationTestSession,
+			Reason: "forged", DurableIntent: &intent,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if outcome := fixture.lastOutcome(t); outcome.Kind != policyelements.GenerationRefused ||
+		outcome.Code != "generation_mismatch" {
+		t.Fatalf("mismatched generation outcome = %+v", outcome)
+	}
+	if !reflect.DeepEqual(fixture.runner.active, activeBefore) ||
+		fixture.runner.intent == nil || *fixture.runner.intent != intentBefore ||
+		fixture.runner.deferred != deferredBefore ||
+		fixture.runner.pendingTerminal != pendingTerminalBefore ||
+		fixture.runner.pendingDisposition != pendingDispositionBefore ||
+		!reflect.DeepEqual(fixture.runner.pendingSettlement, pendingSettlementBefore) ||
+		len(fixture.runner.canceledEffects) != canceledEffectsBefore ||
+		!reflect.DeepEqual(fixture.runner.canceledEffectOrder, canceledEffectOrderBefore) ||
+		len(fixture.runner.canceledIntents) != canceledIntentsBefore ||
+		!reflect.DeepEqual(fixture.runner.canceledIntentOrder, canceledIntentOrderBefore) ||
+		fixture.runner.revokedSequence != revokedSequenceBefore ||
+		fixture.runner.revokedStoreVersion != revokedStoreVersionBefore ||
+		fixture.runner.state.Canceled != canceledCountBefore ||
+		fixture.runner.state.Refused != refusedBefore+1 {
+		t.Fatalf("mismatched generation mutated cancellation state: active=%+v intent=%+v effects=%+v intents=%+v sequence=%d store=%d state=%+v",
+			fixture.runner.active, fixture.runner.intent, fixture.runner.canceledEffects,
+			fixture.runner.canceledIntents, fixture.runner.revokedSequence,
+			fixture.runner.revokedStoreVersion, fixture.runner.state)
 	}
 }
 

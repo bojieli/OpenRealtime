@@ -5,8 +5,8 @@
       "reference": "action.AuthorizedCallCommit",
       "identity": {
         "name": "action.AuthorizedCallCommit",
-        "revision": 3,
-        "digest": "sha256:89cea860e7881e2bfa669cb2573a7371cdc4731d1a438955f210a8364be90f28"
+        "revision": 4,
+        "digest": "sha256:370afcb26b5c434c69fe8b7896ad4a66f45c7eac221add2d0ee00951af9c5feb"
       }
     },
     {
@@ -69,8 +69,8 @@
       "reference": "authority.Confirmation",
       "identity": {
         "name": "authority.Confirmation",
-        "revision": 2,
-        "digest": "sha256:403b62b3c3a44fb93a4d77cc4cd2c0e6ab18a3595a1cbb189def1d479e9eb184"
+        "revision": 3,
+        "digest": "sha256:152370cb35f3f2bf8273bedf3ccee0ba893fef92dbd10225cf102dadf4def775"
       }
     },
     {
@@ -101,8 +101,8 @@
       "reference": "cognition.TextModel",
       "identity": {
         "name": "cognition.TextModel",
-        "revision": 2,
-        "digest": "sha256:2d2e3e9848fd63da995721c81c5eec6a8fcb969fe69585ad4e96630f31b37f31"
+        "revision": 3,
+        "digest": "sha256:1596e62d7da68f20107787c8b627b1cc32ba6ff5f3f0c1b3f4f3a5a7a7bf52df"
       }
     },
     {
@@ -138,11 +138,35 @@
       }
     },
     {
+      "reference": "policy.IntentDispositionProducer",
+      "identity": {
+        "name": "policy.IntentDispositionProducer",
+        "revision": 2,
+        "digest": "sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e"
+      }
+    },
+    {
+      "reference": "policy.IntentSettlement",
+      "identity": {
+        "name": "policy.IntentSettlement",
+        "revision": 1,
+        "digest": "sha256:a27213a88f5dce8e656bb182eb27a39037b5e1e34323396a65629a732c3f1990"
+      }
+    },
+    {
       "reference": "policy.RealtimeComputerUseActivation",
       "identity": {
         "name": "policy.RealtimeComputerUseActivation",
-        "revision": 10,
-        "digest": "sha256:e7be8e2fd0169cd9b183ae8865e3d83c7133c97290519a07b90261f809ca325f"
+        "revision": 12,
+        "digest": "sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce"
+      }
+    },
+    {
+      "reference": "policy.RealtimeComputerUseCancellationCoordinator",
+      "identity": {
+        "name": "policy.RealtimeComputerUseCancellationCoordinator",
+        "revision": 2,
+        "digest": "sha256:ed399beac0fddb56f30490311e86f1f46011392db9bc3aa2a85db033562dfb0a"
       }
     },
     {

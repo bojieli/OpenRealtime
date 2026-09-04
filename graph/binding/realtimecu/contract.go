@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	AdapterReference = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-adapter/v1"
+	AdapterReference = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-adapter/v2"
 	ProfileName      = "openrealtime.realtime_computer_use"
-	ProfileRevision  = uint64(1)
+	ProfileRevision  = uint64(2)
 	ModelReference   = "deployment.computer-use"
 	// SettlementPolicyReference is the graph-stable semantic-decider
 	// registration used by an independently connected intent-disposition

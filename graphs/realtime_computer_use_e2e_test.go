@@ -18,6 +18,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -40,14 +41,16 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		descriptor: descriptor, invocations: make(chan int32, 8),
 		secondContexts: make(chan multiStepRealtimeCUContext, 1),
 	}
-	var modelFactories, observerFactories atomic.Int32
+	var modelFactories, policyFactories, observerFactories atomic.Int32
 	applicationArtifact := testRealtimeCUArtifact("endpoint-application", "1")
 	providerArtifact := testRealtimeCUArtifact("endpoint-provider", "2")
 	runtimeArtifact := testRealtimeCUArtifact("endpoint-runtime", "4")
 	modelArtifact := testRealtimeCUArtifact("endpoint-model", "5")
 	observerArtifact := testRealtimeCUArtifact("endpoint-observer", "6")
 	gatewayArtifact := testRealtimeCUArtifact("endpoint-gateway", "7")
+	policyArtifact := testRealtimeCUArtifact("endpoint-settlement-policy", "8")
 	modelReference := "go://test/realtime-cu/endpoint-model/v1"
+	policyReference := "policy://test/realtime-cu/settlement/endpoint/v1"
 	observerReference := "go://test/realtime-cu/endpoint-observer/v1"
 	observerSources := []string{
 		realtimecu.SourceCamera, realtimecu.SourceMicrophone, realtimecu.SourceScreen,
@@ -56,9 +59,17 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		modelFactories.Add(1)
 		return model, nil
 	}
-	observerFactory := func(context.Context, legacy.Options) (realtimecu.Observer, error) {
+	observerFactory := func(
+		_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+	) (realtimecu.Observer, error) {
 		observerFactories.Add(1)
+		observer.retainer = resources.Retainer
 		return observer, nil
+	}
+	policyDescriptor := testRealtimeCUPolicyDescriptor()
+	policyFactory := func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+		policyFactories.Add(1)
+		return testRealtimeCUDispositionDecider{descriptor: policyDescriptor}, nil
 	}
 	registration, err := graphs.RealtimeComputerUseApplicationRegistration(
 		realtimecu.ApplicationRegistrationConfig{
@@ -71,12 +82,18 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 				},
 				Factory: modelFactory,
 			}},
+			Policies: []realtimecu.PolicyFactoryRegistration{{
+				ApplicationPolicySelection: realtimecu.ApplicationPolicySelection{
+					Reference: policyReference, Artifact: policyArtifact, Descriptor: policyDescriptor,
+				},
+				Factory: policyFactory,
+			}},
 			Observers: []realtimecu.ObserverFactoryRegistration{{
 				ApplicationObserverSelection: realtimecu.ApplicationObserverSelection{
 					Reference: observerReference, Name: observer.name, Artifact: observerArtifact,
 					Sources: observerSources,
 				},
-				Factory: observerFactory,
+				ResourceFactory: observerFactory,
 			}},
 		},
 	)
@@ -91,6 +108,9 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		FormatVersion: realtimecu.ApplicationFormatVersion,
 		Model: realtimecu.ApplicationModelSelection{
 			Reference: modelReference, Artifact: modelArtifact, Descriptor: descriptor,
+		},
+		SettlementPolicy: realtimecu.ApplicationPolicySelection{
+			Reference: policyReference, Artifact: policyArtifact, Descriptor: policyDescriptor,
 		},
 		Observer: realtimecu.ApplicationObserverSelection{
 			Reference: observerReference, Name: observer.name, Artifact: observerArtifact,
@@ -145,9 +165,9 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	if bundle.GraphPlan.Identity() != profile.Plan {
 		t.Fatal("profiled endpoint composition lost its exact graph identity")
 	}
-	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
-		t.Fatalf("endpoint composition acquired session resources: model=%d observer=%d",
-			modelFactories.Load(), observerFactories.Load())
+	if modelFactories.Load() != 0 || policyFactories.Load() != 0 || observerFactories.Load() != 0 {
+		t.Fatalf("endpoint composition acquired session resources: model=%d policy=%d observer=%d",
+			modelFactories.Load(), policyFactories.Load(), observerFactories.Load())
 	}
 	realm, err := bundle.ServerBundle.Mount(context.Background())
 	if err != nil {
@@ -160,9 +180,9 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 			t.Errorf("close realtime-CU endpoint realm: %v", closeErr)
 		}
 	})
-	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {
-		t.Fatalf("endpoint mount acquired session resources: model=%d observer=%d",
-			modelFactories.Load(), observerFactories.Load())
+	if modelFactories.Load() != 0 || policyFactories.Load() != 0 || observerFactories.Load() != 0 {
+		t.Fatalf("endpoint mount acquired session resources: model=%d policy=%d observer=%d",
+			modelFactories.Load(), policyFactories.Load(), observerFactories.Load())
 	}
 
 	httpServer := httptest.NewServer(realm.Handler())
@@ -182,9 +202,9 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	client.await(5*time.Second, func(message map[string]any) bool {
 		return message["type"] == "session.created"
 	})
-	if observerFactories.Load() != 1 || modelFactories.Load() != 1 {
-		t.Fatalf("endpoint session factories after dial: model=%d observer=%d",
-			modelFactories.Load(), observerFactories.Load())
+	if observerFactories.Load() != 1 || modelFactories.Load() != 1 || policyFactories.Load() != 1 {
+		t.Fatalf("endpoint session factories after dial: model=%d policy=%d observer=%d",
+			modelFactories.Load(), policyFactories.Load(), observerFactories.Load())
 	}
 
 	spec := testRealtimeCUToolSpecs(t, target)[0]
@@ -222,6 +242,15 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		return message["type"] == "session.updated"
 	})
 	assertRealtimeCUNegotiation(t, updated, observer.name)
+
+	// The public cancellation event crosses the single session_cancel graph
+	// boundary and the adapter does not return until the coordinator publishes
+	// its terminal cancellation_outcome. There is no wire acknowledgement for
+	// response.cancel itself, so the following frame is the round-trip witness:
+	// the gateway reads client events serially and cannot admit it while Cancel
+	// is still waiting. With no durable intent yet, the exact terminal outcome
+	// is no_current_intent and the session remains usable.
+	client.send(map[string]any{"type": "response.cancel"})
 
 	frame := realtimeCUJPEG(t, 320, 240)
 	preIntentTimestampMS := time.Now().UnixMilli()
@@ -389,6 +418,28 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		secondConsequence.CanonicalResultItemID == consequence.CanonicalResultItemID ||
 		secondConsequence.StoreVersion <= consequence.StoreVersion {
 		t.Fatalf("second endpoint visual consequence = %+v", secondConsequence)
+	}
+
+	// Cancel while the durable intent and its second successful effect still
+	// await post-effect settlement. The next frame can be observed only after
+	// the gateway's serial response.cancel handler receives the coordinator's
+	// terminal outcome. It must not reactivate the canceled intent.
+	client.send(map[string]any{"type": "response.cancel"})
+	time.Sleep(350 * time.Millisecond)
+	afterCancelTimestampMS := postEffectTimestampMS + 1
+	client.send(map[string]any{
+		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
+		"frame": frame, "timestamp_ms": afterCancelTimestampMS,
+	})
+	client.await(5*time.Second, func(message map[string]any) bool {
+		return message["type"] == openrealtime.EventObservationAdded &&
+			message["source"] == realtimecu.SourceScreen &&
+			message["timestamp_ms"] == float64(afterCancelTimestampMS)
+	})
+	select {
+	case invocation := <-model.invocations:
+		t.Fatalf("post-cancel observation reactivated model invocation %d", invocation)
+	case <-time.After(250 * time.Millisecond):
 	}
 }
 

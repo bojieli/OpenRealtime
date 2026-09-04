@@ -504,6 +504,18 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"expected_settlement": intentSettlementConfig,
 			}, "role", "invocation", "expected_admission",
 		),
+		"schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1": standardObject(
+			"schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1",
+			schemaObject{
+				"max_transactions": integerSchema(1, 4096),
+				"tombstone_memory": integerSchema(1, 4096),
+				"action_ack_stages": func() schemaObject {
+					result := arraySchema(identifier(256), 1, 32)
+					result["uniqueItems"] = true
+					return result
+				}(),
+			},
+		),
 		"schema://openrealtime/policy/semantic-admission-config/v3": standardObject(
 			"schema://openrealtime/policy/semantic-admission-config/v3",
 			schemaObject{

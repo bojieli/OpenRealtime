@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -23,18 +24,18 @@ import (
 )
 
 const (
-	graphID                   = "realtime_computer_use"
-	audioBoundary             = "audio"
-	videoBoundary             = "video"
-	textBoundary              = "text"
-	activationCancelBoundary  = "activation_cancel"
-	actionCancelBoundary      = "action_cancel"
-	observationBoundary       = "observation_events"
-	transcriptBoundary        = "transcript_events"
-	activationOutcomeBoundary = "activation_outcome"
-	dispatchCommitBoundary    = "dispatch_commit"
-	canonicalResultBoundary   = "canonical_result"
-	textObserverName          = "client.text"
+	graphID                     = "realtime_computer_use"
+	audioBoundary               = "audio"
+	videoBoundary               = "video"
+	textBoundary                = "text"
+	sessionCancelBoundary       = "session_cancel"
+	observationBoundary         = "observation_events"
+	transcriptBoundary          = "transcript_events"
+	observationOutcomeBoundary  = "observation_outcome"
+	cancellationOutcomeBoundary = "cancellation_outcome"
+	dispatchCommitBoundary      = "dispatch_commit"
+	canonicalResultBoundary     = "canonical_result"
+	textObserverName            = "client.text"
 	// Consequences are bounded independently of the action bridge so a client
 	// cannot complete effects indefinitely without supplying the screen frames
 	// that make those effects observable. The bound matches the bridge's
@@ -44,8 +45,9 @@ const (
 )
 
 type boundaries struct {
-	audio, video, text, activationCancel, cancel                 ir.Boundary
-	observations, transcripts, activationOutcome, calls, results ir.Boundary
+	audio, video, text, sessionCancel             ir.Boundary
+	observations, transcripts, observationOutcome ir.Boundary
+	cancellationOutcome, calls, results           ir.Boundary
 }
 
 type boundAdapter struct {
@@ -99,7 +101,7 @@ func bind(plan *graphconfig.Plan, plugin *Plugin) (boundAdapter, error) {
 			{Operation: graphbinding.AdapterInputAudio, Boundary: audioBoundary, Direction: ir.InputBoundary, Type: selected.audio.Type},
 			{Operation: graphbinding.AdapterInputVideo, Boundary: videoBoundary, Direction: ir.InputBoundary, Type: selected.video.Type},
 			{Operation: graphbinding.AdapterInputText, Boundary: textBoundary, Direction: ir.InputBoundary, Type: selected.text.Type},
-			{Operation: graphbinding.AdapterInputCancel, Boundary: actionCancelBoundary, Direction: ir.InputBoundary, Type: selected.cancel.Type},
+			{Operation: graphbinding.AdapterInputCancel, Boundary: sessionCancelBoundary, Direction: ir.InputBoundary, Type: selected.sessionCancel.Type},
 			{Operation: graphbinding.AdapterOutputObservation, Boundary: observationBoundary, Direction: ir.OutputBoundary, Type: selected.observations.Type},
 			{Operation: graphbinding.AdapterOutputTranscript, Boundary: transcriptBoundary, Direction: ir.OutputBoundary, Type: selected.transcripts.Type},
 			{Operation: graphbinding.AdapterOutputToolCalls, Boundary: dispatchCommitBoundary, Direction: ir.OutputBoundary, Type: selected.calls.Type},
@@ -169,11 +171,11 @@ func validateBoundaries(graph ir.Graph) (boundaries, error) {
 		{name: audioBoundary, direction: ir.InputBoundary, typeName: stateelements.ObservationType()},
 		{name: videoBoundary, direction: ir.InputBoundary, typeName: stateelements.ObservationType()},
 		{name: textBoundary, direction: ir.InputBoundary, typeName: stateelements.ObservationType()},
-		{name: activationCancelBoundary, direction: ir.InputBoundary, typeName: policyelements.GenerationCancelType()},
-		{name: actionCancelBoundary, direction: ir.InputBoundary, typeName: actionelements.InterruptType()},
+		{name: sessionCancelBoundary, direction: ir.InputBoundary, typeName: SessionCancellationType()},
 		{name: observationBoundary, direction: ir.OutputBoundary, typeName: stateelements.ObservationType()},
 		{name: transcriptBoundary, direction: ir.OutputBoundary, typeName: stateelements.ObservationType()},
-		{name: activationOutcomeBoundary, direction: ir.OutputBoundary, typeName: policyelements.GenerationOutcomeType()},
+		{name: observationOutcomeBoundary, direction: ir.OutputBoundary, typeName: stateelements.ObservationCommitOutcomeType()},
+		{name: cancellationOutcomeBoundary, direction: ir.OutputBoundary, typeName: SessionCancellationOutcomeType()},
 		{name: dispatchCommitBoundary, direction: ir.OutputBoundary, typeName: actionelements.CommittedType()},
 		{name: canonicalResultBoundary, direction: ir.OutputBoundary, typeName: actionelements.CanonicalResultType()},
 	}
@@ -181,11 +183,11 @@ func validateBoundaries(graph ir.Graph) (boundaries, error) {
 	wanted[0].target = &result.audio
 	wanted[1].target = &result.video
 	wanted[2].target = &result.text
-	wanted[3].target = &result.activationCancel
-	wanted[4].target = &result.cancel
-	wanted[5].target = &result.observations
-	wanted[6].target = &result.transcripts
-	wanted[7].target = &result.activationOutcome
+	wanted[3].target = &result.sessionCancel
+	wanted[4].target = &result.observations
+	wanted[5].target = &result.transcripts
+	wanted[6].target = &result.observationOutcome
+	wanted[7].target = &result.cancellationOutcome
 	wanted[8].target = &result.calls
 	wanted[9].target = &result.results
 	for _, requirement := range wanted {
@@ -234,6 +236,32 @@ func validatePlanReferences(plan *graphconfig.Plan) error {
 			}
 		}
 	}
+	var settlement policyelements.IntentSettlementConfig
+	if err := json.Unmarshal(values["settlement"], &settlement); err != nil {
+		return fmt.Errorf("decode values for settlement: %w", err)
+	}
+	var producer policyelements.IntentDispositionProducerConfig
+	if err := json.Unmarshal(values["settlement_producer"], &producer); err != nil {
+		return fmt.Errorf("decode values for settlement_producer: %w", err)
+	}
+	activation, err := decodeActivationConfig(values["activation"])
+	if err != nil {
+		return fmt.Errorf("decode values for activation: %w", err)
+	}
+	if producer.ExpectedSettlement.Detector.Reference != SettlementPolicyReference {
+		return fmt.Errorf("node settlement_producer detector reference %q, want %q",
+			producer.ExpectedSettlement.Detector.Reference, SettlementPolicyReference)
+	}
+	if !reflect.DeepEqual(settlement, producer.ExpectedSettlement) {
+		return errors.New("nodes settlement and settlement_producer carry different settlement contracts")
+	}
+	if activation.ExpectedSettlement == nil ||
+		!reflect.DeepEqual(settlement, *activation.ExpectedSettlement) {
+		return errors.New("nodes settlement and activation carry different settlement contracts")
+	}
+	if !reflect.DeepEqual(activation.ExpectedAdmission, settlement.ExpectedAdmission) {
+		return errors.New("node activation expected_admission differs from the settlement admission contract")
+	}
 	return nil
 }
 
@@ -243,13 +271,13 @@ type activeCall struct {
 }
 
 type session struct {
-	audio, video, text, activationCancel, cancel element.OutputPort
-	outputs                                      map[string]element.InputPort
-	sink                                         legacy.Sink
-	sessionID                                    string
-	config                                       PluginConfig
-	bundle                                       *sessionBundle
-	observer                                     Observer
+	audio, video, text, sessionCancel element.OutputPort
+	outputs                           map[string]element.InputPort
+	sink                              legacy.Sink
+	sessionID                         string
+	config                            PluginConfig
+	bundle                            *sessionBundle
+	observer                          Observer
 
 	audioObservationMu  sync.Mutex
 	videoObservationMu  sync.Mutex
@@ -262,10 +290,12 @@ type session struct {
 	sequence            uint64
 	pendingConsequences []VisualConsequence
 
-	effectMu    sync.Mutex
-	active      map[string]activeCall
-	cancelAckMu sync.Mutex
-	cancelAcks  map[string]chan error
+	effectMu         sync.Mutex
+	active           map[string]activeCall
+	observationAckMu sync.Mutex
+	observationAcks  map[string]chan error
+	cancelAckMu      sync.Mutex
+	cancelAcks       map[string]chan error
 
 	closeOnce sync.Once
 	closeErr  error
@@ -294,11 +324,7 @@ func newSession(
 	if err != nil {
 		return nil, err
 	}
-	activationCancel, err := ingress(activationCancelBoundary)
-	if err != nil {
-		return nil, err
-	}
-	cancel, err := ingress(actionCancelBoundary)
+	sessionCancel, err := ingress(sessionCancelBoundary)
 	if err != nil {
 		return nil, err
 	}
@@ -314,12 +340,13 @@ func newSession(
 		outputs[boundary.Name] = port
 	}
 	return &session{
-		audio: audio, video: video, text: text, activationCancel: activationCancel,
-		cancel: cancel, outputs: outputs,
-		sink: options.Sink, sessionID: options.SessionID, config: config,
+		audio: audio, video: video, text: text, sessionCancel: sessionCancel,
+		outputs: outputs,
+		sink:    options.Sink, sessionID: options.SessionID, config: config,
 		bundle: bundle, observer: observer, revisions: make(map[string]uint64),
 		captured: make(map[string]uint64), seenText: make(map[string]struct{}),
-		active: make(map[string]activeCall), cancelAcks: make(map[string]chan error),
+		active:          make(map[string]activeCall),
+		observationAcks: make(map[string]chan error), cancelAcks: make(map[string]chan error),
 	}, nil
 }
 
@@ -369,8 +396,10 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.publishObservation(ctx, envelope)
 		case transcriptBoundary:
 			err = session.publishTranscript(ctx, envelope)
-		case activationOutcomeBoundary:
-			err = session.acceptActivationOutcome(envelope)
+		case observationOutcomeBoundary:
+			err = session.acceptObservationOutcome(envelope)
+		case cancellationOutcomeBoundary:
+			err = session.acceptCancellationOutcome(envelope)
 		case dispatchCommitBoundary:
 			err = session.publishCall(ctx, envelope)
 		case canonicalResultBoundary:
@@ -384,32 +413,94 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 	}
 }
 
-func (session *session) acceptActivationOutcome(envelope element.Envelope) error {
-	outcome, ok := generationOutcomePayload(envelope.Payload)
-	if !ok {
-		return fmt.Errorf("Realtime-CU activation outcome has payload %T", envelope.Payload)
+func (session *session) acceptObservationOutcome(envelope element.Envelope) error {
+	outcome, ok := observationCommitOutcomePayload(envelope.Payload)
+	if !ok || !envelope.Type.Equal(stateelements.ObservationCommitOutcomeType()) {
+		return fmt.Errorf("Realtime-CU observation commit outcome has payload %T", envelope.Payload)
 	}
-	var cause string
-	session.cancelAckMu.Lock()
-	for _, parent := range envelope.CausalParents {
-		if _, found := session.cancelAcks[parent]; found {
-			cause = parent
-			break
+	if envelope.SessionID != session.sessionID || outcome.TriggerItemID == "" {
+		return errors.New("Realtime-CU observation commit outcome crossed the mounted session or omitted its trigger")
+	}
+	if !slices.Contains(envelope.CausalParents, outcome.TriggerItemID) {
+		return errors.New("Realtime-CU observation commit outcome omitted its exact trigger lineage")
+	}
+	switch outcome.Kind {
+	case stateelements.ObservationCommitted:
+		if outcome.TrajectoryItemID == "" || outcome.StoreVersion == 0 {
+			return errors.New("Realtime-CU committed observation outcome omitted canonical trajectory identity")
 		}
+	case stateelements.ObservationRejected:
+	default:
+		return fmt.Errorf("Realtime-CU observation commit outcome has unknown kind %q", outcome.Kind)
 	}
-	ack := session.cancelAcks[cause]
+	session.observationAckMu.Lock()
+	ack := session.observationAcks[outcome.TriggerItemID]
 	if ack != nil {
-		delete(session.cancelAcks, cause)
+		delete(session.observationAcks, outcome.TriggerItemID)
 	}
+	session.observationAckMu.Unlock()
+	if ack == nil {
+		return nil
+	}
+	if outcome.Kind != stateelements.ObservationCommitted {
+		ack <- fmt.Errorf("observation commit reached %s/%s: %s", outcome.Kind, outcome.Code, outcome.Message)
+	} else {
+		ack <- nil
+	}
+	return nil
+}
+
+func (session *session) acceptCancellationOutcome(envelope element.Envelope) error {
+	outcome, ok := sessionCancellationOutcomePayload(envelope.Payload)
+	if !ok {
+		return fmt.Errorf("Realtime-CU cancellation outcome has payload %T", envelope.Payload)
+	}
+	if envelope.SessionID != session.sessionID || outcome.SessionID != session.sessionID {
+		return errors.New("Realtime-CU cancellation outcome crossed the mounted session")
+	}
+	if outcome.RequestItemID == "" {
+		return errors.New("Realtime-CU cancellation outcome has no request identity")
+	}
+	session.cancelAckMu.Lock()
+	ack := session.cancelAcks[outcome.RequestItemID]
 	session.cancelAckMu.Unlock()
 	if ack == nil {
 		return nil
 	}
-	if outcome.Kind != policyelements.GenerationCanceled || outcome.Code != "intent_revoked" {
-		ack <- fmt.Errorf("activation cancellation reached %s/%s", outcome.Kind, outcome.Code)
+	var result error
+	terminal := true
+	switch outcome.Kind {
+	case SessionCancellationAccepted, SessionCancellationProgress:
+		terminal = false
+	case SessionCancellationCompleted, SessionCancellationNoCurrentIntent:
+	case SessionCancellationIgnored:
+		if outcome.Code == "duplicate_active_request" {
+			terminal = false
+		} else if outcome.Code == "intent_cancellation_in_progress" {
+			result = errors.New("cancellation of the current durable intent is still in progress; retry after completion")
+		} else if outcome.Code != "duplicate_terminal_request" {
+			result = fmt.Errorf("cancellation request was ignored: %s/%s",
+				outcome.Operation, outcome.Code)
+		}
+	case SessionCancellationRefused, SessionCancellationIncomplete:
+		result = fmt.Errorf("cancellation reached %s/%s: %s",
+			outcome.Kind, outcome.Code, outcome.Message)
+	default:
+		result = fmt.Errorf("cancellation returned unknown outcome kind %q", outcome.Kind)
+	}
+	if !terminal {
 		return nil
 	}
-	ack <- nil
+	session.cancelAckMu.Lock()
+	if session.cancelAcks[outcome.RequestItemID] == ack {
+		delete(session.cancelAcks, outcome.RequestItemID)
+	} else {
+		ack = nil
+	}
+	session.cancelAckMu.Unlock()
+	if ack != nil {
+		ack <- result
+	}
 	return nil
 }
 
@@ -744,6 +835,33 @@ func (session *session) sendObservation(
 	} else {
 		session.sequence++
 	}
+	// Production sessions wait for the exact canonical commit outcome. This is
+	// both delivery evidence and an ingress ordering barrier: once Text/Audio/
+	// Video returns, a later session cancellation cannot race ahead of that
+	// already-accepted user observation and incorrectly report no current
+	// durable intent. Small direct unit fixtures may leave observationAcks nil
+	// when they intentionally exercise only envelope construction.
+	var ack chan error
+	if session.observationAcks != nil {
+		ack = make(chan error, 1)
+		session.observationAckMu.Lock()
+		if _, duplicate := session.observationAcks[itemID]; duplicate {
+			session.observationAckMu.Unlock()
+			return fmt.Errorf("Realtime-CU observation %q already awaits canonical commit", itemID)
+		}
+		session.observationAcks[itemID] = ack
+		session.observationAckMu.Unlock()
+	}
+	removeAck := func() {
+		if ack == nil {
+			return
+		}
+		session.observationAckMu.Lock()
+		if session.observationAcks[itemID] == ack {
+			delete(session.observationAcks, itemID)
+		}
+		session.observationAckMu.Unlock()
+	}
 	result, err := port.Broadcast(ctx, element.Envelope{
 		Type: port.Type(), ItemID: itemID, SessionID: session.sessionID,
 		SourceID:      observation.Observer + ":" + observation.Source,
@@ -751,13 +869,27 @@ func (session *session) sendObservation(
 		TraceID: itemID, CausalParents: slices.Clone(parents), Payload: observation,
 	})
 	if err != nil {
+		removeAck()
 		return fmt.Errorf("send realtime-CU observation: %w", err)
 	}
 	if result.Delivered != 1 || result.Dropped != 0 {
+		removeAck()
 		return fmt.Errorf("send realtime-CU observation delivered %d and dropped %d lanes",
 			result.Delivered, result.Dropped)
 	}
-	return nil
+	if ack == nil {
+		return nil
+	}
+	select {
+	case err := <-ack:
+		if err != nil {
+			return fmt.Errorf("commit realtime-CU observation: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		removeAck()
+		return context.Cause(ctx)
+	}
 }
 
 func (session *session) ToolResult(ctx context.Context, result trajectory.ToolResult) error {
@@ -778,74 +910,62 @@ func (session *session) CreateResponse(ctx context.Context) error {
 }
 
 func (session *session) Cancel(ctx context.Context, reason string) error {
-	if err := usableContext(ctx, "cancel realtime-CU action"); err != nil {
+	if err := usableContext(ctx, "cancel realtime-CU session work"); err != nil {
 		return err
 	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" {
 		reason = "client canceled response"
 	}
+	if len(reason) > maximumCancellationReasonBytes {
+		return fmt.Errorf("cancel Realtime-CU session work: reason exceeds %d bytes",
+			maximumCancellationReasonBytes)
+	}
+	// Establish one explicit adapter ordering boundary. Earlier observation
+	// publications retain this lock until their exact canonical commit; later
+	// publications cannot overtake this cancellation broadcast. Sensor provider
+	// work that is genuinely concurrent and has not reached this boundary may
+	// linearize on either side, matching the graph's actor-order semantics.
 	session.observationMu.Lock()
-	activationItemID := session.nextItemID("intent-cancel")
-	activationSequence := session.sequence
-	session.observationMu.Unlock()
+	requestItemID := session.nextItemID("session-cancel")
+	requestSequence := session.sequence
 	ack := make(chan error, 1)
 	session.cancelAckMu.Lock()
-	session.cancelAcks[activationItemID] = ack
+	session.cancelAcks[requestItemID] = ack
 	session.cancelAckMu.Unlock()
 	removeAck := func() {
 		session.cancelAckMu.Lock()
-		delete(session.cancelAcks, activationItemID)
+		if session.cancelAcks[requestItemID] == ack {
+			delete(session.cancelAcks, requestItemID)
+		}
 		session.cancelAckMu.Unlock()
 	}
-	activationResult, err := session.activationCancel.Broadcast(ctx, element.Envelope{
-		Type: session.activationCancel.Type(), ItemID: activationItemID,
-		SessionID: session.sessionID, Sequence: activationSequence,
-		CancellationScope: session.sessionID, TraceID: activationItemID,
-		Payload: policyelements.GenerationCancel{StreamID: session.sessionID, Reason: reason},
+	result, err := session.sessionCancel.Broadcast(ctx, element.Envelope{
+		Type: session.sessionCancel.Type(), ItemID: requestItemID,
+		SessionID: session.sessionID, Sequence: requestSequence,
+		CancellationScope: session.sessionID, TraceID: requestItemID,
+		Payload: SessionCancellation{SessionID: session.sessionID, Reason: reason},
 	})
+	session.observationMu.Unlock()
 	if err != nil {
 		removeAck()
-		return fmt.Errorf("cancel Realtime-CU durable user intent: %w", err)
+		return fmt.Errorf("cancel Realtime-CU session work: %w", err)
 	}
-	if activationResult.Delivered != 1 || activationResult.Dropped != 0 {
+	if result.Delivered != 1 || result.Dropped != 0 {
 		removeAck()
-		return fmt.Errorf("cancel Realtime-CU durable user intent delivered %d and dropped %d lanes",
-			activationResult.Delivered, activationResult.Dropped)
+		return fmt.Errorf("cancel Realtime-CU session work delivered %d and dropped %d lanes",
+			result.Delivered, result.Dropped)
 	}
 	select {
 	case ackErr := <-ack:
 		if ackErr != nil {
-			return fmt.Errorf("cancel Realtime-CU durable user intent: %w", ackErr)
+			return fmt.Errorf("cancel Realtime-CU session work: %w", ackErr)
 		}
+		return nil
 	case <-ctx.Done():
 		removeAck()
 		return context.Cause(ctx)
 	}
-	session.effectMu.Lock()
-	active := make([]activeCall, 0, len(session.active))
-	for _, call := range session.active {
-		active = append(active, call)
-	}
-	session.effectMu.Unlock()
-	for _, call := range active {
-		session.observationMu.Lock()
-		itemID := session.nextItemID("cancel")
-		session.observationMu.Unlock()
-		result, err := session.cancel.Broadcast(ctx, element.Envelope{
-			Type: session.cancel.Type(), ItemID: itemID, SessionID: session.sessionID,
-			RunID: call.runID, CancellationScope: call.runID, TraceID: itemID,
-			Payload: actionelements.Interrupt{CallID: call.call.CallID, Reason: reason},
-		})
-		if err != nil {
-			return fmt.Errorf("send realtime-CU action cancellation: %w", err)
-		}
-		if result.Delivered != 1 || result.Dropped != 0 {
-			return fmt.Errorf("send realtime-CU action cancellation delivered %d and dropped %d lanes",
-				result.Delivered, result.Dropped)
-		}
-	}
-	return nil
 }
 
 func (*session) Truncate(context.Context, legacy.Truncation) error { return legacy.ErrUnsupported }
@@ -860,10 +980,16 @@ func (session *session) Close(_ context.Context, cause error) error {
 		defer session.mediaLifecycleMu.Unlock()
 		session.mediaClosed = true
 		session.bundle.bridge.Close(cause)
+		session.observationAckMu.Lock()
+		for id, ack := range session.observationAcks {
+			delete(session.observationAcks, id)
+			ack <- errors.New("Realtime-CU session closed before observation committed")
+		}
+		session.observationAckMu.Unlock()
 		session.cancelAckMu.Lock()
 		for id, ack := range session.cancelAcks {
 			delete(session.cancelAcks, id)
-			ack <- errors.New("Realtime-CU session closed before intent cancellation committed")
+			ack <- errors.New("Realtime-CU session closed before cancellation completed")
 		}
 		session.cancelAckMu.Unlock()
 		session.closeErr = session.observer.Close()
@@ -891,6 +1017,18 @@ func observationPayload(payload any) (perception.Observation, bool) {
 	return perception.Observation{}, false
 }
 
+func observationCommitOutcomePayload(payload any) (stateelements.ObservationCommitOutcome, bool) {
+	switch value := payload.(type) {
+	case stateelements.ObservationCommitOutcome:
+		return value, true
+	case *stateelements.ObservationCommitOutcome:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return stateelements.ObservationCommitOutcome{}, false
+}
+
 func committedActionPayload(payload any) (actionelements.CommittedAction, bool) {
 	switch value := payload.(type) {
 	case actionelements.CommittedAction:
@@ -913,6 +1051,18 @@ func generationOutcomePayload(payload any) (policyelements.GenerationOutcome, bo
 		}
 	}
 	return policyelements.GenerationOutcome{}, false
+}
+
+func sessionCancellationOutcomePayload(payload any) (SessionCancellationOutcome, bool) {
+	switch value := payload.(type) {
+	case SessionCancellationOutcome:
+		return value, true
+	case *SessionCancellationOutcome:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return SessionCancellationOutcome{}, false
 }
 
 func canonicalResultPayload(payload any) (actionelements.CanonicalResult, bool) {

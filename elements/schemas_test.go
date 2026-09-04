@@ -39,6 +39,7 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	// caller-owned catalog, while its immutable values schema ships with the
 	// standard resolver used by that reference graph.
 	wanted[realtimecubinding.ActivationConfigSchema] = struct{}{}
+	wanted[realtimecubinding.CancellationCoordinatorConfigSchema] = struct{}{}
 	references := make([]string, 0, len(wanted))
 	for reference := range wanted {
 		references = append(references, reference)
@@ -47,8 +48,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 40 {
-		t.Fatalf("standard config schema count = %d, want 40", len(references))
+	if len(references) != 41 {
+		t.Fatalf("standard config schema count = %d, want 41", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -418,6 +419,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{"role":"fast"}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}`,
 		"schema://openrealtime/realtime-cu/activation-config/v2":                       `{"role":"computer-use","invocation":{"instruction":"Act."},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"expected_settlement":{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
+		"schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1": `{"max_transactions":64,"tombstone_memory":256,"action_ack_stages":["dispatch","ledger_commit"]}`,
 		"schema://openrealtime/speech/playback-config/v1":                              `{"sink":"speaker"}`,
 		"schema://openrealtime/speech/tts-config/v1":                                   `{"provider":"tts"}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":                `{}`,
@@ -463,6 +465,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"eventually"}`,
 		"schema://openrealtime/realtime-cu/activation-config/v2":                       `{"role":"computer-use","invocation":{"instruction":"Act."}}`,
+		"schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1": `{"action_ack_stages":[]}`,
 		"schema://openrealtime/speech/playback-config/v1":                              `{}`,
 		"schema://openrealtime/speech/tts-config/v1":                                   `{}`,
 		"schema://openrealtime/trajectory/observation-commit-config/v1":                `{"revision_namespace":""}`,

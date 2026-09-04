@@ -10,6 +10,7 @@ import (
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
 	"github.com/bojieli/OpenRealtime/continuation"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -30,21 +31,31 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 	modelArtifact := testRealtimeCUArtifact("profile-model", "4")
 	observerArtifact := testRealtimeCUArtifact("profile-observer", "5")
 	gatewayArtifact := testRealtimeCUArtifact("profile-gateway", "6")
+	policyArtifact := testRealtimeCUArtifact("profile-settlement-policy", "7")
 	modelReference := "model://test/realtime-cu/profile/v1"
+	policyReference := "policy://test/realtime-cu/settlement/profile/v1"
 	observerReference := "observer://test/realtime-cu/profile/v1"
 	observerName := "profile-audiovisual-observer"
 	observerSources := []string{
 		realtimecu.SourceCamera, realtimecu.SourceMicrophone, realtimecu.SourceScreen,
 	}
 	observer := newTestRealtimeCUObserver(observerName)
-	var modelAcquisitions, observerAcquisitions atomic.Int32
+	policyDescriptor := testRealtimeCUPolicyDescriptor()
+	var modelAcquisitions, policyAcquisitions, observerAcquisitions atomic.Int32
 	modelFactory := func(context.Context, legacy.Options) (continuation.Provider, error) {
 		modelAcquisitions.Add(1)
 		return &testRealtimeCUModel{descriptor: descriptor}, nil
 	}
-	observerFactory := func(context.Context, legacy.Options) (realtimecu.Observer, error) {
+	observerFactory := func(
+		_ context.Context, _ legacy.Options, resources realtimecu.ObserverResources,
+	) (realtimecu.Observer, error) {
 		observerAcquisitions.Add(1)
+		observer.retainer = resources.Retainer
 		return observer, nil
+	}
+	policyFactory := func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) {
+		policyAcquisitions.Add(1)
+		return testRealtimeCUDispositionDecider{descriptor: policyDescriptor}, nil
 	}
 
 	registration, err := graphs.RealtimeComputerUseApplicationRegistration(
@@ -58,12 +69,18 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 				},
 				Factory: modelFactory,
 			}},
+			Policies: []realtimecu.PolicyFactoryRegistration{{
+				ApplicationPolicySelection: realtimecu.ApplicationPolicySelection{
+					Reference: policyReference, Artifact: policyArtifact, Descriptor: policyDescriptor,
+				},
+				Factory: policyFactory,
+			}},
 			Observers: []realtimecu.ObserverFactoryRegistration{{
 				ApplicationObserverSelection: realtimecu.ApplicationObserverSelection{
 					Reference: observerReference, Name: observerName, Artifact: observerArtifact,
 					Sources: observerSources,
 				},
-				Factory: observerFactory,
+				ResourceFactory: observerFactory,
 			}},
 		},
 	)
@@ -80,6 +97,9 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 		Model: realtimecu.ApplicationModelSelection{
 			Reference: modelReference, Artifact: modelArtifact, Descriptor: descriptor,
 		},
+		SettlementPolicy: realtimecu.ApplicationPolicySelection{
+			Reference: policyReference, Artifact: policyArtifact, Descriptor: policyDescriptor,
+		},
 		Observer: realtimecu.ApplicationObserverSelection{
 			Reference: observerReference, Name: observerName, Artifact: observerArtifact,
 			Sources: observerSources,
@@ -92,13 +112,17 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 	// checked profile must repeat that exact identity before it can resolve.
 	previewConfig, err := graphs.RealtimeComputerUseLaunchConfig(realtimecu.PluginConfig{
 		RuntimeArtifact: runtimeArtifact,
+		SettlementPolicy: realtimecu.PolicyPlugin{
+			Reference: realtimecu.SettlementPolicyReference, Artifact: policyArtifact,
+			Descriptor: policyDescriptor, Factory: policyFactory,
+		},
 		Model: realtimecu.ModelPlugin{
 			Reference: modelReference, Artifact: modelArtifact,
 			Descriptor: descriptor, Factory: modelFactory,
 		},
 		Observer: realtimecu.ObserverPlugin{
 			Reference: observerReference, Name: observerName, Artifact: observerArtifact,
-			Sources: observerSources, Factory: observerFactory,
+			Sources: observerSources, ResourceFactory: observerFactory,
 		},
 		Target: target,
 	})
@@ -153,9 +177,9 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 		composition.ServerBundle.Profile.Name != profile.Server.ProfileName {
 		t.Fatal("Realtime-CU profile resolution lost its graph or server identity")
 	}
-	if modelAcquisitions.Load() != 0 || observerAcquisitions.Load() != 0 {
-		t.Fatalf("profile resolution acquired resources: model=%d observer=%d",
-			modelAcquisitions.Load(), observerAcquisitions.Load())
+	if modelAcquisitions.Load() != 0 || policyAcquisitions.Load() != 0 || observerAcquisitions.Load() != 0 {
+		t.Fatalf("profile resolution acquired resources: model=%d policy=%d observer=%d",
+			modelAcquisitions.Load(), policyAcquisitions.Load(), observerAcquisitions.Load())
 	}
 
 	unknown := make(map[string]any)
@@ -181,6 +205,15 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 		}), want: "artifact or descriptor drifted"},
 		{name: "model descriptor drift", payload: mutateRealtimeCUApplication(t, application, func(config *realtimecu.ApplicationConfig) {
 			config.Model.Descriptor.Model = "realtime-cu-drifted"
+		}), want: "artifact or descriptor drifted"},
+		{name: "settlement policy registry missing", payload: mutateRealtimeCUApplication(t, application, func(config *realtimecu.ApplicationConfig) {
+			config.SettlementPolicy.Reference = "policy://test/realtime-cu/settlement/uninstalled/v1"
+		}), want: "settlement policy registry is missing"},
+		{name: "settlement policy artifact drift", payload: mutateRealtimeCUApplication(t, application, func(config *realtimecu.ApplicationConfig) {
+			config.SettlementPolicy.Artifact.Revision = "v2"
+		}), want: "artifact or descriptor drifted"},
+		{name: "settlement policy descriptor drift", payload: mutateRealtimeCUApplication(t, application, func(config *realtimecu.ApplicationConfig) {
+			config.SettlementPolicy.Descriptor.ConfigurationDigest = "sha256:" + strings.Repeat("8", 64)
 		}), want: "artifact or descriptor drifted"},
 		{name: "observer registry missing", payload: mutateRealtimeCUApplication(t, application, func(config *realtimecu.ApplicationConfig) {
 			config.Observer.Reference = "observer://test/realtime-cu/uninstalled/v1"
@@ -212,9 +245,9 @@ func TestRealtimeComputerUseApplicationProfileResolvesExactGraphWithoutResources
 				}); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("profile drift error = %v, want %q", err, test.want)
 			}
-			if modelAcquisitions.Load() != 0 || observerAcquisitions.Load() != 0 {
-				t.Fatalf("rejected profile acquired resources: model=%d observer=%d",
-					modelAcquisitions.Load(), observerAcquisitions.Load())
+			if modelAcquisitions.Load() != 0 || policyAcquisitions.Load() != 0 || observerAcquisitions.Load() != 0 {
+				t.Fatalf("rejected profile acquired resources: model=%d policy=%d observer=%d",
+					modelAcquisitions.Load(), policyAcquisitions.Load(), observerAcquisitions.Load())
 			}
 		})
 	}

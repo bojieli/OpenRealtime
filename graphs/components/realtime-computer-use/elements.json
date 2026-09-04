@@ -4,7 +4,7 @@
     {
       "format_version": 1,
       "name": "policy.RealtimeComputerUseActivation",
-      "revision": 10,
+      "revision": 12,
       "ports": [
         {
           "name": "admitted",
@@ -248,6 +248,251 @@
       "effects": [
         {
           "name": "realtime-cu.durable-user-intent.memory",
+          "reversible": true
+        }
+      ]
+    },
+    {
+      "format_version": 1,
+      "name": "policy.RealtimeComputerUseCancellationCoordinator",
+      "revision": 2,
+      "ports": [
+        {
+          "name": "action_cancel",
+          "direction": "output",
+          "type": {
+            "name": "Interrupt",
+            "arguments": [
+              {
+                "name": "tool.CallID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "action_outcome",
+          "direction": "input",
+          "type": {
+            "name": "Stream",
+            "arguments": [
+              {
+                "name": "action.Outcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 64
+        },
+        {
+          "name": "activation_cancel",
+          "direction": "output",
+          "type": {
+            "name": "Interrupt",
+            "arguments": [
+              {
+                "name": "policy.GenerationAddress"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "activation_outcome",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.GenerationOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "model_cancel",
+          "direction": "output",
+          "type": {
+            "name": "Interrupt",
+            "arguments": [
+              {
+                "name": "flow.RunID"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "model_commit_outcome",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "interaction.ModelCommitOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "model_outcome",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "cognition.Outcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "outcome",
+          "direction": "output",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "realtimecu.SessionCancellationOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "request",
+          "direction": "input",
+          "type": {
+            "name": "Interrupt",
+            "arguments": [
+              {
+                "name": "realtimecu.SessionCancellation"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "settlement_cancel",
+          "direction": "output",
+          "type": {
+            "name": "Interrupt",
+            "arguments": [
+              {
+                "name": "policy.IntentSettlementCancellation"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 16
+        },
+        {
+          "name": "settlement_outcome",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.IntentSettlementOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "settlement_producer_outcome",
+          "direction": "input",
+          "type": {
+            "name": "Event",
+            "arguments": [
+              {
+                "name": "policy.IntentDispositionProducerOutcome"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "default_depth": 32
+        },
+        {
+          "name": "state",
+          "direction": "output",
+          "type": {
+            "name": "State",
+            "arguments": [
+              {
+                "name": "realtimecu.SessionCancellationState"
+              }
+            ]
+          },
+          "cardinality": "one",
+          "required": true,
+          "loss_allowed": true,
+          "default_depth": 1
+        }
+      ],
+      "reaction": {
+        "triggers": [
+          "action_outcome",
+          "activation_outcome",
+          "model_commit_outcome",
+          "model_outcome",
+          "settlement_outcome",
+          "settlement_producer_outcome"
+        ],
+        "interrupts": [
+          "request"
+        ],
+        "outcomes": [
+          "action_cancel",
+          "activation_cancel",
+          "model_cancel",
+          "outcome",
+          "settlement_cancel",
+          "state"
+        ],
+        "max_concurrency": 1,
+        "breaks_cycles": true
+      },
+      "state_schema": "schema://openrealtime/realtime-cu/session-cancellation-state/v1",
+      "config_schema": "schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1",
+      "dependencies": [
+        {
+          "name": "runtime.clock"
+        },
+        {
+          "name": "runtime.sequence"
+        },
+        {
+          "name": "state.trajectory.store"
+        }
+      ],
+      "effects": [
+        {
+          "name": "realtime-cu.session-cancellation.transactions",
           "reversible": true
         }
       ]

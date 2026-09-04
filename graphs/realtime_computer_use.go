@@ -7,6 +7,7 @@ package graphs
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/elements"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	graphassembly "github.com/bojieli/OpenRealtime/graph/assembly"
 	realtimecubinding "github.com/bojieli/OpenRealtime/graph/binding/realtimecu"
 	graphcatalog "github.com/bojieli/OpenRealtime/graph/catalog"
@@ -36,11 +38,16 @@ var realtimeComputerUseArtifacts embed.FS
 const realtimeComputerUseArtifactDirectory = "components/realtime-computer-use/"
 
 // RealtimeComputerUseArtifacts returns independent, locked artifacts whose
-// activation schema is narrowed to the supplied browser target. This is the
-// only dynamic authoring step: topology, descriptor lock, and deployment stay
-// byte-exact repository artifacts, while target dimensions necessarily come
-// from the selected client surface.
-func RealtimeComputerUseArtifacts(target computeruse.Target) (graphconfig.Artifacts, error) {
+// activation schema is narrowed to the supplied browser target and whose
+// settlement contract is bound to the selected observer and semantic-decider
+// descriptor. This is the only dynamic authoring step: topology, descriptor
+// lock, and deployment stay byte-exact repository artifacts, while target,
+// observation, and detector identities necessarily come from the selected
+// application plugins.
+func RealtimeComputerUseArtifacts(
+	target computeruse.Target, observer string,
+	detector policyelements.SemanticDeciderDescriptor,
+) (graphconfig.Artifacts, error) {
 	if err := target.Validate(); err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("create realtime-CU artifacts target: %w", err)
 	}
@@ -49,6 +56,14 @@ func RealtimeComputerUseArtifacts(target computeruse.Target) (graphconfig.Artifa
 	}
 	if !slices.Equal(target.Sources, []string{realtimecubinding.SourceScreen}) {
 		return graphconfig.Artifacts{}, fmt.Errorf("create realtime-CU artifacts target sources = %v, want only screen", target.Sources)
+	}
+	if observer == "" || observer != strings.TrimSpace(observer) || strings.ContainsAny(observer, "\x00\r\n") {
+		return graphconfig.Artifacts{}, fmt.Errorf(
+			"create realtime-CU artifacts observer %q is not canonical", observer,
+		)
+	}
+	if err := detector.Validate(); err != nil {
+		return graphconfig.Artifacts{}, fmt.Errorf("create realtime-CU artifacts settlement detector: %w", err)
 	}
 	read := func(name string) ([]byte, error) {
 		payload, err := realtimeComputerUseArtifacts.ReadFile(realtimeComputerUseArtifactDirectory + name)
@@ -81,6 +96,28 @@ func RealtimeComputerUseArtifacts(target computeruse.Target) (graphconfig.Artifa
 	if err := json.Unmarshal(document.Nodes["activation"], &activation); err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("decode realtime-CU activation values: %w", err)
 	}
+	var settlement policyelements.IntentSettlementConfig
+	if err := json.Unmarshal(document.Nodes["settlement"], &settlement); err != nil {
+		return graphconfig.Artifacts{}, fmt.Errorf("decode realtime-CU settlement values: %w", err)
+	}
+	if len(settlement.CandidateSources) != 1 ||
+		settlement.CandidateSources[0].Source != realtimecubinding.SourceScreen {
+		return graphconfig.Artifacts{}, errors.New(
+			"realtime-CU settlement template must select exactly one screen observation source",
+		)
+	}
+	settlement.CandidateSources[0].Observer = observer
+	settlement.Detector = policyelements.IntentDetectorIdentity{
+		Reference: realtimecubinding.SettlementPolicyReference,
+		Revision:  detector.Revision, ConfigurationDigest: detector.ConfigurationDigest,
+	}
+	var producer policyelements.IntentDispositionProducerConfig
+	if err := json.Unmarshal(document.Nodes["settlement_producer"], &producer); err != nil {
+		return graphconfig.Artifacts{}, fmt.Errorf("decode realtime-CU settlement producer values: %w", err)
+	}
+	producer.ExpectedSettlement = settlement
+	activation.ExpectedAdmission = settlement.ExpectedAdmission
+	activation.ExpectedSettlement = &settlement
 	definitions, err := computeruse.DefinitionsFor(target)
 	if err != nil {
 		return graphconfig.Artifacts{}, err
@@ -95,6 +132,14 @@ func RealtimeComputerUseArtifacts(target computeruse.Target) (graphconfig.Artifa
 	document.Nodes["activation"], err = json.Marshal(activation)
 	if err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("encode realtime-CU activation values: %w", err)
+	}
+	document.Nodes["settlement"], err = json.Marshal(settlement)
+	if err != nil {
+		return graphconfig.Artifacts{}, fmt.Errorf("encode realtime-CU settlement values: %w", err)
+	}
+	document.Nodes["settlement_producer"], err = json.Marshal(producer)
+	if err != nil {
+		return graphconfig.Artifacts{}, fmt.Errorf("encode realtime-CU settlement producer values: %w", err)
 	}
 	values, err := json.Marshal(document)
 	if err != nil {
@@ -137,7 +182,8 @@ func RealtimeComputerUseApplicationRegistration(
 // RealtimeComputerUseLaunchConfig composes the repository's standard element
 // library with one exact Realtime-CU provider/observer/target plugin. The
 // returned value is resource-free and can be passed directly to graph/launch;
-// model and observer factories remain unopened until SessionProvider.Start.
+// model, settlement-policy, and observer factories remain unopened until the
+// session graph begins running.
 func RealtimeComputerUseLaunchConfig(
 	config realtimecubinding.PluginConfig,
 ) (graphlaunch.Config, error) {
@@ -145,7 +191,9 @@ func RealtimeComputerUseLaunchConfig(
 	if err != nil {
 		return graphlaunch.Config{}, err
 	}
-	artifacts, err := RealtimeComputerUseArtifacts(config.Target)
+	artifacts, err := RealtimeComputerUseArtifacts(
+		config.Target, config.Observer.Name, config.SettlementPolicy.Descriptor,
+	)
 	if err != nil {
 		return graphlaunch.Config{}, err
 	}
