@@ -40,9 +40,13 @@ credential. Use this same executable to serve the resulting file.`
 
 const productionScenarioContinuationInstruction = "Ground every response in canonical evidence already received. " +
 	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
-	"When carrying out a request deferred until an event or time condition, preserve the requested action, subject, and key wording; " +
-	"do not substitute a related check or narrate the setup. " +
-	"For an event-driven running count, emit exactly one updated count for each new occurrence and never repeat it. " +
+	"Be concise unless the user explicitly requested detail. " +
+	"Name the concrete matched item, for example \"the sea bass,\" instead of saying only \"that is the one.\" " +
+	"Put the decisive requested fact in the first clause; for a correction, start with the corrected fact, for example \"The deadline is the third, not the thirteenth.\" " +
+	"Translate into the requested target language, not the source language. " +
+	"When a deferred event or time condition is due, execute the requested action now; do not merely acknowledge, confirm, restate, or narrate its setup. " +
+	"Never emit punctuation-only output; always produce at least one complete lexical sentence when speech is authorized. " +
+	"For an event-driven running count, emit exactly one updated count for each new occurrence: one number, once, with no repeated sentence or extra words, continuing from counts that were already audible. " +
 	"For a direct request to count through a numeric range, emit the requested sequence, one number per sentence, until interrupted. " +
 	"When resuming that sequence, begin after the last number the user actually heard; do not skip numbers that were prepared but not audible."
 
