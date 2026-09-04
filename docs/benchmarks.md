@@ -349,9 +349,11 @@ paid Realtime-CU benchmark. It now provides a runnable graph-native
 implementation checkpoint, but not a frozen benchmark candidate:
 the profile binds an independently owned reference disposition policy and
 shared retained-media resolver; the locked graph routes temporal admission
-through `policy.IntentSettlement` without an activation bypass; and one exact
-session coordinator requires settlement-gate, producer-quiescence, activation,
-model, canonical model-result, and configured action-stage acknowledgements.
+through `policy.IntentSettlement` and explicit
+`policy.IntentDispositionRetry` without an activation bypass; and one exact
+session coordinator routes cancellation through retry quiescence before
+requiring settlement-gate, producer, activation, model, canonical model-result,
+and configured action-stage acknowledgements.
 Focused and stable-endpoint checks establish implementation behavior only. They
 produce no benchmark row and do not show whether the selected live policy
 correctly distinguishes continuation from success on the authored tasks.
@@ -366,9 +368,13 @@ exact authority-free diagnostic shape and continues to require the canonical
 model-result acknowledgement. The unchanged WebSocket endpoint now exercises
 in-flight disposition, active-model, and crossed-client-action cancellation,
 including fresh-intent recovery after each. A separate production composition
-executes focus→type→submit under two `continue` decisions, then verifies that a
-terminal `succeeded` latch resists changing visual cadence and reopens only for
-a new intent. These remain local behavioral regressions, not benchmark rows.
+executes focus→type→submit through
+`indeterminate → automatic retry → continue → continue → succeeded`,
+then verifies that the terminal latch resists changing visual cadence and
+reopens only for a new intent. The retry is a typed graph node with bounded
+deterministic backoff, exact probe replay, control quiescence, typed exhaustion,
+and inspectable state/outcomes; it is not a hidden provider timer. These remain
+local behavioral regressions, not benchmark rows.
 
 The retained live evidence must also be read by checkpoint rather than reduced
 to one headline number. Candidate-05's current settlement-aware exact-sixteen
@@ -388,9 +394,9 @@ two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
 campaign remain open; and the final-candidate ledger remains **0/7,486**.
 
 The next benchmark run is intentionally gated on behavior, not on producing a
-new headline number. First complete the four remaining shipped-profile cases:
-forged cross-node evidence, duplicate/reordered terminal decisions, explicit
-indeterminate retry, and failed effects. Then register all five Realtime-CU
+new headline number. First complete the three remaining shipped-profile cases:
+forged cross-node evidence, duplicate/reordered terminal decisions, and failed
+effects. Then register all five Realtime-CU
 acceptance domains and freeze the exact candidate. Run the two camera, two
 moving-target, and two transient-alert variants as a focused repair set. Every
 failure must be reopened from retained evidence, attributed to code,

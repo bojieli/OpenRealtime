@@ -272,23 +272,25 @@ openrealtime graph check \
   graphs/components/realtime-computer-use/agent.ortg
 ```
 
-The 2026-09-04 no-bypass production-artifact checkpoint pins, for the checked
+The 2026-09-04 explicit-retry production-artifact checkpoint pins, for the checked
 integration fixture in
 `TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedback`
 (`benchmark-browser`, one `screen` source at 1280x720, and the test
 model/policy/observer selections), graph fingerprint
-`sha256:1b36fed81dbda59ed8298cfe2d632a094352314c4c497b2c78656de4af9a31f1`
+`sha256:9aa17db0437959619089dce5a496ef873597886c4d7d4b31f0a30e3a9e4f1979`
 and plan fingerprint
-`sha256:9797a77a00cc7579c52e72d0edbc370bf8cc3b58994f833ecc0d10b82e63aea3`.
+`sha256:7ef628a0cf2a5cf2f94aba6b7cb5ccdaa78f79e6c0be2264f373c83e771cea8c`.
 Its source, lock, and values digests are respectively
-`sha256:18898fcd8ea58d85ef239fbdbcab0b858f71a356b714b11c47a044052c6ee3fa`,
-`sha256:5a6539e8d7a835c1bf2c3e42303326f05f9b067afef72cb8996765964c8bf66c`,
+`sha256:661850f3302f4f1e997ebd1f6e2506703e70ea205aabfa035eb098dba682906e`,
+`sha256:fc462b47b5176463ceff0357edcfdd95e4a944bf49da7d449891c56625774320`,
 and
-`sha256:17725f341669604324ccbbedfa754041926f9b9fabda8cd4a5b3a5a0a92d9a93`.
+`sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01`.
 The lock selects activation revision 12
 (`sha256:c88c12b977dfc0c44bcda8317002fabe72f2d32a38c61418a81a092d053a9dce`),
 disposition producer revision 2
 (`sha256:6924671570fc86be0b90d5711cc93dd8f9fc311bbdf03e8e3b1a9b2622db0c3e`),
+disposition retry revision 1
+(`sha256:c15556d5f4f61a5defa5463500eb75d7403711b2cc446b1605c710cfe3785678`),
 and cancellation coordinator revision 3
 (`sha256:fc227d6bac1d353f099dc7555ff52ae87ad099360875f421b5a8a9f9eb9eb648`).
 It also selects `action.ToolResultCommit` revision 4
@@ -317,6 +319,16 @@ call crossed the external boundary: the public request receives the honest
 `incomplete/action_already_crossed` result, the mandatory cancellation result
 still becomes canonical and requests visual consequence evidence, the old
 intent remains quiescent, and another new intent remains usable.
+
+A separate locked-production composition drives one durable intent through
+focus→type→submit. Its scripted disposition sequence is now
+`indeterminate → automatic retry → continue → continue → succeeded`:
+the first call does not leak an admission, the retry replays the exact probe,
+the next two verified consequences continue the same intent, and the final
+decision latches quiescence. Five later changing screen frames do not restart
+the completed intent, while a new intent activates only from its own fresh
+evidence. This is a credential-free production-topology regression, not a live
+provider-quality or benchmark result.
 
 That crossed-action sequence exposed a shared-trajectory ordering defect. A
 canonical tool-call append for the same run is broadcast to every commit-aware
@@ -369,14 +381,16 @@ fact from a planner returning no proposal, one repeated effect, elapsed quiet
 time, or the evaluator's private `PageResult`: all of those remain unsound
 generic settlement oracles.
 
-The repair architecture keeps two graph-visible, replaceable elements:
+The repair architecture keeps classification, retry, and settlement as three
+graph-visible, independently replaceable elements:
 
 ```text
-successful result-linked post-effect evidence
-  -> disposition producer
-  -> typed IntentDisposition
-  -> deterministic IntentSettlement gate
-  -> activation continuation or same-intent quiescence
+result-linked evidence -> IntentSettlement --probe--> Retry --attempt--> Producer
+                            ^                       ^                  |
+                            |                       |                  |
+                            +------ disposition ----+------ Tee <-----+
+                            |
+                            +-- admitted/terminal --> activation
 ```
 
 The profile-bound `policy.IntentDispositionProducer` classifies a closed
@@ -393,9 +407,10 @@ non-secret configuration independently. Each session opens a fresh policy
 client and gives the producer the observer's exact retained-media resolver;
 configuration or descriptor drift fails before provider work begins.
 
-The producer, producer-neutral `policy.IntentSettlement` gate, and activation's
-revision-12 settlement consumer/acknowledgement boundary are now connected as
-independently replaceable nodes. The gate independently revalidates the typed
+The producer, producer-neutral `policy.IntentSettlement` gate, graph-owned
+`policy.IntentDispositionRetry`, and activation's revision-12 settlement
+consumer/acknowledgement boundary are now connected as independently
+replaceable nodes. The gate independently revalidates the typed
 admission and exact canonical intent→call→successful-result→result-linked
 observation chain, holds a bounded candidate consequence until the matching
 disposition arrives, releases it for `continue`, and retains terminal state
@@ -406,6 +421,20 @@ Activation independently verifies a terminal decision, clears only the exact
 effect without a new cognition turn, retains valid cross-lane reorderings, and
 retries one immutable acknowledgement. The graph has exactly one activation
 admission source—`settlement.admitted`—so there is no timing-policy bypass.
+
+The retry element forwards the original probe immediately and retains that
+exact envelope without mutation. Only a verified `indeterminate` disposition
+for the matching probe schedules another attempt. The reference values use
+100 ms initial delay, integer factor 2, 1,000 ms maximum delay, three retries,
+and a 5,000 ms elapsed bound, with no jitter. Verified `continue`, `succeeded`,
+or `failed` dispositions terminate retry state. Cancellation and reset first
+quiesce the timer and pending record, then forward the exact control envelope
+downstream. Attempt, forwarded-control, typed exhaustion, lossy state, and
+lossless outcome ports make trigger time, delay, deadline, attempt count, stop,
+and exhaustion inspectable. Exhaustion is not silently interpreted as success
+or failure: the reference graph routes it to an explicit `flow.Drop`, while an
+application may instead wire escalation, a user prompt, a different policy, or
+an output stream.
 
 The terminal decision is not just a string label. Succeeded and failed
 decisions embed the exact disposition; canceled decisions embed an exact
@@ -457,9 +486,9 @@ Current implementation ledger:
 | Typed probe, disposition, exact reset/cancel, terminal decision, acknowledgement, state, and outcome contracts | Implemented, locked, and locally verified | Live quality remains unmeasured |
 | Bounded deterministic state transition for a recorded actor order | Implemented and locally verified | No claim of priority between concurrent independent ports |
 | Reference semantic/vision disposition producer | Profile-bound and locally verified | Exercise quality on focused live cases |
-| Protocol/session cancellation translation | Implemented and adversarially verified through provider, model, idle-action, and crossed-action phases | Complete the remaining forged/reordered/failed-effect mounted cases |
+| Protocol/session cancellation translation | Implemented and adversarially verified through retry, provider, model, idle-action, and crossed-action phases | Complete the remaining forged/reordered/failed-effect mounted cases |
 | Activation settlement input and acknowledgement output | Connected; focus→type→submit, terminal cadence, and new-intent recovery are production-mounted and race-tested | Confirm behavior in the focused live cases |
-| Indeterminate settlement retry | Open: the gate retains retryable evidence, but the shipped graph submits each probe only once | Add explicit bounded graph policy and exercise it through the production mount |
+| Indeterminate settlement retry | Implemented as `policy.IntentDispositionRetry@1`, locked, strictly validated, and production-mounted through `indeterminate → retry → continue → continue → succeeded` | Exercise retry quality and exhaustion policy with the selected live disposition provider |
 | Realtime-CU graph, values, descriptors, lock, profile, and fingerprints | Implementation artifacts are pinned with no admission bypass; strict check passes | They are not yet a frozen benchmark candidate and change if later behavioral repair changes code or configuration |
 | Live behavioral validation | Open | Register thresholds, run the focused six variants, repair failures, then rerun all sixteen |
 
@@ -489,14 +518,21 @@ generation/result state live. The production reference topology contains:
 
 ```ortg
 temporal_evidence_admission.admitted -> settlement.evidence;
-settlement.probe -> settlement_producer.probe;
-settlement_producer.disposition -> settlement.disposition;
+settlement.probe -> settlement_retry.probe;
+settlement_retry.attempt -> settlement_producer.probe;
+settlement_producer.disposition -> settlement_disposition_copy.in;
+settlement_disposition_copy.out -> settlement.disposition;
+settlement_disposition_copy.out -> settlement_retry.disposition;
+settlement_retry.exhausted -> settlement_retry_exhausted_sink.in;
+settlement_retry.forwarded_reset -> settlement.reset;
 settlement.admitted -> activation.admitted;
 settlement.terminal -> activation.settlement;
 activation.settlement_ack -> settlement.ack;
 
 input session_cancel = cancellation_coordinator.request;
-cancellation_coordinator.settlement_cancel -> settlement_cancel_copy.in;
+input settlement_reset = settlement_retry.reset;
+cancellation_coordinator.settlement_cancel -> settlement_retry.cancel;
+settlement_retry.forwarded_cancel -> settlement_cancel_copy.in;
 settlement_cancel_copy.out -> settlement.cancel;
 settlement_cancel_copy.out -> settlement_producer.cancel;
 settlement_producer.outcome -> settlement_producer_outcome_copy.in;
@@ -504,19 +540,20 @@ settlement_producer_outcome_copy.out -> cancellation_coordinator.settlement_prod
 cancellation_coordinator.activation_cancel -> activation.cancel;
 cancellation_coordinator.model_cancel -> model.cancel;
 cancellation_coordinator.action_cancel -> action_cancel_copy.in;
+output settlement_retry_state = settlement_retry.state;
+output settlement_retry_outcome = settlement_retry.outcome;
 ```
 
-This topology currently has no retry edge after an `indeterminate` producer
-outcome. That absence is an open production behavior, not an implicit promise
-that the producer retries internally. A retry design belongs in the graph as a
-reusable policy element (or equivalent explicit composed control path) so its
-trigger, delay/backoff, attempt/deadline bounds, cancellation, and terminal
-outcome are visible to validation and inspection. It must replay the exact
-immutable probe and lineage, never invoke the semantic client concurrently,
-and stop on a verified terminal decision or exact cancellation/reset. Adding a
-hidden timer to either `IntentSettlement` or `IntentDispositionProducer` would
-erase a developer-visible interaction-policy choice and is therefore not the
-reference design.
+This topology makes retry an author-controlled graph policy rather than an
+implicit promise inside `IntentSettlement` or `IntentDispositionProducer`.
+Because each retry attempt is emitted only after the prior matching
+`indeterminate` disposition, the single-concurrency producer is never invoked
+concurrently for one probe. The disposition tee is equally important: the
+settlement gate receives the policy decision unchanged while the retry element
+observes the same decision to settle, schedule, or exhaust its own state. The
+types prohibit substituting a generic timer event or generation cancellation
+for these exact ports, and the explicit sink satisfies strict validation
+without pretending that exhaustion disappeared.
 
 There is no admission bypass around the settlement gate. On `continue`, the
 gate releases the original verified evidence through `admitted`. On a verified
@@ -529,8 +566,8 @@ the result and post-effect observation exist, and a broad generation
 cancellation does not prove which completed effect was settled.
 
 The remaining mounted matrix is now concentrated on forged cross-node
-evidence, duplicate/reordered terminal decisions, explicit indeterminate retry,
-and failed effects. After those cases, machine-enforceable Realtime-CU
+evidence, duplicate/reordered terminal decisions, and failed effects. After
+those cases, machine-enforceable Realtime-CU
 acceptance targets must be registered. Then both camera, both moving-target,
 and both transient-alert variants run from one repaired immutable candidate.
 Each observed failure is retained and repaired before all 16 cases are rerun
@@ -542,4 +579,4 @@ Here, the existing cadence regression means five sequential changing screen
 frames after terminal settlement; it does not claim sustained live-stream
 coverage. Likewise, existing mounted forgery checks cover temporal-admission
 source/mode trust. Forged cross-node settlement evidence remains one of the
-four open full-composition cases above.
+three open full-composition cases above.
