@@ -264,6 +264,7 @@ type semanticAdmissionRunner struct {
 	pinboard         *coreinteraction.Pinboard
 	agentOutput      coreinteraction.AgentOutput
 	state            SemanticAdmissionState
+	decisions        sync.WaitGroup
 }
 
 func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
@@ -347,6 +348,7 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 		}
 		stop(nil)
 		receivers.Wait()
+		runner.decisions.Wait()
 	}()
 	for {
 		select {
@@ -460,8 +462,7 @@ func (runner *semanticAdmissionRunner) acceptAgentOutput(
 		runner.state.Ignored++
 		return nil
 	}
-	runner.agentOutput = output
-	runner.agentOutput.ProtectedStreams = slices.Clone(output.ProtectedStreams)
+	runner.agentOutput = cloneSemanticAgentOutput(output)
 	return nil
 }
 
@@ -735,7 +736,14 @@ func (runner *semanticAdmissionRunner) startReadyDecision(
 		runner.active = &activeSemanticDecision{request: request, cancel: cancel}
 		runner.state.Active = true
 		standing := runner.pinboard.InForce()
-		go runner.decide(decisionCtx, request, update, digest, sample, prefix, standing, results)
+		agentOutput := cloneSemanticAgentOutput(runner.agentOutput)
+		runner.decisions.Add(1)
+		go func() {
+			defer runner.decisions.Done()
+			runner.decide(
+				decisionCtx, request, update, digest, sample, prefix, standing, agentOutput, results,
+			)
+		}()
 		return nil
 	}
 	return nil
@@ -878,13 +886,16 @@ func (runner *semanticAdmissionRunner) inputsFor(
 func (runner *semanticAdmissionRunner) decide(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, digest string,
 	sample semanticContextSample, prefix trajectory.Snapshot,
-	standing []coreinteraction.StandingInstruction, results chan<- semanticDecisionResult,
+	standing []coreinteraction.StandingInstruction, agentOutput coreinteraction.AgentOutput,
+	results chan<- semanticDecisionResult,
 ) {
 	started := runner.clock.NowNS()
 	timeout := time.Duration(runner.entry.descriptor.DecisionTimeoutMS) * time.Millisecond
 	decisionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	situation, err := runner.situationWithStanding(decisionCtx, request, update, prefix, standing)
+	situation, err := runner.situationWithStanding(
+		decisionCtx, request, update, prefix, standing, agentOutput,
+	)
 	failure := ""
 	if err != nil {
 		failure = "visual_evidence_failed"
@@ -1358,12 +1369,14 @@ func applySemanticExtraction(
 func (runner *semanticAdmissionRunner) situation(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
 ) (coreinteraction.Situation, error) {
-	return runner.situationWithStanding(ctx, request, update, prefix, nil)
+	return runner.situationWithStanding(
+		ctx, request, update, prefix, nil, cloneSemanticAgentOutput(runner.agentOutput),
+	)
 }
 
 func (runner *semanticAdmissionRunner) situationWithStanding(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
-	standing []coreinteraction.StandingInstruction,
+	standing []coreinteraction.StandingInstruction, agentOutput coreinteraction.AgentOutput,
 ) (coreinteraction.Situation, error) {
 	board := semanticPinboard(standing)
 	state := coreinteraction.Situation{
@@ -1373,12 +1386,12 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 		AllowedActs: []coreinteraction.Act{
 			coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
 		},
-		AgentSpeaking: runner.agentOutput.Active,
-		AgentSaying:   runner.agentOutput.Saying,
+		AgentSpeaking: agentOutput.Active,
+		AgentSaying:   agentOutput.Saying,
 		AgentOutputProtected: slices.Contains(
-			runner.agentOutput.ProtectedStreams, request.streamID,
+			agentOutput.ProtectedStreams, request.streamID,
 		),
-		InFlight: runner.agentOutput.InFlight,
+		InFlight: agentOutput.InFlight,
 	}
 	for _, policy := range standing {
 		state.Restricted = state.Restricted || policy.Restricting
@@ -1975,16 +1988,18 @@ func semanticSnapshotPayload(payload any) (trajectory.Snapshot, bool) {
 func semanticAgentOutputPayload(payload any) (coreinteraction.AgentOutput, bool) {
 	switch value := payload.(type) {
 	case coreinteraction.AgentOutput:
-		value.ProtectedStreams = slices.Clone(value.ProtectedStreams)
-		return value, true
+		return cloneSemanticAgentOutput(value), true
 	case *coreinteraction.AgentOutput:
 		if value != nil {
-			copy := *value
-			copy.ProtectedStreams = slices.Clone(value.ProtectedStreams)
-			return copy, true
+			return cloneSemanticAgentOutput(*value), true
 		}
 	}
 	return coreinteraction.AgentOutput{}, false
+}
+
+func cloneSemanticAgentOutput(output coreinteraction.AgentOutput) coreinteraction.AgentOutput {
+	output.ProtectedStreams = slices.Clone(output.ProtectedStreams)
+	return output
 }
 
 func validateSemanticAgentOutput(output coreinteraction.AgentOutput) error {

@@ -14,6 +14,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -270,6 +271,71 @@ func TestSemanticActivationEvidenceAdmitsOnlyTypedCurrentConditionInputs(t *test
 				t.Fatalf("activation evidence = %v, want %v", got, testCase.want)
 			}
 		})
+	}
+}
+
+func TestSemanticSituationSealsAgentOutputBeforeAConcurrentUpdate(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var clockCalls atomic.Uint64
+	runner := semanticAdmissionRunner{
+		config: SemanticAdmissionConfig{RecentLines: 12},
+		clock: graphruntime.ClockFunc(func() uint64 {
+			call := clockCalls.Add(1)
+			if call == 1 {
+				close(entered)
+				<-release
+			}
+			return call
+		}),
+		agentOutput: interaction.AgentOutput{
+			Revision: 1, Active: true, Queued: true,
+			Saying: "the sealed response", InFlight: "sealed lifecycle work",
+			ProtectedStreams: []string{"speech-stream"},
+		},
+	}
+	request := semanticRequest{streamID: "speech-stream"}
+	update := SessionInvocationUpdate{Invocation: continuation.Invocation{
+		Instruction: "Use the exact lifecycle sample for this decision.",
+	}}
+	prefix := trajectory.Snapshot{Version: 1, Items: []trajectory.Item{{
+		ID: "observation-1", Kind: trajectory.KindObservation, Content: "current evidence",
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+	}}}
+	type situationResult struct {
+		situation interaction.Situation
+		err       error
+	}
+	firstResult := make(chan situationResult, 1)
+	go func() {
+		situation, err := runner.situation(context.Background(), request, update, prefix)
+		firstResult <- situationResult{situation: situation, err: err}
+	}()
+	<-entered
+	later := interaction.AgentOutput{
+		Revision: 2, Active: true, Queued: true,
+		Saying: "the later response", InFlight: "later lifecycle work",
+		ProtectedStreams: []string{"another-stream"},
+	}
+	if err := runner.acceptAgentOutput(context.Background(), element.Envelope{Payload: later}); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	first := <-firstResult
+	if first.err != nil {
+		t.Fatal(first.err)
+	}
+	second, err := runner.situation(context.Background(), request, update, prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.situation.AgentSpeaking || first.situation.AgentSaying != "the sealed response" ||
+		first.situation.InFlight != "sealed lifecycle work" || !first.situation.AgentOutputProtected {
+		t.Fatalf("in-flight decision observed mutable agent output: %+v", first.situation)
+	}
+	if !second.AgentSpeaking || second.AgentSaying != later.Saying || second.InFlight != later.InFlight ||
+		second.AgentOutputProtected {
+		t.Fatalf("next decision did not observe later agent output: %+v", second)
 	}
 }
 
