@@ -12,6 +12,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception/voices"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -54,6 +55,21 @@ func (runtime *runtime) situation(decision interaction.Context) interaction.Situ
 		}
 	}
 	return state
+}
+
+// speakingBoundary is the live split of the utterance coming out of the
+// loudspeaker right now.
+//
+// It is empty once playback has ended, and deliberately: the settled boundary
+// belongs to the trajectory, where every model already reads it. Repeating it
+// here as a live fact would tell a turn that the agent is still saying
+// something it finished saying.
+func (runtime *runtime) speakingBoundary() spoken.Mark {
+	mark, known := runtime.timing.Current()
+	if !known || !mark.Started() {
+		return spoken.Mark{}
+	}
+	return mark
 }
 
 // renderSilence states a pause the way a decision needs it.

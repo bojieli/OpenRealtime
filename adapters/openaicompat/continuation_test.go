@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -805,5 +806,57 @@ func TestBuildRequestCarriesElapsedTime(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "later] are you there") {
 		t.Fatalf("the first observation was given something to be later than: %s", encoded)
+	}
+}
+
+// A provider that retained its own message for a turn replays it verbatim, and
+// the retained message is the whole turn - every word, including the ones
+// playback never reached. Replaying it undoes the projection that made the
+// turn honest, so a partly heard turn falls back to the portable form exactly
+// as a cancelled one does.
+func TestRetainedNativeStateNeverRestoresWordsTheUserNeverHeard(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{
+		Model: "qwen-test", Provider: "vllm", Phase: trajectory.PhaseFast,
+		Effort: continuation.EffortHigh,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _ := json.Marshal(providerState{
+		Provider: "vllm", Model: "qwen-test",
+		Message: chatMessage{Role: "assistant", Content: "one two three four five"},
+	})
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(), InvocationID: "next",
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user-1", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "count for me"},
+			{ID: "fast-answer", Kind: trajectory.KindAssistant, InvocationID: "inv-counting", Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "one two three four five", ProviderStateType: ProviderStateType, ProviderState: state},
+			{ID: "played", Kind: trajectory.KindAssistantState, Producer: trajectory.Producer{Phase: trajectory.PhaseRuntime}, AssistantState: &trajectory.AssistantState{
+				AssistantItemID: "fast-answer", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 900,
+				Heard: &spoken.Mark{Spoken: "one two", Cut: "three", Pending: "three four five", Measured: true},
+			}},
+			{ID: "user-2", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hold on"},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Continue from what was actually heard."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(body)
+	assistant := ""
+	for _, message := range body.Messages {
+		if message.Role == "assistant" {
+			assistant += message.Content
+		}
+	}
+	if !strings.Contains(assistant, "one two") {
+		t.Fatalf("what the user heard is missing: %s", encoded)
+	}
+	if strings.Contains(assistant, "one two three four five") {
+		t.Fatalf("the retained native turn put the unheard words back: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), "three four five") {
+		t.Fatalf("the prepared remainder must still be visible as a runtime note: %s", encoded)
 	}
 }

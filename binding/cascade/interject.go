@@ -307,6 +307,10 @@ func (runtime *runtime) interjectFor(decision interaction.Context, reason intera
 			// from there - with the agent's own earlier numbers in view, which
 			// is the one thing it cannot reconcile.
 			Answered: runtime.alreadyAnsweredFor(runtime.store.Snapshot()),
+			// This path speaks over audio that is still coming out, so it is
+			// the one path where "what have I said so far" is a live question
+			// rather than a settled one.
+			Speaking: runtime.speakingBoundary(),
 		}
 		// An interjection that cannot run is an interjection that does not
 		// happen, not a fault in the conversation. It is opportunistic by

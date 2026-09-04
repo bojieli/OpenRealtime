@@ -212,6 +212,7 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		ToolResult:     batch.Contains(trajectory.KindToolResult),
 		AllowFastTools: runtime.observationHasUserIntent(batch),
 		PendingRepair:  len(trajectory.PendingRepairs(snapshot)) > 0,
+		Speaking:       runtime.speakingBoundary(),
 	}
 	if request.VisualIntentID != "" {
 		runtime.prepareVisualRequest(snapshot, &request)

@@ -26,6 +26,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/adapters/qwenasr"
 	"github.com/bojieli/OpenRealtime/adapters/speakerid"
+	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
 	"github.com/bojieli/OpenRealtime/admission"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	projectarch "github.com/bojieli/OpenRealtime/architecture"
@@ -53,6 +54,7 @@ import (
 	"github.com/bojieli/OpenRealtime/providers"
 	serverprofile "github.com/bojieli/OpenRealtime/server"
 	"github.com/bojieli/OpenRealtime/sidecar"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
 	"github.com/pion/webrtc/v4"
@@ -149,6 +151,10 @@ type serveOptions struct {
 	policies                 string
 	interactionShadow        string
 	speakerURL               string
+	wordTimingsURL           string
+	wordTimingsModel         string
+	wordTimingsLanguage      string
+	wordTimingsInterval      time.Duration
 	interactionFloor         bool
 	interactionSees          bool
 	profileTurns             bool
@@ -353,6 +359,10 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.policies, "policy-models", "none", "comma-separated policy models: backchannel, turn-projection, overlap, interaction, all, or none")
 	flags.StringVar(&options.interactionShadow, "interaction-shadow", "", "file to record shadow interaction decisions to; enabling it decides nothing")
 	flags.StringVar(&options.speakerURL, "speaker-url", "", "speaker-embedding endpoint, so a voice that is not the one the session is with is not reported as the user; unset leaves that prior in place")
+	flags.StringVar(&options.wordTimingsURL, "word-timings-url", "", "OpenAI-shaped transcription endpoint that returns word timestamps, used to find where in a sentence an interruption actually landed; unset models the boundary proportionally instead")
+	flags.StringVar(&options.wordTimingsModel, "word-timings-model", wordtimings.DefaultModel, "recogniser the word-timing endpoint should load")
+	flags.StringVar(&options.wordTimingsLanguage, "word-timings-language", "", "language hint for the word-timing endpoint; unset lets it decide")
+	flags.DurationVar(&options.wordTimingsInterval, "word-timings-interval", 0, "how much new synthesised audio is worth another listen while an utterance is still being produced; zero selects one second")
 	flags.BoolVar(&options.interactionFloor, "interaction-floor", false, "let the interaction model own turn-taking instead of the silence rule and the projection")
 	flags.BoolVar(&options.interactionSees, "interaction-sees", false, "the interaction model can look at a frame, so pictures reach it directly instead of as a narration")
 	flags.BoolVar(&options.profileTurns, "profile-turns", false, "log how long each stage of a turn took, one line per turn")
@@ -1222,8 +1232,21 @@ func buildCascade(
 			Capabilities: v1.Capabilities{},
 		}
 	}
+	var wordTimings spoken.Aligner
+	if endpoint := strings.TrimSpace(options.wordTimingsURL); endpoint != "" {
+		aligner, err := wordtimings.New(wordtimings.Config{
+			Endpoint: endpoint, Model: options.wordTimingsModel,
+			Language: options.wordTimingsLanguage,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("configure the word-timing recogniser: %w", err)
+		}
+		wordTimings = aligner
+	}
 	return cascade.New(cascade.Config{
 		Profile:                   options.profile,
+		WordTimings:               wordTimings,
+		WordTimingInterval:        options.wordTimingsInterval,
 		Voices:                    listener,
 		SpeakerIdentityDescriptor: speakerDescriptor,
 		ClientToolTimeout:         options.clientToolTimeout,
