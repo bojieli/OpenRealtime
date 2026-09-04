@@ -825,15 +825,25 @@ func (toolResultCommitFactory) Mount(
 		cancelInput: cancelInput, timeoutInput: timeoutInput,
 		appendOutput: appendOutput, canonicalOutput: canonicalOutput,
 		outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
-		pending:  make(map[string]*pendingToolResultCommit, config.MaxPending),
-		requests: make(map[string]string, config.MaxPending), terminal: newBoundedSet(config.TerminalMemory),
+		pending:       make(map[string]*pendingToolResultCommit, config.MaxPending),
+		cancellations: make(map[string]*toolResultCancellation, config.MaxPending),
+		requests:      make(map[string]string, config.MaxPending), terminal: newBoundedSet(config.TerminalMemory),
 		resolution: mount.Resolution,
 	}, nil
+}
+
+type toolResultCancellation struct {
+	cause     element.Envelope
+	operation string
+	kind      OutcomeKind
+	callID    string
+	reason    string
 }
 
 type pendingToolResultCommit struct {
 	cause          element.Envelope
 	result         ExecutionResult
+	cancellation   *toolResultCancellation
 	requestID      string
 	waitVersion    uint64
 	expected       uint64
@@ -860,11 +870,12 @@ type toolResultCommitRunner struct {
 	outcomeOutput   element.OutputPort
 	resolvedOutput  element.OutputPort
 
-	latest     *retainedTrajectorySnapshot
-	pending    map[string]*pendingToolResultCommit
-	requests   map[string]string
-	terminal   *boundedSet
-	resolution element.ResolutionReporter
+	latest        *retainedTrajectorySnapshot
+	pending       map[string]*pendingToolResultCommit
+	cancellations map[string]*toolResultCancellation
+	requests      map[string]string
+	terminal      *boundedSet
+	resolution    element.ResolutionReporter
 }
 
 func (runner *toolResultCommitRunner) Run(parent context.Context) error {
@@ -961,12 +972,14 @@ func (runner *toolResultCommitRunner) acceptResult(
 		return runner.publishOutcome(ctx, envelope, OutcomeIgnored, "result", result.CallID,
 			"already_pending", "tool result commit is already pending")
 	}
-	if len(runner.pending) >= runner.config.MaxPending {
+	cancellation := runner.cancellations[identity]
+	if len(runner.pending)+len(runner.cancellations) >= runner.config.MaxPending && cancellation == nil {
 		return runner.publishOutcome(ctx, envelope, OutcomeRejected, "result", result.CallID,
 			"capacity", fmt.Sprintf("tool result commit retains at most %d calls", runner.config.MaxPending))
 	}
+	delete(runner.cancellations, identity)
 	runner.pending[identity] = &pendingToolResultCommit{
-		cause: envelope.Clone(), result: cloneExecutionResult(result),
+		cause: envelope.Clone(), result: cloneExecutionResult(result), cancellation: cancellation,
 	}
 	return runner.tryStart(ctx, identity)
 }
@@ -1077,9 +1090,7 @@ func (runner *toolResultCommitRunner) tryStart(ctx context.Context, identity str
 	if sessionID := strings.TrimSpace(runner.latest.envelope.SessionID); sessionID != "" {
 		admitted := pending.result.Executable.Canonical.Authorized.Confirmed.Declared.Admitted
 		if sessionID != admitted.SessionID {
-			runner.finish(identity, pending)
-			runner.terminal.add(identity)
-			return runner.publishOutcome(ctx, pending.cause, OutcomeRejected, "commit", callID,
+			return runner.finishRejected(ctx, identity, pending, "commit", callID,
 				"context_session_mismatch", "trajectory context crossed the executed action session boundary")
 		}
 	}
@@ -1090,26 +1101,20 @@ func (runner *toolResultCommitRunner) tryStart(ctx context.Context, identity str
 		if code == "call_not_committed" {
 			return nil
 		}
-		runner.finish(identity, pending)
-		runner.terminal.add(identity)
-		return runner.publishOutcome(ctx, pending.cause, OutcomeRejected, "commit", callID, code, err.Error())
+		return runner.finishRejected(ctx, identity, pending, "commit", callID, code, err.Error())
 	}
 	if resultItem != nil {
 		canonical := CanonicalResult{
 			Execution: cloneExecutionResult(pending.result), TrajectoryItemID: resultItem.ID,
 			StoreVersion: runner.latest.value.Version,
 		}
-		runner.finish(identity, pending)
-		runner.terminal.add(identity)
-		return runner.publishCanonical(ctx, pending.cause, canonical, "already_committed")
+		return runner.finishCanonical(ctx, identity, pending, pending.cause, canonical, "already_committed")
 	}
 	toolResult := cloneToolResult(pending.result.Result)
 	itemID := canonicalTrajectoryItemID("tool-result", pending.cause.SessionID,
 		pending.cause.RunID, callItem.ID, pending.result.ResultCapability)
 	if _, collision := canonicalItem(runner.latest.value.Items, itemID); collision {
-		runner.finish(identity, pending)
-		runner.terminal.add(identity)
-		return runner.publishOutcome(ctx, pending.cause, OutcomeRejected, "commit", callID,
+		return runner.finishRejected(ctx, identity, pending, "commit", callID,
 			"trajectory_id_collision", fmt.Sprintf("canonical tool-result item ID %q is already occupied", itemID))
 	}
 	item := trajectory.Item{
@@ -1178,9 +1183,7 @@ func (runner *toolResultCommitRunner) acceptCommit(
 	cause.CausalParents = appendUnique(cause.CausalParents, requestID)
 	cause.CausalParents = appendUnique(cause.CausalParents, envelope.ItemID)
 	cause.CausalParents = appendUnique(cause.CausalParents, pending.trajectoryItem.ID)
-	runner.finish(identity, pending)
-	runner.terminal.add(identity)
-	return runner.publishCanonical(ctx, cause, canonical, "committed")
+	return runner.finishCanonical(ctx, identity, pending, cause, canonical, "committed")
 }
 
 func (runner *toolResultCommitRunner) acceptRejection(
@@ -1217,9 +1220,7 @@ func (runner *toolResultCommitRunner) acceptRejection(
 		}
 		return runner.tryStart(ctx, identity)
 	}
-	runner.finish(identity, pending)
-	runner.terminal.add(identity)
-	return runner.publishOutcome(ctx, pending.cause, OutcomeRejected, "commit", callID,
+	return runner.finishRejected(ctx, identity, pending, "commit", callID,
 		rejection.Code, rejection.Message)
 }
 
@@ -1248,16 +1249,149 @@ func (runner *toolResultCommitRunner) interrupt(
 	if err != nil {
 		return runner.publishOutcome(ctx, envelope, OutcomeRejected, operation, "", code, err.Error())
 	}
-	if _, identityCode, err := interruptIdentity(envelope, interrupt); err != nil {
+	identity, identityCode, err := interruptIdentity(envelope, interrupt)
+	if err != nil {
 		return runner.publishOutcome(ctx, envelope, OutcomeRejected, operation,
 			interrupt.CallID, identityCode, err.Error())
 	}
-	// Dispatch.result exists only after the external boundary was crossed. A
-	// cancellation or timeout may stop a caller waiting for feedback, but it
-	// must never erase the eventual result from canonical state. The explicit
-	// ports therefore report the policy decision without mutating this commit.
-	return runner.publishOutcome(ctx, envelope, OutcomeIgnored, operation, interrupt.CallID,
-		"result_must_commit", "an executed tool result remains a mandatory canonical safe point")
+	cancellation := &toolResultCancellation{
+		cause: envelope.Clone(), operation: operation, callID: interrupt.CallID, reason: interrupt.Reason,
+		kind: OutcomeCanceled,
+	}
+	if operation == "timeout" {
+		cancellation.kind = OutcomeTimedOut
+	}
+	if pending := runner.pending[identity]; pending != nil {
+		if pending.cancellation != nil {
+			return runner.duplicateCancellation(ctx, *cancellation, pending.cancellation)
+		}
+		pending.cancellation = cancellation
+		return runner.publishCancellationPending(ctx, *cancellation, "result_must_commit")
+	}
+	if retained := runner.cancellations[identity]; retained != nil {
+		return runner.duplicateCancellation(ctx, *cancellation, retained)
+	}
+
+	state, found, err := runner.commitmentState(identity)
+	if err != nil {
+		return runner.publishOutcome(ctx, envelope, OutcomeRejected, operation, interrupt.CallID,
+			"ledger_commitment_ambiguous", err.Error())
+	}
+	// A terminal result has already reached this element, so the mandatory
+	// canonicalization attempt is over. Report the irreversible boundary
+	// honestly instead of retaining an interrupt that can never be released.
+	if runner.terminal.contains(identity) {
+		return runner.publishCancellationTerminal(ctx, *cancellation, found && state.Crossed())
+	}
+	if found && state.Crossed() {
+		if len(runner.pending)+len(runner.cancellations) >= runner.config.MaxPending {
+			return runner.publishOutcome(ctx, envelope, OutcomeRejected, operation, interrupt.CallID,
+				"capacity", fmt.Sprintf("tool result commit retains at most %d calls", runner.config.MaxPending))
+		}
+		// Dispatch has crossed but its authenticated result may still be on an
+		// independent lane. Preserve the exact interrupt until that result is a
+		// canonical trajectory item; only then can cancellation settle.
+		runner.cancellations[identity] = cancellation
+		return runner.publishCancellationPending(ctx, *cancellation, "result_must_commit")
+	}
+	// No result is in flight here and the shared ledger proves that this stage
+	// has not crossed. Other cancellation stages fence their own independent
+	// lanes. Do not add the action to terminal memory: an authenticated late
+	// crossed result is still a mandatory canonical safe point.
+	return runner.publishCancellationTerminal(ctx, *cancellation, false)
+}
+
+func (runner *toolResultCommitRunner) duplicateCancellation(
+	ctx context.Context, attempted toolResultCancellation,
+	retained *toolResultCancellation,
+) error {
+	if retained != nil && sameClientToolResultEnvelopeAddress(retained.cause, attempted.cause) &&
+		retained.operation == attempted.operation && retained.kind == attempted.kind &&
+		retained.callID == attempted.callID && retained.reason == attempted.reason {
+		return runner.publishCancellationPending(ctx, *retained, "cancellation_already_pending")
+	}
+	return runner.publishOutcome(ctx, attempted.cause, OutcomeRejected, attempted.operation, attempted.callID,
+		"cancellation_identity_conflict", "a different interrupt already owns this tool-result cancellation")
+}
+
+func (runner *toolResultCommitRunner) commitmentState(identity string) (legacyaction.State, bool, error) {
+	commitmentID := "action:" + identity
+	runner.ledgers.mu.RLock()
+	entries := make([]ledgerEntry, 0, len(runner.ledgers.entries))
+	for _, entry := range runner.ledgers.entries {
+		entries = append(entries, entry)
+	}
+	runner.ledgers.mu.RUnlock()
+	var state legacyaction.State
+	found := false
+	for _, entry := range entries {
+		commitment, exists := entry.ledger.Lookup(commitmentID)
+		if !exists {
+			continue
+		}
+		if found {
+			return "", false, fmt.Errorf("commitment %q exists in more than one registered ledger", commitmentID)
+		}
+		if commitment.ID != commitmentID || commitment.CallID != identity {
+			return "", false, fmt.Errorf("commitment %q has inconsistent action identity", commitmentID)
+		}
+		state, found = commitment.State, true
+	}
+	return state, found, nil
+}
+
+func (runner *toolResultCommitRunner) publishCancellationPending(
+	ctx context.Context, cancellation toolResultCancellation, code string,
+) error {
+	return runner.publishOutcome(ctx, cancellation.cause, OutcomeIgnored, cancellation.operation,
+		cancellation.callID, code, "an executed tool result remains a mandatory canonical safe point")
+}
+
+func (runner *toolResultCommitRunner) publishCancellationTerminal(
+	ctx context.Context, cancellation toolResultCancellation, crossed bool,
+) error {
+	code := "canceled"
+	if cancellation.operation == "timeout" {
+		code = "timed_out"
+	}
+	message := cancellation.reason
+	if message == "" {
+		message = cancellation.operation
+	}
+	return publishOutcome(ctx, runner.emit, runner.outcomeOutput, cancellation.cause, Outcome{
+		Kind: cancellation.kind, Stage: "tool_result_commit", Operation: cancellation.operation,
+		CallID: cancellation.callID, Code: code, Message: message, Crossed: crossed,
+	})
+}
+
+func (runner *toolResultCommitRunner) finishCanonical(
+	ctx context.Context, identity string, pending *pendingToolResultCommit,
+	cause element.Envelope, canonical CanonicalResult, operation string,
+) error {
+	runner.finish(identity, pending)
+	runner.terminal.add(identity)
+	if err := runner.publishCanonical(ctx, cause, canonical, operation); err != nil {
+		return err
+	}
+	if pending.cancellation != nil {
+		return runner.publishCancellationTerminal(ctx, *pending.cancellation, true)
+	}
+	return nil
+}
+
+func (runner *toolResultCommitRunner) finishRejected(
+	ctx context.Context, identity string, pending *pendingToolResultCommit,
+	operation, callID, code, message string,
+) error {
+	runner.finish(identity, pending)
+	runner.terminal.add(identity)
+	if err := runner.publishOutcome(ctx, pending.cause, OutcomeRejected, operation, callID, code, message); err != nil {
+		return err
+	}
+	if pending.cancellation != nil {
+		return runner.publishCancellationTerminal(ctx, *pending.cancellation, true)
+	}
+	return nil
 }
 
 func (runner *toolResultCommitRunner) finish(identity string, pending *pendingToolResultCommit) {

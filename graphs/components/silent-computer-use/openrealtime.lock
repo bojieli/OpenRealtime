@@ -37,8 +37,8 @@
       "reference": "action.ToolResultCommit",
       "identity": {
         "name": "action.ToolResultCommit",
-        "revision": 3,
-        "digest": "sha256:b9ba6a55ed3e2b177f9e0ba33380b28e50f03b37f094a8c1c29794576d4f919c"
+        "revision": 4,
+        "digest": "sha256:9fc6057e1e47de87b14ae0ff7ec43df59d81240a4ae9ac93e8e9eca89094de95"
       }
     },
     {

@@ -193,6 +193,21 @@ const toolResultAttestationGraph = `graph tool_result_attestation_test {
 }
 `
 
+const toolResultCommitHarnessGraph = `graph tool_result_commit_harness {
+    action.ToolResultCommit :: commit;
+    input result = commit.result;
+    input context = commit.context;
+    input committed = commit.committed;
+    input rejected = commit.rejected;
+    input cancel = commit.cancel;
+    input timeout = commit.timeout;
+    output append = commit.append;
+    output canonical = commit.canonical;
+    output outcome = commit.outcome;
+    output resolved = commit.resolved;
+}
+`
+
 const authorizedCommitHarnessGraph = `graph authorized_commit_harness {
     action.AuthorizedCallCommit :: commit;
     input action = commit.action;
@@ -941,6 +956,153 @@ func TestToolResultCommitRequiresLedgerAuthenticatedExactDispatchResult(t *testi
 			}
 			assertNoEnvelope(t, mustEgressAction(t, mounted, "canonical"))
 		})
+	}
+}
+
+func TestToolResultCommitIdleCancellationAcknowledgesWithoutSuppressingLateCrossedResult(t *testing.T) {
+	fixture := mountToolResultCommitHarness(t, json.RawMessage(`{}`), false)
+	defer stopMounted(t, fixture.mounted, fixture.done, fixture.cancel)
+	cancelEnvelope := element.Envelope{
+		Type: InterruptType(), ItemID: "idle-result-cancel", SessionID: "ledger-session",
+		RunID: "model-run", CancellationScope: "model-run",
+		Payload: Interrupt{CallID: "attested-call", Reason: "user canceled before dispatch"},
+	}
+	send(t, mustIngressAction(t, fixture.mounted, "cancel"), cancelEnvelope)
+	ackEnvelope := receive(t, mustEgressAction(t, fixture.mounted, "outcome"))
+	ack := ackEnvelope.Payload.(Outcome)
+	if ack.Kind != OutcomeCanceled || ack.Stage != "tool_result_commit" || ack.Operation != "cancel" ||
+		ack.Code != "canceled" || ack.Crossed || !slices.Contains(ackEnvelope.CausalParents, cancelEnvelope.ItemID) {
+		t.Fatalf("idle result cancellation acknowledgement = %+v / %+v", ack, ackEnvelope)
+	}
+
+	// The idle acknowledgement must not poison terminal memory. If Dispatch
+	// independently crosses after this stage's linearization point, its exact
+	// authenticated result is still a mandatory canonical safe point (and the
+	// dispatch stage will separately report the crossed cancellation).
+	playToolResultCommitment(t, fixture.ledger, fixture.result)
+	send(t, mustIngressAction(t, fixture.mounted, "context"), element.Envelope{
+		Type: stateelements.SnapshotType(), ItemID: "late-result-context", SessionID: "ledger-session",
+		Payload: fixture.store.Snapshot(),
+	})
+	send(t, mustIngressAction(t, fixture.mounted, "result"), element.Envelope{
+		Type: ResultType(), ItemID: "late-crossed-result", SessionID: "ledger-session",
+		RunID: "model-run", Payload: fixture.result,
+	})
+	request := receive(t, mustEgressAction(t, fixture.mounted, "append"))
+	appendRequest := request.Payload.(stateelements.Append)
+	commitAppendForTest(t, fixture.store, fixture.mounted, request, appendRequest)
+	canonical := receive(t, mustEgressAction(t, fixture.mounted, "canonical")).Payload.(CanonicalResult)
+	committed := receive(t, mustEgressAction(t, fixture.mounted, "outcome")).Payload.(Outcome)
+	if canonical.Execution.CallID != "attested-call" || canonical.StoreVersion != fixture.store.Snapshot().Version ||
+		committed.Kind != OutcomeSucceeded || committed.Operation != "committed" {
+		t.Fatalf("late crossed result was not canonicalized: canonical=%+v outcome=%+v", canonical, committed)
+	}
+}
+
+func TestToolResultCommitCancellationWaitsForCanonicalResultAndKeepsExactCause(t *testing.T) {
+	for _, cancelFirst := range []bool{true, false} {
+		name := "result_first"
+		if cancelFirst {
+			name = "cancel_first"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := mountToolResultCommitHarness(t, json.RawMessage(`{}`), true)
+			defer stopMounted(t, fixture.mounted, fixture.done, fixture.cancel)
+			send(t, mustIngressAction(t, fixture.mounted, "context"), element.Envelope{
+				Type: stateelements.SnapshotType(), ItemID: "crossed-result-context",
+				SessionID: "ledger-session", Payload: fixture.store.Snapshot(),
+			})
+			cancelEnvelope := element.Envelope{
+				Type: InterruptType(), ItemID: "crossed-result-cancel", SessionID: "ledger-session",
+				RunID: "model-run", CancellationScope: "model-run",
+				Payload: Interrupt{CallID: "attested-call", Reason: "stop after external effect"},
+			}
+			resultEnvelope := element.Envelope{
+				Type: ResultType(), ItemID: "crossed-result", SessionID: "ledger-session",
+				RunID: "model-run", Payload: fixture.result,
+			}
+			if cancelFirst {
+				send(t, mustIngressAction(t, fixture.mounted, "cancel"), cancelEnvelope)
+			} else {
+				send(t, mustIngressAction(t, fixture.mounted, "result"), resultEnvelope)
+			}
+			var request element.Envelope
+			if cancelFirst {
+				pendingEnvelope := receive(t, mustEgressAction(t, fixture.mounted, "outcome"))
+				pending := pendingEnvelope.Payload.(Outcome)
+				if pending.Kind != OutcomeIgnored || pending.Code != "result_must_commit" ||
+					!slices.Contains(pendingEnvelope.CausalParents, cancelEnvelope.ItemID) {
+					t.Fatalf("pre-result cancellation = %+v / %+v", pending, pendingEnvelope)
+				}
+				send(t, mustIngressAction(t, fixture.mounted, "result"), resultEnvelope)
+				request = receive(t, mustEgressAction(t, fixture.mounted, "append"))
+			} else {
+				request = receive(t, mustEgressAction(t, fixture.mounted, "append"))
+				send(t, mustIngressAction(t, fixture.mounted, "cancel"), cancelEnvelope)
+				pendingEnvelope := receive(t, mustEgressAction(t, fixture.mounted, "outcome"))
+				pending := pendingEnvelope.Payload.(Outcome)
+				if pending.Kind != OutcomeIgnored || pending.Code != "result_must_commit" ||
+					!slices.Contains(pendingEnvelope.CausalParents, cancelEnvelope.ItemID) {
+					t.Fatalf("in-flight cancellation = %+v / %+v", pending, pendingEnvelope)
+				}
+			}
+
+			conflictEnvelope := cancelEnvelope.Clone()
+			conflictEnvelope.ItemID = "conflicting-result-cancel"
+			conflictEnvelope.Payload = Interrupt{CallID: "attested-call", Reason: "different authority"}
+			send(t, mustIngressAction(t, fixture.mounted, "cancel"), conflictEnvelope)
+			conflict := receive(t, mustEgressAction(t, fixture.mounted, "outcome")).Payload.(Outcome)
+			if conflict.Kind != OutcomeRejected || conflict.Code != "cancellation_identity_conflict" {
+				t.Fatalf("conflicting result cancellation = %+v", conflict)
+			}
+
+			appendRequest := request.Payload.(stateelements.Append)
+			commitAppendForTest(t, fixture.store, fixture.mounted, request, appendRequest)
+			_ = receive(t, mustEgressAction(t, fixture.mounted, "canonical"))
+			committed := receive(t, mustEgressAction(t, fixture.mounted, "outcome")).Payload.(Outcome)
+			terminalEnvelope := receive(t, mustEgressAction(t, fixture.mounted, "outcome"))
+			terminal := terminalEnvelope.Payload.(Outcome)
+			if committed.Kind != OutcomeSucceeded || terminal.Kind != OutcomeCanceled ||
+				terminal.Operation != "cancel" || terminal.Code != "canceled" || !terminal.Crossed ||
+				!slices.Contains(terminalEnvelope.CausalParents, cancelEnvelope.ItemID) ||
+				slices.Contains(terminalEnvelope.CausalParents, conflictEnvelope.ItemID) {
+				t.Fatalf("canonical/cancellation terminal = %+v / %+v / %+v", committed, terminal, terminalEnvelope)
+			}
+		})
+	}
+}
+
+func TestToolResultCommitCancellationCapacityDoesNotEvictCrossedAuthority(t *testing.T) {
+	fixture := mountToolResultCommitHarness(t, json.RawMessage(`{"max_pending":1}`), true)
+	defer stopMounted(t, fixture.mounted, fixture.done, fixture.cancel)
+	first := element.Envelope{
+		Type: InterruptType(), ItemID: "retained-crossed-cancel", SessionID: "ledger-session",
+		RunID: "model-run", CancellationScope: "model-run",
+		Payload: Interrupt{CallID: "attested-call", Reason: "retain exact crossed result"},
+	}
+	send(t, mustIngressAction(t, fixture.mounted, "cancel"), first)
+	if pending := receive(t, mustEgressAction(t, fixture.mounted, "outcome")).Payload.(Outcome); pending.Kind != OutcomeIgnored || pending.Code != "result_must_commit" {
+		t.Fatalf("first retained cancellation = %+v", pending)
+	}
+
+	secondResult, _ := distinctClientJoinEvidence(t, fixture.entry, fixture.result, 2)
+	playToolResultCommitment(t, fixture.ledger, secondResult)
+	secondAdmitted := secondResult.Executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	second := element.Envelope{
+		Type: InterruptType(), ItemID: "overflow-crossed-cancel", SessionID: secondAdmitted.SessionID,
+		RunID: secondAdmitted.ModelRunID, CancellationScope: secondAdmitted.ModelRunID,
+		Payload: Interrupt{CallID: secondResult.CallID, Reason: "must not evict first authority"},
+	}
+	send(t, mustIngressAction(t, fixture.mounted, "cancel"), second)
+	if refused := receive(t, mustEgressAction(t, fixture.mounted, "outcome")).Payload.(Outcome); refused.Kind != OutcomeRejected || refused.Code != "capacity" {
+		t.Fatalf("overflow crossed cancellation = %+v", refused)
+	}
+
+	// Replaying the first exact interrupt still finds its retained authority;
+	// capacity refusal cannot evict or rebind an unresolved crossed result.
+	send(t, mustIngressAction(t, fixture.mounted, "cancel"), first)
+	if retained := receive(t, mustEgressAction(t, fixture.mounted, "outcome")).Payload.(Outcome); retained.Kind != OutcomeIgnored || retained.Code != "cancellation_already_pending" {
+		t.Fatalf("retained cancellation after overflow = %+v", retained)
 	}
 }
 
@@ -1728,6 +1890,88 @@ func mountToolResultAttestation(
 	return mounted, done, cancel, store, result
 }
 
+type toolResultCommitFixture struct {
+	mounted *graphruntime.Mounted
+	done    chan error
+	cancel  context.CancelFunc
+	store   *trajectory.Store
+	ledger  *legacyaction.Ledger
+	entry   ledgerEntry
+	result  ExecutionResult
+}
+
+func mountToolResultCommitHarness(t *testing.T, config json.RawMessage, crossed bool) toolResultCommitFixture {
+	t.Helper()
+	store, canonical := canonicalAttestationFixture(t, trajectory.PhaseRuntime)
+	ledgers := NewLedgerRegistries()
+	ledger := legacyaction.NewLedger()
+	if err := ledgers.Register("main", ledger); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := ledgers.resolve("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitted := canonical.Authorized.Confirmed.Declared.Admitted
+	commitmentID := actionCommitmentID(admitted)
+	capability, err := entry.sign(canonical, commitmentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := ExecutionResult{
+		Executable: ExecutableAction{
+			Canonical: canonical, LedgerReference: entry.reference, LedgerIdentity: entry.identity,
+			CommitmentID: commitmentID, Capability: capability,
+		},
+		CompletionOrigin: CompletionReturned, CallID: "attested-call", Name: computeruse.Click,
+		CommitmentID: commitmentID,
+		Result: trajectory.ToolResult{CallID: "attested-call", Name: computeruse.Click,
+			Output: json.RawMessage(`{"ok":true}`)},
+		CrossedNS: 10, FinishedNS: 20,
+	}
+	result.ResultCapability, err = entry.signResult(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if crossed {
+		playToolResultCommitment(t, ledger, result)
+	}
+	services := graphruntime.NewServiceSet()
+	for name, service := range map[string]any{
+		LedgerRegistryService: ledgers, TrajectoryStoreService: store,
+	} {
+		if _, err := services.Set(name, service); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mounted, done, cancel := mountGraph(t, toolResultCommitHarnessGraph,
+		map[string]json.RawMessage{"commit": config}, services)
+	return toolResultCommitFixture{
+		mounted: mounted, done: done, cancel: cancel, store: store,
+		ledger: ledger, entry: entry, result: result,
+	}
+}
+
+func playToolResultCommitment(t *testing.T, ledger *legacyaction.Ledger, result ExecutionResult) {
+	t.Helper()
+	admitted := result.Executable.Canonical.Authorized.Confirmed.Declared.Admitted
+	if err := ledger.Prepare(legacyaction.Commitment{
+		ID: result.CommitmentID, Kind: legacyaction.KindComputerAction, CallID: actionIdentity(admitted),
+		SourceRevision: admitted.SourceRevision, Confirm: legacyaction.ConfirmNever,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Queue(result.CommitmentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Emit(result.CommitmentID); err != nil {
+		t.Fatal(err)
+	}
+	if err := ledger.Complete(result.CommitmentID, 0); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func mountClientToolResultJoin(t *testing.T) (*graphruntime.Mounted, chan error,
 	context.CancelFunc, ExecutionResult, ClientToolResultAccepted, ledgerEntry) {
 	t.Helper()
@@ -1899,7 +2143,7 @@ func TestDescriptorsExposeFifteenDistinctBoundariesAndOnlyDispatchIsExternal(t *
 		"action.ClientToolResultIngress": 2,
 		"action.ClientToolResultJoin":    1,
 		"action.LedgerCommit":            2,
-		"action.ToolResultCommit":        3,
+		"action.ToolResultCommit":        4,
 		"action.Dispatch":                3,
 	}
 	for _, descriptor := range descriptors {

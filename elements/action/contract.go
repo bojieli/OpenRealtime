@@ -888,7 +888,7 @@ func AuthorizedCallCommitDescriptor() element.Descriptor {
 // dispatch. External completion is not model context until this commit lands.
 func ToolResultCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
-		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolResultCommit", Revision: 3,
+		FormatVersion: element.DescriptorFormatVersion, Name: "action.ToolResultCommit", Revision: 4,
 		Ports: []element.Port{
 			port("result", element.Input, resultType, 32), port("context", element.Input, snapshotType, 1),
 			port("committed", element.Input, commitType, 16), port("rejected", element.Input, rejectionType, 16),
