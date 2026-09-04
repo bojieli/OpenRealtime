@@ -451,8 +451,12 @@ func (observer *AudioObserver) observationFor(revision v1.PerceptionRevision, ca
 	observer.predecessor = observer.revision
 	observer.lastText = text
 	observer.lastStable = revision.StableText
+	source := strings.TrimSpace(revision.Source)
+	if source == "" {
+		source = observer.config.Source
+	}
 	observation := Observation{
-		Text: text, Observer: observer.config.Name, Source: observer.config.Source,
+		Text: text, Observer: observer.config.Name, Source: source,
 		Authority: trajectory.AuthorityUser, Revision: observer.revision,
 		StableText: revision.StableText, Provisional: !final, Final: final,
 		OccurredNS: capturedNS,

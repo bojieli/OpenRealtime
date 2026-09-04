@@ -620,6 +620,19 @@ func runArchitecturePair(arguments []string, output io.Writer) error {
 	return nil
 }
 
+const architectureInspectionInstruction = "Inspect the negotiated runtime architecture. Do not generate a response."
+
+func architectureInspectionSessionConfig(
+	endpoint, token, model string, timeout time.Duration,
+) bench.SessionConfig {
+	return bench.SessionConfig{
+		Endpoint: endpoint, Token: token, Model: model,
+		Instructions: architectureInspectionInstruction,
+		Timeout:      timeout, TrailingSilence: time.Millisecond,
+		CaptureRuntimeEvidence: true, Quiet: true,
+	}
+}
+
 // runArchitectureInspect opens an ordinary protocol session and prints the
 // handshake-resolved binding status that a manifest must match. It is a
 // read-only authoring aid; inspection is not a benchmark result.
@@ -640,11 +653,9 @@ func runArchitectureInspect(arguments []string, output io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
-	transcript, err := bench.PlaySamples(ctx, bench.SessionConfig{
-		Endpoint: *endpoint, Token: os.Getenv(*tokenEnv), Model: *model,
-		Timeout: *timeout, TrailingSilence: time.Millisecond,
-		CaptureRuntimeEvidence: true, Quiet: true,
-	}, nil)
+	transcript, err := bench.PlaySamples(ctx, architectureInspectionSessionConfig(
+		*endpoint, os.Getenv(*tokenEnv), *model, *timeout,
+	), nil)
 	if err != nil {
 		return err
 	}

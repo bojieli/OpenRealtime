@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -30,7 +32,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID       = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision = "implementation:4"
+	semanticAdmissionRuntimeRevision = "implementation:5"
 	defaultSemanticRecentLines       = 12
 	defaultSemanticPending           = 64
 	defaultSemanticTerminalMemory    = 512
@@ -45,6 +47,7 @@ var (
 	semanticCommitType     = stateelements.ObservationCommitOutcomeType()
 	semanticCreateType     = ResponseCreateType()
 	semanticCancelType     = GenerationCancelType()
+	semanticGrantType      = element.Event(element.Named("policy.SemanticGrant"))
 	semanticDecisionType   = element.Event(element.Named("policy.SemanticDecision"))
 	semanticStateType      = element.State(element.Named("policy.SemanticAdmissionState"))
 	semanticOutcomeType    = element.Event(element.Named("policy.SemanticAdmissionOutcome"))
@@ -52,6 +55,7 @@ var (
 )
 
 func SemanticDecisionType() element.Type          { return semanticDecisionType.Clone() }
+func SemanticGrantType() element.Type             { return semanticGrantType.Clone() }
 func SemanticAdmissionStateType() element.Type    { return semanticStateType.Clone() }
 func SemanticAdmissionOutcomeType() element.Type  { return semanticOutcomeType.Clone() }
 func SemanticDeciderResolutionType() element.Type { return semanticResolutionType.Clone() }
@@ -247,9 +251,9 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "cancel", Direction: element.Input, Type: semanticCancelType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "voice_committed", Direction: element.Output, Type: semanticCommitType,
+			{Name: "voice_committed", Direction: element.Output, Type: semanticGrantType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "silent_committed", Direction: element.Output, Type: semanticCommitType,
+			{Name: "silent_committed", Direction: element.Output, Type: semanticGrantType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "voice_create", Direction: element.Output, Type: semanticCreateType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -283,17 +287,53 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 }
 
 type SemanticAdmissionConfig struct {
-	Decider                     string  `json:"decider"`
-	DirectVisualInput           bool    `json:"direct_visual_input,omitempty"`
-	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
-	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
-	VerifySilentAction          bool    `json:"verify_silent_action,omitempty"`
-	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
-	RecentLines                 int     `json:"recent_lines,omitempty"`
-	MaxPending                  int     `json:"max_pending,omitempty"`
-	TerminalMemory              int     `json:"terminal_memory,omitempty"`
-	CancelMemory                int     `json:"cancel_memory,omitempty"`
-	StandingMemory              int     `json:"standing_memory,omitempty"`
+	Decider                     string                         `json:"decider"`
+	DirectVisualInput           bool                           `json:"direct_visual_input,omitempty"`
+	StandingExtraction          bool                           `json:"standing_extraction,omitempty"`
+	VerifyVoiceActivation       bool                           `json:"verify_voice_activation,omitempty"`
+	VerifySilentAction          bool                           `json:"verify_silent_action,omitempty"`
+	MinimumActivationConfidence float64                        `json:"minimum_activation_confidence,omitempty"`
+	RecentLines                 int                            `json:"recent_lines,omitempty"`
+	MaxPending                  int                            `json:"max_pending,omitempty"`
+	TerminalMemory              int                            `json:"terminal_memory,omitempty"`
+	CancelMemory                int                            `json:"cancel_memory,omitempty"`
+	StandingMemory              int                            `json:"standing_memory,omitempty"`
+	TranscriptEvents            *SemanticTranscriptEventConfig `json:"transcript_events,omitempty"`
+}
+
+// SemanticTranscriptEventConfig is the values-plane hard boundary around the
+// interaction model for live and terminal ASR revisions. Instructions can be
+// replaced independently, while Acts remain an enumerated executable set.
+type SemanticTranscriptEventConfig struct {
+	Partial SemanticTranscriptEventRules `json:"partial"`
+	Final   SemanticTranscriptEventRules `json:"final"`
+}
+
+type SemanticTranscriptEventRules struct {
+	Instruction string                `json:"instruction"`
+	Acts        []coreinteraction.Act `json:"acts"`
+	TimeoutMS   int64                 `json:"timeout_ms"`
+}
+
+// ValidateSemanticTranscriptEventConfig validates the complete values-plane
+// selection without creating or retaining a policy provider.
+func ValidateSemanticTranscriptEventConfig(config SemanticTranscriptEventConfig) error {
+	_, err := semanticTranscriptOptions(config)
+	return err
+}
+
+// SemanticGrant couples the exact canonical observation receipt to the act
+// that authorized its branch. SessionInvocation consumes this typed value so
+// neither an envelope convention nor a mutated state receipt can silently
+// erase whether generation deliberately began over an active speaker.
+type SemanticGrant struct {
+	Commit         stateelements.ObservationCommitOutcome `json:"commit"`
+	Act            coreinteraction.Act                    `json:"act"`
+	DecisionItemID string                                 `json:"decision_item_id"`
+}
+
+func (SemanticGrant) InspectionCause() element.InspectionCauseKind {
+	return element.CausePolicy
 }
 
 type SemanticDecision struct {
@@ -419,11 +459,48 @@ func decodeSemanticAdmissionConfig(source json.RawMessage) (SemanticAdmissionCon
 	if config.StandingMemory < 1 || config.StandingMemory > 4096 {
 		return SemanticAdmissionConfig{}, errors.New("semantic admission standing_memory must be between 1 and 4096")
 	}
+	if config.TranscriptEvents != nil {
+		if _, err := semanticTranscriptOptions(*config.TranscriptEvents); err != nil {
+			return SemanticAdmissionConfig{}, err
+		}
+	}
 	if math.IsNaN(config.MinimumActivationConfidence) || math.IsInf(config.MinimumActivationConfidence, 0) ||
 		config.MinimumActivationConfidence < 0 || config.MinimumActivationConfidence > 1 {
 		return SemanticAdmissionConfig{}, errors.New("semantic admission minimum_activation_confidence must be between 0 and 1")
 	}
 	return config, nil
+}
+
+func semanticTranscriptOptions(
+	config SemanticTranscriptEventConfig,
+) (coreinteraction.TranscriptEventOptions, error) {
+	for name, rules := range map[string]SemanticTranscriptEventRules{
+		"partial": config.Partial, "final": config.Final,
+	} {
+		if rules.TimeoutMS < 1 || rules.TimeoutMS > 300_000 {
+			return coreinteraction.TranscriptEventOptions{}, fmt.Errorf(
+				"semantic admission %s transcript timeout_ms must be between 1 and 300000", name,
+			)
+		}
+	}
+	options := coreinteraction.TranscriptEventOptions{
+		Partial: coreinteraction.TranscriptEventRules{
+			Instruction: config.Partial.Instruction,
+			Acts:        slices.Clone(config.Partial.Acts),
+			Timeout:     time.Duration(config.Partial.TimeoutMS) * time.Millisecond,
+		},
+		Final: coreinteraction.TranscriptEventRules{
+			Instruction: config.Final.Instruction,
+			Acts:        slices.Clone(config.Final.Acts),
+			Timeout:     time.Duration(config.Final.TimeoutMS) * time.Millisecond,
+		},
+	}
+	if err := coreinteraction.ValidateTranscriptEventOptions(options); err != nil {
+		return coreinteraction.TranscriptEventOptions{}, fmt.Errorf(
+			"semantic admission transcript events: %w", err,
+		)
+	}
+	return options, nil
 }
 
 func semanticDescriptorDigest(descriptor SemanticDeciderDescriptor) (string, error) {

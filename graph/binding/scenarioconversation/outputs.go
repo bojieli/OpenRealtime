@@ -519,7 +519,7 @@ func (session *session) publishTranscript(ctx context.Context, envelope element.
 	if err := session.validateObservation(envelope, observation); err != nil {
 		return err
 	}
-	if observation.Source != SourceMicrophone {
+	if observation.Source != SourceMicrophone && observation.Source != SourceOtherSpeaker {
 		return errors.New("scenario conversation transcript boundary emitted a non-microphone observation")
 	}
 	if err := session.sink.Transcript(ctx, legacy.TranscriptEvent{
@@ -560,6 +560,14 @@ func (session *session) validateObservation(
 	case SourceMicrophone:
 		if !canonicalIdentity(observation.Observer) || len(observation.Media) != 0 {
 			return errors.New("scenario conversation microphone observation has invalid observer or media")
+		}
+	case SourceOtherSpeaker:
+		evidence := session.config.Architecture.Interaction.EvidenceCapabilities
+		if evidence == nil || !evidence.SpeakerIdentity {
+			return fmt.Errorf("scenario conversation graph emitted undeclared observation source %q", observation.Source)
+		}
+		if !canonicalIdentity(observation.Observer) || len(observation.Media) != 0 {
+			return errors.New("scenario conversation attributed-speaker observation has invalid observer or media")
 		}
 	case SourceText:
 		if observation.Observer != "client" || len(observation.Media) != 0 {
@@ -1244,7 +1252,18 @@ func (session *session) acceptModelOutcome(ctx context.Context, envelope element
 	case cognitionelements.OutcomeSucceeded, cognitionelements.OutcomeCanceled,
 		cognitionelements.OutcomeIgnored:
 		return nil
-	case cognitionelements.OutcomeRefused, cognitionelements.OutcomeFailed:
+	case cognitionelements.OutcomeRefused:
+		// The model-cancellation lane can overtake a queued committed-context
+		// trigger. Cognition retains an exact (session, run) tombstone and emits
+		// this refusal only when the later trigger proves that cancellation
+		// already made the run terminal without invoking the provider. Treat the
+		// proof as the clean terminal half of that cancellation, not as a new
+		// user-visible model failure.
+		if outcome.Code == "committed_run_replay" {
+			return nil
+		}
+		return session.publishTypedFailure(ctx, outcome.Code, outcome.Message)
+	case cognitionelements.OutcomeFailed:
 		return session.publishTypedFailure(ctx, outcome.Code, outcome.Message)
 	default:
 		return fmt.Errorf("scenario conversation model outcome has unsupported kind %q", outcome.Kind)

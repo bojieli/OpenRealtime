@@ -206,6 +206,54 @@ func TestModelTerminalBeforeInvocationReceiptStillRetainsSpeechHorizon(t *testin
 	}
 }
 
+func TestCommittedRunReplayAfterCancellationIsNotAUserVisibleFailure(t *testing.T) {
+	sink := &cancellationFailureSink{}
+	session := &session{
+		sessionID: "session-a", sink: sink,
+		active: make(map[string]struct{}), pendingSpeech: make(map[string]struct{}),
+		speechlessRuns: make(map[string]struct{}), segmentedRuns: make(map[string]struct{}),
+		terminalRuns: make(map[string]struct{}),
+	}
+	outcome := cognitionelements.Outcome{
+		Kind: cognitionelements.OutcomeRefused, Operation: "generate", RunID: "run-canceled",
+		Code:    "committed_run_replay",
+		Message: "committed generation run is already terminal after cancellation",
+	}
+	if err := session.acceptModelOutcome(context.Background(), element.Envelope{
+		SessionID: session.sessionID, RunID: outcome.RunID, Payload: outcome,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.errors) != 0 || sink.turnBegun != 0 || sink.turnEnded != 0 {
+		t.Fatalf("cancellation proof became a user-visible failure: %+v", sink)
+	}
+	if _, terminal := session.terminalRuns[outcome.RunID]; !terminal {
+		t.Fatal("cancellation proof did not retain the terminal run tombstone")
+	}
+
+	ordinary := outcome
+	ordinary.RunID = "run-refused"
+	ordinary.Code = "provider_refused"
+	ordinary.Message = "provider refused generation"
+	if err := session.acceptModelOutcome(context.Background(), element.Envelope{
+		SessionID: session.sessionID, RunID: ordinary.RunID, Payload: ordinary,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.errors) != 1 || sink.errors[0].Code != ordinary.Code {
+		t.Fatalf("ordinary refusal was not reported: %+v", sink.errors)
+	}
+}
+
+type cancellationFailureSink struct {
+	playbackClientSink
+	errors []legacy.ErrorEvent
+}
+
+func (sink *cancellationFailureSink) Failed(_ context.Context, event legacy.ErrorEvent) {
+	sink.errors = append(sink.errors, event)
+}
+
 func TestToolOnlyForegroundResultClosesPendingSpeechHorizon(t *testing.T) {
 	session := &session{
 		sessionID: "session-a", active: make(map[string]struct{}),

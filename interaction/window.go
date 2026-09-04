@@ -162,6 +162,11 @@ func RecentLines(items []trajectory.Item, max int) []string {
 	if max <= 0 {
 		max = 6
 	}
+	// Canonical state retains every ASR revision, but a decision context must
+	// present the current utterance once. Without this projection a partial and
+	// its longer replacement look like two separate things the person said,
+	// which causes counting, translation, and menu policies to fire repeatedly.
+	items = trajectory.WithoutSupersededPartials(items)
 	var lines []string
 	for index := len(items) - 1; index >= 0 && len(lines) < max; index-- {
 		if line := windowLine(items[index]); line != "" {

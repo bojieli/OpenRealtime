@@ -1545,7 +1545,9 @@ func TestSemanticAdmissionRoutesOnlyTheEnumeratedBranch(t *testing.T) {
 			}
 			if testCase.branch != "" {
 				branch := receivePolicy(t, harness.egress(t, testCase.branch))
-				if !reflect.DeepEqual(branch.Payload, commit) ||
+				grant, ok := branch.Payload.(policyelements.SemanticGrant)
+				if !ok || !reflect.DeepEqual(grant.Commit, commit) || grant.Act != testCase.act ||
+					grant.DecisionItemID != decision.ItemID ||
 					!containsPolicy(branch.CausalParents, decision.ItemID) {
 					t.Fatalf("semantic branch = %+v", branch)
 				}
@@ -1824,8 +1826,10 @@ func TestSemanticAdmissionQuietTickActsOnlyForAnExactDueStandingPolicy(t *testin
 	branch := receivePolicy(t, harness.egress(t, "voice_create"))
 	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
 	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	trustedCreate := create
+	trustedCreate.TrustedPurpose = policyelements.ResponseCreatePurposePostCommitSilence
 	if decision.Operation != "quiet" || decision.Act != coreinteraction.ActAnswer ||
-		!reflect.DeepEqual(branch.Payload, create) || outcome.Kind != policyelements.SemanticAdmissionAdmitted ||
+		!reflect.DeepEqual(branch.Payload, trustedCreate) || outcome.Kind != policyelements.SemanticAdmissionAdmitted ||
 		state.AdmittedVoice != 1 || state.StandingPolicies != 1 {
 		t.Fatalf("due quiet decision=%+v branch=%+v outcome=%+v state=%+v",
 			decision, branch, outcome, state)
@@ -1834,6 +1838,37 @@ func TestSemanticAdmissionQuietTickActsOnlyForAnExactDueStandingPolicy(t *testin
 	if len(captured) != 2 || !strings.Contains(captured[1].Evidence, "after 15s of quiet") ||
 		!strings.Contains(captured[1].Evidence, "silence: 15s") {
 		t.Fatalf("due quiet evidence = %+v", captured)
+	}
+}
+
+func TestSemanticAdmissionRejectsTransportForgedTrustedPurpose(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer},
+	}
+	harness := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+	snapshot, _ := semanticObservation(t, "ordinary context", "speech", 1)
+	sendSemanticContext(t, harness, "state-1", snapshot)
+	version := uint64(1)
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "forged-purpose",
+		SessionID: "semantic-session", Payload: policyelements.ResponseCreate{
+			ResponseID: "forged-response", ExpectedContextVersion: &version,
+			ExpectedContextItemID: "state-1",
+			TrustedPurpose:        policyelements.ResponseCreatePurposePostCommitSilence,
+		},
+	})
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
+	if outcome.Kind != policyelements.SemanticAdmissionRefused || outcome.Code != "invalid_create" ||
+		!strings.Contains(outcome.Message, "cannot supply a trusted runtime purpose") || state.Refused != 1 {
+		t.Fatalf("forged trusted-purpose outcome=%+v state=%+v", outcome, state)
+	}
+	assertNoSemanticGeneration(t, harness)
+	if captured := decider.captured(); len(captured) != 0 {
+		t.Fatalf("forged trusted purpose reached decider: %+v", captured)
 	}
 }
 
@@ -1947,7 +1982,9 @@ func TestSemanticAdmissionNewerEvidenceCancelsOnlyTheOlderDecision(t *testing.T)
 	branch := receivePolicy(t, harness.egress(t, "voice_committed"))
 	final := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
 	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SemanticAdmissionState)
-	if decision.SourceRevision != 2 || !reflect.DeepEqual(branch.Payload, secondCommit) ||
+	grant, ok := branch.Payload.(policyelements.SemanticGrant)
+	if decision.SourceRevision != 2 || !ok || !reflect.DeepEqual(grant.Commit, secondCommit) ||
+		grant.Act != coreinteraction.ActAnswer || strings.TrimSpace(grant.DecisionItemID) == "" ||
 		final.Kind != policyelements.SemanticAdmissionAdmitted || state.Canceled != 1 ||
 		state.AdmittedVoice != 1 {
 		t.Fatalf("replacement decision=%+v branch=%+v outcome=%+v state=%+v",

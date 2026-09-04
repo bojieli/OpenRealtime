@@ -106,6 +106,7 @@ type preparedRun struct {
 	id         string
 	begin      element.Envelope
 	expected   uint64
+	spokeOver  bool
 	buffer     string
 	totalBytes int
 	segments   []string
@@ -207,7 +208,7 @@ func (runner *segmentPreparedTextRunner) acceptText(
 			return runner.refuseText(ctx, envelope, runID, "invalid_framing", err.Error())
 		}
 		runner.active = &preparedRun{
-			id: runID, begin: envelope.Clone(), expected: 1,
+			id: runID, begin: envelope.Clone(), expected: 1, spokeOver: delta.SpokeOver,
 		}
 		return nil
 	}
@@ -216,6 +217,10 @@ func (runner *segmentPreparedTextRunner) acceptText(
 			fmt.Sprintf("run %q arrived while run %q was open", runID, runner.active.id))
 	}
 	run := runner.active
+	if delta.SpokeOver != run.spokeOver {
+		return runner.failActive(ctx, envelope, OutcomeFailed, "inconsistent_spoke_over",
+			"prepared text spoke_over changed within one framed stream", true)
+	}
 	if err := validateSafePreparedDelta(delta, run.expected, true); err != nil {
 		code := "invalid_framing"
 		if delta.Index != run.expected {
@@ -359,7 +364,7 @@ func (runner *segmentPreparedTextRunner) publishSegment(
 	envelope.CausalParents = appendUniqueString(envelope.CausalParents, cause.ItemID)
 	envelope.CausalParents = appendUniqueString(envelope.CausalParents, run.begin.ItemID)
 	envelope.Payload = speech.TextSegment{
-		ID: utteranceID, Text: text,
+		ID: utteranceID, Text: text, SpokeOver: run.spokeOver,
 		Producer: firstNonemptyString(cause.SourceID, run.begin.SourceID),
 		// SpeechAuthority intentionally remains empty. Graph routing grants
 		// speech; a provider's legacy silent label is provenance, not policy.

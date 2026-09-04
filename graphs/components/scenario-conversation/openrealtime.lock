@@ -173,8 +173,8 @@
       "reference": "interaction.OverlapBargeIn",
       "identity": {
         "name": "interaction.OverlapBargeIn",
-        "revision": 4,
-        "digest": "sha256:55c89e35a3b80ad4aa190bba4db70c6a05e87553b1f4738e3a871c19984bf81e"
+        "revision": 5,
+        "digest": "sha256:5ac4a9fbdccd6bab9ac218e06babca9c3e4dbb46a2c93d6ecf3ba23ff114408c"
       }
     },
     {
@@ -221,8 +221,8 @@
       "reference": "perception.FinalObservationGate",
       "identity": {
         "name": "perception.FinalObservationGate",
-        "revision": 1,
-        "digest": "sha256:b8b9c866c22e87c847a1ec6c5c36ee490bdb3438a8f98a510a603c13bf748036"
+        "revision": 2,
+        "digest": "sha256:aa77a77eed78028bc77a0666a3a350e609e19514ad744b4839c2fcd3d086ae71"
       }
     },
     {
@@ -230,7 +230,7 @@
       "identity": {
         "name": "policy.SemanticAdmission",
         "revision": 3,
-        "digest": "sha256:3d91770dee051b1d7e14b057179972b8c736b00065cb4b8aad20d9693ec68e87"
+        "digest": "sha256:3c751840f61ca1f8dfc30ef35e3d2a826285f1af62e94d28a6d4badc62b3e6b0"
       }
     },
     {
@@ -238,7 +238,7 @@
       "identity": {
         "name": "policy.SessionInvocation",
         "revision": 1,
-        "digest": "sha256:b7af23da5ac11d9a4a8a95fb78c2abb982f303b4a05acaade6438612cb405643"
+        "digest": "sha256:544492049aafeb5e881ae9a8e54b34c107861d4281ca73cfd90f64524e26f968"
       }
     },
     {

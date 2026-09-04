@@ -2,6 +2,7 @@ package perception
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	coreperception "github.com/bojieli/OpenRealtime/perception"
 )
 
@@ -29,27 +31,35 @@ var finalObservationGateOutcomeType = element.Event(
 // FinalObservationGateDescriptor is a provider-neutral activation gate. A
 // final observation alone is not sufficient authority to activate cognition:
 // it must join the successful Flush outcome emitted for the same direct cause,
-// session, and stream. Provisional revisions remain available on the ASR
-// observation branch, but this element never forwards them.
+// session, and stream. Valid provisional revisions cross admitted immediately.
+// Attested finals follow them on that same ordered lane, so a downstream
+// revision-aware commit never has to reconstruct ordering across a mux. The
+// optional finals output remains an endpoint-only observation branch.
+// Provisional admission is opt-in so profiles that do not install an
+// event-aware transcript policy retain the original final-only activation
+// boundary.
 func FinalObservationGateDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "perception.FinalObservationGate",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "observations", Direction: element.Input, Type: observationType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "flush", Direction: element.Input, Type: perceptionOutcomeType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			{Name: "admitted", Direction: element.Output, Type: observationType,
+				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "finals", Direction: element.Output, Type: observationType,
-				Cardinality: element.One, Required: true, DefaultDepth: 16},
+				Cardinality: element.One, Required: false, DefaultDepth: 16},
 			{Name: "outcome", Direction: element.Output, Type: finalObservationGateOutcomeType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"observations", "flush"}, Outcomes: []string{"finals", "outcome"},
+			Triggers: []string{"observations", "flush"}, Outcomes: []string{"admitted", "finals", "outcome"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
+		ConfigSchema: "schema://openrealtime/perception/final-observation-gate-config/v1",
 		Dependencies: []element.Dependency{{Name: graphruntime.SequenceServiceName}},
 	}
 }
@@ -61,12 +71,13 @@ func FinalObservationGateOutcomeType() element.Type {
 type FinalObservationGateOutcomeKind string
 
 const (
-	FinalObservationEmitted  FinalObservationGateOutcomeKind = "emitted"
-	FinalObservationPending  FinalObservationGateOutcomeKind = "pending"
-	FinalObservationIgnored  FinalObservationGateOutcomeKind = "ignored"
-	FinalObservationCanceled FinalObservationGateOutcomeKind = "canceled"
-	FinalObservationRefused  FinalObservationGateOutcomeKind = "refused"
-	FinalObservationFailed   FinalObservationGateOutcomeKind = "failed"
+	FinalObservationEmitted       FinalObservationGateOutcomeKind = "emitted"
+	ProvisionalObservationEmitted FinalObservationGateOutcomeKind = "provisional_emitted"
+	FinalObservationPending       FinalObservationGateOutcomeKind = "pending"
+	FinalObservationIgnored       FinalObservationGateOutcomeKind = "ignored"
+	FinalObservationCanceled      FinalObservationGateOutcomeKind = "canceled"
+	FinalObservationRefused       FinalObservationGateOutcomeKind = "refused"
+	FinalObservationFailed        FinalObservationGateOutcomeKind = "failed"
 )
 
 type FinalObservationGateOutcome struct {
@@ -81,15 +92,32 @@ type FinalObservationGateOutcome struct {
 	Message                  string                          `json:"message,omitempty"`
 }
 
+// FinalObservationGateConfig selects whether validated provisional ASR
+// revisions share the ordered admitted lane with the flush-attested final.
+// It is deliberately false by default: merely upgrading the graph element
+// must not make old profiles invoke cognition for every recognizer revision.
+type FinalObservationGateConfig struct {
+	AdmitProvisional bool `json:"admit_provisional,omitempty"`
+}
+
 type finalObservationGateFactory struct{}
 
 func (finalObservationGateFactory) Descriptor() element.Descriptor {
 	return FinalObservationGateDescriptor()
 }
 
+func (finalObservationGateFactory) ValidateConfig(source json.RawMessage) error {
+	_, err := decodeFinalObservationGateConfig(source)
+	return err
+}
+
 func (finalObservationGateFactory) Mount(
 	_ context.Context, mount element.MountContext,
 ) (element.Runnable, error) {
+	config, err := decodeFinalObservationGateConfig(mount.Config)
+	if err != nil {
+		return nil, fmt.Errorf("perception.FinalObservationGate %s config: %w", mount.InstanceID, err)
+	}
 	sequenceService, _, found := mount.Services.Lookup(graphruntime.SequenceServiceName)
 	if !found {
 		return nil, errors.New("perception.FinalObservationGate has no sequence service")
@@ -106,6 +134,10 @@ func (finalObservationGateFactory) Mount(
 	if err != nil {
 		return nil, err
 	}
+	admitted, err := mount.Ports.Output("admitted")
+	if err != nil {
+		return nil, err
+	}
 	finals, err := mount.Ports.Output("finals")
 	if err != nil {
 		return nil, err
@@ -116,12 +148,21 @@ func (finalObservationGateFactory) Mount(
 	}
 	return &finalObservationGateRunner{
 		instance: mount.InstanceID, observations: observations, flush: flush,
-		finals: finals, outcome: outcome, resolution: mount.Resolution, sequences: sequences,
+		admitted: admitted, finals: finals, outcome: outcome,
+		resolution: mount.Resolution, sequences: sequences, admitProvisional: config.AdmitProvisional,
 		pendingFinals:  make(map[finalObservationKey]pendingFinalObservation),
 		pendingFlushes: make(map[finalObservationKey]pendingFinalFlush),
 		nonFinal:       make(map[finalObservationKey]struct{}),
 		terminal:       newFinalObservationMemory(maximumFinalObservationTerminals),
 	}, nil
+}
+
+func decodeFinalObservationGateConfig(source json.RawMessage) (FinalObservationGateConfig, error) {
+	var config FinalObservationGateConfig
+	if err := elementconfig.Decode(source, &config); err != nil {
+		return FinalObservationGateConfig{}, err
+	}
+	return config, nil
 }
 
 type finalObservationKey struct {
@@ -146,13 +187,15 @@ type finalObservationInput struct {
 }
 
 type finalObservationGateRunner struct {
-	instance     string
-	observations element.InputPort
-	flush        element.InputPort
-	finals       element.OutputPort
-	outcome      element.OutputPort
-	resolution   element.ResolutionReporter
-	sequences    *graphruntime.SequenceAllocator
+	instance         string
+	observations     element.InputPort
+	flush            element.InputPort
+	admitted         element.OutputPort
+	finals           element.OutputPort
+	outcome          element.OutputPort
+	resolution       element.ResolutionReporter
+	sequences        *graphruntime.SequenceAllocator
+	admitProvisional bool
 
 	pendingFinals  map[finalObservationKey]pendingFinalObservation
 	pendingFlushes map[finalObservationKey]pendingFinalFlush
@@ -262,13 +305,16 @@ func (runner *finalObservationGateRunner) acceptObservation(
 			}); err != nil {
 				return err
 			}
-		} else {
-			runner.rememberNonFinal(key)
+			return nil
+		}
+		runner.rememberNonFinal(key)
+		if runner.admitProvisional {
+			return runner.emitProvisional(ctx, envelope, observation, stream, cause)
 		}
 		return runner.publishOutcome(ctx, envelope, FinalObservationGateOutcome{
 			Kind: FinalObservationIgnored, Operation: "observation", StreamID: stream,
 			CauseItemID: cause, SourceObservationItemID: envelope.ItemID, Revision: observation.Revision,
-			Code: "non_final", Message: "only a terminal observation may activate cognition",
+			Code: "non_final", Message: "the selected profile activates only on a terminal observation",
 		})
 	}
 	if _, duplicate := runner.pendingFinals[key]; duplicate {
@@ -449,7 +495,7 @@ func (runner *finalObservationGateRunner) emit(
 		})
 	}
 	envelope := final.envelope.Clone()
-	envelope.Type = runner.finals.Type()
+	envelope.Type = runner.admitted.Type()
 	sequence, err := runner.sequences.Next(runner.instance + ".final")
 	if err != nil {
 		return err
@@ -458,25 +504,64 @@ func (runner *finalObservationGateRunner) emit(
 	envelope.CausalParents = []string{final.envelope.ItemID, flush.envelope.ItemID}
 	observation := final.observation
 	observation.Media = slices.Clone(final.observation.Media)
-	// Supersedes is an ASR-revision relationship. Provisional revisions stay
-	// observable but deliberately never cross this activation gate, so carrying
-	// their revision ID into the canonical commit boundary would falsely claim
-	// that the predecessor was committed. The original final observation and
-	// its complete revision relationship remain immutable causal evidence; the
-	// derived flush-attested snapshot starts the canonical revision chain.
-	observation.Supersedes = 0
+	if !runner.admitProvisional {
+		// Supersedes names a recognizer revision. In a final-only profile that
+		// provisional predecessor never crossed the canonical commit boundary,
+		// so carrying its provider-local revision would falsely claim a missing
+		// canonical predecessor. The original evidence remains unchanged on the
+		// causal parent; only the derived activation snapshot starts a new chain.
+		observation.Supersedes = 0
+	}
 	envelope.Payload = observation
-	delivery, err := runner.finals.Broadcast(ctx, envelope)
+	delivery, err := runner.admitted.Broadcast(ctx, envelope)
 	if err != nil {
 		return err
 	}
 	if delivery.Delivered != 1 || delivery.Dropped != 0 {
-		return fmt.Errorf("final observation gate delivery = %+v, want exactly one delivered consumer", delivery)
+		return fmt.Errorf("admitted final observation delivery = %+v, want exactly one delivered consumer", delivery)
+	}
+	finalEnvelope := envelope.Clone()
+	finalEnvelope.Type = runner.finals.Type()
+	finalDelivery, err := runner.finals.Broadcast(ctx, finalEnvelope)
+	if err != nil {
+		return err
+	}
+	if finalDelivery.Delivered > 1 || finalDelivery.Dropped != 0 {
+		return fmt.Errorf("final-only observation delivery = %+v, want at most one delivered consumer", finalDelivery)
 	}
 	return runner.publishOutcome(ctx, flush.envelope, FinalObservationGateOutcome{
 		Kind: FinalObservationEmitted, Operation: "flush", StreamID: key.stream,
 		CauseItemID: key.cause, SourceObservationItemID: final.envelope.ItemID,
 		EmittedObservationItemID: envelope.ItemID, Revision: final.observation.Revision,
+	})
+}
+
+func (runner *finalObservationGateRunner) emitProvisional(
+	ctx context.Context, source element.Envelope, observation coreperception.Observation,
+	stream, cause string,
+) error {
+	envelope := source.Clone()
+	envelope.Type = runner.admitted.Type()
+	sequence, err := runner.sequences.Next(runner.instance + ".provisional")
+	if err != nil {
+		return err
+	}
+	envelope.ItemID = fmt.Sprintf("%s/provisional/%d", runner.instance, sequence)
+	envelope.CausalParents = []string{source.ItemID}
+	observation.Media = slices.Clone(observation.Media)
+	envelope.Payload = observation
+	delivery, err := runner.admitted.Broadcast(ctx, envelope)
+	if err != nil {
+		return err
+	}
+	if delivery.Delivered != 1 || delivery.Dropped != 0 {
+		return fmt.Errorf("admitted provisional observation delivery = %+v, want exactly one delivered consumer", delivery)
+	}
+	return runner.publishOutcome(ctx, source, FinalObservationGateOutcome{
+		Kind: ProvisionalObservationEmitted, Operation: "observation", StreamID: stream,
+		CauseItemID: cause, SourceObservationItemID: source.ItemID,
+		EmittedObservationItemID: envelope.ItemID, Revision: observation.Revision,
+		Code: "provisional_admitted", Message: "validated provisional observation crossed the ordered revision lane",
 	})
 }
 
@@ -492,7 +577,7 @@ func (runner *finalObservationGateRunner) publishOutcome(
 	envelope.ItemID = fmt.Sprintf("%s/outcome/%d", runner.instance, sequence)
 	envelope.CausalParents = []string{cause.ItemID}
 	envelope.Payload = outcome
-	if outcome.Kind == FinalObservationEmitted {
+	if outcome.Kind == FinalObservationEmitted || outcome.Kind == ProvisionalObservationEmitted {
 		envelope.CausalParents = nil
 		for _, itemID := range []string{
 			outcome.SourceObservationItemID, cause.ItemID, outcome.EmittedObservationItemID,
@@ -736,5 +821,8 @@ func (memory *finalObservationMemory) add(key finalObservationKey) {
 	memory.values[key] = struct{}{}
 }
 
-var _ element.Factory = finalObservationGateFactory{}
+var (
+	_ element.Factory         = finalObservationGateFactory{}
+	_ element.ConfigValidator = finalObservationGateFactory{}
+)
 var _ element.Runnable = (*finalObservationGateRunner)(nil)

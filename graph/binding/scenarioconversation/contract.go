@@ -26,6 +26,7 @@ import (
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 )
 
 const (
@@ -33,20 +34,22 @@ const (
 	ProfileName      = "openrealtime.scenario_conversation"
 	ProfileRevision  = uint64(2)
 
-	ASRReference          = "deployment.scenario-conversation.asr"
-	PolicyReference       = "deployment.scenario-conversation.semantic-policy"
-	ModelReference        = "deployment.scenario-conversation.model"
-	SilentModelReference  = "deployment.scenario-conversation.model-silent"
-	TTSReference          = "deployment.scenario-conversation.tts"
-	PlaybackReference     = "deployment.scenario-conversation.playback"
-	ToolReference         = "deployment.scenario-conversation.tools"
-	TargetReference       = "deployment.scenario-conversation.target"
-	LedgerReference       = "deployment.scenario-conversation.ledger"
-	ConfirmationReference = "deployment.scenario-conversation.confirmation"
+	ASRReference             = "deployment.scenario-conversation.asr"
+	SpeakerIdentityReference = "deployment.scenario-conversation.speaker-identity"
+	PolicyReference          = "deployment.scenario-conversation.semantic-policy"
+	ModelReference           = "deployment.scenario-conversation.model"
+	SilentModelReference     = "deployment.scenario-conversation.model-silent"
+	TTSReference             = "deployment.scenario-conversation.tts"
+	PlaybackReference        = "deployment.scenario-conversation.playback"
+	ToolReference            = "deployment.scenario-conversation.tools"
+	TargetReference          = "deployment.scenario-conversation.target"
+	LedgerReference          = "deployment.scenario-conversation.ledger"
+	ConfirmationReference    = "deployment.scenario-conversation.confirmation"
 
-	SourceMicrophone = "microphone"
-	SourceText       = "text"
-	SourceMessage    = "message"
+	SourceMicrophone   = "microphone"
+	SourceText         = "text"
+	SourceMessage      = "message"
+	SourceOtherSpeaker = voices.OtherSpeakerSource
 
 	defaultMediaMaxItems                = 32
 	defaultMediaMaxBytes                = 64 << 20
@@ -137,6 +140,17 @@ type TTSPlugin struct {
 	Factory    func(context.Context, legacy.Options) (v1.SpeechProvider, error)
 }
 
+// SpeakerIdentityPlugin is the optional exact speaker-embedding selection.
+// The factory creates one embedder per session; the recogniser that enrols and
+// compares voices is also session-local and is never shared across calls.
+type SpeakerIdentityPlugin struct {
+	Reference  string
+	Artifact   inspect.ArtifactIdentity
+	Descriptor v1.Descriptor
+	Model      string
+	Factory    func(context.Context, legacy.Options) (voices.Embedder, error)
+}
+
 // ToolDeclaration is the exact client-executed action surface admitted by one
 // profile. Dispatcher is deliberately absent: each mounted session installs
 // its own graph-authorized client rendezvous.
@@ -155,11 +169,12 @@ type ToolDeclaration struct {
 // use are separate: a plug-in may expose standing extraction while a profile
 // deliberately leaves it disabled.
 type SemanticAdmissionSelection struct {
-	StandingExtraction          bool    `json:"standing_extraction,omitempty"`
-	VerifyVoiceActivation       bool    `json:"verify_voice_activation,omitempty"`
-	VerifySilentAction          bool    `json:"verify_silent_action,omitempty"`
-	MinimumActivationConfidence float64 `json:"minimum_activation_confidence,omitempty"`
-	StandingMemory              int     `json:"standing_memory,omitempty"`
+	StandingExtraction          bool                                          `json:"standing_extraction,omitempty"`
+	VerifyVoiceActivation       bool                                          `json:"verify_voice_activation,omitempty"`
+	VerifySilentAction          bool                                          `json:"verify_silent_action,omitempty"`
+	MinimumActivationConfidence float64                                       `json:"minimum_activation_confidence,omitempty"`
+	StandingMemory              int                                           `json:"standing_memory,omitempty"`
+	TranscriptEvents            *policyelements.SemanticTranscriptEventConfig `json:"transcript_events,omitempty"`
 }
 
 func normalizeSemanticAdmissionSelection(
@@ -183,7 +198,27 @@ func normalizeSemanticAdmissionSelection(
 			"scenario conversation standing extraction was selected from a policy provider that does not declare it",
 		)
 	}
+	if selection.TranscriptEvents != nil {
+		selection.TranscriptEvents = cloneSemanticTranscriptEvents(selection.TranscriptEvents)
+		if err := policyelements.ValidateSemanticTranscriptEventConfig(*selection.TranscriptEvents); err != nil {
+			return SemanticAdmissionSelection{}, fmt.Errorf(
+				"scenario conversation transcript events: %w", err,
+			)
+		}
+	}
 	return selection, nil
+}
+
+func cloneSemanticTranscriptEvents(
+	source *policyelements.SemanticTranscriptEventConfig,
+) *policyelements.SemanticTranscriptEventConfig {
+	if source == nil {
+		return nil
+	}
+	result := *source
+	result.Partial.Acts = slices.Clone(source.Partial.Acts)
+	result.Final.Acts = slices.Clone(source.Final.Acts)
+	return &result
 }
 
 // PluginConfig is the immutable resource-free contribution retained by a
@@ -193,6 +228,7 @@ type PluginConfig struct {
 	DependencyArtifact      inspect.ArtifactIdentity
 	Architecture            projectarch.Definition
 	ASR                     ASRPlugin
+	SpeakerIdentity         *SpeakerIdentityPlugin
 	Policy                  PolicyPlugin
 	SemanticAdmission       SemanticAdmissionSelection
 	Model                   ModelPlugin
@@ -239,7 +275,15 @@ func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
 
 func clonePluginConfig(source PluginConfig) PluginConfig {
 	result := source
+	result.SemanticAdmission.TranscriptEvents = cloneSemanticTranscriptEvents(
+		source.SemanticAdmission.TranscriptEvents,
+	)
 	result.ASR.Descriptor.Capabilities = maps.Clone(source.ASR.Descriptor.Capabilities)
+	if source.SpeakerIdentity != nil {
+		speaker := *source.SpeakerIdentity
+		speaker.Descriptor = cloneV1Descriptor(source.SpeakerIdentity.Descriptor)
+		result.SpeakerIdentity = &speaker
+	}
 	result.TTS.Descriptor.Capabilities = maps.Clone(source.TTS.Descriptor.Capabilities)
 	result.Tools = cloneToolDeclarations(source.Tools)
 	result.Target.Sources = slices.Clone(source.Target.Sources)
@@ -258,6 +302,21 @@ func validatePluginConfig(config PluginConfig) error {
 	}
 	if err := validateASRPlugin(config.ASR); err != nil {
 		return err
+	}
+	expectsSpeakerIdentity := false
+	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil {
+		expectsSpeakerIdentity = evidence.SpeakerIdentity
+	}
+	if expectsSpeakerIdentity != (config.SpeakerIdentity != nil) {
+		return fmt.Errorf(
+			"scenario conversation architecture speaker_identity=%t but speaker identity plugin present=%t",
+			expectsSpeakerIdentity, config.SpeakerIdentity != nil,
+		)
+	}
+	if config.SpeakerIdentity != nil {
+		if err := validateSpeakerIdentityPlugin(*config.SpeakerIdentity); err != nil {
+			return err
+		}
 	}
 	if err := validatePolicyPlugin(config.Policy); err != nil {
 		return err
@@ -377,6 +436,28 @@ func validatePolicyPlugin(plugin PolicyPlugin) error {
 	}
 	if err := plugin.Descriptor.Validate(); err != nil {
 		return fmt.Errorf("scenario conversation semantic policy descriptor: %w", err)
+	}
+	return nil
+}
+
+func validateSpeakerIdentityPlugin(plugin SpeakerIdentityPlugin) error {
+	if !canonicalIdentity(plugin.Reference) || plugin.Factory == nil {
+		return errors.New("scenario conversation speaker identity plugin requires a canonical reference and factory")
+	}
+	if plugin.Reference != SpeakerIdentityReference {
+		return fmt.Errorf(
+			"scenario conversation speaker identity reference %q, want exact graph selection %q",
+			plugin.Reference, SpeakerIdentityReference,
+		)
+	}
+	if err := plugin.Artifact.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation speaker identity artifact: %w", err)
+	}
+	if err := plugin.Descriptor.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation speaker identity descriptor: %w", err)
+	}
+	if !canonicalIdentity(plugin.Model) {
+		return errors.New("scenario conversation speaker identity plugin requires an exact model")
 	}
 	return nil
 }

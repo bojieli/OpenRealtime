@@ -65,9 +65,10 @@ func TestEnergyGateRejectsMalformedConfiguration(t *testing.T) {
 }
 
 type revisionASR struct {
-	revisions []v1.PerceptionRevision
-	index     int
-	final     string
+	revisions   []v1.PerceptionRevision
+	index       int
+	final       string
+	finalSource string
 }
 
 func (asr *revisionASR) Descriptor() v1.Descriptor {
@@ -84,7 +85,7 @@ func (asr *revisionASR) PushFrame(context.Context, v1.AudioFrame) ([]v1.Percepti
 }
 
 func (asr *revisionASR) Finalize(context.Context, uint64) (v1.PerceptionRevision, error) {
-	return v1.PerceptionRevision{StableText: asr.final, Final: true}, nil
+	return v1.PerceptionRevision{StableText: asr.final, Source: asr.finalSource, Final: true}, nil
 }
 
 func audioFrame() perception.Frame {
@@ -141,6 +142,29 @@ func TestAudioObserverProducesProvisionalRevisionsAndOneFinal(t *testing.T) {
 	}
 	if final[0].Supersedes == 0 {
 		t.Fatal("the final observation must supersede the partials it replaces")
+	}
+}
+
+func TestAudioObserverPreservesAttributedRevisionSource(t *testing.T) {
+	const source = "someone else in the room"
+	asr := &revisionASR{
+		revisions: []v1.PerceptionRevision{{StableText: "are you", Source: source}},
+		final:     "are you getting milk?", finalSource: source,
+	}
+	observer, err := perception.NewAudioObserver(perception.AudioConfig{
+		Provider: func() (v1.PerceptionProvider, error) { return asr, nil },
+		Name:     "asr", Source: "microphone",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial, err := observer.Observe(t.Context(), []perception.Frame{audioFrame()})
+	if err != nil || len(partial) != 1 || partial[0].Source != source {
+		t.Fatalf("attributed partial = %+v, err=%v", partial, err)
+	}
+	final, err := observer.Flush(t.Context())
+	if err != nil || len(final) != 1 || final[0].Source != source {
+		t.Fatalf("attributed final = %+v, err=%v", final, err)
 	}
 }
 
@@ -688,6 +712,20 @@ func TestObservationValidationRejectsForgedProvenance(t *testing.T) {
 	speech := perception.Observation{Text: "hello", Observer: "audio", Authority: trajectory.AuthorityUser}
 	if speech.Meta() != nil {
 		t.Fatal("plain user speech needs no extra provenance")
+	}
+	microphone := perception.Observation{
+		Text: "hello", Observer: "audio", Source: "microphone", Authority: trajectory.AuthorityUser,
+	}
+	if microphone.Meta() != nil {
+		t.Fatal("ordinary microphone speech needs no extra provenance")
+	}
+	otherSpeaker := perception.Observation{
+		Text: "hello", Observer: "audio", Source: "someone else in the room",
+		Authority: trajectory.AuthorityUser,
+	}
+	if meta := otherSpeaker.Meta(); meta == nil || meta.Source != otherSpeaker.Source ||
+		meta.Authority != trajectory.AuthorityUser {
+		t.Fatalf("speaker attribution did not survive trajectory metadata: %+v", meta)
 	}
 }
 

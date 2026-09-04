@@ -1095,6 +1095,59 @@
       }
     },
     {
+      "id": "cascade.composed-policy-direct-visual-speaker",
+      "revision": 1,
+      "family": "cascade",
+      "stage": "experimental",
+      "derived_from": [
+        {"id": "cascade.composed-policy-direct-visual", "revision": 1}
+      ],
+      "summary": "Predicate endpoint and overlap control is composed with a transcript policy that receives exact retained pixels and speaker identity.",
+      "change": "Add only session-local speaker-identity evidence to the direct-visual composed controller.",
+      "ownership": {
+        "perception": "engine",
+        "fast_cognition": "engine",
+        "slow_cognition": "engine",
+        "action": "engine",
+        "interaction": "engine",
+        "floor": "engine"
+      },
+      "requires": {
+        "audio_input": true,
+        "audio_output": true,
+        "transcription": true,
+        "turn_generation": true,
+        "visual_input": true,
+        "concurrent_io": true,
+        "native_floor": false,
+        "native_interaction": false,
+        "interaction_acts": false,
+        "text_injection": false
+      },
+      "interaction": {
+        "mode": "composed-policy",
+        "evidence": "transcript",
+        "evidence_capabilities": {
+          "transcript": true,
+          "acoustic_activity": true,
+          "silence_clock": true,
+          "conversation_state": true,
+          "tool_state": true,
+          "speaker_identity": true,
+          "addressing": false,
+          "visual_description": false,
+          "direct_visual_input": true,
+          "native_model_state": false
+        },
+        "transport": "in-process",
+        "handoff": "direct",
+        "control": {
+          "selectors": {"predicates": true, "text_policy": true, "native": false, "remote": false},
+          "arbitration": "predicate-floor"
+        }
+      }
+    },
+    {
       "id": "cascade.text-policy-visual-speaker",
       "revision": 2,
       "family": "cascade",

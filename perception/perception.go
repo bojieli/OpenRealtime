@@ -174,12 +174,26 @@ func (observation Observation) Producer() trajectory.Producer {
 // Meta renders the trajectory observation provenance, or nil for plain user
 // speech, which is the pre-existing shape of the audio path.
 func (observation Observation) Meta() *trajectory.ObservationMeta {
-	if observation.Authority == trajectory.AuthorityUser && len(observation.Media) == 0 {
+	if observation.Authority == trajectory.AuthorityUser && len(observation.Media) == 0 &&
+		ordinaryUserSource(observation.Source) {
 		return nil
 	}
 	return &trajectory.ObservationMeta{
 		Observer: observation.Observer, Source: observation.Source,
 		Authority: observation.Authority, Media: slices.Clone(observation.Media),
+	}
+}
+
+// ordinaryUserSource identifies the historical, un-attributed user lanes.
+// Speaker attribution remains user-authority input, but its non-default source
+// must survive trajectory commit so interaction and cognition agree about who
+// spoke. Empty, microphone, voice, and text retain the compact legacy shape.
+func ordinaryUserSource(source string) bool {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "", "microphone", "voice", "text":
+		return true
+	default:
+		return false
 	}
 }
 

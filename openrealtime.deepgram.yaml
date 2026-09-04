@@ -13,11 +13,13 @@ listen: 127.0.0.1:8875
 asr:
   provider: deepgram
   model: nova-3
-  # English is the measured-safe default. Nova-3's current multi mode covers
-  # English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese,
-  # Italian, and Dutch; it does not cover Mandarin. Use multi only within that
-  # set, or choose a locale such as zh-CN for a Mandarin stream.
-  language: en-US
+  # Nova-3's native multi mode does not cover Mandarin. A comma-separated pair
+  # is OpenRealtime's explicit dual-stream mode: both locale-restricted
+  # Deepgram streams receive the same audio. A high-confidence Han reading
+  # selects zh-CN; a high-confidence primary reading selects en-US. The lane is
+  # then fixed for that utterance, so low-confidence cross-language phonetics
+  # never reach the interaction policy.
+  language: en-US,zh-CN
   cadence: 100ms
   endpointing: 300ms
 

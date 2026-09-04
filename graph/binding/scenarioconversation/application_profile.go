@@ -20,11 +20,12 @@ import (
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 )
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(6)
+	ApplicationFormatVersion      = uint64(8)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -36,6 +37,17 @@ type ApplicationASRSelection struct {
 	Reference     string                   `json:"reference"`
 	Artifact      inspect.ArtifactIdentity `json:"artifact"`
 	Descriptor    v1.Descriptor            `json:"descriptor"`
+	Configuration json.RawMessage          `json:"configuration,omitempty"`
+}
+
+// ApplicationSpeakerIdentitySelection pins the optional session-local
+// speaker embedder. Descriptor identifies the adapter contract; Model pins the
+// independently deployed embedding weights.
+type ApplicationSpeakerIdentitySelection struct {
+	Reference     string                   `json:"reference"`
+	Artifact      inspect.ArtifactIdentity `json:"artifact"`
+	Descriptor    v1.Descriptor            `json:"descriptor"`
+	Model         string                   `json:"model"`
 	Configuration json.RawMessage          `json:"configuration,omitempty"`
 }
 
@@ -85,20 +97,21 @@ func (selection ApplicationGateSelection) gateConfig() perception.GateConfig {
 // ApplicationConfig is the complete plugin-owned, resource-free selection
 // carried by a generic graph launch profile.
 type ApplicationConfig struct {
-	FormatVersion           uint64                      `json:"format_version"`
-	Architecture            legacy.ArchitectureIdentity `json:"architecture"`
-	ASR                     ApplicationASRSelection     `json:"asr"`
-	Policy                  ApplicationPolicySelection  `json:"policy"`
-	SemanticAdmission       SemanticAdmissionSelection  `json:"semantic_admission"`
-	Model                   ApplicationModelSelection   `json:"model"`
-	SilentModel             ApplicationModelSelection   `json:"silent_model"`
-	TTS                     ApplicationTTSSelection     `json:"tts"`
-	Tools                   []ToolDeclaration           `json:"tools"`
-	Target                  computeruse.Target          `json:"target"`
-	Gate                    ApplicationGateSelection    `json:"gate"`
-	Media                   MediaLimits                 `json:"media"`
-	MaxOutputTokens         int                         `json:"max_output_tokens"`
-	ContinuationInstruction string                      `json:"continuation_instruction,omitempty"`
+	FormatVersion           uint64                               `json:"format_version"`
+	Architecture            legacy.ArchitectureIdentity          `json:"architecture"`
+	ASR                     ApplicationASRSelection              `json:"asr"`
+	SpeakerIdentity         *ApplicationSpeakerIdentitySelection `json:"speaker_identity,omitempty"`
+	Policy                  ApplicationPolicySelection           `json:"policy"`
+	SemanticAdmission       SemanticAdmissionSelection           `json:"semantic_admission"`
+	Model                   ApplicationModelSelection            `json:"model"`
+	SilentModel             ApplicationModelSelection            `json:"silent_model"`
+	TTS                     ApplicationTTSSelection              `json:"tts"`
+	Tools                   []ToolDeclaration                    `json:"tools"`
+	Target                  computeruse.Target                   `json:"target"`
+	Gate                    ApplicationGateSelection             `json:"gate"`
+	Media                   MediaLimits                          `json:"media"`
+	MaxOutputTokens         int                                  `json:"max_output_tokens"`
+	ContinuationInstruction string                               `json:"continuation_instruction,omitempty"`
 }
 
 // DecodeApplicationConfig strictly decodes and validates an exact selection.
@@ -131,6 +144,23 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 	}
 	if err := validateApplicationASR(config.ASR); err != nil {
 		return ApplicationConfig{}, err
+	}
+	architecture, err := resolveScenarioArchitecture(config.Architecture)
+	if err != nil {
+		return ApplicationConfig{}, err
+	}
+	expectsSpeakerIdentity := architecture.Interaction.EvidenceCapabilities != nil &&
+		architecture.Interaction.EvidenceCapabilities.SpeakerIdentity
+	if expectsSpeakerIdentity != (config.SpeakerIdentity != nil) {
+		return ApplicationConfig{}, fmt.Errorf(
+			"scenario conversation application architecture speaker_identity=%t but speaker identity selection present=%t",
+			expectsSpeakerIdentity, config.SpeakerIdentity != nil,
+		)
+	}
+	if config.SpeakerIdentity != nil {
+		if err := validateApplicationSpeakerIdentity(*config.SpeakerIdentity); err != nil {
+			return ApplicationConfig{}, err
+		}
 	}
 	if err := validateApplicationPolicy(config.Policy); err != nil {
 		return ApplicationConfig{}, err
@@ -185,6 +215,22 @@ func validateApplicationASR(selection ApplicationASRSelection) error {
 	}
 	if err := selection.Descriptor.Validate(); err != nil {
 		return fmt.Errorf("scenario conversation application ASR descriptor: %w", err)
+	}
+	return nil
+}
+
+func validateApplicationSpeakerIdentity(selection ApplicationSpeakerIdentitySelection) error {
+	if !canonicalIdentity(selection.Reference) {
+		return errors.New("scenario conversation application speaker identity reference is not canonical")
+	}
+	if err := selection.Artifact.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation application speaker identity artifact: %w", err)
+	}
+	if err := selection.Descriptor.Validate(); err != nil {
+		return fmt.Errorf("scenario conversation application speaker identity descriptor: %w", err)
+	}
+	if !canonicalIdentity(selection.Model) {
+		return errors.New("scenario conversation application speaker identity model is not canonical")
 	}
 	return nil
 }
@@ -250,6 +296,14 @@ type ASRFactoryRegistration struct {
 	ReadinessConfiguration func(context.Context, json.RawMessage) error
 }
 
+type SpeakerIdentityFactoryRegistration struct {
+	ApplicationSpeakerIdentitySelection
+	Factory                func(context.Context, legacy.Options) (voices.Embedder, error)
+	DescribeConfiguration  func(json.RawMessage) (v1.Descriptor, string, error)
+	FactoryConfiguration   func(context.Context, legacy.Options, json.RawMessage) (voices.Embedder, error)
+	ReadinessConfiguration func(context.Context, json.RawMessage) error
+}
+
 type ModelFactoryRegistration struct {
 	ApplicationModelSelection
 	Factory                func(context.Context, legacy.Options) (continuation.Provider, error)
@@ -283,6 +337,7 @@ type ApplicationRegistrationConfig struct {
 	RuntimeArtifact     inspect.ArtifactIdentity
 	DependencyArtifact  inspect.ArtifactIdentity
 	ASR                 []ASRFactoryRegistration
+	SpeakerIdentity     []SpeakerIdentityFactoryRegistration
 	Policies            []PolicyFactoryRegistration
 	Models              []ModelFactoryRegistration
 	TTS                 []TTSFactoryRegistration
@@ -318,12 +373,16 @@ func NewApplicationRegistration(
 	}
 	if len(source.ASR) == 0 || len(source.Policies) == 0 || len(source.Models) == 0 || len(source.TTS) == 0 ||
 		len(source.ASR) > maximumApplicationProviders || len(source.Policies) > maximumApplicationProviders || len(source.Models) > maximumApplicationProviders ||
-		len(source.TTS) > maximumApplicationProviders {
+		len(source.TTS) > maximumApplicationProviders || len(source.SpeakerIdentity) > maximumApplicationProviders {
 		return launchprofile.Registration{}, errors.New(
 			"scenario conversation application registration requires bounded ASR, policy, model, and TTS inventories",
 		)
 	}
 	asr, err := snapshotASRRegistrations(source.ASR)
+	if err != nil {
+		return launchprofile.Registration{}, err
+	}
+	speakerIdentities, err := snapshotSpeakerIdentityRegistrations(source.SpeakerIdentity)
 	if err != nil {
 		return launchprofile.Registration{}, err
 	}
@@ -368,6 +427,32 @@ func NewApplicationRegistration(
 			asrDescriptor, asrFactory, asrReady, err := resolveASRRegistration(asrRegistration, config.ASR)
 			if err != nil {
 				return graphlaunch.Config{}, err
+			}
+			var speakerPlugin *SpeakerIdentityPlugin
+			var speakerReady func(context.Context) error
+			if config.SpeakerIdentity != nil {
+				speakerRegistration, found := speakerIdentities[config.SpeakerIdentity.Reference]
+				if !found {
+					return graphlaunch.Config{}, fmt.Errorf(
+						"scenario conversation speaker identity registry is missing %q", config.SpeakerIdentity.Reference,
+					)
+				}
+				if speakerRegistration.Artifact != config.SpeakerIdentity.Artifact {
+					return graphlaunch.Config{}, fmt.Errorf(
+						"scenario conversation speaker identity %q artifact drifted", config.SpeakerIdentity.Reference,
+					)
+				}
+				speakerDescriptor, speakerModel, speakerFactory, ready, resolveErr :=
+					resolveSpeakerIdentityRegistration(speakerRegistration, *config.SpeakerIdentity)
+				if resolveErr != nil {
+					return graphlaunch.Config{}, resolveErr
+				}
+				speakerReady = ready
+				speakerPlugin = &SpeakerIdentityPlugin{
+					Reference: SpeakerIdentityReference, Artifact: speakerRegistration.Artifact,
+					Descriptor: cloneV1Descriptor(speakerDescriptor), Model: speakerModel,
+					Factory: speakerFactory,
+				}
 			}
 			policyRegistration, found := policies[config.Policy.Reference]
 			if !found {
@@ -447,6 +532,7 @@ func NewApplicationRegistration(
 				Architecture: architecture,
 				ASR: ASRPlugin{Reference: ASRReference, Artifact: asrRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
+				SpeakerIdentity: speakerPlugin,
 				Policy: PolicyPlugin{Reference: PolicyReference, Artifact: policyRegistration.Artifact,
 					Descriptor: policyDescriptor, Factory: policyFactory},
 				SemanticAdmission: config.SemanticAdmission,
@@ -469,6 +555,10 @@ func NewApplicationRegistration(
 				if asrReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
 						graphlaunch.ReadinessCheck{Name: "asr:" + config.ASR.Reference, Check: asrReady})
+				}
+				if speakerReady != nil {
+					resolved.Readiness = append(resolved.Readiness,
+						graphlaunch.ReadinessCheck{Name: "speaker-identity:" + config.SpeakerIdentity.Reference, Check: speakerReady})
 				}
 				if policyReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
@@ -516,7 +606,8 @@ func resolveScenarioArchitecture(
 	ref := definition.Ref()
 	baseline := ref == (projectarch.Ref{ID: "cascade.composed-policy", Revision: 1})
 	directVisual := ref == (projectarch.Ref{ID: "cascade.composed-policy-direct-visual", Revision: 1})
-	if (!baseline && !directVisual) ||
+	directVisualSpeaker := ref == (projectarch.Ref{ID: "cascade.composed-policy-direct-visual-speaker", Revision: 1})
+	if (!baseline && !directVisual && !directVisualSpeaker) ||
 		definition.Interaction.Mode != projectarch.InteractionComposed ||
 		definition.Interaction.EvidenceCapabilities == nil ||
 		definition.Interaction.Control == nil {
@@ -526,6 +617,40 @@ func resolveScenarioArchitecture(
 		)
 	}
 	return definition, nil
+}
+
+func resolveSpeakerIdentityRegistration(
+	registration SpeakerIdentityFactoryRegistration, selection ApplicationSpeakerIdentitySelection,
+) (v1.Descriptor, string, func(context.Context, legacy.Options) (voices.Embedder, error), func(context.Context) error, error) {
+	if registration.DescribeConfiguration == nil {
+		if len(selection.Configuration) != 0 ||
+			!sameV1Descriptor(registration.Descriptor, selection.Descriptor) ||
+			registration.Model != selection.Model {
+			return v1.Descriptor{}, "", nil, nil, fmt.Errorf(
+				"scenario conversation speaker identity %q artifact, descriptor, or model drifted", selection.Reference,
+			)
+		}
+		return cloneV1Descriptor(registration.Descriptor), registration.Model, registration.Factory, nil, nil
+	}
+	configuration := slices.Clone(selection.Configuration)
+	descriptor, model, err := registration.DescribeConfiguration(configuration)
+	if err != nil {
+		return v1.Descriptor{}, "", nil, nil, fmt.Errorf(
+			"scenario conversation speaker identity %q configuration: %w", selection.Reference, err,
+		)
+	}
+	if !sameV1Descriptor(descriptor, selection.Descriptor) || model != selection.Model {
+		return v1.Descriptor{}, "", nil, nil, fmt.Errorf(
+			"scenario conversation speaker identity %q descriptor or model drifted from its configuration", selection.Reference,
+		)
+	}
+	return cloneV1Descriptor(descriptor), model,
+		func(ctx context.Context, options legacy.Options) (voices.Embedder, error) {
+			return registration.FactoryConfiguration(ctx, options, slices.Clone(configuration))
+		},
+		func(ctx context.Context) error {
+			return registration.ReadinessConfiguration(ctx, slices.Clone(configuration))
+		}, nil
 }
 
 func resolveASRRegistration(
@@ -687,6 +812,37 @@ func snapshotASRRegistrations(source []ASRFactoryRegistration) (map[string]ASRFa
 	return result, nil
 }
 
+func snapshotSpeakerIdentityRegistrations(
+	source []SpeakerIdentityFactoryRegistration,
+) (map[string]SpeakerIdentityFactoryRegistration, error) {
+	result := make(map[string]SpeakerIdentityFactoryRegistration, len(source))
+	for index, registration := range source {
+		if err := validateApplicationProviderIdentity(registration.Reference, registration.Artifact, "speaker identity"); err != nil {
+			return nil, fmt.Errorf("scenario conversation speaker identity registration %d: %w", index, err)
+		}
+		parameterized := registration.DescribeConfiguration != nil ||
+			registration.FactoryConfiguration != nil || registration.ReadinessConfiguration != nil
+		if parameterized {
+			if registration.DescribeConfiguration == nil || registration.FactoryConfiguration == nil ||
+				registration.ReadinessConfiguration == nil || registration.Factory != nil ||
+				len(registration.Configuration) != 0 || !zeroV1Descriptor(registration.Descriptor) ||
+				registration.Model != "" {
+				return nil, fmt.Errorf("scenario conversation speaker identity registration %d has a partial or mixed parameterized factory", index)
+			}
+		} else if registration.Factory == nil {
+			return nil, fmt.Errorf("scenario conversation speaker identity registration %d has a nil factory", index)
+		} else if err := validateApplicationSpeakerIdentity(registration.ApplicationSpeakerIdentitySelection); err != nil {
+			return nil, fmt.Errorf("scenario conversation speaker identity registration %d: %w", index, err)
+		}
+		if _, duplicate := result[registration.Reference]; duplicate {
+			return nil, fmt.Errorf("scenario conversation speaker identity reference %q is registered more than once", registration.Reference)
+		}
+		registration.Descriptor = cloneV1Descriptor(registration.Descriptor)
+		result[registration.Reference] = registration
+	}
+	return result, nil
+}
+
 func snapshotPolicyRegistrations(source []PolicyFactoryRegistration) (map[string]PolicyFactoryRegistration, error) {
 	result := make(map[string]PolicyFactoryRegistration, len(source))
 	for index, registration := range source {
@@ -797,8 +953,17 @@ func sameV1Descriptor(left, right v1.Descriptor) bool {
 
 func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
 	result := source
+	result.SemanticAdmission.TranscriptEvents = cloneSemanticTranscriptEvents(
+		source.SemanticAdmission.TranscriptEvents,
+	)
 	result.ASR.Descriptor = cloneV1Descriptor(source.ASR.Descriptor)
 	result.ASR.Configuration = slices.Clone(source.ASR.Configuration)
+	if source.SpeakerIdentity != nil {
+		speaker := *source.SpeakerIdentity
+		speaker.Descriptor = cloneV1Descriptor(source.SpeakerIdentity.Descriptor)
+		speaker.Configuration = slices.Clone(source.SpeakerIdentity.Configuration)
+		result.SpeakerIdentity = &speaker
+	}
 	result.Policy.Configuration = slices.Clone(source.Policy.Configuration)
 	result.Model.Configuration = slices.Clone(source.Model.Configuration)
 	result.SilentModel.Configuration = slices.Clone(source.SilentModel.Configuration)

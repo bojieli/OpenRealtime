@@ -35,6 +35,13 @@ type serveASRConfiguration struct {
 	CadenceMS         int64    `json:"cadence_ms"`
 }
 
+type serveSpeakerIdentityConfiguration struct {
+	FormatVersion    uint64 `json:"format_version"`
+	Endpoint         string `json:"endpoint"`
+	Model            string `json:"model"`
+	RequestTimeoutMS int64  `json:"request_timeout_ms"`
+}
+
 type serveModelConfiguration struct {
 	FormatVersion    uint64   `json:"format_version"`
 	Model            string   `json:"model"`
@@ -128,6 +135,33 @@ func decodeServeASRConfiguration(
 		Endpointing:     time.Duration(config.EndpointingMS) * time.Millisecond,
 		RequestTimeout:  time.Duration(config.RequestTimeoutMS) * time.Millisecond,
 	}, nil
+}
+
+func decodeServeSpeakerIdentityConfiguration(
+	source json.RawMessage,
+) (serveSpeakerIdentityConfiguration, error) {
+	var config serveSpeakerIdentityConfiguration
+	if err := elementconfig.Decode(source, &config); err != nil {
+		return config, fmt.Errorf("decode speaker identity configuration: %w", err)
+	}
+	if config.FormatVersion != serveProviderConfigurationVersion {
+		return config, fmt.Errorf("speaker identity configuration format is %d, want %d",
+			config.FormatVersion, serveProviderConfigurationVersion)
+	}
+	if err := exactEndpoint("speaker identity endpoint", config.Endpoint, false); err != nil {
+		return config, err
+	}
+	parsed, err := url.Parse(config.Endpoint)
+	if err != nil || parsed.Path != "/embed" || parsed.RawQuery != "" {
+		return config, errors.New("speaker identity endpoint must end exactly in /embed")
+	}
+	if err := exactNonempty("speaker identity model", config.Model); err != nil {
+		return config, err
+	}
+	if err := boundedMilliseconds("speaker identity request_timeout_ms", config.RequestTimeoutMS, false); err != nil {
+		return config, err
+	}
+	return config, nil
 }
 
 func decodeServeModelConfiguration(

@@ -16,6 +16,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -42,7 +43,7 @@ func TestSessionInvocationDescriptorOwnsDynamicSettingsAndActivation(t *testing.
 	}
 	want := map[string]string{
 		"update":    "Event<policy.SessionInvocationUpdate>",
-		"committed": "Event<trajectory.ObservationCommitOutcome>",
+		"committed": "Event<policy.SemanticGrant>",
 		"create":    "Trigger<policy.ResponseCreate>",
 		"cancel":    "Interrupt<policy.GenerationAddress>",
 		"trigger":   "Trigger<cognition.Generate>",
@@ -92,8 +93,8 @@ func TestSessionInvocationSnapshotsExactInstructionsToolsAndCommittedBasis(t *te
 
 	commit := committedObservation(t, "microphone", "speech-final", "trajectory-user", "trajectory-state", 1, 9)
 	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
-		Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit-user",
-		SessionID: "session-policy", Payload: commit,
+		Type: policyelements.SemanticGrantType(), ItemID: "commit-user",
+		SessionID: "session-policy", Payload: semanticGrant(commit, interaction.ActAnswer),
 	})
 	trigger := receivePolicy(t, harness.egress(t, "trigger"))
 	authority := receivePolicy(t, harness.egress(t, "authority"))
@@ -179,6 +180,37 @@ func TestSessionInvocationManualCreateIsVisibleAndCarriesNoObservationAuthority(
 	assertNoPolicyEnvelope(t, harness.egress(t, "trigger"))
 }
 
+func TestSessionInvocationExecutesTrustedPostCommitSilencePurpose(t *testing.T) {
+	harness := mountSessionInvocation(t)
+	defer harness.stop(t)
+	_ = receivePolicy(t, harness.egress(t, "state"))
+	installSessionInvocation(t, harness, 1, "Be concise and follow the user's standing requests.", nil)
+	version := uint64(4)
+	sendPolicy(t, harness.ingress(t, "create"), element.Envelope{
+		Type: policyelements.ResponseCreateType(), ItemID: "quiet-create",
+		SessionID: "session-policy", Payload: policyelements.ResponseCreate{
+			ResponseID: "quiet-response", ExpectedContextVersion: &version,
+			ExpectedContextItemID: "trajectory-state-4",
+			TrustedPurpose:        policyelements.ResponseCreatePurposePostCommitSilence,
+		},
+	})
+	trigger := receivePolicy(t, harness.egress(t, "trigger"))
+	payload := trigger.Payload.(cognitionelements.Generate)
+	if !strings.HasPrefix(payload.Invocation.Instruction,
+		"Be concise and follow the user's standing requests.\n\nTrusted runtime purpose:") ||
+		!strings.Contains(payload.Invocation.Instruction, "Execute that due standing action now") ||
+		!strings.Contains(payload.Invocation.Instruction, "Do not merely acknowledge") ||
+		payload.Invocation.SourceRevision != 0 || len(payload.Invocation.Tools) != 0 {
+		t.Fatalf("trusted quiet invocation = %+v", payload.Invocation)
+	}
+	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
+	state := receivePolicy(t, harness.egress(t, "state")).Payload.(policyelements.SessionInvocationState)
+	if outcome.Kind != policyelements.SessionInvocationEmitted || outcome.Operation != "create" ||
+		state.Emitted != 1 || state.ContextVersion != version {
+		t.Fatalf("trusted quiet outcome=%+v state=%+v", outcome, state)
+	}
+}
+
 func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testing.T) {
 	t.Run("commit before settings", func(t *testing.T) {
 		harness := mountSessionInvocation(t)
@@ -186,8 +218,8 @@ func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testin
 		_ = receivePolicy(t, harness.egress(t, "state"))
 		commit := committedObservation(t, "microphone", "speech", "trajectory-user", "state", 1, 1)
 		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
-			Type: stateelements.ObservationCommitOutcomeType(), ItemID: "commit",
-			SessionID: "session-policy", Payload: commit,
+			Type: policyelements.SemanticGrantType(), ItemID: "commit",
+			SessionID: "session-policy", Payload: semanticGrant(commit, interaction.ActAnswer),
 		})
 		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
 		_ = receivePolicy(t, harness.egress(t, "state"))
@@ -310,6 +342,14 @@ func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testin
 	}
 }
 
+func semanticGrant(
+	commit stateelements.ObservationCommitOutcome, act interaction.Act,
+) policyelements.SemanticGrant {
+	return policyelements.SemanticGrant{
+		Commit: commit, Act: act, DecisionItemID: "semantic-decision-for-" + commit.TriggerItemID,
+	}
+}
+
 func TestSessionInvocationFactoryRejectsUnknownConfig(t *testing.T) {
 	registrations, err := policyelements.FactoryRegistrations()
 	if err != nil {
@@ -387,7 +427,7 @@ func assertSessionInvocationLiveResolution(t *testing.T, mounted *graphruntime.M
 		resolution := mounted.Live().Nodes["policy"].Resolution
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/policy.SessionInvocation" &&
-			resolution.Runtime.Revision == "implementation:2" {
+			resolution.Runtime.Revision == "implementation:3" {
 			return
 		}
 		if time.Now().After(deadline) {

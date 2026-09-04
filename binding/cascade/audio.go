@@ -609,6 +609,16 @@ func (runtime *runtime) onUserSpeechStopped(ctx context.Context, utteranceID str
 		})
 		runtime.audio.Reset()
 	}
+	// Speaker comparison runs beside recognition so it never delays a partial.
+	// At the final event it becomes authorization evidence: an answer selected
+	// while the comparison is still in flight is an answer attributed to the
+	// prior (the user), even when the local model identifies another voice a few
+	// milliseconds later. Join only work that is already running and keep the
+	// live-path bound small; short speech for which no comparison started stays
+	// Unknown rather than being guessed at.
+	speakerContext, cancelSpeaker := context.WithTimeout(ctx, 100*time.Millisecond)
+	runtime.voices.Await(speakerContext)
+	cancelSpeaker()
 	runtime.policies.Trigger.Reset()
 	runtime.policies.Preparation.Reset()
 	runtime.audioMu.Lock()
@@ -668,7 +678,13 @@ func (runtime *runtime) observeAudio(
 	// this goroutine: the verdict is read by the situation, and one that
 	// arrives a revision late costs nothing while a request that blocks costs
 	// every turn.
-	runtime.voices.Hear(ctx, frames)
+	// Speaker embedding deliberately outlives this one Audio call. The graph
+	// compatibility boundary cancels a call-scoped context as soon as dispatch
+	// returns, so giving that context to the asynchronous comparison cancels
+	// every request before it can publish a verdict. The runtime context has the
+	// same session lifetime as the recogniser and is canceled when the session
+	// closes.
+	runtime.voices.Hear(runtime.ctx, frames)
 	began := time.Now()
 	correlationID := runtime.currentUtterance()
 	runtime.debug(ctx, binding.DebugEvent{

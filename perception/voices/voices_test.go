@@ -14,6 +14,18 @@ type scripted struct {
 	calls   int
 }
 
+type delayed struct {
+	started chan struct{}
+	release chan struct{}
+	vector  []float32
+}
+
+func (embedder *delayed) Embed(context.Context, []byte, uint32) ([]float32, error) {
+	close(embedder.started)
+	<-embedder.release
+	return embedder.vector, nil
+}
+
 func (s *scripted) Embed(context.Context, []byte, uint32) ([]float32, error) {
 	if s.calls >= len(s.vectors) {
 		return nil, nil
@@ -67,6 +79,32 @@ func TestADifferentVoiceIsReportedAsDifferent(t *testing.T) {
 	recogniser.Hear(context.Background(), enough())
 	if got := settle(t, recogniser, voices.Different); got != voices.Different {
 		t.Fatalf("a stranger was reported as %q", got)
+	}
+}
+
+func TestAwaitJoinsAComparisonAlreadyInFlight(t *testing.T) {
+	embedder := &delayed{
+		started: make(chan struct{}), release: make(chan struct{}), vector: []float32{1, 0, 0},
+	}
+	recogniser := voices.New(embedder, voices.DefaultThreshold, time.Second)
+	recogniser.Begin("item-1")
+	recogniser.Hear(context.Background(), enough())
+	<-embedder.started
+
+	result := make(chan voices.Verdict, 1)
+	go func() {
+		wait, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		result <- recogniser.Await(wait)
+	}()
+	select {
+	case verdict := <-result:
+		t.Fatalf("Await returned %q before the comparison settled", verdict)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(embedder.release)
+	if verdict := <-result; verdict != voices.Familiar {
+		t.Fatalf("Await returned %q after enrolment settled", verdict)
 	}
 }
 

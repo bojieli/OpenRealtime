@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	legacyaction "github.com/bojieli/OpenRealtime/action"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
@@ -24,6 +26,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -153,6 +156,7 @@ type sessionBundle struct {
 	playback     *sessionPlaybackSink
 	store        *trajectory.Store
 	services     map[string]any
+	speaker      io.Closer
 }
 
 func newSessionBundle(
@@ -191,11 +195,37 @@ func newSessionBundle(
 		mediaBridge.Close(err)
 		return nil, err
 	}
+	var speakerRecogniser *voices.Recogniser
+	var speakerCloser io.Closer
+	if config.SpeakerIdentity != nil {
+		embedder, err := config.SpeakerIdentity.Factory(ctx, options)
+		if err != nil {
+			mediaBridge.Close(err)
+			return nil, fmt.Errorf("open scenario conversation speaker identity: %w", err)
+		}
+		if embedder == nil {
+			mediaBridge.Close(errors.New("speaker identity factory returned nil"))
+			return nil, errors.New("scenario conversation speaker identity factory returned nil")
+		}
+		if closer, ok := embedder.(io.Closer); ok {
+			speakerCloser = closer
+		}
+		speakerRecogniser = voices.New(embedder, voices.DefaultThreshold, voices.DefaultMinimum)
+	}
+	var utteranceSequence atomic.Uint64
 	asrProviders := perceptionelements.NewASRProviderRegistry()
 	if err := asrProviders.Register(ASRReference, cloneV1Descriptor(config.ASR.Descriptor), func() (v1.PerceptionProvider, error) {
-		return config.ASR.Factory(ctx, options)
+		provider, err := config.ASR.Factory(ctx, options)
+		if err != nil || speakerRecogniser == nil {
+			return provider, err
+		}
+		utterance := fmt.Sprintf("%s/%d", options.SessionID, utteranceSequence.Add(1))
+		return voices.WrapProvider(ctx, provider, speakerRecogniser, utterance)
 	}); err != nil {
 		mediaBridge.Close(err)
+		if speakerCloser != nil {
+			_ = speakerCloser.Close()
+		}
 		return nil, err
 	}
 	ttsProviders := speechelements.NewTTSProviderRegistry()
@@ -266,7 +296,7 @@ func newSessionBundle(
 	}
 	return &sessionBundle{
 		bridge: bridge, media: mediaBridge, presentation: presentation,
-		playback: playbackSink, store: store, services: services,
+		playback: playbackSink, store: store, services: services, speaker: speakerCloser,
 	}, nil
 }
 
@@ -276,10 +306,14 @@ func (bundle *sessionBundle) Close(cause error) error {
 	}
 	bundle.bridge.Close(cause)
 	bundle.media.Close(cause)
+	var playbackErr, speakerErr error
 	if bundle.playback != nil {
-		return bundle.playback.Close()
+		playbackErr = bundle.playback.Close()
 	}
-	return nil
+	if bundle.speaker != nil {
+		speakerErr = bundle.speaker.Close()
+	}
+	return errors.Join(playbackErr, speakerErr)
 }
 
 type denyUnrequestedConfirmation struct{}

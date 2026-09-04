@@ -8,14 +8,60 @@ import (
 	"testing"
 	"time"
 
+	projectarch "github.com/bojieli/OpenRealtime/architecture"
 	"github.com/bojieli/OpenRealtime/element"
 	acousticelements "github.com/bojieli/OpenRealtime/elements/acoustic"
 	actionelements "github.com/bojieli/OpenRealtime/elements/action"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
+
+func TestSpeakerAwareArchitectureAloneDeclaresAttributedObservationSource(t *testing.T) {
+	speakerAware, err := projectarch.Default().Resolve(
+		"cascade.composed-policy-direct-visual-speaker@1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := projectarch.Default().Resolve("cascade.composed-policy-direct-visual@1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation := perception.Observation{
+		Text: "Can you put it on the list?", Observer: "asr",
+		Source: SourceOtherSpeaker, Authority: trajectory.AuthorityUser, Final: true,
+	}
+	envelope := element.Envelope{
+		ItemID: "attributed-transcript", SessionID: "session-a", Payload: observation,
+	}
+
+	accepted := &session{
+		sessionID: envelope.SessionID, sink: &playbackClientSink{},
+		config: PluginConfig{Architecture: speakerAware},
+	}
+	if err := accepted.publishTranscript(t.Context(), envelope); err != nil {
+		t.Fatalf("speaker-aware transcript rejected: %v", err)
+	}
+	if err := accepted.publishObservation(t.Context(), envelope); err != nil {
+		t.Fatalf("speaker-aware observation rejected: %v", err)
+	}
+
+	rejected := &session{
+		sessionID: envelope.SessionID, sink: &playbackClientSink{},
+		config: PluginConfig{Architecture: baseline},
+	}
+	if err := rejected.publishTranscript(t.Context(), envelope); err == nil ||
+		!strings.Contains(err.Error(), "undeclared observation source") {
+		t.Fatalf("baseline transcript accepted attributed source: %v", err)
+	}
+	if err := rejected.publishObservation(t.Context(), envelope); err == nil ||
+		!strings.Contains(err.Error(), "undeclared observation source") {
+		t.Fatalf("baseline observation accepted attributed source: %v", err)
+	}
+}
 
 func TestDelayedActivityAcceptsOnlyExactlyClosedAudioStream(t *testing.T) {
 	session := &session{

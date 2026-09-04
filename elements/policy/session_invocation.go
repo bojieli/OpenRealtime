@@ -14,13 +14,15 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 )
 
 const (
 	sessionInvocationRuntimeID          = "builtin://openrealtime/elements/policy.SessionInvocation"
-	sessionInvocationRuntimeRevision    = "implementation:2"
+	sessionInvocationRuntimeRevision    = "implementation:3"
 	defaultSessionInvocationTerminalMax = 512
+	postCommitSilenceInstruction        = "Trusted runtime purpose: the post-commit silence timer reached the due point for a standing user instruction. Execute that due standing action now from the canonical conversation context. Do not merely acknowledge, confirm, restate, or describe the instruction."
 )
 
 var (
@@ -56,7 +58,7 @@ func SessionInvocationDescriptor() element.Descriptor {
 		Ports: []element.Port{
 			{Name: "update", Direction: element.Input, Type: sessionInvocationUpdateType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "committed", Direction: element.Input, Type: observationCommitType,
+			{Name: "committed", Direction: element.Input, Type: semanticGrantType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "create", Direction: element.Input, Type: responseCreateType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -113,7 +115,20 @@ type ResponseCreate struct {
 	// authenticated prefix from a later State when independent lossless lanes
 	// deliver a newer snapshot first. It must agree with both legacy fields.
 	CommittedContext *stateelements.CommittedContext `json:"committed_context,omitempty"`
+	// TrustedPurpose is attached only inside the fixed graph after an admitted
+	// graph-owned trigger. Transport-originated response.create requests must
+	// leave it empty; SemanticAdmission is the trust boundary that enforces
+	// that rule before adding a purpose to its downstream copy.
+	TrustedPurpose ResponseCreatePurpose `json:"trusted_purpose,omitempty"`
 }
+
+// ResponseCreatePurpose is a closed, graph-owned reason for generation that
+// cannot be inferred reliably from ordinary conversation text alone.
+type ResponseCreatePurpose string
+
+const (
+	ResponseCreatePurposePostCommitSilence ResponseCreatePurpose = "post-commit-silence"
+)
 
 func (ResponseCreate) InspectionCause() element.InspectionCauseKind {
 	return element.CausePolicy
@@ -130,19 +145,21 @@ const (
 )
 
 type SessionInvocationOutcome struct {
-	Kind               SessionInvocationOutcomeKind `json:"kind"`
-	Operation          string                       `json:"operation"`
-	GenerationID       string                       `json:"generation_id,omitempty"`
-	Role               string                       `json:"role"`
-	InvocationRevision uint64                       `json:"invocation_revision,omitempty"`
-	InvocationDigest   string                       `json:"invocation_digest,omitempty"`
-	StreamID           string                       `json:"stream_id,omitempty"`
-	SourceRevision     uint64                       `json:"source_revision,omitempty"`
-	ContextVersion     uint64                       `json:"context_version,omitempty"`
-	TriggerItemID      string                       `json:"trigger_item_id,omitempty"`
-	Code               string                       `json:"code,omitempty"`
-	Message            string                       `json:"message,omitempty"`
-	FinishedNS         uint64                       `json:"finished_ns,omitempty"`
+	Kind                SessionInvocationOutcomeKind `json:"kind"`
+	Operation           string                       `json:"operation"`
+	GenerationID        string                       `json:"generation_id,omitempty"`
+	Role                string                       `json:"role"`
+	InvocationRevision  uint64                       `json:"invocation_revision,omitempty"`
+	InvocationDigest    string                       `json:"invocation_digest,omitempty"`
+	StreamID            string                       `json:"stream_id,omitempty"`
+	SourceRevision      uint64                       `json:"source_revision,omitempty"`
+	ObservationRevision uint64                       `json:"observation_revision,omitempty"`
+	Act                 coreinteraction.Act          `json:"act,omitempty"`
+	ContextVersion      uint64                       `json:"context_version,omitempty"`
+	TriggerItemID       string                       `json:"trigger_item_id,omitempty"`
+	Code                string                       `json:"code,omitempty"`
+	Message             string                       `json:"message,omitempty"`
+	FinishedNS          uint64                       `json:"finished_ns,omitempty"`
 }
 
 func (SessionInvocationOutcome) InspectionCause() element.InspectionCauseKind {
@@ -278,6 +295,39 @@ func cloneSessionInvocationOutcome(value SessionInvocationOutcome) SessionInvoca
 	return value
 }
 
+func semanticGrantPayload(payload any) (SemanticGrant, bool) {
+	switch value := payload.(type) {
+	case SemanticGrant:
+		return value, true
+	case *SemanticGrant:
+		if value != nil {
+			return *value, true
+		}
+	}
+	return SemanticGrant{}, false
+}
+
+func validateSemanticGrant(grant SemanticGrant, role string) error {
+	if err := validateCommit(grant.Commit); err != nil {
+		return err
+	}
+	if err := validatePolicyIdentifier(
+		"semantic grant decision item ID", grant.DecisionItemID, true,
+	); err != nil {
+		return err
+	}
+	voice := grant.Act == coreinteraction.ActAnswer ||
+		grant.Act == coreinteraction.ActSpeakThrough || grant.Act == coreinteraction.ActInterrupt
+	if role == "silent" {
+		if grant.Act != coreinteraction.ActActSilently {
+			return fmt.Errorf("silent session invocation cannot execute semantic act %q", grant.Act)
+		}
+	} else if !voice {
+		return fmt.Errorf("voice session invocation cannot execute semantic act %q", grant.Act)
+	}
+	return nil
+}
+
 func cloneSessionInvocationUpdate(value SessionInvocationUpdate) SessionInvocationUpdate {
 	value.Invocation = cloneInvocation(value.Invocation)
 	return value
@@ -303,6 +353,10 @@ func responseCreateIdentifier(value ResponseCreate) (string, error) {
 	}
 	if value.ExpectedContextVersion == nil {
 		return "", errors.New("response create requires an expected context version")
+	}
+	if value.TrustedPurpose != "" &&
+		value.TrustedPurpose != ResponseCreatePurposePostCommitSilence {
+		return "", fmt.Errorf("response create has unknown trusted purpose %q", value.TrustedPurpose)
 	}
 	if err := validatePolicyIdentifier(
 		"response create expected context item ID", value.ExpectedContextItemID, true,
@@ -341,7 +395,9 @@ func invocationForCommit(update SessionInvocationUpdate, commit stateelements.Ob
 	return invocation
 }
 
-func invocationForManualCreate(update SessionInvocationUpdate) continuation.Invocation {
+func invocationForManualCreate(
+	update SessionInvocationUpdate, purpose ResponseCreatePurpose,
+) (continuation.Invocation, error) {
 	invocation := cloneInvocation(update.Invocation)
 	// A manual response.create is bound to an exact trajectory snapshot but
 	// carries no committed observation authority. Do not advertise external
@@ -353,7 +409,22 @@ func invocationForManualCreate(update SessionInvocationUpdate) continuation.Invo
 	invocation.Capabilities = nil
 	invocation.Tools = nil
 	invocation.SourceRevision = 0
-	return invocation
+	switch purpose {
+	case "":
+		return invocation, nil
+	case ResponseCreatePurposePostCommitSilence:
+		instruction := strings.TrimSpace(invocation.Instruction) + "\n\n" + postCommitSilenceInstruction
+		if len(instruction) > maximumPolicyInstructionBytes {
+			return continuation.Invocation{}, fmt.Errorf(
+				"trusted response purpose would exceed the %d-byte generation instruction limit",
+				maximumPolicyInstructionBytes,
+			)
+		}
+		invocation.Instruction = instruction
+		return invocation, nil
+	default:
+		return continuation.Invocation{}, fmt.Errorf("unknown trusted response purpose %q", purpose)
+	}
 }
 
 func authorityForSessionCommit(

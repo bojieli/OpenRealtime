@@ -5,6 +5,11 @@
   observability APIs, client plugin lifecycle, security boundaries, and end-to-end gates
 - **Depends on:** [Composable Real-Time Agent Element Graph](composable-agent-graph.md)
 
+> [!IMPORTANT]
+> This is the accepted design record and implementation tracker. For the
+> shipped client workflow, begin with the [quickstart](quickstart.md) or the
+> [macOS client guide](../macos/README.md).
+
 This document extends the element-graph design to the software around the
 agent. The browser application, its local server, the macOS application,
 inspection, editor, media capture, tool hosts, and view components are not

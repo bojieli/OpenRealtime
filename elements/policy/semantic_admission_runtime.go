@@ -185,6 +185,7 @@ type semanticDecisionResult struct {
 	sample            semanticContextSample
 	prefix            trajectory.Snapshot
 	act               coreinteraction.Act
+	policy            string
 	outcome           coreinteraction.Outcome
 	stage             string
 	activation        string
@@ -237,6 +238,7 @@ type semanticAdmissionRunner struct {
 	handle           *semanticDeciderHandle
 	decider          SemanticDecider
 	model            *coreinteraction.InteractionModel
+	transcriptPolicy *coreinteraction.TranscriptEventPolicy
 	extractor        coreinteraction.Extractor
 	media            continuation.MediaResolver
 	clock            graphruntime.Clock
@@ -290,6 +292,16 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 		runner.extractor, err = coreinteraction.NewExtractor(generator)
 		if err != nil {
 			return fmt.Errorf("create semantic standing-policy extractor: %w", err)
+		}
+	}
+	if runner.config.TranscriptEvents != nil {
+		options, optionsErr := semanticTranscriptOptions(*runner.config.TranscriptEvents)
+		if optionsErr != nil {
+			return optionsErr
+		}
+		runner.transcriptPolicy, err = coreinteraction.NewTranscriptEventPolicy(decider, options)
+		if err != nil {
+			return fmt.Errorf("create semantic transcript-event policy: %w", err)
 		}
 	}
 	runner.decider, runner.model = decider, model
@@ -547,6 +559,10 @@ func (runner *semanticAdmissionRunner) enqueueCreate(
 	}
 	if _, err := responseCreateIdentifier(create); err != nil {
 		return runner.publishRefusal(ctx, envelope, operation, "invalid_create", err.Error())
+	}
+	if create.TrustedPurpose != "" {
+		return runner.publishRefusal(ctx, envelope, operation, "invalid_create",
+			"transport response create cannot supply a trusted runtime purpose")
 	}
 	if err := validatePolicyIdentifier("semantic response session ID", envelope.SessionID, true); err != nil {
 		return runner.publishRefusal(ctx, envelope, operation, "invalid_create_envelope", err.Error())
@@ -847,6 +863,12 @@ func (runner *semanticAdmissionRunner) decide(
 	}
 	var act coreinteraction.Act
 	var outcome coreinteraction.Outcome
+	policyName := runner.model.Name()
+	if runner.transcriptPolicy != nil &&
+		(situation.TranscriptEvent == coreinteraction.TranscriptPartial ||
+			situation.TranscriptEvent == coreinteraction.TranscriptFinal) {
+		policyName = runner.transcriptPolicy.Name()
+	}
 	stage := "primary"
 	activation := ""
 	var activationOutcome coreinteraction.Outcome
@@ -931,9 +953,9 @@ func (runner *semanticAdmissionRunner) decide(
 		}
 	}
 	if err == nil && stage == "primary" {
-		act, outcome, err = runner.decideAct(decisionCtx, request.operation, situation)
+		act, outcome, err = runner.decideAct(decisionCtx, request, situation)
 		if err == nil {
-			options := semanticActOptions(situation)
+			options := runner.semanticActOptions(request, situation)
 			err = validateSemanticOutcome(outcome, options)
 			if err != nil {
 				failure = "invalid_decider_outcome"
@@ -1015,7 +1037,7 @@ func (runner *semanticAdmissionRunner) decide(
 	}
 	result := semanticDecisionResult{
 		request: request, update: update, digest: digest, sample: sample, prefix: prefix,
-		act: act, outcome: outcome, stage: stage, activation: activation,
+		act: act, policy: policyName, outcome: outcome, stage: stage, activation: activation,
 		activationOutcome: activationOutcome, standingCoverage: standingCoverage,
 		coverageOutcome: coverageOutcome, standingBefore: standing, standingAfter: standingAfter,
 		standingPinned: standingPinned, standingRevoked: standingRevoked,
@@ -1047,9 +1069,14 @@ func validateSemanticSituation(situation coreinteraction.Situation) error {
 }
 
 func (runner *semanticAdmissionRunner) decideAct(
-	ctx context.Context, operation string, situation coreinteraction.Situation,
+	ctx context.Context, request semanticRequest, situation coreinteraction.Situation,
 ) (coreinteraction.Act, coreinteraction.Outcome, error) {
-	if situation.Decidable() || operation == "committed" {
+	if request.operation == "committed" && runner.transcriptPolicy != nil &&
+		(situation.TranscriptEvent == coreinteraction.TranscriptPartial ||
+			situation.TranscriptEvent == coreinteraction.TranscriptFinal) {
+		return runner.transcriptPolicy.Decide(ctx, situation.TranscriptEvent, situation)
+	}
+	if situation.Decidable() || request.operation == "committed" {
 		return runner.model.Decide(ctx, situation)
 	}
 	// Explicit response.create and PostCommitSilence triggers are themselves
@@ -1088,6 +1115,17 @@ func (runner *semanticAdmissionRunner) decideAct(
 	}
 	return coreinteraction.ActStaySilent, outcome,
 		fmt.Errorf("interaction model chose %q, which is not available here", outcome.Option)
+}
+
+func (runner *semanticAdmissionRunner) semanticActOptions(
+	request semanticRequest, situation coreinteraction.Situation,
+) []string {
+	if request.operation == "committed" && runner.transcriptPolicy != nil &&
+		(situation.TranscriptEvent == coreinteraction.TranscriptPartial ||
+			situation.TranscriptEvent == coreinteraction.TranscriptFinal) {
+		situation.AllowedActs = runner.transcriptPolicy.AllowedActs(situation.TranscriptEvent)
+	}
+	return semanticActOptions(situation)
 }
 
 func semanticActOptions(situation coreinteraction.Situation) []string {
@@ -1596,7 +1634,7 @@ func (runner *semanticAdmissionRunner) finishDecision(
 		confidence = result.activationOutcome
 	}
 	decision := SemanticDecision{
-		Operation: request.operation, Act: result.act, Policy: runner.model.Name(),
+		Operation: request.operation, Act: result.act, Policy: result.policy,
 		EvidenceItemID: request.envelope.ItemID, StreamID: request.streamID,
 		SourceRevision: request.sourceRev, ContextVersion: request.version,
 		InvocationDigest: result.digest, Provider: runner.entry.descriptor.Provider,
@@ -1645,13 +1683,29 @@ func (runner *semanticAdmissionRunner) finishDecision(
 			output = runner.ports.silentCreate
 		}
 		runner.state.AdmittedSilent++
-	case coreinteraction.ActAnswer:
+	case coreinteraction.ActAnswer, coreinteraction.ActSpeakThrough, coreinteraction.ActInterrupt:
 		if request.operation == "committed" {
 			output = runner.ports.voiceCommitted
 		} else {
 			output = runner.ports.voiceCreate
 		}
 		runner.state.AdmittedVoice++
+	case coreinteraction.ActKeepSpeaking, coreinteraction.ActStopSpeaking:
+		code, message, refused := semanticControlDisposition(request.operation, result.act)
+		if refused {
+			runner.state.Refused++
+			return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
+				Kind: SemanticAdmissionRefused, Operation: request.operation, Act: result.act,
+				StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
+				DecisionItemID: decisionItemID, Code: code, Message: message,
+			})
+		}
+		runner.state.Suppressed++
+		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
+			Kind: SemanticAdmissionSuppressed, Operation: request.operation, Act: result.act,
+			StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
+			DecisionItemID: decisionItemID, Code: code, Message: message,
+		})
 	default:
 		runner.state.Refused++
 		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
@@ -1662,6 +1716,17 @@ func (runner *semanticAdmissionRunner) finishDecision(
 		})
 	}
 	branch.Type = output.Type()
+	if request.operation == "committed" {
+		branch.Payload = SemanticGrant{
+			Commit: request.commit, Act: result.act, DecisionItemID: decisionItemID,
+		}
+	} else {
+		create := request.create
+		if request.operation == "quiet" {
+			create.TrustedPurpose = ResponseCreatePurposePostCommitSilence
+		}
+		branch.Payload = create
+	}
 	if _, err := output.Broadcast(ctx, branch); err != nil {
 		return err
 	}
@@ -1670,6 +1735,20 @@ func (runner *semanticAdmissionRunner) finishDecision(
 		StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
 		DecisionItemID: decisionItemID,
 	})
+}
+
+func semanticControlDisposition(
+	operation string, act coreinteraction.Act,
+) (code, message string, refused bool) {
+	if operation != "committed" {
+		return "unsupported_act",
+			"explicit response creation cannot claim an in-flight speech control act", true
+	}
+	if act == coreinteraction.ActStopSpeaking {
+		return "stop_speaking",
+			"semantic policy delegated cancellation of existing output to the overlap controller", false
+	}
+	return "keep_speaking", "semantic policy kept the existing deliberate output active", false
 }
 
 func (runner *semanticAdmissionRunner) reportResolution() error {

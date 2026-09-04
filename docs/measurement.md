@@ -1,5 +1,12 @@
 # Measurement
 
+> [!NOTE]
+> **Chronological evidence log.** This document deliberately retains negative
+> results, invalidated runs, and dated experiment IDs. It explains how the
+> project learned what it knows; it is not required onboarding. Current support
+> claims live in the [README](../README.md), and their release gates live in
+> [release validation](release-validation.md).
+
 The claim this project wants to make is not "four voice stacks are supported" —
 that is a release gate, and it is met. It is **"here is what each one is worth,
 measured the same way."**

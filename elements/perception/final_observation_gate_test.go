@@ -23,9 +23,10 @@ import (
 
 const finalObservationGateGraph = `graph final_observation_gate {
     perception.FinalObservationGate :: gate;
-    input observations = gate.observations;
-    input flush = gate.flush;
-    output finals = gate.finals;
+	input observations = gate.observations;
+	input flush = gate.flush;
+	output admitted = gate.admitted;
+	output finals = gate.finals;
     output outcome = gate.outcome;
 }`
 
@@ -33,7 +34,7 @@ const finalObservationCommitGraph = `graph final_observation_commit {
     perception.FinalObservationGate :: gate;
     state.ObservationCommit :: commit;
     state.TrajectoryStore :: store;
-    gate.finals -> commit.observations;
+	gate.admitted -> commit.observations;
     commit.append -> store.append;
     store.committed -> commit.committed;
     store.rejected -> commit.rejected;
@@ -44,11 +45,12 @@ const finalObservationCommitGraph = `graph final_observation_commit {
     output snapshot = store.snapshot;
 }`
 
-func TestFinalObservationGateKeepsPartialsObservableButActivatesOnlyFlushFinal(t *testing.T) {
+func TestFinalObservationGateAdmitsOrderedPartialsAndOnlyFlushAttestedFinal(t *testing.T) {
 	mounted, done, cancel := mountFinalObservationGate(t)
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 
@@ -57,9 +59,18 @@ func TestFinalObservationGateKeepsPartialsObservableButActivatesOnlyFlushFinal(t
 		Revision: 1, StableText: "hel", Provisional: true,
 	})
 	sendGate(t, observations, partial)
-	ignored := receive(t, outcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
-	if ignored.Kind != perceptionelements.FinalObservationIgnored || ignored.Code != "non_final" || ignored.Revision != 1 {
-		t.Fatalf("provisional outcome = %+v", ignored)
+	emittedPartialEnvelope := receive(t, admitted)
+	emittedPartial := emittedPartialEnvelope.Payload.(coreperception.Observation)
+	if emittedPartial.Revision != 1 || emittedPartial.Supersedes != 0 || !emittedPartial.Provisional ||
+		emittedPartial.Final || emittedPartialEnvelope.ItemID == partial.ItemID ||
+		len(emittedPartialEnvelope.CausalParents) != 1 || emittedPartialEnvelope.CausalParents[0] != partial.ItemID {
+		t.Fatalf("admitted provisional = %+v / %+v", emittedPartial, emittedPartialEnvelope)
+	}
+	partialOutcome := receive(t, outcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
+	if partialOutcome.Kind != perceptionelements.ProvisionalObservationEmitted ||
+		partialOutcome.Code != "provisional_admitted" || partialOutcome.Revision != 1 ||
+		partialOutcome.EmittedObservationItemID != emittedPartialEnvelope.ItemID {
+		t.Fatalf("provisional outcome = %+v", partialOutcome)
 	}
 	assertNoGateEnvelope(t, finals)
 
@@ -78,13 +89,17 @@ func TestFinalObservationGateKeepsPartialsObservableButActivatesOnlyFlushFinal(t
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "flush-a", "flush-a:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
 			StreamID: "stream-a", ObservationCount: 1}))
-	emittedEnvelope := receive(t, finals)
+	emittedEnvelope := receive(t, admitted)
 	emitted := emittedEnvelope.Payload.(coreperception.Observation)
-	if emitted.Revision != 2 || emitted.Supersedes != 0 || !emitted.Final || emitted.Provisional ||
+	if emitted.Revision != 2 || emitted.Supersedes != 1 || !emitted.Final || emitted.Provisional ||
 		emittedEnvelope.ItemID == "final-a" ||
 		len(emittedEnvelope.CausalParents) != 2 || emittedEnvelope.CausalParents[0] != "final-a" ||
 		emittedEnvelope.CausalParents[1] != "flush-a:outcome" {
 		t.Fatalf("emitted final = %+v / %+v", emitted, emittedEnvelope)
+	}
+	finalOnlyEnvelope := receive(t, finals)
+	if finalOnly := finalOnlyEnvelope.Payload.(coreperception.Observation); finalOnly.Revision != 2 || finalOnly.Supersedes != 1 || finalOnlyEnvelope.ItemID != emittedEnvelope.ItemID {
+		t.Fatalf("final-only observation = %+v / %+v", finalOnly, finalOnlyEnvelope)
 	}
 	gateOutcomeEnvelope := receive(t, outcomes)
 	gateOutcome := gateOutcomeEnvelope.Payload.(perceptionelements.FinalObservationGateOutcome)
@@ -108,6 +123,7 @@ func TestFinalObservationGateKeepsPartialsObservableButActivatesOnlyFlushFinal(t
 	if replayEnvelope.ItemID == pendingEnvelope.ItemID {
 		t.Fatalf("gate outcome reused immutable item ID %q", replayEnvelope.ItemID)
 	}
+	assertNoGateEnvelope(t, admitted)
 	assertNoGateEnvelope(t, finals)
 }
 
@@ -116,6 +132,7 @@ func TestFinalObservationGateRefusesCrossSessionJoinAndClearsCanceledFlush(t *te
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 
@@ -133,6 +150,7 @@ func TestFinalObservationGateRefusesCrossSessionJoinAndClearsCanceledFlush(t *te
 		t.Fatalf("cross-session flush = %+v", otherPending)
 	}
 	assertNoGateEnvelope(t, finals)
+	assertNoGateEnvelope(t, admitted)
 
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "flush-shared", "flush-a:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeCanceled, Operation: "flush",
@@ -142,6 +160,7 @@ func TestFinalObservationGateRefusesCrossSessionJoinAndClearsCanceledFlush(t *te
 		t.Fatalf("canceled flush = %+v", canceled)
 	}
 	assertNoGateEnvelope(t, finals)
+	assertNoGateEnvelope(t, admitted)
 }
 
 func TestFinalObservationGateJoinsFlushArrivingBeforeFinalExactlyOnce(t *testing.T) {
@@ -149,6 +168,7 @@ func TestFinalObservationGateJoinsFlushArrivingBeforeFinalExactlyOnce(t *testing
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 
@@ -161,6 +181,9 @@ func TestFinalObservationGateJoinsFlushArrivingBeforeFinalExactlyOnce(t *testing
 	sendGate(t, observations, gateObservationEnvelope("session-a", "stream-a", "flush-a", "final-a",
 		coreperception.Observation{Text: "hello", Observer: "asr", Authority: trajectory.AuthorityUser,
 			Revision: 1, Final: true}))
+	if final := receive(t, admitted).Payload.(coreperception.Observation); final.Revision != 1 || !final.Final {
+		t.Fatalf("reverse-order admitted final = %+v", final)
+	}
 	if final := receive(t, finals).Payload.(coreperception.Observation); final.Revision != 1 || !final.Final {
 		t.Fatalf("reverse-order final = %+v", final)
 	}
@@ -169,7 +192,7 @@ func TestFinalObservationGateJoinsFlushArrivingBeforeFinalExactlyOnce(t *testing
 	}
 }
 
-func TestFinalObservationGateCommitsNoPartialAndExactlyOneFlushAttestedFinal(t *testing.T) {
+func TestFinalObservationGateCommitsEveryRevisionAndOnlyFlushAttestedFinal(t *testing.T) {
 	graph := compileFinalObservationSource(t, finalObservationCommitGraph)
 	registry, err := elements.RuntimeRegistry()
 	if err != nil {
@@ -178,7 +201,8 @@ func TestFinalObservationGateCommitsNoPartialAndExactlyOneFlushAttestedFinal(t *
 	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
 		Graph: graph, Registry: registry,
 		Values: map[string]json.RawMessage{
-			"gate": json.RawMessage(`{}`), "commit": json.RawMessage(`{}`), "store": json.RawMessage(`{}`),
+			"gate":   json.RawMessage(`{"admit_provisional":true}`),
+			"commit": json.RawMessage(`{}`), "store": json.RawMessage(`{}`),
 		},
 		Now: func() uint64 { return 42 },
 	})
@@ -206,12 +230,18 @@ func TestFinalObservationGateCommitsNoPartialAndExactlyOneFlushAttestedFinal(t *
 			StableText: "weather", Provisional: true,
 		})
 	sendGate(t, observations, partial)
-	ignored := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
-	if ignored.Kind != perceptionelements.FinalObservationIgnored || ignored.Code != "non_final" {
-		t.Fatalf("partial gate outcome = %+v", ignored)
+	partialGate := receive(t, gateOutcomes).Payload.(perceptionelements.FinalObservationGateOutcome)
+	if partialGate.Kind != perceptionelements.ProvisionalObservationEmitted || partialGate.Code != "provisional_admitted" {
+		t.Fatalf("partial gate outcome = %+v", partialGate)
 	}
-	assertNoGateEnvelope(t, commitOutcomes)
-	assertNoGateEnvelope(t, snapshots)
+	partialSnapshot := receive(t, snapshots).Payload.(trajectory.Snapshot)
+	partialCommit := receive(t, commitOutcomes).Payload.(stateelements.ObservationCommitOutcome)
+	if partialCommit.Kind != stateelements.ObservationCommitted || partialCommit.ObservationRevision != 1 ||
+		partialSnapshot.Version != 1 || len(partialSnapshot.Items) != 1 ||
+		partialSnapshot.Items[0].Content != "weather" || partialSnapshot.Items[0].Event == nil ||
+		partialSnapshot.Items[0].Event.Type != "audio.revision" {
+		t.Fatalf("provisional commit = %+v / %+v", partialCommit, partialSnapshot)
+	}
 
 	final := gateObservationEnvelope("session-a", "stream-a", "flush-a", "final-a",
 		coreperception.Observation{
@@ -237,13 +267,13 @@ func TestFinalObservationGateCommitsNoPartialAndExactlyOneFlushAttestedFinal(t *
 	committed := receive(t, commitOutcomes).Payload.(stateelements.ObservationCommitOutcome)
 	if emitted.Kind != perceptionelements.FinalObservationEmitted ||
 		committed.Kind != stateelements.ObservationCommitted || committed.ObservationRevision != 2 ||
-		committedSnapshot.Version != 1 || len(committedSnapshot.Items) != 1 {
+		committedSnapshot.Version != 2 || len(committedSnapshot.Items) != 2 {
 		t.Fatalf("flush-attested commit = gate %+v commit %+v snapshot %+v",
 			emitted, committed, committedSnapshot)
 	}
-	item := committedSnapshot.Items[0]
+	item := committedSnapshot.Items[1]
 	if item.Content != "weather in Paris" || item.Event == nil ||
-		item.Event.SupersedesRevision != 0 || item.SourceRevision != committed.SourceRevision {
+		item.Event.SupersedesRevision != partialCommit.SourceRevision || item.SourceRevision != committed.SourceRevision {
 		t.Fatalf("flush-attested trajectory item = %+v", item)
 	}
 
@@ -264,6 +294,7 @@ func TestFinalObservationGatePreservesCancelFailureSemanticsAndRefusedCancelCann
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 
@@ -282,6 +313,7 @@ func TestFinalObservationGatePreservesCancelFailureSemanticsAndRefusedCancelCann
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "flush-a", "flush-a:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
 			StreamID: "stream-a", ObservationCount: 1}))
+	_ = receive(t, admitted)
 	_ = receive(t, finals)
 	_ = receive(t, outcomes)
 
@@ -305,6 +337,7 @@ func TestFinalObservationGatePreservesCancelFailureSemanticsAndRefusedCancelCann
 		t.Fatalf("flush after failed cancel = %+v", cleared)
 	}
 	assertNoGateEnvelope(t, finals)
+	assertNoGateEnvelope(t, admitted)
 
 	successfulCancel := gateFlushEnvelope("session-a", "stream-a", "cancel-success", "cancel-success:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeCanceled, Operation: "cancel",
@@ -324,6 +357,7 @@ func TestFinalObservationGateUsesExplicitDirectCauseAndRejectsNoncanonicalAddres
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 
@@ -342,9 +376,11 @@ func TestFinalObservationGateUsesExplicitDirectCauseAndRejectsNoncanonicalAddres
 		t.Fatalf("cross-cause flush = %+v", got)
 	}
 	assertNoGateEnvelope(t, finals)
+	assertNoGateEnvelope(t, admitted)
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "cause-a", "flush-a:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
 			StreamID: "stream-a", ObservationCount: 1}))
+	_ = receive(t, admitted)
 	_ = receive(t, finals)
 	_ = receive(t, outcomes)
 
@@ -372,11 +408,13 @@ func TestFinalObservationGateRefusesSuccessfulFlushForOnlyProvisionalEvidence(t 
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 	sendGate(t, observations, gateObservationEnvelope("session-a", "stream-a", "flush-a", "partial-a",
 		coreperception.Observation{Text: "partial", Observer: "asr", Authority: trajectory.AuthorityUser,
 			Revision: 1, Provisional: true, StableText: "part"}))
+	_ = receive(t, admitted)
 	_ = receive(t, outcomes)
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "flush-a", "flush-a:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
@@ -393,6 +431,7 @@ func TestFinalObservationGateReplayProtectionSurvivesRendezvousWindow(t *testing
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 	var firstFinal, firstFlush element.Envelope
@@ -410,6 +449,7 @@ func TestFinalObservationGateReplayProtectionSurvivesRendezvousWindow(t *testing
 		sendGate(t, observations, finalEnvelope)
 		_ = receive(t, outcomes)
 		sendGate(t, flush, flushEnvelope)
+		_ = receive(t, admitted)
 		_ = receive(t, finals)
 		_ = receive(t, outcomes)
 	}
@@ -422,6 +462,7 @@ func TestFinalObservationGateReplayProtectionSurvivesRendezvousWindow(t *testing
 		t.Fatalf("old flush replay = %+v", replay)
 	}
 	assertNoGateEnvelope(t, finals)
+	assertNoGateEnvelope(t, admitted)
 }
 
 func TestFinalObservationGateObserveCadenceDoesNotConsumeActivationReplayBudget(t *testing.T) {
@@ -429,6 +470,7 @@ func TestFinalObservationGateObserveCadenceDoesNotConsumeActivationReplayBudget(
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 	for index := 0; index < 4097; index++ {
@@ -445,6 +487,7 @@ func TestFinalObservationGateObserveCadenceDoesNotConsumeActivationReplayBudget(
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "flush-final", "flush-final:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
 			StreamID: "stream-a", ObservationCount: 1}))
+	_ = receive(t, admitted)
 	_ = receive(t, finals)
 	if emitted := receive(t, outcomes).Payload.(perceptionelements.FinalObservationGateOutcome); emitted.Kind != perceptionelements.FinalObservationEmitted {
 		t.Fatalf("post-cadence final = %+v", emitted)
@@ -456,6 +499,7 @@ func TestFinalObservationGateEmitsValidatedSnapshotAndPoisonsAmbiguousEvidence(t
 	defer stopASR(t, mounted, done, cancel)
 	observations, _ := mounted.Ingress("observations")
 	flush, _ := mounted.Ingress("flush")
+	admitted, _ := mounted.Egress("admitted")
 	finals, _ := mounted.Egress("finals")
 	outcomes, _ := mounted.Egress("outcome")
 
@@ -469,7 +513,8 @@ func TestFinalObservationGateEmitsValidatedSnapshotAndPoisonsAmbiguousEvidence(t
 	sendGate(t, flush, gateFlushEnvelope("session-a", "stream-a", "snapshot", "snapshot:outcome",
 		perceptionelements.Outcome{Kind: perceptionelements.OutcomeSucceeded, Operation: "flush",
 			StreamID: "stream-a", ObservationCount: 1}))
-	emitted := receive(t, finals).Payload.(coreperception.Observation)
+	emitted := receive(t, admitted).Payload.(coreperception.Observation)
+	_ = receive(t, finals)
 	if emitted.Text != "accepted" || emitted.Revision != 1 {
 		t.Fatalf("emitted observation drifted from accepted snapshot: %+v", emitted)
 	}
@@ -520,6 +565,7 @@ func TestFinalObservationGateEmitsValidatedSnapshotAndPoisonsAmbiguousEvidence(t
 		t.Fatalf("evidence identity collision = %+v", collision)
 	}
 	assertNoGateEnvelope(t, finals)
+	assertNoGateEnvelope(t, admitted)
 }
 
 func mountFinalObservationGate(
@@ -532,7 +578,9 @@ func mountFinalObservationGate(
 		t.Fatal(err)
 	}
 	mounted, err := graphruntime.Mount(context.Background(), graphruntime.Config{
-		Graph: graph, Registry: registry, Values: map[string]json.RawMessage{},
+		Graph: graph, Registry: registry, Values: map[string]json.RawMessage{
+			"gate": json.RawMessage(`{"admit_provisional":true}`),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

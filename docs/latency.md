@@ -1,5 +1,11 @@
 # Response latency
 
+> [!NOTE]
+> **Evidence record.** The numbers below belong to the named hardware, models,
+> scenarios, and revisions; they are not a blanket latency promise. Use the
+> methodology here to reproduce them and [the benchmark harness](benchmarks.md)
+> to generate current results for your deployment.
+
 What a person in the room waits through, measured in waveform time: from the
 last sample of the thing that triggered a reply to the first sample the agent
 produced. Not from the decision, and not from the start of the trigger.

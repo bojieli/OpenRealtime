@@ -1,7 +1,12 @@
 # OpenRealtime v1.0: Product, Architecture, Protocol, and Measurement Plan
 
-Status: proposal for review. Nothing here is implemented. `api/v1` remains the
-supported contract and the frozen M8–M10 study is unaffected.
+> [!WARNING]
+> **Historical design plan.** This document predates the v1.0 release. Parts of
+> it were implemented, parts evolved, and parts were superseded; unchecked or
+> future-tense text here is not a statement about current behavior. Use the
+> [quickstart](quickstart.md), [current architecture](architecture.md),
+> [Protocol v1](protocol/openrealtime-1.md), and [stable component API](api-v1.md)
+> as the released sources of truth.
 
 > Historical note: the mutually exclusive cascade/Omni/duplex taxonomy in this
 > proposal is superseded by [ADR-0011](adr/0011-capabilities-not-model-species.md).

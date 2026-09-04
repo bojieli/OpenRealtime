@@ -15,6 +15,7 @@ package voices
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -141,13 +142,18 @@ type Recogniser struct {
 	minimum   time.Duration
 	enrolment time.Duration
 
-	mu        sync.Mutex
-	reference []float32
-	utterance string
-	buffered  []byte
-	rate      uint32
-	asked     bool
-	verdict   Verdict
+	mu             sync.Mutex
+	reference      []float32
+	utterance      string
+	buffered       []byte
+	rate           uint32
+	asked          bool
+	verdict        Verdict
+	pending        chan struct{}
+	referenceReady bool
+	compared       bool
+	similarity     float64
+	lastError      string
 }
 
 // New returns a recogniser, or nil when there is nobody to ask. A nil
@@ -185,6 +191,10 @@ func (recogniser *Recogniser) Begin(utterance string) {
 	recogniser.buffered = nil
 	recogniser.asked = false
 	recogniser.verdict = Unknown
+	recogniser.pending = nil
+	recogniser.compared = false
+	recogniser.similarity = 0
+	recogniser.lastError = ""
 }
 
 // Hear takes the audio admitted for the current utterance.
@@ -220,17 +230,30 @@ func (recogniser *Recogniser) Hear(ctx context.Context, frames []perception.Fram
 		return
 	}
 	recogniser.asked = true
+	settled := make(chan struct{})
+	recogniser.pending = settled
 	utterance := recogniser.utterance
 	audio := append([]byte(nil), recogniser.buffered...)
 	rate := recogniser.rate
 	recogniser.mu.Unlock()
 
-	go recogniser.settle(ctx, utterance, audio, rate)
+	go recogniser.settle(ctx, utterance, audio, rate, settled)
 }
 
-func (recogniser *Recogniser) settle(ctx context.Context, utterance string, audio []byte, rate uint32) {
+func (recogniser *Recogniser) settle(
+	ctx context.Context, utterance string, audio []byte, rate uint32, settled chan struct{},
+) {
+	defer close(settled)
 	vector, err := recogniser.embedder.Embed(ctx, audio, rate)
 	if err != nil || len(vector) == 0 {
+		recogniser.mu.Lock()
+		if recogniser.utterance == utterance {
+			if err == nil {
+				err = errors.New("speaker embedder returned no vector")
+			}
+			recogniser.lastError = err.Error()
+		}
+		recogniser.mu.Unlock()
 		return
 	}
 	recogniser.mu.Lock()
@@ -243,14 +266,87 @@ func (recogniser *Recogniser) settle(ctx context.Context, utterance string, audi
 	if recogniser.reference == nil {
 		// Whoever opened the session is who the session is with.
 		recogniser.reference = vector
+		recogniser.referenceReady = true
 		recogniser.verdict = Familiar
 		return
 	}
-	if similarity(recogniser.reference, vector) >= recogniser.threshold {
+	recogniser.compared = true
+	recogniser.similarity = similarity(recogniser.reference, vector)
+	if recogniser.similarity >= recogniser.threshold {
 		recogniser.verdict = Familiar
 		return
 	}
 	recogniser.verdict = Different
+}
+
+// Evidence is the inspectable state behind a speaker verdict. It is intended
+// for opt-in diagnostic traces, not as another policy input: the interaction
+// model should receive the attribution, while operators need enough evidence
+// to tell a model decision from missing or failed speaker perception.
+type Evidence struct {
+	Verdict        Verdict
+	Buffered       time.Duration
+	Asked          bool
+	Pending        bool
+	ReferenceReady bool
+	Compared       bool
+	Similarity     float64
+	Error          string
+}
+
+// Evidence returns one consistent snapshot of speaker recognition state.
+func (recogniser *Recogniser) Evidence() Evidence {
+	if recogniser == nil {
+		return Evidence{Verdict: Unknown}
+	}
+	recogniser.mu.Lock()
+	defer recogniser.mu.Unlock()
+	buffered := time.Duration(0)
+	if recogniser.rate > 0 {
+		buffered = time.Duration(len(recogniser.buffered)/2) * time.Second /
+			time.Duration(recogniser.rate)
+	}
+	pending := recogniser.pending != nil
+	if pending {
+		select {
+		case <-recogniser.pending:
+			pending = false
+		default:
+		}
+	}
+	return Evidence{
+		Verdict: recogniser.verdict, Buffered: buffered, Asked: recogniser.asked,
+		Pending: pending, ReferenceReady: recogniser.referenceReady,
+		Compared: recogniser.compared, Similarity: recogniser.similarity,
+		Error: recogniser.lastError,
+	}
+}
+
+// Await returns the best verdict available after an in-flight comparison has
+// settled or the caller's bound has expired. It never starts a comparison: a
+// short utterance that did not meet the evidence minimum remains Unknown.
+//
+// Partial transcript decisions stay non-blocking. A final transcript is
+// different: it is the authorization boundary that can open ordinary
+// cognition, and letting it overtake a speaker comparison already in flight
+// turns "unknown for another few milliseconds" into "the user asked this".
+func (recogniser *Recogniser) Await(ctx context.Context) Verdict {
+	if recogniser == nil {
+		return Unknown
+	}
+	recogniser.mu.Lock()
+	pending := recogniser.pending
+	verdict := recogniser.verdict
+	recogniser.mu.Unlock()
+	if pending == nil {
+		return verdict
+	}
+	select {
+	case <-pending:
+		return recogniser.Verdict()
+	case <-ctx.Done():
+		return recogniser.Verdict()
+	}
 }
 
 // Verdict is what is known about the current utterance.

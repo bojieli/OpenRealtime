@@ -13,6 +13,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 )
 
 type sessionInvocationFactory struct{}
@@ -206,11 +207,12 @@ func (runner *sessionInvocationRunner) acceptUpdate(ctx context.Context, envelop
 }
 
 func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelope element.Envelope) error {
-	commit, ok := observationCommitPayload(envelope.Payload)
+	grant, ok := semanticGrantPayload(envelope.Payload)
 	if !ok {
 		return runner.refuse(ctx, envelope, "committed", "", "invalid_commit",
-			fmt.Sprintf("observation commit payload has type %T", envelope.Payload))
+			fmt.Sprintf("semantic grant payload has type %T", envelope.Payload))
 	}
+	commit := grant.Commit
 	if commit.Kind != stateelements.ObservationCommitted {
 		runner.state.Ignored++
 		if err := runner.publishOutcome(ctx, envelope, SessionInvocationOutcome{
@@ -225,7 +227,7 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 	if err := runner.validateEnvelope(envelope, "observation commit"); err != nil {
 		return runner.refuse(ctx, envelope, "committed", "", "invalid_commit", err.Error())
 	}
-	if err := validateCommit(commit); err != nil {
+	if err := validateSemanticGrant(grant, runner.config.Role); err != nil {
 		return runner.refuse(ctx, envelope, "committed", "", "invalid_commit", err.Error())
 	}
 	if runner.invocation.Revision == 0 {
@@ -257,6 +259,7 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 		Invocation:             invocationForCommit(runner.invocation, commit),
 		ExpectedContextVersion: &version, ExpectedContextItemID: commit.Context.StateItemID,
 		CommittedContext: &committedContext,
+		SpokeOver:        grant.Act == coreinteraction.ActSpeakThrough || grant.Act == coreinteraction.ActInterrupt,
 	}
 	trigger := runner.triggerEnvelope(envelope, generationID, payload)
 	for _, parent := range []string{commit.Context.StateItemID, commit.TrajectoryItemID, commit.TriggerItemID} {
@@ -275,7 +278,7 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 	if _, err := runner.ports.authority.Broadcast(ctx, candidateEnvelope); err != nil {
 		return err
 	}
-	return runner.finishEmission(ctx, envelope, "committed", generationID, commit)
+	return runner.finishEmission(ctx, envelope, "committed", generationID, commit, grant.Act)
 }
 
 func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelope element.Envelope) error {
@@ -319,8 +322,12 @@ func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelop
 		return runner.publishState(ctx, envelope)
 	}
 	version := *create.ExpectedContextVersion
+	invocation, err := invocationForManualCreate(runner.invocation, create.TrustedPurpose)
+	if err != nil {
+		return runner.refuse(ctx, envelope, "create", generationID, "invalid_create", err.Error())
+	}
 	payload := cognitionelements.Generate{
-		Invocation:             invocationForManualCreate(runner.invocation),
+		Invocation:             invocation,
 		ExpectedContextVersion: &version, ExpectedContextItemID: create.ExpectedContextItemID,
 		CommittedContext: cloneResponseCreateContext(create.CommittedContext),
 	}
@@ -331,7 +338,7 @@ func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelop
 	}
 	runner.state.ContextVersion = version
 	return runner.finishEmission(ctx, envelope, "create", generationID,
-		stateelements.ObservationCommitOutcome{StoreVersion: version})
+		stateelements.ObservationCommitOutcome{StoreVersion: version}, "")
 }
 
 func (runner *sessionInvocationRunner) acceptCancel(ctx context.Context, envelope element.Envelope) error {
@@ -385,7 +392,7 @@ func (runner *sessionInvocationRunner) triggerEnvelope(
 
 func (runner *sessionInvocationRunner) finishEmission(
 	ctx context.Context, cause element.Envelope, operation, generationID string,
-	commit stateelements.ObservationCommitOutcome,
+	commit stateelements.ObservationCommitOutcome, act coreinteraction.Act,
 ) error {
 	runner.rememberTerminal(generationID)
 	runner.state.Emitted++
@@ -393,7 +400,8 @@ func (runner *sessionInvocationRunner) finishEmission(
 		Kind: SessionInvocationEmitted, Operation: operation, GenerationID: generationID,
 		Role: runner.config.Role, InvocationRevision: runner.invocation.Revision,
 		InvocationDigest: runner.invocationDigest, StreamID: commit.StreamID,
-		SourceRevision: commit.SourceRevision, ContextVersion: commit.StoreVersion,
+		SourceRevision: commit.SourceRevision, ObservationRevision: commit.ObservationRevision,
+		Act: act, ContextVersion: commit.StoreVersion,
 		TriggerItemID: commit.TriggerItemID,
 	}); err != nil {
 		return err

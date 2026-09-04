@@ -29,6 +29,7 @@ const overlapBargeInGraph = `graph overlap_barge_in_test {
     interaction.OverlapBargeIn :: overlap;
     input activity = overlap.activity;
     input transcript = overlap.transcript;
+    input semantic = overlap.semantic;
     input speech = overlap.speech;
     input result = overlap.result;
     input invocation = overlap.invocation;
@@ -63,7 +64,7 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 4 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 5 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v2" {
@@ -230,6 +231,68 @@ func TestOverlapBargeInReleaseBeforeStatusTombstonesTheExactUtterance(t *testing
 	}
 	assertNoEnvelope(t, harness.output(t, "decision"))
 	assertNoOverlapCancels(t, harness)
+}
+
+func TestOverlapBargeInReleaseAcceptsFailedZeroAudioPunctuationMarker(t *testing.T) {
+	decider := newOverlapTestDecider(coreinteraction.OverlapDirected)
+	harness := mountOverlapBargeIn(t,
+		`{"decider":"overlap-test","hold_ms":10,"unclassified":"cancel"}`, decider)
+	defer harness.stop(t)
+
+	const (
+		runID       = "failed-zero-audio-run"
+		utteranceID = "failed-zero-audio-utterance"
+	)
+	harness.sendAndSync(t, "model", overlapModelEnvelope("model-done", runID))
+	harness.sendAndSync(t, "segmentation", overlapSegmentationEnvelope(
+		"segmentation-done", runID, OutcomeCompleted,
+	))
+	harness.sendAndSync(t, "invocation", overlapInvocationEnvelope("invocation-late", runID))
+	release := overlapReleaseEnvelope(
+		"failed-release", runID, utteranceID, "...",
+		action.Outcome{Completed: false, PlayedMS: 0, Reason: "Fish Audio returned no audio"},
+	)
+	state := harness.sendAndSync(t, "release", release)
+	if state.ActiveTTS != 0 || state.ActivePlayback != 0 || state.OverlapActive {
+		t.Fatalf("failed zero-audio release retained speech work: %+v", state)
+	}
+	forwarded := receive(t, harness.output(t, "safe_release"))
+	receipt, ok := forwarded.Payload.(speechelements.PlaybackReceipt)
+	if !ok || receipt.Utterance.Text != "..." || receipt.Outcome.Completed ||
+		receipt.Outcome.PlayedMS != 0 || receipt.Outcome.Reason == "" ||
+		!slices.Contains(forwarded.CausalParents, release.ItemID) {
+		t.Fatalf("failed zero-audio release pass-through = %+v / %#v",
+			forwarded, forwarded.Payload)
+	}
+}
+
+func TestOverlapBargeInReleaseRejectsUnprovedPunctuationMarker(t *testing.T) {
+	tests := []struct {
+		name    string
+		text    string
+		outcome action.Outcome
+	}{
+		{name: "completed", text: "...", outcome: action.Outcome{Completed: true}},
+		{name: "played audio", text: "...", outcome: action.Outcome{PlayedMS: 1, Reason: "failed later"}},
+		{name: "missing failure", text: "...", outcome: action.Outcome{}},
+		{name: "symbol rather than punctuation", text: "🙂", outcome: action.Outcome{Reason: "no audio"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &overlapBargeInRunner{
+				config:             OverlapBargeInConfig{MaxUtterances: 8},
+				runs:               make(map[string]*overlapRun),
+				utterances:         make(map[string]*overlapUtterance),
+				terminalUtterances: make(map[string]struct{}),
+			}
+			_, err := runner.acceptPlaybackRelease(overlapReleaseEnvelope(
+				"release", "run", "utterance", test.text, test.outcome,
+			))
+			if err == nil {
+				t.Fatal("punctuation-only release without failed zero-audio proof was accepted")
+			}
+		})
+	}
 }
 
 func TestOverlapBargeInSafeResultBarrierRetiresSpeechlessHorizonBeforeForwarding(t *testing.T) {
@@ -718,6 +781,57 @@ func TestOverlapBargeInCancelsLateWorkForTheSameActiveSpeech(t *testing.T) {
 	assertNoOverlapCancels(t, harness)
 }
 
+func TestOverlapBargeInProtectsDeliberateSameStreamUntilExplicitStop(t *testing.T) {
+	harness := mountOverlapBargeIn(t, `{"hold_ms":10,"unclassified":"cancel"}`, nil)
+	defer harness.stop(t)
+
+	harness.sendAndSync(t, "activity", overlapActivityEnvelope(
+		"activity-start", "stream-a", acousticelements.SpeechStarted,
+	))
+	state := harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
+		"invocation-a", "run-a", "stream-a", 1, coreinteraction.ActSpeakThrough,
+	))
+	if state.OverlapActive || state.ActiveModels != 1 || state.ActiveSegmentations != 1 {
+		t.Fatalf("deliberate same-stream invocation armed generic overlap: %+v", state)
+	}
+
+	harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
+		"semantic-listen", "stream-a", 2, coreinteraction.ActStaySilent,
+	))
+	assertNoOverlapCancels(t, harness)
+
+	harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
+		"semantic-stop", "stream-a", 3, coreinteraction.ActStopSpeaking,
+	))
+	decisionEnvelope, decision := receiveOverlapDecision(t, harness.output(t, "decision"))
+	if decision.Kind != OverlapCanceled || decision.Trigger != "semantic_revision" ||
+		decision.SourceRevision != 3 || !reflect.DeepEqual(decision.ActiveRunIDs, []string{"run-a"}) ||
+		decision.ModelCancels != 1 || decision.SegmentationCancels != 1 {
+		t.Fatalf("semantic stop cancellation = %+v", decision)
+	}
+	assertExactOverlapRunCancel(t, harness.output(t, "model_cancel"), decisionEnvelope.ItemID, "run-a")
+	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"), decisionEnvelope.ItemID, "run-a")
+}
+
+func TestOverlapBargeInAppliesDecisionBeforeReorderedInvocation(t *testing.T) {
+	harness := mountOverlapBargeIn(t, `{"hold_ms":10,"unclassified":"cancel"}`, nil)
+	defer harness.stop(t)
+
+	harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
+		"semantic-newer", "stream-a", 2, coreinteraction.ActStaySilent,
+	))
+	harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
+		"invocation-older", "run-older", "stream-a", 1, coreinteraction.ActAnswer,
+	))
+	decisionEnvelope, decision := receiveOverlapDecision(t, harness.output(t, "decision"))
+	if decision.Kind != OverlapCanceled || decision.Trigger != "semantic_revision" ||
+		!reflect.DeepEqual(decision.ActiveRunIDs, []string{"run-older"}) {
+		t.Fatalf("decision-before-invocation cancellation = %+v", decision)
+	}
+	assertExactOverlapRunCancel(t, harness.output(t, "model_cancel"), decisionEnvelope.ItemID, "run-older")
+	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"), decisionEnvelope.ItemID, "run-older")
+}
+
 func mountOverlapBargeIn(
 	t *testing.T, config string, decider *overlapTestDecider,
 ) *overlapBargeInHarness {
@@ -915,6 +1029,32 @@ func overlapInvocationEnvelope(itemID, runID string) element.Envelope {
 		Payload: policyelements.SessionInvocationOutcome{
 			Kind: policyelements.SessionInvocationEmitted, Operation: "create", GenerationID: runID,
 			Role: "assistant",
+		},
+	}
+}
+
+func overlapCommittedInvocationEnvelope(
+	itemID, runID, streamID string, sourceRevision uint64, act coreinteraction.Act,
+) element.Envelope {
+	envelope := overlapInvocationEnvelope(itemID, runID)
+	envelope.Payload = policyelements.SessionInvocationOutcome{
+		Kind: policyelements.SessionInvocationEmitted, Operation: "committed",
+		GenerationID: runID, Role: "foreground", StreamID: streamID,
+		SourceRevision: sourceRevision, ObservationRevision: sourceRevision, Act: act,
+	}
+	return envelope
+}
+
+func overlapSemanticEnvelope(
+	itemID, streamID string, sourceRevision uint64, act coreinteraction.Act,
+) element.Envelope {
+	return element.Envelope{
+		Type: policyelements.SemanticDecisionType(), ItemID: itemID,
+		SessionID: overlapBargeInSession, SourceID: streamID, CancellationScope: streamID,
+		Payload: policyelements.SemanticDecision{
+			Operation: "committed", Act: act, Policy: "transcript-policy",
+			EvidenceItemID: "evidence-" + itemID, StreamID: streamID,
+			SourceRevision: sourceRevision, ContextVersion: sourceRevision,
 		},
 	}
 }

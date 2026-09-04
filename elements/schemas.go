@@ -257,6 +257,22 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		},
 		"expected_admission", "candidate_sources", "detector",
 	)
+	transcriptEventRules := objectSchema(schemaObject{
+		"instruction": stringSchema(1, maximumElementJSON),
+		"acts": func() schemaObject {
+			result := arraySchema(enumSchema(
+				"listen", "speak-through", "answer", "interrupt", "act-silently",
+				"keep-speaking", "stop-speaking",
+			), 2, 7)
+			result["uniqueItems"] = true
+			return result
+		}(),
+		"timeout_ms": integerSchema(1, 300_000),
+	}, "instruction", "acts", "timeout_ms")
+	transcriptEvents := objectSchema(schemaObject{
+		"partial": transcriptEventRules,
+		"final":   transcriptEventRules,
+	}, "partial", "final")
 	documents := map[string]schemaObject{
 		"schema://openrealtime/acoustic/admission-config/v1": standardObject(
 			"schema://openrealtime/acoustic/admission-config/v1",
@@ -449,6 +465,10 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"source": schemaObject{"type": "string"},
 			}, "provider",
 		),
+		"schema://openrealtime/perception/final-observation-gate-config/v1": standardObject(
+			"schema://openrealtime/perception/final-observation-gate-config/v1",
+			schemaObject{"admit_provisional": schemaObject{"type": "boolean"}},
+		),
 		"schema://openrealtime/perception/visual-observer-config/v1": standardObject(
 			"schema://openrealtime/perception/visual-observer-config/v1",
 			schemaObject{
@@ -540,6 +560,9 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"recent_lines":                  integerSchema(1, 4096),
 				"max_pending":                   largeBoundedState, "terminal_memory": largeBoundedState,
 				"cancel_memory": largeBoundedState, "standing_memory": integerSchema(1, 4096),
+				"transcript_events": schemaObject{"anyOf": []any{
+					transcriptEvents, schemaObject{"type": "null"},
+				}},
 			}, "decider",
 		),
 		"schema://openrealtime/speech/tts-config/v1": standardObject(

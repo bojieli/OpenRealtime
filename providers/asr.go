@@ -242,10 +242,15 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 		}, nil
 	case DialectDeepgramListen:
 		return func() (v1.PerceptionProvider, error) {
-			return deepgram.NewListener(deepgram.ListenConfig{
+			config := deepgram.ListenConfig{
 				URL: baseURL, Model: model, APIKey: key, Language: request.Language,
 				Keyterms: request.Keyterms, Header: request.Header, Endpointing: request.Endpointing,
-			})
+			}
+			if strings.Contains(request.Language, ",") {
+				languages := strings.Split(request.Language, ",")
+				return deepgram.NewLanguageMux(config, languages)
+			}
+			return deepgram.NewListener(config)
 		}, nil
 	case DialectOpenAITranscriptions, DialectElevenLabsSTT:
 		return func() (v1.PerceptionProvider, error) {

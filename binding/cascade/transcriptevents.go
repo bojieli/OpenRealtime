@@ -85,9 +85,23 @@ func (runtime *runtime) decideTranscriptEvent(
 		Message: message,
 	})
 	if recorder := runtime.policies.ShadowInteraction; recorder != nil {
+		predicates := map[string]string{"where": "transcript." + string(kind)}
+		speaker := runtime.voices.Evidence()
+		predicates["speaker_verdict"] = string(speaker.Verdict)
+		predicates["speaker_audio_ms"] = strconv.FormatInt(speaker.Buffered.Milliseconds(), 10)
+		predicates["speaker_asked"] = strconv.FormatBool(speaker.Asked)
+		predicates["speaker_pending"] = strconv.FormatBool(speaker.Pending)
+		predicates["speaker_reference"] = strconv.FormatBool(speaker.ReferenceReady)
+		predicates["speaker_compared"] = strconv.FormatBool(speaker.Compared)
+		if speaker.Compared {
+			predicates["speaker_similarity"] = fmt.Sprintf("%.3f", speaker.Similarity)
+		}
+		if speaker.Error != "" {
+			predicates["speaker_error"] = speaker.Error
+		}
 		recorder(interaction.ShadowDecision{
 			NowNS: decision.NowNS, Situation: state.Render(), Act: string(act),
-			Predicates: map[string]string{"where": "transcript." + string(kind)},
+			Predicates: predicates,
 			Error:      errorText(err), ElapsedNS: outcome.ElapsedNS,
 		})
 	}

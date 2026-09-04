@@ -109,6 +109,18 @@ func ScenarioConversationArtifacts(
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
+	if err := updateScenarioNode(document.Nodes, "audio_final_gate", map[string]any{
+		"admit_provisional": config.SemanticAdmission.TranscriptEvents != nil,
+	}); err != nil {
+		return graphconfig.Artifacts{}, err
+	}
+	if config.SemanticAdmission.TranscriptEvents != nil {
+		if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
+			"transcript_events": config.SemanticAdmission.TranscriptEvents,
+		}); err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+	}
 	values, err := json.Marshal(document)
 	if err != nil {
 		return graphconfig.Artifacts{}, fmt.Errorf("encode scenario conversation values artifact: %w", err)

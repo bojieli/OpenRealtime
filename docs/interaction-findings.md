@@ -1,5 +1,11 @@
 # Building an interaction model: what the measurements said
 
+> [!NOTE]
+> **Research note.** This is a record of findings, failed assumptions, and
+> corrected measurements—not a setup guide or current API contract. See
+> [Architecture](architecture.md) for shipped behavior and
+> [Measurement](measurement.md) for the underlying evidence.
+
 This records what was learned building the model that decides *when* an agent
 acts, so that the next person does not rediscover it. The design itself is
 ADR-0009; the numbers are in `measurement.md` under F13–F18. This is the part

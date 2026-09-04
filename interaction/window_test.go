@@ -132,6 +132,23 @@ func TestOneSentenceIsOneLineHoweverOftenItWasCommitted(t *testing.T) {
 	}
 }
 
+func TestRecentLinesAlsoProjectsSupersededPartials(t *testing.T) {
+	said := func(text string) trajectory.Item {
+		return trajectory.Item{
+			Kind: trajectory.KindObservation, Content: text,
+			Observation: &trajectory.ObservationMeta{Source: "microphone"},
+		}
+	}
+	lines := interaction.RecentLines([]trajectory.Item{
+		said("The third is"),
+		said("The third is a sea bass"),
+		said("The third is a sea bass with fennel"),
+	}, 12)
+	if len(lines) != 1 || !strings.Contains(lines[0], "with fennel") {
+		t.Fatalf("recent decision context retained superseded ASR revisions: %v", lines)
+	}
+}
+
 // TestBackgroundStateIsNotRenderedAsSpeech is the regression for a
 // conversation in which the agent appeared to have said "The user wants to
 // finish a task but has not yet specified what the task is. Please ask the

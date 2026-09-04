@@ -106,6 +106,7 @@ type Listener struct {
 	committed        string
 	interim          string
 	lastEmittedText  string
+	confidence       float64
 	revisionID       uint64
 	finalized        bool
 	speechEndpointed bool
@@ -130,6 +131,7 @@ type Listener struct {
 // transcriptSegment is one recognised span as Deepgram reported it.
 type transcriptSegment struct {
 	text        string
+	confidence  float64
 	final       bool
 	speechFinal bool
 }
@@ -346,7 +348,8 @@ func (listener *Listener) read(connection *websocket.Conn) {
 			SpeechFinal bool   `json:"speech_final"`
 			Channel     struct {
 				Alternatives []struct {
-					Transcript string `json:"transcript"`
+					Transcript string  `json:"transcript"`
+					Confidence float64 `json:"confidence"`
 				} `json:"alternatives"`
 			} `json:"channel"`
 			Error       string `json:"error"`
@@ -371,8 +374,9 @@ func (listener *Listener) read(connection *websocket.Conn) {
 				continue
 			}
 			segment := transcriptSegment{
-				text:  envelope.Channel.Alternatives[0].Transcript,
-				final: envelope.IsFinal, speechFinal: envelope.SpeechFinal,
+				text:       envelope.Channel.Alternatives[0].Transcript,
+				confidence: envelope.Channel.Alternatives[0].Confidence,
+				final:      envelope.IsFinal, speechFinal: envelope.SpeechFinal,
 			}
 			// An interim result with nothing in it is Deepgram saying it has
 			// not decided yet, not that the speaker said nothing. Forwarding
@@ -459,6 +463,7 @@ func (listener *Listener) apply(segment transcriptSegment) {
 	}
 	if segment.final {
 		if strings.TrimSpace(segment.text) != "" {
+			listener.confidence = segment.confidence
 			if listener.committed != "" {
 				listener.committed += " "
 			}
@@ -467,7 +472,20 @@ func (listener *Listener) apply(segment transcriptSegment) {
 		listener.interim = ""
 		return
 	}
+	if strings.TrimSpace(segment.text) != "" {
+		listener.confidence = segment.confidence
+	}
 	listener.interim = " " + strings.TrimSpace(segment.text)
+}
+
+// Confidence is Deepgram's confidence in the transcript currently exposed by
+// this stream. It is retained across an empty endpoint marker because that
+// marker closes the preceding text; it does not replace it with a hypothesis
+// that the speaker said nothing.
+func (listener *Listener) Confidence() float64 {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	return listener.confidence
 }
 
 // SpeechEndpointed reports that Deepgram's own VAD marked the current

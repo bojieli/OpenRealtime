@@ -46,19 +46,38 @@ func TestValidateSemanticOutcomeRequiresExactConsistentBoundedChoice(t *testing.
 
 func TestSemanticExplicitCreateDoesNotAskProviderToChooseSingletonAct(t *testing.T) {
 	runner := semanticAdmissionRunner{}
-	act, outcome, err := runner.decideAct(context.Background(), "create", interaction.Situation{
+	act, outcome, err := runner.decideAct(context.Background(), semanticRequest{operation: "create"}, interaction.Situation{
 		AllowedActs: []interaction.Act{interaction.ActStaySilent},
 	})
 	if err != nil || act != interaction.ActStaySilent || outcome.Index != 0 ||
 		outcome.Option != string(interaction.ActStaySilent) || outcome.Measured {
 		t.Fatalf("singleton explicit-create act = %q, %+v, %v", act, outcome, err)
 	}
-	_, _, err = runner.decideAct(context.Background(), "create", interaction.Situation{
+	_, _, err = runner.decideAct(context.Background(), semanticRequest{operation: "create"}, interaction.Situation{
 		AgentSpeaking: true,
 		AllowedActs:   []interaction.Act{interaction.ActAnswer},
 	})
 	if err == nil || !strings.Contains(err.Error(), "no executable act") {
 		t.Fatalf("empty explicit-create act set error = %v", err)
+	}
+}
+
+func TestSemanticControlDispositionSuppressesCommittedControlWithoutOpeningCreate(t *testing.T) {
+	for _, testCase := range []struct {
+		act      interaction.Act
+		wantCode string
+	}{
+		{act: interaction.ActKeepSpeaking, wantCode: "keep_speaking"},
+		{act: interaction.ActStopSpeaking, wantCode: "stop_speaking"},
+	} {
+		code, message, refused := semanticControlDisposition("committed", testCase.act)
+		if refused || code != testCase.wantCode || strings.TrimSpace(message) == "" {
+			t.Fatalf("committed %s disposition = %q, %q, %t", testCase.act, code, message, refused)
+		}
+		code, message, refused = semanticControlDisposition("create", testCase.act)
+		if !refused || code != "unsupported_act" || !strings.Contains(message, "cannot claim") {
+			t.Fatalf("create %s disposition = %q, %q, %t", testCase.act, code, message, refused)
+		}
 	}
 }
 

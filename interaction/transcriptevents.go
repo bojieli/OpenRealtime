@@ -69,6 +69,9 @@ func NewTranscriptEventPolicy(
 	if decider == nil {
 		return nil, errors.New("a transcript-event policy requires a decider")
 	}
+	if err := ValidateTranscriptEventOptions(options); err != nil {
+		return nil, err
+	}
 	partial, err := validateTranscriptRules(TranscriptPartial, options.Partial)
 	if err != nil {
 		return nil, err
@@ -78,6 +81,20 @@ func NewTranscriptEventPolicy(
 		return nil, err
 	}
 	return &TranscriptEventPolicy{decider: decider, partial: partial, final: final}, nil
+}
+
+// ValidateTranscriptEventOptions checks an event policy without opening or
+// retaining a model client. Deployment configuration uses it before a live
+// Decider is available; NewTranscriptEventPolicy repeats the check at the
+// runtime boundary so configuration and execution cannot drift.
+func ValidateTranscriptEventOptions(options TranscriptEventOptions) error {
+	if _, err := validateTranscriptRules(TranscriptPartial, options.Partial); err != nil {
+		return err
+	}
+	if _, err := validateTranscriptRules(TranscriptFinal, options.Final); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (policy *TranscriptEventPolicy) Name() string {

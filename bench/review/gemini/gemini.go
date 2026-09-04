@@ -18,6 +18,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strconv"
@@ -176,7 +177,7 @@ func descriptorFor(implementation, configuration []byte) review.ProviderDescript
 		Provider: "google", Model: ModelID, API: interactionsAPI,
 		APIRevision: APIRevision,
 		Implementation: review.ContentIdentity{
-			Version: "openrealtime.gemini-review.impl.v11", SHA256: digest(implementation),
+			Version: "openrealtime.gemini-review.impl.v12", SHA256: digest(implementation),
 		},
 		ConfigurationSHA256: digest(configuration),
 		CapabilitiesSHA256:  capabilitiesSHA256,
@@ -244,14 +245,56 @@ func snapshotHTTPClient(client *http.Client) http.Client {
 
 func newProductionTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: dialTimeout, KeepAlive: dialKeepAlive}
+	proxy, _ := productionHTTPSProxy()
 	return &http.Transport{
-		Proxy: nil, DialContext: dialer.DialContext, ForceAttemptHTTP2: true,
+		Proxy: proxy, DialContext: dialer.DialContext, ForceAttemptHTTP2: true,
 		MaxIdleConns: maximumIdleConnections, MaxIdleConnsPerHost: maximumIdlePerHost,
 		MaxConnsPerHost: maximumConnectionsPerHost, IdleConnTimeout: idleConnectionTimeout,
 		TLSHandshakeTimeout: tlsHandshakeTimeout, ResponseHeaderTimeout: responseHeaderTimeout,
 		ExpectContinueTimeout: expectContinueTimeout, DisableCompression: true,
 		MaxResponseHeaderBytes: maximumResponseHeaderBytes,
 		TLSClientConfig:        &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+}
+
+// productionHTTPSProxy resolves the conventional HTTPS_PROXY setting without
+// delegating to http.DefaultTransport. The reviewer keeps its own immutable
+// transport, but deployments may still select a standard forward proxy when a
+// direct Google route is unavailable. Only a credential-free endpoint is
+// retained in the configuration artifact; any proxy userinfo stays inside the
+// private transport closure.
+func productionHTTPSProxy() (
+	func(*http.Request) (*url.URL, error), map[string]any,
+) {
+	raw, source := "", ""
+	for _, name := range []string{"HTTPS_PROXY", "https_proxy"} {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			raw, source = value, name
+			break
+		}
+	}
+	if raw == "" {
+		return nil, map[string]any{
+			"policy": "private_direct_transport_v1", "proxy": "disabled",
+		}
+	}
+	parsed, err := url.Parse(raw)
+	validScheme := err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https")
+	validShape := err == nil && parsed.Hostname() != "" &&
+		(parsed.Path == "" || parsed.Path == "/") && parsed.RawQuery == "" && parsed.Fragment == ""
+	if !validScheme || !validShape {
+		return func(*http.Request) (*url.URL, error) {
+				return nil, errors.New("Gemini HTTPS proxy environment is invalid")
+			}, map[string]any{
+				"policy": "private_https_proxy_transport_v1", "proxy": "invalid",
+				"proxy_source": source,
+			}
+	}
+	endpoint := (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host}).String()
+	return http.ProxyURL(parsed), map[string]any{
+		"policy": "private_https_proxy_transport_v1", "proxy": "enabled",
+		"proxy_source": source, "proxy_endpoint": endpoint,
+		"proxy_authentication": parsed.User != nil,
 	}
 }
 
@@ -280,8 +323,8 @@ func implementationArtifact() []byte {
 }
 
 func productionConfigurationArtifact() []byte {
-	return configurationArtifact(map[string]any{
-		"policy": "private_direct_transport_v1", "proxy": "disabled",
+	_, proxyConfiguration := productionHTTPSProxy()
+	transport := map[string]any{
 		"compression": false, "cookies": false, "redirects": "disabled",
 		"dial_timeout_ms":            dialTimeout.Milliseconds(),
 		"dial_keepalive_ms":          dialKeepAlive.Milliseconds(),
@@ -295,7 +338,11 @@ func productionConfigurationArtifact() []byte {
 		"max_idle_connections":          maximumIdleConnections,
 		"max_idle_connections_per_host": maximumIdlePerHost,
 		"max_connections_per_host":      maximumConnectionsPerHost,
-	})
+	}
+	for key, value := range proxyConfiguration {
+		transport[key] = value
+	}
+	return configurationArtifact(transport)
 }
 
 func hermeticConfigurationArtifact(client http.Client) []byte {
@@ -313,7 +360,7 @@ func configurationArtifact(transport map[string]any) []byte {
 			"accept": "application/json", "content_type": "application/json",
 			"credential_header": "x-goog-api-key", "user_agent": "OpenRealtime-benchmark-review/1",
 		},
-		"implementation":           "openrealtime.gemini-review.v11",
+		"implementation":           "openrealtime.gemini-review.v12",
 		"inline_media_max_count":   maximumPreparedMedia,
 		"inline_media_max_bytes":   maximumInlineMediaBytes,
 		"inline_request_max_bytes": maximumInlineRequestBytes,

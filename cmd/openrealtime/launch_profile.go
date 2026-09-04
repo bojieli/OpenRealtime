@@ -21,6 +21,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
+	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
@@ -51,40 +52,49 @@ type scenarioProfileOptions struct {
 	revision      uint64
 	architecture  string
 
-	asrProvider        string
-	asrModel           string
-	asrURL             string
-	asrLanguage        string
-	asrKeyterms        []string
-	asrPartialMS       int64
-	asrEndpointingMS   int64
-	asrTimeoutMS       int64
-	asrCadenceMS       int64
-	modelProvider      string
-	modelName          string
-	modelURL           string
-	modelEffort        string
-	modelVision        bool
-	modelReason        string
-	modelRetainReason  bool
-	modelTemperature   float64
-	modelTimeoutMS     int64
-	policyProvider     string
-	policyModel        string
-	policyURL          string
-	policyTimeoutMS    int64
-	policyVision       bool
-	policyGuided       bool
-	policyReasoning    string
-	policyTokenEnv     string
-	ttsProvider        string
-	ttsModel           string
-	ttsURL             string
-	ttsVoice           string
-	ttsLanguage        string
-	ttsTimeoutMS       int64
-	ttsSentenceWrap    bool
-	ttsSentenceMinimum int
+	asrProvider            string
+	asrModel               string
+	asrURL                 string
+	asrLanguage            string
+	asrKeyterms            []string
+	asrPartialMS           int64
+	asrEndpointingMS       int64
+	asrTimeoutMS           int64
+	asrCadenceMS           int64
+	speakerURL             string
+	speakerModel           string
+	speakerTimeoutMS       int64
+	modelProvider          string
+	modelName              string
+	modelURL               string
+	modelEffort            string
+	modelVision            bool
+	modelReason            string
+	modelRetainReason      bool
+	modelTemperature       float64
+	modelTimeoutMS         int64
+	policyProvider         string
+	policyModel            string
+	policyURL              string
+	policyTimeoutMS        int64
+	policyVision           bool
+	policyGuided           bool
+	policyReasoning        string
+	policyTokenEnv         string
+	transcriptPolicy       string
+	transcriptTimeoutMS    int64
+	transcriptPartialActs  string
+	transcriptPartialRules string
+	transcriptFinalActs    string
+	transcriptFinalRules   string
+	ttsProvider            string
+	ttsModel               string
+	ttsURL                 string
+	ttsVoice               string
+	ttsLanguage            string
+	ttsTimeoutMS           int64
+	ttsSentenceWrap        bool
+	ttsSentenceMinimum     int
 
 	gateThreshold           float64
 	gatePrefixMS            int
@@ -106,6 +116,7 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		asrProvider:  "sensevoice", asrModel: "iic/SenseVoiceSmall",
 		asrURL: "http://127.0.0.1:8002/v1", asrPartialMS: 200,
 		asrTimeoutMS: 30_000, asrCadenceMS: 200,
+		speakerModel: "speechbrain/spkrec-ecapa-voxceleb", speakerTimeoutMS: 5_000,
 		modelProvider: "vllm", modelName: "qwen-fast",
 		modelURL: "http://127.0.0.1:8000/v1", modelEffort: "minimal",
 		modelVision: true, modelReason: "off", modelTemperature: 0,
@@ -113,7 +124,10 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		policyProvider: "vllm", policyModel: "qwen-fast",
 		policyURL: "http://127.0.0.1:8000/v1", policyTimeoutMS: 2_000,
 		policyVision: true, policyGuided: true, policyReasoning: "chat_template_kwargs",
-		ttsProvider: "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
+		transcriptPolicy: "none", transcriptTimeoutMS: 250,
+		transcriptPartialActs: "listen,speak-through,interrupt,act-silently",
+		transcriptFinalActs:   "listen,answer,act-silently",
+		ttsProvider:           "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
 		ttsURL: "http://127.0.0.1:8123/v1/tts", ttsVoice: "default",
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
 		gateThreshold: 0.5, gatePrefixMS: 300, gateSilenceMS: 500,
@@ -174,6 +188,9 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.Int64Var(&options.asrEndpointingMS, "asr-endpointing-ms", options.asrEndpointingMS, "streaming-provider endpointing")
 	flags.Int64Var(&options.asrTimeoutMS, "asr-timeout-ms", options.asrTimeoutMS, "ASR request timeout")
 	flags.Int64Var(&options.asrCadenceMS, "asr-cadence-ms", options.asrCadenceMS, "ASR graph cadence")
+	flags.StringVar(&options.speakerURL, "speaker-url", options.speakerURL, "speaker-embedding endpoint ending in /embed")
+	flags.StringVar(&options.speakerModel, "speaker-model", options.speakerModel, "exact speaker-embedding model")
+	flags.Int64Var(&options.speakerTimeoutMS, "speaker-timeout-ms", options.speakerTimeoutMS, "speaker-embedding request timeout")
 	flags.StringVar(&options.modelProvider, "model-provider", options.modelProvider, "installed text-model provider plugin")
 	flags.StringVar(&options.modelName, "model", options.modelName, "exact text model")
 	flags.StringVar(&options.modelURL, "model-url", options.modelURL, "exact text-model base URL")
@@ -191,6 +208,18 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.policyGuided, "policy-guided-choice", options.policyGuided, "request provider-side enumerated-choice decoding")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", options.policyReasoning, "semantic-policy reasoning control")
 	flags.StringVar(&options.policyTokenEnv, "policy-token-env", options.policyTokenEnv, "optional provider-owned semantic-policy credential environment name")
+	flags.StringVar(&options.transcriptPolicy, "transcript-policy", options.transcriptPolicy,
+		"streaming transcript interaction policy: event-aware or none")
+	flags.Int64Var(&options.transcriptTimeoutMS, "transcript-timeout-ms", options.transcriptTimeoutMS,
+		"per-revision transcript interaction decision timeout")
+	flags.StringVar(&options.transcriptPartialActs, "transcript-partial-acts", options.transcriptPartialActs,
+		"comma-separated executable acts for provisional transcript events")
+	flags.StringVar(&options.transcriptPartialRules, "transcript-partial-rules", options.transcriptPartialRules,
+		"interaction-model instruction for provisional transcript events")
+	flags.StringVar(&options.transcriptFinalActs, "transcript-final-acts", options.transcriptFinalActs,
+		"comma-separated executable acts for final transcript events")
+	flags.StringVar(&options.transcriptFinalRules, "transcript-final-rules", options.transcriptFinalRules,
+		"interaction-model instruction for final transcript events")
 	flags.StringVar(&options.ttsProvider, "tts-provider", options.ttsProvider, "installed TTS provider plugin")
 	flags.StringVar(&options.ttsModel, "tts-model", options.ttsModel, "exact TTS model")
 	flags.StringVar(&options.ttsURL, "tts-url", options.ttsURL, "exact TTS endpoint")
@@ -365,6 +394,10 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
+	speakerIdentity, err := scenarioProfileSpeakerIdentitySelection(inventory, options)
+	if err != nil {
+		return launchprofile.Document{}, graphlaunch.Result{}, err
+	}
 	policy, err := scenarioProfilePolicySelection(inventory, options)
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
@@ -393,13 +426,19 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("resolve scenario architecture: %w", err)
 	}
+	transcriptEvents, err := scenarioProfileTranscriptEvents(options)
+	if err != nil {
+		return launchprofile.Document{}, graphlaunch.Result{}, err
+	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
-		ASR:           asr, Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
+		ASR:           asr, SpeakerIdentity: speakerIdentity,
+		Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
 		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
 			StandingExtraction: true, VerifyVoiceActivation: true, VerifySilentAction: true,
 			MinimumActivationConfidence: 0.7, StandingMemory: 64,
+			TranscriptEvents: transcriptEvents,
 		},
 		Tools: tools,
 		Target: computeruse.Target{
@@ -471,6 +510,42 @@ func freezeProductionScenarioProfile(
 		return launchprofile.Document{}, graphlaunch.Result{}, errors.New("frozen scenario profile and prepared graph plan disagree")
 	}
 	return profile, launched, nil
+}
+
+func scenarioProfileTranscriptEvents(
+	options scenarioProfileOptions,
+) (*policyelements.SemanticTranscriptEventConfig, error) {
+	enabled, err := parseTranscriptPolicy(options.transcriptPolicy)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, nil
+	}
+	partialActs, err := parseTranscriptActs(options.transcriptPartialActs)
+	if err != nil {
+		return nil, fmt.Errorf("partial transcript acts: %w", err)
+	}
+	finalActs, err := parseTranscriptActs(options.transcriptFinalActs)
+	if err != nil {
+		return nil, fmt.Errorf("final transcript acts: %w", err)
+	}
+	config := &policyelements.SemanticTranscriptEventConfig{
+		Partial: policyelements.SemanticTranscriptEventRules{
+			Instruction: options.transcriptPartialRules,
+			Acts:        partialActs,
+			TimeoutMS:   options.transcriptTimeoutMS,
+		},
+		Final: policyelements.SemanticTranscriptEventRules{
+			Instruction: options.transcriptFinalRules,
+			Acts:        finalActs,
+			TimeoutMS:   options.transcriptTimeoutMS,
+		},
+	}
+	if err := policyelements.ValidateSemanticTranscriptEventConfig(*config); err != nil {
+		return nil, fmt.Errorf("scenario transcript policy: %w", err)
+	}
+	return config, nil
 }
 
 // productionScenarioToolDeclarations derives the profile-owned client action
@@ -589,7 +664,7 @@ func scenarioProfileASRSelection(
 			FormatVersion: 1, Model: options.asrModel, BaseURL: options.asrURL,
 			Language: options.asrLanguage, Keyterms: slices.Clone(options.asrKeyterms),
 			PartialIntervalMS: options.asrPartialMS,
-			EndpointingMS: options.asrEndpointingMS, RequestTimeoutMS: options.asrTimeoutMS,
+			EndpointingMS:     options.asrEndpointingMS, RequestTimeoutMS: options.asrTimeoutMS,
 			CadenceMS: options.asrCadenceMS,
 		})
 		if err != nil {
@@ -605,6 +680,37 @@ func scenarioProfileASRSelection(
 		}, nil
 	}
 	return scenarioconversation.ApplicationASRSelection{}, fmt.Errorf("scenario ASR inventory is missing %q", reference)
+}
+
+func scenarioProfileSpeakerIdentitySelection(
+	inventory serveScenarioProviders, options scenarioProfileOptions,
+) (*scenarioconversation.ApplicationSpeakerIdentitySelection, error) {
+	if strings.TrimSpace(options.speakerURL) == "" {
+		return nil, nil
+	}
+	reference := serveProviderReference("speaker-identity", "speakerid")
+	for _, registration := range inventory.SpeakerIdentity {
+		if registration.Reference != reference {
+			continue
+		}
+		raw, err := json.Marshal(serveSpeakerIdentityConfiguration{
+			FormatVersion: serveProviderConfigurationVersion,
+			Endpoint:      options.speakerURL, Model: options.speakerModel,
+			RequestTimeoutMS: options.speakerTimeoutMS,
+		})
+		if err != nil {
+			return nil, err
+		}
+		descriptor, model, err := registration.DescribeConfiguration(raw)
+		if err != nil {
+			return nil, fmt.Errorf("describe scenario speaker identity: %w", err)
+		}
+		return &scenarioconversation.ApplicationSpeakerIdentitySelection{
+			Reference: reference, Artifact: registration.Artifact,
+			Descriptor: descriptor, Model: model, Configuration: raw,
+		}, nil
+	}
+	return nil, fmt.Errorf("scenario speaker identity inventory is missing %q", reference)
 }
 
 func scenarioProfileModelSelection(

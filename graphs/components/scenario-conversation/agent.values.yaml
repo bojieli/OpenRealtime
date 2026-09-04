@@ -18,6 +18,8 @@ nodes:
     provider: deployment.scenario-conversation.asr
     name: scenario-conversation-audio
     source: microphone
+  audio_final_gate:
+    admit_provisional: false
   content:
     observer: client
     text_source: text
@@ -63,6 +65,7 @@ nodes:
     terminal_memory: 512
     cancel_memory: 256
     standing_memory: 64
+    transcript_events: null
   voice_session_invocation:
     role: foreground
     terminal_memory: 512

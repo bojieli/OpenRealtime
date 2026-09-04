@@ -129,6 +129,10 @@ type TextModelConfig struct {
 // a trigger to one exact sampled prefix instead of accepting a newer state.
 type Generate struct {
 	Invocation continuation.Invocation `json:"invocation"`
+	// SpokeOver records that policy deliberately authorized this run while the
+	// user was still speaking. It is carried through prepared text into speech
+	// provenance; it does not itself grant playback authority.
+	SpokeOver bool `json:"spoke_over,omitempty"`
 	// ExpectedContextVersion distinguishes an unconstrained trigger (nil)
 	// from one explicitly bound to the empty trajectory (pointer to zero).
 	ExpectedContextVersion *uint64 `json:"expected_context_version,omitempty"`
@@ -177,6 +181,7 @@ type PreparedTextDelta struct {
 	Text        string       `json:"text,omitempty"`
 	Index       uint64       `json:"index"`
 	Interrupted bool         `json:"interrupted,omitempty"`
+	SpokeOver   bool         `json:"spoke_over,omitempty"`
 }
 
 func (PreparedTextDelta) InspectionCause() element.InspectionCauseKind {

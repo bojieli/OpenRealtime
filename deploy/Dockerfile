@@ -5,7 +5,10 @@
 # the protocol it speaks and not a distribution's package set.
 #
 #   docker build -f deploy/Dockerfile -t openrealtime:1.0.0 .
-#   docker run --rm -p 8080:8080 -e OPENAI_API_KEY openrealtime:1.0.0
+#   docker run --rm -p 8080:8080 -e GEMINI_API_KEY -e OPENREALTIME_TOKEN \
+#     openrealtime:1.0.0 \
+#     serve -listen :8080 -binding upstream -upstream-provider google \
+#     -slow-provider google
 
 FROM golang:1.25 AS build
 
@@ -33,4 +36,4 @@ USER nonroot:nonroot
 EXPOSE 8080
 
 ENTRYPOINT ["/usr/local/bin/openrealtime"]
-CMD ["serve", "-addr", ":8080"]
+CMD ["serve", "-listen", ":8080"]

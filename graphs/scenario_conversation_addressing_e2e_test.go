@@ -20,7 +20,6 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/element"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
-	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphinspect "github.com/bojieli/OpenRealtime/graph/inspect"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
@@ -651,8 +650,9 @@ func assertScenarioAddressingCommitBranch(
 ) {
 	t.Helper()
 	got := recording.any("semantic_admission."+port, func(envelope element.Envelope) bool {
-		commit, ok := envelope.Payload.(stateelements.ObservationCommitOutcome)
-		return ok && commit.StreamID == streamID && commit.SourceRevision == sourceRevision
+		grant, ok := envelope.Payload.(policyelements.SemanticGrant)
+		return ok && grant.Commit.StreamID == streamID &&
+			grant.Commit.SourceRevision == sourceRevision && grant.DecisionItemID != ""
 	})
 	if got != want {
 		t.Fatalf("semantic admission %s branch for stream=%s revision=%d present=%t, want %t",

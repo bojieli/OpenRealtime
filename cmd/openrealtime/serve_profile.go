@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/adapters/bysentence"
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
+	"github.com/bojieli/OpenRealtime/adapters/speakerid"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/asrbuffer"
 	graphnative "github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
@@ -30,6 +33,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graphs"
 	"github.com/bojieli/OpenRealtime/internal/runtimeartifact"
 	"github.com/bojieli/OpenRealtime/management"
+	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/policymodel"
 	"github.com/bojieli/OpenRealtime/providers"
 	serverprofile "github.com/bojieli/OpenRealtime/server"
@@ -91,11 +95,12 @@ func executableServeProfileArtifacts() (serveProfileArtifacts, error) {
 }
 
 type serveScenarioProviders struct {
-	ASR        []scenarioconversation.ASRFactoryRegistration
-	Policies   []scenarioconversation.PolicyFactoryRegistration
-	Models     []scenarioconversation.ModelFactoryRegistration
-	TTS        []scenarioconversation.TTSFactoryRegistration
-	Recogniser *asrbuffer.Accumulator
+	ASR             []scenarioconversation.ASRFactoryRegistration
+	SpeakerIdentity []scenarioconversation.SpeakerIdentityFactoryRegistration
+	Policies        []scenarioconversation.PolicyFactoryRegistration
+	Models          []scenarioconversation.ModelFactoryRegistration
+	TTS             []scenarioconversation.TTSFactoryRegistration
+	Recogniser      *asrbuffer.Accumulator
 }
 
 // newServeScenarioProviders publishes the whole linked provider catalogue.
@@ -105,6 +110,47 @@ type serveScenarioProviders struct {
 func newServeScenarioProviders(artifacts serveProfileArtifacts) (serveScenarioProviders, error) {
 	recogniserMetrics := asrbuffer.NewAccumulator()
 	result := serveScenarioProviders{Recogniser: recogniserMetrics}
+	speakerArtifact, err := serveProviderArtifact(artifacts.Gateway, "speaker-identity", "speakerid")
+	if err != nil {
+		return serveScenarioProviders{}, err
+	}
+	result.SpeakerIdentity = append(result.SpeakerIdentity,
+		scenarioconversation.SpeakerIdentityFactoryRegistration{
+			ApplicationSpeakerIdentitySelection: scenarioconversation.ApplicationSpeakerIdentitySelection{
+				Reference: serveProviderReference("speaker-identity", "speakerid"), Artifact: speakerArtifact,
+			},
+			DescribeConfiguration: func(raw json.RawMessage) (v1.Descriptor, string, error) {
+				config, err := decodeServeSpeakerIdentityConfiguration(raw)
+				if err != nil {
+					return v1.Descriptor{}, "", err
+				}
+				return v1.Descriptor{Name: "speakerid/http", Version: speakerid.AdapterVersion,
+					Capabilities: v1.Capabilities{}}, config.Model, nil
+			},
+			FactoryConfiguration: func(ctx context.Context, _ legacy.Options, raw json.RawMessage) (voices.Embedder, error) {
+				if err := profileProviderContext(ctx); err != nil {
+					return nil, err
+				}
+				config, err := decodeServeSpeakerIdentityConfiguration(raw)
+				if err != nil {
+					return nil, err
+				}
+				return speakerid.New(speakerid.Config{
+					Endpoint:       config.Endpoint,
+					RequestTimeout: time.Duration(config.RequestTimeoutMS) * time.Millisecond,
+				})
+			},
+			ReadinessConfiguration: func(ctx context.Context, raw json.RawMessage) error {
+				if err := profileProviderContext(ctx); err != nil {
+					return err
+				}
+				config, err := decodeServeSpeakerIdentityConfiguration(raw)
+				if err != nil {
+					return err
+				}
+				return readySpeakerIdentity(ctx, config)
+			},
+		})
 	const policyProvider = "vllm"
 	policyArtifact, err := serveProviderArtifact(artifacts.Gateway, "policy", policyProvider)
 	if err != nil {
@@ -307,6 +353,33 @@ func newServeScenarioProviders(artifacts serveProfileArtifacts) (serveScenarioPr
 	return result, nil
 }
 
+func readySpeakerIdentity(ctx context.Context, config serveSpeakerIdentityConfiguration) error {
+	health, err := url.Parse(config.Endpoint)
+	if err != nil {
+		return err
+	}
+	health.Path, health.RawPath, health.RawQuery = "/health", "", ""
+	timed, cancel := context.WithTimeout(ctx, time.Duration(config.RequestTimeoutMS)*time.Millisecond)
+	defer cancel()
+	request, err := http.NewRequestWithContext(timed, http.MethodGet, health.String(), nil)
+	if err != nil {
+		return err
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, 1024))
+	if readErr != nil {
+		return readErr
+	}
+	if response.StatusCode != http.StatusOK || strings.TrimSpace(string(body)) != "ok" {
+		return fmt.Errorf("speaker identity readiness returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
 func serveProviderReference(role, name string) string {
 	return "provider.openrealtime." + role + "." + name + ".v1"
 }
@@ -391,9 +464,11 @@ func newServeProfileHost(
 			ProviderArtifact:    artifacts.ScenarioProvider,
 			RuntimeArtifact:     artifacts.ScenarioRuntime,
 			DependencyArtifact:  artifacts.ScenarioDependencies,
-			ASR:                 providerInventory.ASR, Policies: providerInventory.Policies,
-			Models: providerInventory.Models,
-			TTS:    providerInventory.TTS,
+			ASR:                 providerInventory.ASR,
+			SpeakerIdentity:     providerInventory.SpeakerIdentity,
+			Policies:            providerInventory.Policies,
+			Models:              providerInventory.Models,
+			TTS:                 providerInventory.TTS,
 		},
 	)
 	if err != nil {

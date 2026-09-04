@@ -1,6 +1,6 @@
 # Code of conduct
 
-OpenRealtime is committed to a harassment-free, inclusive research community.
+OpenRealtime is committed to a harassment-free, inclusive open source community.
 Be respectful, critique claims and evidence rather than people, acknowledge
 uncertainty, and make space for participants with different backgrounds and
 communication styles.

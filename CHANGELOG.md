@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Highlights
+
+- The descriptor-locked browser and native companion clients now share one
+  clean Realtime server and explicit presentation APIs.
+- Voice + vision deployments gain a bounded silent visual-action lane while the
+  conversational model remains proposal-only.
+- Fast/slow cognition, interruption, holding speech, and parallel event-loop
+  work now preserve one open response and one canonical trajectory.
+- Compatibility coverage includes the published OpenAI Realtime SDK over both
+  WebSocket and WebRTC.
+- Benchmark and review paths now fail closed on incomplete, mislabeled, or
+  type-inconsistent evidence.
+- Provider catalogs cover language, recognition, synthesis, and remote
+  Realtime roles with live probing for stale defaults.
+
+<details>
+<summary>Detailed engineering record</summary>
+
 ### Developer experience
 
 - **A native macOS client carries the complete session.** The SwiftUI app sends
@@ -434,6 +452,8 @@
   pretending to stream.
 - **Speech from Deepgram, ElevenLabs, and Cartesia**, sharing one adapter and
   one streaming reader with the endpoints that speak OpenAI's speech route.
+
+</details>
 
 ## v1.0.0
 

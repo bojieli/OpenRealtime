@@ -46,6 +46,7 @@ graph scenario_conversation {
     flow.Tee :: asr_outcome_copy;
     flow.Tee :: content_observation_copy;
     flow.Tee :: message_commit_outcome_copy;
+    flow.Tee :: semantic_decision_copy;
     flow.Mux :: observation_output_mux;
     flow.Mux :: trajectory_append_mux;
     flow.Tee :: trajectory_snapshot_copy;
@@ -102,7 +103,7 @@ graph scenario_conversation {
     asr_observation_copy.out -> overlap_barge_in.transcript;
     asr.outcome -> asr_outcome_copy.in;
     asr_outcome_copy.out -> audio_final_gate.flush;
-    audio_final_gate.finals -> audio_observation_commit.observations;
+    audio_final_gate.admitted -> audio_observation_commit.observations;
     content.retain -> retention.retain;
     retention.retained -> content.retained;
     content.release -> retention.release;
@@ -155,6 +156,8 @@ graph scenario_conversation {
     semantic_admission.silent_committed -> silent_session_invocation.committed;
     semantic_admission.voice_create -> voice_session_invocation.create;
     semantic_admission.silent_create -> silent_session_invocation.create;
+    semantic_admission.decision -> semantic_decision_copy.in;
+    semantic_decision_copy.out -> overlap_barge_in.semantic;
     voice_session_invocation.trigger -> voice_model.trigger;
     silent_session_invocation.trigger -> silent_model.trigger;
     voice_session_invocation.authority -> invocation_authority_mux.in;
@@ -299,7 +302,7 @@ graph scenario_conversation {
     output message_commit_outcome = message_commit_outcome_copy.out;
     output post_commit_silence_state = post_commit_silence.state;
     output post_commit_silence_outcome = post_commit_silence.outcome;
-    output semantic_decision = semantic_admission.decision;
+    output semantic_decision = semantic_decision_copy.out;
     output semantic_admission_state = semantic_admission.state;
     output semantic_admission_outcome = semantic_admission.outcome;
     output semantic_policy_resolution = semantic_admission.resolved;

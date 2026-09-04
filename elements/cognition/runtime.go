@@ -962,6 +962,7 @@ func (execution *generationExecution) publishText(
 	envelope.Sequence = index + 1
 	envelope.Payload = PreparedTextDelta{
 		Boundary: boundary, Text: text, Index: index, Interrupted: interrupted,
+		SpokeOver: execution.generate.SpokeOver,
 	}
 	return broadcast(execution.ctx, execution.runner.textOutput, envelope)
 }

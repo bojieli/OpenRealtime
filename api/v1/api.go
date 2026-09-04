@@ -91,6 +91,11 @@ func (frame AudioFrame) EndSample() (uint64, error) {
 type PerceptionRevision struct {
 	RevisionID   uint64 `json:"revision_id"`
 	SourceSample uint64 `json:"source_sample"`
+	// Source optionally names who or what produced the speech. Most ASR
+	// providers leave it empty because a single microphone does not identify a
+	// speaker. A deployment-owned attribution layer may populate it without
+	// changing the transcript or its user authority.
+	Source       string `json:"source,omitempty"`
 	StableText   string `json:"stable_text"`
 	UnstableText string `json:"unstable_text"`
 	Delta        string `json:"delta"`

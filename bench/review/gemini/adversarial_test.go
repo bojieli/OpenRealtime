@@ -1758,6 +1758,8 @@ func TestProductionConstructorUsesPinnedArtifactContract(t *testing.T) {
 }
 
 func TestProductionTransportIsPrivateAndIgnoresMutableHTTPDefault(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("https_proxy", "")
 	original := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = original })
 	var globalCalls atomic.Int32
@@ -1785,7 +1787,75 @@ func TestProductionTransportIsPrivateAndIgnoresMutableHTTPDefault(t *testing.T) 
 	}
 }
 
+func TestProductionTransportUsesStandardHTTPSProxyWithoutRetainingCredentials(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://proxy-user:proxy-password@23.135.236.242:3128")
+	t.Setenv("https_proxy", "")
+	client := snapshotHTTPClient(nil)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport == nil || transport.Proxy == nil {
+		t.Fatalf("proxied production transport = %#v", client.Transport)
+	}
+	request, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "https://generativelanguage.googleapis.com/v1beta/models", nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyURL, err := transport.Proxy(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxyURL == nil || proxyURL.Scheme != "http" || proxyURL.Host != "23.135.236.242:3128" ||
+		proxyURL.User == nil {
+		t.Fatalf("resolved HTTPS proxy = %v", proxyURL)
+	}
+	configuration := productionConfigurationArtifact()
+	if bytes.Contains(configuration, []byte("proxy-user")) ||
+		bytes.Contains(configuration, []byte("proxy-password")) {
+		t.Fatal("production configuration retained HTTPS proxy credentials")
+	}
+	var decoded struct {
+		Transport map[string]any `json:"transport"`
+	}
+	if err := json.Unmarshal(configuration, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Transport["policy"] != "private_https_proxy_transport_v1" ||
+		decoded.Transport["proxy"] != "enabled" ||
+		decoded.Transport["proxy_source"] != "HTTPS_PROXY" ||
+		decoded.Transport["proxy_endpoint"] != "http://23.135.236.242:3128" ||
+		decoded.Transport["proxy_authentication"] != true {
+		t.Fatalf("production HTTPS proxy configuration = %#v", decoded.Transport)
+	}
+}
+
+func TestProductionTransportFailsClosedForInvalidHTTPSProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "socks5://proxy.invalid:1080")
+	t.Setenv("https_proxy", "")
+	client := snapshotHTTPClient(nil)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport == nil || transport.Proxy == nil {
+		t.Fatalf("invalid-proxy production transport = %#v", client.Transport)
+	}
+	request, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "https://generativelanguage.googleapis.com/v1beta/models", nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := transport.Proxy(request); err == nil ||
+		!strings.Contains(err.Error(), "proxy environment is invalid") {
+		t.Fatalf("invalid HTTPS proxy error = %v", err)
+	}
+	configuration := productionConfigurationArtifact()
+	if bytes.Contains(configuration, []byte("proxy.invalid")) {
+		t.Fatal("invalid HTTPS proxy value leaked into production configuration")
+	}
+}
+
 func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "")
+	t.Setenv("https_proxy", "")
 	implementation := implementationArtifact()
 	if len(implementation) < 10_000 ||
 		!bytes.Contains(implementation, []byte("func (plugin *Plugin) Review")) ||
@@ -1824,7 +1894,7 @@ func TestProductionArtifactsContainInspectableSourceAndExactPolicyPreimages(t *t
 	if decoded["response_schema_policy"] != "omit_redundant_finding_timestamps_v1" {
 		t.Fatalf("configuration response schema policy = %#v", decoded["response_schema_policy"])
 	}
-	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v11" ||
+	if descriptor.Implementation.Version != "openrealtime.gemini-review.impl.v12" ||
 		descriptor.Implementation.SHA256 != digest(implementation) ||
 		descriptor.ConfigurationSHA256 != digest(configuration) {
 		t.Fatalf("production descriptor = %+v", descriptor)

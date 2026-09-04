@@ -1,0 +1,34 @@
+# Runtime model caches and generated benchmark evidence can be tens of
+# gigabytes and are never inputs to the server build.
+.runtime/
+artifacts/
+results/
+
+# Build products and dependency caches.
+dist/
+dist-*/
+build/
+bin/
+**/node_modules/
+**/.build/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.egg-info/
+*.py[cod]
+.coverage
+*.log
+
+# Local credentials and environment overrides are runtime inputs, never build
+# inputs. Pass the required named variables to `docker run`.
+.env*
+**/.env*
+
+# Editor and operating-system state.
+*.swp
+*.swo
+.DS_Store
+
+# Keep .git itself: Go records the source revision in `openrealtime version`.
+# This repository-owned measurement index is unrelated to ordinary VCS lookup.
+.git/realtime-cu-measurement.index

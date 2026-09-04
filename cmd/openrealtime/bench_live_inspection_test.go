@@ -206,6 +206,23 @@ func TestUnattestedDiagnosticHasNoImplicitRuntimeAttestor(t *testing.T) {
 	}
 }
 
+func TestArchitectureInspectionSuppliesNonEmptyBenignInstruction(t *testing.T) {
+	config := architectureInspectionSessionConfig(
+		"ws://127.0.0.1:8765/v1/realtime", "token", "model", 3*time.Second,
+	)
+	if strings.TrimSpace(config.Instructions) == "" {
+		t.Fatal("architecture inspection omitted the instruction required by strict graph bindings")
+	}
+	if config.Instructions != architectureInspectionInstruction ||
+		!strings.Contains(strings.ToLower(config.Instructions), "do not generate a response") {
+		t.Fatalf("architecture inspection instruction = %q", config.Instructions)
+	}
+	if !config.CaptureRuntimeEvidence || !config.Quiet ||
+		config.TrailingSilence != time.Millisecond || config.Timeout != 3*time.Second {
+		t.Fatalf("architecture inspection config = %+v", config)
+	}
+}
+
 func TestInspectionGraphIsNeverSilentlyIgnored(t *testing.T) {
 	var reads atomic.Int32
 	_, _, err := configureSessionBenchmarkAttestor(

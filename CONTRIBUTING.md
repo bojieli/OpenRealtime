@@ -1,25 +1,50 @@
 # Contributing to OpenRealtime
 
-OpenRealtime is a research project. A change is reviewable only when its origin,
-behavior, and effect on the evidence are inspectable.
+Thanks for helping build open infrastructure for realtime agents. Contributions
+are welcome across the Go runtime, model adapters, protocol support, clients,
+benchmarks, documentation, examples, and developer experience.
+
+OpenRealtime is production-oriented software with an evidence-first engineering
+standard: behavior should be inspectable, compatibility should be tested, and
+performance claims should be reproducible.
+
+Before participating, read the [Code of Conduct](CODE_OF_CONDUCT.md). Report
+vulnerabilities privately through the process in [SECURITY.md](SECURITY.md), not
+in a public issue.
+
+## Ways to contribute
+
+- Fix a bug or improve an error message.
+- Add or maintain a model/provider adapter.
+- Improve an example, guide, or protocol explanation.
+- Add coverage for a wire, concurrency, authority, or lifecycle edge case.
+- Reproduce a benchmark result or identify a measurement flaw.
+- Propose a new component, graph element, architecture revision, or client
+  integration.
+
+Small, focused pull requests are easiest to review. For a large architecture or
+protocol change, open a discussion or draft ADR before investing in the full
+implementation.
 
 ## Development setup
 
-Install Go 1.25 or newer, then run the gate:
+Install Go 1.25 or newer, clone the repository, and run the same gate used by
+CI:
 
 ```bash
+git clone https://github.com/bojieli/OpenRealtime.git
+cd OpenRealtime
+git switch -c your-change
 ./scripts/check.sh
 ```
 
-That is the whole gate and the same one CI runs: formatting, `go vet` and
-`go test -race` across every module, the protocol conformance suite, the
-prompt-injection release gate, the examples, and the shell scripts. It runs
-offline in a few minutes, and it runs every stage before reporting, so a run
-tells you everything that is broken rather than the first thing.
+The gate runs formatting, `go vet`, race-enabled tests across every module,
+protocol conformance, the prompt-injection safety gate, examples, and shell
+checks. It is offline and runs every stage before reporting failures.
 
-The scripts resolve the toolchain from `OPENREALTIME_GO_BIN`,
-`/usr/local/go/bin/go`, or `PATH`, in that order. Use the same helper for
-ad-hoc commands when an older system `go` comes first on `PATH`:
+The scripts resolve Go from `OPENREALTIME_GO_BIN`,
+`/usr/local/go/bin/go`, or `PATH`, in that order. Use the shared helper when an
+older system toolchain comes first:
 
 ```bash
 source scripts/go-toolchain.sh
@@ -27,75 +52,91 @@ go_bin="$(openrealtime_go_bin)"
 "$go_bin" test -race ./eventloop/...
 ```
 
-What needs a model, a dataset, or a GPU is deliberately not in the gate. The
-measurement suites (`openrealtime bench`, `scripts/prepare-*.sh`) are reported
-rather than gated, because a gate that cannot run offline eventually fails for
-reasons that have nothing to do with the change in front of it.
+Model-, dataset-, browser-, and GPU-dependent checks are provisioned release or
+measurement gates rather than part of the offline developer gate. A skipped
+optional integration is not evidence that the integration passed; the release
+matrix records which environments are required for each public claim.
 
-The engine, the protocol, and the tools are Go, and protocol code is generated
-by `cmd/specsync` rather than by hand. Python appears in exactly two places, in
-both cases because the thing it talks to is Python: the sidecar library and
-reference sidecars under `sidecars/`, and the τ-Voice runner. Neither is on the
-server's runtime path — a sidecar is a separate process the engine speaks a
-documented protocol to.
+## Pull request checklist
 
-## Contribution requirements
+Every pull request should:
 
-Every pull request must:
-
-1. Explain the research or engineering question it addresses.
-2. Declare the origin and license of imported code, data, prompts, model
+1. Explain the problem, user impact, and chosen approach.
+2. Keep the change scoped; call out intentional follow-up work explicitly.
+3. Add tests for affected state, ordering, revision, cancellation, timing, wire,
+   or authority invariants.
+4. Run `./scripts/check.sh` and report any additional checks performed.
+5. Update user-facing documentation and the changelog when behavior changes.
+6. Declare the origin and license of imported code, data, prompts, model
    weights, and generated assets. Write “none” when there are none.
-3. Add tests for state, ordering, revision, cancellation, and time invariants
-   affected by the change.
-4. Record exact model, prompt, provider, fixture, schema, and configuration
-   versions for performance evidence.
-5. Report negative or ambiguous measurements alongside positive results.
-6. Avoid committing credentials, private audio, or provider output whose terms
-   prohibit redistribution.
-7. Keep the OpenAI Realtime wire shape compatible. Project timing, causality,
-   and experiment metadata belongs in the separate trace envelope, never in a
-   client or server event sent on the wire.
-8. Treat `api/v1` as stable. A breaking interface or semantic change requires a
-   new `api/v2` import path, migration documentation, and a major release.
-9. Treat canonical trajectory and reasoning data as internal. Raw reasoning
-   retention must be opt-in, provider-permitted, consented where applicable,
-   and unnecessary for ordinary wire compatibility or timing evidence.
+7. Avoid committing credentials, private audio, personal data, or provider
+   output whose terms prohibit redistribution.
+8. Report negative and ambiguous measurements alongside positive results.
 
-Contributors certify that they have the right to submit their contribution and
-license it under the repository’s applicable license. Substantial architecture
-or protocol changes should start with an ADR in `docs/adr/`.
+Contributors certify that they have the right to submit their work under the
+repository's applicable license.
 
-### Break the check on purpose before you trust it
+## Compatibility and stable surfaces
 
-A test that passes tells you two things and they are easy to confuse: that the
-code is right, or that the check never looked. Before relying on a new test or
-a new gate, **make the defect it describes and confirm it fails.** It costs one
-edit and a rerun, and it is the only check on a check anyone here has found
-that works.
+Keep the OpenAI Realtime wire shape compatible. Project timing, causality, and
+experiment metadata belongs in the separate trace envelope, never in a client
+or server event sent on the wire.
 
-Four of these were caught in a single day, and none of them looked broken:
+Treat `api/v1` as stable. A breaking interface or semantic change requires a
+new versioned import path, migration documentation, and a major release.
 
-- A mutation whose regex broke the syntax of the file it was testing, so the
-  build failed and the run read as the mutation surviving.
-- A source-grep test that called a page healthy while its own
-  `Content-Security-Policy` made it unreachable in any browser.
-- A skipped test standing in for a passed one, so a release gate reported a
-  compatibility claim it had never checked.
-- A refusal message naming a cause it had not verified, sending the reader past
-  the reason printed directly above it.
+Treat the canonical trajectory and reasoning data as internal. Raw reasoning
+retention must be opt-in, permitted by the provider, consented to where
+applicable, and unnecessary for ordinary wire compatibility or timing
+evidence.
 
-The last one is the shape worth remembering: a diagnostic that asserts a cause
-it has not checked is the same defect as the code it was written to catch, and
-it costs more, because it is what someone consults after something else has
-already gone wrong.
+Substantial architecture or protocol decisions belong in `docs/adr/`. Follow
+the existing ADR shape and describe context, decision, alternatives,
+consequences, and compatibility impact.
 
-Assert on what a consumer actually received or rendered, never on what crossed
-the wire or what a file contains. A wire-level or source-level check agrees
-that nothing is wrong in exactly the cases where the user sees nothing at all.
+Protocol code is generated by `cmd/specsync`; do not hand-edit generated wire
+registries. Python belongs in the sidecar library/reference sidecars and in
+model runners that require Python. The server runtime remains Go, and sidecars
+remain separate processes behind a documented protocol.
 
-## Benchmarks
+## Test the test
 
-Performance pull requests must include the command, raw trace, hardware and
-network metadata, repeated-trial distribution, and comparison baseline. A
-single best run is not evidence of an improvement.
+A new regression test should fail for the defect it claims to catch. Before
+trusting it, temporarily reintroduce the defect or make the smallest equivalent
+mutation, confirm the test fails for the expected reason, then restore the
+implementation.
+
+Assert what a consumer actually receives or renders. Source-text checks and
+wire-only checks can pass while the feature is unreachable, skipped, or broken
+at the final boundary. When a gate may skip because an optional dependency is
+missing, make that skip explicit and ensure the provisioned release gate turns
+it into a failure.
+
+## Performance and benchmark changes
+
+Performance pull requests must include:
+
+- the exact command and source revision;
+- raw trace or sealed result cell;
+- hardware, model, prompt, provider, fixture, schema, and configuration
+  identities;
+- repeated-trial distributions rather than a single best run;
+- a comparison baseline with only the intended factor changed;
+- negative results, missing observations, and known limitations.
+
+Read [the benchmark harness](docs/benchmarks.md) and
+[measurement rules](docs/measurement.md) before publishing a result. A
+configuration being supported is a release claim; it outperforming another
+configuration is a separate claim that requires paired evidence.
+
+## Documentation changes
+
+Use the [documentation home](docs/README.md) to place new material:
+
+- task instructions belong in a guide;
+- stable behavior belongs in reference documentation;
+- chronological trials and negative results belong in an evidence record;
+- future architecture belongs in a proposal or ADR.
+
+Keep the README focused on the value of the project and the shortest successful
+path. Link to depth instead of moving design notebooks back into onboarding.

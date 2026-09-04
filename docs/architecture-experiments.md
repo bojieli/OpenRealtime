@@ -1,5 +1,11 @@
 # Architecture experiments
 
+> [!NOTE]
+> **Evidence record.** This page preserves the controlled experiments behind
+> the architecture catalog. For the released runtime and deployment model, read
+> [Architecture](architecture.md). For commands and result interpretation,
+> read [the benchmark harness](benchmarks.md).
+
 F52 asks three narrow questions: where should interaction policy live, what
 evidence should it see, and—when more than one selector is composed—which
 arbitration rule gives the system one authoritative act? It does not define
