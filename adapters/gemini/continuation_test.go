@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -49,6 +50,145 @@ func TestAdapterStreamsTextAndPreservesSignature(t *testing.T) {
 	}
 	if completion.ProviderStateType != ProviderStateType || !strings.Contains(string(completion.ProviderState), "thoughtSignature") {
 		t.Fatalf("thought signature not preserved: %s", completion.ProviderState)
+	}
+}
+
+func TestAdapterRetriesTransientRejectionBeforeStream(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if calls.Add(1) < 3 {
+			writer.Header().Set("Retry-After", "0")
+			http.Error(writer, `{"error":{"status":"UNAVAILABLE"}}`, http.StatusServiceUnavailable)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"hello\"}]},\"finishReason\":\"STOP\"}]}\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Endpoint: server.URL,
+		Phase: trajectory.PhaseFast, Effort: continuation.EffortMinimal,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := continuation.Request{
+		InvocationID: "inv-retry", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hi",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Respond."},
+	}
+	var spoken strings.Builder
+	if _, err := adapter.Continue(t.Context(), request, func(event continuation.Event) error {
+		spoken.WriteString(event.Text)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 3 {
+		t.Fatalf("requests = %d, want 3", got)
+	}
+	if got := spoken.String(); got != "hello" {
+		t.Fatalf("spoken text = %q", got)
+	}
+}
+
+func TestAdapterDoesNotRetryNonTransientRejection(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		http.Error(writer, `{"error":{"status":"INVALID_ARGUMENT"}}`, http.StatusBadRequest)
+	}))
+	defer server.Close()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Endpoint: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := continuation.Request{
+		InvocationID: "inv-bad-request", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hi",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Respond."},
+	}
+	_, err = adapter.Continue(t.Context(), request, func(continuation.Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "Gemini returned HTTP 400") {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+}
+
+func TestAdapterBoundsTransientRejections(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		writer.Header().Set("Retry-After", "0")
+		http.Error(writer, `{"error":{"status":"UNAVAILABLE"}}`, http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Endpoint: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := continuation.Request{
+		InvocationID: "inv-exhausted", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hi",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Respond."},
+	}
+	_, err = adapter.Continue(t.Context(), request, func(continuation.Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "Gemini returned HTTP 503") {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != maxHTTPAttempts {
+		t.Fatalf("requests = %d, want %d", got, maxHTTPAttempts)
+	}
+}
+
+func TestAdapterDoesNotReplayAcceptedStream(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"once\"}]}}]}\n\ndata: not-json\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Endpoint: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := continuation.Request{
+		InvocationID: "inv-midstream", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hi",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Respond."},
+	}
+	var spoken strings.Builder
+	_, err = adapter.Continue(t.Context(), request, func(event continuation.Event) error {
+		spoken.WriteString(event.Text)
+		return nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "decode Gemini stream event") {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	if got := spoken.String(); got != "once" {
+		t.Fatalf("spoken text = %q", got)
 	}
 }
 

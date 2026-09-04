@@ -31,6 +31,9 @@ const (
 	defaultEndpoint   = "https://generativelanguage.googleapis.com/v1beta"
 	maxErrorBody      = 64 << 10
 	maxSSEEvent       = 16 << 20
+	maxHTTPAttempts   = 4
+	initialRetryDelay = 250 * time.Millisecond
+	maximumRetryDelay = 2 * time.Second
 	// portableToolCallThoughtSignature is Gemini's documented sentinel for a
 	// manually constructed function call. Native Gemini content retains its
 	// provider-authenticated signature instead; only portable calls authored
@@ -242,22 +245,11 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	}
 	continuation.TraceRequest(adapter.Descriptor(), request.InvocationID, encoded)
 	endpoint := adapter.config.Endpoint + "/models/" + url.PathEscape(adapter.config.Model) + ":streamGenerateContent?alt=sse"
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	response, err := adapter.openStream(ctx, endpoint, encoded)
 	if err != nil {
-		return continuation.Completion{}, fmt.Errorf("create Gemini request: %w", err)
-	}
-	httpRequest.Header.Set("Content-Type", "application/json")
-	httpRequest.Header.Set("Accept", "text/event-stream")
-	httpRequest.Header.Set("x-goog-api-key", adapter.config.APIKey)
-	response, err := adapter.config.HTTPClient.Do(httpRequest)
-	if err != nil {
-		return continuation.Completion{}, fmt.Errorf("send Gemini request: %w", err)
+		return continuation.Completion{}, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		message, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
-		return continuation.Completion{}, fmt.Errorf("Gemini returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
-	}
 
 	completion := continuation.Completion{ProviderStateType: ProviderStateType}
 	state := geminiContent{Role: "model"}
@@ -333,6 +325,69 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		return completion, err
 	}
 	return completion, nil
+}
+
+// openStream retries only a retryable HTTP rejection received before a Gemini
+// stream begins. Once the provider accepts a request, Continue owns that one
+// stream and never replays it: retrying after SSE output could duplicate text,
+// tool calls, or billing while hiding an ambiguous provider outcome.
+func (adapter *Adapter) openStream(ctx context.Context, endpoint string, encoded []byte) (*http.Response, error) {
+	var lastErr error
+	for attempt := 1; attempt <= maxHTTPAttempts; attempt++ {
+		httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+		if err != nil {
+			return nil, fmt.Errorf("create Gemini request: %w", err)
+		}
+		httpRequest.Header.Set("Content-Type", "application/json")
+		httpRequest.Header.Set("Accept", "text/event-stream")
+		httpRequest.Header.Set("x-goog-api-key", adapter.config.APIKey)
+		response, err := adapter.config.HTTPClient.Do(httpRequest)
+		if err != nil {
+			return nil, fmt.Errorf("send Gemini request: %w", err)
+		}
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			return response, nil
+		}
+		message, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
+		_ = response.Body.Close()
+		lastErr = fmt.Errorf("Gemini returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		if attempt == maxHTTPAttempts || !retryableHTTPStatus(response.StatusCode) {
+			return nil, lastErr
+		}
+		delay := retryDelay(response.Header.Get("Retry-After"), attempt, time.Now())
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, fmt.Errorf("retry Gemini request after %w: %v", ctx.Err(), lastErr)
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func retryableHTTPStatus(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests,
+		http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func retryDelay(header string, attempt int, now time.Time) time.Duration {
+	if seconds, err := strconv.Atoi(strings.TrimSpace(header)); err == nil && seconds >= 0 {
+		return min(time.Duration(seconds)*time.Second, maximumRetryDelay)
+	}
+	if deadline, err := http.ParseTime(strings.TrimSpace(header)); err == nil {
+		return min(max(deadline.Sub(now), 0), maximumRetryDelay)
+	}
+	delay := initialRetryDelay << (attempt - 1)
+	return min(delay, maximumRetryDelay)
 }
 
 // dumpRequests names a file to append every outgoing request to.
