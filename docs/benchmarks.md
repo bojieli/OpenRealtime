@@ -185,7 +185,7 @@ profile and evidence workflow.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 7`. Content checks match whole words and numbers, ignoring
+`scorer_version: 8`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -223,7 +223,20 @@ their complete source PCM is absent from the room recording. Successful replay
 checks deterministic decisions given retained observations; it does not
 independently transcribe speech, authenticate the provider or runtime, establish
 a canonical run specification, or meet the final population and target gates.
-Scoring semantics and `scorer_version: 7` are unchanged by replay support.
+Replay support itself did not change version-7 scoring semantics. Version 8
+separately strengthens interrupted counting: the authored range is 1–40, with
+at least three independently recognized numbers before and after interruption.
+The prefix must start at one and remain ordered; the already-supported
+single-number recognition gap tolerance applies to both sequences. Repeating
+the boundary number once remains allowed, but finishing forty before the
+interruption supplies no unfinished sequence to resume. More than 120 ms of
+captured speech must occur in the two seconds before the interruption, using
+the same 20 ms / RMS-128 activity threshold as acknowledgement scoring. This
+prevents an already-silent agent from earning interruption credit. Results
+retain both count sequences and recent activity in `resumptions`, and replay
+requires exact reproduction of those measurements. The check establishes a
+bounded sustained-count sample, not completion of all forty numbers after
+resumption. Historical scores remain unchanged.
 
 The acknowledgement scenario now requires acoustic continuation across both
 “Mhm” and “Right, yeah.” Each `held-across` check uses the captured agent

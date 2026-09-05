@@ -186,6 +186,9 @@ func describeNumbers(numbers []int) string {
 // is an agent that lost the thread entirely. Reported as one "wrong number",
 // none of them would be diagnosable.
 func resumed(check Check, timeline Timeline, listen heard) string {
+	if err := validateCheck(check, timeline); err != nil {
+		return "invalid scenario check: " + err.Error()
+	}
 	if check.Interrupted < 0 || check.Interrupted >= len(timeline.Spans) ||
 		check.Line < 0 || check.Line >= len(timeline.Spans) {
 		return fmt.Sprintf("the resumed check names lines %d and %d, and the script has %d (%s)",
@@ -220,7 +223,28 @@ func resumed(check Check, timeline Timeline, listen heard) string {
 			"and was then heard saying %q (%s)",
 			describeNumbers(lastFew(heardBefore)), truncateSaid(after), check.Note)
 	}
+	count := check.Count
+	if len(heardBefore) < count.MinimumBefore || len(heardAfter) < count.MinimumAfter {
+		return fmt.Sprintf("insufficient sustained counting: heard %d numbers before interruption and %d afterwards; require at least %d before and %d after (%s)",
+			len(heardBefore), len(heardAfter), count.MinimumBefore, count.MinimumAfter, check.Note)
+	}
+	for _, sequence := range [][]int{heardBefore, heardAfter} {
+		for _, number := range sequence {
+			if number < count.From || number > count.Through {
+				return fmt.Sprintf("counted %d outside the requested range %d through %d (%s)", number, count.From, count.Through, check.Note)
+			}
+		}
+	}
+	if heardBefore[0] != count.From {
+		return fmt.Sprintf("the initial count began at %d instead of %d (%s)", heardBefore[0], count.From, check.Note)
+	}
+	if at, ordered := runsOn(heardBefore); !ordered {
+		return fmt.Sprintf("before interruption the count jumped from %d to %d (%s)", heardBefore[at-1], heardBefore[at], check.Note)
+	}
 	reached := heardBefore[len(heardBefore)-1]
+	if reached == count.Through {
+		return fmt.Sprintf("the count already reached %d before interruption; no unfinished sequence remained to resume (%s)", reached, check.Note)
+	}
 	next := heardAfter[0]
 	switch {
 	case next <= 1 && reached > 2:

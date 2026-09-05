@@ -108,7 +108,7 @@ func TestReplayRecordedBindsIndependentHearingToRequestedPCMWindows(t *testing.T
 					return "four five six", nil
 				}
 			}
-			capture := activityCapture([2]int{1000, 2000}, [2]int{25300, 26000})
+			capture := activityCapture([2]int{1000, 2000}, [2]int{14000, 14700}, [2]int{25300, 26000})
 			result, wav := replayFixture(t, item, &capture, listen)
 			if result.Passed != (mode == "continues") {
 				t.Fatalf("wrong count fixture: %+v", result.Failures)

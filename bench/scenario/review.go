@@ -529,6 +529,10 @@ func (run *ReviewRun) renderMarkdown(manifest ReviewManifest) string {
 }
 
 func renderReviewTranscript(output *strings.Builder, result Result) {
+	for _, resume := range result.Resumptions {
+		fmt.Fprintf(output, "\n- Interrupted count, line %d to line %d: independently heard [%s] before and [%s] after; %.0f ms active in pre-interruption window %d–%d ms.\n", resume.Interrupted, resume.Line,
+			describeNumbers(resume.BeforeNumbers), describeNumbers(resume.AfterNumbers), resume.RecentActiveMS, resume.RecentFromMS, resume.RecentToMS)
+	}
 	for _, cue := range result.Transcript.SpeechCues {
 		fmt.Fprintf(output, "\n- Speech cue %s: %s; actual input %d–%.3f ms; %.0f ms active in preceding %d ms, %.0f ms active in recent %d ms; sent %d/%d samples.\n", markdownText(cue.Name), markdownText(cue.Status), cue.StartMS, cue.EndMS, cue.ActiveMS, cue.LookbackMS, cue.RecentActiveMS, cue.RecentMS, cue.SentSamples, cue.ExpectedSamples)
 	}
@@ -833,6 +837,11 @@ func sanitizedReviewResult(result Result, redact func(string) string) Result {
 		copy.Replay = &evidence
 	}
 	copy.Holds = append([]HoldMeasurement(nil), result.Holds...)
+	copy.Resumptions = append([]ResumeMeasurement(nil), result.Resumptions...)
+	for index := range copy.Resumptions {
+		copy.Resumptions[index].BeforeNumbers = append([]int(nil), result.Resumptions[index].BeforeNumbers...)
+		copy.Resumptions[index].AfterNumbers = append([]int(nil), result.Resumptions[index].AfterNumbers...)
+	}
 	for index := range copy.Holds {
 		copy.Holds[index].Responses = append([]HoldResponse(nil), result.Holds[index].Responses...)
 		for j := range copy.Holds[index].Responses {

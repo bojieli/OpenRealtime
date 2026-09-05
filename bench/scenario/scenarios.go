@@ -373,9 +373,10 @@ func SubturnSuite() []Scenario {
 				Note: "they stopped it, and it has to stay stopped until they say otherwise"},
 			{Kind: CheckSpoke, Line: 2, AfterMS: 6000,
 				Note: "they asked it to carry on"},
-			{Kind: CheckResumed, Line: 2, Interrupted: 1, AfterMS: 12000,
+			{Kind: CheckResumed, Line: 2, Interrupted: 1, AfterMS: 12000, BeforeMS: 2000,
+				Count: &CountRequirement{From: 1, Through: 40, MinimumBefore: 3, MinimumAfter: 3},
 				Note: "carrying on means from the last number they heard, not from the " +
-					"last one it had written and not from the beginning"},
+					"last one it had written and not from the beginning; sustain an ordered count on both sides and be audible near the interruption"},
 		},
 	}}
 }

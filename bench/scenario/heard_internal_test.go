@@ -22,7 +22,8 @@ func spans(bounds ...[2]int) Timeline {
 var script = spans([2]int{0, 6000}, [2]int{15000, 17000}, [2]int{25000, 28000})
 
 func resumedCheck() Check {
-	return Check{Kind: CheckResumed, Line: 2, Interrupted: 1, AfterMS: 12000, Note: "note"}
+	return Check{Kind: CheckResumed, Line: 2, Interrupted: 1, AfterMS: 12000, BeforeMS: 2000, Note: "note",
+		Count: &CountRequirement{From: 1, Through: 40, MinimumBefore: 3, MinimumAfter: 3}}
 }
 
 // scripted answers the two windows the check asks about, and nothing else, so

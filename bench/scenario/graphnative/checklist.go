@@ -910,6 +910,10 @@ func cloneScenario(item scenario.Scenario) scenario.Scenario {
 	item.Checks = slices.Clone(item.Checks)
 	for index := range item.Checks {
 		item.Checks[index].Any = slices.Clone(item.Checks[index].Any)
+		if item.Checks[index].Count != nil {
+			count := *item.Checks[index].Count
+			item.Checks[index].Count = &count
+		}
 	}
 	return item
 }

@@ -31,6 +31,14 @@ func TestChecklistRunsCompleteTwelveCaseMatrixWithIndependentEvidenceAndMedia(t 
 		_ context.Context, key graphnative.AttemptKey, item scenario.Scenario,
 	) (graphnative.AttemptObservation, error) {
 		executed.Add(1)
+		for _, check := range item.Checks {
+			if check.Count != nil {
+				if check.Count.MinimumBefore != 3 {
+					t.Fatal("earlier attempt mutated the canonical count requirement")
+				}
+				check.Count.MinimumBefore = 99
+			}
+		}
 		return fixture.observation(t, key, item, true, nil), nil
 	}
 	fixture.config.VerifyMedia = func(

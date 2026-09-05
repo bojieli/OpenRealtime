@@ -52,6 +52,10 @@ type Check struct {
 	// The window before it is what the agent had audibly said by the time
 	// somebody stopped it.
 	Interrupted int
+	// Count declares the numeric task and minimum observed sequence lengths
+	// for CheckResumed. BeforeMS bounds its acoustic lookback before the
+	// interruption, so an already-silent count is not an interruption trial.
+	Count *CountRequirement `json:",omitempty"`
 	// Sight indexes Sees instead, when the moment being checked is something
 	// the agent saw. It is one-based so that the zero value keeps meaning
 	// "use Line", and it can anchor absolutely where a spoken line cannot:
@@ -111,6 +115,16 @@ type Check struct {
 
 // CheckKind names what a check asserts.
 type CheckKind string
+
+// CountRequirement makes the interrupted-count experiment's opportunity
+// explicit. Three observed numbers expose progression on either side; a lone
+// "one" followed by "two" cannot distinguish a sustained count from a restart.
+type CountRequirement struct {
+	From          int `json:"from"`
+	Through       int `json:"through"`
+	MinimumBefore int `json:"minimum_before"`
+	MinimumAfter  int `json:"minimum_after"`
+}
 
 const (
 	// CheckSilent asserts the agent produced no audio in a window. It is the
@@ -295,14 +309,15 @@ func (tool Tool) FunctionDeclaration() (FunctionToolDeclaration, error) {
 type Result struct {
 	// ScorerVersion identifies the deterministic scoring semantics. Zero is
 	// reserved for historical unversioned results and unscored attempts.
-	ScorerVersion uint64            `json:"scorer_version,omitempty"`
-	Scenario      string            `json:"scenario"`
-	Passed        bool              `json:"passed"`
-	Failures      []string          `json:"failures,omitempty"`
-	Latencies     []Latency         `json:"latencies,omitempty"`
-	Holds         []HoldMeasurement `json:"holds,omitempty"`
-	Transcript    bench.Transcript  `json:"transcript"`
-	Replay        *ReplayEvidence   `json:"replay,omitempty"`
+	ScorerVersion uint64              `json:"scorer_version,omitempty"`
+	Scenario      string              `json:"scenario"`
+	Passed        bool                `json:"passed"`
+	Failures      []string            `json:"failures,omitempty"`
+	Latencies     []Latency           `json:"latencies,omitempty"`
+	Holds         []HoldMeasurement   `json:"holds,omitempty"`
+	Resumptions   []ResumeMeasurement `json:"resumptions,omitempty"`
+	Transcript    bench.Transcript    `json:"transcript"`
+	Replay        *ReplayEvidence     `json:"replay,omitempty"`
 }
 
 // Latency is how long after something happened the agent could be heard.
@@ -572,6 +587,10 @@ func score(
 				failure = heldResponseContinuity(&measurement, transcript, capture)
 			}
 			result.Holds = append(result.Holds, measurement)
+		} else if check.Kind == CheckResumed {
+			measurement, problem := resumedAcross(check, timeline, listen, capture)
+			failure = problem
+			result.Resumptions = append(result.Resumptions, measurement)
 		} else {
 			failure = apply(check, timeline, transcript, menu, listen)
 		}
