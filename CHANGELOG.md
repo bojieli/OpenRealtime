@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- Production computer-use regressions now cover classifications delivered after
+  cancellation and replacement, duplicate classifications while cancellation
+  waits, and old acknowledgements replayed during a different cancellation.
+  They check that each task keeps its own completion authority and that a
+  fresh task can still execute and settle afterward.
+
 - Element-graph traces reach the clients that ask for them. Three graph-native
   bindings and the word-timing reporter were labelling their debug entries with
   category names no client could select, so the gateway's category filter

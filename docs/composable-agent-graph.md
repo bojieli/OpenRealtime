@@ -1841,7 +1841,7 @@ Current behavior work includes:
 | --- | --- | --- |
 | Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech. Policy history also distinguishes heard words from unplayed drafts, with a full conversation-graph cancellation/resumption regression | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
 | Acknowledgements | Existing recordings exposed unwanted cancellation and a separate omitted purchase confirmation; cancellation repairs have focused coverage | Attribute the content omission at the model, synthesis, or evaluator boundary and repair a reproduced cause |
-| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences cannot reclassify a result that already released continuation; distinct later results still settle. The evaluator distinguishes explicit failure, later recovery, missing page consequences, and an error-bearing apparent success. Full-session recovery joins canonical result lineage to received tool results and guards a false timeout caused by passive observations | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish remaining cross-boundary ordering cases; use affected camera and terminal-loop cases for live checks where needed |
+| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences cannot reclassify a result that already released continuation; distinct later results still settle. The evaluator distinguishes explicit failure, later recovery, missing page consequences, and an error-bearing apparent success. Full-session recovery joins canonical result lineage to received tool results and guards a false timeout caused by passive observations | The local production-graph ordering matrix now includes altered evidence, delayed and duplicate classifications, terminal-before-model-result, and acknowledgement replay across cancellation transactions. Use affected camera and terminal-loop failures to investigate remaining live behavior |
 | Full-duplex interaction | Existing FDB cases exposed interruption latency and apparent background/third-party hold failures. Repeating the existing hold recordings found overlap opportunities that vary with agent timing, without a consistently failing agent case in that diagnostic | Separate missing fixture overlap from actual hold/yield failures before changing policy; check reproduced repairs against relevant speech and silence controls |
 | Tool use | FDB v3 exposed extra effects and spoken-ID normalization; scorer and mounted normalization repairs exist | Reuse the failed tool cases to check remaining action/result behavior |
 | Broader scenario coverage | Historical FD-Bench and tau-Voice runs remain useful despite incomplete populations or older revisions | Select concrete failures that reveal missing behavior; unrun populations alone are not bugs or publication blockers |
@@ -1855,7 +1855,7 @@ run scope without contributing a separate completion quota.
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
 | 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Direct integration coverage for the remaining production launch paths |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, the producer-neutral typed and bounded intent-settlement gate, a profile-bound lifecycle-owned reference disposition producer, explicit graph-owned bounded disposition retry, the connected activation settlement/ack handshake, and exact session cancellation across retry, settlement, producer, activation, model/result commit, and all selected action stages. The locked production Realtime-CU graph has no temporal-admission bypass and its stable shared-server endpoint exercises cancellation ordering. Cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison also exist | Complete the remaining mounted Realtime-CU adversarial cases and diagnose unresolved live behavior |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, the producer-neutral typed and bounded intent-settlement gate, a profile-bound lifecycle-owned reference disposition producer, explicit graph-owned bounded disposition retry, the connected activation settlement/ack handshake, and exact session cancellation across retry, settlement, producer, activation, model/result commit, and all selected action stages. The locked production Realtime-CU graph has no temporal-admission bypass and its stable shared-server endpoint exercises cancellation ordering. Cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison also exist | Complete remaining session adapters and conversational safe-point integration; diagnose unresolved live behavior |
 | 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Use provider failures for focused diagnostics; this architecture gate is complete |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
 | 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and direct deployment integration |
@@ -3984,7 +3984,7 @@ the required new 180-attempt sample.
         public producer outcome while routing the same lossless evidence to the
         coordinator, and the single session-cancel boundary fans out only under
         coordinator authority.
-      - [ ] Execute the complete mounted-composition test matrix: shared
+      - [x] Execute the complete mounted-composition test matrix: shared
         retained-media service ownership, forged cross-node evidence,
         duplicate/reordered decisions, coordinator cancellation/replacement,
         failed effects, indeterminate retry, asynchronous wait,
@@ -3996,8 +3996,8 @@ the required new 180-attempt sample.
         production-mounted: its exact error result and linked frame open one
         recovery turn without entering terminal-disposition policy, and a later
         successful effect settles normally. Forged cross-node evidence,
-        duplicate/reordered terminal decisions, and failed-result scorer/live
-        acceptance still need production-mounted treatment. Failed and
+        duplicate/reordered terminal decisions, and failed-result scorer
+        integration now have production-mounted treatment. Failed and
         successful result-consequence cancellation orderings plus bounded
         canceled-effect cleanup are now mounted. The cleanup outcome is also
         validated as nontransactional at the connected coordinator boundary,
@@ -4024,7 +4024,7 @@ the required new 180-attempt sample.
           result/detector, and terminal generation/prefix values are refused at
           the receiving node; releasing the genuine value still settles the
           original effect without another model call.
-        - [ ] Exercise duplicate and reordered terminal decisions through the
+        - [x] Exercise duplicate and reordered terminal decisions through the
           full locked production profile, including terminal/result and
           cancellation/terminal reorderings at every connected boundary.
           The production graph now covers a replayed continued consequence,
@@ -4036,10 +4036,23 @@ the required new 180-attempt sample.
           acknowledgement while producer quiescence is delayed; coordinator
           revision 5 retains completion and the original terminal authorizer.
           Cancellation completes after producer release and a fresh intent
-          remains usable. Remaining disposition delivery and acknowledgement
-          replay across distinct cancellation transactions keep this broad
-          item open. A separate mounted acknowledgement test rejects a different
-          generation, then accepts the exact value and ignores three duplicates.
+          remains usable. Delayed `continue`, `succeeded`, and `failed`
+          classifications are now delivered after cancellation and a new
+          intent's effect; the canceled probe is refused on arrival and replay,
+          and the new effect settles from its own evidence. Duplicate terminal
+          classifications during cancellation preserve the original pending
+          acknowledgement. Acknowledgements and resulting cancellation outcomes
+          from a completed transaction are each replayed three times while a
+          distinct cancellation awaits its own acknowledgement. Same-lane
+          processing barriers prove the newer cancellation stays pending;
+          releasing its exact acknowledgement completes it, and a third intent
+          still executes and settles. Mutations that match an acknowledgement
+          to any active transaction or replace a pending terminal classification
+          fail the mounted checks. A separate mounted acknowledgement test
+          rejects a different generation, then accepts the exact value and
+          ignores three duplicates. This completes the named local composition
+          matrix; it does not establish the cause of every historical live
+          failure or require a fresh benchmark campaign.
         - [x] Implement and exercise explicit bounded `indeterminate` retry as
           graph policy while preserving the immutable probe, serialized client
           use, cancellation/reset quiescence, terminal stop, typed exhaustion,
