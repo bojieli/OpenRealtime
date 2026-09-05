@@ -301,6 +301,42 @@ The profile, runtime status, graph execution evidence, commands, WAV hashes,
 and metadata-authoring limitation are retained with the diagnostic. The
 fifteen-repeat acknowledgement gate and final-candidate ledger remain open.
 
+## Acknowledgement cancellation audit with scorer version 5
+
+`artifacts/scenario-acknowledgement-hold-v5-20260905` retains an offline
+reinterpretation of all three grounded v4 recordings. Scorer revision
+`4a16480f9366d0b30b2adba97c2093b19f372c23` independently reopened the original
+source and advisory receipts above and verified every original outer checksum.
+All 93 source-artifact files remain unchanged. This is zero new live attempts
+and carries no full-suite or final-candidate credit.
+
+All three still fail the first hold for zero activity before the fixed cue.
+Each now also fails the second hold for the initial response's recorded
+cancellation at 12,975.662, 13,047.777, and 12,989.534 ms respectively. The
+second hold ends at 14,078 ms. Later audio cannot erase that interruption.
+Every waveform measurement and response-to-playout join is unchanged; only
+the deterministic interpretation advances from version 4 to version 5.
+
+Version 5 requires recognized, unambiguous response outcomes and attribution
+of active PCM to recorded response audio intervals. An overlapping response
+that reports cancelled, failed, or incomplete at or before the hold ends
+cannot earn credit, including when prefetched or replacement audio fills the
+acoustic window. An abort after the window does not retroactively fail the
+hold. Completed speech segments may follow one another naturally. This is a
+bounded protocol-continuity check, not a claim about the cancellation cause or
+complete semantic fidelity. The runtime repair and a stimulus anchored to
+observed speech remain open.
+
+The retained audit includes the exact executable digests, three rescored
+results and cue timelines, reproduction scripts, source-verification output,
+and checksums. The new regression first reproduced the v4 false passes.
+Five mutations were caught, including dropping the verdict at the actual
+WebSocket-to-WAV-to-review boundary. Restored scenario packages and the full
+repository gate passed; the optional official SDK checks were explicitly
+skipped because that dependency was absent in the isolated worktree. No new
+advisory evaluation, live pass, fifteen-repeat case gate, or release credit is
+inferred from this offline audit.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under
