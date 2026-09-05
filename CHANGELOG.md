@@ -340,6 +340,18 @@
 
 ### Turn-taking
 
+- **A final transcript that lands mid-speech no longer kills the session.**
+  Since the semantic policy learned whether the agent is speaking, its
+  executable acts during speech have been the two speech controls, but the
+  committed-observation path still allowed only silence and answer, the
+  free-floor acts. The intersection was empty, and every profile without a
+  transcript-event policy failed the whole session with "no executable act"
+  on exactly the FDB interruption case: the first fresh FDB v1.5 campaign of
+  the day lost two of its first twenty-five recordings to it and was stopped.
+  Keep-speaking and stop-speaking are now offered while the agent is audibly
+  speaking, and a regression test drives a mid-speech final through the
+  no-policy path to a disposition instead of a failure.
+
 - **A policy model may report that it does not know how sure it was, and an
   unknown confidence is no longer read as a low one.** `confidenceOf` returned
   `0.5` for "no log probabilities came back", which compares like a number: the

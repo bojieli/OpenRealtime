@@ -1559,13 +1559,24 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 	standing []coreinteraction.StandingInstruction, agentOutput coreinteraction.AgentOutput,
 ) (coreinteraction.Situation, error) {
 	board := semanticPinboard(standing)
+	// Silence and answer are the legacy observation space, the acts a
+	// committed observation can take while the floor is free. While the agent
+	// is audibly speaking the executable acts are the two speech controls
+	// instead, and a decision must be able to choose one: with only the free-
+	// floor acts allowed, a final transcript landing mid-speech left no
+	// executable act at all, and the whole session failed on it. That is the
+	// FDB interruption case in every profile without a transcript-event
+	// policy, which is where the policy's own act lists would have supplied
+	// them.
+	allowed := []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer}
+	if agentOutput.Active {
+		allowed = append(allowed, coreinteraction.ActKeepSpeaking, coreinteraction.ActStopSpeaking)
+	}
 	state := coreinteraction.Situation{
-		Contract: update.Invocation.Instruction,
-		Recent:   coreinteraction.RecentLines(prefix.Items, runner.config.RecentLines),
-		Pins:     board.Lines(semanticNowNS(runner.clock)),
-		AllowedActs: []coreinteraction.Act{
-			coreinteraction.ActStaySilent, coreinteraction.ActAnswer,
-		},
+		Contract:      update.Invocation.Instruction,
+		Recent:        coreinteraction.RecentLines(prefix.Items, runner.config.RecentLines),
+		Pins:          board.Lines(semanticNowNS(runner.clock)),
+		AllowedActs:   allowed,
 		AgentSpeaking: agentOutput.Active,
 		AgentSaying:   agentOutput.Saying,
 		AgentOutputProtected: slices.Contains(

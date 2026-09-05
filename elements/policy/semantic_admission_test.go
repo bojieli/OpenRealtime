@@ -3382,3 +3382,91 @@ func semanticVisualObservation(
 }
 
 var _ policyelements.SemanticDecider = (*semanticTestDecider)(nil)
+
+// A final transcript that lands while the agent is audibly speaking, in a
+// profile with no transcript-event policy, is the FDB interruption case. The
+// allowed set used to be silence and answer only - the free-floor acts - while
+// the executable acts during speech are the two speech controls, so the
+// intersection was empty and every such session failed with
+// "no executable act". The controls must be offered, and choosing one must
+// resolve as a disposition rather than a failure.
+func TestSemanticAdmissionOffersSpeechControlsWhileSpeakingWithoutATranscriptPolicy(t *testing.T) {
+	decider := &semanticTestDecider{
+		descriptor: semanticTestDescriptor,
+		answers:    []string{string(coreinteraction.ActStopSpeaking), string(coreinteraction.ActKeepSpeaking)},
+	}
+	config, err := json.Marshal(policyelements.SemanticAdmissionConfig{
+		Decider: "semantic-primary", RecentLines: 12, MaxPending: 8,
+		TerminalMemory: 8, CancelMemory: 8, StandingMemory: 8,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness := mountSemanticAdmission(t, decider, config)
+	defer harness.stop(t)
+	consumeSemanticStartup(t, harness)
+	installSemanticInvocation(t, harness, 1, false)
+
+	sendPolicy(t, harness.ingress(t, "agent_output"), element.Envelope{
+		Type: coreinteraction.AgentOutputType(), ItemID: "agent-output-speaking",
+		SessionID: "semantic-session", Payload: coreinteraction.AgentOutput{
+			Revision: 1, Active: true, Audible: true, Saying: "You could make a stir fry tonight,",
+			InFlight: "voice output active: model=1, segmentation=1, synthesis=1, playback=1",
+		},
+	})
+	_ = receivePolicy(t, harness.egress(t, "state"))
+
+	items := []trajectory.Item{
+		semanticTranscriptObservation("interruption-final", "asr.endpoint", 1,
+			"Oh, before I forget, do we need more coffee?"),
+		semanticTranscriptObservation("continuation-final", "asr.endpoint", 2,
+			"Actually never mind, keep going."),
+	}
+	commitFinal := func(index int) (policyelements.SemanticDecision, policyelements.SemanticAdmissionOutcome) {
+		snapshot := trajectory.Snapshot{
+			Version: uint64(index + 1), Items: append([]trajectory.Item(nil), items[:index+1]...),
+		}
+		stateID := fmt.Sprintf("state-%d", index+1)
+		sendSemanticContext(t, harness, stateID, snapshot)
+		prefix, identifyErr := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
+		if identifyErr != nil {
+			t.Fatal(identifyErr)
+		}
+		commit := semanticCommittedOutcome(items[index], fmt.Sprintf("stream-%d", index+1), prefix, stateID, snapshot.Version)
+		commit.ObservationRevision = items[index].SourceRevision
+		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
+			Type:   stateelements.ObservationCommitOutcomeType(),
+			ItemID: fmt.Sprintf("commit-%d", index+1), SessionID: "semantic-session",
+			Payload: commit,
+		})
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		decision := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
+		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+		_ = receivePolicy(t, harness.egress(t, "state"))
+		return decision, outcome
+	}
+
+	stop, stopOutcome := commitFinal(0)
+	if stop.Act != coreinteraction.ActStopSpeaking || stopOutcome.Kind != policyelements.SemanticAdmissionSuppressed ||
+		stopOutcome.Code != "stop_speaking" {
+		t.Fatalf("interruption mid-speech: decision=%+v outcome=%+v", stop, stopOutcome)
+	}
+	keep, keepOutcome := commitFinal(1)
+	if keep.Act != coreinteraction.ActKeepSpeaking || keepOutcome.Kind != policyelements.SemanticAdmissionSuppressed ||
+		keepOutcome.Code != "keep_speaking" {
+		t.Fatalf("continuation mid-speech: decision=%+v outcome=%+v", keep, keepOutcome)
+	}
+	for _, outcome := range []policyelements.SemanticAdmissionOutcome{stopOutcome, keepOutcome} {
+		if outcome.Kind == policyelements.SemanticAdmissionFailed || outcome.Code == "decider_failed" {
+			t.Fatalf("a mid-speech final transcript failed the session: %+v", outcome)
+		}
+	}
+	assertNoPolicyEnvelope(t, harness.egress(t, "voice_committed"))
+	captured := decider.captured()
+	if len(captured) != 2 ||
+		!reflect.DeepEqual(captured[0].Options, []string{"keep-speaking", "stop-speaking"}) ||
+		!reflect.DeepEqual(captured[1].Options, []string{"keep-speaking", "stop-speaking"}) ||
+		!strings.Contains(captured[0].Evidence, "You could make a stir fry tonight,") {
+		t.Fatalf("speech controls were not what the policy was offered: %+v", captured)
+	}
+}
