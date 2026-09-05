@@ -151,6 +151,18 @@ type Options struct {
 	// Limit bounds how many recordings run. A limited run is explicitly not a
 	// complete cell, and the report says so.
 	Limit int
+	// Repeat is how many times each recording runs. Zero and one both mean
+	// once, and leave every identifier exactly as a single run produces them.
+	//
+	// One attempt cannot classify a recording here. Two runs of the same forty
+	// recordings against the same executable disagreed on five of them - a
+	// recording moved from fail to pass, another from pass to fail, three
+	// between failing and having nothing to overlap - while both runs reported
+	// the same number of passes, so the category total looked settled while a
+	// seventh of what it summed had moved. Every per-recording claim this suite
+	// has ever made was sampled once. Repeats are how a defect is told from
+	// noise, and Stability is how the answer is read.
+	Repeat int
 	// YieldWindow is how long the agent has to stop after an interruption
 	// before it counts as not having stopped. Zero selects 1 s.
 	YieldWindow time.Duration
@@ -195,13 +207,14 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	if len(samples) == 0 {
 		return bench.Result{}, errors.New("the dataset contains no recordings")
 	}
-	expected := len(samples)
+	repeat := max(1, options.Repeat)
+	expected := len(samples) * repeat
 	if options.Limit > 0 {
 		// A limited run is a smaller experiment, not a complete cell. The
 		// expected count stays the full dataset so the report refuses it.
 		full, err := Load(options.Root, options.Categories, 0)
 		if err == nil {
-			expected = len(full)
+			expected = len(full) * repeat
 		}
 	}
 
@@ -228,13 +241,26 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 		return result, errors.Join(runErr, evidenceLifecycle.Finish(result))
 	}
 	var runErr error
-	for index, sample := range samples {
-		if options.Progress != nil {
-			options.Progress(fmt.Sprintf("[%d/%d] %s", index+1, len(samples), sample.ID))
+	// Trial-major rather than repeating each recording back to back: a second
+	// attempt immediately after the first shares whatever the first left warm,
+	// and the point of repeating is to sample the same recording under
+	// conditions as independent as the harness can make them. It also means an
+	// interrupted run has covered every recording once rather than the first
+	// few exhaustively.
+	for trial := 1; trial <= repeat; trial++ {
+		for index, sample := range samples {
+			caseID := sample.ID
+			if repeat > 1 {
+				caseID = fmt.Sprintf("%s#%d", sample.ID, trial)
+			}
+			if options.Progress != nil {
+				options.Progress(fmt.Sprintf("[%d/%d] %s",
+					(trial-1)*len(samples)+index+1, len(samples)*repeat, caseID))
+			}
+			outcome, evidenceErr := runSample(ctx, options, sample, caseID, trial, evidenceLifecycle)
+			result.Tasks = append(result.Tasks, outcome)
+			runErr = errors.Join(runErr, evidenceErr)
 		}
-		outcome, evidenceErr := runSample(ctx, options, sample, evidenceLifecycle)
-		result.Tasks = append(result.Tasks, outcome)
-		runErr = errors.Join(runErr, evidenceErr)
 	}
 	return finish(runErr)
 }
@@ -275,10 +301,11 @@ func validateRecoveredOutcome(
 }
 
 func runSample(
-	ctx context.Context, options Options, sample Sample, evidenceLifecycle *candidate.Lifecycle,
+	ctx context.Context, options Options, sample Sample, caseID string, trial int,
+	evidenceLifecycle *candidate.Lifecycle,
 ) (outcome bench.TaskOutcome, evidenceErr error) {
 	outcome = bench.TaskOutcome{
-		ID: sample.ID,
+		ID: caseID,
 		Notes: map[string]string{
 			"category": string(sample.Category),
 			"context":  sample.ContextText,
@@ -290,7 +317,7 @@ func runSample(
 	if evidenceLifecycle != nil {
 		var err error
 		attempt, err = evidenceLifecycle.Begin(
-			sample.ID, 1, attemptContext{
+			sample.ID, trial, attemptContext{
 				Category: sample.Category, ContextText: sample.ContextText, EventText: sample.EventText,
 				EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
 				ShouldYield:   sample.Category.ShouldYield(),

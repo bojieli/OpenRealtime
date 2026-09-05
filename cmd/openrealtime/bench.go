@@ -1073,6 +1073,7 @@ func runFDB(arguments []string, output io.Writer) error {
 		out             string
 		categories      string
 		limit           int
+		repeat          int
 		cellName        string
 		referenceLevels string
 		varyFactor      string
@@ -1088,6 +1089,9 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
 	flags.StringVar(&categories, "categories", "", "comma-separated categories; empty runs all four")
 	flags.IntVar(&limit, "limit", 0, "stop after this many recordings; a limited run is never a complete cell")
+	flags.IntVar(&repeat, "repeat", 0,
+		"attempts per recording; one attempt cannot tell a defect from noise, and the report says "+
+			"how many recordings agreed with themselves")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies from the reference, such as F2")
@@ -1131,7 +1135,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	}
 	runOptions := fdb.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
-		Cell: cell, Categories: wanted, Limit: limit, Timeout: timeout,
+		Cell: cell, Categories: wanted, Limit: limit, Repeat: repeat, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}
@@ -1183,6 +1187,16 @@ func writeFDBScores(output io.Writer, result bench.Result) {
 	}
 	fmt.Fprintf(output, "score      : %d/%d applicable, %s (%d not applicable)\n",
 		passed, applicable, rate(passed, applicable), notApplicable)
+	if stability := fdb.Measure(result); stability.Trials > 1 {
+		fmt.Fprintf(output,
+			"stability  : %d recordings x %d attempts; %d always passed, %d always failed, "+
+				"%d always inapplicable, %d disagreed with themselves\n",
+			stability.Recordings, stability.Trials, stability.AlwaysPassed, stability.AlwaysFailed,
+			stability.AlwaysNotApplicable, len(stability.Mixed))
+		for _, id := range stability.Mixed {
+			fmt.Fprintf(output, "  unsettled  %s\n", id)
+		}
+	}
 	for _, category := range fdb.Categories() {
 		summary, present := breakdown[category]
 		if !present {

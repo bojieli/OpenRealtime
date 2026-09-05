@@ -426,6 +426,13 @@
   says that stopping is not the safe answer, that only words directed at the
   agent and changing what it should do take its floor, and carries a worked
   example of each act with the agent mid-sentence.
+- **FDB v1.5 can repeat a recording.** It never could, so every per-recording
+  claim it has made was sampled once - and two runs of the same forty against
+  the same executable disagree on five of them while reporting the same number
+  of passes. `-repeat N` runs each recording N times and the report says how
+  many agreed with themselves, naming the ones that did not. A single run keeps
+  its exact identifiers and output. The scenario suite answered this question
+  with fifteen repeats years of evidence ago; this suite had never asked it.
 - **A finished answer is not a failure to hold.** The scorer asked whether the
   agent had spoken in the half second before an overlap, and called that
   speaking when the event began. For a one-line command whose answer is over in

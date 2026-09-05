@@ -369,6 +369,15 @@ the current scorer. In particular, the retained v28 acknowledgement recording ha
 agent activity after its second backchannel and does not meet the new check;
 see the [separately attributed waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit).
 
+`bench fdb -repeat N` runs every selected recording N times and reports how
+many recordings agreed with themselves. It exists because one attempt cannot
+classify one recording: two runs of the same forty against the same executable
+disagreed on five of them while both reported the same number of passes, so the
+category total looked settled while a seventh of what it summed had moved. The
+report names the unsettled recordings rather than only counting them, because
+looking at them is the next step. A single run is unchanged - no trial suffix,
+no stability line - so nothing that reads existing results has to change.
+
 **FDB v1.5** has four categories: yield to an interruption, hold through a backchannel, background speech,
 and speech addressed to somebody else. A system that scores well by always
 yielding is not a system that handles overlap, which is why the report breaks
