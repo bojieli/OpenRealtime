@@ -191,6 +191,15 @@
 
 ### The protocol surface
 
+- **A LiveKit room's video reaches the engine too.** The agent subscribed to
+  audio only, so a stock meeting client sharing a screen was audio-only to it
+  and video arrived only from a custom participant sending protocol frames as
+  data packets. Behind a `-video` flag it now subscribes to room video,
+  declares the extension in its own `session.update`, and bridges VP8 key
+  frames as the same two events, asking the publisher for one each second with
+  a picture-loss indication. It writes the bridge itself rather than importing
+  the server's, for the reason it writes its own protocol client. The flag is
+  opt-in: without it the wire is byte-for-byte unchanged.
 - **A VP8 video track reaches the engine.** The in-process WebRTC adapter
   ignored inbound video tracks, so a stock client that published a screen
   share was audio-only. It now bridges the track's key frames as the same

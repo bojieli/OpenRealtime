@@ -234,15 +234,24 @@ default) and discards the inter frames between them. The engine's video
 observer samples at a few hertz and gates on pixel change, so a key frame a
 second is the observation it wanted; the inter frames it cannot decode are
 the ones it would have discarded. H.264, VP9, and AV1 tracks are logged as
-unbridged and drained. The LiveKit integration still forwards video events in
-data packets and does not decode room video tracks.
+unbridged and drained.
+
+The LiveKit agent does the same for a room's video tracks, behind its
+`-video` flag: it subscribes to room video, declares the extension in its own
+`session.update`, and bridges VP8 key frames as the same two events, asking
+the publisher for one each second with a picture-loss indication. The flag is
+opt-in because it changes what the agent negotiates; without it the wire is
+unchanged. It writes the bridge itself rather than importing the server's,
+for the reason it writes its own protocol client: an integration that ships
+separately should not depend on the server's internals.
 
 | Client path | Audio | Direct screen pixels |
 | --- | --- | --- |
 | composable browser WebRTC profile | RTP media track | protocol frames on the data channel |
 | custom LiveKit client publishing protocol frames | room audio track | protocol frames in data packets |
 | stock WebRTC client publishing a VP8 video track | RTP audio | key frames bridged after `video.input` is negotiated |
-| stock WebRTC client publishing H.264/VP9/AV1, or a LiveKit client publishing only a video track | RTP/room audio | not bridged |
+| stock LiveKit client publishing a VP8 video track, agent run with `-video` | room audio | key frames bridged after `video.input` is negotiated |
+| any client publishing H.264, VP9, or AV1 video | RTP/room audio | not bridged; the track is drained and logged |
 
 This still preserves one engine entrance and the same server-side adaptive
 observation gate. Transport adapters may decode a track into those events in a
