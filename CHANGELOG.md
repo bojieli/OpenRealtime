@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- A confidently verified standing trigger can recover an uncertain final
+  `answer` just as it can recover `listen`. The ordinary confidence threshold
+  previously suppressed the first animal count even after the independent
+  activation guard had grounded it. A production-graph regression verifies
+  actual count audio and preserves silence for uncertain partials, unmet
+  conditions, and uncertain activation evidence.
 - Spoken stops and acoustic interruption now revoke a prepared speech stream
   even after text generation and segmentation finish. The overlap controller
   retains the emitted segment count until exact speech terminals arrive, so

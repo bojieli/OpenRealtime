@@ -1183,11 +1183,16 @@ func (runner *semanticAdmissionRunner) decide(
 					act = coreinteraction.ActStaySilent
 					stage = "voice_activation"
 				case activation == semanticVoiceConditionMet && confident &&
-					act == coreinteraction.ActStaySilent && answerAvailable:
+					answerAvailable && (act == coreinteraction.ActStaySilent ||
+					act == coreinteraction.ActAnswer && standingConditionMet &&
+						outcome.Measured && outcome.Confidence < runner.config.MinimumActivationConfidence):
 					// A final transcript is the bounded recovery point for a standing
 					// condition the primary act missed. The guard can only select an
 					// already executable Answer; it cannot generate content or widen
-					// the graph's act set.
+					// the graph's act set. An uncertain Answer would otherwise become
+					// Listen in the confidence guard below. Recover it under the same
+					// independently verified, pre-existing standing condition instead
+					// of making an uncertain Answer weaker than an explicit Listen.
 					act = coreinteraction.ActAnswer
 					stage = "voice_activation"
 				}

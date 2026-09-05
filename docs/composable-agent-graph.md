@@ -2914,6 +2914,17 @@ the required new 180-attempt sample.
     each continuation invocation and passes focused repeated/shuffled/race,
     full-repository test, and vet gates.
   - [ ] `count-as-they-go`
+    The 2026-09-05 provider-boundary trace identifies a confidence-ordering
+    defect: both missing first counts chose final `answer` at 0.651 confidence
+    after independent `condition-met` at 0.999. The 0.7 primary-act guard
+    suppressed them, although an explicit `listen` would have been recovered
+    by the same activation evidence. A production-graph regression reproduces
+    zero model calls with a complete partial followed by its identical final.
+    The repair lets the pre-existing, confidently grounded standing condition
+    recover that uncertain final answer. Controls preserve silence for policy
+    setup, uncertain partials, unmet conditions, and uncertain activation.
+    Repeated live validation and the complete fifteen-trial case remain open;
+    this implementation does not close the case or final-candidate population.
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`
   - [ ] `cutting in on something wrong`

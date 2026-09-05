@@ -1051,3 +1051,36 @@ The server and both run-owned proxies stopped after recording; no shared
 service was stopped. Traces retain safe text/audio projections and hashes,
 without authentication headers, hidden reasoning, or thought signatures.
 This campaign supplies no full-suite or final-candidate credit.
+
+## First-count confidence ordering
+
+The retained first-count failures have an additional decisive observation:
+the policy client measures the chosen first token's probability. Both failed
+finals selected `answer` at approximately 0.6511, below the configured 0.7
+threshold, while the independent activation guard selected `condition-met` at
+approximately 0.9989. Their complete partials selected `speak-through` at
+0.6789. The passing trial's final selected `answer` at 0.9889. These values
+are reconstructible from the retained, projected token log probabilities;
+the complete-partial scheduling correlation alone was not the diagnosis.
+
+A deterministic production-graph regression reproduces the failure with the
+same complete-partial-to-identical-final ordering. It first installs the
+standing instruction without speech, suppresses the uncertain partial, and
+observes the final become `listen` at `confidence_guard`, with zero provider
+calls despite activation confidence 0.999. Changing only the primary choice
+to `listen` or a confident `answer` produces the requested count. This exposes
+an ordering inconsistency: the existing standing-trigger recovery handled
+explicit `listen`, but not the uncertain `answer` that the later confidence
+guard would turn into `listen`.
+
+SemanticAdmission implementation 12 lets the same independently verified,
+pre-existing standing condition recover an uncertain final answer before that
+guard. The recovered decision names `voice_activation` and its actual
+activation confidence. The unchanged threshold still suppresses uncertain
+partials. Mounted controls also reject unmet and uncertain conditions; passing
+cases deliver one count through the real graph's model, TTS, and audio sink.
+The original regression fails before the repair and all five cases pass after
+it. Logs are retained under
+`artifacts/scenario-count-admission-repair-20260905-01`. Repeated live validation
+and full-case acceptance are still required; the earlier failed recordings
+and scores remain unchanged.
