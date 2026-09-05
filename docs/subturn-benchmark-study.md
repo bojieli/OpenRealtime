@@ -971,7 +971,17 @@ than at the response boundary; it does not any more.
 
 This does not make the suite easier. The three categories that ask the agent to
 *hold* have almost no lead, so their windows move by tens of milliseconds, and
-they move later, which asks the agent to hold slightly longer.
+they move later, which asks the agent to hold slightly longer. Twenty-five
+`background_speech` recordings through the shipped scorer say the same:
+
+| Scorer | Applicable | Passed | Held in the window, median |
+| --- | ---: | ---: | ---: |
+| from the annotation, 25 x 3 | 39 of 74 | 39 | 929 ms |
+| from the first sound, 25 x 1 | 14 of 25 | 14 | 906 ms |
+
+The leads on those recordings run to a median of 100 ms and a maximum of 180,
+so the window moves by that much and the agent holds through it anyway. Nothing
+failed under either scorer.
 
 **The same question is open in FD-Bench, and there it follows the
 synthesiser.** Its scorer measures response latency from a turn's annotated end
