@@ -35,17 +35,34 @@ its own track. Anyone else in the room talks to the agent.
 | Agent audio | `response.output_audio.delta` → 20 ms mu-law packets → published track |
 | Participant events | room data packet → protocol event, unchanged |
 | Server events | protocol event → room data packet, unchanged |
+| Participant video, with `-video` | VP8 track → key frames decoded, scaled, JPEG → `openrealtime.input_video_source.update` and `…input_video_frame.append` |
 
 Opus decoding is pure Go, so the agent stays a static binary with no codec
 library and no cgo.
 
-Protocol video events sent by a custom participant also cross the data-packet
-row unchanged. Ordinary LiveKit camera and screen-share tracks do not: this
-agent currently subscribes only to audio tracks and has no VP8/H.264-to-JPEG
-decoder. A stock meeting room is therefore audio-only to the agent until the
-publisher sends retained frames as
-`openrealtime.input_video_frame.append` events or a video-track bridge is
-deployed. Do not infer video-track support from the generic data path.
+## Video
+
+Protocol video events sent by a custom participant cross the data-packet row
+unchanged and need no flag. An ordinary camera or screen-share **track** needs
+`-video`, which subscribes the agent to room video and declares the
+OpenRealtime video extension in its `session.update`. An endpoint that does
+not implement the extension never echoes it, and the agent stays voice-only;
+without the flag the wire is byte-for-byte what it has always been.
+
+It bridges **key frames only, from a VP8 track**. There is no pure-Go decoder
+for VP8 inter frames, and a cgo dependency on libvpx would cost the static
+binary above, so the agent asks the publisher for a key frame each second with
+a picture-loss indication and discards the inter frames between them. The
+engine's video observer samples at a few hertz and gates on pixel change, so a
+key frame a second is the observation it wanted. H.264, VP9, and AV1 tracks
+are logged as unbridged and drained; publish VP8, or send retained frames as
+protocol events, for those rooms.
+
+Every frame is scaled to the `max_dimension` the server answered with and
+encoded under its `max_frame_bytes`, at no more than its `fps_cap`. The agent
+sends nothing before that answer arrives, and a frame that cannot fit the byte
+limit at the lowest quality is dropped rather than sent as something the
+server would refuse.
 
 ## Rules it follows
 

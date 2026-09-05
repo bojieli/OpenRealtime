@@ -51,6 +51,20 @@ type Config struct {
 
 	// PacketDuration is the outbound packetisation interval. Zero selects 20 ms.
 	PacketDuration time.Duration
+	// Video subscribes this agent to room video tracks and bridges their key
+	// frames to the endpoint as protocol video events (see video.go).
+	//
+	// It is opt-in because it changes what this agent negotiates: with it set
+	// the session.update declares support for the OpenRealtime video
+	// extension, and an endpoint that does not implement the extension simply
+	// never echoes it and the agent stays voice-only. Without it the wire is
+	// byte-for-byte what it has always been.
+	Video bool
+	// VideoKeyframeInterval is how often the agent asks a publisher for a key
+	// frame once video is negotiated. Only key frames are bridged, so this is
+	// the frame cadence the engine sees, bounded above by the negotiated
+	// frame-rate cap. Zero selects one second.
+	VideoKeyframeInterval time.Duration
 	// Logf receives operational messages.
 	Logf func(string, ...any)
 }
@@ -68,6 +82,13 @@ type Agent struct {
 	closed  atomic.Bool
 	done    chan struct{}
 	once    sync.Once
+
+	// video is what the endpoint answered about video input, read from the
+	// session events passing through to the room. The key-frame bridge in
+	// video.go sends nothing until that answer enables it.
+	videoMu    sync.Mutex
+	video      videoNegotiation
+	videoKnown bool
 }
 
 // New validates the configuration.
@@ -114,15 +135,20 @@ func (agent *Agent) Run(ctx context.Context) error {
 
 	// The agent owns the media format because it terminates media, exactly as
 	// the in-process adapter does.
-	if err := protocolClient.Send(ctx, map[string]any{
-		"type": "session.update",
-		"session": map[string]any{
-			"type": "realtime",
-			"audio": map[string]any{
-				"input":  map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
-				"output": map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
-			},
+	session := map[string]any{
+		"type": "realtime",
+		"audio": map[string]any{
+			"input":  map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
+			"output": map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
 		},
+	}
+	if agent.config.Video {
+		session["openrealtime"] = map[string]any{
+			"version": 1, "supports": []string{"video.input"},
+		}
+	}
+	if err := protocolClient.Send(ctx, map[string]any{
+		"type": "session.update", "session": session,
 	}); err != nil {
 		return fmt.Errorf("configure the protocol session: %w", err)
 	}
@@ -139,11 +165,17 @@ func (agent *Agent) Run(ctx context.Context) error {
 		OnDisconnected: func() { agent.close() },
 		ParticipantCallback: lksdk.ParticipantCallback{
 			OnTrackSubscribed: func(remote *pion.TrackRemote, _ *lksdk.RemoteTrackPublication, participant *lksdk.RemoteParticipant) {
-				if remote.Kind() != pion.RTPCodecTypeAudio {
-					return
+				switch remote.Kind() {
+				case pion.RTPCodecTypeAudio:
+					agent.config.Logf("subscribed to audio from %s", participant.Identity())
+					go agent.pumpInbound(ctx, remote)
+				case pion.RTPCodecTypeVideo:
+					if !agent.config.Video {
+						return
+					}
+					agent.config.Logf("subscribed to video from %s", participant.Identity())
+					go agent.pumpVideo(ctx, remote, participant, participant.Identity())
 				}
-				agent.config.Logf("subscribed to audio from %s", participant.Identity())
-				go agent.pumpInbound(ctx, remote)
 			},
 			OnDataPacket: func(packet lksdk.DataPacket, _ lksdk.DataReceiveParams) {
 				user, ok := packet.(*lksdk.UserDataPacket)
@@ -237,6 +269,9 @@ func (agent *Agent) pumpOutbound(ctx context.Context) {
 			if event.Type == "response.output_audio.delta" {
 				agent.playAudio(event.Raw)
 				continue
+			}
+			if event.Type == "session.created" || event.Type == "session.updated" {
+				agent.observeVideoNegotiation(event.Raw)
 			}
 			agent.forwardToRoom(event.Raw)
 		}

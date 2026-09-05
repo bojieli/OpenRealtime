@@ -36,6 +36,7 @@ func run(arguments []string) error {
 		keyEnv    string
 		secretEnv string
 		verbose   bool
+		video     bool
 	)
 	flags.StringVar(&url, "livekit-url", "", "LiveKit server URL, ws:// or wss://")
 	flags.StringVar(&room, "room", "", "room to join")
@@ -47,6 +48,9 @@ func run(arguments []string) error {
 	flags.StringVar(&keyEnv, "livekit-key-env", "LIVEKIT_API_KEY", "environment variable holding the LiveKit API key")
 	flags.StringVar(&secretEnv, "livekit-secret-env", "LIVEKIT_API_SECRET", "environment variable holding the LiveKit API secret")
 	flags.BoolVar(&verbose, "verbose", true, "log connection and media events")
+	flags.BoolVar(&video, "video", false,
+		"subscribe to room video tracks and bridge VP8 key frames to the endpoint as protocol video events; "+
+			"the session then declares the OpenRealtime video extension, which an endpoint without it ignores")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -62,7 +66,7 @@ func run(arguments []string) error {
 		URL: url, APIKey: os.Getenv(keyEnv), APISecret: os.Getenv(secretEnv),
 		Room: room, Identity: identity, Name: name,
 		Endpoint: endpoint, Token: os.Getenv(tokenEnv), Model: model,
-		PacketDuration: 20 * time.Millisecond, Logf: logf,
+		PacketDuration: 20 * time.Millisecond, Video: video, Logf: logf,
 	})
 	if err != nil {
 		return err
