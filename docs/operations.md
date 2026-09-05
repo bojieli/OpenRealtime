@@ -177,6 +177,17 @@ conversation supports.
 | `omni` / `duplex` | one model process per session, or one shared | use `-sidecar-address` to share an expensive model rather than loading it per session |
 | `upstream` | one outbound WebSocket, plus the reasoner | the lightest to run; the remote does the work |
 
+Every adapter that reaches a provider over HTTP shares one connection pool,
+which keeps sixty-four idle connections per host rather than the two Go's
+default transport keeps. Two is right for a program that talks to many hosts
+occasionally and wrong for this one, which talks to a handful constantly: past
+the second concurrent call the finished connection is closed instead of pooled,
+and the next call pays a redial and a TLS handshake on the path a person is
+waiting on. There is no shared request deadline — each adapter bounds its own
+call by its own cadence, because a recogniser answering in tens of milliseconds
+and a reasoner answering in tens of seconds cannot share a number that means
+anything for either.
+
 All local model work can compete under one admission governor with three
 classes: interactive above speculative preparation above background. Policy
 models are admitted at interactive class, video narration at background, and

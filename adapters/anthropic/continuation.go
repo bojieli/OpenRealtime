@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -212,7 +213,7 @@ func New(config Config) (*Adapter, error) {
 	config.Betas = slices.Clone(config.Betas)
 	config.Headers = maps.Clone(config.Headers)
 	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{}
+		config.HTTPClient = httpclient.Shared()
 	}
 	if config.RequestTimeout < 0 {
 		return nil, errors.New("Anthropic request timeout cannot be negative")

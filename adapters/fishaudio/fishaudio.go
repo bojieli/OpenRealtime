@@ -22,6 +22,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/pcm"
 )
 
@@ -152,7 +153,7 @@ func New(config Config) (*Adapter, error) {
 		return nil, errors.New("Fish Audio maximum audio size must contain at least one PCM16 sample")
 	}
 	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{}
+		config.HTTPClient = httpclient.Shared()
 	}
 	config.Headers = config.Headers.Clone()
 	config.BearerToken = strings.TrimSpace(config.BearerToken)

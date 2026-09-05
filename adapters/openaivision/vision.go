@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/perception"
 )
 
@@ -69,7 +70,7 @@ func New(config Config) (*Client, error) {
 	}
 	client := config.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: config.RequestTimeout}
+		client = httpclient.WithTimeout(config.RequestTimeout)
 	}
 	return &Client{config: config, http: client}, nil
 }

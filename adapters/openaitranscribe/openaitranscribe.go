@@ -39,6 +39,7 @@ import (
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"github.com/bojieli/OpenRealtime/internal/audio"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/pcm"
 )
 
@@ -178,7 +179,7 @@ func New(config Config) (*Adapter, error) {
 		config.MaxUtteranceBytes = defaultMaxUtterance
 	}
 	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{}
+		config.HTTPClient = httpclient.Shared()
 	}
 	config.ExtraFields = maps.Clone(config.ExtraFields)
 	config.Headers = config.Headers.Clone()

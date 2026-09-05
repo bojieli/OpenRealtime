@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 )
 
 // ProbeResult is what a provider says it serves, and whether the catalogue's
@@ -112,7 +114,10 @@ func Probe(ctx context.Context, request LLMRequest) (ProbeResult, error) {
 		httpRequest.Header.Set(name, value)
 	}
 
-	response, err := http.DefaultClient.Do(httpRequest)
+	// The shared pool rather than the default one: a probe that dials a
+	// provider at startup should leave a warm connection behind for the
+	// first real call rather than a closed one.
+	response, err := httpclient.Shared().Do(httpRequest)
 	if err != nil {
 		return ProbeResult{}, fmt.Errorf("list %s models: %w", entry.Name, err)
 	}

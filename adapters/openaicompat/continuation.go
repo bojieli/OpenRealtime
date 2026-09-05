@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/internal/sse"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -176,7 +177,7 @@ func New(config Config) (*Adapter, error) {
 		return nil, errors.New("temperature must be between 0 and 2")
 	}
 	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{}
+		config.HTTPClient = httpclient.Shared()
 	}
 	if config.RequestTimeout < 0 {
 		return nil, errors.New("OpenAI-compatible request timeout cannot be negative")

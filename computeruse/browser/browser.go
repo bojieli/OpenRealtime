@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/computeruse"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/coder/websocket"
 )
 
@@ -106,7 +107,7 @@ type devToolsTarget struct {
 }
 
 func discover(ctx context.Context, base string, timeout time.Duration) (string, error) {
-	client := &http.Client{Timeout: timeout}
+	client := httpclient.WithTimeout(timeout)
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodGet, strings.TrimRight(base, "/")+"/json/list", nil)
 	if err != nil {

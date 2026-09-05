@@ -40,6 +40,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/admission"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 )
 
 // DefaultBaseURL is the conventional local OpenAI-compatible location.
@@ -170,7 +171,7 @@ func New(config Config) (*Client, error) {
 	}
 	client := config.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: config.Timeout}
+		client = httpclient.WithTimeout(config.Timeout)
 	}
 	return &Client{config: config, http: client}, nil
 }

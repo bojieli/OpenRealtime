@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 )
 
 // DefaultEndpoint is where tools/speakerid serves embeddings.
@@ -49,7 +51,7 @@ func New(config Config) (*Adapter, error) {
 	}
 	client := config.HTTPClient
 	if client == nil {
-		client = &http.Client{}
+		client = httpclient.Shared()
 	}
 	timeout := config.RequestTimeout
 	if timeout <= 0 {

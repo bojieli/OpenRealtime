@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/bojieli/OpenRealtime/internal/audio"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/spoken"
 )
 
@@ -84,7 +85,7 @@ func New(config Config) (*Adapter, error) {
 		config.AuthHeader = "Authorization"
 	}
 	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{}
+		config.HTTPClient = httpclient.Shared()
 	}
 	if config.RequestTimeout <= 0 {
 		config.RequestTimeout = 10 * time.Second

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
+	"github.com/bojieli/OpenRealtime/internal/httpclient"
 	"github.com/bojieli/OpenRealtime/internal/speechstream"
 )
 
@@ -277,7 +278,7 @@ func prepare(config Config, defaultModel string) (Config, error) {
 		config.RequestTimeout = defaultTimeout
 	}
 	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{}
+		config.HTTPClient = httpclient.Shared()
 	}
 	config.Headers = config.Headers.Clone()
 	config.ExtraBody = maps.Clone(config.ExtraBody)
