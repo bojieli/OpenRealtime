@@ -1008,9 +1008,39 @@ looked: anchoring the turn's end at its last audible block degrades to the
 annotation exactly where a fixed floor cannot find an end, because in the
 `noisy-bg-0dB` conditions the background never falls below it and the last
 audible block is the last block. Nothing gets worse there and the clean
-conditions stop charging the agent for the speaker's own pause. This is
-recorded as measured; `bench fdbench -transcripts` exists so the effect can be
-confirmed on a run before the scoring is changed.
+conditions stop charging the agent for the speaker's own pause.
+
+The scoring is nevertheless unchanged, and the reason is that a run was asked
+first. Ten ChatTTS conversations with their records retained produced **no
+premature turns at all** - so on this evidence there is nothing for the
+correction to excuse. The suite now reports
+`premature_turns_after_speech_ended` on every conversation, which is the number
+that would justify moving the rule, and it should be seen above zero on a run
+before the rule moves. The machine was heavily loaded throughout, and a slow
+agent never starts early, so this is a weak negative rather than a clean one.
+
+**Keeping the record found a different defect in the same suite.** Of the
+forty-six turns in those ten conversations, six were recorded as unanswered.
+One of them had twenty-two audio deltas of a genuinely new response arriving
+148 ms after the turn ended. A reply was recognised by a gap of at least one
+packet between audio segments, and an agent that finishes one answer and begins
+the next without pausing produces no gap - so on that rule its next answer does
+not exist. A change of response now establishes an onset as well, which
+recovers two of the forty-six turns and one of the ten conversations, and
+leaves an overrun an overrun, because a response already speaking when the turn
+ended carries the same identity either side of the boundary.
+
+| Reply recognised by | Answered | Missed | Conversations answering every turn |
+| --- | ---: | ---: | ---: |
+| a gap in the audio | 40 of 46 | 6 | 6 of 10 |
+| a gap or a new response | 42 of 46 | 4 | 7 of 10 |
+
+The two suites also agree with each other, which neither could do before their
+records were kept. FD-Bench's agent audio inside a user turn it overlapped
+comes to a median of 712 ms per turn; FDB v1.5's yield latency from the first
+sound comes to 622 ms. Different recordings, different scoring code, the same
+answer - and the 905 ms that FDB reports from its annotations is the number
+that does not fit.
 
 **The meeting suite was audited the same way and is fine.** Its four checked-in
 cue recordings end 240 to 275 ms after their last sound, and the cue boundaries
