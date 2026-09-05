@@ -2978,6 +2978,12 @@ the required new 180-attempt sample.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`
+    The replay-v1 diagnostic at `b7d188d` reproduced a scorer-v7 pass from
+    independent observations `1.` before interruption and `2.` after resuming.
+    This verifies the observed boundary but exposes a coverage limit: the
+    check does not require a sustained count on either side. Require enough
+    audible numbers to distinguish continued counting, a restart, and a
+    one-number response before closing this case.
 - [x] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
   production profile. Clean-worktree candidate-21 at commit `c250d83` passed
   four independent focused two-case runs (8/8) before its immutable full run.
@@ -3165,6 +3171,14 @@ the required new 180-attempt sample.
         accuracy, provider/runtime authenticity, canonical run specifications,
         and incomplete dynamic-cue source recovery remain outside this subgate;
         the all-suite parent remains open.
+        Five new live recordings from clean `b7d188d` and one exact executable
+        independently replayed all retained outcomes and metrics: three
+        observed-speech acknowledgements (2/3 passed), one menu (passed), and
+        one interrupted count (passed its current checks). Every advisory
+        review agreed, including the acknowledgement that omitted purchase
+        confirmation. These are focused diagnostics, not final-candidate or
+        sustained-counting acceptance. See the
+        [replay evidence record](subturn-benchmark-study.md#scenario-score-replay-from-retained-evidence).
     - [x] Bind each declared repair lineage edge externally: preserve the
       failed full campaign, link the focused diagnostic and repaired full-suite
       closure to it, and require an exact chronological digest match. Earlier

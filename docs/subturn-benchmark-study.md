@@ -714,3 +714,86 @@ done
 
 All eight commands returned 5/5 verified, for 40/40 independently reopened
 recordings and reviews.
+
+
+## Scenario score replay from retained evidence
+
+New scenario results retain `replay.version: 1` alongside scorer version 7.
+The verifier reconstructs authored input timing, exact source PCM, serialized
+agent chunks, menu transitions, requested recognizer windows, acoustic checks,
+content checks, and latencies. It then compares the complete result and its
+architecture-task projection. Source-integrity verification remains available
+for historical results; behavioral campaign acceptance now requires replay.
+The public offline command is `openrealtime review replay-scenario`.
+
+Two focused campaigns ran from clean source
+`b7d188daabc4ea13d24d7862cfcfe22a2cd1d6e5`, before integration with the colleague's
+later commits. Both used the identical executable SHA-256
+`cb011753c5792c8da0b709c9da0fb3202010af4b176975b2ba13445c87447f6e`.
+Deepgram Nova-3 handled conversational recognition, Gemini 3.5 Flash generated
+responses, Qwen supplied the local policy, and Fish supplied speech. The
+counting scorer used the separate SenseVoice endpoint. Exact profiles, graph,
+values, execution receipts, model settings, commands, and media are retained.
+These are focused diagnostics; they add no final-candidate population credit.
+
+| Recording | Current deterministic outcome | Offline replay | Advisory review |
+| --- | --- | --- | --- |
+| Observed-speech acknowledgement, trial 1 | Pass | Exact match | Agrees |
+| Observed-speech acknowledgement, trial 2 | Fail: omitted purchase confirmation | Exact match | Agrees |
+| Observed-speech acknowledgement, trial 3 | Pass | Exact match | Agrees |
+| Recorded menu | Pass | Exact match | Agrees |
+| Interrupted count | Pass under current boundary check | Exact match | Agrees |
+
+The second acknowledgement again said “order number and purchase Check that”
+without completing the required confirmation phrase. Its original failure,
+media, acoustic measurements, and agreeing review are retained. Replay proves
+that this failure follows from the retained inputs; it does not explain the
+provider boundary that caused the omission.
+
+The interrupted-count pass has a narrower meaning than sustained counting:
+SenseVoice heard `1.` in `[0, 15000)` ms and `2.` in `[27925, 39925)` ms. Their
+PCM digests are respectively
+`sha256:38143ca8afcc65f84a1f842a1cab468e9150548d22cd3f51204cb924fdcae378`
+and
+`sha256:2ee56e7fd5ac4e0e06aabbaa8197d6c3fb87ee891b816cb09f6d3862f9292e9e`.
+The reviewer heard the same progression. The current check requires no minimum
+number of audible counts on either side, so this evidence does not establish
+continuous counting toward forty or a sufficiently long pre-interruption
+prefix to distinguish restarting. That scenario's full acceptance box remains
+open; this is a concrete coverage extension to implement and measure.
+
+Retained directories:
+
+- `artifacts/scenario-score-replay-20260905-01`: acknowledgement source receipt
+  `sha256:d5cfe358a8889a1444cb0ccd38d7bfc597750b88660659dfd4d8f549868b6017`,
+  advisory receipt
+  `sha256:7e6217ad06fc98b2d09e9c9889670f67dccb0f98011683a33e0c7af9bf8b8cf5`.
+- `artifacts/scenario-score-replay-menu-counting-20260905-01`: menu/count source
+  receipt
+  `sha256:e696fa0d448b68a6a9d6e890f3c64482266dc2474481474318f866098372b433`,
+  advisory receipt
+  `sha256:7da8e5d35dbcc7d2ba641434691c9bdba653c9409fb5ea9af6fded18fd196c71`.
+
+Both source trees and every advisory evaluation were independently reopened;
+all five outcomes and metrics replayed exactly without provider calls.
+Regression coverage includes all twelve canonical scenarios, production
+recording, sent speech cues, absent historical inputs, tampered outcomes,
+acoustic measurements, latencies, room/output audio, counting windows, menu
+results, and freshly resealed architecture metrics. Mutations bypassing result
+comparison or metric comparison were caught and restored.
+
+The initial full gate also exposed an older endpoint test that stopped at the
+first response's completion and assumed every segment shared that response ID.
+A ten-repetition race run reproduced the scheduling-dependent false failure.
+The repaired test waits for all expected audio and the final response's
+completion, checks every segment and successful terminal status, and verifies
+balanced response lifecycles. Ten race-enabled repetitions passed; restoring
+`minimum_clause_runes: 1` still failed the segmentation assertion. Original
+failure logs and mutation evidence are retained beside the integration gate.
+
+Replay treats recognizer text and transcript events as retained observations.
+It does not independently establish ASR accuracy, provider/runtime authorship,
+or a canonical run specification. Missing or partly transmitted dynamic cues
+still lack their complete source PCM and refuse this verifier. Universal
+all-suite replay, trusted thresholds, the independently controlled release
+store, and the final 7,501-attempt campaign remain open.
