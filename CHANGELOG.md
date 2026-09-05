@@ -358,6 +358,18 @@
   retains the JSON report, failing closed if the report is not written or does
   not reach the audio gate; it compares no thresholds, because the claim is
   that every number is measured and stated against its machine.
+- **The Opus encoder is compiled and tested somewhere.** The cgo encoder
+  behind the `opus` build tag was reachable from no gate, so nothing would
+  have noticed it stop building. `local.go.webrtc.opus` compiles and tests
+  it; a new `pkg_config` prerequisite kind asks pkg-config for libopus and
+  libopusfile, so a host without them plans as blocked rather than failing to
+  build, and both CI gate jobs install the two development packages.
+- **DynaCU's Python environment is what the gate expects.** The prepare
+  script accepted the system interpreter while the matrix required a virtual
+  environment inside the pinned checkout, so the optional gate always
+  reported the environment missing on a host that could run it. The
+  environment is now created over the system packages; the gate is blocked
+  only on the endpoint it must be pointed at.
 - **Sidecar conformance is a dedicated gate.** The broad Go sweep tolerates
   skips by design, so the one place the bundled Python element and the three
   reference sidecars were exercised could be skipped without anyone noticing.

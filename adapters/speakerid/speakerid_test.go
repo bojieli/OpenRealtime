@@ -19,7 +19,7 @@ import (
 func TestEmbedSendsPCMWithItsRateAndReturnsTheVector(t *testing.T) {
 	var (
 		gotMethod, gotType, gotRate string
-		gotBody                    []byte
+		gotBody                     []byte
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotType, gotRate = r.Method, r.Header.Get("Content-Type"), r.Header.Get("X-Sample-Rate")

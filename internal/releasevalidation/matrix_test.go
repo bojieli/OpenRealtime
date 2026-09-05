@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -899,4 +900,39 @@ func countArgument(command []string, value string) int {
 		}
 	}
 	return count
+}
+
+// A cgo build tag is only as available as the C library behind it, and a
+// missing library is a compile error rather than a skip. The prerequisite asks
+// pkg-config, so a host without the library plans as blocked instead of
+// failing to build.
+func TestPkgConfigPrerequisiteAsksPkgConfig(t *testing.T) {
+	root := repositoryRoot(t)
+	resolver, err := newResolver(
+		root,
+		filepath.Join(root, ".runtime", "toolchains", "go1.25.0", "bin", "go"),
+		nil,
+		filepath.Join(t.TempDir(), "artifacts"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prerequisite := Prerequisite{
+		Kind: "pkg_config", Value: "a-library-nobody-ships-9f3c", Description: "a library that does not exist",
+	}
+	if err := prerequisite.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if available, reason := resolver.checkPrerequisite(context.Background(), prerequisite); available ||
+		!strings.Contains(reason, "a-library-nobody-ships-9f3c") {
+		t.Fatalf("an unknown library was reported available: %v %q", available, reason)
+	}
+	if _, err := exec.LookPath("pkg-config"); err != nil {
+		t.Skip("pkg-config is not installed; the positive case needs it")
+	}
+	// Every pkg-config installation knows itself.
+	known := Prerequisite{Kind: "pkg_config", Value: "pkg-config", Description: "pkg-config's own module"}
+	if available, reason := resolver.checkPrerequisite(context.Background(), known); !available {
+		t.Fatalf("pkg-config's own module was reported unavailable: %s", reason)
+	}
 }

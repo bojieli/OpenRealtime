@@ -421,6 +421,18 @@ func (resolver *resolver) checkPrerequisite(ctx context.Context, prerequisite Pr
 		if err := command.Run(); err != nil {
 			return false, fmt.Sprintf("preloaded Docker image %s is unavailable (the gate never pulls)", prerequisite.Value)
 		}
+	case "pkg_config":
+		// A cgo build tag is only as available as the C library behind it,
+		// and a missing library is a compile error rather than a skip. Ask
+		// pkg-config, which is what the cgo directive itself consults, so a
+		// host without the library reports blocked instead of failing to build.
+		if _, err := exec.LookPath("pkg-config"); err != nil {
+			return false, fmt.Sprintf("pkg-config is unavailable, so library %s cannot be located", prerequisite.Value)
+		}
+		command := exec.CommandContext(ctx, "pkg-config", "--exists", prerequisite.Value)
+		if err := command.Run(); err != nil {
+			return false, fmt.Sprintf("pkg-config does not know library %s", prerequisite.Value)
+		}
 	case "python_module":
 		parts := strings.SplitN(prerequisite.Value, ":", 2)
 		if len(parts) != 2 {

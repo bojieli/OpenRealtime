@@ -290,7 +290,7 @@ func (prerequisite Prerequisite) validate() error {
 		"env": true, "env_url": true, "env_file": true,
 		"env_directory": true, "env_executable": true,
 		"file": true, "directory": true, "executable": true, "os": true,
-		"python_module": true,
+		"python_module": true, "pkg_config": true,
 	}
 	if !allowed[prerequisite.Kind] {
 		return fmt.Errorf("unknown prerequisite kind %q", prerequisite.Kind)

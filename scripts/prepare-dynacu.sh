@@ -74,10 +74,19 @@ done
 pages="$(find "${checkout}/benchmark_env/html_tasks" -name '*.html' | wc -l | tr -d ' ')"
 echo "task pages: ${pages}"
 
+# The release matrix expects the suite's interpreter inside the checkout, at
+# .venv/bin/python, so that the environment a run used is part of the pinned
+# tree rather than whatever python3 happened to be first on PATH. Create it
+# over the system site-packages: the heavy dependencies (torch, CLIP, Whisper)
+# are usually already installed system-wide on a benchmark host, and a venv
+# that sees them costs nothing, while one that does not still works after the
+# pip install the script prints below.
 python_bin="${DYNACU_PYTHON:-python3}"
-if [[ -x "${checkout}/.venv/bin/python" ]]; then
-  python_bin="${checkout}/.venv/bin/python"
+if [[ ! -x "${checkout}/.venv/bin/python" ]]; then
+  echo "creating ${checkout}/.venv over the system site-packages"
+  "${python_bin}" -m venv --system-site-packages "${checkout}/.venv"
 fi
+python_bin="${checkout}/.venv/bin/python"
 
 declared="$(cd "${checkout}" && PYTHONPATH="${checkout}" "${python_bin}" - <<'PY'
 import json

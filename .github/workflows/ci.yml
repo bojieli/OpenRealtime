@@ -67,7 +67,7 @@ jobs:
       - name: Review media sandbox
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
 
       # The reference sidecars run in mock mode under the Go conformance
       # suite; they need only numpy and Pillow, which is what the sidecar
@@ -174,7 +174,7 @@ jobs:
       - name: Browser for the WebRTC transport
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
           sudo apt-get install -y --no-install-recommends chromium-browser \
             || sudo apt-get install -y --no-install-recommends chromium
           # The test looks for chromium, chromium-browser, then google-chrome on

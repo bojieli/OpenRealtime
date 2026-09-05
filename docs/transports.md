@@ -170,7 +170,10 @@ is obviously right, and the cost of the choice made is stated here rather than
 hidden: synthesised speech reaches a browser at telephone bandwidth.
 
 A deployment that needs wideband output should use an RTC provider, which is
-what the LiveKit path is for.
+what the LiveKit path is for. The cgo encoder behind the `opus` build tag is
+kept compiling and tested by the `local.go.webrtc.opus` release gate, which
+is blocked rather than failed on a host without the libopus and libopusfile
+development files.
 
 ### Clean audio is the client's responsibility
 

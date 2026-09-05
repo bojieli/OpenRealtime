@@ -907,6 +907,25 @@
       "covers": ["go:vet:."]
     },
     {
+      "id": "local.go.webrtc.opus",
+      "description": "Compile and test the cgo Opus encoder behind the opus build tag, which no default build reaches",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-tags", "opus", "-count=1", "-v", "./transport/webrtc"],
+      "prerequisites": [
+        {"kind": "command", "value": "pkg-config", "description": "pkg-config is available to locate the C libraries"},
+        {"kind": "pkg_config", "value": "opus", "description": "the libopus development files are installed"},
+        {"kind": "pkg_config", "value": "opusfile", "description": "the libopusfile development files are installed"}
+      ],
+      "timeout": "10m",
+      "skip_policy": "forbid",
+      "assertions": [
+        {"kind": "stdout_regex", "value": "(?m)^--- PASS: TestOpusEncoderProducesDecodablePackets"}
+      ]
+    },
+    {
       "id": "local.presentation.chromium",
       "description": "Run every composable browser presentation test in real Chromium with release skip refusal",
       "availability": "local",
