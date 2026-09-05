@@ -273,6 +273,8 @@ type SessionConfig struct {
 	WorkingTimeout time.Duration
 	// PostPlaybackQuiet is how long a session with no protocol work visibly
 	// outstanding must remain quiet after playback before collection ends.
+	// Passive observation and debug traffic is recorded but does not extend
+	// this interval; continuing video cannot keep a completed task alive.
 	// Zero selects three seconds. Suites with an asynchronous slow lane may
 	// raise this without weakening their action deadlines; Timeout remains the
 	// hard conversation horizon.
@@ -890,8 +892,8 @@ func (recorder *recorder) add(moment Moment) {
 	recorder.moments = append(recorder.moments, moment)
 	// Do not update lastActivity here. Moments also include locally sampled
 	// video frames, which can continue forever and must not prevent quiet
-	// detection. Protocol events and completed tool work touch activity at
-	// their actual boundaries below.
+	// detection. Conversational protocol events and completed tool work touch
+	// activity at their actual boundaries below.
 }
 
 func (recorder *recorder) beginEpisode() {
@@ -961,7 +963,8 @@ func (recorder *recorder) snapshot() Transcript {
 // recording may contain one turn or five, and counting responses would make
 // the driver suite-specific.
 //
-// Quiet is measured from the later of playback ending and the last event,
+// Quiet is measured from the later of playback ending and the last
+// conversational event (excluding passive observation and debug traffic),
 // which matters more than it sounds. Arming a timer only when an event arrives
 // means a session that produces nothing after playback never arms it at all,
 // and every task in that cell fails with a timeout - which looks like the
@@ -1032,7 +1035,15 @@ func (recorder *recorder) collect(
 				recorder.mu.Unlock()
 				return recorder.snapshot()
 			}
-			recorder.touch()
+			switch event.Type {
+			case openrealtime.EventObservationAdded, openrealtime.EventDebug:
+				// These are passive sensor and inspection outputs. A camera may
+				// keep observing after the agent has settled, and debug traffic
+				// must not turn a completed conversation into a timeout. Preserve
+				// both below without treating them as new conversational work.
+			default:
+				recorder.touch()
+			}
 			recorder.handle(ctx, client, config, event)
 			recorder.mu.Lock()
 			failed := recorder.failure != ""

@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- Benchmark sessions now record passive observation and debug traffic without
+  extending conversation deadlines. Continuing screen updates can no longer
+  turn a recovered, settled computer-use task into a false session timeout.
+  Response progress and outstanding tools still retain their working interval.
+
 - Continuation commits now check for superseding evidence and append output
   under one trajectory lock. A concurrent user correction can no longer enter
   between those operations and leave a stale answer or tool call committed

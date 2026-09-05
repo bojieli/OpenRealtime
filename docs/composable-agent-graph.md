@@ -1841,8 +1841,8 @@ Current behavior work includes:
 | --- | --- | --- |
 | Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
 | Acknowledgements | Existing recordings exposed unwanted cancellation and a separate omitted purchase confirmation; cancellation repairs have focused coverage | Attribute the content omission at the model, synthesis, or evaluator boundary and repair a reproduced cause |
-| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences cannot reclassify a result that already released continuation; distinct later results still settle. The evaluator distinguishes explicit failure, later recovery, missing page consequences, and an error-bearing apparent success | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish remaining cross-boundary ordering and full-session failed-result lineage cases; use affected camera and terminal-loop cases for live checks where needed |
-| Full-duplex interaction | Existing FDB cases expose interruption latency and incorrect handling of background or third-party speech | Diagnose the affected hold/yield cases and check policy repairs against both relevant speech and silence controls |
+| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences cannot reclassify a result that already released continuation; distinct later results still settle. The evaluator distinguishes explicit failure, later recovery, missing page consequences, and an error-bearing apparent success. Full-session recovery joins canonical result lineage to received tool results and guards a false timeout caused by passive observations | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish remaining cross-boundary ordering cases; use affected camera and terminal-loop cases for live checks where needed |
+| Full-duplex interaction | Existing FDB cases exposed interruption latency and apparent background/third-party hold failures. Repeating the existing hold recordings found overlap opportunities that vary with agent timing, without a consistently failing agent case in that diagnostic | Separate missing fixture overlap from actual hold/yield failures before changing policy; check reproduced repairs against relevant speech and silence controls |
 | Tool use | FDB v3 exposed extra effects and spoken-ID normalization; scorer and mounted normalization repairs exist | Reuse the failed tool cases to check remaining action/result behavior |
 | Broader scenario coverage | Historical FD-Bench and tau-Voice runs remain useful despite incomplete populations or older revisions | Select concrete failures that reveal missing behavior; unrun populations alone are not bugs or publication blockers |
 
@@ -1863,6 +1863,29 @@ run scope without contributing a separate completion quota.
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
+### 2026-09-05 full-session recovery and passive-traffic timeout repair
+
+A controlled WebSocket regression now connects the locked production
+computer-use graph, server/gateway, benchmark client, evaluator dispatcher,
+action handler, and scorer. The first click fails; the next distinct click
+succeeds. The test joins both received tool results to their canonical call,
+invocation, error/output, and directly linked visual consequence. Only the
+successful result reaches the disposition policy. The production activation
+acknowledges its terminal settlement, and later changing observations leave
+the model and policy quiescent.
+
+This full-session path reproduced a real evaluator defect: continuous passive
+observations kept resetting activity, so a recovered task with no outstanding
+response or tool still reached the session timeout. The collector now records
+observation and debug events without extending its quiet or working deadline.
+Deterministic timer regressions preserve both passive event data and outstanding
+work, while a response-progress control ensures active output still extends
+collection. Restoring the old collector through a source overlay makes the
+passive-traffic regressions and full session fail; ignoring all protocol
+progress instead makes the response control fail. These checks close the
+full-session failed-result lineage item without a new benchmark campaign or
+score report. Other historical timeouts still require their own diagnosis.
+
 ### 2026-09-05 failed-effect evaluator coverage
 
 The failed-effect diagnostic now exercises the evaluator's real dispatcher and
@@ -1878,8 +1901,8 @@ These checks pass under the race detector with the existing implementation;
 no scoring rule was weakened. Removing the execution-error guard makes the
 error-bearing success case fail its regression. Together with the mounted
 failed-effect recovery tests, this covers each side's local semantics. The
-full-session join between production graph lineage and evaluator input remains
-open; a new benchmark campaign or published result is unnecessary for that work.
+subsequent full-session regression above connects production graph lineage to
+evaluator input and repairs the passive-traffic timeout it exposed.
 
 ### 2026-09-05 atomic continuation commit repair
 
@@ -2014,7 +2037,7 @@ Realtime-CU evidence, but live confirmation remains deliberately separate:
 | Cancellation after dispatch could erase evidence of an already crossed effect | Action stages preserve exact authorizers; result commit retains the exact cancellation until canonical result settlement and reports `Crossed` honestly | The local locked-profile WebSocket test reports `incomplete/action_already_crossed`, commits the mandatory cancellation result, requests visual consequence evidence, suppresses the old epoch, and admits a later intent | Exercise an authored failed-effect case and confirm live scorer behavior |
 | A terminal policy could accidentally become a blanket one-action-per-intent rule | Settlement explicitly chooses continuation or terminal state per canonical consequence | The production graph executes click/focus→type→submit under two continuations, terminates on success, ignores five changing cadence frames, and admits a new intent afterward | Confirm moving-target and transient-alert live behavior |
 | A transient provider, policy, or retained-media failure could strand a durable intent after one `indeterminate` decision | A separate typed retry node immediately forwards the immutable probe, schedules only verified indeterminate outcomes with bounded deterministic backoff, and stops on terminal disposition, cancellation, reset, elapsed-time bound, or attempt exhaustion | Element tests cover exact replay, capped exponential schedules, typed exhaustion, forged/stale/duplicate/reordered inputs, capacity, shutdown, and race behavior; the locked production focus→type→submit test begins with an automatic retry | Exercise the selected live disposition provider in the focused cases; route exhaustion to a different fallback if the application should not drop it |
-| A canonical failed client effect could strand a live intent, while cancellation after either result status could retain effect capacity indefinitely | Ordinary failed evidence opens one recovery turn. After cancellation, settlement revision 2 emits only an independently verified exact result consequence on a distinct typed cleanup lane; activation revision 15 removes only the matching local `canceledEffects` record and replays an already-admitted different-intent value after the old cancellation/cleanup completes. Every retained effect keeps its exact tombstone; under memory pressure only a complete pair superseded by newer final user authority may be reclaimed, and a pair with an outstanding terminal acknowledgement is protected | The exact locked topology executes failed click → recovery click → successful terminal settlement; cancel-before-failed-consequence emits `canceled_effect_failed`, cancel-after-success-result-before-consequence emits `canceled_effect_succeeded`, and failure-before-cancel cancels the exact recovery generation. A deterministic mounted gate proves cleanup can arrive while coordinator cancellation is still waiting, for both result statuses, without invoking policy/model or losing the generation acknowledgement. It also proves cleanup cannot create a coordinator refusal and that newer admitted work starts after release without another frame. Element tests reject malformed, cross-session, forged, duplicate, and conflicting controls; reclaim one-slot capacity only when safe; and preserve an effect with an outstanding terminal acknowledgement | Prove evaluator interpretation against retained authored evidence, then run the authored failed-effect live case; local tests do not close benchmark acceptance |
+| A canonical failed client effect could strand a live intent, while cancellation after either result status could retain effect capacity indefinitely | Ordinary failed evidence opens one recovery turn. After cancellation, settlement revision 2 emits only an independently verified exact result consequence on a distinct typed cleanup lane; activation revision 15 removes only the matching local `canceledEffects` record and replays an already-admitted different-intent value after the old cancellation/cleanup completes. Every retained effect keeps its exact tombstone; under memory pressure only a complete pair superseded by newer final user authority may be reclaimed, and a pair with an outstanding terminal acknowledgement is protected | The exact locked topology executes failed click → recovery click → successful terminal settlement; cancel-before-failed-consequence emits `canceled_effect_failed`, cancel-after-success-result-before-consequence emits `canceled_effect_succeeded`, and failure-before-cancel cancels the exact recovery generation. A deterministic mounted gate proves cleanup can arrive while coordinator cancellation is still waiting, for both result statuses, without invoking policy/model or losing the generation acknowledgement. It also proves cleanup cannot create a coordinator refusal and that newer admitted work starts after release without another frame. Element tests reject malformed, cross-session, forged, duplicate, and conflicting controls; reclaim one-slot capacity only when safe; and preserve an effect with an outstanding terminal acknowledgement | Evaluator-local and full-session failure/recovery checks now join exact canonical lineage to received results and terminal acknowledgement. Reuse historical failures for further provider and ordering diagnostics where needed |
 | Session shutdown could deadlock behind media waiting for canonical commit | Observer use and publication/close ordering now have separate lifecycle boundaries; close drains commit waiters | Focused normal and race-enabled close regressions pass | Confirm the live focused cases terminate without running to the evaluation horizon |
 
 Validation at the rebased implementation checkpoint passed with Go 1.25.
@@ -3948,11 +3971,16 @@ the required new 180-attempt sample.
           settle the task; a missing failed-action consequence still fails
           closed. Race-enabled tests and mutation of the execution-error guard
           establish these distinctions without a benchmark campaign.
-        - [ ] Exercise the full-session join between the production graph's
+        - [x] Exercise the full-session join between the production graph's
           canonical failed-result/consequence lineage and the evaluator's
-          received tool result. Mounted graph recovery and evaluator-local
-          failure/recovery checks cover the two boundaries independently;
-          their combined session path remains open.
+          received tool result. The actual graph, gateway, WebSocket client,
+          dispatcher, handler, and scorer execute failure then recovery with
+          exact call/result/invocation/error and direct-consequence joins.
+          Terminal acknowledgement and later cadence quiescence are checked.
+          This path exposed and now guards a false timeout from passive
+          observation traffic; deterministic timer controls preserve real
+          response progress and outstanding work. The model, observer,
+          semantic policy, and browser surface are controlled fixtures.
       - [x] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
         `scripts/behavioral-acceptance-targets.json`. Registered 2026-09-05

@@ -715,9 +715,20 @@ cross-session control refusal, exact identity/lineage/status checks,
 duplicate/conflicting/reordered delivery, terminal-versus-cleanup ordering,
 ordinary and cleanup-first replay of an already-admitted newer intent, and
 one-slot capacity reuse without evicting an effect that still owes a terminal
-acknowledgement. These are implementation regressions, not benchmark rows;
-scorer interpretation and the authored live failed-effect case remain open. No
-live or paid Realtime-CU benchmark ran at this checkpoint.
+acknowledgement.
+
+Failed-effect scoring now has dispatcher/handler regressions for ordinary
+failure, successful recovery, error-bearing apparent success, and missing page
+consequences. A full WebSocket session additionally connects the locked
+production graph, gateway, benchmark client, dispatcher, and scorer. It verifies
+the exact failed and successful call/result identities and their canonical
+visual consequences, terminal acknowledgement, and quiescence under later
+screen observations. The model, observer, policy, and browser surface are
+controlled fixtures. This session exposed a false evaluator timeout: passive
+observation traffic kept resetting quiet detection after the agent had
+recovered. The repaired collector preserves that traffic without extending the
+conversation deadline. These checks establish the affected integration
+behavior; they do not attribute every historical timeout to this cause.
 
 The retained live evidence must also be read by checkpoint rather than reduced
 to one headline number. Candidate-05's current settlement-aware exact-sixteen
@@ -730,8 +741,8 @@ the evaluation horizon. The observer-repair artifact attempted only 4/16 and
 still contains large post-success invalid-action loops.
 
 Focused state, ordering, lifecycle, and mounted-profile tests verify the
-implemented repairs. Remaining useful diagnostics include forged or reordered
-settlement evidence, canonical failed-result interpretation, and the camera,
+implemented repairs. Remaining useful diagnostics include further reordered
+settlement evidence and the camera,
 moving-target, and transient-alert cases that exposed live behavior defects.
 Use the existing recordings to choose and reproduce those failures, repair
 the underlying causes, and validate the affected behavior. No complete sixteen-
@@ -902,6 +913,15 @@ that case separately, because a server that opens a response and never closes
 it has to fail rather than hang. If a cell reports tasks that plainly should
 have used a tool and did not, check this first: the question is whether the
 answer never came or whether nobody was still listening.
+
+Outstanding tools also use the working interval. Actual response progress and
+tool completion reset activity; passive `openrealtime.observation.added` and
+`openrealtime.debug.event` traffic is recorded without resetting it. A camera
+can keep sending observations after an agent has settled, so its continued
+activity must not force the conversation to run until the session timeout.
+The quiet interval begins at the later of playback completion and the last
+conversational activity. Profiles with asynchronous policy work may increase
+`PostPlaybackQuiet` to allow that work to finish before collection ends.
 
 ## Adding a suite
 
