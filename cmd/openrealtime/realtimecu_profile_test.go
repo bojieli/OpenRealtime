@@ -84,7 +84,7 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 	settlementResolution := realtimeCUResolutionElement(t, frozen.Resolution, "settlement")
 	if settlementResolution.Runtime.ID !=
 		"builtin://openrealtime/elements/policy.IntentSettlement" ||
-		settlementResolution.Runtime.Revision != "implementation:2" {
+		settlementResolution.Runtime.Revision != "implementation:3" {
 		t.Fatalf("frozen settlement runtime = %+v", settlementResolution.Runtime)
 	}
 	modelResolution := realtimeCUResolutionElement(t, frozen.Resolution, "model")
