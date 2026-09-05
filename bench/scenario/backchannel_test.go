@@ -47,7 +47,7 @@ func TestAcknowledgementScoresRecordedPlayoutAcrossBothBackchannels(t *testing.T
 	// recorded playout spans both, so packet-arrival windows would be wrong.
 	transcript := bench.Transcript{Moments: []bench.Moment{
 		{AtMS: 4500, Kind: bench.MomentAgentAudio, PlayoutAtMS: 4500, AudioMS: 10000, ResponseID: "explanation"},
-		{AtMS: 4500, Kind: bench.MomentAgentText, Text: "Find your order number, use the return label, and receive the refund on the original payment method."},
+		{AtMS: 4500, Kind: bench.MomentAgentText, Text: "Find your order number and purchase email, use the return label, and receive the refund on the original payment method."},
 		{AtMS: 4600, Kind: bench.MomentResponseDone, ResponseID: "explanation", ResponseStatus: "completed"},
 	}}
 	capture := activityCapture([2]int{4500, 14500})
@@ -255,6 +255,35 @@ func TestAcknowledgementRejectsUngroundedNonAnswerDespiteContinuousAudio(t *test
 	if result := ScoreWithAudio(acknowledgementScenario(t), acknowledgementTimeline(), transcript,
 		activityCapture([2]int{4500, 14500})); result.Passed {
 		t.Fatalf("sustained non-answer passed refund explanation: %+v", result)
+	}
+}
+
+func TestAcknowledgementRequiresPurchaseConfirmationDespiteOtherEmailAndContinuousSpeech(t *testing.T) {
+	// The retained live omission still mentions support emailing a return
+	// label. Neither that different email nor passing acoustic holds supplies
+	// the missing purchase confirmation.
+	const omitted = "First, you must find the order number and purchase Check that the request is within thirty days of delivery. " +
+		"Support will email a prepaid return label. The refund goes to the original payment method."
+	for _, detail := range []string{"", "purchase email", "confirmation email", "email confirmation", "order confirmation"} {
+		t.Run(detail, func(t *testing.T) {
+			text := omitted
+			if detail != "" {
+				text = strings.Replace(text, "purchase Check", detail+". Check", 1)
+			}
+			transcript := bench.Transcript{Moments: []bench.Moment{
+				{AtMS: 4500, Kind: bench.MomentAgentAudio, PlayoutAtMS: 4500, AudioMS: 10000, ResponseID: "explanation"},
+				{AtMS: 4500, Kind: bench.MomentAgentText, Text: text},
+				{AtMS: 14500, Kind: bench.MomentResponseDone, ResponseID: "explanation", ResponseStatus: "completed"},
+			}}
+			result := ScoreWithAudio(acknowledgementScenario(t), acknowledgementTimeline(), transcript,
+				activityCapture([2]int{4500, 14500}))
+			if result.Passed != (detail != "") || len(result.Holds) != 2 {
+				t.Fatalf("purchase confirmation %q: %+v", detail, result)
+			}
+			if detail == "" && (len(result.Failures) != 1 || !strings.Contains(result.Failures[0], "purchase confirmation")) {
+				t.Fatalf("omission was not independently diagnosed: %+v", result)
+			}
+		})
 	}
 }
 

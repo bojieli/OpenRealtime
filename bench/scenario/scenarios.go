@@ -271,6 +271,9 @@ func Suite() []Scenario {
 			Checks: []Check{
 				{Kind: CheckSpoke, Line: 0, AfterMS: 5000, Note: "they asked for detail"},
 				{Kind: CheckSaid, Line: -1, Any: []string{"order number"}, Note: "explain how to identify the purchase"},
+				{Kind: CheckSaid, Line: -1,
+					Any:  []string{"purchase email", "confirmation email", "email confirmation", "order confirmation"},
+					Note: "include the purchase confirmation needed alongside the order number"},
 				{Kind: CheckSaid, Line: -1, Any: []string{"return label"}, Note: "explain the supplied return procedure"},
 				{Kind: CheckSaid, Line: -1, Any: []string{"original payment method"}, Note: "explain where the approved refund goes"},
 				{Kind: CheckHeldAcross, Line: 1, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,

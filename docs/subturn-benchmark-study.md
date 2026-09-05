@@ -486,6 +486,71 @@ of the old behavior. No thresholds changed or failed trials were filtered.
 The temporary server was stopped. Within-phrase audio continuity, content
 fidelity, fifteen-repeat cases, the full suite, and final acceptance remain open.
 
+## Provider-boundary attribution and purchase-confirmation coverage
+
+`artifacts/scenario-provider-boundary-trace-20260905-01` retains one new
+instrumented diagnostic from clean revision
+`15e1c3ee8aeb3b9863db424e3c1b88b72c8f9c14`, using the same executable digest
+`sha256:1c6ed16ed2ba6099bd2d58a810fbfb33d7d924756e6e78cf459e39e9fcf5741d`.
+Local model/TTS proxies retained non-thought response text, projected requests,
+original body digests, native provider audio, and receipt timing. Credentials,
+headers, model reasoning, and signatures were excluded. The proxies change
+transport and timing; this is attribution evidence for that one recording,
+not an unchanged-deployment or performance comparison.
+
+The trial completed and **1/1 passed** under v6. Gemini 3.7 Flash found usable
+media and agreed. The first cue began at 10,000 ms, with 620/511/909 ms of
+before/during/after activity; the second began at 11,500 ms, with
+920/1,319/720 ms. Their longest hold gaps were 0 and 320 ms. Both overlapping
+responses completed. Input identities, cue opportunities, and holds reproduce
+from the WAV. The source and advisory bundles independently reopened:
+
+- Source receipt: `sha256:dc3e6edbdd53c7a3740ac5f5bc05c4f00aa9c8c5c12e0b843085f90231c75d31`.
+- Advisory receipt: `sha256:791a7a72ae84dc1bd13cccf1e3fd3d74495598efc40d09b959c070f0ba66e6cb`.
+
+The initial partial-prompt model request disconnected after emitting text
+ending at `purchase`. The succeeding complete response included `purchase
+email`. That complete response equals the ten synthesis requests and delivered
+text segments after joining segment boundaries with spaces. Offline replay of
+all ten native Fish audio responses through the shipped adapter reproduces
+every one of the **1,075,548 recorded PCM16 samples**, byte for byte. Five
+within-request low-activity intervals last 300, 320, 420, 360, and 340 ms.
+Those pauses are present in the provider audio. This trace contains no runtime
+sample loss and does not reproduce the older omission or 540 ms failure.
+The isolated endpoint and both proxies were stopped; shared services remained.
+
+The omission still justifies an evaluator repair: the earlier three content
+checks could all pass when `purchase email` was absent, because the response
+mentioned an order number, return label, and original payment method. Scorer
+version 7 now independently requires one of `purchase email`, `confirmation
+email`, `email confirmation`, or `order confirmation` in both acknowledgement
+cases. An unrelated return-label email cannot supply that detail. This remains
+a bounded phrase requirement, not proof of complete semantics or audible-word
+fidelity; negation and other policy omissions still need further evaluation.
+
+`artifacts/scenario-purchase-confirmation-v7-20260905` reopens all ten source
+recordings and first reproduces every original v6 pass/failure and acoustic
+hold from the retained WAV, transcript, and digest-checked participant PCM.
+It then evaluates the additional requirement. Original files, scores,
+receipts, and model reviews remain unchanged:
+
+| Campaign | Attempts | Original v6 passes | Retrospective v7 passes |
+| --- | ---: | ---: | ---: |
+| Speech-cue baseline | 3 | 0 | 0 |
+| Validator repair | 3 | 2 | 0 |
+| Clause segmentation | 3 | 2 | 1 |
+| Provider-boundary trace | 1 | 1 | 1 |
+
+Seven recordings omit the purchase-confirmation phrase; three of them had
+passed v6. All earlier cancellation and acoustic failures remain. The
+regression rejects the retained omission despite continuous audio, completed
+response evidence, and an unrelated email mention, while accepting all four
+declared alternatives. Removing the added check makes it fail. The full
+repository gate and explicit optional SDK skips are retained with the audit.
+No new v7 live campaign or advisory rereview is claimed. Within-phrase audio
+continuity, the earlier omission's cause, broader content fidelity, complete
+repeated scenarios, and final acceptance remain open.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under

@@ -185,7 +185,7 @@ profile and evidence workflow.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 6`. Content checks match whole words and numbers, ignoring
+`scorer_version: 7`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -272,13 +272,21 @@ repair requests, and floor-taking words. This policy change addresses the
 retained `Right?` rejection path; only subsequent live evidence establishes
 whether the complete conversation now preserves the turn.
 
+Version 7 additionally requires the purchase-confirmation detail in both
+acknowledgement cases. Accepted whole-word alternatives are `purchase email`,
+`confirmation email`, `email confirmation`, and `order confirmation`.
+Mentioning support emailing the return label does not meet this separate
+requirement. The retained `purchase Check` omission showed that the earlier
+three content checks could pass without it. The recorded content still does
+not prove every policy fact or its audible realization.
+
 These are deterministic content requirements, not a general semantic judge.
 Negation, contradictory statements, invented dialogue, and audible quality
 still require the separately retained media review and further scorer work.
 The twelve-case wire contract and 180-attempt release population are unchanged.
-Historical results through version 5 retain their original labels and
+Historical results through version 6 retain their original labels and
 receipts; a passing historical recording does not establish a pass under
-version 6. In particular, the retained v28 acknowledgement recording has no
+the current scorer. In particular, the retained v28 acknowledgement recording has no
 agent activity after its second backchannel and does not meet the new check;
 see the [separately attributed waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit).
 
@@ -652,7 +660,7 @@ second acceptance source of truth:
 
 | Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
 | --- | ---: | --- | ---: |
-| Interaction scenarios | 180 | Historical 12×1 checkpoint passed its earlier scorer; speech-anchored acknowledgement diagnostics progressed from 0/3 to 2/3, then remained 2/3 after clause segmentation removed the isolated introduction; a 540 ms within-phrase pause still fails | 0/180 |
+| Interaction scenarios | 180 | Historical 12×1 checkpoint passed its earlier scorer; v7 retrospective purchase-confirmation checks reduce the validator and clause diagnostics from 2/3 each to 0/3 and 1/3; a new provider-traced trial passes 1/1; the 540 ms pause remains unresolved | 0/180 |
 | Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
 | Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
 | FDB v1.5 | 498 | Historical diagnostic completed 498; 287/430 applicable passes, 68 not applicable (original nominal score 355/498); interruption 15/156 applicable | 0/498 |

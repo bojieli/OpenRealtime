@@ -153,7 +153,7 @@ func TestSpeechDiagnosticKeepsReleasePopulationAndGrounding(t *testing.T) {
 		t.Fatal("diagnostic changed release population")
 	}
 	item := Diagnostics()[0]
-	if item.Name != SpeechAcknowledgementDiagnostic || item.Script[1].AfterSpeech == nil || item.Script[2].AfterSpeech == nil || len(item.Checks) != 7 || !strings.Contains(item.Instructions, "original payment method") {
+	if item.Name != SpeechAcknowledgementDiagnostic || item.Script[1].AfterSpeech == nil || item.Script[2].AfterSpeech == nil || len(item.Checks) != 8 || !strings.Contains(item.Instructions, "original payment method") {
 		t.Fatalf("diagnostic lost authored checks/content: %+v", item)
 	}
 	timeline, err := Compose(t.Context(), speechCueVoice{}, item)

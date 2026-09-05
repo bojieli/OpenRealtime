@@ -4,6 +4,10 @@
 
 ### Highlights
 
+- Acknowledgement scorer version 7 requires the purchase-confirmation detail
+  from the supplied refund policy. An unrelated email about the return label
+  cannot satisfy it. Historical recordings retain their original scores;
+  separately attributed rescoring exposes previously passing omissions.
 - The scenario conversation graph keeps short comma introductions such as
   `First,` with the following phrase before synthesis. Its separate
   `minimum_clause_runes` setting preserves short complete sentences and

@@ -22,7 +22,9 @@ import (
 // Earlier scores are not evidence for this version.
 // Version 6 resolves speech-triggered diagnostic cues from retained input and
 // independently observed agent PCM, failing missing opportunities explicitly.
-const ScorerVersion uint64 = 6
+// Version 7 requires the purchase-confirmation detail in both acknowledgement
+// scenarios; mentioning the unrelated return-label email cannot replace it.
+const ScorerVersion uint64 = 7
 
 func validateCheckKind(check Check) error {
 	switch check.Kind {

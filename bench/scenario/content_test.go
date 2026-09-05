@@ -111,7 +111,7 @@ func TestResultsIdentifyTheScorerWithoutRelabelingHistoricalEvidence(t *testing.
 		t.Fatalf("current scorer is unidentified: %+v", result)
 	}
 	payload, err := json.Marshal(result)
-	if err != nil || !strings.Contains(string(payload), `"scorer_version":6`) {
+	if err != nil || !strings.Contains(string(payload), `"scorer_version":7`) {
 		t.Fatalf("retained result lacks scorer identity: %s, %v", payload, err)
 	}
 	var historical scenario.Result

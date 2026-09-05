@@ -2967,6 +2967,14 @@ the required new 180-attempt sample.
     no 540 ms transport or segment-boundary stall explains it. The failed
     recording, unchanged limits, and content-fidelity limitation remain
     retained. No repeat, full-suite, or release gate closes.
+    The [provider-boundary trace and scorer-v7 audit](subturn-benchmark-study.md#provider-boundary-attribution-and-purchase-confirmation-coverage)
+    retain a new 1/1 diagnostic with exact model-to-synthesis text and
+    provider-to-recording PCM identity. It does not reproduce the earlier
+    omitted purchase email or establish its cause. The new content requirement
+    independently reproduces all ten original v6 outcomes before rescoring:
+    the validator and clause campaigns become 0/3 and 1/3 under v7, while
+    original scores and reviews remain unchanged. Three previously passing
+    omissions are now rejected. All acoustic and release gates remain intact.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`
