@@ -970,3 +970,45 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 		t.Fatal("task outcome aliases the shared driver's transcript evidence")
 	}
 }
+
+// A capture that outlives the conversation horizon still ends in the horizon.
+//
+// This pins the ordinary path: the sender notices the expired context and
+// stops, and the driver reports the typed timeout with its transcript rather
+// than a transport fault. The rare case it cannot reach from here is the
+// deadline expiring inside the socket write itself, which is what failed a
+// release-matrix run on a machine at load average 70 and what the guard in
+// PlaySamples now covers; reproducing that one needs an injection point the
+// driver deliberately does not have.
+func TestAHorizonThatOutlivesASlowCaptureIsStillTheHorizon(t *testing.T) {
+	for attempt := range 8 {
+		stub := &realtimeStub{done: make(chan struct{})}
+		server := httptest.NewServer(http.HandlerFunc(stub.serve))
+		transcript, err := bench.PlaySamples(context.Background(), bench.SessionConfig{
+			Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"),
+			// Long enough that the loopback dial and handshake always finish.
+			Timeout: 50 * time.Millisecond,
+			Ready:   func(context.Context) error { return nil },
+			Video: []bench.VideoStream{{
+				Source: "screen", Width: 2, Height: 2, Interval: time.Millisecond,
+				// A capture slower than the remaining horizon, which is what a
+				// real screen grab becomes on a loaded machine. The frame it
+				// finally returns is written to an already-expired context, so
+				// the sender reports the horizon's own deadline as a send
+				// failure at the same moment the horizon fires - the race, made
+				// to happen every time rather than waited for.
+				Capture: func(context.Context) ([]byte, error) {
+					time.Sleep(120 * time.Millisecond)
+					return []byte{0xff, 0xd8, 0xff, 0xd9}, nil
+				},
+			}},
+		}, nil)
+		server.Close()
+		if !errors.Is(err, bench.ErrConversationTimeout) {
+			t.Fatalf("attempt %d: timeout = %v, want ErrConversationTimeout", attempt, err)
+		}
+		if transcript.PlaybackMS < 0 {
+			t.Fatalf("attempt %d: transcript was not retained: %+v", attempt, transcript)
+		}
+	}
+}

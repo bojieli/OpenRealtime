@@ -697,7 +697,21 @@ func PlaySamples(
 		return transcript, nil
 	case err := <-videoErrors:
 		stopVideo()
-		return attestTranscript(ctx, config, recorder.snapshot()), err
+		transcript := attestTranscript(ctx, config, recorder.snapshot())
+		// The conversation horizon cancels the video sender along with
+		// everything else, so a frame that was mid-write when it expired fails
+		// with that deadline rather than with a fault of its own. Which worker
+		// noticed the horizon first is a scheduling accident, and on a loaded
+		// machine it is often this one; the outcome is still the horizon. A
+		// transport fault that is not the horizon, and a caller who cancelled,
+		// both still surface as themselves.
+		if errors.Is(timed.Err(), context.DeadlineExceeded) {
+			if strings.TrimSpace(transcript.Failure) != "" {
+				return transcript, fmt.Errorf("%w: %s", ErrSessionFailure, transcript.Failure)
+			}
+			return transcript, ErrConversationTimeout
+		}
+		return transcript, err
 	case <-timed.Done():
 		stopVideo()
 		transcript := attestTranscript(ctx, config, recorder.snapshot())

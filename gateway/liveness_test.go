@@ -77,6 +77,28 @@ func awaitMetric(t *testing.T, server *httptest.Server, name string, want float6
 	t.Fatalf("metric %s reached %v, want at least %v before the deadline", name, last, want)
 }
 
+// awaitMetricDown is awaitMetric for a gauge that has to come back down.
+//
+// A counter and a gauge are not updated in the same instant: a session that
+// failed increments sessions_failed and then releases its slot, so a test that
+// waits for the counter and reads the gauge in the next statement is asserting
+// on a window rather than on a state. It passes on an idle machine and fails
+// on a loaded one, which is the worst way for a gate to be wrong.
+func awaitMetricDown(t *testing.T, server *httptest.Server, name string, want float64) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	var last float64
+	for time.Now().Before(deadline) {
+		value, _ := readMetrics(t, server)[name].(float64)
+		last = value
+		if value <= want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("metric %s stayed at %v, want at most %v before the deadline", name, last, want)
+}
+
 // dialSilent opens a session and never reads from it again.
 //
 // It is the client this file is about: one that completed the handshake and
@@ -143,9 +165,7 @@ func TestASessionEndsWhenTheClientStopsReadingInsteadOfWedgingForever(t *testing
 	}()
 
 	awaitMetric(t, server, "sessions_failed", 1)
-	if inFlight, _ := readMetrics(t, server)["sessions_in_flight"].(float64); inFlight != 0 {
-		t.Fatalf("sessions_in_flight = %v after the session ended, want 0", inFlight)
-	}
+	awaitMetricDown(t, server, "sessions_in_flight", 0)
 }
 
 // TestASessionEndsWhenThePeerStopsAnsweringKeepalives is the other half.

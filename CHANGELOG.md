@@ -465,6 +465,18 @@
   make first. Under a loaded race run that turned a refused collision into an
   ordinary held probe and failed the gate. Both mounts now read a fixed clock,
   which is the collision the test exists to provoke.
+- **Two gates stopped depending on how loaded the machine is.** The matrix's
+  race sweep failed twice on this host at load average 70, each time on a
+  different test, each passing alone. One asserted a gauge in the statement
+  after waiting for a counter, so it was reading the window between a session
+  failing and releasing its slot; it now waits for the gauge itself. The other
+  was the benchmark driver: the conversation horizon cancels the video sender
+  too, so a frame mid-write when it expired surfaced the raw deadline instead
+  of the typed conversation timeout, and which worker noticed the horizon
+  first decided whether a suite recorded a scored negative or an
+  infrastructure failure. The driver now reports the horizon as the horizon.
+  The retained test pins the ordinary path; the in-write case that failed the
+  matrix needs an injection point the driver deliberately does not have.
 - **The release matrix runs in CI.** Nothing ran the matrix: the gate job
   runs `check.sh`, which tolerates skips by design, so the matrix's dedicated
   gates could rot with every check green. A `release-matrix` job now runs the
