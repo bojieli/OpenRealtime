@@ -139,3 +139,48 @@ func writeFixtureWAV(tb testing.TB, path string, silentMS, toneMS float64) {
 		tb.Fatal(err)
 	}
 }
+
+// A yield is followed by the answer to the question that interrupted it, and
+// on a fast agent the two are milliseconds apart. Following the audio by time
+// alone cannot tell them apart, so the second answer is charged to the first
+// as continued speech: one attempt's interrupted response ran 9.4 s past the
+// overlap, the next response's first delta arrived 1.5 ms after its last, and
+// the recorded failure to yield was 13.3 s.
+func TestTheAnswerToTheInterruptingQuestionIsNotChargedToTheOneItInterrupted(t *testing.T) {
+	var moments []bench.Moment
+	for at := 4_000.0; at <= 5_800.0; at += 50 {
+		moments = append(moments, bench.Moment{
+			AtMS: at, Kind: bench.MomentAgentAudio, AudioMS: 50, ResponseID: "resp_first",
+		})
+	}
+	// The next answer begins a millisecond and a half later and runs for
+	// several seconds, as an answer does.
+	for at := 5_801.5; at <= 9_000.0; at += 50 {
+		moments = append(moments, bench.Moment{
+			AtMS: at, Kind: bench.MomentAgentAudio, AudioMS: 50, ResponseID: "resp_second",
+		})
+	}
+	transcript := bench.Transcript{Moments: moments}
+
+	latency, found := stopLatency(transcript, 5_000)
+	if !found {
+		t.Fatal("no audio was found after the event")
+	}
+	if latency < 750 || latency > 850 {
+		t.Fatalf("the interrupted answer kept going for %.0f ms, want about 800", latency)
+	}
+}
+
+// An endpoint that does not identify its responses still gets the old rule.
+func TestWithoutResponseIdentityTheGapStillEndsTheStream(t *testing.T) {
+	transcript := bench.Transcript{Moments: []bench.Moment{
+		{AtMS: 4_900, Kind: bench.MomentAgentAudio, AudioMS: 50},
+		{AtMS: 5_200, Kind: bench.MomentAgentAudio, AudioMS: 50},
+		{AtMS: 5_400, Kind: bench.MomentAgentAudio, AudioMS: 50},
+		{AtMS: 8_000, Kind: bench.MomentAgentAudio, AudioMS: 50},
+	}}
+	latency, found := stopLatency(transcript, 5_000)
+	if !found || latency != 400 {
+		t.Fatalf("latency = %.0f ms found=%v, want the stream ending at 5,400", latency, found)
+	}
+}

@@ -519,7 +519,22 @@ const contactMS = 100.0
 // recording would measure when the agent finished answering the *new* question
 // instead - a number tens of seconds long that looks like a catastrophic
 // failure to yield and is nothing of the kind.
+//
+// The boundary is the response the audio belongs to, because a time gap cannot
+// tell the interrupted answer from the answer that follows it. Measured on
+// 2026-09-05: one attempt's interrupted response ran 9.4 s past the overlap
+// and the next response's first delta arrived 1.5 ms after its last, which the
+// gap rule read as one stream and reported as 13.3 s. The gap rule is kept
+// underneath for an endpoint that does not identify its responses, and as a
+// second boundary within one response.
 func stopLatency(transcript bench.Transcript, eventMS float64) (float64, bool) {
+	interrupted := ""
+	for _, moment := range transcript.Moments {
+		if moment.Kind != bench.MomentAgentAudio || moment.AtMS > eventMS {
+			continue
+		}
+		interrupted = moment.ResponseID
+	}
 	// A gap longer than this means the stream stopped rather than paused
 	// between frames. Frames arrive at the pacing interval, so anything much
 	// larger is a boundary.
@@ -528,6 +543,9 @@ func stopLatency(transcript bench.Transcript, eventMS float64) (float64, bool) {
 	for _, moment := range transcript.Moments {
 		if moment.Kind != bench.MomentAgentAudio || moment.AtMS < eventMS {
 			continue
+		}
+		if interrupted != "" && moment.ResponseID != "" && moment.ResponseID != interrupted {
+			break
 		}
 		if last >= 0 && moment.AtMS-last > gapMS {
 			break

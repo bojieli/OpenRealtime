@@ -4,6 +4,17 @@
 
 ### Highlights
 
+- A failure to yield is measured against the response that was interrupted,
+  not against the clock. The suite followed the agent's audio after an overlap
+  until a four-hundred-millisecond gap, which cannot tell the interrupted
+  answer from the answer to the question that interrupted it, and on a fast
+  agent the two are milliseconds apart: one attempt's interrupted response ran
+  9.4 seconds past the overlap, the next response's first delta arrived 1.5 ms
+  after its last, and the recorded failure to yield was 13.3 seconds. Every
+  audio delta carries the response it belongs to, so the boundary is now that.
+  The gap rule is kept underneath, for an endpoint that does not identify its
+  responses and as a second boundary within one response.
+
 - A truncation that arrives just after an answer ended now reaches the runtime,
   and one naming an item the session never played is refused instead of
   confirmed. The client is the only party that knows where playback actually
