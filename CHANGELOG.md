@@ -436,6 +436,10 @@
   says that stopping is not the safe answer, that only words directed at the
   agent and changing what it should do take its floor, and carries a worked
   example of each act with the agent mid-sentence.
+- **A repeated attempt now carries its own execution evidence.** The scope
+  named the recording rather than the attempt, so on the first stability run
+  every attempt after the first looked like evidence for a different task and
+  the run refused itself. The refusal was right and the scope was wrong.
 - **FDB v1.5 can repeat a recording.** It never could, so every per-recording
   claim it has made was sampled once - and two runs of the same forty against
   the same executable disagree on five of them while reporting the same number

@@ -793,6 +793,39 @@ attributed to the hold categories, carries that much noise and none of them
 were sampled more than once. The scenario suite learned this and answered it
 with fifteen repeats; FDB v1.5 has never been repeated at all.
 
+## Twenty-five recordings, three attempts each
+
+With `-repeat` in the runner, the question the reruns above could not answer
+was asked directly: the first twenty-five `background_speech` recordings, three
+attempts each, against the repaired tree. Retained under
+`.runtime/fdb-verify-hold/background-speech-25x3.json`.
+
+| | |
+| --- | ---: |
+| Applicable attempts passed | 39/39 |
+| Recordings that always passed | 10 |
+| Recordings that always failed | **0** |
+| Recordings always inapplicable | 8 |
+| Recordings that disagreed with themselves | 7 |
+
+**No recording in this subset fails reproducibly.** Every one that ever failed
+also passed, or had nothing to overlap, on another attempt. The eighteen
+"regressions" the September campaign attributed to the hold categories were a
+single sample each; against three samples and the two scorer repairs, none of
+the ones covered here survives as a defect.
+
+Seven of twenty-five still disagree with themselves, which is the honest state
+of this suite: the agent's answer lands near enough to the injected event that
+run-to-run timing decides whether there is an overlap to test at all. That is a
+property of the fixture meeting a faster agent, not of the agent's overlap
+handling, and it is why eight recordings are now always inapplicable. A
+category total over one sample cannot see any of this.
+
+The run also refused itself, correctly, and found a defect in the repeat
+support on its first use: every attempt carried execution evidence scoped to
+the recording rather than to the attempt, so every attempt after the first
+looked like evidence for a different task. Fixed, with the refusal as its test.
+
 ## Which benchmark suites benefit
 
 Sub-turn classification is an interaction/timing intervention, not a universal

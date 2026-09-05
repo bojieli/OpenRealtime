@@ -344,7 +344,12 @@ func runSample(
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions: "You are a helpful voice assistant. Answer the user's question.",
 		Realtime:     true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
-		AttestationScope: sample.ID,
+		// The scope names this attempt, not the recording behind it. A repeated
+		// run has several attempts at one recording and the reportability check
+		// compares the two, so a scope left at the recording's own identity
+		// makes every attempt after the first look like evidence for something
+		// else.
+		AttestationScope: caseID,
 	}
 	if attempt != nil {
 		config.CaptureAudio = attempt.CaptureAudio

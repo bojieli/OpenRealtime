@@ -2,6 +2,7 @@ package fdb
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
@@ -74,5 +75,41 @@ func TestStabilityTreatsAnIncompleteAttemptAsADisagreement(t *testing.T) {
 	got := Measure(result)
 	if len(got.Mixed) != 1 || got.Mixed[0] != "user_interruption/1" || got.AlwaysPassed != 0 {
 		t.Fatalf("incomplete attempt was absorbed: %+v", got)
+	}
+}
+
+// Every attempt's execution evidence names that attempt.
+//
+// A repeated run has several attempts at one recording, and reportability
+// compares each task's identity against the scope its evidence carries. The
+// scope was the recording's own identity, so the first stability run refused
+// itself: fifty attempts after the first, each looking like evidence for a
+// different task. This is that refusal, driven from the same check.
+func TestARepeatedAttemptMustCarryItsOwnExecutionScope(t *testing.T) {
+	attempt := func(id, scope string) bench.TaskOutcome {
+		return bench.TaskOutcome{
+			ID: id, Completed: true, Passed: true, Applicability: bench.Applicable,
+			Notes:     map[string]string{"category": string(BackgroundSpeech)},
+			Execution: &bench.ExecutionEvidence{FormatVersion: 1, Kind: "graph-native", Scope: scope},
+		}
+	}
+	drifted := bench.Result{Suite: "fdb-v1.5", Expected: 2, Tasks: []bench.TaskOutcome{
+		attempt("background_speech/1#1", "background_speech/1"),
+		attempt("background_speech/1#2", "background_speech/1"),
+	}}
+	drifted.Finish()
+	err := drifted.Reportable()
+	if err == nil || !strings.Contains(err.Error(), "execution evidence for scope") {
+		t.Fatalf("attempts carrying the recording's scope were accepted: %v", err)
+	}
+
+	owned := bench.Result{Suite: "fdb-v1.5", Expected: 2, Tasks: []bench.TaskOutcome{
+		attempt("background_speech/1#1", "background_speech/1#1"),
+		attempt("background_speech/1#2", "background_speech/1#2"),
+	}}
+	owned.Finish()
+	if err := owned.Reportable(); err != nil &&
+		strings.Contains(err.Error(), "execution evidence for scope") {
+		t.Fatalf("an attempt naming itself was still refused: %v", err)
 	}
 }
