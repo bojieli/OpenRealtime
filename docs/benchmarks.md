@@ -185,7 +185,7 @@ profile and evidence workflow.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 3`. Content checks match whole words and numbers, ignoring
+`scorer_version: 4`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -204,6 +204,24 @@ silence and low-level dither do not earn speech credit. Missing or malformed
 capture is explicitly unverified. Arrival timestamps, text, and the room
 channel cannot substitute for the recorded agent audio.
 
+Version 4 supplies a fictional five-step refund policy as scenario-owned
+session instructions. The answer must mention the order number, return label,
+and original payment method as well as meet both acoustic holds. This avoids
+asking for a long explanation of facts the model was never given. Content
+checks establish only those explicit details, not complete semantic fidelity
+to every policy clause. The script's spoken words and cue times are unchanged.
+
+New transcript moments preserve `response_id`, `playout_at_ms` on audio deltas,
+and `response_status`/`response_status_reason` on terminal events. Each hold
+joins responses by their recorded audio playout window, then retains their
+terminal status and event time in `responses`. A prefetched response can finish
+on the wire before the listener hears its audio end. A status of `completed`
+does not establish that the explanation was complete; `cancelled` does not
+prove that this backchannel caused the stop. Missing, unknown, or duplicated
+terminal evidence is explicit and never borrowed from another response.
+Response diagnostics do not change the acoustic thresholds or turn missing
+continuation into a pass.
+
 Results retain each check's windows, activity durations, and longest pause in
 `holds`; the media-linked review renders the same measurements. `Play` supplies
 the capture automatically, and `ScoreWithAudio` can examine retained PCM.
@@ -215,9 +233,9 @@ These are deterministic content requirements, not a general semantic judge.
 Negation, contradictory statements, invented dialogue, and audible quality
 still require the separately retained media review and further scorer work.
 The twelve-case wire contract and 180-attempt release population are unchanged.
-Historical unversioned and version-2 results retain their original labels and
+Historical unversioned, version-2, and version-3 results retain their original labels and
 receipts; a passing historical recording does not establish a pass under
-version 3. In particular, the retained v28 acknowledgement recording has no
+version 4. In particular, the retained v28 acknowledgement recording has no
 agent activity after its second backchannel and does not meet the new check;
 see the [separately attributed waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit).
 

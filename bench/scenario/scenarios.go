@@ -251,9 +251,17 @@ func Suite() []Scenario {
 			},
 		},
 		{
-			Name:         "an acknowledgement is not an interruption",
-			Note:         "the agent is mid-sentence and somebody says mhm; stopping would be wrong",
-			Instructions: "You are a helpful voice assistant. When asked what you found, give the detail you have.",
+			Name: "an acknowledgement is not an interruption",
+			Note: "the agent is mid-sentence and somebody says mhm; stopping would be wrong",
+			Instructions: "You are a helpful voice assistant for the fictional Northwind store. " +
+				"The following refund policy is known source material for this conversation. " +
+				"First, find the order number and purchase email, and check that the request is within thirty days of delivery. " +
+				"Second, pack the item with all accessories in its original packaging; photograph any damage before packing. " +
+				"Third, support emails a prepaid return label. Attach it outside the parcel and keep the carrier receipt as proof of return. " +
+				"Fourth, the warehouse inspects the returned item, normally within two business days, and sends an approval or explains a rejection. " +
+				"Fifth, an approved refund goes to the original payment method within five business days; shipping is refunded only for damaged items. " +
+				"When asked for detail, explain all five steps in order, with a complete sentence explaining each step. " +
+				"Use this policy; no lookup or additional customer information is needed to explain the process.",
 			Script: []Line{
 				{Speaker: "user", AtMS: 0, Text: "Tell me everything you know about the refund process, in as much detail as you can manage."},
 				{Speaker: "user", AtMS: 9000, Text: "Mhm."},
@@ -262,6 +270,9 @@ func Suite() []Scenario {
 			TrailingMS: 6000,
 			Checks: []Check{
 				{Kind: CheckSpoke, Line: 0, AfterMS: 5000, Note: "they asked for detail"},
+				{Kind: CheckSaid, Line: -1, Any: []string{"order number"}, Note: "explain how to identify the purchase"},
+				{Kind: CheckSaid, Line: -1, Any: []string{"return label"}, Note: "explain the supplied return procedure"},
+				{Kind: CheckSaid, Line: -1, Any: []string{"original payment method"}, Note: "explain where the approved refund goes"},
 				{Kind: CheckHeldAcross, Line: 1, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,
 					Note: "mhm acknowledges the explanation; the agent must keep speaking through it"},
 				{Kind: CheckHeldAcross, Line: 2, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,

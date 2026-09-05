@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- Acknowledgement scenarios now supply a concrete refund policy and require
+  key explanation details, preventing a sustained non-answer from passing.
+  Scorer version 4 retains response identities, serialized audio positions,
+  and terminal status beside the waveform measurements. Reviews distinguish
+  reported completion, cancellation, incomplete output, and missing evidence
+  without inferring the cause of silence. Historical scores remain intact.
 - Focused graph-native scenario diagnostics now select exact cases with
   repeated `-case` flags in both profile creation and execution. The frozen
   populations must match. `scenario -list` lists canonical names without

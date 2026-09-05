@@ -532,6 +532,7 @@ func score(
 		failure := ""
 		if check.Kind == CheckHeldAcross {
 			measurement, problem := heldAcross(check, timeline, capture)
+			retainHoldResponses(&measurement, transcript)
 			result.Holds = append(result.Holds, measurement)
 			failure = problem
 		} else {

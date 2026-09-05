@@ -18,16 +18,31 @@ const (
 // text events or the arrival time of a prefetched audio packet. Activity is
 // an acoustic proxy, not proof that the same semantic explanation continued.
 type HoldMeasurement struct {
-	Line           int     `json:"line"`
-	FromMS         int     `json:"from_ms"`
-	TriggerStartMS int     `json:"trigger_start_ms"`
-	TriggerEndMS   int     `json:"trigger_end_ms"`
-	ToMS           int     `json:"to_ms"`
-	BeforeActiveMS float64 `json:"before_active_ms"`
-	DuringActiveMS float64 `json:"during_active_ms"`
-	AfterActiveMS  float64 `json:"after_active_ms"`
-	LongestGapMS   float64 `json:"longest_gap_ms"`
-	GapLimitMS     int     `json:"gap_limit_ms"`
+	Line             int            `json:"line"`
+	FromMS           int            `json:"from_ms"`
+	TriggerStartMS   int            `json:"trigger_start_ms"`
+	TriggerEndMS     int            `json:"trigger_end_ms"`
+	ToMS             int            `json:"to_ms"`
+	BeforeActiveMS   float64        `json:"before_active_ms"`
+	DuringActiveMS   float64        `json:"during_active_ms"`
+	AfterActiveMS    float64        `json:"after_active_ms"`
+	LongestGapMS     float64        `json:"longest_gap_ms"`
+	GapLimitMS       int            `json:"gap_limit_ms"`
+	ResponseEvidence string         `json:"response_evidence,omitempty"`
+	Responses        []HoldResponse `json:"responses,omitempty"`
+}
+
+// HoldResponse records the terminal status of one response whose audio packets
+// overlap the measured playout window. A completed status describes protocol
+// completion, not semantic completeness. A cancelled status does not by itself
+// prove that this acknowledgement caused cancellation. Neither changes scoring.
+type HoldResponse struct {
+	ResponseID   string  `json:"response_id"`
+	AudioFromMS  float64 `json:"audio_from_ms"`
+	AudioToMS    float64 `json:"audio_to_ms"`
+	Status       string  `json:"status"`
+	TerminalAtMS float64 `json:"terminal_at_ms,omitempty"`
+	Reason       string  `json:"reason,omitempty"`
 }
 
 func heldAcross(check Check, timeline Timeline, capture *bench.SessionAudioCapture) (HoldMeasurement, string) {
@@ -103,12 +118,80 @@ func heldAcross(check Check, timeline Timeline, capture *bench.SessionAudioCaptu
 		return measurement, fmt.Sprintf("did not speak through acknowledgement on line %d: %.0fms active (%s)", check.Line, measurement.DuringActiveMS, check.Note)
 	}
 	if measurement.AfterActiveMS <= audibleMS {
-		return measurement, fmt.Sprintf("stopped at acknowledgement on line %d: %.0fms active afterwards (%s)", check.Line, measurement.AfterActiveMS, check.Note)
+		return measurement, fmt.Sprintf("insufficient continuation after acknowledgement on line %d: %.0fms active afterwards (%s)", check.Line, measurement.AfterActiveMS, check.Note)
 	}
 	if measurement.LongestGapMS > float64(check.MaxGapMS) {
 		return measurement, fmt.Sprintf("paused %.0fms across acknowledgement on line %d, beyond %dms (%s)", measurement.LongestGapMS, check.Line, check.MaxGapMS, check.Note)
 	}
 	return measurement, ""
+}
+
+func retainHoldResponses(measurement *HoldMeasurement, transcript bench.Transcript) {
+	measurement.ResponseEvidence = "unavailable"
+	if measurement.ToMS <= measurement.FromMS {
+		return
+	}
+	indices := make(map[string]int)
+	missing := false
+	for _, moment := range transcript.Moments {
+		if moment.Kind != bench.MomentAgentAudio {
+			continue
+		}
+		from, to := moment.PlayoutAtMS, moment.PlayoutAtMS+moment.AudioMS
+		if moment.ResponseID == "" {
+			// Older recordings cannot establish a response-to-playout join.
+			missing = true
+			continue
+		}
+		if math.IsNaN(from) || math.IsNaN(to) || math.IsInf(to, 0) || from < 0 || to <= from {
+			missing = true
+			continue
+		}
+		if to <= float64(measurement.FromMS) || from >= float64(measurement.ToMS) {
+			continue
+		}
+		index, found := indices[moment.ResponseID]
+		if !found {
+			index = len(measurement.Responses)
+			indices[moment.ResponseID] = index
+			measurement.Responses = append(measurement.Responses, HoldResponse{
+				ResponseID: moment.ResponseID, AudioFromMS: from, AudioToMS: to, Status: "unobserved",
+			})
+		} else {
+			response := &measurement.Responses[index]
+			response.AudioFromMS = min(response.AudioFromMS, from)
+			response.AudioToMS = max(response.AudioToMS, to)
+		}
+	}
+	seen := make(map[string]bool)
+	for _, moment := range transcript.Moments {
+		index, found := indices[moment.ResponseID]
+		if moment.Kind != bench.MomentResponseDone || !found {
+			continue
+		}
+		response := &measurement.Responses[index]
+		if seen[moment.ResponseID] {
+			response.Status, response.Reason, response.TerminalAtMS = "ambiguous", "", 0
+			continue
+		}
+		seen[moment.ResponseID] = true
+		if math.IsNaN(moment.AtMS) || math.IsInf(moment.AtMS, 0) || moment.AtMS < 0 {
+			response.Status = "unrecognized"
+			continue
+		}
+		switch moment.ResponseStatus {
+		case "completed", "cancelled", "failed", "incomplete":
+			response.Status, response.Reason, response.TerminalAtMS = moment.ResponseStatus, moment.ResponseStatusReason, moment.AtMS
+		default:
+			response.Status = "unrecognized"
+		}
+	}
+	if len(measurement.Responses) > 0 {
+		measurement.ResponseEvidence = "recorded"
+		if missing {
+			measurement.ResponseEvidence = "partial"
+		}
+	}
 }
 
 func overlapMS(start, end, from, to float64) float64 {

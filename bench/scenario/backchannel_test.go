@@ -47,7 +47,7 @@ func TestAcknowledgementScoresRecordedPlayoutAcrossBothBackchannels(t *testing.T
 	// recorded playout spans both, so packet-arrival windows would be wrong.
 	transcript := bench.Transcript{Moments: []bench.Moment{
 		{AtMS: 4500, Kind: bench.MomentAgentAudio, AudioMS: 10000},
-		{AtMS: 4500, Kind: bench.MomentAgentText, Text: "Here are the refund details."},
+		{AtMS: 4500, Kind: bench.MomentAgentText, Text: "Find your order number, use the return label, and receive the refund on the original payment method."},
 		{AtMS: 4600, Kind: bench.MomentResponseDone},
 	}}
 	capture := activityCapture([2]int{4500, 14500})
@@ -84,7 +84,7 @@ func TestHoldingDistinguishesSilenceOverlapStopAndLateRestart(t *testing.T) {
 	}{
 		{"never started", activityCapture([2]int{9200, 10400}), "not speaking before"},
 		{"spoke only before", activityCapture([2]int{8000, 9000}), "did not speak through"},
-		{"stopped at end", activityCapture([2]int{8000, 9600}), "stopped at acknowledgement"},
+		{"stopped at end", activityCapture([2]int{8000, 9600}), "insufficient continuation"},
 		{"yield then restart", activityCapture([2]int{8000, 9000}, [2]int{9800, 10600}), "did not speak through"},
 		{"long pause with some overlap", activityCapture([2]int{8000, 9240}, [2]int{9840, 10600}), "paused 600ms"},
 		{"continuous", activityCapture([2]int{8000, 10600}), ""},
@@ -97,6 +97,76 @@ func TestHoldingDistinguishesSilenceOverlapStopAndLateRestart(t *testing.T) {
 				t.Fatalf("failure=%q, want %q; measurements=%+v", failure, test.want, measurement)
 			}
 		})
+	}
+}
+
+func TestHoldingRetainsResponseOutcomesWithoutInferringCancellation(t *testing.T) {
+	item := Scenario{Checks: []Check{heldTestCheck()}}
+	for _, status := range []string{"completed", "cancelled", "incomplete", "failed", "", "not-a-status"} {
+		transcript := bench.Transcript{Moments: []bench.Moment{
+			// Prefetch delivery occurs well before the recorded overlap window.
+			{Kind: bench.MomentAgentAudio, AtMS: 1000, PlayoutAtMS: 8000, AudioMS: 1600, ResponseID: "first"},
+			{Kind: bench.MomentResponseDone, AtMS: 2000, ResponseID: "first", ResponseStatus: status, ResponseStatusReason: "turn_detected"},
+			// A later, unrelated response must not supply the first one's status.
+			{Kind: bench.MomentAgentAudio, AtMS: 11000, PlayoutAtMS: 11000, AudioMS: 1000, ResponseID: "unrelated"},
+			{Kind: bench.MomentResponseDone, AtMS: 12000, ResponseID: "unrelated", ResponseStatus: "cancelled"},
+		}}
+		result := ScoreWithAudio(item, acknowledgementTimeline(), transcript, activityCapture([2]int{8000, 9600}))
+		if result.Passed || len(result.Holds[0].Responses) != 1 ||
+			!strings.Contains(result.Failures[0], "insufficient continuation") {
+			t.Fatalf("status %q changed waveform score: %+v", status, result)
+		}
+		response := result.Holds[0].Responses[0]
+		want := status
+		if status == "" || status == "not-a-status" {
+			want = "unrecognized"
+		}
+		if result.Holds[0].ResponseEvidence != "recorded" || response.Status != want || response.ResponseID != "first" ||
+			response.AudioFromMS != 8000 || response.AudioToMS != 9600 {
+			t.Fatalf("wrong playout/termination join: %+v", result.Holds[0])
+		}
+		if want != "unrecognized" && (response.TerminalAtMS != 2000 || response.Reason != "turn_detected") {
+			t.Fatalf("terminal evidence changed: %+v", response)
+		}
+		if want == "unrecognized" && (response.TerminalAtMS != 0 || response.Reason != "") {
+			t.Fatalf("unknown status acquired evidence: %+v", response)
+		}
+	}
+}
+
+func TestHoldingCannotBorrowOrChooseConflictingTerminalEvidence(t *testing.T) {
+	base := bench.Transcript{Moments: []bench.Moment{
+		{Kind: bench.MomentAgentAudio, AtMS: 1000, PlayoutAtMS: 8000, AudioMS: 2600, ResponseID: "first"},
+	}}
+	for _, test := range []struct {
+		name string
+		ends []bench.Moment
+		want string
+	}{
+		{"no end", nil, "unobserved"},
+		{"wrong response", []bench.Moment{{Kind: bench.MomentResponseDone, ResponseID: "other", ResponseStatus: "completed"}}, "unobserved"},
+		{"duplicate completion", []bench.Moment{
+			{Kind: bench.MomentResponseDone, ResponseID: "first", ResponseStatus: "completed"},
+			{Kind: bench.MomentResponseDone, ResponseID: "first", ResponseStatus: "completed"},
+		}, "ambiguous"},
+		{"conflicting completion", []bench.Moment{
+			{Kind: bench.MomentResponseDone, ResponseID: "first", ResponseStatus: "completed"},
+			{Kind: bench.MomentResponseDone, ResponseID: "first", ResponseStatus: "cancelled"},
+		}, "ambiguous"},
+		{"invalid time", []bench.Moment{{Kind: bench.MomentResponseDone, AtMS: math.NaN(), ResponseID: "first", ResponseStatus: "completed"}}, "unrecognized"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transcript := bench.Transcript{Moments: append(append([]bench.Moment{}, base.Moments...), test.ends...)}
+			result := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), transcript,
+				activityCapture([2]int{8000, 10600}))
+			if !result.Passed || result.Holds[0].Responses[0].Status != test.want {
+				t.Fatalf("terminal metadata changed acoustic result or inferred evidence: %+v", result)
+			}
+		})
+	}
+	legacy := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), bench.Transcript{}, activityCapture([2]int{8000, 10600}))
+	if !legacy.Passed || legacy.Holds[0].ResponseEvidence != "unavailable" || len(legacy.Holds[0].Responses) != 0 {
+		t.Fatalf("old transcript received terminal evidence: %+v", legacy)
 	}
 }
 
@@ -174,5 +244,16 @@ func TestAcknowledgementCannotPassBySpeakingOnlyBeforeTheBackchannels(t *testing
 	}}
 	if result := Score(acknowledgementScenario(t), acknowledgementTimeline(), transcript); result.Passed {
 		t.Fatalf("the agent stopped before both acknowledgements but passed: %+v", result)
+	}
+}
+
+func TestAcknowledgementRejectsUngroundedNonAnswerDespiteContinuousAudio(t *testing.T) {
+	transcript := bench.Transcript{Moments: []bench.Moment{
+		{AtMS: 4500, Kind: bench.MomentAgentAudio, AudioMS: 10000},
+		{AtMS: 4500, Kind: bench.MomentAgentText, Text: "I do not have any information about the refund process in my current context."},
+	}}
+	if result := ScoreWithAudio(acknowledgementScenario(t), acknowledgementTimeline(), transcript,
+		activityCapture([2]int{4500, 14500})); result.Passed {
+		t.Fatalf("sustained non-answer passed refund explanation: %+v", result)
 	}
 }

@@ -38,8 +38,17 @@ type Moment struct {
 	Text string  `json:"text,omitempty"`
 	// AudioMS is how much audio a speech moment carried.
 	AudioMS float64 `json:"audio_ms,omitempty"`
-	Name    string  `json:"name,omitempty"`
-	CallID  string  `json:"call_id,omitempty"`
+	// PlayoutAtMS is the start of this audio delta in the captured waveform.
+	// AtMS remains its arrival time; a prefetched response may finish on the
+	// wire before its queued audio has played. Historical moments omit this.
+	PlayoutAtMS float64 `json:"playout_at_ms,omitempty"`
+	// Response fields preserve protocol evidence without inferring why a
+	// response ended. Empty fields mean that the endpoint did not supply them.
+	ResponseID           string `json:"response_id,omitempty"`
+	ResponseStatus       string `json:"response_status,omitempty"`
+	ResponseStatusReason string `json:"response_status_reason,omitempty"`
+	Name                 string `json:"name,omitempty"`
+	CallID               string `json:"call_id,omitempty"`
 	// Arguments preserves the action the model actually grounded. Accuracy
 	// cannot be reconstructed from a tool name alone.
 	Arguments string `json:"arguments,omitempty"`
@@ -1034,15 +1043,17 @@ func (recorder *recorder) handle(
 		recorder.add(Moment{Kind: MomentTranscript, Text: decoded.Transcript})
 	case "response.output_audio_transcript.delta":
 		var decoded struct {
-			Delta string `json:"delta"`
+			Delta      string `json:"delta"`
+			ResponseID string `json:"response_id"`
 		}
 		_ = event.Decode(&decoded)
 		if strings.TrimSpace(decoded.Delta) != "" {
-			recorder.add(Moment{Kind: MomentAgentText, Text: decoded.Delta})
+			recorder.add(Moment{Kind: MomentAgentText, Text: decoded.Delta, ResponseID: decoded.ResponseID})
 		}
 	case "response.output_audio.delta":
 		var decoded struct {
-			Delta string `json:"delta"`
+			Delta      string `json:"delta"`
+			ResponseID string `json:"response_id"`
 		}
 		_ = event.Decode(&decoded)
 		payload, err := base64.StdEncoding.DecodeString(decoded.Delta)
@@ -1058,16 +1069,31 @@ func (recorder *recorder) handle(
 			for index := range samples {
 				samples[index] = int16(binary.LittleEndian.Uint16(payload[index*2:]))
 			}
-			recorder.audio.addAgent(recorder.at(), samples)
-			recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: float64(len(payload)/2) / 24.0})
+			playout := recorder.audio.addAgent(recorder.at(), samples)
+			recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: float64(len(payload)/2) / 24.0,
+				ResponseID: decoded.ResponseID, PlayoutAtMS: playout})
 		}
 	case "response.done":
+		var decoded struct {
+			Response struct {
+				ID            string `json:"id"`
+				Status        string `json:"status"`
+				StatusDetails struct {
+					Reason string `json:"reason"`
+				} `json:"status_details"`
+			} `json:"response"`
+		}
+		if err := event.Decode(&decoded); err != nil {
+			decoded.Response.Status = ""
+			decoded.Response.StatusDetails.Reason = ""
+		}
 		recorder.mu.Lock()
 		if recorder.openResponses > 0 {
 			recorder.openResponses--
 		}
 		recorder.mu.Unlock()
-		recorder.add(Moment{Kind: MomentResponseDone})
+		recorder.add(Moment{Kind: MomentResponseDone, ResponseID: decoded.Response.ID,
+			ResponseStatus: decoded.Response.Status, ResponseStatusReason: decoded.Response.StatusDetails.Reason})
 	case "response.function_call_arguments.done":
 		var decoded struct {
 			CallID string `json:"call_id"`

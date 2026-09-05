@@ -52,9 +52,9 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 					sent = true
 					for _, event := range []map[string]any{
 						{"type": "response.created"},
-						{"type": "response.output_audio_transcript.delta", "delta": "Here are the refund details."},
-						{"type": "response.output_audio.delta", "delta": base64.StdEncoding.EncodeToString(pcm)},
-						{"type": "response.done"},
+						{"type": "response.output_audio_transcript.delta", "response_id": "response-fixture", "delta": "Here are the refund details."},
+						{"type": "response.output_audio.delta", "response_id": "response-fixture", "delta": base64.StdEncoding.EncodeToString(pcm)},
+						{"type": "response.done", "response": map[string]any{"id": "response-fixture", "status": "completed"}},
 					} {
 						encoded, _ := json.Marshal(event)
 						if err := connection.Write(r.Context(), websocket.MessageText, encoded); err != nil {
@@ -89,6 +89,9 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 			// not rewrite the human review independently of its recorded audio.
 			original := result.Holds[0]
 			result.Holds[0].BeforeActiveMS = 9999
+			if len(original.Responses) > 0 {
+				result.Holds[0].Responses[0].Status = "caller-mutated"
+			}
 			if err := run.Close(); err != nil {
 				t.Fatal(err)
 			}
@@ -108,12 +111,19 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 			}
 			reopened := ScoreWithAudio(item, timeline, result.Transcript, bench.SessionAudioCapture{SampleRateHz: 24_000,
 				Agent: []bench.TimedAudioChunk{{AtMS: 0, PCM16: agent}}})
+			// Recompute from the retained audio and original terminal transcript.
+			if len(original.Responses) > 0 {
+				result.Holds[0].Responses[0].Status = "completed"
+			}
 			if reopened.Passed != result.Passed || !reflect.DeepEqual(reopened.Holds, result.Holds) {
 				t.Fatalf("retained WAV does not reproduce activity: %+v versus %+v", reopened.Holds, result.Holds)
 			}
 			review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
-			if err != nil || !strings.Contains(string(review), "Acknowledgement line 1:") || !strings.Contains(string(review), "longest pause") || strings.Contains(string(review), "9999 ms") {
+			if err != nil || !strings.Contains(string(review), "Acknowledgement line 1:") || !strings.Contains(string(review), "longest pause") || strings.Contains(string(review), "9999 ms") || strings.Contains(string(review), "caller-mutated") {
 				t.Fatalf("final review lost or changed measurements: %v\n%s", err, review)
+			}
+			if mode == "continues" && (!strings.Contains(string(review), "response-fixture: completed") || !strings.Contains(string(review), "does not establish why speech ended")) {
+				t.Fatalf("review lost terminal evidence or attribution limit: %s", review)
 			}
 		})
 	}

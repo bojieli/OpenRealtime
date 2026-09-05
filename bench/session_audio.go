@@ -59,14 +59,14 @@ func (recorder *sessionAudioRecorder) beginEpisode() {
 	recorder.mu.Unlock()
 }
 
-func (recorder *sessionAudioRecorder) addAgent(atMS float64, samples []int16) {
+func (recorder *sessionAudioRecorder) addAgent(atMS float64, samples []int16) float64 {
 	if recorder == nil || len(samples) == 0 {
-		return
+		return atMS
 	}
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()
 	if !recorder.active {
-		return
+		return atMS
 	}
 	if atMS < recorder.agentPlayoutMS {
 		atMS = recorder.agentPlayoutMS
@@ -74,6 +74,7 @@ func (recorder *sessionAudioRecorder) addAgent(atMS float64, samples []int16) {
 	copyOfSamples := append([]int16(nil), samples...)
 	recorder.agent = append(recorder.agent, TimedAudioChunk{AtMS: atMS, PCM16: copyOfSamples})
 	recorder.agentPlayoutMS = atMS + float64(len(copyOfSamples))*1000/24_000
+	return atMS
 }
 
 func (recorder *sessionAudioRecorder) snapshot() SessionAudioCapture {

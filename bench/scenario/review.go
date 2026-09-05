@@ -533,6 +533,21 @@ func renderReviewTranscript(output *strings.Builder, result Result) {
 		fmt.Fprintf(output, "\n- Acknowledgement line %d: %.0f ms active before, %.0f ms during, %.0f ms after; longest pause %.0f ms (limit %d ms); playout window %d–%d ms.\n",
 			hold.Line, hold.BeforeActiveMS, hold.DuringActiveMS, hold.AfterActiveMS,
 			hold.LongestGapMS, hold.GapLimitMS, hold.FromMS, hold.ToMS)
+		if hold.ResponseEvidence != "" {
+			fmt.Fprintf(output, "- Response evidence: %s. Terminal status describes protocol completion; it does not establish why speech ended.\n", markdownText(hold.ResponseEvidence))
+		}
+		for _, response := range hold.Responses {
+			fmt.Fprintf(output, "- Response %s: %s; audio playout %.0f–%.0f ms",
+				markdownText(response.ResponseID), markdownText(response.Status), response.AudioFromMS, response.AudioToMS)
+			switch response.Status {
+			case "completed", "cancelled", "incomplete", "failed":
+				fmt.Fprintf(output, "; terminal event %.0f ms", response.TerminalAtMS)
+				if response.Reason != "" {
+					fmt.Fprintf(output, "; reason %s", markdownText(response.Reason))
+				}
+			}
+			output.WriteString(".\n")
+		}
 	}
 	output.WriteString("\nTranscript:\n\n")
 	userTurns, agentTurns := result.Transcript.UserTurns(), result.Transcript.AgentTurns()
@@ -802,6 +817,13 @@ func (run *ReviewRun) redactMany(values []string) []string {
 func sanitizedReviewResult(result Result, redact func(string) string) Result {
 	copy := result
 	copy.Holds = append([]HoldMeasurement(nil), result.Holds...)
+	for index := range copy.Holds {
+		copy.Holds[index].Responses = append([]HoldResponse(nil), result.Holds[index].Responses...)
+		for j := range copy.Holds[index].Responses {
+			response := &copy.Holds[index].Responses[j]
+			response.ResponseID, response.Reason = redact(response.ResponseID), redact(response.Reason)
+		}
+	}
 	copy.Failures = make([]string, len(result.Failures))
 	for index, failure := range result.Failures {
 		copy.Failures[index] = redact(failure)
@@ -814,6 +836,8 @@ func sanitizedReviewResult(result Result, redact func(string) string) Result {
 		moment := &copy.Transcript.Moments[index]
 		moment.Text = redact(moment.Text)
 		moment.Arguments = redact(moment.Arguments)
+		moment.ResponseID = redact(moment.ResponseID)
+		moment.ResponseStatusReason = redact(moment.ResponseStatusReason)
 	}
 	return copy
 }
