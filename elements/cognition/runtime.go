@@ -795,6 +795,7 @@ type generationExecution struct {
 	outputBytes int
 	eventErr    error
 	deliveryErr error
+	runtimeText continuation.RuntimeAnnotationFilter
 }
 
 func newGenerationExecution(
@@ -893,12 +894,16 @@ func (execution *generationExecution) emit(event continuation.Event) error {
 			}
 			execution.textOpened = true
 		}
-		if err := execution.publishText(TextChunk, event.Text, false); err != nil {
+		safe := execution.runtimeText.Push(event.Text)
+		if safe == "" {
+			break
+		}
+		if err := execution.publishText(TextChunk, safe, false); err != nil {
 			execution.deliveryErr = err
 			return err
 		}
-		execution.assistant.WriteString(event.Text)
-		execution.appendTextOutput(PreparedAssistant, event.Text)
+		execution.assistant.WriteString(safe)
+		execution.appendTextOutput(PreparedAssistant, safe)
 	case continuation.EventToolCall:
 		if execution.runner.entry.descriptor.EffectiveToolAuthority() == continuation.ToolAuthorityNone {
 			err := errors.New("continuation emitted a tool call without proposal or execution authority")
@@ -1012,6 +1017,19 @@ func (runner *textModelRunner) completeGeneration(
 	}
 	interrupted := canceled || providerErr != nil
 	if execution.textOpened {
+		// A short suffix may have been held because it looked like the start of
+		// a reserved runtime marker. Release it only after a successful provider
+		// terminal proves that the marker never completed. An interrupted stream
+		// fails closed instead of making a partial control token audible.
+		if !interrupted {
+			if tail := execution.runtimeText.Finish(); tail != "" {
+				if err := execution.publishText(TextChunk, tail, false); err != nil {
+					return fmt.Errorf("flush cognition text stream for run %q: %w", execution.runID, err)
+				}
+				execution.assistant.WriteString(tail)
+				execution.appendTextOutput(PreparedAssistant, tail)
+			}
+		}
 		// The provider's run context may already be canceled. Framing closure
 		// uses the still-live element context so an explicit interrupt cannot
 		// strand a stream-aware downstream arbiter.

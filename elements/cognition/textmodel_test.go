@@ -201,6 +201,59 @@ func TestTextModelSamplesContextAndEmitsPreparedTypedOutputs(t *testing.T) {
 	}
 }
 
+func TestTextModelRemovesSplitRuntimeProjectionBeforePreparedOutput(t *testing.T) {
+	provider := &scriptedProvider{
+		descriptor: testDescriptor,
+		events: []continuation.Event{
+			{Kind: continuation.EventAssistantDelta, Text: "Continue normally. [RUNT"},
+			{Kind: continuation.EventAssistantDelta, Text: "IME: playback stopped here;"},
+			{Kind: continuation.EventAssistantDelta, Text: " prepared but never spoken: secret] after"},
+		},
+		completion: continuation.Completion{
+			StopReason: "stop", ProviderStateType: "test.state",
+			ProviderState: json.RawMessage(`{"turn":"opaque raw provider state"}`),
+		},
+	}
+	providers := cognitionelements.NewProviderRegistry()
+	if err := providers.Register("primary", testDescriptor, func() (continuation.Provider, error) {
+		return provider, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mounted, done, stop := mountTextModel(t, providers, json.RawMessage(`{"provider":"primary"}`))
+	defer stopTextModel(t, mounted, done, stop)
+
+	_ = receive(t, mustEgress(t, mounted, "resolved"))
+	sendContext(t, mounted, 0, "empty-context")
+	sendGenerate(t, mounted, "runtime-annotation", 0)
+
+	textPort := mustEgress(t, mounted, "text")
+	var streamed strings.Builder
+	for {
+		delta := receive(t, textPort).Payload.(cognitionelements.PreparedTextDelta)
+		streamed.WriteString(delta.Text)
+		if delta.Boundary == cognitionelements.TextEnd {
+			break
+		}
+	}
+	if got := streamed.String(); got != "Continue normally." {
+		t.Fatalf("prepared stream retained runtime annotation: %q", got)
+	}
+	result := receive(t, mustEgress(t, mounted, "result")).Payload.(cognitionelements.Result)
+	if result.AssistantText != "Continue normally." || len(result.Outputs) != 1 ||
+		result.Outputs[0].Kind != cognitionelements.PreparedAssistant ||
+		result.Outputs[0].Text != "Continue normally." {
+		t.Fatalf("completed result retained runtime annotation: %+v", result)
+	}
+	if strings.Contains(strings.ToLower(result.AssistantText), "runtime") ||
+		strings.Contains(strings.ToLower(result.AssistantText), "prepared but never spoken") {
+		t.Fatalf("reserved runtime text escaped the graph-native model boundary: %q", result.AssistantText)
+	}
+	if outcome := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome); outcome.Kind != cognitionelements.OutcomeSucceeded {
+		t.Fatalf("model outcome = %+v", outcome)
+	}
+}
+
 func TestTextModelAddressedInterruptCancelsOnlyTheActiveRunAndClosesProvider(t *testing.T) {
 	provider := &blockingProvider{descriptor: testDescriptor, entered: make(chan continuation.Request, 1)}
 	providers := cognitionelements.NewProviderRegistry()

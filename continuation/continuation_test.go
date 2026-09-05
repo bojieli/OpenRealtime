@@ -1,6 +1,8 @@
 package continuation_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -91,5 +93,31 @@ func TestRuntimeProjectionAnnotationCannotBecomeSpeech(t *testing.T) {
 					test.in, got, found, test.want, test.name != "ordinary text")
 			}
 		})
+	}
+}
+
+func TestRuntimeProjectionAnnotationCannotEscapeAStreamBoundary(t *testing.T) {
+	content := "你好，continue normally. [RuNtImE:\nplayback stopped here; prepared but never spoken: secret] after"
+	marker := "[RuNtImE:"
+	markerStart := strings.Index(content, marker)
+	if markerStart < 0 {
+		t.Fatal("test marker is absent")
+	}
+	for split := markerStart; split <= markerStart+len(marker); split++ {
+		t.Run(fmt.Sprintf("split-%d", split-markerStart), func(t *testing.T) {
+			var filter continuation.RuntimeAnnotationFilter
+			got := filter.Push(content[:split])
+			got += filter.Push(content[split:])
+			got += filter.Finish()
+			if got != "你好，continue normally." || !filter.Found() {
+				t.Fatalf("filtered stream = %q, found %t", got, filter.Found())
+			}
+		})
+	}
+
+	var ordinary continuation.RuntimeAnnotationFilter
+	got := ordinary.Push("ordinary [runt") + ordinary.Push("ime is useful") + ordinary.Finish()
+	if got != "ordinary [runtime is useful" || ordinary.Found() {
+		t.Fatalf("ordinary marker-like text = %q, found %t", got, ordinary.Found())
 	}
 }

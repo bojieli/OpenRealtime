@@ -107,6 +107,71 @@ func StripRuntimeAnnotations(content string) (string, bool) {
 	return strings.TrimSpace(content[:index]), true
 }
 
+// RuntimeAnnotationFilter removes a reserved runtime projection note from an
+// ordered assistant-text stream without delaying ordinary speech until the
+// provider finishes. It retains only trailing whitespace and the short suffix
+// that could still become the beginning of the marker in a later chunk. Once
+// the marker is complete, every later assistant byte in that stream is
+// discarded.
+//
+// The filter is stateful and must be used by one stream in event order. It is
+// not safe for concurrent use.
+type RuntimeAnnotationFilter struct {
+	pending string
+	found   bool
+}
+
+// Push accepts the next provider-authored assistant-text chunk and returns the
+// portion that is safe to expose. The returned text can be empty when the
+// input is a possible marker prefix or arrives after a completed marker.
+func (filter *RuntimeAnnotationFilter) Push(content string) string {
+	if filter == nil || filter.found {
+		return ""
+	}
+	combined := filter.pending + content
+	filter.pending = ""
+	marker := strings.TrimSpace(HeardPreamble)
+	if index := indexASCIIFold(combined, marker); index >= 0 {
+		filter.found = true
+		return strings.TrimRight(combined[:index], " \t\r\n")
+	}
+
+	// Retain the longest suffix that is an ASCII-case-insensitive prefix of
+	// the marker. Marker bytes are ASCII, so a retained suffix never splits a
+	// non-ASCII UTF-8 rune from the safe prefix.
+	maximum := min(len(combined), len(marker)-1)
+	pendingStart := len(combined)
+	for length := maximum; length > 0; length-- {
+		start := len(combined) - length
+		if equalASCIIFold(combined[start:], marker[:length]) {
+			pendingStart = start
+			break
+		}
+	}
+	for pendingStart > 0 && strings.ContainsRune(" \t\r\n", rune(combined[pendingStart-1])) {
+		pendingStart--
+	}
+	filter.pending = combined[pendingStart:]
+	return combined[:pendingStart]
+}
+
+// Finish releases a marker-like suffix when the provider completed without
+// ever producing the reserved marker. It returns nothing after a marker was
+// found and clears the retained suffix in either case.
+func (filter *RuntimeAnnotationFilter) Finish() string {
+	if filter == nil || filter.found {
+		return ""
+	}
+	tail := filter.pending
+	filter.pending = ""
+	return tail
+}
+
+// Found reports whether this stream contained the reserved marker.
+func (filter *RuntimeAnnotationFilter) Found() bool {
+	return filter != nil && filter.found
+}
+
 // indexASCIIFold finds an ASCII marker without changing the byte offsets in
 // content. Using strings.ToLower on the whole response would usually work,
 // but Unicode case mappings can expand a rune; the resulting index would then
@@ -121,25 +186,30 @@ func indexASCIIFold(content, marker string) int {
 		return -1
 	}
 	for start := 0; start <= len(content)-len(marker); start++ {
-		matched := true
-		for offset := range len(marker) {
-			left, right := content[start+offset], marker[offset]
-			if left >= 'A' && left <= 'Z' {
-				left += 'a' - 'A'
-			}
-			if right >= 'A' && right <= 'Z' {
-				right += 'a' - 'A'
-			}
-			if left != right {
-				matched = false
-				break
-			}
-		}
-		if matched {
+		if equalASCIIFold(content[start:start+len(marker)], marker) {
 			return start
 		}
 	}
 	return -1
+}
+
+func equalASCIIFold(left, right string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for offset := range len(right) {
+		leftByte, rightByte := left[offset], right[offset]
+		if leftByte >= 'A' && leftByte <= 'Z' {
+			leftByte += 'a' - 'A'
+		}
+		if rightByte >= 'A' && rightByte <= 'Z' {
+			rightByte += 'a' - 'A'
+		}
+		if leftByte != rightByte {
+			return false
+		}
+	}
+	return true
 }
 
 // ProducedSilently reports whether an item came from a provider that could not
