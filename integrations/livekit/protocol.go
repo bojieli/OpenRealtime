@@ -9,9 +9,20 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/coder/websocket"
 )
+
+// writeTimeout bounds one send on an established connection.
+//
+// Thirty seconds rather than the room's audio cadence: this carries whole
+// Realtime events to a Realtime server, and the bound only has to be past any
+// stall a congested link produces and short of forever.
+//
+// It is a variable rather than a constant only so a test can shorten it; a
+// test that had to wait the shipped bound is a test nobody runs.
+var writeTimeout = 30 * time.Second
 
 // event is one decoded server event with its raw bytes retained, so a caller
 // can forward it unchanged rather than re-encoding a model of it.
@@ -71,7 +82,21 @@ func (client *client) Send(ctx context.Context, value any) error {
 	if client.closed.Load() {
 		return errors.New("protocol client is closed")
 	}
-	return client.connection.Write(ctx, websocket.MessageText, encoded)
+	// Bounded: this carries the room's inbound audio to the OpenRealtime
+	// endpoint, and the context is the agent's run context, which ends when
+	// the agent does. An endpoint that stops reading would otherwise block
+	// this send with nothing left to end it, and because Send holds the write
+	// lock, every later send blocks behind the first - the room keeps talking
+	// and nothing reaches the model.
+	if writeTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, writeTimeout)
+		defer cancel()
+	}
+	if err := client.connection.Write(ctx, websocket.MessageText, encoded); err != nil {
+		return fmt.Errorf("send to the OpenRealtime endpoint: %w", err)
+	}
+	return nil
 }
 
 func (client *client) Close() error {

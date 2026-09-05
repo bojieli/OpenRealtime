@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/plugin"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
@@ -228,6 +229,28 @@ func appendTargetModel(endpoint, model string) string {
 	return parsed.String()
 }
 
+// relayWriteTimeout bounds one write on either half of a relayed session.
+//
+// It is a variable rather than a constant only so a test can shorten it; a
+// test that had to wait the shipped bound is a test nobody runs.
+var relayWriteTimeout = 30 * time.Second
+
+// writeRelay sends one message with a bound on how long the socket may take
+// it. Without one, a peer that stops reading blocks the write on a context
+// that ends only when the relayed session does, and the goroutine that would
+// have noticed is the one that is blocked.
+func writeRelay(
+	ctx context.Context, connection *websocket.Conn,
+	kind websocket.MessageType, payload []byte,
+) error {
+	if relayWriteTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, relayWriteTimeout)
+		defer cancel()
+	}
+	return connection.Write(ctx, kind, payload)
+}
+
 func writeRelayFailure(ctx context.Context, connection *websocket.Conn, code, message string) {
 	payload, _ := json.Marshal(map[string]any{
 		"type": "error",
@@ -235,17 +258,24 @@ func writeRelayFailure(ctx context.Context, connection *websocket.Conn, code, me
 			"type": "connection_error", "code": code, "message": message,
 		},
 	})
-	_ = connection.Write(ctx, websocket.MessageText, payload)
+	_ = writeRelay(ctx, connection, websocket.MessageText, payload)
 	_ = connection.Close(websocket.StatusNormalClosure, "relay connection failed")
 }
 
+// copyWebSocket forwards one direction of a relayed session.
+//
+// The write is bounded because this is the relay's data path and both halves
+// depend on it: a peer that stops reading blocks this goroutine, which then
+// stops reading its own side, so the other half's writes back up behind a
+// socket nobody is draining. One stalled browser wedges the whole relayed
+// session, and the context here ends only when that session does.
 func copyWebSocket(ctx context.Context, from, to *websocket.Conn) {
 	for {
 		kind, payload, err := from.Read(ctx)
 		if err != nil {
 			return
 		}
-		if err := to.Write(ctx, kind, payload); err != nil {
+		if err := writeRelay(ctx, to, kind, payload); err != nil {
 			return
 		}
 	}

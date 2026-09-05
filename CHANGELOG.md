@@ -327,6 +327,15 @@
   pass the session's context, which has no deadline. Every one of these fails
   the same way: not slowly, but silently and forever, because the write holds
   a lock that every later write needs.
+
+  Six sockets in all, which is every WebSocket write in the tree that was not
+  already bounded: the gateway's, the presentation effect socket, the
+  presentation relay's own data path — where one stalled browser wedged both
+  directions, because the goroutine that blocks writing is the goroutine that
+  stops reading — the Deepgram listener, the Gemini Live client, the shared
+  Realtime client, and the LiveKit agent's link to the endpoint. Each is
+  bounded by what it carries: five seconds for a frame of audio to one
+  provider, thirty for a whole Realtime event to a server.
 - **A gateway can be told how many sessions it will take.** Admission checked
   only whether the gateway was closing, and past that point a session holds a
   runtime and its provider connections — so an unbounded gateway does not
