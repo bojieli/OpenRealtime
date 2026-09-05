@@ -322,16 +322,21 @@ predicts that a streaming one would classify sooner. Thirty `user_interruption`
 recordings run three times against each: the streaming profile's median yield
 was 164 ms *worse*, and it passed 23 of 70 applicable attempts against 46 of
 74. It is better behaved in the tail — 2,173 ms against 4,162 ms — so the two
-are not ordered. The 1,000 ms transcript-policy decision deadline was tested
-the same way and cut to 300 ms moved the median by 9 ms, because that policy
-decided five of seventy-nine turns and was never on this path at all.
+are not ordered. The transcript-event policy's decision deadline was tested the
+same way: on the profile where that policy is configured, cutting it from
+1,000 ms to 300 ms moved the median by 9 ms and left the p90 identical. On the
+profile the decomposition below used it is not configured at all
+(`transcript_events` is null), so the knob was never on that path to begin
+with.
 
 Decomposing one run's timed record puts the numbers on the two halves. Once a
 recording is audible the acoustic gate costs a median of 84 ms; everything from
 there to the last audio delta of the interrupted answer is a median of 550 ms,
-and the engine's log says the semantic classifier answered on 66 of the 79
-turns that produced no speech, with the 800 ms unclassified-overlap hold firing
-on 6. So the half-second is the classified path arriving at a decision, which
+and the engine's log accounts for the 79 turns that produced no speech: 66
+because the overlapping speech was classified as directed at the agent, 6
+because the 800 ms unclassified-overlap hold expired, 5 on an explicit
+stop-speaking decision, 2 on other causes. The classifier is answering rather
+than timing out. So the half-second is the classified path arriving at a decision, which
 is what the ~665 ms row above was measuring, and the ~195 ms row is what the
 same engine does when nothing has to be classified. See
 [subturn-benchmark-study.md](subturn-benchmark-study.md).
