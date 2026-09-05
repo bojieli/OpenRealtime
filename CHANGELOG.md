@@ -225,6 +225,17 @@
 
 ### The benchmark harness
 
+- **One transient provider error no longer costs a whole campaign.** A
+  session that reached no evaluation is retained as an incomplete attempt
+  rather than scored, which is right, but resume then met the suite's own
+  recovery validator, which refuses a retained failure and aborted the entire
+  resume. A four-hour FDB v1.5 run that lost a single recording to a broken
+  pipe from the local policy provider could only be redone from the start.
+  Resume now retires an incomplete attempt into the same `interruptions/`
+  namespace an uncommitted attempt takes, where it stays inside the sealed
+  bundle, and runs that case again. A behavioural failure is never re-rolled:
+  only an attempt the harness itself recorded as having reached no evaluation.
+
 - **A synthesised tool schema now agrees with the values it is scored against.**
   FDB v3 declares its tools from the dataset, and declared every parameter a
   string. The suite expects numbers for prices and quantities, so a model that

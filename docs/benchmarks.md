@@ -468,6 +468,17 @@ never reached evaluation is recorded as incomplete rather than as a failure: an
 endpoint that was down is not a benchmark result, and scoring it zero is how
 infrastructure trouble becomes a published capability claim.
 
+Because an incomplete attempt is not a result, `-review-resume` does not let
+one satisfy its case. It retires the attempt into the bundle's
+`interruptions/` namespace, where an uncommitted attempt also goes, and runs
+the case again. Nothing is discarded: the outage evidence stays inside the
+sealed bundle and is verified with everything else. Without that, one
+transient provider error in hour three of a suite that takes hours would be
+unrecoverable, because the suite's own recovery validator refuses the retained
+failure and aborts the whole resume. A behavioural failure is never re-rolled
+this way; only an attempt the harness itself recorded as having reached no
+evaluation.
+
 A connected session that continues acting beyond a suite's evaluation horizon
 is different: the environment did run and its deterministic state can be
 scored. Realtime-CU records that case as a completed negative result with

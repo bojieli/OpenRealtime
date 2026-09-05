@@ -150,6 +150,22 @@ func loadPartialBundle(ctx context.Context, bundle *Bundle) error {
 		if err != nil {
 			return err
 		}
+		// An incomplete outcome is the harness's own word for "this attempt
+		// never reached evaluation": a protocol error from ASR, cognition, the
+		// engine, or transport, which the suites are required to leave
+		// incomplete rather than publish as an incapable agent. It is not a
+		// result, so it cannot satisfy its case on resume - and a suite
+		// recovery validator that refuses it would abort the resume instead,
+		// stranding every other retained attempt in the campaign. One transient
+		// provider outage would then cost a complete rerun of a suite that
+		// takes hours. Retire it beside the uncommitted attempts, where it is
+		// retained rather than discarded, and let the case be run again.
+		if !completion.Outcome.Completed {
+			if _, err := archiveInterruptedAttempt(bundle.root, name); err != nil {
+				return err
+			}
+			continue
+		}
 		if bundle.suite == "" {
 			bundle.suite, bundle.cell = attempt.Suite, attempt.Cell
 			bundle.provenance, bundle.origin = attempt.Provenance, attempt.Origin

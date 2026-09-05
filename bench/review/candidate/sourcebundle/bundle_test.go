@@ -925,3 +925,100 @@ func benchmarkIndex(value int) string {
 	}
 	return string(reversed[position:])
 }
+
+// An attempt that reached no evaluation - a protocol error from ASR,
+// cognition, the engine, or transport - is retained as an incomplete outcome
+// rather than scored, so it is not a result its case can be satisfied by. Left
+// committed, it would meet a suite recovery validator that refuses it and
+// abort the whole resume, and one transient provider outage during a
+// multi-hour campaign would cost a complete rerun. Resume retires it beside
+// the uncommitted attempts and frees its identity.
+func TestBundleResumeRetiresAnIncompleteAttemptAndFreesItsCase(t *testing.T) {
+	fixture := newSourceFixture(t)
+	durable := fixture.attempt(t, "durable", 1, false)
+	kept := beginAttempt(t, fixture, durable)
+	if err := kept.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	completeAttempt(t, kept, durable, fixtureOutcome("durable", true))
+
+	outage := fixture.attempt(t, "outage", 1, false)
+	attempt := beginAttempt(t, fixture, outage)
+	if err := attempt.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	incomplete := fixtureOutcome("outage", false)
+	incomplete.Completed = false
+	incomplete.Error = "the session reported a failure: policy decision: broken pipe"
+	completeAttempt(t, attempt, outage, incomplete)
+	if err := fixture.bundle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := Resume(t.Context(), Options{Directory: fixture.directory, ReceiptPath: fixture.receipt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := candidate.NewLifecycle(candidate.LifecycleConfig{
+		Context: t.Context(), Plugin: resumed, Suite: "source-suite", Cell: fixture.cell,
+		Provenance: fixture.provenance, Origin: fixture.origin,
+		RecoveryValidator: fixtureRecoveryValidator,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The completed attempt is still recovered, so resuming is worth doing.
+	recovered, err := lifecycle.Begin("durable", 1, map[string]any{"criterion": "exact", "case": "durable"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := recovered.Recovered(); err != nil || !found {
+		t.Fatalf("a completed attempt must survive resume: found=%v err=%v", found, err)
+	}
+	// The incomplete one is not, so its case runs again rather than aborting.
+	retry, err := lifecycle.Begin("outage", 1, map[string]any{"criterion": "exact", "case": "outage"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := retry.Recovered(); err != nil || found {
+		t.Fatalf("an incomplete attempt must not satisfy its case: found=%v err=%v", found, err)
+	}
+	if err := retry.CaptureAudio(fixtureCapture()); err != nil {
+		t.Fatal(err)
+	}
+	repaired := fixtureOutcome("outage", true)
+	if err := retry.Complete(repaired, fixtureTranscript()); err != nil {
+		t.Fatal(err)
+	}
+	keptOutcome := fixtureOutcome("durable", true)
+	result := bench.Result{
+		Suite: "source-suite", Cell: fixture.cell, Provenance: lifecycle.Provenance(),
+		Expected: 2, Tasks: []bench.TaskOutcome{keptOutcome, repaired},
+	}
+	result.Finish()
+	if !result.Summary.Complete || result.Summary.Completed != 2 {
+		t.Fatalf("the repaired population must close: %+v", result.Summary)
+	}
+	if err := lifecycle.Finish(result); err != nil {
+		t.Fatal(err)
+	}
+	manifest, _, err := Verify(t.Context(), fixture.directory, fixture.receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retired, not discarded: the outage evidence is still inside the sealed
+	// bundle, under the same namespace an uncommitted attempt would take.
+	wantPrefix := "interruptions/" + digestName(outage.ID()) + "-000001/"
+	archived := false
+	for _, file := range manifest.Files {
+		if strings.HasPrefix(file.Path, wantPrefix) {
+			archived = true
+			if file.Purpose != "interrupted candidate attempt source evidence" {
+				t.Fatalf("retired interruption purpose = %q", file.Purpose)
+			}
+		}
+	}
+	if !archived || manifest.AttemptCount != 2 {
+		t.Fatalf("retired outage manifest = attempts %d archived %v", manifest.AttemptCount, archived)
+	}
+}
