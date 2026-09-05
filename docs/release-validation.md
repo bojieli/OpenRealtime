@@ -1,11 +1,21 @@
 # Release validation matrix
 
 `scripts/release-matrix.json` is the versioned, machine-readable inventory of
-release tests and benchmark evidence. `scripts/release-validate.sh` validates
+release tests and optional diagnostic tools. `scripts/release-validate.sh` validates
 and runs it. The matrix is intentionally separate from `scripts/check.sh`:
 `check.sh` remains the convenient offline developer check and, outside its
 release mode, explicitly tolerates unavailable browser, SDK, Swift, and Python
 dependencies. A release record must not inherit those tolerated skips.
+
+Benchmarks are debugging tools. Full campaigns, fresh benchmark archives,
+external model reviews, score reporting, and the measurement program are not
+requirements for project completion or publication. Historical results and
+focused affected-case checks are sufficient inputs for finding and verifying
+repairs. Every `external.benchmark.*` entry, the benchmark review and upstream
+tau checks, `performance.review-bundles`, and `local.efficiency` are optional
+(`required: false`, `selection: opt_in`). They do not enter
+`missing_required_gates` or prevent `release_complete`. When explicitly selected,
+a tool still checks its declared contract and reports failure honestly.
 
 Validate the checked schema and print its exact required gate IDs:
 
@@ -65,21 +75,19 @@ cleanup. Portable receipt-verifier tests do not satisfy this gate.
 invocation passed. `release_complete` is stricter: it is true only when every
 required ID in the entire matrix passed in that invocation. A local-only run
 therefore says `release_complete: false` and lists the unrun or blocked
-required performance and provisioned gates under `missing_required_gates`. This is
-deliberate; local CI success is not model, dataset, or signed-native evidence.
+required provisioned integration gates under `missing_required_gates`.
+Optional diagnostic campaigns do not affect this field.
 
-## Efficiency gate
+## Optional efficiency diagnostic
 
 `local.efficiency` runs `openrealtime efficiency` for ten seconds of simulated
 1080p video at 3 fps and retains the JSON report beside the run. It is a
-default local gate: it needs no model, dataset, or network, and it fails
-closed if the report is not written or does not reach the audio gate. The
-report's numbers are the ones [efficiency](efficiency.md) publishes for the
-reference machine; the gate does not compare them against thresholds, because
-the release claim is that every efficiency number is measured and stated
-against its machine, not that a build host matches the reference machine.
+local opt-in diagnostic: it needs no model, dataset, or network, and checks
+that the report is written and reaches the audio gate. It does not compare
+against machine-dependent timing thresholds or require published efficiency
+numbers to be refreshed before release.
 
-## Checked performance protocol
+## Optional performance protocol
 
 The direct audiovisual review-bundle benchmark is opt-in because it performs
 the complete four-case Meeting retention path and the exact-sixteen
@@ -99,71 +107,30 @@ its checked allocation threshold. The gate requires both benchmark names in
 stdout; timing, bytes, and allocations remain visible for review. This local
 performance evidence does not substitute for either live behavioral suite.
 
-## Direct candidate benchmark protocol
+## Optional complete-campaign comparison
 
-The checked matrix executes only the new graph-native implementation. The old
-implementation is reference material, and the benchmark owner's recorded
-numbers are quality targets for the case-by-case review; neither is a
-production arm, command, registry, or runtime dependency.
+For bug fixes, start with existing failed cases and run only the behavior needed
+to validate a repair. No frozen candidate, full-population rerun, sealed closure,
+paid reviewer, or published score is needed for that workflow.
 
-The required direct candidates are FDB v1.5, FDB v3, FD-Bench, Meeting
-Assistant cascade, Realtime-CU, the twelve-scenario profile, tau control, and
-tau regular. Together they contain exactly 7,501 required attempts. Each gate
-must run its complete declared population against the shared Realtime API with
-an exact execution requirement and authenticated live graph inspection.
-Diagnostic subsets remain useful for iteration but cannot satisfy a release
-gate. Meeting Assistant omni and DynaCU remain independently runnable opt-in
-validations; they are marked `required: false`, do not enter behavioral
-acceptance, and do not affect `release_complete`.
+The existing complete-campaign tools remain available for an explicitly chosen
+quantitative comparison. Their declared populations are FDB v1.5 (498), FDB v3
+(100), FD-Bench (6,147), Meeting Assistant cascade (4), Realtime-CU (16), the
+twelve-scenario profile (180), and tau control and regular (278 each). These
+7,501 attempts describe the optional comparison contract, not a release quota.
+Meeting omni and DynaCU are also independently optional.
 
-All required populations must come from one frozen final candidate: the exact
-commit and executable, Graph IR, values, deployment, model revisions, policies,
-dataset/scorer revisions, and machine class are part of that candidate's
-identity. A behavior-affecting change after a run invalidates the affected
-final-candidate evidence. An older complete campaign can remain useful
-diagnostic history, but it cannot certify the changed candidate.
+The optional `external.benchmark.validation.behavioral` command consumes eight
+campaign closures, a frozen-candidate declaration, and the checked target
+registry. It verifies population, candidate identity, score reconstruction,
+registered targets, and repair lineage. Those requirements apply when invoking
+that comparison tool. An incomplete historical run can still diagnose bugs even
+when it cannot satisfy this stricter comparison contract. Missing target data
+blocks only the optional comparison, never project publication.
 
-Every new attempt must retain its deterministic result and the media needed to
-review what happened. Audio cases retain playable audio; visual cases retain
-the exact submitted images; computer-use and other audiovisual cases retain
-synchronized video plus audio. Source manifests and external receipts are
-published create-only after the complete population closes. Advisory review
-uses the exact `google/gemini-3.7-flash` plug-in and never rewrites the
-deterministic scorer.
-
-The final review reports new totals, per-case outcomes, safety and deadline
-failures, and latency distributions beside the trusted historical numbers. It
-does not fabricate historical attempts or require historical media. A material
-regression remains a blocker: retain the failed new run, diagnose it with the
-new graph/runtime evidence, rerun the affected diagnostic slice, and then rerun
-the complete candidate population. Repeat that focused-then-complete loop until
-the full affected suite passes. A repaired diagnostic slice never becomes the
-release result, an aggregate cannot hide a severe per-case or safety regression,
-and an absolute pass rate above 80% does not excuse a material fall from a
-higher trusted result.
-
-The per-benchmark matrix gates enforce complete execution and sealed evidence.
-They are not, by themselves, behavioral acceptance. The required
-`external.benchmark.validation.behavioral` gate consumes eight create-only
-campaign closures, one pre-run frozen-candidate declaration, and the checked
-behavioral target registry. A bare result path is never an acceptance input.
-Each closure reopens the exact result and binds its candidate, executable,
-machine, graph execution requirement, run specification, pre-run inventory,
-source receipts, deterministic scorer, task population, and repair lineage.
-The gate refuses incomplete populations, mixed candidates, unregistered
-targets, material regressions, and a repair history that ends in a diagnostic
-subset. As of 2026-09-05 the checked registry carries registered targets for
-Realtime-CU, the cascade Meeting Assistant, FDB v1.5, and the scenario suite's
-aggregate and per-case domains. Each registered floor cites the retained,
-independently reopened complete run it was derived from, by artifact path,
-revision, and executable digest; it is a non-regression floor, not a quality
-claim, and the benchmark owner may tighten it but not lower it. FD-Bench, FDB
-v3, and both τ-Voice conditions remain `unavailable`, each with the reason
-there is no complete acceptance-valid run to derive a floor from, and the
-scenario suite's safety, deadline, and latency domains remain unavailable
-because a one-attempt checkpoint cannot bound them. The gate therefore stays
-blocked on those suites until their first complete run; implementing the gate
-does not close a benchmark or non-regression checklist item.
+The following control-artifact reference documents that optional tool. Its
+artifact names and `behavioral acceptance` output are retained for compatibility;
+they do not impose a project acceptance program.
 
 ### Behavioral acceptance control artifacts
 
@@ -348,7 +315,7 @@ media, and deterministic rows. Recovered FDB v1.5, FDB v3, and FD-Bench
 attempts are suite-rescored before they may seal; recovered τ-Voice attempts
 currently fail closed because the retained trace cannot independently replay
 the authoritative tau2 score. Acceptance does not claim to rerun every suite's
-scorer from raw media. A release job must also retain the resulting closure in
+scorer from raw media. An operator who needs authenticated comparison evidence can retain the closure in
 an independently controlled artifact store; fabricating a coherent replacement
 universe is outside what an unkeyed SHA-256 receipt can detect. A result JSON
 alone, a self-declared `final_full` label, or a closure whose bound artifacts
@@ -377,15 +344,15 @@ has the exact population and identity and clears every registered target;
 `blocked` means required trusted target data is honestly unavailable. Both
 `failed` and `blocked` exit 1. Malformed control artifacts, invocation errors,
 the deprecated unsealed `-result` flag, or an existing report path exit 2.
-Passing unit and integration tests merely verify this machinery; only the
-complete frozen campaigns, all independently verified closures, and a `passed`
-report can close the behavioral benchmark gates.
+Passing unit and integration tests merely verify this machinery; a `passed`
+report requires the declared campaigns and independently verified closures.
+This is an optional comparison result, not a publication prerequisite.
 
 The graph-native scenario candidate also owns a create-only human/media review
 directory and an external source receipt. The source manifest is published
 only after all 180 checklist rows, exact scorer results, stereo WAVs, submitted
 visual inputs, candidate review indexes, and the finished architecture result are
-closed and cross-bound. The release gate requires both the committed source
+closed and cross-bound. The optional campaign check requires both the committed source
 manifest and the portable receipt outside that directory; `CHECKLIST.md` or an
 ordinary result JSON by itself is not retained-review evidence. Advisory model
 reviews remain separate evaluations of that receipt and cannot change the
@@ -399,9 +366,9 @@ evaluation bundle and sibling portable receipt per attempt, then a reproducible
 case-by-case `REVIEW.md`, aggregate manifest, and aggregate external receipt.
 These artifacts are secondary review evidence: they expose disagreement and
 media-quality findings but never rewrite the checklist outcome. They must not
-be represented as a passing live release gate unless the complete provisioned
+be represented as a passing optional live review check unless the complete provisioned
 population and all retained receipts were actually produced and verified.
-The required `external.model.scenario-review` gate consumes the candidate
+The optional `external.model.scenario-review` gate consumes the candidate
 scenario source in the same fresh release artifact directory and asserts the
 first and last per-attempt WAVs and receipts as well as the aggregate review;
 the command's receipt verifier binds all 180 attempts between those endpoints.
@@ -415,7 +382,7 @@ variables are:
 
 - `OPENREALTIME_BENCH_ENDPOINT`, `OPENREALTIME_BENCH_EXECUTION`, and
   `OPENREALTIME_BENCH_INSPECTION_GRAPH` for dataset and owned benchmark runs;
-- `OPENREALTIME_MEETING_CASCADE_ENDPOINT` for the required Meeting Assistant
+- `OPENREALTIME_MEETING_CASCADE_ENDPOINT` for the optional Meeting Assistant
   reference and `OPENREALTIME_MEETING_OMNI_ENDPOINT` only when selecting its
   optional native-audio validation;
 - `OPENREALTIME_SPEECH_ENDPOINT`, `OPENREALTIME_SCENARIO_TRANSCRIBE_ENDPOINT`,
@@ -442,8 +409,7 @@ matrix report. File, directory, and executable variables must also contain
 absolute paths; they are reported by variable name, not by their potentially
 sensitive value.
 
-Run a provisioned gate by exact ID, or use `-scope all` only on a job that has
-all prerequisites:
+Run an optional provisioned check by exact ID on a job with its prerequisites:
 
 ```sh
 ./scripts/release-validate.sh \
@@ -452,7 +418,7 @@ all prerequisites:
   -report .runtime/release-validation/tau-upstream-001/report.json
 ```
 
-The tau upstream gate performs `uv sync --all-extras`, `tau2 check-data`, Ruff
+The optional tau upstream check performs `uv sync --all-extras`, `tau2 check-data`, Ruff
 lint and formatting, `make test-all`, and the audio-native provider suite. It
 is provisioned rather than local because dependency resolution and the pinned
 external checkout are not offline repository inputs.
@@ -466,9 +432,8 @@ what the local gates need and nothing more: a browser, Node and the official
 SDK, Python with the sidecar test requirements, ffmpeg and bubblewrap, the
 Opus development libraries, and the pinned Swift image. Provisioned gates
 stay blocked there, which the report records. `check.sh` remains the
-developer gate; this job is the one that would have noticed the efficiency,
-Opus, sidecar-conformance, and fuzz gates rotting while every check stayed
-green.
+developer gate; this job also covers the dedicated Opus, sidecar-conformance,
+and fuzz checks. The optional efficiency diagnostic runs only when selected.
 
 ### A fuzz-engine behaviour the cancellation gates work around
 
@@ -489,7 +454,7 @@ outcome only while the fuzz engine is driving them, detected from the
 - Every gate is either a required release claim or an explicitly opt-in,
   `required: false` independent validation. Diagnostic and smoke subsets do
   not belong in this matrix. Optional validation never enters
-  `release_complete` or behavioral acceptance.
+  `release_complete`; the complete-campaign comparison is itself optional.
 - Default local gates may record skips in the broad root/module sweeps because
   the skipped claims have dedicated gates. Dedicated release gates forbid any
   `--- SKIP:` result.
@@ -502,7 +467,8 @@ outcome only while the fuzz engine is driving them, detected from the
   attempts plus its externally anchored, reopenable source/media receipt. The
   optional omni Meeting run still requires all four cases when selected, and
   the optional DynaCU run still requires all 150 tasks when selected; neither
-  enters the required 7,501-attempt acceptance population.
+  enters the optional eight-suite comparison population. None of these
+  campaign populations is required for publication.
 - Tests discover every `Fuzz*` function and every non-runtime Go module and
   compare them with matrix coverage. Adding one without a normal/race/vet or
   exact fuzz gate breaks `go test ./internal/releasevalidation`.

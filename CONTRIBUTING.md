@@ -90,7 +90,7 @@ Every pull request should:
    weights, and generated assets. Write “none” when there are none.
 7. Avoid committing credentials, private audio, personal data, or provider
    output whose terms prohibit redistribution.
-8. Report negative and ambiguous measurements alongside positive results.
+8. When reporting measurements, include negative and ambiguous results.
 
 Contributors certify that they have the right to submit their work under the
 repository's applicable license.
@@ -133,20 +133,24 @@ it into a failure.
 
 ## Performance and benchmark changes
 
-Performance pull requests must include:
+Use benchmarks to find failures and improve agent behavior. Historical results,
+partial runs, and existing recordings are useful diagnostic inputs. Reproduce
+an actionable failure, fix its underlying cause, and test the affected behavior.
+Explain the failure and what the regression check proves, including unresolved
+provider or evaluator uncertainty.
 
-- the exact command and source revision;
-- raw trace or sealed result cell;
-- hardware, model, prompt, provider, fixture, schema, and configuration
-  identities;
-- repeated-trial distributions rather than a single best run;
-- a comparison baseline with only the intended factor changed;
-- negative results, missing observations, and known limitations.
+A full benchmark campaign, fresh result archive, external model review, score
+report, or measurement program is not required for a repair, project completion,
+or publication. The release matrix keeps these tools available as optional
+checks. Ordinary behavioral regressions, protocol checks, and integration tests
+remain part of validation.
 
-Read [the benchmark harness](docs/benchmarks.md) and
-[measurement rules](docs/measurement.md) before publishing a result. A
-configuration being supported is a release claim; it outperforming another
-configuration is a separate claim that requires paired evidence.
+If a contribution voluntarily makes a quantitative performance claim, provide
+the command, relevant environment and configuration, a suitable comparison,
+and the limitations needed to assess that claim. See
+[the benchmark harness](docs/benchmarks.md) and
+[measurement notes](docs/measurement.md) for the available tools and historical
+experiments.
 
 ## Documentation changes
 

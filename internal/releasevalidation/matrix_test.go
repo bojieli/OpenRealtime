@@ -295,31 +295,33 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 		"external.benchmark.tau.control",
 		"external.benchmark.tau.regular",
 	}
-	requiredSpecialIDs := append([]string{}, candidateIDs...)
-	requiredSpecialIDs = append(requiredSpecialIDs,
-		"external.benchmark.validation.behavioral",
+	requiredSpecialIDs := []string{
 		"external.macos.signed-e2e",
 		"external.model.live-presentation",
-		"external.model.scenario-review",
-		"external.tau.upstream",
 		"local.client.swift-linux",
 		"local.presentation.chromium",
 		"local.presentation.companion",
 		"local.presentation.shared-server",
 		"local.scenario.profiled-websocket",
 		"local.sdk.official",
-		"performance.review-bundles",
-	)
+	}
 	for _, id := range requiredSpecialIDs {
 		gate, exists := byID[id]
 		if !exists || !gate.Required {
 			t.Errorf("required special gate is missing: %s", id)
 		}
 	}
-	for _, id := range []string{
+	optionalIDs := append(slices.Clone(candidateIDs),
 		"external.benchmark.dynacu",
 		"external.benchmark.meeting.omni",
-	} {
+		"external.benchmark.validation.behavioral",
+		"external.model.gemini-review",
+		"external.model.scenario-review",
+		"external.tau.upstream",
+		"performance.review-bundles",
+		"local.efficiency",
+	)
+	for _, id := range optionalIDs {
 		gate, exists := byID[id]
 		if !exists || gate.Required || gate.Selection != SelectionOptIn {
 			t.Errorf("optional validation gate is missing or required: %s: %+v", id, gate)
@@ -632,7 +634,7 @@ func TestCheckedMatrixPinsFailClosedSpecialGates(t *testing.T) {
 
 }
 
-func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
+func TestCheckedMatrixPinsOptionalBehavioralComparisonGate(t *testing.T) {
 	root := repositoryRoot(t)
 	matrix, err := Load(filepath.Join(root, "scripts", "release-matrix.json"))
 	if err != nil {
@@ -649,9 +651,9 @@ func TestCheckedMatrixPinsCandidateOnlyBehavioralAcceptanceGate(t *testing.T) {
 	if !found {
 		t.Fatal("candidate-only behavioral acceptance gate is missing")
 	}
-	if !gate.Required || gate.Availability != AvailabilityProvisioned ||
+	if gate.Required || gate.Availability != AvailabilityProvisioned ||
 		gate.Selection != SelectionOptIn || gate.SkipPolicy != SkipForbid {
-		t.Fatalf("behavioral acceptance gate was weakened: %+v", gate)
+		t.Fatalf("optional behavioral comparison gate changed: %+v", gate)
 	}
 	if !gateHasPrerequisite(gate, "file", "{root}/scripts/behavioral-acceptance-targets.json") ||
 		!gateHasPrerequisite(gate, "env_file", "OPENREALTIME_BEHAVIORAL_CANDIDATE") {

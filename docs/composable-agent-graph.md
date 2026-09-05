@@ -1803,6 +1803,15 @@ reconstruction, or alternate benchmark path.
 
 ### Living implementation tracker
 
+Current development priority, clarified on **2026-09-05**: use existing benchmark
+results to identify failures and make principled improvements to agent behavior.
+Historical runs are valid diagnostic data. Reproducing and testing the affected
+behavior is sufficient for a focused repair; fresh full benchmark populations,
+reportability, new evidence archives, score publication, and the measurement
+program are not prerequisites for repairs, project completion, or publication.
+Earlier campaign and reporting requirements below are retired planning history.
+They must not be used as phase-exit or publication gates.
+
 Last reconciled with the repository on **2026-09-05**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
@@ -1818,109 +1827,38 @@ Broad objectives must be split into independently reviewable boxes as work
 lands so that a remaining end-to-end gate does not hide completed primitives,
 reference graphs, or conformance evidence.
 
-Unit, integration, race, protocol-conformance, and synthetic end-to-end tests
-may close only their specifically named implementation slices. They cannot
-close a benchmark, phase-exit, or project-completion gate. Final completion
-requires the entire prescribed benchmark matrix on the final clean candidate
-and its exact graph, values, deployment, model, and policy artifacts. A later
-behavior-affecting code or artifact change invalidates the affected final-run
-evidence even when an earlier campaign remains useful as a checked historical
-execution milestone.
+Completion is assessed through implemented behavior and checks that exercise
+that behavior at the relevant boundary. Historical benchmark failures are valid
+inputs for choosing repairs. An affected-case regression can close the defect it
+reproduces; it does not prove that unrelated cases or all live providers work.
+Broad implementation outcomes remain open when their named behavior is missing.
 
-The words **complete**, **production-ready**, **regression-free**, and
-**release-ready** are reserved for that final result. A green unit, race, vet,
-protocol, smoke, synthetic-integration, focused benchmark, or earlier complete
-suite run may be reported only with its narrower scope. The release candidate
-is frozen before the first required attempt; all 7,501 required attempts must
-name the same executable and final-candidate manifest, including its
-preregistered suite-specific graph/values/deployment/model/policy identities.
-Any subsequent behavior-affecting change creates a new candidate and requires
-the affected complete suites—and ultimately the final matrix—to be rerun.
+The earlier checkbox percentages and 7,501-attempt final-candidate ledger are
+retired. They mixed implementation work with an optional measurement program.
+Current behavior work includes:
 
-Successful execution of all attempts is not behavioral acceptance. The final
-result must meet every registered aggregate, per-case, safety, deadline, and
-latency target; for example, the accepted eleven-case Scenario baseline was
-140/165 (84.85%) and the promoted twelve-case contract requires all 180
-attempts to pass, so a substantially lower pass rate cannot be called a successful
-refactor merely because the harness and artifact checks completed. A failed or
-materially regressed campaign is retained, diagnosed from its exact evidence,
-and followed by a code/configuration/policy repair, a focused affected-case
-run, and a complete affected-suite rerun from the newly frozen candidate. That
-cycle repeats until the complete matrix meets the accepted targets. Tests and
-ad hoc integrations are prerequisites for attempting that loop, never a
-substitute for it.
-
-At this checkpoint, 314 of 383 explicit tracker boxes are checked (82.0%)
-and 69 remain open. The 2026-09-05 reconciliation aligned the scenario
-population with the promoted twelve-case contract: the one-attempt live
-scenario box is now checked by the retained 12×1 checkpoint, and the twelfth
-case gained its own open fifteen-repeat box, so the denominator grew by one. The denominator grew when the broad mounted Realtime-CU
-composition item was split into ten reviewable subgates; seven are now
-evidenced and three remain open. The lower percentage relative to the earlier,
-coarser ledger is added resolution, not lost implementation. The
-percentage records completed reviewable slices; it does not dilute an open
-parent, benchmark population, platform gate, or definition-of-done requirement.
-
-The release-acceptance numerator is separately **0 of 7,501 final-candidate
-attempts**. This does not erase the substantial diagnostic execution below; it
-means no attempt can enter the final ledger until the remaining behavioral
-repairs are committed, one clean candidate is frozen, and every required cell
-is rerun against that exact candidate. The current critical path is:
-
-| Required cell | Current evidence and diagnosis | Next acceptance gate |
+| Area | Existing diagnosis and implementation | Remaining useful work |
 | --- | --- | --- |
-| Interaction scenarios (180) | The contract includes 12 cases × 15 trials. Earlier 12×1 checkpoints cannot close the current gate. Observed-speech acknowledgement diagnostics retain a 2/3 result with one omitted purchase confirmation. Scorer v9 requires sustained counting, includes the audible stopping prefix, and checks silence until resumption. The subsequent queued-speech repair retains completed preparation until distinct speech terminals arrive and cancels its entire remaining stream. All three fresh interrupted counts stay quiet during the pause; two pass the full scorer and one retains contradictory recognizer/reviewer observations. Event count passed only 1/3 in that six-trial diagnostic. The subsequent provider trace and mounted reproduction identify a confidence-ordering defect: a strongly grounded standing trigger could recover listen but not an uncertain answer. Clean `0424eaf` repairs that asymmetry and passes three event counts plus three ordinary-question controls. A separate fifteen-trial event-count campaign scores 15/15, all verified and replayed, but advisory agreement is 14/15: upstream synthesis contains unwanted words in some recordings while scorer 9 checks reported text. Seven trials reproduce and recover the old uncertain final answer. A separate 2026-09-05 12×1 checkpoint (v29, revision `d70cd90`, the scorer of that revision) passed 12/12 as a reportable cell with 11/12 Gemini agreement; its reviewer flagged unchecked filler speech in the counting case | Repair the repeated count exposed by scorer 10 (2/3 fresh trials) and investigate absent playback completion/context; repair remaining content omissions and recognition/review discrepancies, then run all 12 cases × 15 under the current scorer and frozen final candidate |
-| Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
-| Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable live defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. A distinct typed cleanup lane prevents canceled result consequences from re-entering ordinary activation. Mounted regressions exercise `indeterminate → retry → continue → continue → succeeded`, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, and cleanup overtaking activation cancellation for both statuses. The connected cleanup outcome is now proven nontransactional at the coordinator, and an already-admitted newer intent resumes after the delayed old cancellation without another frame. Focused and stable-endpoint implementation checks pass, but scorer interpretation, the remaining forged/reordered composition matrix, and live repair campaign remain open | Complete forged/reordered boundary cases and failed-result scorer/live acceptance, apply registered targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
-| FDB v1.5 (498) | Earlier diagnostic completed 498/498 with 287/430 applicable passes and 68 not applicable (the original nominal 355 includes those 68); interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. A 2026-09-05 rerun on `8276a03` against the same local profile reached 309/408 applicable: interruption 80/161 with 1,002/2,269 ms p50/p95, but `background_speech` fell to 61/73 and `talking_to_other` to 76/82, and applicability itself fell from 430 to 408 in those same two categories. One recording reached no evaluation when the local policy socket broke, so the campaign is not reportable and the registered 430-applicable floor is not met | Repair the two hold regressions, then run a complete 498-task campaign from a new frozen candidate |
-| FDB v3 (100) | Earlier 100-task evidence is diagnostic-only because the old scorer admitted extra effects; the observed 9/100 is not an acceptance result. A full mounted endpoint regression now proves deployment-owned spoken-ID normalization without changing raw proposals, provider schemas, or speech | Run the exact failed task, preregister and run a representative slice, then rerun all 100 from one frozen candidate |
-| FD-Bench (6,147) | Prior campaign retained 1,546 completions and one interrupted attempt, but is incomplete; its obsolete executable rejected resume and cannot be mixed with a later candidate | Finish restartable, independently rescored retention and rerun all 21 conditions from one candidate |
-| tau-Voice control (278) | An older nonreportable diagnostic completed 278/278 and passed 160; the pinned 50/114/114 upstream population now exists, but no graph-native final-candidate campaign does | Run all 278 control tasks with retained review evidence |
-| tau-Voice regular (278) | The pinned 50/114/114 upstream population exists; the required regular campaign has not started | Run all 278 regular tasks with retained review evidence |
+| Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
+| Acknowledgements | Existing recordings exposed unwanted cancellation and a separate omitted purchase confirmation; cancellation repairs have focused coverage | Attribute the content omission at the model, synthesis, or evaluator boundary and repair a reproduced cause |
+| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage | Finish forged/reordered settlement and failed-result interpretation cases; use affected camera and terminal-loop cases for live checks where needed |
+| Full-duplex interaction | Existing FDB cases expose interruption latency and incorrect handling of background or third-party speech | Diagnose the affected hold/yield cases and check policy repairs against both relevant speech and silence controls |
+| Tool use | FDB v3 exposed extra effects and spoken-ID normalization; scorer and mounted normalization repairs exist | Reuse the failed tool cases to check remaining action/result behavior |
+| Broader scenario coverage | Historical FD-Bench and tau-Voice runs remain useful despite incomplete populations or older revisions | Select concrete failures that reveal missing behavior; unrun populations alone are not bugs or publication blockers |
 
-Accordingly, the architecture tracker percentage is useful for locating
-implemented slices, but it is not a release percentage. The release remains
-open until all rows above meet their preregistered aggregate, per-case, safety,
-deadline, and latency targets and their evidence is independently reopened.
-
-Checkpoint accounting is intentionally split so that implementation progress
-cannot be mistaken for behavioral acceptance:
-
-| Ledger | Current state | Meaning |
-| --- | --- | --- |
-| Architecture implementation | 314/383 boxes checked (82.0%); 69 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
-| Phase exits | Phases 0, 3, and 4 are marked complete; phases 1, 2, 5, 6, 7, and 8 remain open | A phase closes only through its own checked exit gate |
-| Realtime-CU mounted composition | Ten reviewable subgates; seven evidenced and three open: forged cross-node evidence, reordered/duplicate terminal evidence, and failed-result scorer/live acceptance | The parent mounted-composition box remains unchecked until every subgate runs through the shipped profile |
-| Realtime-CU target registry | All five domains registered on 2026-09-05 as non-regression floors from candidate-05 | A complete candidate can now be accepted or refused mechanically; the floors record current behaviour, not the target quality |
-| Repaired-candidate live work | Focused six variants and the subsequent exact sixteen have not run | Historical 8/16 and 14/16 checkpoints remain diagnostic, not candidate credit |
-| Definition of done | 8/15 top-level outcomes checked; 17/24 including nested subgates | Seven top-level release outcomes remain open regardless of lower-level implementation progress |
-| Final release matrix | 0/7,501 final-candidate attempts | No prior, filtered, synthetic, or differently versioned attempt is carried into this ledger |
-
-The exact checkbox distribution is:
-
-| Tracker section | Checked | Open | Total |
-| --- | ---: | ---: | ---: |
-| Delivery and acceptance ledger | 149 | 46 | 195 |
-| Phase 0 | 4 | 0 | 4 |
-| Phase 1 | 7 | 1 | 8 |
-| Phase 2 | 10 | 3 | 13 |
-| Phase 3 | 5 | 0 | 5 |
-| Phase 4 | 10 | 0 | 10 |
-| Phase 5 | 11 | 2 | 13 |
-| Phase 6 | 88 | 4 | 92 |
-| Phase 7 | 9 | 4 | 13 |
-| Phase 8 | 4 | 2 | 6 |
-| Definition of done, including subgates | 17 | 7 | 24 |
-| **Total** | **314** | **69** | **383** |
+The architecture phases below still identify unfinished design work. Platform,
+remote-element, authoring, and lifecycle checks remain meaningful independently
+of benchmark campaigns. Historical evaluation notes preserve their original
+run scope without contributing a separate completion quota.
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
 | 0 — contracts | Complete | Accepted design, terminology, authoring decisions, and historical quality targets | Keep decisions and superseded ADRs synchronized as implementation lands |
-| 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Full new-architecture integration and benchmark-quality evidence |
-| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, the producer-neutral typed and bounded intent-settlement gate, a profile-bound lifecycle-owned reference disposition producer, explicit graph-owned bounded disposition retry, the connected activation settlement/ack handshake, and exact session cancellation across retry, settlement, producer, activation, model/result commit, and all selected action stages. The locked production Realtime-CU graph has no temporal-admission bypass and its stable shared-server endpoint exercises cancellation ordering. Cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison also exist | Complete the remaining mounted Realtime-CU adversarial matrix and focused live repair against the registered acceptance targets; retained diagnostics record current divergence rather than claiming completion |
-| 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Provider quality and performance remain in the shared benchmark matrix rather than reopening this architecture gate |
+| 1 — graph foundation | Exit evidence pending | Typed descriptors/runtime, `.ortg`, strict YAML/JSON interchange, Go SDK, lockfiles, Graph IR, validation, connectors, rendering, and a coarse reference mount kept outside the production profile | Direct integration coverage for the remaining production launch paths |
+| 2 — component/cascade | In progress | Acoustic admission/endpointing, ASR, commit-bound trajectory-prefix activation, generic typed temporal-evidence admission, the producer-neutral typed and bounded intent-settlement gate, a profile-bound lifecycle-owned reference disposition producer, explicit graph-owned bounded disposition retry, the connected activation settlement/ack handshake, and exact session cancellation across retry, settlement, producer, activation, model/result commit, and all selected action stages. The locked production Realtime-CU graph has no temporal-admission bypass and its stable shared-server endpoint exercises cancellation ordering. Cognition, control-serialization quarantine, interaction/result commit, overlap/barge-in policy, graph-authorized playback release, speech, tools, explicit `Tee`/`Mux`, full locked fast-only/slow-only/both-speaking reference graphs, executed-turn regression, and retained safe-point comparison also exist | Complete the remaining mounted Realtime-CU adversarial cases and diagnose unresolved live behavior |
+| 3 — sidecar/end-to-end | Complete | Typed v1-v4 sidecar negotiation, one graph-native external-model element, locked omni/duplex/upstream topologies, exact protocol-v4 mount/dial/media conformance, and executed native/external interaction parity | Use provider failures for focused diagnostics; this architecture gate is complete |
 | 4 — modalities/authority | Complete | Typed visual observation, multimodal text/image/file/attachment ingress and retention, explicit streaming camera/screen/video cadence, complete audio-free text/file cognition, complete silent Realtime-CU, independent voiced/silent action composition, explicit dual-lane visual-reflex/slow-planner arbitration and feedback, plus proposal, confirmation, target-fence, ledger, and dispatch elements | Keep locked reference graphs and adversarial authority evidence synchronized with contract revisions |
-| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and executed candidate artifacts |
+| 5 — config/catalog | In progress | Resolution locks, strict node-ID-keyed values, separate deployment, secret-reference, and evidence-profile artifacts, exact plan-bound graph-native launch, immutable production graph/config/profile catalog entries, mount-time secret assembly, exact redacted deployment evidence through live inspection/trace/replay/benchmarks, graph-contract-owned session-adapter capability validation, authenticated benchmark/gateway inspection, and reviewed graph-path attestation | Legacy serve-flag removal and direct deployment integration |
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, a compiler-backed language-service core exposed through the UI-independent management API, and authenticated rollback-safe stateless, multi-row, and stateful browser implementation replacement | Complete signed-native, topology-changing, and remaining capability-specific presentation replacement gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
@@ -2031,34 +1969,14 @@ statuses passed twenty repetitions; the repaired Meeting mounted case passed
 normal and race-enabled stress runs. Those repetitions are diagnostic
 implementation evidence, not committed benchmark attempts. No live or paid
 benchmark was run, no Realtime-CU acceptance target is yet registered, and the
-final-candidate ledger therefore remains 0/7,501.
+no live benchmark result is claimed for that checkpoint.
 
-The ordered critical path from this checkpoint is:
-
-1. Complete the remaining production-mounted matrix for forged cross-node
-   evidence and duplicate/reordered terminal decisions, then prove the scorer's
-   treatment of canonical failed-result lineage with retained authored evidence.
-   Ordinary failed-effect recovery and the failed/successful canceled-result
-   orderings—including bounded cleanup of canceled known-call retention—are now covered through
-   the exact locked profile. Shared retained media, cancellation/replacement,
-   asynchronous provider/model wait, crossed effects, explicit indeterminate
-   retry, focus→type→submit, five sequential changing cadence frames,
-   graph-level race, and stable local WebSocket ordering also have
-   production-composition coverage.
-2. Apply the now-registered Realtime-CU aggregate, exact per-case, safety,
-   deadline, and latency targets to the new candidate. These are the cited
-   candidate-05 non-regression floors; registration alone is not acceptance.
-3. Freeze a candidate and run the two camera, two moving-target, and two
-   transient-alert variants. Retain and inspect every failure rather than
-   optimizing a headline pass count.
-4. Repair each observed behavioral defect, rerun its focused cases, and repeat
-   until the focused evidence meets the registered constraints.
-5. Run and independently reopen all 16 Realtime-CU cases from one subsequently
-   frozen candidate. Any behavior-affecting repair starts a new candidate and
-   requires the affected population again.
-6. Complete the other required suite populations and finally execute all 7,501
-   attempts against one shared frozen release candidate. Only accepted results
-   from that matrix can close the release.
+The remaining behavior work is to exercise forged cross-node and reordered
+terminal evidence through the production graph, verify canonical failed-result
+interpretation, and use the existing camera, moving-target, and transient-alert
+failures to check the selected live provider where local tests cannot resolve
+its behavior. Diagnose each failure, repair its cause, and rerun its affected
+case. Complete-suite reruns and frozen-candidate campaign accounting are optional.
 
 The explicit `indeterminate` settlement retry blocker is now closed at the
 implementation and shipped-profile level. `policy.IntentDispositionRetry`
@@ -2755,13 +2673,15 @@ Reference-agent tracker:
 - [x] Locked sidecar omni, duplex, and upstream topology graphs built over the
   shared `model.External` element rather than separate binding species.
 
-Evaluation and direct-candidate tracker. The checked production surface is the
-new plug-in/API design. Old implementations are reference material only; the
-benchmark owner's recorded numbers are quality targets for the review, not a
-second production arm or a reason to preserve migration code. Unit, race, vet,
-fuzz, synthetic integration, mount, and protocol-conformance tests may close a
-component checkpoint, but none establishes behavioral quality or closes this
-tracker by itself:
+<details>
+<summary>Historical evaluation plan and diagnostic repair notes</summary>
+
+The campaign, repetition, retained-evidence, and reporting requirements in this
+older plan were retired on 2026-09-05. Its unchecked campaign/reporting boxes are
+not current implementation, phase-exit, or publication requirements. Existing
+results and repair notes remain useful diagnostic data. Current behavior work is
+summarized at the start of the living tracker; the optional comparison tools
+remain runnable for anyone who explicitly needs them.
 
 - [x] Remove the benchmark migration/parity subsystem, paired-arm CLI flags,
   historical-registry implementation, legacy-baseline release gates, and final
@@ -4075,6 +3995,8 @@ the required new 180-attempt sample.
   baseline. Re-freeze and rerun every affected final suite after each relevant
   code, graph, values, deployment, model, or policy change.
 
+</details>
+
 ### Phase 0: accept contracts and terminology
 
 - [x] Review this design against current ADRs and measurement requirements.
@@ -4102,14 +4024,13 @@ the required new 180-attempt sample.
   for deletion.
 
 - [ ] **Exit gate:** every production reference architecture runs directly
-  through Graph IR with protocol conformance and complete new-candidate
-  benchmark evidence; no coarse reference element is reachable.
+  through Graph IR with protocol conformance and direct integration coverage;
+  no coarse reference element is reachable.
   - [x] Scenario Conversation, Meeting Assistant, Realtime-CU, and the adaptive
     video reference construct fine-grained plans and start as `NativeBinding`/
     `NativeRuntime` sessions with exact adapter profiles, authenticated live
     inspection, and no compatibility-node identity. Remaining legacy voice,
-    sidecar, and upstream launch paths plus their incomplete candidate evidence
-    keep the universal parent gate open.
+    sidecar, and upstream launch paths keep the universal parent gate open.
 
 ### Phase 2: decompose the component/cascade path
 
@@ -4137,13 +4058,12 @@ the required new 180-attempt sample.
   acoustic, ASR/trajectory, activation, and interaction components plus the
   complete conversational family cover the topology. The retained historical
   ordinary-turn artifact is diagnostic only; production acceptance comes from
-  the new graph's direct integration and benchmark outcomes.
+  the new graph's direct integration behavior.
   - [x] Compile from fresh locks, bind, mount, and directly execute the acoustic,
     ASR/trajectory, activation, interaction, and complete fast-only/slow-only/
     both-speaking reference safe points. The payload-free ordinary-turn
     comparison is fingerprint-bound and retained as diagnostic evidence;
-    shared-server integration and full live quality populations keep the
-    parent open.
+    shared-server integration coverage keeps the parent open.
 - [x] Make every production Meeting spoken-output lane cross an explicit typed
   control/content-separation boundary before it can reach a user.
   - [x] Complete and mount the text-result quarantine so publication preserves
@@ -4195,7 +4115,7 @@ the required new 180-attempt sample.
   `model.External` element. All three exact artifacts compile, bind, mount
   through the same generic factory, negotiate their selected protocol-v4 ports
   and capabilities, and cross a typed audio/prepared-audio/outcome data plane.
-  Provisioned provider quality remains part of the separate benchmark gates.
+  Concrete provider failures can be investigated with focused diagnostics.
 - [x] Express native and external interaction as topology changes over the same
   foreground element contract. The locked cross-mode regression now sends an
   `answer` act into the external-interaction graph and receives the same act
@@ -5624,62 +5544,28 @@ the required new 180-attempt sample.
 - Measure endpoint-to-first-played-audio, playout gaps, capture/frame drops,
   client transport queues, reconnect recovery, reducer-to-view latency, memory
   growth, and inspection/render overhead in both browser and macOS clients.
-- Run complete system benchmarks using immutable graph/config/profile
-  identities rather than model-family labels.
+- Use system benchmark failures to diagnose behavior, with enough graph/config/
+  profile context to identify the implementation that failed.
 
-### 26.5 Benchmark and behavioral non-regression gates
+### 26.5 Benchmark-driven behavioral repairs
 
-Repository tests answer whether local contracts and deliberately constructed
-examples behave as implemented. They do not answer whether the refactored
-agent still succeeds on real conversations, meeting work, computer use, tool
-calling, overlap, or latency. Project completion therefore requires complete
-new-architecture benchmark evidence and a review against the trusted original
-numbers in addition to all preceding test gates.
+Use existing benchmark failures to test real conversation, meeting, computer-use,
+tool, overlap, and latency behavior. Historical results and partial populations
+can reveal defects even when they cannot support a quantitative comparison.
 
-Each required comparison must follow this protocol:
+1. Inspect the failed case and distinguish an agent failure from an evaluator,
+   fixture, recognition, or provider problem.
+2. Reproduce the relevant behavior through the production path or a focused
+   regression that exercises the same cause.
+3. Fix the underlying state, ordering, policy, or integration defect and verify
+   the affected behavior, including nearby controls that could regress.
+4. State what the checks establish and what uncertainty remains. Broaden the
+   diagnostic run when it answers an unresolved behavior question.
 
-1. Record the benchmark owner's accepted original baseline number and available
-   per-case trail before observing the candidate. Historical per-attempt
-   reconstruction is not required. Pin the complete fixture/scorer and
-   deployment configuration for the new run so its result is reproducible and
-   cannot be silently relabeled.
-2. Run the candidate through the graph-native launch path and exact new values,
-   deployment, and policy artifacts. Every completed task must attest the
-   immutable Graph IR fingerprint and live element/config/capability identities;
-   a candidate that silently falls back to an obsolete binding is invalid.
-3. Report the new aggregate pass rate, every per-task/per-condition result,
-   safety and authority failures, deadline success, interaction errors, and
-   relevant latency distributions including median and tail behavior. Place
-   those results beside every historical aggregate or per-case number that
-   actually survived. Do not fabricate matched historical attempts,
-   transitions, confidence intervals, or media. An aggregate can never erase a
-   severe scenario or safety regression.
-4. Require the complete predeclared candidate population and, for statistically
-   comparable gates, at least the accepted historical quality target. A
-   merely non-significant difference is not proof of parity, and remaining
-   above 80% is not acceptable when the trusted result was materially higher.
-   The interaction-scenario release population is fifteen retained attempts
-   per case (exactly 180 total). Any one-attempt-per-case checkpoint
-   is descriptive diagnostic evidence only. Other suites declare their own
-   complete candidate population before the run.
-5. Treat any material correctness, interaction, safety, deadline, or latency
-   regression as an implementation blocker. Preserve the failed artifact, use
-   graph diff plus runtime/trace evidence to locate the changed path, fix it,
-   rerun the smallest affected diagnostic slice, and then rerun the complete
-   affected suite. Repeat this focused-then-complete cycle until the complete
-   immutable candidate passes; a locally repaired slice never closes the gate.
-
-The required final matrix contains exactly 7,501 attempts: fifteen retained
-attempts for each of the twelve interaction scenarios (180 attempts),
-all four Meeting Assistant v1 tasks through the cascade reference, all sixteen
-Realtime-CU v1 cases, all 498 FDB v1.5 tasks, all 100 FDB v3 examples, all
-6,147 FD-Bench conversations in all 21 conditions, and all 278 tau2-bench/
-tau-Voice tasks in both control and regular conditions. DynaCU-Bench remains an
-independent optional validation; the alternate omni Meeting composition is an
-optional architecture/provider-quality validation. Neither optional run enters
-behavioral acceptance or `release_complete`. No phase exit gate or project-
-level completion claim may substitute a test suite, protocol-conformance run,
-or synthetic integration test for this matrix.
+No complete population, fixed repetition count, frozen shared candidate, new
+archive, paid review, benchmark score report, or measurement program is required
+for project completion or publication. Optional comparison tooling retains its
+own population and integrity checks when explicitly invoked.
 
 ## 27. Compatibility and versioning
 
@@ -5698,9 +5584,9 @@ or synthetic integration test for this matrix.
 - No legacy flag, named binding, migration shim, or historical-result loader is
   part of the new runtime or benchmark design. Obsolete switches are deleted as
   direct profiles take over.
-- Trusted historical numbers remain write-up-only quality targets. Only new
-  candidate attempts require and produce retained per-attempt artifacts; old
-  graph artifacts are never runtime inputs and are not reconstructed.
+- Historical numbers, recordings, and traces remain useful diagnostic inputs.
+  Old graph artifacts are not runtime dependencies and need not be reconstructed;
+  new benchmark archives are optional.
 
 ## 28. Risks and mitigations
 
@@ -5783,7 +5669,8 @@ evidence.
 ## 30. Definition of done
 
 The refactoring is complete when all of the following are checked. None is
-checked from foundation work alone; each requires end-to-end release evidence.
+checked from foundation work alone; each requires checks of its implemented
+behavior. Benchmark campaigns and reporting are not part of this definition.
 
 - [ ] A developer can construct and type-check a graph from arbitrary native,
    sidecar, and remote elements through `.ortg`, normalized YAML/JSON, a
@@ -5824,9 +5711,8 @@ checked from foundation work alone; each requires end-to-end release evidence.
     omni, duplex-native, and upstream-native forms mount and negotiate exact
     protocol-v4 sessions. The executed cross-mode regression proves the common
     typed audio/output behavior and the equivalent `answer` selection through
-    the external input versus native output control ports. Live provider quality
-    and performance remain benchmark gates rather than being inferred from this
-    architecture proof.
+    the external input versus native output control ports. The architecture proof does not establish live provider quality;
+    investigate concrete provider failures with affected-case diagnostics.
 - [x] Channel depth, loss, queue occupancy, and latency contribution are
   visible. The joined operator channel cards bind immutable delivery/depth to
   live occupancy/high-water, drop/backpressure, and queue-wait evidence; the
@@ -5858,25 +5744,12 @@ checked from foundation work alone; each requires end-to-end release evidence.
     have executed regressions, and the fast-only, slow-only, and both-speaking
     graphs execute complete turns with retained artifacts. The reviewed
     Realtime-CU campaign supplies live release evidence for the silent action
-    composition; reference safe-point/protocol parity and the remaining live
-    benchmark evidence keep the parent gate open.
-- [ ] Every required benchmark has accepted, preregistered historical quality
-    targets plus complete, clean, exactly attested graph-native final-candidate
-    artifacts; the candidate satisfies the aggregate and per-case non-
-    regression gates, and every discovered regression has been fixed and
-    followed by a complete-suite rerun. Historical per-attempt artifacts are
-    not reconstructed or required.
-  - [x] Complete, independently reopened graph-native diagnostic populations
-    now exist for Meeting Assistant (4/4 passed and independently reopened in
-    its historical diagnostic campaign) and Realtime-CU (16/16 executed and
-    reopened, 14/16 scored), with exact
-    live graph evidence, retained media, deterministic outcomes, exact-model
-    advisory review, and create-only source/evaluation receipts. The prior FDB
-    v3 100-attempt campaign remains retained but is acceptance-invalid because
-    its scorer admitted extra effects. A repaired FDB v3 population, the final
-    scenario 12×15 population, FD-Bench, both tau-Voice conditions, all other
-    final-candidate reruns, and the resulting full non-regression cycle keep the
-    universal parent gate open.
+    composition; reference safe-point/protocol parity keeps the parent gate open.
+- [ ] Known scenario failures have been diagnosed and their underlying behavior
+    repaired with affected-case checks. Current unresolved work includes
+    acknowledgement content, remaining computer-use settlement/termination
+    cases, and hold/yield interaction behavior. Historical results are valid
+    diagnostic data; no complete campaign, score report, or archive is required.
 - [ ] Supported graph changes mount and unmount without leaked resources or
     silently lost committed work.
   - [x] Leaf and bounded multi-entry implementation, configuration, and

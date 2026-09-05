@@ -7,19 +7,12 @@
 > claims live in the [README](../README.md), and their release gates live in
 > [release validation](release-validation.md).
 
-The claim this project wants to make is not "four voice stacks are supported" —
-that is a release gate, and it is met. It is **"here is what each one is worth,
-measured the same way."**
-
-That answer publishes continuously after launch, and it does not gate the
-release. Shipping before the most interesting claims are provable is a
-deliberate trade: a system nobody can run is not evidence of anything.
-
-## What v1.0 claims
-
-The README says what the system *supports* and what has been *verified*. It
-makes no claim that one configuration beats another, and no such claim appears
-anywhere until this program says so.
+Benchmarks support bug diagnosis and focused verification. Existing results
+remain useful data even when their population is incomplete or their source
+revision is older. There is no required measurement program, score publication,
+or full benchmark campaign before project publication. The experimental design
+and dated results below are historical reference material; they do not define
+current completion requirements.
 
 ## Design
 

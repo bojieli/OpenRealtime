@@ -1,5 +1,12 @@
 # The benchmark harness
 
+Benchmarks help find and fix agent failures. Historical results and focused
+subsets are valid diagnostic inputs; a repair needs checks of the affected
+behavior, not a fresh complete campaign. Benchmark score reporting, external
+review packages, and the measurement program are optional and do not gate
+project completion or publication. Complete-campaign and receipt tools below
+remain available when a quantitative comparison is explicitly wanted.
+
 Every suite reduces to the same thing: drive a timed environment into a session
 and judge what came out. The shared driver can pace audio, schedule protocol
 events, negotiate video sources, stream changing frames while the agent acts,
@@ -18,7 +25,7 @@ openrealtime serve &                       # the system under test
 openrealtime bench fdb --limit 4           # a suite against it
 ```
 
-A graph-native release run freezes the strict scenario profile together with
+An optional attested graph-native run freezes the strict scenario profile together with
 its exact Graph IR, values, resource-free live-resolution probe, and reviewed
 execution requirement. Pass the resulting `execution.json` and `graph.json` to
 the suite so every task is checked against authenticated live inspection:
@@ -38,7 +45,7 @@ openrealtime bench fdb \
 
 The profile is published last and acts as the marker that its create-only
 companions are durable. Omitting the execution pair remains useful for local
-diagnosis, but it cannot support a graph-native release claim.
+diagnosis, but it does not attest which graph produced a quantitative result.
 
 FDB v3 sessions submit the union of every released support tool, so their
 strict application profile must select that exact union before the server can
@@ -713,45 +720,15 @@ page effect; repeated invalid actions exhausted authority; and sessions ran to
 the evaluation horizon. The observer-repair artifact attempted only 4/16 and
 still contains large post-success invalid-action loops.
 
-Focused unit, exact-media, lifecycle, bounded-state, event-reordering,
-acknowledgement-retry, schema/catalog, strict-profile, race, and affected-package
-checks are implementation evidence only. Aggregate, exact-per-case, safety,
-deadline, and latency floors are now registered from candidate-05, but no
-repaired candidate has passed them; the focused
-two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
-campaign remain open; and the final-candidate ledger remains **0/7,501**.
-
-The next benchmark run is intentionally gated on behavior, not on producing a
-new headline number. First complete the three remaining shipped-profile
-subgates: forged cross-node evidence, duplicate/reordered terminal decisions,
-and scorer/live acceptance for canonical failed-result lineage. Ordinary
-failed-effect recovery and the canceled-result cleanup orderings, including
-bounded cleanup, are already production-mounted; the broader gate remains open.
-Then freeze the exact candidate against the registered Realtime-CU
-acceptance domains. Run the two camera, two
-moving-target, and two transient-alert variants as a focused repair set. Every
-failure must be reopened from retained evidence, attributed to code,
-configuration, policy, provider, or evaluator behavior, and repaired before
-the affected focused case is repeated. Only after that loop meets the
-registered constraints should all sixteen cases run and be independently
-reopened from one newly frozen candidate. A behavior-affecting repair
-invalidates affected candidate evidence; it is never hidden by averaging more
-attempts into an aggregate.
-
-The following is a status mirror of the master implementation tracker, not a
-second acceptance source of truth:
-
-| Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
-| --- | ---: | --- | ---: |
-| Interaction scenarios | 180 | Historical 12×1 checkpoints passed earlier scorers. Sustained-counting checks exposed queued-speech cancellation, now repaired with zero quiet-window activity in three fresh trials. First-count omission was repaired at the admission confidence guard. The fifteen-trial event-count diagnostic scores 15/15 and replays exactly, but advisory agreement is 14/15 and exact upstream synthesis WAVs contain unwanted speech in affected counts. Scorer 10 now requires exact audible counts and outside-window silence; separate rescoring establishes 2/15 old recordings. Punctuated-number synthesis controls support an instruction repair. Fresh scorer-10 diagnostics pass event counts 2/3 and question controls 3/3, with all six reviews agreeing. Repeated counts, playback completion/context, acknowledgement content, and recognizer disagreements remain open | 0/180 |
-| Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
-| Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
-| FDB v1.5 | 498 | Historical diagnostic completed 498; 287/430 applicable passes, 68 not applicable (original nominal score 355/498); interruption 15/156 applicable. A 2026-09-05 rerun on `8276a03` reached 309/408 applicable with interruption at 80/161 and yield p50/p95 of 1,002/2,269 ms, but `background_speech` fell to 61/73 and `talking_to_other` to 76/82, and one recording reached no evaluation, so it is not reportable | 0/498 |
-| FDB v3 | 100 | Historical 9/100 is acceptance-invalid because the scorer admitted extra effects | 0/100 |
-| FD-Bench | 6,147 | 1,546 completions and one interrupted attempt are retained; the population is incomplete | 0/6,147 |
-| tau-Voice control | 278 | Older nonreportable diagnostic passed 160/278 | 0/278 |
-| tau-Voice regular | 278 | No graph-native campaign has started | 0/278 |
-| **Total** | **7,501** | Earlier checkpoints remain diagnostic only | **0/7,501** |
+Focused state, ordering, lifecycle, and mounted-profile tests verify the
+implemented repairs. Remaining useful diagnostics include forged or reordered
+settlement evidence, canonical failed-result interpretation, and the camera,
+moving-target, and transient-alert cases that exposed live behavior defects.
+Use the existing recordings to choose and reproduce those failures, repair
+the underlying causes, and validate the affected behavior. No complete sixteen-
+case campaign or broader benchmark quota is required to close an individual
+repair. Historical results remain in the dated study and implementation tracker;
+there is no separate final-candidate credit ledger.
 
 The report also retains cue-to-first-tool, cue-to-effectful-action,
 speech-end-to-action, cue/frame-to-observation, action execution, and total
@@ -806,7 +783,7 @@ do not turn a partial, filtered, dirty-tree, or unavailable-provider run into a
 ranking.
 
 The cascade four-case cell is the required Meeting Assistant result in the
-7,501-attempt behavioral acceptance matrix. The Omni cell is independent,
+optional eight-suite comparison contract. The Omni cell is independent,
 opt-in architecture/provider-quality validation; when selected it still must
 run all four cases, but it does not enter behavioral acceptance or
 `release_complete`.
