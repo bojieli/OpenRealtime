@@ -1,11 +1,44 @@
 # Architecture
 
-This document describes the currently shipped architecture. The
-[composable agent graph proposal](composable-agent-graph.md) defines the
-proposed target architecture and refactoring plan for general multimodal
-real-time agents. It deliberately revisits some binding, ownership, mandatory
-audio, and slow-cognition constraints described below; until that migration is
-implemented, this document remains the authority for current behavior.
+OpenRealtime has a typed graph runtime alongside the earlier binding-based
+launch paths. The graph implementation already runs Scenario Conversation,
+Meeting Assistant, Realtime-CU, adaptive video, and the locked conversational
+and external-model reference compositions. The
+[living tracker](composable-agent-graph.md#living-implementation-tracker)
+identifies the remaining launch, authoring, and lifecycle work.
+
+## Graph composition
+
+A locked `.ortg` topology or normalized YAML/JSON source compiles to immutable
+Graph IR. Nodes declare typed ports, triggers, cancellation, dependencies, and
+effects. Separate values and deployment artifacts select configuration and
+implementations. A launch profile mounts that exact plan; inspection reports
+its fingerprint and live component identities. The
+[production assembly guide](graph-native-assembly.md) describes preparation,
+and [ADR-0015](adr/0015-agent-topology-is-a-versioned-graph.md) records which
+earlier topology restrictions were superseded.
+
+Speech and tool roles follow the selected graph. The
+[fast-only](../graphs/components/conversational-fast-only/agent.ortg),
+[slow-only](../graphs/components/conversational-slow-only/agent.ortg), and
+[both-speaking](../graphs/components/conversational-both/agent.ortg) references
+execute complete turns through the same runtime. Text/file cognition and
+[silent computer use](realtime-computer-use-graph.md) omit speech entirely.
+Native and external interaction are alternative connections over the same
+external-model element. Control paths carry typed decisions, interrupts,
+acknowledgements, and the evidence those decisions require.
+
+Across these compositions, canonical history, causal provenance, bounded
+queues, cancellation, and independent action authority remain explicit
+contracts. A model's role or output alone does not authorize an external effect.
+
+## Existing binding-based voice configurations
+
+The rest of this page describes the earlier voice composition still selected
+by the default and binding-based CLI paths. Its single event loop, silent
+background reasoner, timing flags, and ownership presets are properties of
+those configurations. They do not restrict graph compositions. Replacing the
+remaining binding launch paths is still tracked implementation work.
 
 Four subsystems over one session core. Three of them move and transform data;
 the fourth decides *when* the other three act.
@@ -51,7 +84,7 @@ outside world, it reads the log and appends to the log. What the three have in
 common is only that data flows through them, which is the definition of a data
 plane.
 
-## Interaction carries no data
+## Interaction in the binding reference
 
 Trigger cadence, speculative pre-start, floor ownership, barge-in,
 commit-versus-cancel — these are decisions *about when*, made over evidence
@@ -141,8 +174,9 @@ speak with the user hearing it gets every overlap decision wrong.
 
 ## Cognition roles and boundaries
 
-> **Fast is proposal-only by default and can execute only an explicitly
-> filtered bounded tool lane. Slow cannot speak.**
+In this binding reference, Fast is proposal-only by default and can execute
+only an explicitly filtered bounded tool lane. Slow returns background state
+for Fast to present; it is not connected directly to speech.
 
 Both are properties of the provider descriptor, checked once at construction
 and enforced where output commits. In the default arrangement a fast

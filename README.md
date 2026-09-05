@@ -113,16 +113,23 @@ revision.
 
 ## A voice with a second brain
 
-OpenRealtime separates the conversational reflex from deliberation. Both read
-and extend one canonical trajectory, but their authority is intentionally
-different:
+The default voice configuration pairs a conversational foreground with a
+background reasoner over one canonical trajectory. The foreground speaks;
+the background can work with tools and return results for the foreground to
+present.
 
-> **Fast cognition speaks but is proposal-only by default. Slow cognition can
-> reason and use tools, but it never speaks directly.**
+These roles are choices of composition. The graph runtime also includes
+[fast-only](graphs/components/conversational-fast-only/agent.ortg),
+[slow-only](graphs/components/conversational-slow-only/agent.ortg), and
+[both-speaking](graphs/components/conversational-both/agent.ortg) reference
+graphs, plus [silent computer use](docs/realtime-computer-use-graph.md).
+Either cognition role can produce speech when connected to the speech path.
+Every tool proposal still needs independent action admission, confirmation,
+target checks, and a committed result. See the
+[architecture reference](docs/architecture.md) for the implemented compositions
+and remaining transition from binding-based launch paths.
 
-The foreground answers the person in front of it. The background reasoner can
-keep working, call a tool, and place the result back into the shared
-conversation for the voice to present naturally.
+The default voice arrangement looks like this:
 
 ```mermaid
 flowchart LR
@@ -180,21 +187,21 @@ See the [compatibility report](docs/openai-realtime-compatibility.md),
 [stable API contract](docs/api-v1.md), and [release validation
 matrix](docs/release-validation.md).
 
-## Built to be measured
+## Find failures with the benchmark harness
 
-OpenRealtime ships the harness used to evaluate it. Benchmark cells record the
-architecture, models, prompts, configuration, executable identity, timing, and
-negative results. Support claims and comparative claims are kept separate: a
-configuration can be production-capable without pretending it has already won
-a benchmark.
+The harness exercises conversations, interruptions, meeting work, tools, and
+computer use through the same protocol clients use. Existing recordings and
+partial runs help locate agent, provider, and evaluator failures. Reproduce a
+bad case, fix its cause, and check the affected behavior.
 
 ```bash
 ./openrealtime bench realtime-cu -out results/realtime-cu.json
 ```
 
-Start with the [benchmark guide](docs/benchmarks.md). The longer
-[measurement record](docs/measurement.md) is deliberately preserved as a
-research log, not presented as onboarding documentation.
+The [benchmark guide](docs/benchmarks.md) explains suite selection and setup.
+Full campaigns, external reviews, and published benchmark scores are optional.
+The [measurement record](docs/measurement.md) preserves earlier experiments
+as diagnostic reference material.
 
 ## Find your path
 

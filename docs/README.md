@@ -41,8 +41,8 @@ they are not required reading to run or extend OpenRealtime.
 
 Read these in order if you want the conceptual model:
 
-1. [Architecture](architecture.md) — perception, cognition, action, the
-   interaction control plane, and the shared session core.
+1. [Architecture](architecture.md) — typed graph composition, shared behavior
+   contracts, and the existing binding-based voice configurations.
 2. [Bindings and capability composition](bindings/README.md) — how cascade,
    upstream, omni, duplex, and sidecars select model ownership.
 3. [OpenRealtime Protocol v1](protocol/openrealtime-1.md) — the normative video,
