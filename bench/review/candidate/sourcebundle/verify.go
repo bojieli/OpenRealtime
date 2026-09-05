@@ -458,7 +458,7 @@ func decodeCanonicalBounded(payload []byte, destination any, maximum int) error 
 		return err
 	}
 	canonical, err := canonicalIndentedBounded(destination, maximum)
-	if err != nil || !bytes.Equal(payload, canonical) {
+	if err != nil || !bytes.Equal(payload, canonical) && !matchesLegacyRuntimeJSON(payload, destination, true) {
 		return errors.New("candidate source JSON is noncanonical")
 	}
 	return nil
@@ -482,7 +482,7 @@ func decodeCompact(payload []byte, destination any) error {
 		return err
 	}
 	canonical, err := canonicalCompact(destination)
-	if err != nil || !bytes.Equal(payload, canonical) {
+	if err != nil || !bytes.Equal(payload, canonical) && !matchesLegacyRuntimeJSON(payload, destination, false) {
 		return errors.New("candidate source compact JSON is noncanonical")
 	}
 	return nil

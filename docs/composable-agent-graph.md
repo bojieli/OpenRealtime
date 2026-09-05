@@ -5720,7 +5720,7 @@ checked from foundation work alone; each requires end-to-end release evidence.
     advisory review, and create-only source/evaluation receipts. The prior FDB
     v3 100-attempt campaign remains retained but is acceptance-invalid because
     its scorer admitted extra effects. A repaired FDB v3 population, the final
-    scenario 11×15 population, FD-Bench, both tau-Voice conditions, all other
+    scenario 12×15 population, FD-Bench, both tau-Voice conditions, all other
     final-candidate reruns, and the resulting full non-regression cycle keep the
     universal parent gate open.
 - [ ] Supported graph changes mount and unmount without leaked resources or

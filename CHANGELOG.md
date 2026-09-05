@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- Historical candidate-source receipts reopen after runtime status became
+  sparse. The archive verifier recognizes the former status encoding in
+  completions and review contexts while enforcing the original file hashes,
+  strict schemas, and canonical bytes. All 498 retained FDB recordings and
+  advisory evaluations reopen with the current binary.
 - FDB overlap evaluation now separates completed recordings from applicable
   behavior in scores, sealed reviews, comparisons, and release acceptance.
   Inapplicable recordings cannot earn passes. The retained 498-recording

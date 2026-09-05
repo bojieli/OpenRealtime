@@ -216,6 +216,16 @@ current quality comparison or final candidate. The retained complete
 applicable passes, versus the original nominal 59/200. This is a correction to
 the interpretation of retained evidence, not a new benchmark run.
 
+The source verifier also recognizes the historical runtime-status encoding
+that retained empty observer and capability fields. The change to sparse live
+status had otherwise made those older canonical completions unreadable.
+Compatibility is confined to source completions and review contexts, after
+strict typed decoding; the verifier still requires the original file hashes
+and an exact current or historical encoding. The 498 source recordings and
+498 advisory evaluations were reopened on 2026-09-05 with the repaired
+verifier, against aggregate receipt
+`sha256:a375c4a48ee694ea11e77c6874f6e2f42397b024a6949b71a9fcf34d9bc77d3b`.
+
 The checked acceptance registry translates that exact history to a 287-pass,
 430-applicable floor. Every one of the 430 previously applicable cases must
 remain applicable, including all 143 failures, and every applicable historical
