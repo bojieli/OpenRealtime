@@ -869,6 +869,99 @@ next thing to look at is what already-synthesised audio does when cancellation
 arrives, since sentence-granular synthesis would produce exactly this shape;
 that is a hypothesis and it has not been tested.
 
+## Where the interruption second actually goes
+
+The section above left a hypothesis: that already-synthesised audio was being
+drained after cancellation, and that sentence-granular synthesis would produce
+the observed floor. It was wrong, and so was the whole framing. Answering it
+needed the timed record of a run rather than another rebuild, so the suite
+learned to keep one (`bench fdb -transcripts`), and the endpoint's own
+`audio_start_ms` was retained beside the arrival time of each event. Thirty
+`user_interruption` recordings, twice each, against the same frozen profile.
+Retained under `.runtime/fdb-decompose`.
+
+**The stop path divides in two, and the second half is not the problem.**
+
+| | detection | stop, after detection | total |
+| --- | ---: | ---: | ---: |
+| attempts scored as passing | 275 ms | 518 ms | 793 ms |
+| attempts scored as failing | 549 ms | 681 ms | 1,142 ms |
+
+Medians over 50 attempts. Detection is the time from the recording's annotated
+event to `input_audio_buffer.speech_started`; the rest is everything after it,
+which ends when the last audio delta of the interrupted answer leaves. The
+second column barely moves between a pass and a failure. The first doubles.
+Every one of the eighteen failures had a stop-after-detection inside the
+one-second window: had the endpoint reported the speech at the annotated
+moment, all eighteen would have passed.
+
+The engine's own log says why the second column is what it is. Over the run it
+recorded "overlapping speech is directed at the agent" 66 times and
+"configured unclassified-overlap fallback yields the floor" 6 times, counted
+over the seventy-nine turns that produced no speech. The semantic classifier is
+answering, not timing out, so the half second is what the engine spends between
+hearing the overlap and having a decision it can act on. The 800 ms hold is a
+ceiling that binds one turn in twelve. That also explains the refuted deadline
+experiment in the section above: the `-transcript-timeout-ms` knob belongs to
+the transcript-event policy, which accounted for five of those seventy-nine. It
+was never on the path.
+
+**Then detection turned out not to be the engine's either.** The recordings
+carry two timestamps saying when the event happens. Treating the first as the
+moment the person begins talking over the agent is wrong: it is where the event
+clip was placed in the mix, and the clip begins with whatever silence the
+speaker left. Measuring the first 20 ms block of `input.wav` after the
+annotation that reaches an RMS of 640, across the whole of FDB v1.5:
+
+| Category | Median lead | Over 400 ms |
+| --- | ---: | ---: |
+| `user_interruption` | 260 ms | 66 of 200 |
+| `background_speech` | 120 ms | 1 of 100 |
+| `talking_to_other` | 50 ms | 0 of 100 |
+| `user_backchannel` | 20 ms | 0 of 98 |
+
+One recording begins 1,460 ms of silence after its own annotation. The padding
+is confined to the one category scored against a one-second deadline, and it is
+not a threshold artifact: sweeping the floor across 24 dB, from 160 to 2,560,
+moves the median lead only from 240 ms to 360 ms.
+
+Against the first sound rather than the annotation, the detector costs a median
+of 84 ms, with a quartile range of 42 to 101 ms and a worst case of 289 ms over
+25 recordings. That is the whole of the acoustic stage. The recording that took
+1,424 ms to detect is silent for 1,340 ms after its annotation; the gate fired
+84 ms after the sound arrived, like every other one.
+
+**What the category was measuring.**
+
+| Window opens at | Attempts within 1 s | p50 | p75 | p90 | max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| the annotation | 32 of 50 | 933 ms | 1,072 ms | 1,378 ms | 1,709 ms |
+| the first sound | 50 of 50 | 609 ms | 799 ms | 857 ms | 878 ms |
+
+Eleven of the twenty-five recordings change verdict, and every one of them is
+explained by its own lead: 1,340 ms for recording 7, 720 for 5, 500 for 9 and
+19, 480 for 4. The engine yielded within 878 ms of the user making a sound in
+every attempt of every recording, twice each. The scorer now opens all of its
+windows at the first sound and reports `event_audible_after_ms` and
+`yield_latency_from_annotation_ms` on every task, so a run scored before this
+can be reconciled with one scored after.
+
+This does not make the suite easier. The three categories that ask the agent to
+*hold* have almost no lead, so their windows move by tens of milliseconds, and
+they move later, which asks the agent to hold slightly longer.
+
+**The same question is open in FD-Bench and is harder there.** Its scorer
+measures response latency from a turn's annotated end and counts agent audio
+inside the annotated turn as speaking over the person. Sampling twelve
+conversations in each of eight conditions, the audio inside a turn goes quiet a
+median of 220 to 350 ms before the annotated end, with a p90 between 500 and
+1,460 ms. An agent that endpoints on real silence and answers quickly therefore
+produces audio inside the annotated turn and is charged for it. The fix that
+worked for FDB v1.5 does not transfer unaltered: in the `noisy-bg-0dB`
+condition the background never falls below a fixed floor, so the same
+measurement reports no trailing silence at all. This is recorded as measured
+and unfixed.
+
 ## Which benchmark suites benefit
 
 Sub-turn classification is an interaction/timing intervention, not a universal
