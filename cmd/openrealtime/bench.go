@@ -1080,6 +1080,7 @@ func runFDB(arguments []string, output io.Writer) error {
 		varyLevel       string
 		executionPath   string
 		inspectionGraph string
+		transcripts     string
 		timeout         time.Duration
 	)
 	flags.StringVar(&root, "dataset", ".runtime/full-duplex-bench-v1.5/dataset", "FDB v1.5 dataset root")
@@ -1098,6 +1099,8 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.StringVar(&varyLevel, "level", "", "the level it varies to")
 	flags.StringVar(&executionPath, "execution", "", benchmarkExecutionFlagHelp)
 	flags.StringVar(&inspectionGraph, "inspection-graph", "", benchmarkInspectionGraphFlagHelp)
+	flags.StringVar(&transcripts, "transcripts", "",
+		"write one timed record per attempt into this directory; a score cannot say where a millisecond went")
 	flags.DurationVar(&timeout, "task-timeout", 3*time.Minute, "how long one recording may take")
 	reviewConfig.bind(flags)
 	flags.SetOutput(output)
@@ -1136,6 +1139,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	runOptions := fdb.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Repeat: repeat, Timeout: timeout,
+		Transcripts:     transcripts,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}

@@ -42,6 +42,15 @@ type Moment struct {
 	// AtMS remains its arrival time; a prefetched response may finish on the
 	// wire before its queued audio has played. Historical moments omit this.
 	PlayoutAtMS float64 `json:"playout_at_ms,omitempty"`
+	// StreamAtMS is where in the input audio the endpoint says this happened.
+	//
+	// A speech_started event carries audio_start_ms, which is the endpoint's
+	// own position in the stream it was fed - not when the notice reached the
+	// client. Keeping only the arrival time confuses two different questions:
+	// how long the detector took to hear speech, and how long the notice took
+	// to come back. Subtracting one from the other separates them. Endpoints
+	// that omit the field leave this zero.
+	StreamAtMS float64 `json:"stream_at_ms,omitempty"`
 	// Response fields preserve protocol evidence without inferring why a
 	// response ended. Empty fields mean that the endpoint did not supply them.
 	ResponseID           string `json:"response_id,omitempty"`
@@ -1087,9 +1096,17 @@ func (recorder *recorder) handle(
 		recorder.openResponses++
 		recorder.mu.Unlock()
 	case "input_audio_buffer.speech_started":
-		recorder.add(Moment{Kind: MomentSpeechStarted})
+		var decoded struct {
+			AudioStartMS float64 `json:"audio_start_ms"`
+		}
+		_ = event.Decode(&decoded)
+		recorder.add(Moment{Kind: MomentSpeechStarted, StreamAtMS: decoded.AudioStartMS})
 	case "input_audio_buffer.speech_stopped":
-		recorder.add(Moment{Kind: MomentSpeechStopped})
+		var decoded struct {
+			AudioEndMS float64 `json:"audio_end_ms"`
+		}
+		_ = event.Decode(&decoded)
+		recorder.add(Moment{Kind: MomentSpeechStopped, StreamAtMS: decoded.AudioEndMS})
 	case "conversation.item.input_audio_transcription.completed":
 		var decoded struct {
 			Transcript string `json:"transcript"`

@@ -4,6 +4,17 @@
 
 ### Highlights
 
+- The full-duplex suite can keep the timed record each score was derived
+  from, with `-transcripts`. A score is one word per recording and the
+  interruption category is decided inside a window of one second, so the
+  difference between yielding eighty milliseconds late and never yielding
+  arrived as the same word. Two earlier explanations for that window were
+  each tested by rebuilding the server and re-running thirty recordings
+  three times, about forty minutes an answer; the same question is now
+  answered from one run, offline. Benchmark sessions also retain
+  `audio_start_ms` and `audio_end_ms` alongside arrival time, which is what
+  separates a slow detector from a slow notice.
+
 - Concurrent graph shutdown callers now wait for the same completed cleanup
   even when the graph was mounted but never run. Each caller can cancel its
   own wait while resource retirement continues, and subsequent callers receive

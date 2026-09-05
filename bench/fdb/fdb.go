@@ -179,6 +179,11 @@ type Options struct {
 	// EvidenceOrigin must explicitly identify a production or hermetic shared
 	// endpoint whenever Evidence is configured.
 	EvidenceOrigin candidate.RunOrigin
+	// Transcripts, when set, is a directory receiving one timed record per
+	// attempt. It changes nothing about how a run is scored; it keeps the
+	// evidence a score is derived from, so a latency can be decomposed after
+	// the fact instead of by rebuilding the server and running again.
+	Transcripts string
 }
 
 // Run executes the suite.
@@ -357,6 +362,19 @@ func runSample(
 	var err error
 	transcript, err = bench.Play(ctx, config, sample.AudioPath)
 	outcome.AttachExecution(transcript)
+	// Before any early return. A recording that failed or timed out is the one
+	// whose timed record is worth reading.
+	defer func() {
+		if options.Transcripts == "" {
+			return
+		}
+		evidenceErr = errors.Join(evidenceErr, WriteTranscript(options.Transcripts, TranscriptRecord{
+			Case: caseID, Recording: sample.ID, Trial: trial, Category: sample.Category,
+			EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
+			ShouldYield: sample.Category.ShouldYield(),
+			Outcome:     outcome, Transcript: transcript,
+		}))
+	}()
 	if err != nil {
 		outcome.Error = err.Error()
 		return outcome, evidenceErr
