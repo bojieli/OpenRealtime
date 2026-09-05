@@ -716,7 +716,7 @@ second acceptance source of truth:
 
 | Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
 | --- | ---: | --- | ---: |
-| Interaction scenarios | 180 | Historical 12×1 checkpoints passed earlier scorers. Sustained-counting checks exposed queued-speech cancellation, now repaired with zero quiet-window activity in three fresh trials. First-count omission was reproduced at the admission confidence guard; its repair passes three event counts and three ordinary-question controls with verified review and score replay. Fifteen-repeat reliability, acknowledgement content, and recognizer disagreements remain open | 0/180 |
+| Interaction scenarios | 180 | Historical 12×1 checkpoints passed earlier scorers. Sustained-counting checks exposed queued-speech cancellation, now repaired with zero quiet-window activity in three fresh trials. First-count omission was repaired at the admission confidence guard. The fifteen-trial event-count diagnostic scores 15/15 and replays exactly, but advisory agreement is 14/15 and exact upstream synthesis WAVs contain unwanted speech in affected counts. Audible-count evaluation, short-number TTS, acknowledgement content, and recognizer disagreements remain open | 0/180 |
 | Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
 | Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
 | FDB v1.5 | 498 | Historical diagnostic completed 498; 287/430 applicable passes, 68 not applicable (original nominal score 355/498); interruption 15/156 applicable | 0/498 |

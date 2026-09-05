@@ -1108,3 +1108,71 @@ projections, commands, regression/mutation logs, and the developer gate.
 The isolated server and tracing proxies stopped without touching shared
 services. The complete fifteen-trial case and final-candidate acceptance remain
 open; the earlier failed recordings and scores remain unchanged.
+
+## Fifteen event counts and audible-content disagreement
+
+A separate fifteen-trial event-count diagnostic used the same clean `0424eaf`
+source and byte-identical executable as the six-trial repair/control campaign.
+All fifteen deterministic scorer-9 outcomes pass. All fifteen source/review
+records verify, all outcomes and metrics replay, and every review has usable
+media. The campaign is retained under
+`artifacts/scenario-count-admission-15x-20260905-01` with its own exact source,
+binary, profile, provider traces, commands, and receipts. It is a diagnostic
+population; no attempt enters the shared final-candidate ledger.
+
+Every session makes two model requests returning `1` and `2`, followed by the
+matching two synthesis requests. All thirty model and thirty synthesis streams
+finish upstream. Trials 2, 5, 7, 9, 11, 14, and 15 reproduce the old final
+`answer` confidence of 0.6511 with strongly verified `condition-met`; each now
+invokes the model for the first count. This strengthens the admission-repair
+evidence without establishing that every emitted digit was spoken correctly.
+
+The advisory reviews agree with 14/15 pass labels. Trial 12 is judged a failure
+because its first count contains unwanted speech resembling “This is Pierce…”
+instead of only the number. Trial 5 retains a significant garbled second-count
+finding despite its reviewer marking agreement with the deterministic pass.
+Other reviews retain distorted first counts as minor observations. Their
+labels and explanations remain unchanged; binary agreement cannot erase an
+audible-content finding or resolve inconsistent severity judgments.
+
+The exact-window audit verifies each source WAV against its media manifest,
+extracts only the agent channel around the response's recorded playout, and
+makes fresh, separately retained recognition requests. Both recognizers hear
+non-count speech on the affected windows. The same audit against the exact
+upstream 44.1 kHz synthesis WAVs locates that speech before playback:
+
+| Synthesis exchange | Input text | SenseVoice on upstream WAV | Whisper on upstream WAV |
+| --- | --- | --- | --- |
+| Trial 3, first count | `1` | “It's serve.” | “If swerve.” |
+| Trial 5, second count | `2` | “Ever as mom.” | “Ever. And mom.” |
+| Trial 12, first count | `1` | “This is Pierce, Da K.” | “This is Pierce. Daekwon?” |
+
+These observations support a synthesis defect for those recordings. The
+reviewer's proposed reference-prompt-leak explanation is not established by
+the trace alone. The retained request names only the digit, `reference_id:
+default`, no inline references, normalization enabled, and temperature 0.8.
+The services also disagree on short control windows: the supposedly clear
+trial-5 first count becomes “Yeah.” or empty, and trial-1's second count becomes
+“22.” or “to one two”. Neither recognizer is a demonstrated oracle for all
+single-digit speech, and choosing a preferred recognition does not resolve the
+evaluation contract.
+
+Scorer 9's event-count `CheckSaid` checks reported agent text and associated
+timing; its replay inputs have no independent event-count hearings. Consequently
+correct `1`/`2` text can pass alongside garbled or extraneous synthesized speech.
+The next repair must make audible count content and “say nothing else”
+independently observable, preserve ambiguous recognition, diagnose the upstream
+short-number synthesis, and rerun the repeated case under the strengthened
+scorer. The fifteen-repeat recording milestone therefore does not close the
+event-count acceptance box.
+
+Source receipt:
+`sha256:984ca3b5325f6a0982779d2b32da54eb35c0e8825ca875d558d6c456b69f4983`.
+Advisory receipt:
+`sha256:c4a4b2e95fb385a174df940b5d055c882411b88d36b0638416c56c3f4015ab5c`.
+`count-summary.json` joins each trial with provider observations, confidences,
+reviews, and exact result digests. The hearing audit's initial response-variable
+serialization error and corrected retry are retained separately; existing
+observations were reused without replacement. The server and proxies on
+18977–18979 stopped, and private intermediate policy capture was removed after
+safe projection. Shared services and colleague processes were preserved.
