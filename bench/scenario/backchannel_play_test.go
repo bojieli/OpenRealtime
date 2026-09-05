@@ -18,7 +18,7 @@ import (
 )
 
 func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
-	for _, mode := range []string{"continues", "stops", "silent-packet"} {
+	for _, mode := range []string{"continues", "stops", "silent-packet", "cancelled-then-restarts"} {
 		t.Run(mode, func(t *testing.T) {
 			samples := activityCapture([2]int{0, 2000}).Agent[0].PCM16
 			if mode == "stops" {
@@ -50,12 +50,24 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 						continue
 					}
 					sent = true
-					for _, event := range []map[string]any{
+					initialPCM, status := pcm, "completed"
+					if mode == "cancelled-then-restarts" {
+						initialPCM, status = pcm[:1200*24*2], "cancelled"
+					}
+					events := []map[string]any{
 						{"type": "response.created"},
 						{"type": "response.output_audio_transcript.delta", "response_id": "response-fixture", "delta": "Here are the refund details."},
-						{"type": "response.output_audio.delta", "response_id": "response-fixture", "delta": base64.StdEncoding.EncodeToString(pcm)},
-						{"type": "response.done", "response": map[string]any{"id": "response-fixture", "status": "completed"}},
-					} {
+						{"type": "response.output_audio.delta", "response_id": "response-fixture", "delta": base64.StdEncoding.EncodeToString(initialPCM)},
+						{"type": "response.done", "response": map[string]any{"id": "response-fixture", "status": status}},
+					}
+					if mode == "cancelled-then-restarts" {
+						events = append(events,
+							map[string]any{"type": "response.created"},
+							map[string]any{"type": "response.output_audio.delta", "response_id": "replacement", "delta": base64.StdEncoding.EncodeToString(pcm[len(initialPCM):])},
+							map[string]any{"type": "response.done", "response": map[string]any{"id": "replacement", "status": "completed"}},
+						)
+					}
+					for _, event := range events {
 						encoded, _ := json.Marshal(event)
 						if err := connection.Write(r.Context(), websocket.MessageText, encoded); err != nil {
 							return
@@ -88,6 +100,7 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 			// Retention owns the measured numbers; later caller mutation must
 			// not rewrite the human review independently of its recorded audio.
 			original := result.Holds[0]
+			original.Responses = append([]HoldResponse(nil), original.Responses...)
 			result.Holds[0].BeforeActiveMS = 9999
 			if len(original.Responses) > 0 {
 				result.Holds[0].Responses[0].Status = "caller-mutated"
@@ -112,15 +125,15 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 			reopened := ScoreWithAudio(item, timeline, result.Transcript, bench.SessionAudioCapture{SampleRateHz: 24_000,
 				Agent: []bench.TimedAudioChunk{{AtMS: 0, PCM16: agent}}})
 			// Recompute from the retained audio and original terminal transcript.
-			if len(original.Responses) > 0 {
-				result.Holds[0].Responses[0].Status = "completed"
-			}
 			if reopened.Passed != result.Passed || !reflect.DeepEqual(reopened.Holds, result.Holds) {
 				t.Fatalf("retained WAV does not reproduce activity: %+v versus %+v", reopened.Holds, result.Holds)
 			}
 			review, err := os.ReadFile(filepath.Join(directory, "REVIEW.md"))
 			if err != nil || !strings.Contains(string(review), "Acknowledgement line 1:") || !strings.Contains(string(review), "longest pause") || strings.Contains(string(review), "9999 ms") || strings.Contains(string(review), "caller-mutated") {
 				t.Fatalf("final review lost or changed measurements: %v\n%s", err, review)
+			}
+			if mode == "cancelled-then-restarts" && (!strings.Contains(string(review), "response-fixture: cancelled") || !strings.Contains(string(review), "continuous replacement audio cannot establish turn preservation") || original.AfterActiveMS <= audibleMS) {
+				t.Fatalf("cancelled speech plus audible restart was not rejected in retained review: %s", review)
 			}
 			if mode == "continues" && (!strings.Contains(string(review), "response-fixture: completed") || !strings.Contains(string(review), "does not establish why speech ended")) {
 				t.Fatalf("review lost terminal evidence or attribution limit: %s", review)

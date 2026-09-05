@@ -185,7 +185,7 @@ profile and evidence workflow.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 4`. Content checks match whole words and numbers, ignoring
+`scorer_version: 5`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -219,23 +219,35 @@ on the wire before the listener hears its audio end. A status of `completed`
 does not establish that the explanation was complete; `cancelled` does not
 prove that this backchannel caused the stop. Missing, unknown, or duplicated
 terminal evidence is explicit and never borrowed from another response.
-Response diagnostics do not change the acoustic thresholds or turn missing
-continuation into a pass.
+Version 5 also requires a complete response-to-audio join and recognized,
+unambiguous terminal evidence. An overlapping response that reports
+`cancelled`, `failed`, or `incomplete` at or before the hold window ends fails
+that hold, even if later responses fill the acoustic window. Cancellation
+later than the window does not retroactively fail an earlier hold. Prefetched
+audio cannot hide an earlier aborted response; naturally completed speech
+segments may follow one another without requiring one response ID for the
+whole explanation. Nonzero samples in active frames must be covered by the
+recorded response audio intervals. Unattributed activity is retained as
+`unattributed_active_ms` and fails as unverified. Silence padding in retained
+WAVs does not require response attribution. Acoustic thresholds are unchanged.
 
 Results retain each check's windows, activity durations, and longest pause in
 `holds`; the media-linked review renders the same measurements. `Play` supplies
 the capture automatically, and `ScoreWithAudio` can examine retained PCM.
-Transcript-only `Score` cannot verify this check. This tests acoustic
-continuation, not whether arbitrary audible content continues the same
-explanation; the content checks and independent media review still matter.
+Transcript-only `Score` cannot verify this check. The combined check rules
+out observed protocol interruption within the measured window; it does not
+establish that arbitrary audible content continues the same explanation.
+Content checks and independent media review still matter. The first fixed
+acknowledgement can arrive before speech starts; a future diagnostic anchored
+to observed speech is needed to separate that opportunity from startup timing.
 
 These are deterministic content requirements, not a general semantic judge.
 Negation, contradictory statements, invented dialogue, and audible quality
 still require the separately retained media review and further scorer work.
 The twelve-case wire contract and 180-attempt release population are unchanged.
-Historical unversioned, version-2, and version-3 results retain their original labels and
+Historical results through version 4 retain their original labels and
 receipts; a passing historical recording does not establish a pass under
-version 4. In particular, the retained v28 acknowledgement recording has no
+version 5. In particular, the retained v28 acknowledgement recording has no
 agent activity after its second backchannel and does not meet the new check;
 see the [separately attributed waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit).
 
@@ -609,7 +621,7 @@ second acceptance source of truth:
 
 | Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
 | --- | ---: | --- | ---: |
-| Interaction scenarios | 180 | Twelve cases × 15 since the 2026-09-04 promotion; the retained 12×1 checkpoint passed 12/12, and the earlier sealed 11-case diagnostic passed 8/11 | 0/180 |
+| Interaction scenarios | 180 | Historical 12×1 checkpoint passed its earlier scorer; the latest grounded acknowledgement diagnostic completed three trials and failed all three, exposing cancellation despite later audio | 0/180 |
 | Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
 | Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
 | FDB v1.5 | 498 | Historical diagnostic completed 498; 287/430 applicable passes, 68 not applicable (original nominal score 355/498); interruption 15/156 applicable | 0/498 |

@@ -536,6 +536,9 @@ func renderReviewTranscript(output *strings.Builder, result Result) {
 		if hold.ResponseEvidence != "" {
 			fmt.Fprintf(output, "- Response evidence: %s. Terminal status describes protocol completion; it does not establish why speech ended.\n", markdownText(hold.ResponseEvidence))
 		}
+		if hold.UnattributedActiveMS > 0 {
+			fmt.Fprintf(output, "- Active audio without response attribution: %.3f ms.\n", hold.UnattributedActiveMS)
+		}
 		for _, response := range hold.Responses {
 			fmt.Fprintf(output, "- Response %s: %s; audio playout %.0f–%.0f ms",
 				markdownText(response.ResponseID), markdownText(response.Status), response.AudioFromMS, response.AudioToMS)

@@ -17,8 +17,10 @@ import (
 // version 3 also requires recorded acoustic continuity across acknowledgements.
 // Version 4 supplies refund source content, checks explanation coverage, and
 // retains response-terminal evidence without inferring cancellation from silence.
+// Version 5 also requires attributed audio and rejects responses aborted before
+// the hold ends, even when replacement audio fills the acoustic window.
 // Earlier scores are not evidence for this version.
-const ScorerVersion uint64 = 4
+const ScorerVersion uint64 = 5
 
 func validateCheckKind(check Check) error {
 	switch check.Kind {

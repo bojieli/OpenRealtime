@@ -18,24 +18,27 @@ const (
 // text events or the arrival time of a prefetched audio packet. Activity is
 // an acoustic proxy, not proof that the same semantic explanation continued.
 type HoldMeasurement struct {
-	Line             int            `json:"line"`
-	FromMS           int            `json:"from_ms"`
-	TriggerStartMS   int            `json:"trigger_start_ms"`
-	TriggerEndMS     int            `json:"trigger_end_ms"`
-	ToMS             int            `json:"to_ms"`
-	BeforeActiveMS   float64        `json:"before_active_ms"`
-	DuringActiveMS   float64        `json:"during_active_ms"`
-	AfterActiveMS    float64        `json:"after_active_ms"`
-	LongestGapMS     float64        `json:"longest_gap_ms"`
-	GapLimitMS       int            `json:"gap_limit_ms"`
-	ResponseEvidence string         `json:"response_evidence,omitempty"`
-	Responses        []HoldResponse `json:"responses,omitempty"`
+	Line                 int            `json:"line"`
+	FromMS               int            `json:"from_ms"`
+	TriggerStartMS       int            `json:"trigger_start_ms"`
+	TriggerEndMS         int            `json:"trigger_end_ms"`
+	ToMS                 int            `json:"to_ms"`
+	BeforeActiveMS       float64        `json:"before_active_ms"`
+	DuringActiveMS       float64        `json:"during_active_ms"`
+	AfterActiveMS        float64        `json:"after_active_ms"`
+	LongestGapMS         float64        `json:"longest_gap_ms"`
+	GapLimitMS           int            `json:"gap_limit_ms"`
+	ResponseEvidence     string         `json:"response_evidence,omitempty"`
+	UnattributedActiveMS float64        `json:"unattributed_active_ms,omitempty"`
+	Responses            []HoldResponse `json:"responses,omitempty"`
 }
 
 // HoldResponse records the terminal status of one response whose audio packets
 // overlap the measured playout window. A completed status describes protocol
 // completion, not semantic completeness. A cancelled status does not by itself
-// prove that this acknowledgement caused cancellation. Neither changes scoring.
+// prove that this acknowledgement caused cancellation. An aborted response
+// cannot earn hold credit when its terminal event is at or before the end of
+// the measured window, even if another response supplies continuous audio.
 type HoldResponse struct {
 	ResponseID   string  `json:"response_id"`
 	AudioFromMS  float64 `json:"audio_from_ms"`
@@ -60,36 +63,9 @@ func heldAcross(check Check, timeline Timeline, capture *bench.SessionAudioCaptu
 	}
 	measurement.FromMS, measurement.ToMS = from, to
 	measurement.TriggerStartMS, measurement.TriggerEndMS = span.StartMS, span.EndMS
-	if capture == nil {
-		return measurement, "NOT VERIFIED: holding through an acknowledgement requires captured agent audio"
-	}
-	if capture.SampleRateHz != 24_000 {
-		return measurement, "NOT VERIFIED: held-across audio must be the harness's 24 kHz PCM capture"
-	}
-	previousEnd := 0.0
-	for _, chunk := range capture.Agent {
-		if math.IsNaN(chunk.AtMS) || math.IsInf(chunk.AtMS, 0) || chunk.AtMS < previousEnd {
-			return measurement, "NOT VERIFIED: held-across audio has invalid or overlapping playout positions"
-		}
-		previousEnd = chunk.AtMS + float64(len(chunk.PCM16))/24
-		if math.IsInf(previousEnd, 0) || previousEnd > float64(math.MaxInt/24) {
-			return measurement, "NOT VERIFIED: held-across audio exceeds the supported playout clock"
-		}
-	}
-	// Clip to this short window before converting positions to sample offsets.
-	// A distant valid chunk must not overflow integer arithmetic or influence
-	// activity here. Round to the same 24 kHz sample grid as retained media.
-	samples := make([]int16, (to-from)*24)
-	for _, chunk := range capture.Agent {
-		chunkEnd := chunk.AtMS + float64(len(chunk.PCM16))/24
-		if chunk.AtMS >= float64(to) || chunkEnd <= float64(from) {
-			continue
-		}
-		offset := int(math.Round((chunk.AtMS - float64(from)) * 24))
-		begin, end := max(0, -offset), min(len(chunk.PCM16), len(samples)-offset)
-		if begin < end {
-			copy(samples[offset+begin:offset+end], chunk.PCM16[begin:end])
-		}
+	samples, problem := holdWindowSamples(measurement, capture)
+	if problem != "" {
+		return measurement, problem
 	}
 	const frameSamples = holdFrameMS * 24
 	lastActiveEnd := -1.0
@@ -126,6 +102,112 @@ func heldAcross(check Check, timeline Timeline, capture *bench.SessionAudioCaptu
 	return measurement, ""
 }
 
+// holdWindowSamples uses the same sample grid as the retained stereo WAV.
+// Callers must have validated the bounded measurement window first.
+func holdWindowSamples(measurement HoldMeasurement, capture *bench.SessionAudioCapture) ([]int16, string) {
+	from, to := measurement.FromMS, measurement.ToMS
+	if capture == nil {
+		return nil, "NOT VERIFIED: holding through an acknowledgement requires captured agent audio"
+	}
+	if capture.SampleRateHz != 24_000 {
+		return nil, "NOT VERIFIED: held-across audio must be the harness's 24 kHz PCM capture"
+	}
+	previousEnd := 0.0
+	for _, chunk := range capture.Agent {
+		if math.IsNaN(chunk.AtMS) || math.IsInf(chunk.AtMS, 0) || chunk.AtMS < previousEnd {
+			return nil, "NOT VERIFIED: held-across audio has invalid or overlapping playout positions"
+		}
+		previousEnd = chunk.AtMS + float64(len(chunk.PCM16))/24
+		if math.IsInf(previousEnd, 0) || previousEnd > float64(math.MaxInt/24) {
+			return nil, "NOT VERIFIED: held-across audio exceeds the supported playout clock"
+		}
+	}
+	// Clip to this short window before converting positions to sample offsets.
+	// A distant valid chunk must not overflow integer arithmetic or influence
+	// activity here. Round to the same 24 kHz sample grid as retained media.
+	samples := make([]int16, (to-from)*24)
+	for _, chunk := range capture.Agent {
+		chunkEnd := chunk.AtMS + float64(len(chunk.PCM16))/24
+		if chunk.AtMS >= float64(to) || chunkEnd <= float64(from) {
+			continue
+		}
+		offset := int(math.Round((chunk.AtMS - float64(from)) * 24))
+		begin, end := max(0, -offset), min(len(chunk.PCM16), len(samples)-offset)
+		if begin < end {
+			copy(samples[offset+begin:offset+end], chunk.PCM16[begin:end])
+		}
+	}
+	return samples, ""
+}
+
+// heldResponseContinuity supplements the acoustic check. It does not infer a
+// cancellation cause or require one wire response for the whole explanation:
+// naturally completed speech segments may cross the acknowledgement boundary.
+func heldResponseContinuity(measurement *HoldMeasurement, transcript bench.Transcript, capture *bench.SessionAudioCapture) string {
+	if measurement.ResponseEvidence != "recorded" {
+		return fmt.Sprintf("NOT VERIFIED: response evidence is %s across acknowledgement on line %d", measurement.ResponseEvidence, measurement.Line)
+	}
+	for _, response := range measurement.Responses {
+		switch response.Status {
+		case "completed":
+		case "cancelled", "failed", "incomplete":
+			// A later intentional interruption must not fail an earlier hold.
+			// Earlier terminal events still matter when queued audio plays in
+			// this window: more audible bytes do not undo an aborted response.
+			if response.TerminalAtMS <= float64(measurement.ToMS) {
+				return fmt.Sprintf("response %q was %s at %.0fms before the end of acknowledgement hold on line %d; continuous replacement audio cannot establish turn preservation", response.ResponseID, response.Status, response.TerminalAtMS, measurement.Line)
+			}
+		default:
+			return fmt.Sprintf("NOT VERIFIED: response %q has %s terminal evidence across acknowledgement on line %d", response.ResponseID, response.Status, measurement.Line)
+		}
+	}
+	// A completed packet elsewhere in the window must not certify unattributed
+	// speech. Reopened WAVs include silence between packets, so require the
+	// nonzero samples of acoustically active frames, not padded silence, to be
+	// covered by the response-to-playout join. Use sample rounding throughout.
+	samples, problem := holdWindowSamples(*measurement, capture)
+	if problem != "" {
+		return problem
+	}
+	attributed := make([]bool, len(samples))
+	for _, moment := range transcript.Moments {
+		if moment.Kind != bench.MomentAgentAudio || moment.ResponseID == "" {
+			continue
+		}
+		from, to := moment.PlayoutAtMS, moment.PlayoutAtMS+moment.AudioMS
+		if math.IsNaN(from) || math.IsNaN(to) || math.IsInf(to, 0) || from < 0 || to <= from ||
+			to <= float64(measurement.FromMS) || from >= float64(measurement.ToMS) {
+			continue
+		}
+		begin := int(math.Round((max(from, float64(measurement.FromMS)) - float64(measurement.FromMS)) * 24))
+		end := int(math.Round((min(to, float64(measurement.ToMS)) - float64(measurement.FromMS)) * 24))
+		for index := begin; index < end; index++ {
+			attributed[index] = true
+		}
+	}
+	missing := 0
+	for offset := 0; offset < len(samples); offset += holdFrameMS * 24 {
+		end := min(offset+holdFrameMS*24, len(samples))
+		energy := 0.0
+		for _, sample := range samples[offset:end] {
+			energy += float64(sample) * float64(sample)
+		}
+		if energy < float64(end-offset)*holdMinimumRMS*holdMinimumRMS {
+			continue
+		}
+		for index := offset; index < end; index++ {
+			if samples[index] != 0 && !attributed[index] {
+				missing++
+			}
+		}
+	}
+	measurement.UnattributedActiveMS = float64(missing) / 24
+	if missing > 0 {
+		return fmt.Sprintf("NOT VERIFIED: %.3fms of active audio is not attributed to a response across acknowledgement on line %d", measurement.UnattributedActiveMS, measurement.Line)
+	}
+	return ""
+}
+
 func retainHoldResponses(measurement *HoldMeasurement, transcript bench.Transcript) {
 	measurement.ResponseEvidence = "unavailable"
 	if measurement.ToMS <= measurement.FromMS {
@@ -138,16 +220,16 @@ func retainHoldResponses(measurement *HoldMeasurement, transcript bench.Transcri
 			continue
 		}
 		from, to := moment.PlayoutAtMS, moment.PlayoutAtMS+moment.AudioMS
-		if moment.ResponseID == "" {
-			// Older recordings cannot establish a response-to-playout join.
-			missing = true
-			continue
-		}
 		if math.IsNaN(from) || math.IsNaN(to) || math.IsInf(to, 0) || from < 0 || to <= from {
 			missing = true
 			continue
 		}
 		if to <= float64(measurement.FromMS) || from >= float64(measurement.ToMS) {
+			continue
+		}
+		if moment.ResponseID == "" {
+			// Older recordings cannot establish a response-to-playout join.
+			missing = true
 			continue
 		}
 		index, found := indices[moment.ResponseID]

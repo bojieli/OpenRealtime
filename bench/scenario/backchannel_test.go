@@ -46,9 +46,9 @@ func TestAcknowledgementScoresRecordedPlayoutAcrossBothBackchannels(t *testing.T
 	// One prefetched packet arrives before either acknowledgement. Its
 	// recorded playout spans both, so packet-arrival windows would be wrong.
 	transcript := bench.Transcript{Moments: []bench.Moment{
-		{AtMS: 4500, Kind: bench.MomentAgentAudio, AudioMS: 10000},
+		{AtMS: 4500, Kind: bench.MomentAgentAudio, PlayoutAtMS: 4500, AudioMS: 10000, ResponseID: "explanation"},
 		{AtMS: 4500, Kind: bench.MomentAgentText, Text: "Find your order number, use the return label, and receive the refund on the original payment method."},
-		{AtMS: 4600, Kind: bench.MomentResponseDone},
+		{AtMS: 4600, Kind: bench.MomentResponseDone, ResponseID: "explanation", ResponseStatus: "completed"},
 	}}
 	capture := activityCapture([2]int{4500, 14500})
 	result := ScoreWithAudio(item, timeline, transcript, capture)
@@ -159,13 +159,13 @@ func TestHoldingCannotBorrowOrChooseConflictingTerminalEvidence(t *testing.T) {
 			transcript := bench.Transcript{Moments: append(append([]bench.Moment{}, base.Moments...), test.ends...)}
 			result := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), transcript,
 				activityCapture([2]int{8000, 10600}))
-			if !result.Passed || result.Holds[0].Responses[0].Status != test.want {
-				t.Fatalf("terminal metadata changed acoustic result or inferred evidence: %+v", result)
+			if result.Passed || result.Holds[0].Responses[0].Status != test.want || !strings.Contains(result.Failures[0], "NOT VERIFIED") {
+				t.Fatalf("missing or conflicting terminal evidence earned hold credit: %+v", result)
 			}
 		})
 	}
 	legacy := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), bench.Transcript{}, activityCapture([2]int{8000, 10600}))
-	if !legacy.Passed || legacy.Holds[0].ResponseEvidence != "unavailable" || len(legacy.Holds[0].Responses) != 0 {
+	if legacy.Passed || legacy.Holds[0].ResponseEvidence != "unavailable" || len(legacy.Holds[0].Responses) != 0 {
 		t.Fatalf("old transcript received terminal evidence: %+v", legacy)
 	}
 }
@@ -255,5 +255,100 @@ func TestAcknowledgementRejectsUngroundedNonAnswerDespiteContinuousAudio(t *test
 	if result := ScoreWithAudio(acknowledgementScenario(t), acknowledgementTimeline(), transcript,
 		activityCapture([2]int{4500, 14500})); result.Passed {
 		t.Fatalf("sustained non-answer passed refund explanation: %+v", result)
+	}
+}
+
+// A fresh response can fill every acoustic window after the original response
+// is cancelled. Continuation credit must still reject that interrupted turn.
+func TestHoldingRejectsAbortDespiteContinuousReplacementAudio(t *testing.T) {
+	for _, status := range []string{"completed", "cancelled", "failed", "incomplete"} {
+		t.Run(status, func(t *testing.T) {
+			transcript := bench.Transcript{Moments: []bench.Moment{
+				{Kind: bench.MomentAgentAudio, AtMS: 1000, PlayoutAtMS: 8000, AudioMS: 1400, ResponseID: "original"},
+				{Kind: bench.MomentResponseDone, AtMS: 9250, ResponseID: "original", ResponseStatus: status, ResponseStatusReason: "turn_detected"},
+				{Kind: bench.MomentAgentAudio, AtMS: 9400, PlayoutAtMS: 9400, AudioMS: 1200, ResponseID: "replacement"},
+				{Kind: bench.MomentResponseDone, AtMS: 9500, ResponseID: "replacement", ResponseStatus: "completed"},
+			}}
+			result := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), transcript,
+				activityCapture([2]int{8000, 10600}))
+			if result.Passed != (status == "completed") || len(result.Holds) != 1 || len(result.Holds[0].Responses) != 2 {
+				t.Fatalf("%s followed by replacement audio received wrong hold outcome: %+v", status, result)
+			}
+			if status != "completed" && !strings.Contains(strings.Join(result.Failures, " "), status) {
+				t.Fatalf("failure did not identify the observed terminal status: %+v", result)
+			}
+		})
+	}
+}
+
+func TestHoldingUsesBoundedTerminalTimeAndExactAudioAttribution(t *testing.T) {
+	base := []bench.Moment{
+		{Kind: bench.MomentAgentAudio, AtMS: 1000, PlayoutAtMS: 8000, AudioMS: 2600, ResponseID: "speech"},
+		{Kind: bench.MomentResponseDone, AtMS: 2000, ResponseID: "speech", ResponseStatus: "completed"},
+	}
+	for _, test := range []struct {
+		name    string
+		mutate  func([]bench.Moment) []bench.Moment
+		want    string
+		missing float64
+	}{
+		{name: "prefetched completed", mutate: func(m []bench.Moment) []bench.Moment { return m }},
+		{name: "prefetched cancelled", mutate: func(m []bench.Moment) []bench.Moment { m[1].ResponseStatus = "cancelled"; return m }, want: "cancelled"},
+		{name: "cancelled at window end", mutate: func(m []bench.Moment) []bench.Moment { m[1].ResponseStatus = "cancelled"; m[1].AtMS = 10600; return m }, want: "cancelled"},
+		{name: "cancelled after window", mutate: func(m []bench.Moment) []bench.Moment { m[1].ResponseStatus = "cancelled"; m[1].AtMS = 10601; return m }},
+		{name: "failed after window", mutate: func(m []bench.Moment) []bench.Moment { m[1].ResponseStatus = "failed"; m[1].AtMS = 10601; return m }},
+		{name: "unrelated earlier cancel", mutate: func(m []bench.Moment) []bench.Moment {
+			return append(m,
+				bench.Moment{Kind: bench.MomentAgentAudio, PlayoutAtMS: 7000, AudioMS: 1000, ResponseID: "earlier"},
+				bench.Moment{Kind: bench.MomentResponseDone, AtMS: 7900, ResponseID: "earlier", ResponseStatus: "cancelled"})
+		}},
+		{name: "unidentified later audio", mutate: func(m []bench.Moment) []bench.Moment {
+			return append(m,
+				bench.Moment{Kind: bench.MomentAgentAudio, PlayoutAtMS: 10600, AudioMS: 1000})
+		}},
+		{name: "unidentified overlap audio", mutate: func(m []bench.Moment) []bench.Moment {
+			return append(m,
+				bench.Moment{Kind: bench.MomentAgentAudio, PlayoutAtMS: 9000, AudioMS: 100})
+		}, want: "evidence is partial"},
+		{name: "missing identity", mutate: func(m []bench.Moment) []bench.Moment { m[0].ResponseID = ""; return m }, want: "evidence is unavailable"},
+		{name: "missing playout", mutate: func(m []bench.Moment) []bench.Moment { m[0].PlayoutAtMS = 0; return m }, want: "evidence is unavailable"},
+		{name: "missing audio tail", mutate: func(m []bench.Moment) []bench.Moment { m[0].AudioMS = 1600; return m }, want: "not attributed", missing: 1000},
+		{name: "one missing sample", mutate: func(m []bench.Moment) []bench.Moment { m[0].AudioMS -= 1.0 / 24; return m }, want: "not attributed", missing: 1.0 / 24},
+		{name: "gap between same response packets", mutate: func(m []bench.Moment) []bench.Moment {
+			m[0].AudioMS = 1000
+			return append(m,
+				bench.Moment{Kind: bench.MomentAgentAudio, PlayoutAtMS: 9600, AudioMS: 1000, ResponseID: "speech"})
+		}, want: "not attributed", missing: 600},
+		{name: "invalid packet time", mutate: func(m []bench.Moment) []bench.Moment { m[0].PlayoutAtMS = math.Inf(1); return m }, want: "evidence is unavailable"},
+		{name: "unknown terminal", mutate: func(m []bench.Moment) []bench.Moment { m[1].ResponseStatus = "unknown"; return m }, want: "unrecognized terminal"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transcript := bench.Transcript{Moments: test.mutate(append([]bench.Moment(nil), base...))}
+			result := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), transcript,
+				activityCapture([2]int{8000, 10600}))
+			if result.Passed != (test.want == "") || test.want != "" && !strings.Contains(strings.Join(result.Failures, " "), test.want) ||
+				result.Holds[0].UnattributedActiveMS != test.missing {
+				t.Fatalf("incorrect bounded/attributed response outcome, want %q and %.3fms missing: %+v", test.want, test.missing, result)
+			}
+		})
+	}
+}
+
+func TestHoldingDoesNotRequireAttributionForSilentWAVPadding(t *testing.T) {
+	capture := activityCapture([2]int{8000, 9200}, [2]int{9400, 10600})
+	wav, _, err := encodeReviewStereoWAV(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, samples := decodeStereoReviewWAV(t, wav)
+	transcript := bench.Transcript{Moments: []bench.Moment{
+		{Kind: bench.MomentAgentAudio, AtMS: 1000, PlayoutAtMS: 8000, AudioMS: 1200, ResponseID: "speech"},
+		{Kind: bench.MomentAgentAudio, AtMS: 2000, PlayoutAtMS: 9400, AudioMS: 1200, ResponseID: "speech"},
+		{Kind: bench.MomentResponseDone, AtMS: 2001, ResponseID: "speech", ResponseStatus: "completed"},
+	}}
+	result := ScoreWithAudio(Scenario{Checks: []Check{heldTestCheck()}}, acknowledgementTimeline(), transcript,
+		bench.SessionAudioCapture{SampleRateHz: 24000, Agent: []bench.TimedAudioChunk{{PCM16: samples}}})
+	if !result.Passed || result.Holds[0].LongestGapMS != 200 || result.Holds[0].UnattributedActiveMS != 0 {
+		t.Fatalf("WAV padding required response attribution: %+v", result)
 	}
 }

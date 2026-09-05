@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- Scorer version 5 rejects acknowledgement holds when an overlapping response
+  is cancelled, fails, or ends incomplete before the measured window closes,
+  even when replacement audio continues. Missing/conflicting terminal evidence
+  or unattributed active audio cannot earn hold credit. Completed segments and
+  cancellations after the hold window remain valid within the check's scope.
+  Historical recordings and scores remain unchanged.
 - Acknowledgement scenarios now supply a concrete refund policy and require
   key explanation details, preventing a sustained non-answer from passing.
   Scorer version 4 retains response identities, serialized audio positions,
