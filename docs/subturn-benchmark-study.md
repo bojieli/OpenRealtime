@@ -694,6 +694,71 @@ of the receipt JSON container files.
 | F5-TTS easy, noisy background 0 dB | `sha256:f3247d97b514cdbb0c7aef96a08ecefaaf0b51d5b7eb6454acaa053002e7cc8b` | `sha256:614c7c63dc7982b3249a2cd838ae116130f7cd3fe517d11c41e51053ad04cf71` | `sha256:7b110ac8ec042cc3f4f8793b060094f0313153858604d4a26b936ebb0dd6ee87` | `sha256:eb0dfe30625aa9a7124c2ec82e904b31297f5cf6fc23106fa6333faaa56c46ad` |
 | CosyVoice2 easy, noisy gap 0 dB | `sha256:7b23c47b65c40d93359bf18275e56f604660f7ade1f02b0ce9432b4b28ab513c` | `sha256:9a02d240186692c5bfed79d0be40495ff4aa006ea70cd875fe48ea88dcac0def` | `sha256:17d4e396651d63eeb145ff6322cb619aab3c50805e94a6e8a9fc0aab7f7c8a62` | `sha256:875e0d7a04467e9eaeec4596d80cde1771e8abf6e82794468818b4adeff3b45f` |
 
+## Complete FDB v1.5 campaign on the 2026-09-05 tree
+
+The first complete FDB v1.5 run since the interruption work landed is retained
+under `artifacts/fdb-candidate-full498-20260905-02-*`, from clean revision
+`8276a036bfcc` (executable
+`sha256:179279883eb37fd1d0d6d94cbcb2116d03cdfd7870a560b1ed72e260cb2075ac`)
+against the local SenseVoice + `qwen-fast` + Fish profile frozen in
+`.runtime/fdb-candidate-v29-local/config`, the same provider selections as the
+2026-08-31 campaign it is compared with. All 498 recordings were reviewed by
+`google/gemini-3.7-flash` as advisory evidence.
+
+**It is not reportable.** Recording `user_interruption/16` reached no
+evaluation: the local policy provider's socket broke mid-session under host
+contention, which the harness records as an incomplete attempt rather than
+scoring an outage as an incapable agent. 497 of 498 completed, so the cell
+refuses publication, and this is diagnostic evidence only. It is also the
+campaign that motivated letting `-review-resume` retire an attempt that
+reached no evaluation: on this run the failure was unrecoverable and cost the
+whole four hours.
+
+Both columns below count passes over *applicable* recordings, the historical
+one recomputed from its own retained `notes.applicable` field so the
+denominators mean the same thing.
+
+| Category | 2026-08-31 `fc8195ae` | 2026-09-05 `8276a03` |
+| --- | ---: | ---: |
+| `user_interruption` yield | 15/156 (9.6%) | **80/161 (49.7%)** |
+| `user_backchannel` hold | 90/90 (100%) | 92/92 (100%) |
+| `background_speech` hold | 89/89 (100%) | **61/73 (83.6%)** |
+| `talking_to_other` hold | 93/95 (97.9%) | **76/82 (92.7%)** |
+| Total | 287/430 (66.7%) | 309/408 (75.7%) |
+
+| Yield latency | 2026-08-31 | 2026-09-05 |
+| --- | ---: | ---: |
+| p50 | 2,412 ms | 1,002 ms |
+| p95 | 10,132 ms | 2,269 ms |
+| max | 13,115 ms | 15,435 ms |
+
+Interruption is the headline and it moved a long way: five times as many
+recordings yield on time, the median yield is under a second where it was
+two and a half, and the tail fell by a factor of four and a half. That is the
+category the interruption and sub-turn work targeted.
+
+The two regressions are the same change seen from the other side, and they
+are not to be read past. Holding through background speech fell from every
+applicable recording to 61 of 73, and holding through speech addressed to
+somebody else from 93 of 95 to 76 of 82: an agent readier to stop for an
+interruption is readier to stop for a voice that was not talking to it. The
+aggregate rose because interruption is the largest category, which is exactly
+how an aggregate hides a category-level regression, and why the acceptance
+registry carries per-case targets beside it.
+
+Applicability moved too, and in the same direction: 408 applicable recordings
+against 430, with `background_speech` falling from 89 applicable to 73 and
+`talking_to_other` from 95 to 82. A recording is applicable when the agent was
+audibly speaking as the overlapping event arrived, so the agent is now
+speaking less often at that instant in exactly the two categories that
+regressed. Neither the pass counts nor the applicability counts can be read
+without the other.
+
+Against the registered non-regression floor - 287 passes over at least 430
+applicable recordings - this run passes the first and fails the second. A
+complete campaign from a frozen candidate is still required before any of
+this can be acceptance evidence rather than a diagnostic.
+
 ## Which benchmark suites benefit
 
 Sub-turn classification is an interaction/timing intervention, not a universal

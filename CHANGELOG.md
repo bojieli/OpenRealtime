@@ -234,6 +234,18 @@
 
 ### The benchmark harness
 
+- **The first complete FDB v1.5 run since the interruption work.** Retained
+  under `artifacts/fdb-candidate-full498-20260905-02-*` and not reportable:
+  one recording reached no evaluation when the local policy socket broke under
+  host contention. Against the 2026-08-31 campaign on the same profile and the
+  same applicability basis, interruption yield went from 15/156 to 80/161 and
+  its median from 2,412 ms to 1,002 ms, while holding through background
+  speech fell from 89/89 to 61/73 and through side speech from 93/95 to 76/82.
+  An agent readier to stop for an interruption is readier to stop for a voice
+  that was not talking to it, and the aggregate rose anyway because
+  interruption is the largest category, which is what per-case targets exist
+  to catch.
+
 - **One transient provider error no longer costs a whole campaign.** A
   session that reached no evaluation is retained as an incomplete attempt
   rather than scored, which is right, but resume then met the suite's own
