@@ -705,9 +705,16 @@ func readSharedObservability(t *testing.T, base string) sharedObservability {
 	if err := json.Unmarshal(metricsPayload, &fields); err != nil {
 		t.Fatal(err)
 	}
+	// Every field is named, and adding one is meant to be a decision rather
+	// than a diff nobody looked at. The rule the list encodes is that this
+	// endpoint carries counts and never content, so a new entry has to be a
+	// number that says nothing about what was said: sessions_in_flight is how
+	// many sessions exist, sessions_rejected is how many were refused at
+	// capacity, and neither can carry a word of a conversation.
 	wantFields := []string{
 		"audio_frames_in", "audio_frames_out", "sessions_completed", "sessions_failed",
-		"sessions_started", "tool_calls_out", "video_frames_dropped", "video_frames_in",
+		"sessions_in_flight", "sessions_rejected", "sessions_started", "tool_calls_out",
+		"video_frames_dropped", "video_frames_in",
 	}
 	gotFields := make([]string, 0, len(fields))
 	for name := range fields {
