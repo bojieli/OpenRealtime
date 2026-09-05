@@ -383,6 +383,50 @@ and speech addressed to somebody else. A system that scores well by always
 yielding is not a system that handles overlap, which is why the report breaks
 the four out rather than averaging them.
 
+**Every FDB v1.5 window opens at the first sound of the event, not at the
+annotation.** Each recording carries two timestamps saying when its event
+happens, and they mark where the event clip was placed in the mix; the clip
+begins with whatever silence the speaker left before opening their mouth. That
+silence is negligible in three categories - a median of 20 ms for backchannels,
+50 ms for talking to somebody else, 120 ms for background speech - and large in
+the fourth: 66 of the 200 `user_interruption` recordings begin with more than
+400 ms of it and one begins with 1,460 ms. Interruption is the category scored
+against a one-second deadline, so a third of it was charging the agent for time
+in which there was nothing to react to. On thirty of those recordings run twice
+each, 32 of 50 attempts yielded inside the window when timed from the
+annotation and all 50 did when timed from the first sound.
+
+The first sound is the first 20 ms block of the played audio whose RMS reaches
+640, a level fixed here rather than read from a deployment, because when a
+recording starts making noise is a property of the recording. Sweeping that
+level across 24 dB moves the median lead only from 240 ms to 360 ms. Every task
+reports `event_audible_after_ms` and `yield_latency_from_annotation_ms`, so a
+run scored before this can be reconciled with one scored after. The change is
+not a relaxation: the three categories that ask the agent to keep speaking have
+almost no lead and their windows move later, which asks them to hold longer.
+
+**A failure to yield ends at the response boundary, not at a gap in the
+audio.** The audio after an overlap contains two things - the answer being
+interrupted and the answer to the question that interrupted it - and on a fast
+agent they are milliseconds apart. Following the stream until a
+four-hundred-millisecond gap once recorded a 9.4 second failure to yield as
+13.3 seconds, four of them the agent answering the new question. Every audio
+delta names the response it belongs to, so that is the boundary; the gap rule
+remains underneath for an endpoint that does not name them.
+
+**`bench fdb -transcripts <dir>` and `bench fdbench -transcripts <dir>`** keep
+the timed record each score was derived from, one file per attempt. A score is
+one word per recording and the interruption category is decided inside a window
+of one second, so a recording that yielded eighty milliseconds late and one
+that never yielded arrive as the same word. Two explanations for that window
+were each tested by rebuilding the server and re-running thirty recordings
+three times, about forty minutes an answer; both were refuted, and the third -
+that the recordings' own annotations lead their audio - was visible in the
+first retained transcript. FD-Bench's records carry the turn boundaries the
+conversation was judged by, because a premature start and a missed turn are
+both claims about where a turn ended. Retention is off unless asked for and
+changes nothing about how anything is scored.
+
 A recording where the agent was not speaking when the event arrived is reported
 as **not applicable** rather than as a pass or a failure. It says something
 about latency and nothing about overlap, and folding it in either direction
