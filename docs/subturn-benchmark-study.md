@@ -241,6 +241,66 @@ negative mutation, and full repository gates passed before the new run.
 No historical result was rewritten, no fifteen-repeat case gate closed, and
 the full-suite/final-candidate ledger remains unchanged.
 
+## Grounded acknowledgement diagnostic with scorer version 4
+
+The next three-trial diagnostic is retained in
+`artifacts/scenario-grounded-acknowledgement-20260905-01`. It used clean revision
+`51623d0a2db965058944a50a5f5fae646d1c94b5` and executable digest
+`sha256:6ea01910cbf5ded2333bbd96b8c9c6c4ce3bb993d6496762f2b88d1fd81d4e29`.
+The scenario now supplies a fictional five-step refund policy and requires
+the order number, return label, and original payment method in the answer.
+The spoken prompt, acknowledgement cues, acoustic thresholds, and cached
+participant PCM are unchanged from the preceding focused diagnostic. This is
+a changed-fixture diagnostic, not a paired runtime performance comparison.
+
+All **3/3 attempts completed and 0/3 passed**. All three produced the required
+content details; each failed the first acknowledgement's lookback because
+the agent had not started speaking before 9,000 ms. Independent Gemini 3.7
+Flash review reported usable media and an agreeing failure for every trial.
+All three source recordings and evaluations reopened against their external
+receipts:
+
+- Source receipt: `sha256:3d13d9aa2060c4e6e6063a033b48e4d43570ad2ec7d8192c2b5ec4a3a8f02ee0`.
+- Advisory receipt: `sha256:7113889c4c21d4a96195ca1f6d5a21c17edee4e22c4fc8069b2c1f9ed781d12c`.
+
+| Trial | First audio playout | First response cancelled | Mhm activity before/during/after | Right, yeah activity before/during/after |
+| --- | ---: | ---: | --- | --- |
+| 1 | 9,030.638 ms | 12,975.662 ms | 0 / 410 / 580 ms | 780 / 1,320 / 660 ms |
+| 2 | 9,110.785 ms | 13,047.777 ms | 0 / 290 / 540 ms | 1,000 / 1,418 / 522 ms |
+| 3 | 9,205.636 ms | 12,989.534 ms | 0 / 190 / 600 ms | 1,000 / 1,160 / 538 ms |
+
+Version 4 now preserves response IDs, serialized audio playout positions,
+terminal status, and terminal reason. The initial response in every trial
+reported `cancelled` with reason `turn_detected` during the second
+acknowledgement. The isolated server also logged the transcript-event policy's
+explicit `stop-speaking` decision at the corresponding time. This is stronger
+evidence than inferring cancellation from silence. Subsequent responses
+continued later parts of the explanation; `completed` statuses on those
+responses cannot erase the first response's cancellation. The decision
+provider's exact request/reply was not retained, so its internal classification
+cause is still unproven.
+
+Two follow-ups remain. First, the fixed 9,000 ms cue did not encounter an
+already-speaking agent in any of these trials. The first hold therefore
+measures startup timing as well as acknowledgement handling; an additional
+case anchored to observed speech would separate those claims. Second, audio
+from subsequent responses satisfied the second acoustic hold even though
+the first response was cancelled. A positive turn-preservation claim needs
+an additional cancellation/continuation invariant; waveform continuity alone
+does not establish it. Version 4 exposes the response evidence without
+changing the acoustic check into a semantic or causal judge. No passing case
+or acceptance credit is inferred from those individual acoustic windows.
+
+Independent Python analysis of each retained WAV exactly reproduced all six
+hold measurements. The full repository gate passed, and mutations dropping
+terminal status, shifting playout, joining on arrival time, borrowing another
+response's terminal status, and aliasing the caller's review measurements each
+failed. The new binary also reopened the historical twelve-case checkpoint
+and all 498 FDB source/evaluation records without changing their receipts.
+The profile, runtime status, graph execution evidence, commands, WAV hashes,
+and metadata-authoring limitation are retained with the diagnostic. The
+fifteen-repeat acknowledgement gate and final-candidate ledger remain open.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under

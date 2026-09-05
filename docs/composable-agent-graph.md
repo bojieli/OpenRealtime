@@ -2937,6 +2937,13 @@ the required new 180-attempt sample.
     limitation: no refund source content is supplied, and the short answer
     may have naturally finished. The failure is retained without inferring
     policy cancellation or closing this gate.
+    The [grounded scorer-v4 diagnostic](subturn-benchmark-study.md#grounded-acknowledgement-diagnostic-with-scorer-version-4)
+    supplies the missing policy context and retains three new completed
+    failures with agreeing independent reviews. All three start too late
+    for the first fixed cue and report explicit response cancellation during
+    the second. Response IDs, terminal statuses, and playout positions now
+    preserve that distinction; a speech-anchored opportunity and a stronger
+    turn-preservation invariant remain follow-up work. No case gate closes.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`
