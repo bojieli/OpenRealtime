@@ -4,12 +4,15 @@
 
 ### Highlights
 
-- Interrupted-count scorer version 8 requires at least three observed numbers
+- Interrupted-count scorer version 9 requires at least three observed numbers
   before and after interruption, an ordered prefix within the requested range,
   and captured speech near the interruption. A lone “One” followed by “Two”
   cannot pass. Results and reviews retain the observed counts and recent audio
   activity. Scenario profiles now distinguish a complete spoken numeric range
   from one count per new event; silence remains explicit when no event occurred.
+  The pre-resumption count includes speech heard while the agent is stopping;
+  captured audio must then stay quiet until the request to resume. Intermediate
+  version-8 diagnostics retain their original, shorter recognition windows.
 - Scenario recordings now retain versioned replay inputs. The offline
   `review replay-scenario` command reconstructs the authored timeline, acoustic
   checks, menu outcomes, counting decisions, and latency metrics from sealed

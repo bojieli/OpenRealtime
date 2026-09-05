@@ -124,6 +124,10 @@ type CountRequirement struct {
 	Through       int `json:"through"`
 	MinimumBefore int `json:"minimum_before"`
 	MinimumAfter  int `json:"minimum_after"`
+	// StopWithinMS allows recognition and playback to stop after the user's
+	// interruption finishes. Speech heard during that interval belongs to the
+	// pre-resumption prefix, even though the user had already begun speaking.
+	StopWithinMS int `json:"stop_within_ms"`
 }
 
 const (

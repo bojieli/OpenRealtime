@@ -354,7 +354,8 @@ func SubturnSuite() []Scenario {
 	return []Scenario{{
 		Name: "picking up where it was cut off",
 		Note: "an interruption is a boundary inside a sentence, and carrying on means " +
-			"carrying on from the word they heard rather than from the word it wrote",
+			"carrying on from the word they heard rather than from the word it wrote; " +
+			"the bounded recording tests stopping and resumed progression, not completion of all forty numbers",
 		// Counting is the instrument, not the subject. Any long turn can be
 		// interrupted, but only a count makes the boundary legible from outside:
 		// every item is distinct, ordered, and equally long, so where the agent
@@ -374,7 +375,7 @@ func SubturnSuite() []Scenario {
 			{Kind: CheckSpoke, Line: 2, AfterMS: 6000,
 				Note: "they asked it to carry on"},
 			{Kind: CheckResumed, Line: 2, Interrupted: 1, AfterMS: 12000, BeforeMS: 2000,
-				Count: &CountRequirement{From: 1, Through: 40, MinimumBefore: 3, MinimumAfter: 3},
+				Count: &CountRequirement{From: 1, Through: 40, MinimumBefore: 3, MinimumAfter: 3, StopWithinMS: 2500},
 				Note: "carrying on means from the last number they heard, not from the " +
 					"last one it had written and not from the beginning; sustain an ordered count on both sides and be audible near the interruption"},
 		},

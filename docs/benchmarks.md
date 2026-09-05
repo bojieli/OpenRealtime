@@ -185,7 +185,7 @@ profile and evidence workflow.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 8`. Content checks match whole words and numbers, ignoring
+`scorer_version: 9`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -223,8 +223,8 @@ their complete source PCM is absent from the room recording. Successful replay
 checks deterministic decisions given retained observations; it does not
 independently transcribe speech, authenticate the provider or runtime, establish
 a canonical run specification, or meet the final population and target gates.
-Replay support itself did not change version-7 scoring semantics. Version 8
-separately strengthens interrupted counting: the authored range is 1–40, with
+Replay support itself did not change version-7 scoring semantics. Version 9
+strengthens interrupted counting: the authored range is 1–40, with
 at least three independently recognized numbers before and after interruption.
 The prefix must start at one and remain ordered; the already-supported
 single-number recognition gap tolerance applies to both sequences. Repeating
@@ -237,6 +237,17 @@ retain both count sequences and recent activity in `resumptions`, and replay
 requires exact reproduction of those measurements. The check establishes a
 bounded sustained-count sample, not completion of all forty numbers after
 resumption. Historical scores remain unchanged.
+
+The pre-resumption recognition window ends 2.5 seconds after the interruption
+line finishes, allowing the same stopping grace as the silence check. Numbers
+the user heard while the agent was stopping must count toward its audible
+prefix. From that deadline until the start of the request to resume, captured
+activity must not exceed 120 ms. These exact windows and activity are retained
+with the count. Version-8 diagnostics used the earlier interruption-start
+boundary and remain historical. Recognizer errors are not repaired using the
+agent's own transcript: a recognizer that merges “thirteen, fourteen” into
+`1314` cannot establish an in-range count. Retain any independent retranscription
+as a separately attributed observation; never silently relabel old scores.
 
 The acknowledgement scenario now requires acoustic continuation across both
 “Mhm” and “Right, yeah.” Each `held-across` check uses the captured agent

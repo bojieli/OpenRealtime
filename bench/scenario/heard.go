@@ -202,7 +202,14 @@ func resumed(check Check, timeline Timeline, listen heard) string {
 			"against the agent's own recorded audio, and no transcription endpoint " +
 			"was configured for the harness (-transcribe-url)"
 	}
-	before, err := listen(0, timeline.Spans[check.Interrupted].StartMS)
+	// The user still hears speech while the agent is stopping. Cutting this
+	// window at the user's first sample loses those numbers and falsely calls
+	// a correct continuation a skip.
+	stop := timeline.Spans[check.Interrupted].EndMS
+	if !canAddMS(stop, check.Count.StopWithinMS) || stop+check.Count.StopWithinMS >= timeline.Spans[check.Line].StartMS {
+		return "invalid scenario check: stopping deadline leaves no quiet interval before resumption"
+	}
+	before, err := listen(0, stop+check.Count.StopWithinMS)
 	if err != nil {
 		return fmt.Sprintf("NOT VERIFIED: could not transcribe what the agent had said: %v", err)
 	}

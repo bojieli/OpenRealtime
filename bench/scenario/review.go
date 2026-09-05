@@ -532,6 +532,7 @@ func renderReviewTranscript(output *strings.Builder, result Result) {
 	for _, resume := range result.Resumptions {
 		fmt.Fprintf(output, "\n- Interrupted count, line %d to line %d: independently heard [%s] before and [%s] after; %.0f ms active in pre-interruption window %d–%d ms.\n", resume.Interrupted, resume.Line,
 			describeNumbers(resume.BeforeNumbers), describeNumbers(resume.AfterNumbers), resume.RecentActiveMS, resume.RecentFromMS, resume.RecentToMS)
+		fmt.Fprintf(output, "- Pre-resumption count includes audio through %d ms; %.0f ms active in required quiet window %d–%d ms.\n", resume.BeforeToMS, resume.QuietActiveMS, resume.QuietFromMS, resume.QuietToMS)
 	}
 	for _, cue := range result.Transcript.SpeechCues {
 		fmt.Fprintf(output, "\n- Speech cue %s: %s; actual input %d–%.3f ms; %.0f ms active in preceding %d ms, %.0f ms active in recent %d ms; sent %d/%d samples.\n", markdownText(cue.Name), markdownText(cue.Status), cue.StartMS, cue.EndMS, cue.ActiveMS, cue.LookbackMS, cue.RecentActiveMS, cue.RecentMS, cue.SentSamples, cue.ExpectedSamples)

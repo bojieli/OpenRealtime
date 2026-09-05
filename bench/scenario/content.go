@@ -26,18 +26,20 @@ import (
 // scenarios; mentioning the unrelated return-label email cannot replace it.
 // Version 8 requires a sufficiently long ordered count on both sides of an
 // interruption, within its authored range, and recent captured speech before it.
-const ScorerVersion uint64 = 8
+// Version 9 includes speech heard during the allowed stopping interval in the
+// resumed prefix and requires captured silence until the request to resume.
+const ScorerVersion uint64 = 9
 
 func validateCheckKind(check Check) error {
 	switch check.Kind {
 	case CheckSilent, CheckSpoke, CheckAnsweredWithin:
 	case CheckResumed:
 		count := check.Count
-		if count == nil || count.From < 1 || count.Through > 1000 || count.Through <= count.From ||
+		if count == nil || count.From < 1 || count.Through > 99 || count.Through <= count.From ||
 			count.MinimumBefore < 3 || count.MinimumAfter < 3 ||
 			count.MinimumBefore > count.Through-count.From || count.MinimumAfter > count.Through-count.From ||
 			check.Line < 0 || check.Sight != 0 || check.FromMS != 0 || check.AfterMS <= 0 ||
-			check.BeforeMS <= audibleMS || check.BeforeMS > 10_000 {
+			check.BeforeMS <= audibleMS || check.BeforeMS > 10_000 || count.StopWithinMS < 0 || count.StopWithinMS > 10_000 {
 			return errors.New("resumed check requires a bounded counting range, at least three observed numbers on each side, and a positive acoustic lookback")
 		}
 	case CheckHeldAcross:

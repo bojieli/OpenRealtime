@@ -53,6 +53,7 @@ func TestResumedRequiresAudibleSpeechNearTheInterruption(t *testing.T) {
 		{"silent packet", &bench.SessionAudioCapture{SampleRateHz: 24000, Agent: []bench.TimedAudioChunk{{AtMS: 13000, PCM16: make([]int16, 2000*24)}}}, "no audible interruption opportunity"},
 		{"clipped syllable", pointerCapture(activityCapture([2]int{14880, 15000})), "no audible interruption opportunity"},
 		{"recent counted speech", pointerCapture(activityCapture([2]int{13900, 14300})), ""},
+		{"continued after stop deadline", pointerCapture(activityCapture([2]int{13900, 14300}, [2]int{22000, 23000})), "did not stay stopped"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			measurement, failure := resumedAcross(resumedCheck(), timeline, scripted("one two three", "four five six"), test.capture)
@@ -76,6 +77,8 @@ func TestResumedRequirementsAndWindowsFailClosed(t *testing.T) {
 		func(c *Check) { c.BeforeMS = 0 },
 		func(c *Check) { c.Line = -1 },
 		func(c *Check) { c.AfterMS = -1 },
+		func(c *Check) { c.Count.StopWithinMS = -1 },
+		func(c *Check) { c.Count.StopWithinMS = 10001 },
 	} {
 		check := resumedCheck()
 		change(&check)
@@ -91,6 +94,29 @@ func TestResumedRequirementsAndWindowsFailClosed(t *testing.T) {
 		_, failure := resumedAcross(resumedCheck(), timeline, func(int, int) (string, error) { t.Fatal("invalid window invoked recognition"); return "", nil }, nil)
 		if !strings.Contains(failure, "invalid scenario check") {
 			t.Fatalf("invalid timing accepted: %s", failure)
+		}
+	}
+}
+
+func TestResumedIncludesNumbersHeardWhileStopping(t *testing.T) {
+	timeline := script
+	timeline.TotalMS = 42000
+	capture := activityCapture([2]int{13900, 14300}, [2]int{15000, 16600})
+	for _, after := range []string{"seven eight nine", "eight nine ten"} {
+		var windows [][2]int
+		listen := func(from, to int) (string, error) {
+			windows = append(windows, [2]int{from, to})
+			if from == 0 {
+				if to == 15000 {
+					return "one two three four five", nil
+				}
+				return "one two three four five six seven", nil
+			}
+			return after, nil
+		}
+		measurement, failure := resumedAcross(resumedCheck(), timeline, listen, &capture)
+		if failure != "" || !reflect.DeepEqual(windows, [][2]int{{0, 19500}, {28000, 40000}}) || measurement.BeforeToMS != 19500 || measurement.QuietActiveMS != 0 {
+			t.Fatalf("audible stopping prefix lost: failure=%s windows=%v measurement=%+v", failure, windows, measurement)
 		}
 	}
 }
