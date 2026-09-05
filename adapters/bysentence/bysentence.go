@@ -92,6 +92,14 @@ func (provider Provider) minimum() int {
 // so the rest is left whole rather than chopped at every comma, each piece
 // paying its own round trip while the ear is already occupied.
 func Split(text string, minimum int) []string {
+	return SplitWithClauseMinimum(text, minimum, minimum)
+}
+
+// SplitWithClauseMinimum permits short complete sentences while requiring a
+// longer phrase before a comma, semicolon, colon, or dash. Streaming callers
+// can release "Yes." promptly without sending "First," alone to synthesis.
+// Both minima apply to clause breaks; sentence ends use minimum alone.
+func SplitWithClauseMinimum(text string, minimum, clauseMinimum int) []string {
 	trimmed := strings.TrimSpace(text)
 	if len([]rune(trimmed)) < minimum*2 {
 		return []string{trimmed}
@@ -102,6 +110,9 @@ func Split(text string, minimum int) []string {
 			continue
 		}
 		if !isBreak(symbol) {
+			continue
+		}
+		if !isSentenceEnd(symbol) && index+1 < clauseMinimum {
 			continue
 		}
 		// A boundary is only a boundary if what follows it is a gap. "3.5" and
@@ -117,6 +128,14 @@ func Split(text string, minimum int) []string {
 		return []string{head, tail}
 	}
 	return []string{trimmed}
+}
+
+func isSentenceEnd(symbol rune) bool {
+	switch symbol {
+	case '.', '!', '?', '。', '！', '？':
+		return true
+	}
+	return false
 }
 
 // isBreak reports punctuation a speaker would pause at.

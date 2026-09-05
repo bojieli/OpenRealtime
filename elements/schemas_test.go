@@ -406,7 +406,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/interaction/control-serialization-quarantine-config/v2": `{"max_candidate_bytes":1048576,"max_blocks":32,"max_active_streams":4}`,
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1":                 `{"decider":"overlap-primary","hold_ms":250,"unclassified":"keep_speaking","max_active_runs":8,"max_utterances":16}`,
 		"schema://openrealtime/interaction/post-commit-silence-config/v1":              `{"delay_ms":15000}`,
-		"schema://openrealtime/interaction/segment-prepared-text-config/v1":            `{}`,
+		"schema://openrealtime/interaction/segment-prepared-text-config/v1":            `{"minimum_runes":1,"minimum_clause_runes":12}`,
 		"schema://openrealtime/interaction/speech-arbiter-config/v1":                   `{}`,
 		"schema://openrealtime/media/attachment-resolver-config/v1":                    `{}`,
 		"schema://openrealtime/media/retained-media-config/v1":                         `{}`,

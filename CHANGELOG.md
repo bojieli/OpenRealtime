@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- The scenario conversation graph keeps short comma introductions such as
+  `First,` with the following phrase before synthesis. Its separate
+  `minimum_clause_runes` setting preserves short complete sentences and
+  immediate flushing at source completion. Existing profiles that omit the
+  setting retain their segmentation behavior.
 - Listener-backchannel validation now treats speech-recognition punctuation
   as insufficient evidence of a question. The validator uses lexical content
   and conversational context, preserving genuine requests and floor-taking

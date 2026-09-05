@@ -383,10 +383,11 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		"schema://openrealtime/interaction/segment-prepared-text-config/v1": standardObject(
 			"schema://openrealtime/interaction/segment-prepared-text-config/v1",
 			schemaObject{
-				"minimum_runes":     integerSchema(1, 4096),
-				"max_segment_bytes": integerSchema(1, maximumBoundBytes),
-				"max_run_bytes":     integerSchema(1, maximumBoundBytes),
-				"max_segments":      integerSchema(1, 4096), "terminal_memory": integerSchema(1, 4096),
+				"minimum_runes":        integerSchema(1, 4096),
+				"minimum_clause_runes": integerSchema(1, 4096),
+				"max_segment_bytes":    integerSchema(1, maximumBoundBytes),
+				"max_run_bytes":        integerSchema(1, maximumBoundBytes),
+				"max_segments":         integerSchema(1, 4096), "terminal_memory": integerSchema(1, 4096),
 			},
 		),
 		"schema://openrealtime/interaction/control-serialization-quarantine-config/v2": standardObject(

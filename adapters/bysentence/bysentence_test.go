@@ -1,6 +1,42 @@
 package bysentence
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestClauseMinimumPreservesShortSentencesAndCompletePhrases(t *testing.T) {
+	for _, test := range []struct {
+		text string
+		want []string
+	}{
+		{"First, find the order number. Then check the date.", []string{"First, find the order number.", "Then check the date."}},
+		{"Right, the deadline has moved.", []string{"Right, the deadline has moved."}},
+		{"Yes. Find the order number.", []string{"Yes.", "Find the order number."}},
+		{"One. Two. Three.", []string{"One.", "Two. Three."}},
+		{"Why? Tell me more.", []string{"Why?", "Tell me more."}},
+		{"好。 接下来检查日期。", []string{"好。", "接下来检查日期。"}},
+	} {
+		t.Run(test.text, func(t *testing.T) {
+			if got := SplitWithClauseMinimum(test.text, 1, 12); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("speech pieces = %q, want %q", got, test.want)
+			}
+		})
+	}
+	for _, mark := range []string{",", ";", ":", "—", "，", "、", "；", "："} {
+		short := "First" + mark + " find the order number"
+		if got := SplitWithClauseMinimum(short, 1, 12); !reflect.DeepEqual(got, []string{short}) {
+			t.Fatalf("short clause was isolated: %q", got)
+		}
+		long := "Find the order number" + mark
+		if got := SplitWithClauseMinimum(long+" then check the date.", 1, 12); !reflect.DeepEqual(got, []string{long, "then check the date."}) {
+			t.Fatalf("complete clause was not released: %q", got)
+		}
+	}
+	if got := SplitWithClauseMinimum("Yes. Find the order number.", 12, 1); len(got) != 1 {
+		t.Fatalf("clause floor bypassed the overall minimum: %q", got)
+	}
+}
 
 // The first piece is what the agent starts talking on, and the synthesiser's
 // wait for its first byte is a function of the text it was handed: 289ms for a

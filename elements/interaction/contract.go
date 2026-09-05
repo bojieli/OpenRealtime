@@ -306,11 +306,14 @@ type ArbitrationOutcome struct {
 }
 
 type SegmentPreparedTextConfig struct {
-	MinimumRunes    int `json:"minimum_runes,omitempty"`
-	MaxSegmentBytes int `json:"max_segment_bytes,omitempty"`
-	MaxRunBytes     int `json:"max_run_bytes,omitempty"`
-	MaxSegments     int `json:"max_segments,omitempty"`
-	TerminalMemory  int `json:"terminal_memory,omitempty"`
+	MinimumRunes int `json:"minimum_runes,omitempty"`
+	// MinimumClauseRunes adds a floor at non-sentence punctuation. Omission
+	// preserves MinimumRunes; completed source text always flushes in full.
+	MinimumClauseRunes int `json:"minimum_clause_runes,omitempty"`
+	MaxSegmentBytes    int `json:"max_segment_bytes,omitempty"`
+	MaxRunBytes        int `json:"max_run_bytes,omitempty"`
+	MaxSegments        int `json:"max_segments,omitempty"`
+	TerminalMemory     int `json:"terminal_memory,omitempty"`
 }
 
 type SpeechArbiterConfig struct {
@@ -334,7 +337,7 @@ const maximumConfigurationBound = 64 << 20
 
 func decodeSegmentConfig(source json.RawMessage) (SegmentPreparedTextConfig, error) {
 	config := SegmentPreparedTextConfig{
-		MinimumRunes: 12, MaxSegmentBytes: 64 << 10,
+		MinimumRunes: 12, MinimumClauseRunes: 1, MaxSegmentBytes: 64 << 10,
 		MaxRunBytes: 1 << 20, MaxSegments: 256, TerminalMemory: 256,
 	}
 	if err := elementconfig.Decode(source, &config); err != nil {
@@ -342,6 +345,9 @@ func decodeSegmentConfig(source json.RawMessage) (SegmentPreparedTextConfig, err
 	}
 	if config.MinimumRunes < 1 || config.MinimumRunes > 4096 {
 		return SegmentPreparedTextConfig{}, errors.New("minimum_runes must be between 1 and 4096")
+	}
+	if config.MinimumClauseRunes < 1 || config.MinimumClauseRunes > 4096 {
+		return SegmentPreparedTextConfig{}, errors.New("minimum_clause_runes must be between 1 and 4096")
 	}
 	if config.MaxSegmentBytes < 1 || config.MaxSegmentBytes > maximumConfigurationBound {
 		return SegmentPreparedTextConfig{}, fmt.Errorf("max_segment_bytes must be between 1 and %d", maximumConfigurationBound)

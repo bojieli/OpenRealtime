@@ -63,6 +63,7 @@ type scenarioEndpointToolCase struct {
 	effectiveArguments string
 	result             string
 	reply              string
+	wantSpeechPlans    []string
 }
 
 func scenarioEndpointToolCases() []scenarioEndpointToolCase {
@@ -108,6 +109,13 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 			testScenarioConversationGraphRoundTrip(t, toolCase)
 		})
 	}
+}
+
+func TestScenarioConversationSpeechCoalescesShortClausesAndKeepsShortAnswers(t *testing.T) {
+	test := scenarioEndpointToolCases()[0]
+	test.reply = "First, check the forecast. Yes. Done"
+	test.wantSpeechPlans = []string{"First, check the forecast.", "Yes.", "Done"}
+	testScenarioConversationGraphRoundTrip(t, test)
 }
 
 func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpointToolCase) {
@@ -277,12 +285,40 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	if spoken := strings.Join(spokenPlans, " "); spoken != toolCase.reply {
 		t.Fatalf("action continuation reached TTS as %q", spoken)
 	}
+	if toolCase.wantSpeechPlans != nil && !slices.Equal(spokenPlans, toolCase.wantSpeechPlans) {
+		t.Fatalf("scenario speech plans = %q, want %q", spokenPlans, toolCase.wantSpeechPlans)
+	}
 	for _, control := range []string{
 		toolCase.tool, toolCase.proposalArguments, toolCase.effectiveArguments, "order_id",
 	} {
 		if slices.ContainsFunc(spokenPlans, func(text string) bool { return strings.Contains(text, control) }) {
 			t.Fatalf("serialized action control %q reached TTS: %q", control, spokenPlans)
 		}
+	}
+	if toolCase.wantSpeechPlans != nil {
+		// This variant ends after the segmented reply. The general endpoint
+		// sequence below assumes one audio item per turn; consuming its pending
+		// segments as the next turn's audio would misidentify that response.
+		var audible []string
+		audioChunks := 0
+		for _, message := range client.received {
+			if message["response_id"] != firstSpeechResponse {
+				continue
+			}
+			if message["type"] == "response.output_audio_transcript.delta" {
+				audible = append(audible, fmt.Sprint(message["delta"]))
+			}
+			if message["type"] == "response.output_audio.delta" {
+				audioChunks++
+				assertScenarioEndpointAudio(t, message)
+			}
+		}
+		if !slices.Equal(audible, toolCase.wantSpeechPlans) || audioChunks != len(toolCase.wantSpeechPlans) {
+			t.Fatalf("scenario endpoint rendered %q with %d audio chunks, want %q",
+				audible, audioChunks, toolCase.wantSpeechPlans)
+		}
+		client.assertBalancedResponseLifecycle(t)
+		return
 	}
 
 	imageBytes, imageURL := scenarioEndpointJPEG(t, 64, 48)

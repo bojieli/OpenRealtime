@@ -105,6 +105,7 @@ nodes:
   model_result_commit: {}
   segment:
     minimum_runes: 1
+    minimum_clause_runes: 12
     max_segment_bytes: 65536
     max_run_bytes: 1048576
     max_segments: 256

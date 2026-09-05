@@ -175,6 +175,8 @@ func TestStrictBoundedInteractionConfig(t *testing.T) {
 		{"segment unknown", func(raw json.RawMessage) error { _, err := decodeSegmentConfig(raw); return err }, `{"mystery":1}`},
 		{"segment duplicate", func(raw json.RawMessage) error { _, err := decodeSegmentConfig(raw); return err }, `{"max_segments":2,"max_segments":3}`},
 		{"segment unbounded", func(raw json.RawMessage) error { _, err := decodeSegmentConfig(raw); return err }, `{"max_segments":999999}`},
+		{"segment clause zero", func(raw json.RawMessage) error { _, err := decodeSegmentConfig(raw); return err }, `{"minimum_clause_runes":0}`},
+		{"segment clause unbounded", func(raw json.RawMessage) error { _, err := decodeSegmentConfig(raw); return err }, `{"minimum_clause_runes":4097}`},
 		{"arbiter unknown", func(raw json.RawMessage) error { _, err := decodeArbiterConfig(raw); return err }, `{"priority":"slow"}`},
 		{"arbiter duplicate", func(raw json.RawMessage) error { _, err := decodeArbiterConfig(raw); return err }, `{"max_pending_runs":2,"max_pending_runs":3}`},
 		{"arbiter unbounded", func(raw json.RawMessage) error { _, err := decodeArbiterConfig(raw); return err }, `{"max_buffered_bytes":999999999}`},
@@ -246,6 +248,43 @@ func TestSegmentPreparedTextReleasesSafeUnitsAndTranslatesCancellation(t *testin
 		Boundary: cognitionelements.TextEnd, Index: 2, Interrupted: true,
 	}))
 	assertNoEnvelope(t, segments)
+}
+
+func TestSegmentPreparedTextKeepsShortIntroductionsWithTheirPhrase(t *testing.T) {
+	mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
+		map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":1,"minimum_clause_runes":12}`)}, nil)
+	defer stopInteractionGraph(t, done, cancel)
+
+	const runID = "short-introduction"
+	text := ingress(t, mounted, "text")
+	segments := egress(t, mounted, "segments")
+	send(t, text, preparedEnvelope("begin", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextBegin, Index: 0,
+	}))
+	send(t, text, preparedEnvelope("intro", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextChunk, Index: 1, Text: "First, find the order",
+	}))
+	assertNoEnvelope(t, segments)
+	send(t, text, preparedEnvelope("phrase", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextChunk, Index: 2, Text: " number. Yes. Then",
+	}))
+	for _, want := range []string{"First, find the order number.", "Yes."} {
+		got := receive(t, segments)
+		if segment := got.Payload.(speech.TextSegment); segment.Text != want || got.RunID != runID {
+			t.Fatalf("released speech = %+v, want %q in %s", got, want, runID)
+		}
+	}
+	// Source completion releases a short remainder without a new punctuation
+	// boundary, extra model tokens, or a timer.
+	send(t, text, preparedEnvelope("end", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextEnd, Index: 3,
+	}))
+	if segment := receive(t, segments).Payload.(speech.TextSegment); segment.Text != "Then" {
+		t.Fatalf("terminal remainder = %+v", segment)
+	}
+	if outcome := receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted); outcome.Segments != 3 {
+		t.Fatalf("completed segmentation = %+v", outcome)
+	}
 }
 
 func TestSegmentPreparedTextConsumesNoOpChunkAndTerminalText(t *testing.T) {

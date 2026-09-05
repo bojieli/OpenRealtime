@@ -72,6 +72,18 @@ and the audio-plus-one-word, and words the recogniser has not reached are placed
 *past* the audio: audio that does not exist yet cannot have been played. When
 synthesis ends, the guess is replaced by the real duration.
 
+## Text segmentation before synthesis
+
+The scenario conversation graph uses `minimum_runes: 1` for complete sentences
+and `minimum_clause_runes: 12` for comma, semicolon, colon, and dash breaks.
+This keeps a short introduction such as `First,` attached to its phrase, while
+`Yes.` and individual complete counting sentences can still be released during
+generation. Completed source text flushes immediately even without punctuation
+or the minimum length. Other graph profiles that omit `minimum_clause_runes`
+keep their existing `minimum_runes` behavior. These text boundaries do not prove
+continuous playback; recorded audio is still required to measure synthesis
+and playout gaps.
+
 ## Where the boundary goes
 
 **Into the trajectory.** `AssistantState.Heard` records the split beside the

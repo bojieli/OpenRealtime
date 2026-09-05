@@ -324,7 +324,8 @@ func (runner *segmentPreparedTextRunner) releaseSafeSegments(
 	ctx context.Context, cause element.Envelope,
 ) error {
 	for {
-		pieces := bysentence.Split(runner.active.buffer, runner.config.MinimumRunes)
+		pieces := bysentence.SplitWithClauseMinimum(runner.active.buffer,
+			runner.config.MinimumRunes, runner.config.MinimumClauseRunes)
 		if len(pieces) < 2 {
 			break
 		}
