@@ -376,6 +376,61 @@ gates and six mutations passed, with the absent optional official SDK reported
 as a skip. The temporary server was stopped. All failures remain retained;
 the runtime repair, repeated-case requirements, and final ledger remain open.
 
+## Backchannel validator repair and repeated speech-anchored diagnostic
+
+The live baseline's exact `Right?` validator requests motivated a controlled
+comparison retained in `artifacts/scenario-backchannel-validator-study-20260905`.
+The preregistered diagnostic contains the three retained contexts plus nine
+pure-continuer and fourteen non-backchannel word variants, repeated twice.
+The original prompt produced 42/52 expected outcomes; the revised prompt
+produced 52/52. Independent replay through the shipped overlap classifier and
+provider adapter reproduced the same 42/52 versus 52/52. The original failed
+both repetitions of the three retained requests, `Right?`, and `Okay?`; all
+fourteen negative variants remained non-backchannels after the change. These
+are small provider diagnostics, not a replacement benchmark population.
+
+Revision `15a51f7619e8a5e298b5ef0487e530b3e052c312` clarifies that ASR punctuation
+alone cannot turn a pure continuer into a question. Actual lexical/contextual
+requests, disagreement, and floor-taking remain excluded. It changes the
+validator prompt, not canonical transcripts or a runtime word whitelist.
+The full repository gate passed, with the optional official SDK explicitly
+skipped because its dependency was absent.
+
+Three new live trials are retained in
+`artifacts/scenario-speech-anchored-acknowledgement-20260905-02`, using executable
+`sha256:7d27dfa8961e8bd9a3a6bb55576bca2c0ab310a998708062c3f6fe6c74dc201e`.
+All three completed and **2/3 passed**, versus the baseline's **0/3**. Independent
+Gemini 3.7 Flash review reported usable media and agreed with each outcome.
+The source and evaluations independently reopened:
+
+- Source receipt: `sha256:3d12efc7666edcc249664fd22092c01d0c1e641e90f0c72d8c2539eb0a0efc59`.
+- Advisory receipt: `sha256:5fd79c827b09838d15d9a9963d5c851da35da3e58de3b63bee9f6b635ccc261b`.
+
+| Trial | First cue | Second cue | First hold before/during/after | Second hold before/during/after | Result |
+| --- | ---: | ---: | --- | --- | --- |
+| 1 | 11,300 ms | 13,500 ms | 680 / 511 / 449 ms | 640 / 1,099 / 1,000 ms | Pass |
+| 2 | 11,000 ms | 12,200 ms | 600 / 511 / 829 ms | 1,000 / 1,219 / 1,000 ms | Pass |
+| 3 | 9,700 ms | 11,500 ms | 660 / 20 / 991 ms | 1,000 / 1,340 / 859 ms | Fail: first-cue overlap activity |
+
+All six cue opportunities and exact input PCM hashes independently reproduce
+from the WAVs. Every response overlapping the six holds reports `completed`,
+and the validator accepts `Right?` in all three trials. The repeated baseline
+cancellation is absent. Trial 3 still pauses after `First,` before the next
+phrase; its 20 ms overlap activity fails the unchanged threshold even though
+its longest interior pause is 340 ms. The failure and agreeing review remain
+retained; the pause is not labeled cancellation.
+
+The 70 retained policy exchanges include one context-cancelled request for the
+advancing initial prompt fragment `In as much detail`. Its later directed
+classification concerns that prompt, not an acknowledgement. The artifact
+retains the exception, policy choices, comparison plan, commands, exact
+runtime/profile identity, and metadata-authoring limitation. Participant PCM,
+scenario content, cue rules, scorer, and provider settings are unchanged across
+the two three-trial campaigns, but shared services and sequential execution
+limit statistical claims. No threshold was relaxed and no failed trial was
+filtered. The temporary server was stopped; no case-repeat, full-suite, or
+final-candidate gate closes. The inter-phrase pause is the next behavioral gap.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under
