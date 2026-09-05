@@ -1,6 +1,6 @@
 # Sub-turn interaction benchmark study
 
-Status: 2026-09-04. This note records the retained twelve-case checkpoint and
+Status: 2026-09-05. This note records the retained twelve-case checkpoint and
 the paired Full-Duplex-Bench (FDB) diagnostic that followed it. The FDB run is
 an intentionally focused diagnostic (five recordings per category), not a
 release result: the complete FDB v1.5 population is 498 recordings and every
@@ -54,6 +54,17 @@ the reviewer. Thus a recursive `*.wav` count is 24, while the canonical source
 record is exactly the 12 stereo WAVs above. The source and review bundles were
 reopened with `review verify-scenario` after case 12 was added; all 12 source
 and 12 evaluation records verified against their receipts.
+
+The retained bundle is immutable evidence for the profile run that produced
+it. A later live diagnostic found that a model could copy the reserved
+`[runtime: ...]` note used to describe prepared-but-unheard speech into its
+answer. The current continuation runner now removes that reserved annotation
+before building `RunResult.AssistantText`, committing assistant trajectory
+content, or handing text to the speech boundary; adjacent streamed chunks are
+coalesced before the check. The regression is covered by continuation and
+cascade end-to-end tests. This repair does not rewrite or re-label the sealed
+v28 recordings, and scratch reruns remain non-reportable unless they acquire a
+new graph-native source receipt.
 
 The canonical source media index is:
 

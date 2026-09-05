@@ -78,6 +78,70 @@ func StripMarkers(content string) (string, bool) {
 	return content, false
 }
 
+// StripRuntimeAnnotations removes the reserved runtime projection note from
+// model-authored assistant content.
+//
+// ProviderRuns deliberately shows an interrupted assistant turn as the text
+// the person heard followed by an internal note describing the prepared,
+// unheard remainder. That note is context for the next model, not a script.
+// A model can nevertheless copy the note into its own response. Letting that
+// response reach the speech boundary would make implementation metadata
+// audible (and can expose the prepared text), so the first reserved marker is
+// a fail-closed boundary: preserve only the ordinary text before it and drop
+// the rest. The marker is compared case-insensitively because model output is
+// not required to preserve the casing of a copied control token.
+//
+// This function intentionally does not try to parse a closing bracket. The
+// runtime note may contain arbitrary quoted user text, including brackets; the
+// first marker is the point after which no model-authored content is trusted
+// as speech. It also handles a marker split across streamed chunks because
+// the runner coalesces adjacent assistant deltas before applying it.
+func StripRuntimeAnnotations(content string) (string, bool) {
+	// Match the stable token through the colon, not its formatting whitespace:
+	// providers have been observed copying the marker with a newline where the
+	// projection used a space.
+	index := indexASCIIFold(content, strings.TrimSpace(HeardPreamble))
+	if index < 0 {
+		return content, false
+	}
+	return strings.TrimSpace(content[:index]), true
+}
+
+// indexASCIIFold finds an ASCII marker without changing the byte offsets in
+// content. Using strings.ToLower on the whole response would usually work,
+// but Unicode case mappings can expand a rune; the resulting index would then
+// not necessarily be a valid slice boundary in the original UTF-8 string.
+// Runtime control markers are ASCII, so a byte-wise fold is both sufficient
+// and safe for arbitrary text before the marker.
+func indexASCIIFold(content, marker string) int {
+	if marker == "" {
+		return 0
+	}
+	if len(content) < len(marker) {
+		return -1
+	}
+	for start := 0; start <= len(content)-len(marker); start++ {
+		matched := true
+		for offset := range len(marker) {
+			left, right := content[start+offset], marker[offset]
+			if left >= 'A' && left <= 'Z' {
+				left += 'a' - 'A'
+			}
+			if right >= 'A' && right <= 'Z' {
+				right += 'a' - 'A'
+			}
+			if left != right {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return start
+		}
+	}
+	return -1
+}
+
 // ProducedSilently reports whether an item came from a provider that could not
 // be heard.
 //

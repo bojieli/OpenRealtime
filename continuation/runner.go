@@ -524,11 +524,18 @@ func stripMarkers(segments []bufferedSegment) bool {
 		if segments[index].kind != EventAssistantDelta {
 			continue
 		}
-		stripped, found := StripMarkers(segments[index].text.String())
-		if !found {
+		text := segments[index].text.String()
+		stripped, found := StripMarkers(text)
+		if found {
+			finished = true
+		}
+		// Runtime projection notes are model-visible control context, never
+		// user-visible speech. Apply this after the completion marker so either
+		// ordering is safe, including a provider that emits both in one stream.
+		stripped, _ = StripRuntimeAnnotations(stripped)
+		if !found && stripped == text {
 			continue
 		}
-		finished = true
 		segments[index].text.Reset()
 		segments[index].text.WriteString(stripped)
 	}

@@ -47,3 +47,49 @@ func TestEmptyInternalStateIsNotATurn(t *testing.T) {
 		t.Fatal("real working state was dropped")
 	}
 }
+
+// The interrupted-turn projection is deliberately visible to the model, but
+// its runtime annotation is never a sentence for the person. A copied note
+// must therefore stop at the reserved marker, including when the model changes
+// its casing or leaves the note unfinished.
+func TestRuntimeProjectionAnnotationCannotBecomeSpeech(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "complete note",
+			in:   "Let's continue. [runtime: playback stopped here. Prepared but never spoken: \"the rest\"]",
+			want: "Let's continue.",
+		},
+		{
+			name: "model casing and whitespace",
+			in:   "I can help. [RUNTIME:\ncopied control text",
+			want: "I can help.",
+		},
+		{
+			name: "unicode before marker",
+			in:   "你好，I can help. [RuNtImE: copied control text",
+			want: "你好，I can help.",
+		},
+		{
+			name: "marker at start",
+			in:   "[runtime: the whole answer was metadata]",
+			want: "",
+		},
+		{
+			name: "ordinary text",
+			in:   "The runtime is ready.",
+			want: "The runtime is ready.",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, found := continuation.StripRuntimeAnnotations(test.in)
+			if found != (test.name != "ordinary text") || got != test.want {
+				t.Fatalf("StripRuntimeAnnotations(%q) = (%q, %t), want (%q, %t)",
+					test.in, got, found, test.want, test.name != "ordinary text")
+			}
+		})
+	}
+}

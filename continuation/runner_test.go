@@ -30,6 +30,83 @@ type requestCapturingProvider struct {
 	request    Request
 }
 
+// A provider can copy the interrupted-turn note it was given. The note is
+// useful context, but it is not assistant speech; the runner must remove it
+// before either the committed trajectory or the returned text reaches a
+// speech planner.
+func TestRunnerRemovesCopiedRuntimeProjectionBeforeCommit(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user", Kind: trajectory.KindObservation,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "continue",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := NewRunner(RunnerConfig{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := scriptedProvider{
+		descriptor: Descriptor{
+			Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: EffortMinimal, Streaming: true,
+		},
+		events: []Event{{Kind: EventAssistantDelta, Text: "Continue now. [runtime: playback stopped here; prepared text]\n"}},
+	}
+	result, err := runner.Run(context.Background(), provider, Invocation{Instruction: "Respond."}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Committed || result.AssistantText != "Continue now." {
+		t.Fatalf("runtime annotation escaped the returned result: %#v", result)
+	}
+	for _, item := range store.Snapshot().Items {
+		if item.Kind == trajectory.KindAssistant && strings.Contains(strings.ToLower(item.Content), "[runtime:") {
+			t.Fatalf("runtime annotation reached committed assistant content: %q", item.Content)
+		}
+	}
+}
+
+// Adjacent streamed deltas are coalesced before sanitization. A marker split
+// across two provider chunks must be just as unspeakable as one delivered in a
+// single chunk, while a completion marker in the same response remains control.
+func TestRunnerRemovesSplitRuntimeProjectionAndCompletionMarker(t *testing.T) {
+	store := trajectory.NewStore()
+	if err := store.Append(trajectory.Item{
+		ID: "user", Kind: trajectory.KindObservation,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "continue",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	runner, err := NewRunner(RunnerConfig{Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := scriptedProvider{
+		descriptor: Descriptor{
+			Provider: "test", Model: "fast", Phase: trajectory.PhaseFast,
+			Effort: EffortMinimal, Streaming: true,
+		},
+		events: []Event{
+			{Kind: EventAssistantDelta, Text: "Continue. [RUNT"},
+			{Kind: EventAssistantDelta, Text: "IME: copied note] <<DONE>>"},
+		},
+	}
+	result, err := runner.Run(context.Background(), provider, Invocation{Instruction: "Respond."}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Committed || !result.Finished || result.AssistantText != "Continue." {
+		t.Fatalf("split control markers escaped the result: %#v", result)
+	}
+	for _, item := range store.Snapshot().Items {
+		if item.Kind == trajectory.KindAssistant &&
+			(strings.Contains(strings.ToLower(item.Content), "[runtime:") || strings.Contains(item.Content, "<<DONE>>")) {
+			t.Fatalf("control marker reached committed assistant content: %q", item.Content)
+		}
+	}
+}
+
 func (provider *requestCapturingProvider) Descriptor() Descriptor { return provider.descriptor }
 
 func (provider *requestCapturingProvider) Continue(_ context.Context, request Request, emit Emit) (Completion, error) {
