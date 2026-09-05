@@ -1850,7 +1850,7 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this checkpoint, 313 of 382 explicit tracker boxes are checked (81.9%)
+At this checkpoint, 314 of 383 explicit tracker boxes are checked (82.0%)
 and 69 remain open. The 2026-09-05 reconciliation aligned the scenario
 population with the promoted twelve-case contract: the one-attempt live
 scenario box is now checked by the retained 12×1 checkpoint, and the twelfth
@@ -1869,7 +1869,7 @@ is rerun against that exact candidate. The current critical path is:
 
 | Required cell | Current evidence and diagnosis | Next acceptance gate |
 | --- | --- | --- |
-| Interaction scenarios (180) | The contract includes 12 cases × 15 trials. The historical 12×1 checkpoint passed 12/12 under its earlier scorer; it cannot close the current gate. Scorer-v7 focused observed-speech diagnostics now retain explicit content, acoustic continuity, and terminal checks. The latest three-trial recording passed 2/3: one omitted purchase confirmation. All three results and metrics replayed exactly, and independent reviews agreed. A fresh menu and interrupted-count recording also passed and replayed, but the count contained only “One” before interruption and “Two” after resuming, exposing the absence of a sustained-count requirement. Earlier acoustic pause and provider-boundary evidence remains retained; the omission's cause is unresolved. A separate 2026-09-05 12×1 checkpoint (v29, revision `d70cd90`, the scorer of that revision) passed 12/12 as a reportable cell with 11/12 Gemini agreement; the reviewer flagged filler speech in the counting case that the scorer of that revision did not check | Strengthen sustained-count coverage, repair the observed omission and remaining failed cases, then run all 12 cases × 15 under the current scorer and frozen final candidate |
+| Interaction scenarios (180) | The contract includes 12 cases × 15 trials. Earlier 12×1 checkpoints cannot close the current gate. Observed-speech acknowledgement diagnostics retain a 2/3 result with one omitted purchase confirmation. Scorer v9 now requires sustained interrupted counting, captures the audible stopping prefix, and checks silence until resumption. The production instruction now distinguishes reciting a range from counting new events. Fresh event-count trials passed 2/3; one omitted the first count. Fresh interrupted-count trials scored 1/3: one continued audibly during the required pause, and another has a disputed recognizer sequence. All ten new recordings across the v7 trace and v8/v9 diagnostics were retained, reviewed, and deterministically replayed; that is evidence retention, not behavioral acceptance. A separate 2026-09-05 12×1 checkpoint (v29, revision `d70cd90`, the scorer of that revision) passed 12/12 as a reportable cell with 11/12 Gemini agreement; the reviewer flagged filler speech in the counting case that its scorer did not check | Repair the retained speech-cancellation and count/content omissions, resolve recognition/review discrepancies, then run all 12 cases × 15 under the current scorer and frozen final candidate |
 | Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
 | Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable live defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. A distinct typed cleanup lane prevents canceled result consequences from re-entering ordinary activation. Mounted regressions exercise `indeterminate → retry → continue → continue → succeeded`, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, and cleanup overtaking activation cancellation for both statuses. The connected cleanup outcome is now proven nontransactional at the coordinator, and an already-admitted newer intent resumes after the delayed old cancellation without another frame. Focused and stable-endpoint implementation checks pass, but scorer interpretation, the remaining forged/reordered composition matrix, enforceable targets, and live repair campaign remain open | Complete forged/reordered boundary cases and failed-result scorer/live acceptance, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
 | FDB v1.5 (498) | Earlier diagnostic completed 498/498 with 287/430 applicable passes and 68 not applicable (the original nominal 355 includes those 68); interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
@@ -1888,7 +1888,7 @@ cannot be mistaken for behavioral acceptance:
 
 | Ledger | Current state | Meaning |
 | --- | --- | --- |
-| Architecture implementation | 313/382 boxes checked (81.9%); 69 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
+| Architecture implementation | 314/383 boxes checked (82.0%); 69 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
 | Phase exits | Phases 0, 3, and 4 are marked complete; phases 1, 2, 5, 6, 7, and 8 remain open | A phase closes only through its own checked exit gate |
 | Realtime-CU mounted composition | Ten reviewable subgates; seven evidenced and three open: forged cross-node evidence, reordered/duplicate terminal evidence, and failed-result scorer/live acceptance | The parent mounted-composition box remains unchecked until every subgate runs through the shipped profile |
 | Realtime-CU target registry | All five domains registered on 2026-09-05 as non-regression floors from candidate-05 | A complete candidate can now be accepted or refused mechanically; the floors record current behaviour, not the target quality |
@@ -1900,10 +1900,10 @@ The exact checkbox distribution is:
 
 | Tracker section | Checked | Open | Total |
 | --- | ---: | ---: | ---: |
-| Delivery and acceptance ledger | 141 | 43 | 184 |
+| Delivery and acceptance ledger | 149 | 46 | 195 |
 | Phase 0 | 4 | 0 | 4 |
 | Phase 1 | 7 | 1 | 8 |
-| Phase 2 | 17 | 6 | 23 |
+| Phase 2 | 10 | 3 | 13 |
 | Phase 3 | 5 | 0 | 5 |
 | Phase 4 | 10 | 0 | 10 |
 | Phase 5 | 11 | 2 | 13 |
@@ -1911,7 +1911,7 @@ The exact checkbox distribution is:
 | Phase 7 | 9 | 4 | 13 |
 | Phase 8 | 4 | 2 | 6 |
 | Definition of done, including subgates | 17 | 7 | 24 |
-| **Total** | **313** | **69** | **382** |
+| **Total** | **314** | **69** | **383** |
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
@@ -2980,10 +2980,20 @@ the required new 180-attempt sample.
   - [ ] `picking up where it was cut off`
     The replay-v1 diagnostic at `b7d188d` reproduced a scorer-v7 pass from
     independent observations `1.` before interruption and `2.` after resuming.
-    This verifies the observed boundary but exposes a coverage limit: the
-    check does not require a sustained count on either side. Require enough
-    audible numbers to distinguish continued counting, a restart, and a
-    one-number response before closing this case.
+    Scorer v9 now rejects that one-number false positive: at least three
+    ordered, in-range numbers must be observed on each side, captured speech
+    must establish an interruption opportunity, the prefix includes words
+    heard while stopping, and the recording must remain quiet until resumption.
+    The repaired production instruction generates the remaining range in one
+    response while preserving event-driven silence. The new three-trial live
+    diagnostic scores 1/3: trial 1 retains 3,164 ms of active audio during the
+    pause; trial 3 has a disputed recognizer sequence. Separate v9/Whisper
+    rescoring of the three earlier v8 recordings passes 3/3 but neither
+    overwrites those originals nor counts as new trials. Recognition accuracy,
+    queued-speech cancellation, repeated live acceptance, and full-suite
+    acceptance remain open. This bounded scenario does not establish eventual
+    completion of all forty numbers. See the
+    [sustained-count evidence](subturn-benchmark-study.md#sustained-counting-and-the-audible-stopping-boundary).
 - [x] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
   production profile. Clean-worktree candidate-21 at commit `c250d83` passed
   four independent focused two-case runs (8/8) before its immutable full run.

@@ -800,11 +800,12 @@ PCM digests are respectively
 `sha256:38143ca8afcc65f84a1f842a1cab468e9150548d22cd3f51204cb924fdcae378`
 and
 `sha256:2ee56e7fd5ac4e0e06aabbaa8197d6c3fb87ee891b816cb09f6d3862f9292e9e`.
-The reviewer heard the same progression. The current check requires no minimum
+The reviewer heard the same progression. The version-7 check required no minimum
 number of audible counts on either side, so this evidence does not establish
 continuous counting toward forty or a sufficiently long pre-interruption
 prefix to distinguish restarting. That scenario's full acceptance box remains
-open; this is a concrete coverage extension to implement and measure.
+open. The subsequent sustained-counting diagnostic below implements this
+coverage extension and retains the remaining behavioral and evaluator failures.
 
 Retained directories:
 
@@ -841,3 +842,101 @@ or a canonical run specification. Missing or partly transmitted dynamic cues
 still lack their complete source PCM and refuse this verifier. Universal
 all-suite replay, trusted thresholds, the independently controlled release
 store, and the final 7,501-attempt campaign remain open.
+
+## Sustained counting and the audible stopping boundary
+
+The earlier one-number interrupted-count pass exposed both a scenario coverage
+gap and a production instruction problem. A provider-boundary recording from
+clean `0f210b297c0383dbba21dafb5c65812d2e4bbbc8` retained the complete initial
+request producing only `One.` and the resume request producing only `Two.`.
+Both model streams reached upstream EOF with `STOP`; synthesis received exactly
+those texts and completed. This locates the immediate omission in model output
+for that recording, before synthesis or playback. It does not explain unrelated
+purchase-confirmation or event-count omissions.
+
+The new instruction explicitly requests the complete remaining finite range in
+one response and delegates pacing/interruption to speech playback. It separately
+requires exactly `<wait>` when an event-driven count has no new occurrence.
+Fifteen controlled model requests (three repetitions of initial range, resumed
+range, no-new-animal, first-animal, and one-number-only controls) passed 6/15 with
+the old instruction and 15/15 with the candidate. The exploratory first revision
+and its inadequate silence criterion remain retained separately; they are not
+included in that comparison. Controlled text output is evidence about this
+instruction, not proof of live conversational behavior.
+
+Scorer v8 added an authored minimum of three observed numbers on both sides,
+range/order/start checks, rejection of already-completed counts, and captured
+speech in the two seconds before interruption. It rejected both retained v7
+one-number passes when separately rescored. Fresh v8 recordings from clean
+`ce0ad2bab2b2c9a426881e71c84b9b3f2c3f6843` then exposed two evaluator problems:
+SenseVoice merged adjacent spoken numbers into `145` or `1314`, and the old
+recognition window ended when the user began interrupting, excluding words the
+agent audibly finished while stopping. Neither problem justifies rewriting
+recognizer output from the runtime's proposed text.
+
+Scorer v9 extends the recognized prefix through the authored stopping deadline
+and independently requires captured silence from that deadline until the resume
+request. In these recordings the prefix is `[0, 19496)` ms, the quiet interval
+is `[19496, 25000)` ms, and the resumed observation is `[27925, 39925)` ms. The
+same 20 ms / RMS 128 waveform activity rule and 120 ms tolerance used by the
+other acoustic checks apply. Results and reviews retain counts, window bounds,
+recent activity, and quiet activity. Regression mutations removing the count
+minimum, interruption opportunity, stopping-prefix extension, or paused-speech
+check each fail their targeted test.
+
+| Evidence population | Original deterministic outcome | Interpretation |
+| --- | --- | --- |
+| v7 provider trace, interrupted count, one trial | 1/1 | One number on each side; false positive for sustained counting, now rejected |
+| v8 event count, three trials | 2/3 | Trial 3 omitted the first animal count despite recorded admission decisions |
+| v8 interrupted count, three trials | 1/3 | Two failures contain merged recognizer digits; original scores and observations remain intact |
+| Separate v9/Whisper rescoring of those three v8 recordings | 3/3 | New attributed recognition/windows on existing media; zero new live trials |
+| v9 interrupted count, three fresh trials | 1/3 | A real failure to stay stopped and a disputed recognizer sequence remain retained |
+
+The fresh v9 recordings used clean
+`c18d781de4f56872ef280b239f34cf2fb72dbb21`, including the colleague's intervening
+commits through `8276a03`. Trial 1 has 3,164 ms of waveform activity in the
+required quiet interval; the existing transported-audio check reports 4,180 ms
+in its nearly identical window. Speech continues after recorded cancellations.
+This is an observed cancellation escape; the responsible lifecycle boundary
+has not yet been established. Trial 2 passes with prefix 1–4, continuation 5–10,
+and no quiet-window activity. Trial 3 also has no quiet-window activity but its
+recognizer reports `6,7,8,9,10,11,12,13,11,12,13`; the advisory reviewer disputes
+that sequence against the audio. The disputed original remains a failed result.
+
+Every new source and advisory receipt reopens, and all ten original live
+outcomes and metrics replay exactly using their corresponding frozen executable.
+The v9 retrospective results also retain their new recognition observations and
+replay exactly. This proves reconstruction from observations, not recognition
+accuracy. Gemini 3.7 Flash reports agreement with every original result, but
+that binary field overstates agreement on cause: v8 reviewers attribute failures
+to not reaching forty, and the v9 trial-3 reviewer disputes the scorer's sequence
+while again judging failure to reach forty. The authored v9 note explicitly
+limits this recording to stopping and resumed progression. Eventual completion
+needs its own sufficient horizon and check; advisory reasoning outside the
+declared contract cannot validate a deterministic failure.
+
+The v9 trial-3 hearing audit reconstructs the exact original window and checks
+its PCM digest before making fresh recognizer calls. Whisper reproduces its
+repeated suffix; SenseVoice instead merges the last numbers into `123`.
+Extending the window by two seconds produces different erroneous suffixes from
+both recognizers. Neither service is therefore a demonstrated oracle for this
+recording, and changing services or window lengths alone does not resolve the
+coverage gap. These audit observations do not replace the sealed judgment.
+
+The three diagnostic directories retain exact source/executable/profile/graph
+identities, executed commands, participant PCM identities, media, observations,
+reviews, and support scripts:
+
+| Directory under `artifacts/` | Source receipt | Advisory receipt |
+| --- | --- | --- |
+| `scenario-counting-boundary-trace-20260905-01` | `sha256:3f6709c74f5a3226ef6bbe89c866a18d2f93a9af2394fc60dc27d76791f729c1` | `sha256:a2b4afc88a157e50a8abf24d2a98e081b6105ac8959bf6b0b99174084b44b50f` |
+| `scenario-counting-v8-repair-20260905-01` | `sha256:0c8a627214c94466482cb131c951b7309432b55ccc7be4e86d861e0a9b11b990` | `sha256:e12e921337b3a682c5690e8c34411fd788dc71a2e9d36db2b18c4adfca7a3dcc` |
+| `scenario-counting-v9-stop-window-20260905-01` | `sha256:b49f6a7644410e29c1c90a31e97c496b5c1b339d12c5c60426138a926f4220bd` | `sha256:dee30ed110fdd97137e649839e31422148133cf59f9697951ac4d7de8ecb6e2a` |
+
+The v8 and final combined-code v9 developer gates passed. Both explicitly
+skipped the official SDK WebSocket/WebRTC tests because that SDK was not
+installed; those integrations are not verified by these runs. Logs and exact
+validation identities are retained in their corresponding directories.
+No shared services were stopped. These focused recordings
+close neither the per-case fifteen-repeat requirements nor the twelve-case
+180-attempt campaign, and add no credit to the final 7,501-attempt ledger.
