@@ -12,6 +12,12 @@ dist/
 artifacts/
 .runtime/
 
+# The quickstart's own build output. `go build -o openrealtime ./cmd/openrealtime`
+# is the first command in the README, so every reader ends up with a fifty-
+# megabyte binary here; leaving it untracked-but-listed makes `git status` lie
+# about whether the tree is clean.
+/openrealtime
+
 # The official-SDK example installs its client from npm and builds a browser
 # bundle from it. Neither is ours to vendor: the point of that example is that
 # the client is the published package rather than a copy of it.
