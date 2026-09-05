@@ -1291,12 +1291,15 @@ func runFDBench(arguments []string, output io.Writer) error {
 		inspectionGraph string
 		budget          time.Duration
 		timeout         time.Duration
+		transcripts     string
 	)
 	flags.StringVar(&root, "dataset", ".runtime/fd-bench/dataset", "FD-Bench dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
 	flags.StringVar(&tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token")
 	flags.StringVar(&model, "model", "", "model to request")
 	flags.StringVar(&out, "out", "", "write the result to this path as JSON")
+	flags.StringVar(&transcripts, "transcripts", "",
+		"write one timed record per conversation into this directory; a score cannot say where a millisecond went")
 	flags.StringVar(&conditions, "conditions", "", "comma-separated dataset conditions; required")
 	flags.BoolVar(&list, "list", false, "list the conditions this dataset contains and stop")
 	flags.IntVar(&limit, "limit", 0, "stop after this many conversations")
@@ -1355,7 +1358,8 @@ func runFDBench(arguments []string, output io.Writer) error {
 		return err
 	}
 	runOptions := fdbench.Options{
-		Root: root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
+		Transcripts: transcripts,
+		Root:        root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },

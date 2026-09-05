@@ -67,16 +67,18 @@
   changes. The cascade and sidecar bindings keep one gate per session and
   were already correct.
 
-- The full-duplex suite can keep the timed record each score was derived
-  from, with `-transcripts`. A score is one word per recording and the
+- The full-duplex suites can keep the timed record each score was derived
+  from, with `-transcripts` on `bench fdb` and `bench fdbench`. A score is one word per recording and the
   interruption category is decided inside a window of one second, so the
   difference between yielding eighty milliseconds late and never yielding
   arrived as the same word. Two earlier explanations for that window were
   each tested by rebuilding the server and re-running thirty recordings
   three times, about forty minutes an answer; the same question is now
-  answered from one run, offline. Benchmark sessions also retain
-  `audio_start_ms` and `audio_end_ms` alongside arrival time, which is what
-  separates a slow detector from a slow notice.
+  answered from one run, offline. FD-Bench keeps each conversation's turn
+  boundaries beside its timing, because a premature start and a missed turn are
+  the same word in a score and both are claims about where a turn ended.
+  Benchmark sessions also retain `audio_start_ms` and `audio_end_ms` alongside
+  arrival time, which is what separates a slow detector from a slow notice.
 
 - Concurrent graph shutdown callers now wait for the same completed cleanup
   even when the graph was mounted but never run. Each caller can cancel its

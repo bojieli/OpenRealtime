@@ -1,14 +1,6 @@
 package fdb
 
-import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/bojieli/OpenRealtime/bench"
-)
+import "github.com/bojieli/OpenRealtime/bench"
 
 // Why a run can keep its transcripts.
 //
@@ -48,53 +40,14 @@ type TranscriptRecord struct {
 }
 
 // WriteTranscript records one attempt under dir, named after the case.
-//
-// A failed write is returned rather than swallowed. A diagnostic directory that
-// silently holds less than the run produced is worse than no directory at all:
-// the absent attempt is exactly the one that would have been looked at.
 func WriteTranscript(dir string, record TranscriptRecord) error {
-	if strings.TrimSpace(dir) == "" {
-		return nil
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("transcript directory: %w", err)
-	}
+	// The graph execution evidence is deliberately dropped. It is fifty
+	// kilobytes of deployment identity per attempt, it is already carried in
+	// the result, and it says nothing about when anything happened.
 	record.Outcome.Execution = nil
 	record.Transcript.Execution = nil
-	encoded, err := json.MarshalIndent(record, "", " ")
-	if err != nil {
-		return fmt.Errorf("encode transcript for %s: %w", record.Case, err)
-	}
-	name := TranscriptFileName(record.Case)
-	if err := os.WriteFile(filepath.Join(dir, name), append(encoded, '\n'), 0o644); err != nil {
-		return fmt.Errorf("write transcript for %s: %w", record.Case, err)
-	}
-	return nil
+	return bench.WriteRetainedTranscript(dir, record.Case, record)
 }
 
 // TranscriptFileName turns a case identifier into one path segment.
-//
-// Case identifiers carry a category, a slash, an index, and - when the run
-// repeats - a trial suffix: "user_interruption/1#2". Written unaltered the
-// slash would scatter attempts into per-category directories and the hash
-// would need quoting at every shell that later reads them, so every character
-// that is not a letter, a digit, or a dash becomes a dash.
-func TranscriptFileName(caseID string) string {
-	var builder strings.Builder
-	for _, symbol := range caseID {
-		switch {
-		case symbol >= 'a' && symbol <= 'z',
-			symbol >= 'A' && symbol <= 'Z',
-			symbol >= '0' && symbol <= '9',
-			symbol == '-', symbol == '_':
-			builder.WriteRune(symbol)
-		default:
-			builder.WriteRune('-')
-		}
-	}
-	trimmed := strings.Trim(builder.String(), "-")
-	if trimmed == "" {
-		trimmed = "attempt"
-	}
-	return trimmed + ".json"
-}
+func TranscriptFileName(caseID string) string { return bench.TranscriptFileName(caseID) }

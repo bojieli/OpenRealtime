@@ -158,6 +158,23 @@ type Options struct {
 	// audio from the deterministic scorer's shared Realtime session.
 	Evidence       candidate.Plugin
 	EvidenceOrigin candidate.RunOrigin
+	// Transcripts, when set, is a directory receiving one timed record per
+	// conversation, together with the turn boundaries it was scored against.
+	// It changes nothing about the score; it keeps the evidence the score was
+	// derived from, so a premature start or a missed turn can be read back
+	// against the audio instead of re-run.
+	Transcripts string
+}
+
+// TranscriptRecord is one conversation's timed record beside the annotations
+// it was judged by, so a retained file can be read without the dataset.
+type TranscriptRecord struct {
+	Case          string            `json:"case"`
+	Condition     string            `json:"condition"`
+	Turns         []Turn            `json:"turns"`
+	LatencyBudget float64           `json:"latency_budget_ms"`
+	Outcome       bench.TaskOutcome `json:"outcome"`
+	Transcript    bench.Transcript  `json:"transcript"`
 }
 
 // Run executes the suite.
@@ -293,6 +310,24 @@ func runConversation(
 	var err error
 	transcript, err = bench.Play(ctx, config, conversation.AudioPath)
 	outcome.AttachExecution(transcript)
+	// Before any early return. A conversation that failed or timed out is the
+	// one whose timed record is worth reading.
+	defer func() {
+		if options.Transcripts == "" {
+			return
+		}
+		record := TranscriptRecord{
+			Case: conversation.ID, Condition: conversation.Condition,
+			Turns: conversation.Turns, LatencyBudget: float64(options.LatencyBudget.Milliseconds()),
+			Outcome: outcome, Transcript: transcript,
+		}
+		// Fifty kilobytes of deployment identity per conversation says nothing
+		// about when anything happened, and the result already carries it.
+		record.Outcome.Execution = nil
+		record.Transcript.Execution = nil
+		evidenceErr = errors.Join(evidenceErr,
+			bench.WriteRetainedTranscript(options.Transcripts, record.Case, record))
+	}()
 	if err != nil {
 		outcome.Error = err.Error()
 		return outcome, evidenceErr
