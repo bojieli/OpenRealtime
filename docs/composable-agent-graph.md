@@ -4323,6 +4323,24 @@ the required new 180-attempt sample.
   and static/session generation 4 with unchanged descriptor contracts. This
   repairs an activation prerequisite found while reviewing the text/file
   session path; the production session adapter remains open above.
+- [x] Keep canceled audio out of canonical history and subsequent transcript
+  activation. ASR previously published valid provider revisions before checking
+  cancellation, and forgot the stream when closing the provider. Its final
+  observation gate canceled only causes already in memory and ignored canceled
+  observe outcomes. ASR now suppresses canceled-operation observations, and both
+  boundaries retain the exact session/stream in a 512-entry FIFO. Late batches,
+  endpoint barriers, and new provisional/final causes cannot reopen retained
+  canceled streams. A cancellation for another session or queued stream leaves
+  the active provider running. The locked ASR/trajectory graph reproduces late
+  canceled text entering canonical history for both observe and flush, then
+  verifies that only a fresh utterance's revisions commit. Mounted gate checks
+  cover both observation/outcome orderings and fresh-stream/session controls;
+  ASR controls cover deferred endpoint cleanup, FIFO eviction, and repeated
+  canceled arrivals. Original code fails these checks; ten race-enabled
+  repetitions pass with the repair. ASR advances to implementation 4, and the
+  final-observation gate gains independent runtime identity implementation 1;
+  descriptor contracts remain unchanged. These close reproduced audio
+  cancellation defects, not the remaining production session-adapter work.
 - [x] Check in exact-lock conversational fast-only, slow-only, and
   both-speaking reference graphs with an identical non-routing backbone,
   explicit cancellation/timing boundaries, no model-to-model edge, fresh-lock

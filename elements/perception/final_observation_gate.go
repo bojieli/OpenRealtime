@@ -14,14 +14,17 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/elements/internal/factoryprofile"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
+	"github.com/bojieli/OpenRealtime/graph/inspect"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	coreperception "github.com/bojieli/OpenRealtime/perception"
 )
 
 const (
-	defaultFinalObservationGateMemory = 512
-	maximumFinalObservationTerminals  = 16384
+	defaultFinalObservationGateMemory          = 512
+	maximumFinalObservationTerminals           = 16384
+	finalObservationGateRuntimeID              = "builtin://openrealtime/elements/perception.FinalObservationGate"
+	finalObservationGateImplementationRevision = "implementation:1"
 )
 
 var finalObservationGateOutcomeType = element.Event(
@@ -197,12 +200,13 @@ type finalObservationGateRunner struct {
 	sequences        *graphruntime.SequenceAllocator
 	admitProvisional bool
 
-	pendingFinals  map[finalObservationKey]pendingFinalObservation
-	pendingFlushes map[finalObservationKey]pendingFinalFlush
-	pendingOrder   []finalObservationKey
-	nonFinal       map[finalObservationKey]struct{}
-	nonFinalOrder  []finalObservationKey
-	terminal       *finalObservationMemory
+	pendingFinals   map[finalObservationKey]pendingFinalObservation
+	pendingFlushes  map[finalObservationKey]pendingFinalFlush
+	pendingOrder    []finalObservationKey
+	nonFinal        map[finalObservationKey]struct{}
+	nonFinalOrder   []finalObservationKey
+	terminal        *finalObservationMemory
+	canceledStreams canceledAudioStreams
 }
 
 func (runner *finalObservationGateRunner) Run(parent context.Context) error {
@@ -276,6 +280,13 @@ func (runner *finalObservationGateRunner) acceptObservation(
 		})
 	}
 	key := finalObservationKey{session: envelope.SessionID, stream: stream, cause: cause}
+	if runner.canceledStreams.has(envelope.SessionID, stream) {
+		return runner.publishOutcome(ctx, envelope, FinalObservationGateOutcome{
+			Kind: FinalObservationCanceled, Operation: "observation", StreamID: stream,
+			CauseItemID: cause, SourceObservationItemID: envelope.ItemID, Revision: observation.Revision,
+			Code: "stream_canceled", Message: "observation belongs to a canceled utterance",
+		})
+	}
 	if runner.terminal.contains(key) {
 		return runner.publishOutcome(ctx, envelope, FinalObservationGateOutcome{
 			Kind: FinalObservationIgnored, Operation: "observation", StreamID: stream,
@@ -378,6 +389,22 @@ func (runner *finalObservationGateRunner) acceptFlush(
 		return runner.publishOutcome(ctx, envelope, FinalObservationGateOutcome{
 			Kind: FinalObservationIgnored, Operation: outcome.Operation, StreamID: stream,
 			CauseItemID: cause, Code: "terminal_replay", Message: "ASR operation cause is already terminal",
+		})
+	}
+	// Active ASR cancellation is reported against the interrupted observe or
+	// flush cause. It withdraws the stream just like an idle cancel receipt.
+	if (outcome.Operation == "observe" || outcome.Operation == "flush") && outcome.Kind == OutcomeCanceled {
+		runner.cancelStream(envelope.SessionID, stream)
+		runner.terminal.add(key)
+		return runner.publishOutcome(ctx, envelope, FinalObservationGateOutcome{
+			Kind: FinalObservationCanceled, Operation: outcome.Operation, StreamID: stream,
+			CauseItemID: cause, Code: firstNonempty(outcome.Code, "canceled"), Message: outcome.Message,
+		})
+	}
+	if outcome.Operation != "cancel" && runner.canceledStreams.has(envelope.SessionID, stream) {
+		return runner.publishOutcome(ctx, envelope, FinalObservationGateOutcome{
+			Kind: FinalObservationCanceled, Operation: outcome.Operation, StreamID: stream,
+			CauseItemID: cause, Code: "stream_canceled", Message: "ASR outcome belongs to a canceled utterance",
 		})
 	}
 	if outcome.Operation == "observe" {
@@ -683,17 +710,15 @@ func receiveFinalObservationInputs(
 }
 
 func reportFinalObservationGateResolution(reporter element.ResolutionReporter) error {
-	identity, err := FinalObservationGateDescriptor().Identity()
-	if err != nil {
-		return err
-	}
 	return liveidentity.Report(reporter, liveidentity.Artifact{
-		ID: identity.Name, Digest: identity.Digest,
+		ID: finalObservationGateRuntimeID, Revision: finalObservationGateImplementationRevision,
 	}, nil)
 }
 
 func finalObservationGateRegistration() factoryprofile.Entry {
-	return factoryprofile.Entry{Factory: finalObservationGateFactory{}}
+	return factoryprofile.Entry{Factory: finalObservationGateFactory{}, Artifact: inspect.ArtifactIdentity{
+		ID: finalObservationGateRuntimeID, Revision: finalObservationGateImplementationRevision,
+	}}
 }
 
 func (runner *finalObservationGateRunner) rememberPending(key finalObservationKey) {
@@ -782,6 +807,7 @@ func (runner *finalObservationGateRunner) rememberNonFinal(key finalObservationK
 }
 
 func (runner *finalObservationGateRunner) cancelStream(sessionID, streamID string) {
+	runner.canceledStreams.add(sessionID, streamID)
 	for _, key := range slices.Clone(runner.pendingOrder) {
 		if key.session == sessionID && key.stream == streamID {
 			delete(runner.pendingFinals, key)

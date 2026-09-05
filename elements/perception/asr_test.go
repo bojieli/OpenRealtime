@@ -468,7 +468,7 @@ func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 	resolution := mounted.Live().Nodes["asr"].Resolution
 	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 		resolution.Runtime.ID != "builtin://openrealtime/elements/perception.ASR" ||
-		resolution.Runtime.Revision != "implementation:3" ||
+		resolution.Runtime.Revision != "implementation:4" ||
 		resolution.CapabilitiesEvidence != inspect.EvidenceLive {
 		t.Fatalf("ASR live resolution = %+v", resolution)
 	}
@@ -477,7 +477,7 @@ func assertASRLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 			capability.Provider.ID == "provider://openrealtime/api/v1/perception/test-asr" &&
 			capability.Provider.Revision == "1" && capability.Adapter != nil &&
 			capability.Adapter.ID == "builtin://openrealtime/adapters/perception.ASR-api-v1" &&
-			capability.Adapter.Revision == "implementation:3" {
+			capability.Adapter.Revision == "implementation:4" {
 			return
 		}
 	}

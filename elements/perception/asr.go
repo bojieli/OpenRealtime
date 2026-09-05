@@ -94,6 +94,10 @@ type Flush struct {
 	AfterItemID string `json:"after_item_id,omitempty"`
 }
 
+// Cancel withdraws an utterance in the envelope's session. While its bounded
+// cancellation record is retained, later batches and endpoint flushes for that
+// stream are canceled too. An empty address selects that session's active
+// utterance; a new utterance must use a fresh stream identity.
 type Cancel struct {
 	StreamID string `json:"stream_id,omitempty"`
 	Reason   string `json:"reason,omitempty"`
@@ -392,6 +396,8 @@ type asrRunner struct {
 	resolvedOutput     element.OutputPort
 	resolution         element.ResolutionReporter
 	currentStream      string
+	currentSession     string
+	canceledStreams    canceledAudioStreams
 	lastObservedItemID string
 	deferredFlush      *asrCommand
 }
@@ -528,6 +534,18 @@ func (runner *asrRunner) prepare(command asrCommand) (asrCommand, *Outcome) {
 			}
 		}
 	}
+	if runner.canceledStreams.has(command.envelope.SessionID, streamID) {
+		return command, &Outcome{
+			Kind: OutcomeCanceled, Operation: string(command.kind), StreamID: streamID,
+			Code: "canceled", Message: "utterance was canceled before this operation arrived",
+		}
+	}
+	if runner.currentStream != "" && runner.currentSession != command.envelope.SessionID {
+		return command, &Outcome{
+			Kind: OutcomeRefused, Operation: string(command.kind), StreamID: streamID,
+			Code: "session_in_progress", Message: "another session owns the active utterance",
+		}
+	}
 	if runner.currentStream != "" && streamID != "" && runner.currentStream != streamID {
 		outcome := Outcome{
 			Kind: OutcomeRefused, Operation: string(command.kind), StreamID: streamID,
@@ -538,6 +556,7 @@ func (runner *asrRunner) prepare(command asrCommand) (asrCommand, *Outcome) {
 	}
 	if runner.currentStream == "" && streamID != "" {
 		runner.currentStream = streamID
+		runner.currentSession = command.envelope.SessionID
 	}
 	if command.kind == commandFlush && streamID == "" {
 		command.flush.StreamID = runner.currentStream
@@ -581,17 +600,15 @@ func (runner *asrRunner) runOperation(
 			if active == "" {
 				active = runner.currentStream
 			}
-			if requested != "" && requested != active {
-				if err := runner.publishOutcome(ctx, interrupt, Outcome{
-					Kind: OutcomeIgnored, Operation: "cancel", StreamID: requested,
-					Code: "scope_not_active", Message: fmt.Sprintf("active stream is %q", active),
-				}); err != nil {
+			if interrupt.SessionID != command.envelope.SessionID || (requested != "" && requested != active) {
+				if err := runner.recordInactiveCancel(ctx, interrupt, requested); err != nil {
 					stop(err)
 					<-resultChannel
 					return err
 				}
 				continue
 			}
+			runner.canceledStreams.add(command.envelope.SessionID, active)
 			copy := interrupt
 			canceled = &copy
 			stop(fmt.Errorf("%w: %s", errASRCanceled, cancelRequest.Reason))
@@ -619,6 +636,13 @@ func (runner *asrRunner) execute(ctx context.Context, command asrCommand) ([]cor
 func (runner *asrRunner) completeOperation(
 	ctx context.Context, result asrOperationResult, canceled bool,
 ) error {
+	// A provider may return useful-looking revisions after its context was
+	// canceled, or return revisions from earlier frames alongside cancellation.
+	// Decide publication authority before any observation crosses the port.
+	canceled = canceled || errors.Is(result.err, errASRCanceled) || errors.Is(result.err, context.Canceled)
+	if canceled {
+		result.observations = nil
+	}
 	for index, observation := range result.observations {
 		if err := runner.publishObservation(ctx, result.command.envelope, observation, index); err != nil {
 			return err
@@ -632,7 +656,8 @@ func (runner *asrRunner) completeOperation(
 		Kind: OutcomeSucceeded, Operation: string(result.command.kind), StreamID: streamID,
 		ObservationCount: len(result.observations),
 	}
-	if canceled || errors.Is(result.err, errASRCanceled) || errors.Is(result.err, context.Canceled) {
+	if canceled {
+		runner.canceledStreams.add(result.command.envelope.SessionID, streamID)
 		outcome.Kind, outcome.Code = OutcomeCanceled, "canceled"
 		if result.err != nil {
 			outcome.Message = result.err.Error()
@@ -646,8 +671,7 @@ func (runner *asrRunner) completeOperation(
 			outcome.Code = "provider_close_error"
 			outcome.Message = errors.Join(result.err, closeErr).Error()
 		}
-		runner.currentStream = ""
-		runner.lastObservedItemID = ""
+		runner.currentStream, runner.currentSession, runner.lastObservedItemID = "", "", ""
 		if outcome.Kind == OutcomeCanceled || outcome.Kind == OutcomeFailed {
 			runner.deferredFlush = nil
 		}
@@ -661,30 +685,44 @@ func (runner *asrRunner) cancelIdle(ctx context.Context, envelope element.Envelo
 		return runner.publishOutcome(ctx, envelope, invalidCancelOutcome(envelope))
 	}
 	requested := firstNonempty(request.StreamID, envelopeScope(envelope))
-	if requested != "" && runner.currentStream != "" && requested != runner.currentStream {
-		return runner.publishOutcome(ctx, envelope, Outcome{
-			Kind: OutcomeIgnored, Operation: "cancel", StreamID: requested,
-			Code: "scope_not_active", Message: fmt.Sprintf("active stream is %q", runner.currentStream),
-		})
+	if runner.currentStream != "" && (envelope.SessionID != runner.currentSession || (requested != "" && requested != runner.currentStream)) {
+		return runner.recordInactiveCancel(ctx, envelope, requested)
 	}
 	streamID := runner.currentStream
 	if streamID == "" {
 		streamID = requested
 	}
+	runner.canceledStreams.add(envelope.SessionID, streamID)
 	if runner.deferredFlush != nil &&
 		(requested == "" || requested == commandStreamID(*runner.deferredFlush)) {
 		runner.deferredFlush = nil
 	}
 	if err := runner.observer.Close(); err != nil {
-		runner.currentStream = ""
+		runner.currentStream, runner.currentSession, runner.lastObservedItemID = "", "", ""
 		return runner.publishOutcome(ctx, envelope, Outcome{
 			Kind: OutcomeFailed, Operation: "cancel", StreamID: streamID,
 			Code: "provider_close_error", Message: err.Error(),
 		})
 	}
-	runner.currentStream = ""
+	runner.currentStream, runner.currentSession, runner.lastObservedItemID = "", "", ""
 	return runner.publishOutcome(ctx, envelope, Outcome{
 		Kind: OutcomeCanceled, Operation: "cancel", StreamID: streamID, Code: "canceled", Message: request.Reason,
+	})
+}
+
+// An addressed cancellation can overtake that stream while another utterance
+// owns the provider. Remember it without closing or interrupting the owner.
+func (runner *asrRunner) recordInactiveCancel(ctx context.Context, envelope element.Envelope, stream string) error {
+	if stream == "" {
+		return runner.publishOutcome(ctx, envelope, Outcome{
+			Kind: OutcomeIgnored, Operation: "cancel", Code: "scope_not_active",
+			Message: "this session has no active utterance to cancel",
+		})
+	}
+	runner.canceledStreams.add(envelope.SessionID, stream)
+	return runner.publishOutcome(ctx, envelope, Outcome{
+		Kind: OutcomeCanceled, Operation: "cancel", StreamID: stream, Code: "canceled",
+		Message: "utterance canceled before its next operation",
 	})
 }
 

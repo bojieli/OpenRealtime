@@ -9,10 +9,9 @@ import (
 )
 
 const (
-	// ASR implementation:3 retains implementation:2 immutable operation
-	// identity and additionally waits for an endpoint flush's exact final
-	// admitted-audio item across independently scheduled input lanes.
-	asrImplementationRevision    = "implementation:3"
+	// ASR implementation:4 retains cancellation across delayed operations and
+	// suppresses provider results returned after an operation was canceled.
+	asrImplementationRevision    = "implementation:4"
 	visualImplementationRevision = "implementation:1"
 )
 

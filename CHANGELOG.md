@@ -4,6 +4,14 @@
 
 ### Highlights
 
+- Canceled speech recognition can no longer publish late provider text into
+  conversation history or reopen an utterance from delayed audio and endpoint
+  messages. ASR checks cancellation before publishing revisions, keeps bounded
+  session-scoped stream cancellation, and leaves another session's active
+  recognizer alone. The final-observation gate also rejects new causes from
+  canceled streams, including cancellation reported by an interrupted observe
+  or flush operation. Fresh utterances continue normally.
+
 - An FD-Bench turn answered without a pause after the previous answer is no
   longer recorded as unanswered. A reply was recognised by a gap of at least
   one packet between audio segments, so an agent that finishes one answer and
