@@ -48,13 +48,12 @@ func applicabilityPairingFailures(baseline, variant Result) []string {
 	for index, result := range []Result{baseline, variant} {
 		populations[index] = make(map[string]bool)
 		for _, task := range result.Tasks {
+			conditional = conditional || task.Applicability != ""
 			if result.Suite == "fdb-v1.5" && task.Applicability == "" {
 				failures = append(failures, fmt.Sprintf("FDB cell %q lacks explicit applicability; historical nominal passes are not comparable quality scores", result.Cell.Name))
 				break
 			}
-			if task.Applicability == NotApplicable {
-				conditional = true
-			} else if task.Completed {
+			if task.Applicability != NotApplicable && task.Completed {
 				populations[index][task.ID] = true
 			}
 		}

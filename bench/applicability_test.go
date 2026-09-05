@@ -101,3 +101,24 @@ func TestPairRefusesUnclassifiedHistoricalFDBScores(t *testing.T) {
 		t.Fatalf("legacy FDB nominal passes were compared as quality: %+v", got)
 	}
 }
+
+func TestPairRequiresSameExplicitlyApplicableCasesEvenWithoutExclusions(t *testing.T) {
+	baseline := complete("reference", 1, 2)
+	variant := complete("variant", 1, 2)
+	baseline.Suite, variant.Suite = "fdb-v1.5", "fdb-v1.5"
+	variant.Cell.Levels[bench.FactorCognition] = "fast-only"
+	for _, result := range []*bench.Result{&baseline, &variant} {
+		for index := range result.Tasks {
+			result.Tasks[index].Applicability = bench.Applicable
+		}
+		result.Finish()
+	}
+	if got := bench.Pair(baseline, variant); !got.Reportable {
+		t.Fatalf("identical applicable cases refused: %+v", got)
+	}
+	variant.Tasks[1].ID = "different-case"
+	variant.Finish()
+	if got := bench.Pair(baseline, variant); got.Reportable || !strings.Contains(got.Refusal, "applicable task populations") {
+		t.Fatalf("different fully applicable cases compared: %+v", got)
+	}
+}
