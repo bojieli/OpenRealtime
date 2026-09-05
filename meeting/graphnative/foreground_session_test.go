@@ -1221,6 +1221,23 @@ func TestForegroundTranscriptSupersessionUsesStableStreamAndIndependentFrames(t 
 	}
 }
 
+// TestForegroundCloseDuringEmitDoesNotCloseProducerChannel is two claims, and
+// they are separated because only one of them is about the code.
+//
+// Closing cancels the session context, so an emit that got past its own
+// context check before the cancel lands completes and returns nil. That is a
+// legitimate outcome: it means the emit won a race that nothing here orders.
+// This test used to start the emitting goroutine, close, and then require the
+// emit to have failed - an assertion on which side of an unsynchronised race
+// arrived first, which is a property of the scheduler rather than of the
+// session. It held for a long time and then failed once inside a full gate
+// run, where a hundred packages compete and goroutines are scheduled
+// differently than they are in a package run on its own.
+//
+// So the race keeps the claim its name makes - closing underneath an emit must
+// not close the producer channel, and the emit must return rather than hang -
+// and the claim about what an emit after a close returns is made separately,
+// after Close has provably finished, where it is not a race at all.
 func TestForegroundCloseDuringEmitDoesNotCloseProducerChannel(t *testing.T) {
 	session, runtime, _ := foregroundTestSession(t)
 	sink, _, _ := runtime.snapshot()
@@ -1236,8 +1253,12 @@ func TestForegroundCloseDuringEmitDoesNotCloseProducerChannel(t *testing.T) {
 	}
 	select {
 	case err := <-done:
-		if err == nil || !errors.Is(err, context.Canceled) && err.Error() != "meeting foreground session closed" {
-			t.Fatalf("emit after close error = %v", err)
+		// Either outcome is correct. What must not happen is a panic on a
+		// closed producer channel, which would arrive here as a failed test
+		// process rather than as a value, or a send that never returns.
+		if err != nil && !errors.Is(err, context.Canceled) &&
+			err.Error() != "meeting foreground session closed" {
+			t.Fatalf("emit racing close = %v, want success or the close cause", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("emit raced with close and did not return")
@@ -1250,6 +1271,16 @@ func TestForegroundCloseDuringEmitDoesNotCloseProducerChannel(t *testing.T) {
 	}
 	if got := runtime.closes.Load(); got != 1 {
 		t.Fatalf("idempotent runtime closes = %d, want 1", got)
+	}
+
+	// Close has returned twice, so this emit is unambiguously after it and the
+	// refusal is a fact about the session rather than about scheduling.
+	err := sink.Activity(context.Background(), legacy.ActivityEvent{Started: true, ItemID: "activity-2"})
+	if err == nil {
+		t.Fatal("an emit after Close returned succeeded; a closed session still accepts output")
+	}
+	if !errors.Is(err, context.Canceled) && err.Error() != "meeting foreground session closed" {
+		t.Fatalf("emit after close = %v, want the close cause", err)
 	}
 }
 
