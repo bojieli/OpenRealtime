@@ -450,15 +450,28 @@ func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn
 // ends between them. The recorder can leave sub-frame scheduling jitter
 // between otherwise continuous chunks; only a gap of at least one 20 ms PCM
 // packet establishes a new onset.
+//
+// A change of response establishes one too, and has to. An agent that finishes
+// one answer and begins the next without pausing produces no gap at all, and
+// judged on gaps alone every turn after the first is unanswered: measured on
+// 2026-09-05, one turn of thirty-six was counted as missed while twenty-two
+// deltas of a genuinely new response arrived 148 ms after it ended. A response
+// that had already begun before the turn ended is an overrun rather than a
+// fresh answer, and is still not counted here, because its deltas either side
+// of the boundary carry the same identity.
 func firstAudioOnsetAfter(transcript bench.Transcript, fromMS float64) (float64, bool) {
 	const minimumSegmentGapMS = 20.0
 	previousEndMS := 0.0
+	previousResponse := ""
 	haveAudio := false
 	for _, moment := range transcript.Moments {
 		if moment.Kind != bench.MomentAgentAudio || moment.AudioMS <= 0 {
 			continue
 		}
-		isOnset := !haveAudio || moment.AtMS-previousEndMS >= minimumSegmentGapMS
+		changedResponse := moment.ResponseID != "" && haveAudio &&
+			moment.ResponseID != previousResponse
+		isOnset := !haveAudio || changedResponse ||
+			moment.AtMS-previousEndMS >= minimumSegmentGapMS
 		if isOnset && moment.AtMS >= fromMS {
 			return moment.AtMS - fromMS, true
 		}
@@ -466,6 +479,7 @@ func firstAudioOnsetAfter(transcript bench.Transcript, fromMS float64) (float64,
 		if !haveAudio || endMS > previousEndMS {
 			previousEndMS = endMS
 		}
+		previousResponse = moment.ResponseID
 		haveAudio = true
 	}
 	return 0, false

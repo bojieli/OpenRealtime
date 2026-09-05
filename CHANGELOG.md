@@ -4,6 +4,17 @@
 
 ### Highlights
 
+- An FD-Bench turn answered without a pause after the previous answer is no
+  longer recorded as unanswered. A reply was recognised by a gap of at least
+  one packet between audio segments, so an agent that finishes one answer and
+  begins the next without pausing produced no gap and no reply: measured across
+  eight conversations, one turn of thirty-six was counted missed while
+  twenty-two deltas of a genuinely new response arrived 148 ms after it ended.
+  A change of response now establishes an onset as well. A response that had
+  already begun before the turn ended is still an overrun rather than a fresh
+  answer, because its audio either side of the boundary carries the same
+  identity.
+
 - Canceling a content or generation stream now suppresses its later revisions
   through ingress, semantic admission, and static/session-configured generation
   policies. These paths previously consumed cancellation on the first match,
