@@ -337,6 +337,45 @@ skipped because that dependency was absent in the isolated worktree. No new
 advisory evaluation, live pass, fifteen-repeat case gate, or release credit is
 inferred from this offline audit.
 
+## Speech-anchored acknowledgement diagnostic with scorer version 6
+
+`artifacts/scenario-speech-anchored-acknowledgement-20260905-01` retains three
+new trials of the optional `acknowledgements during observed speech` case,
+from clean revision `bbf6c7003ca47d4231b2af36e4eb0be202bc83db`. All three
+completed and none passed. Independent Gemini 3.7 Flash reviews found usable
+media and agreed with every failure. Both source and advisory bundles reopened:
+
+- Source receipt: `sha256:d74c20a760e430f70ac441a94b87aef843fd184c7e2eabac93a1db9bc5043a31`.
+- Advisory receipt: `sha256:42785593889eaef28934439aa546a86bf0030919986d10e7bdb44ee90cccd7bb`.
+
+The new driver sends pre-synthesized cues only after at least 600 ms of audible
+agent PCM in the preceding second, with activity in the last 100 ms. The first
+cue started at 9,900, 11,100, and 9,800 ms; the second at 11,500, 12,300, and
+11,500 ms. All six cues were fully sent at independently verified opportunities.
+The separate Python WAV audit reproduced their activity, exact input hashes,
+sample counts, and actual hold anchors. The original startup-timing failure is
+therefore separated from overlap behavior. Trial 3 still had only 31 ms of
+activity during its first cue; all three had first-response cancellation during
+the second hold, at 13,068, 13,799, and 13,116 ms respectively.
+
+The existing policy client capture hook retained 72 request/final-choice
+exchanges, including timing and errors, with no headers or hidden reasoning.
+In every trial the overlap classifier proposed `listener_backchannel` for
+`Right?`, the binary validator returned `not_backchannel`, and fallback chose
+`directed_speech`. The server then recorded explicit transcript-policy
+`stop-speaking`, followed by response cancellation with reason `turn_detected`.
+This identifies a repeatable decision path; a controlled policy comparison is
+still needed to attribute the rejection specifically to ASR punctuation.
+
+Scorer v6 validates cue policy/identity, successful transmission, recorded room
+PCM, and independently recomputed agent activity before resolving checks to
+actual positions. Missed opportunities and partial sends fail. The default
+contract remains twelve cases and 180 attempts; the optional extension is
+never full-suite reportable, including at fifteen passing repetitions. Full
+gates and six mutations passed, with the absent optional official SDK reported
+as a skip. The temporary server was stopped. All failures remain retained;
+the runtime repair, repeated-case requirements, and final ledger remain open.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under

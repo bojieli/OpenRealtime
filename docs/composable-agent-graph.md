@@ -2947,8 +2947,12 @@ the required new 180-attempt sample.
     window ends, even if replacement audio continues. It also refuses missing
     terminal evidence and unattributed active PCM. Rescoring all three
     recordings adds a second-hold cancellation failure without changing the
-    original media, scores, or receipts. The runtime cancellation repair and
-    a speech-anchored opportunity remain open. No case gate closes.
+    original media, scores, or receipts. The [speech-anchored v6 diagnostic](subturn-benchmark-study.md#speech-anchored-acknowledgement-diagnostic-with-scorer-version-6)
+    now supplies the missing opportunity: all six cues across three new
+    completed trials encountered independently verified speech. All trials
+    still failed, with a retained `listener_backchannel → not_backchannel →
+    directed_speech` path for `Right?` followed by cancellation. The runtime
+    repair and repeated-case requirements remain open. No case gate closes.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`
