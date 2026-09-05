@@ -536,19 +536,7 @@ func explicitVisualActionsComplete(request cognition.Request) bool {
 }
 
 func (runtime *runtime) waitForLiveVisual(ctx context.Context) error {
-	if !runtime.visualPartial.Load() {
-		return nil
-	}
-	ticker := time.NewTicker(5 * time.Millisecond)
-	defer ticker.Stop()
-	for runtime.visualPartial.Load() {
-		select {
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		case <-ticker.C:
-		}
-	}
-	return nil
+	return runtime.visualPartial.Wait(ctx)
 }
 
 func (runtime *runtime) beginVisualDecision(

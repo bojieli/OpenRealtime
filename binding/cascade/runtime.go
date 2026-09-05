@@ -78,7 +78,7 @@ type runtime struct {
 	// occupied to the newest evidence only; piling one model call per 200 ms
 	// revision behind a busy GPU would turn responsiveness into stale work,
 	// while dropping the final revision can erase the last requested action.
-	visualPartial inFlight
+	visualPartial waitableLane
 	// ordinaryFastRunning includes the interval after an ordinary voice
 	// continuation starts and before it has queued speech. Duplex state cannot
 	// cover that interval: no audio is audible yet. A user who resumes then has
