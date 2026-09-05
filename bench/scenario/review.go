@@ -822,6 +822,16 @@ func (run *ReviewRun) redactMany(values []string) []string {
 
 func sanitizedReviewResult(result Result, redact func(string) string) Result {
 	copy := result
+	if result.Replay != nil {
+		evidence := *result.Replay
+		evidence.Inputs = append([]ReplayInput(nil), result.Replay.Inputs...)
+		evidence.Hearings = append([]ReplayHearing(nil), result.Replay.Hearings...)
+		for index := range evidence.Hearings {
+			evidence.Hearings[index].Text = redact(evidence.Hearings[index].Text)
+			evidence.Hearings[index].Error = redact(evidence.Hearings[index].Error)
+		}
+		copy.Replay = &evidence
+	}
 	copy.Holds = append([]HoldMeasurement(nil), result.Holds...)
 	for index := range copy.Holds {
 		copy.Holds[index].Responses = append([]HoldResponse(nil), result.Holds[index].Responses...)

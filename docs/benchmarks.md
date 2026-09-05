@@ -193,6 +193,38 @@ The translation case separately requires the greeting and introduction, then
 the meeting, day, time, afternoon, and office. Mentioning one appointment
 keyword no longer passes the whole translation.
 
+Completed scenario recordings also retain `replay.version: 1`: authored-case
+identity, synthesized input sample counts and PCM digests, appended transport
+silence, and the independent recognizer observations requested by interrupted
+counting. Recognition observations include the exact window and its PCM
+digest. From the repository root, verify a newly recorded source without
+credentials or an advisory model evaluation:
+
+```bash
+go run ./cmd/openrealtime review replay-scenario \
+  -source-dir /absolute/path/to/source \
+  -source-receipt /absolute/path/to/source.receipt.json
+```
+
+This reopens the complete sealed tree, reconstructs input timing and output
+chunks from the stereo WAV and transcript, and reruns the current scorer. It
+requires exact agreement of outcomes, failures, acoustic measurements,
+latencies, and their architecture-task projection. Menu transitions are
+replayed from tool calls and matched to their results; submitted images must
+match the current authored fixtures. All twelve canonical cases are covered
+by offline replay regressions, and complete sent cues in the observed-speech
+diagnostic are supported. Replay is bounded to ten minutes per attempt.
+
+Behavioral campaign acceptance uses this stricter verifier. Historical
+recordings without replay inputs remain readable through source-integrity and
+advisory verification, but cannot satisfy replay acceptance. Missing or partly
+sent dynamic cues remain negative evidence and currently refuse replay because
+their complete source PCM is absent from the room recording. Successful replay
+checks deterministic decisions given retained observations; it does not
+independently transcribe speech, authenticate the provider or runtime, establish
+a canonical run specification, or meet the final population and target gates.
+Scoring semantics and `scorer_version: 7` are unchanged by replay support.
+
 The acknowledgement scenario now requires acoustic continuation across both
 “Mhm” and “Right, yeah.” Each `held-across` check uses the captured agent
 channel on the serialized playout clock, with one second before and after

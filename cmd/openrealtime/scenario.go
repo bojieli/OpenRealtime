@@ -302,37 +302,7 @@ func scenarioSessionForTask(config bench.SessionConfig, taskID string) bench.Ses
 // scenarioTask adapts one owned interaction scenario to the generic benchmark
 // result without throwing away its richer raw record.
 func scenarioTask(id string, result scenario.Result, runErr error) bench.TaskOutcome {
-	outcome := bench.TaskOutcome{ID: id, Completed: runErr == nil, Passed: result.Passed}
-	outcome.AttachExecution(result.Transcript)
-	if runErr != nil {
-		outcome.Error = runErr.Error()
-	}
-	var heard []float64
-	missed, negative := 0, 0
-	for _, latency := range result.Latencies {
-		switch {
-		case !latency.Heard:
-			missed++
-		case latency.MS < 0:
-			negative++
-		default:
-			heard = append(heard, latency.MS)
-		}
-	}
-	outcome.Metrics = map[string]float64{
-		"missed_reaction_triggers": float64(missed),
-		"overlap_before_trigger":   float64(negative),
-		"failed_checks":            float64(len(result.Failures)),
-	}
-	if len(heard) > 0 {
-		distribution := bench.Summarise(heard)
-		outcome.Metrics["reaction_latency_p50_ms"] = distribution.P50
-		outcome.Metrics["reaction_latency_p90_ms"] = distribution.P90
-	}
-	if len(result.Failures) > 0 {
-		outcome.Notes = map[string]string{"failures": strings.Join(result.Failures, " | ")}
-	}
-	return outcome
+	return scenario.TaskOutcome(id, result, runErr)
 }
 
 // report renders one scenario's attempts.

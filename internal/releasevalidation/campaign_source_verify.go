@@ -80,7 +80,7 @@ func verifyScenarioSourceReceipt(
 	if err := decodeCampaignSourceReceipt(payload, &receipt); err != nil {
 		return "", err
 	}
-	bundle, err := scenariosource.VerifySourceBundle(ctx, scenariosource.SourceBundleOptions{
+	bundle, err := scenariosource.VerifyScoredSourceBundle(ctx, scenariosource.SourceBundleOptions{
 		Directory: receipt.Directory,
 	}, receipt)
 	if err != nil {

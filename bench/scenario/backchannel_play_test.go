@@ -118,6 +118,9 @@ func TestPlayScoresAndRetainsActualAcknowledgementAudio(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, agent := decodeStereoReviewWAV(t, wav)
+			if _, err := ReplayRecorded(t.Context(), item, result, wav); err != nil {
+				t.Fatalf("production result did not replay from retained media: %v", err)
+			}
 			timeline, err := Compose(t.Context(), fixedVoice{ms: 200}, item)
 			if err != nil {
 				t.Fatal(err)

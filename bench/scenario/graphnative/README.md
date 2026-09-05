@@ -191,6 +191,26 @@ go run ./cmd/openrealtime review verify-scenario \
 Verification requires both external receipt levels and reopens all source and
 evaluation bytes; a local manifest by itself is not authority.
 
+New recordings also support deterministic replay, independently of the
+advisory evaluation. From the repository root:
+
+```sh
+go run ./cmd/openrealtime review replay-scenario \
+  -source-dir results/candidate-scenario-review \
+  -source-receipt results/candidate-scenario-review.receipt.json
+```
+
+`VerifyScoredSourceBundle` verifies source integrity, reconstructs the current
+canonical scenario's inputs and captured output, and exactly reproduces the
+retained result and architecture-task metrics. Behavioral campaign acceptance
+requires this stronger verifier. `VerifySourceBundle` remains the historical
+integrity reader. Replay requires versioned inputs from a completed recording;
+missing/partial dynamic cues currently lack recoverable source PCM. Counting
+uses retained independent-recognizer observations bound to their exact audio
+windows. Neither that binding nor local receipts prove recognizer accuracy or
+provider/runtime authenticity. See [the benchmark guide](../../../docs/benchmarks.md)
+for the retained inputs and remaining acceptance requirements.
+
 Missing endpoints, provider credentials, reviewed manifests, inspection
 authority, or sealed review publication are an unavailable provisioned gate—not a
 passing synthetic result. The credential-free WebSocket test above must never

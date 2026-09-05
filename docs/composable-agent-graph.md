@@ -3152,6 +3152,19 @@ the required new 180-attempt sample.
       recovered FDB-family attempts are deterministically rescored and tau-
       Voice recovery fails closed, but not every suite can yet replay every
       accepted score and metric from its lowest-level retained evidence.
+      - [x] Add current scenario scorer replay and require it at the campaign
+        source boundary. Versioned inputs bind authored scripts/checks/images,
+        source PCM durations/digests, trailing silence, and requested counting
+        transcription windows. The offline `review replay-scenario` command
+        rebuilds the timeline and audio capture, reruns menu transitions,
+        acoustic/content/counting checks and latencies, and checks the exact
+        architecture task projection. Regressions cover all twelve canonical
+        cases, production recordings, complete observed-speech cues, and
+        freshly sealed false scores/metrics. Historical source integrity still
+        reopens, while missing replay evidence refuses acceptance. Recognizer
+        accuracy, provider/runtime authenticity, canonical run specifications,
+        and incomplete dynamic-cue source recovery remain outside this subgate;
+        the all-suite parent remains open.
     - [x] Bind each declared repair lineage edge externally: preserve the
       failed full campaign, link the focused diagnostic and repaired full-suite
       closure to it, and require an exact chronological digest match. Earlier

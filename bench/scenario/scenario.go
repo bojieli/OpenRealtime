@@ -302,6 +302,7 @@ type Result struct {
 	Latencies     []Latency         `json:"latencies,omitempty"`
 	Holds         []HoldMeasurement `json:"holds,omitempty"`
 	Transcript    bench.Transcript  `json:"transcript"`
+	Replay        *ReplayEvidence   `json:"replay,omitempty"`
 }
 
 // Latency is how long after something happened the agent could be heard.
@@ -457,7 +458,8 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	if err := validateScenarioChecks(item); err != nil {
 		return Result{Scenario: item.Name}, fmt.Errorf("invalid scenario checks: %w", err)
 	}
-	timeline, err := Compose(ctx, voice, item)
+	recordedVoice := &recordingVoice{voice: voice}
+	timeline, err := Compose(ctx, recordedVoice, item)
 	if err != nil {
 		return Result{Scenario: item.Name}, err
 	}
@@ -511,7 +513,15 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 		return Result{Scenario: item.Name, Transcript: transcript}, err
 	}
 	ears, _ := voice.(Ears)
-	result := score(item, timeline, transcript, menu, hearing(ctx, ears, captured), &captured)
+	identity, identityErr := replayScenarioDigest(item)
+	if identityErr != nil {
+		return Result{Scenario: item.Name, Transcript: transcript}, identityErr
+	}
+	evidence := &ReplayEvidence{Version: ReplayVersion, ScenarioSHA256: identity, Inputs: recordedVoice.inputs,
+		TrailingSamples: len(captured.RoomPCM16) - len(timeline.Samples)}
+	result := score(item, timeline, transcript, menu,
+		recordHearing(hearing(ctx, ears, captured), captured, evidence), &captured)
+	result.Replay = evidence
 	actualTimeline, _ := resolveSpeechCues(item, timeline, transcript, &captured)
 	result.Latencies = latencies(item, actualTimeline, transcript)
 	return result, nil

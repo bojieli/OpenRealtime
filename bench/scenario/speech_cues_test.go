@@ -110,6 +110,14 @@ func TestSpeechTriggeredScenarioUsesSentPositionsThroughRecordedWAVAndReview(t *
 				t.Fatal(err)
 			}
 			room, agent := decodeStereoReviewWAV(t, wav)
+			_, replayErr := ReplayRecorded(t.Context(), item, result, wav)
+			if mode == "silent" {
+				if replayErr == nil || !strings.Contains(replayErr.Error(), "complete sent cue") {
+					t.Fatalf("missing source cue should refuse replay: %v", replayErr)
+				}
+			} else if replayErr != nil {
+				t.Fatalf("production sent cues did not replay: %v", replayErr)
+			}
 			timeline, err := Compose(t.Context(), speechCueVoice{}, item)
 			if err != nil {
 				t.Fatal(err)

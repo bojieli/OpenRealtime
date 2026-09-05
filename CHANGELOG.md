@@ -4,6 +4,13 @@
 
 ### Highlights
 
+- Scenario recordings now retain versioned replay inputs. The offline
+  `review replay-scenario` command reconstructs the authored timeline, acoustic
+  checks, menu outcomes, counting decisions, and latency metrics from sealed
+  media and observations. Behavioral acceptance uses the same verifier and
+  rejects missing replay evidence or scores that disagree with reconstruction.
+  Historical integrity verification remains available; replay does not prove
+  recognizer accuracy, provider authenticity, or release acceptance.
 - Acknowledgement scorer version 7 requires the purchase-confirmation detail
   from the supplied refund policy. An unrelated email about the return label
   cannot satisfy it. Historical recordings retain their original scores;

@@ -38,12 +38,14 @@ const (
 	maximumScenarioEvaluationWorkers     = 16
 )
 
-const reviewUsage = `usage: openrealtime review <scenario|verify-scenario> [flags]
+const reviewUsage = `usage: openrealtime review <scenario|verify-scenario|replay-scenario> [flags]
 
 The scenario reviewer consumes an externally anchored graph-native source
 bundle. It never starts a Realtime session and never changes deterministic
 pass/fail results. verify-scenario reopens the source, every evaluation, and
-both levels of external receipt without credentials or provider work.`
+both levels of external receipt without credentials or provider work.
+replay-scenario independently recomputes current scenario outcomes and metrics
+from retained media and observations; it requires no advisory evaluation.`
 
 type scenarioEvaluationPortableReceipt struct {
 	ManifestSHA256 string `json:"manifest_sha256"`
@@ -123,6 +125,8 @@ func runReview(arguments []string, output io.Writer) error {
 		return runScenarioEvaluationContext(ctx, arguments[1:], output, registry)
 	case "verify-scenario":
 		return runScenarioEvaluationVerification(arguments[1:], output)
+	case "replay-scenario":
+		return runScenarioScoreReplay(arguments[1:], output)
 	case "help", "-h", "--help":
 		fmt.Fprintln(output, reviewUsage)
 		return nil

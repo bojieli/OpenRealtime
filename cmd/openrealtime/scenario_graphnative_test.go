@@ -331,6 +331,14 @@ func BenchmarkScenarioGraphSourceVerifyOneHundredEightyAttempts(b *testing.B) {
 func publishScenarioGraphPopulationFixture(
 	tb testing.TB, repetitions int, retainBehavioralFailure bool, selected ...string,
 ) (string, graphnative.SourceReceipt, scenarioGraphOutcome) {
+	return publishScenarioGraphReplayFixture(tb, repetitions, retainBehavioralFailure, nil, nil, selected...)
+}
+
+func publishScenarioGraphReplayFixture(
+	tb testing.TB, repetitions int, retainBehavioralFailure bool,
+	captureResult func(scenario.Result) (scenario.Result, bench.SessionAudioCapture),
+	mutateArchitecture func(*archbench.Result), selected ...string,
+) (string, graphnative.SourceReceipt, scenarioGraphOutcome) {
 	tb.Helper()
 	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(tb, selected...)
 	directory := filepath.Join(tb.TempDir(), "review-population")
@@ -355,12 +363,16 @@ func publishScenarioGraphPopulationFixture(
 				result.Passed = false
 				result.Failures = []string{"hermetic behavioral failure retained for review"}
 			}
+			audio := bench.SessionAudioCapture{
+				SampleRateHz: 24_000, RoomPCM16: []int16{1, 2},
+				Agent: []bench.TimedAudioChunk{{AtMS: 0.05, PCM16: []int16{3, 4}}},
+			}
+			if captureResult != nil {
+				result, audio = captureResult(result)
+			}
 			reference, err := config.Retain(ctx, graphnative.AttemptCapture{
 				Key: key, Result: result, RunSucceeded: true,
-				Audio: bench.SessionAudioCapture{
-					SampleRateHz: 24_000, RoomPCM16: []int16{1, 2},
-					Agent: []bench.TimedAudioChunk{{AtMS: 0.05, PCM16: []int16{3, 4}}},
-				},
+				Audio:     audio,
 				Submitted: scenarioGraphSubmittedFixture(tb, item),
 			})
 			return graphnative.AttemptObservation{Result: result, Media: &reference}, err
@@ -382,6 +394,9 @@ func publishScenarioGraphPopulationFixture(
 	}
 	if err := appendScenarioGraphArchitectureAttempts(&architecture, outcome.Attempts); err != nil {
 		tb.Fatal(err)
+	}
+	if mutateArchitecture != nil {
+		mutateArchitecture(&architecture)
 	}
 	architecture.Finish()
 	architecturePayload, err := marshalScenarioArchitectureResult(architecture)
