@@ -185,6 +185,62 @@ credentials in this repository:
 | baseline / background | `sha256:bbb116ca2927c07552c64ce1a51cfadc62deb91d04b3936b9113293fc86c09ff` | `sha256:dfc39c1fb4ac4a0cfddfe25737c4bc0aefbe42e237fbeb70c8bf453701f52459` |
 | baseline / other | `sha256:f099274e6df5ee6a4ffd38d9eb37ee177e1556178fafc88a32a37c86c20c6c84` | `sha256:d125dad26f26fadb3562a6bd35a29810fe7ba38f8ba3c32d068fd05920cf0cd2` |
 
+## Focused acknowledgement diagnostic with scorer version 3
+
+The 2026-09-05 focused run is retained in
+`artifacts/scenario-focused-acknowledgement-20260905-02`. It executed one case
+through the public graph-native CLI at revision
+`86f171235597afb7c4abbd2958efacb43b2600da`, with executable digest
+`sha256:440119b9a18d3b6d5c8099a7ac966ae35e0c05aede0ed3554f5131b52fdd6ead`.
+The result is **1/1 completed, 0/1 passed**, with authenticated execution
+evidence, one canonical 25.078-second stereo recording, and one independent
+Gemini 3.7 Flash advisory evaluation. The reviewer found usable media, reported
+`fail`, and agreed with the deterministic result. Both source and evaluation
+were independently reopened by `review verify-scenario`.
+
+- Source receipt: `sha256:52bbb2486a0f0c002dd7da709a5c943048df06fa3d28a412d77ef55956d7019c`.
+- Advisory receipt: `sha256:0a4335cc0bf4bcf835639889285437d8934499d3f7cc8e0bd14069dff5527dbd`.
+- Source WAV: `source/01-an-acknowledgement-is-not-an-interruption-trial-01.stereo.wav`,
+  digest `sha256:9d5ad3393d457fc53b90ac8da4da56181403c544ede5327e1e1e701a18cc0604`.
+
+| Trigger | Before activity | During activity | After activity | Longest interior pause | Check |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Mhm, 9,000–9,510 ms | 720 ms | 510 ms | 1,000 ms | 0 ms | Pass |
+| Right, yeah, 11,500–13,078 ms | 1,000 ms | 480 ms | **0 ms** | 180 ms | Fail |
+
+An independent Python calculation from the retained WAV's agent channel
+reproduced every activity and pause measurement exactly; its program and output
+are retained in `.support/audit.py` and `waveform-audit.json`.
+
+This failure also exposes an authoring limitation. The script asks for a long
+refund explanation without supplying a refund policy. The first agent text was
+“I do not have any information about the refund process in my current context.”
+Its response completed at 12,318 ms. A second short confirmation started after
+the acknowledgements. The absence of acoustic continuation is established;
+whether the first response naturally finished or was interrupted is not
+established by these records. The advisory review's causal interpretation does
+not settle that question. The next scenario repair should provide concrete
+source content for sustained speech and distinguish normal completion from a
+policy-driven stop before attributing the failure to interruption handling.
+
+The profile reused the v28 provider selections and instructions with current
+code, plus explicitly hashed cached participant PCM. Those PCM durations differ
+from the v28 retained checkpoint, so this is not a paired performance
+comparison. Historical architecture declarations are metadata only: the normal
+`bench architecture inspect` authoring command still refuses sparse graph-native
+status. A protocol helper captured actual graph/binding/adapter status; the new
+Graph IR, execution requirement, and per-attempt authenticated inspection bind
+what executed. `authoring-limitations.json` records this distinction.
+
+The preceding `...-01` directory retains both that authoring refusal and a
+pre-media executor refusal: subset ordinal 1 was incorrectly checked against
+full-suite ordinal 9. The live executor now freezes the selected contract,
+rejects changed fixtures and mismatched ordinals, and retains media under the
+subset's own case order. CLI/profile selection, retention, direct executor,
+negative mutation, and full repository gates passed before the new run.
+No historical result was rewritten, no fifteen-repeat case gate closed, and
+the full-suite/final-candidate ledger remains unchanged.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under

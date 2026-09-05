@@ -2930,6 +2930,13 @@ the required new 180-attempt sample.
     preserves the original receipt and records the new interpretation
     separately. Hermetic protocol, retained-WAV, and review regressions prove
     the scoring path; the fifteen-repeat live requirement remains open.
+    The [focused scorer-v3 diagnostic](subturn-benchmark-study.md#focused-acknowledgement-diagnostic-with-scorer-version-3)
+    now retains and independently reopens one new failed attempt and its
+    advisory evaluation. Exact CLI/profile case selection and live executor
+    ordinals are wired end to end. The new recording also exposes a fixture
+    limitation: no refund source content is supplied, and the short answer
+    may have naturally finished. The failure is retained without inferring
+    policy cancellation or closing this gate.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`
