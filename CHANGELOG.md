@@ -432,6 +432,21 @@
   make first. Under a loaded race run that turned a refused collision into an
   ordinary held probe and failed the gate. Both mounts now read a fixed clock,
   which is the collision the test exists to provoke.
+- **The release matrix runs in CI.** Nothing ran the matrix: the gate job
+  runs `check.sh`, which tolerates skips by design, so the matrix's dedicated
+  gates could rot with every check green. A `release-matrix` job now runs the
+  complete local scope with skips forbidden on every change and keeps the
+  create-only report as an artifact. Its first local run found five things:
+  formatting inside sealed evidence, a timing-sensitive race-sweep test, and
+  three cancellation fuzz gates that lose the context cause under the fuzz
+  engine.
+- **The cancellation fuzz gates no longer fail on a fuzz-engine behaviour.**
+  Under `go test -fuzz` a blocked waiter can be handed `context.Canceled`
+  from a context whose cause reads correctly a microsecond later; a
+  twenty-line target reproduces it in a second, and the same target passes
+  thousands of times outside the engine. The three gates accept the bare
+  cancellation only while the engine drives them; the runtime's seeds still
+  prove the cause survives in the ordinary sweep.
 - **Retained evidence is not source the gofmt gate may fail on.** Benchmark
   evidence directories under `artifacts/` carry the support programs that
   produced them, copied in verbatim and sealed by receipts. The gofmt gate

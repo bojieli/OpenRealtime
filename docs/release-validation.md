@@ -457,6 +457,33 @@ lint and formatting, `make test-all`, and the audio-native provider suite. It
 is provisioned rather than local because dependency resolution and the pinned
 external checkout are not offline repository inputs.
 
+## Continuous integration
+
+The `release-matrix` job in `.github/workflows/ci.yml` runs the complete
+local scope of this matrix on every change, with skips forbidden, and keeps
+the create-only report and per-gate logs as a build artifact. It provisions
+what the local gates need and nothing more: a browser, Node and the official
+SDK, Python with the sidecar test requirements, ffmpeg and bubblewrap, the
+Opus development libraries, and the pinned Swift image. Provisioned gates
+stay blocked there, which the report records. `check.sh` remains the
+developer gate; this job is the one that would have noticed the efficiency,
+Opus, sidecar-conformance, and fuzz gates rotting while every check stayed
+green.
+
+### A fuzz-engine behaviour the cancellation gates work around
+
+Under `go test -fuzz` on go1.25.0 and go1.25.14, a goroutine blocked on a
+context's `Done` channel can be handed `context.Canceled` from a context whose
+`context.Cause` reads as the caller's cause a microsecond later, in the same
+process, on the same context object, with a single worker. A twenty-line
+target that only blocks and reads the cause reproduces it within a second;
+the same target passes two thousand times when built with the fuzz
+instrumentation but run without the engine, and the runtime's own seeds prove
+the cause survives every wait path in the ordinary sweep. The three
+cancellation fuzz gates therefore accept the bare cancellation as the same
+outcome only while the fuzz engine is driving them, detected from the
+`-test.fuzz` flag; the cause assertion is unchanged everywhere else.
+
 ## Fail-closed rules
 
 - Every gate is either a required release claim or an explicitly opt-in,

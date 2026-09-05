@@ -198,6 +198,70 @@ jobs:
           mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
           ./scripts/check.sh
 
+  # The release matrix is the machine-readable claim inventory, and until now
+  # nothing ran it: the gate above runs check.sh, which tolerates skips by
+  # design, and the matrix's dedicated gates - efficiency, the Opus encoder,
+  # sidecar conformance, the extension conformance suites, every fuzz target,
+  # the browser presentation profiles, the portable clients - could rot with
+  # every check green. This job runs the complete local scope with skips
+  # forbidden and keeps the create-only report as an artifact. It provisions
+  # exactly what the plan says the local gates need; a provisioned gate stays
+  # blocked here, which the report records rather than hides.
+  release-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Local gate prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
+          sudo apt-get install -y --no-install-recommends chromium-browser \
+            || sudo apt-get install -y --no-install-recommends chromium
+          for candidate in chromium chromium-browser google-chrome; do
+            if path="$(command -v "$candidate")"; then
+              echo "CHROMIUM=$path" >> "$GITHUB_ENV"
+              break
+            fi
+          done
+          python -m pip install --quiet -r sidecars/requirements-test.txt
+          # The Swift gate never pulls; the image must be present before it runs.
+          docker pull --quiet swift:5.10-jammy
+
+      - name: Official Realtime SDK
+        working-directory: examples/sdk-client
+        run: npm install --no-audit --no-fund
+
+      - name: Local release matrix
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+        run: |
+          mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
+          evidence=".runtime/release-validation/ci-${{ github.run_id }}-${{ github.run_attempt }}"
+          ./scripts/release-validate.sh -mode run -scope local \
+            -artifacts "$evidence" -report "$evidence/report.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-matrix-local-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .runtime/release-validation/ci-*/
+          if-no-files-found: ignore
+
   sidecars:
     runs-on: ubuntu-latest
     timeout-minutes: 15
