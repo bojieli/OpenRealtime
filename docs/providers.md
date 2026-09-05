@@ -177,6 +177,17 @@ should be measured on the language pair in use. The historical `-language`
 flag remains a shared recognition/synthesis fallback; a role-specific setting
 wins.
 
+The default `qwen-asr` recogniser detects the language itself and reports the
+one it heard; it takes no hint. An explicit `-asr-language` for it is refused
+at construction rather than dropped, and the shared `-language` fallback,
+which also configures synthesis, simply does not reach it. The same rule
+covers the other two Deepgram-only options: `-asr-keyterms` and
+`-asr-endpointing` are honoured by Deepgram, ignored by the batch recognisers
+as documented below, and refused by `qwen-asr`, whose endpoint the engine's
+own acoustic gate decides. The refusal is deliberate: a recogniser that
+accepted an option and ran without it would report a configuration it was
+not running.
+
 A batch endpoint cannot produce a partial hypothesis: it can only be asked what
 a recording said. So by default it recognises **once**, at the endpoint of the
 utterance, and emits one final revision. `-asr-partial-interval` will buy

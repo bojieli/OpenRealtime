@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -640,5 +641,41 @@ func TestWithoutAProjectionSilenceStillDecidesAlone(t *testing.T) {
 	})
 	if !decision.Ended || decision.Projected {
 		t.Fatalf("the rule fallback ends on silence and projects nothing: %+v", decision)
+	}
+}
+
+// Turn projection reaches the conversation only through the floor. A policy
+// set that names a model projection while its floor never consults it would
+// report a factor it is not running - the silent no-op a measured factor must
+// never be - so validation refuses it rather than trusting every composer to
+// remember the floor.
+func TestValidateRefusesAProjectionTheFloorDoesNotConsult(t *testing.T) {
+	projection, err := interaction.NewModelProjection(answering{option: "finished"}, interaction.ProjectionOptions{})
+	if err != nil {
+		t.Fatalf("projection: %v", err)
+	}
+	policies := interaction.Defaults()
+	policies.TurnProjection = projection
+	err = policies.Validate()
+	if err == nil || !strings.Contains(err.Error(), "turn_projection") || !strings.Contains(err.Error(), "floor") {
+		t.Fatalf("a projection the default floor never consults was accepted: %v", err)
+	}
+	policies.Floor = interaction.NewModelFloor("native")
+	if err := policies.Validate(); err == nil {
+		t.Fatal("a model-owned floor cannot consult an engine projection, yet the set validated")
+	}
+	policies.Floor = interaction.NewEngineFloor(interaction.EngineFloorOptions{Projection: projection})
+	if err := policies.Validate(); err != nil {
+		t.Fatalf("a floor built around the projection must validate: %v", err)
+	}
+	other, _ := interaction.NewModelProjection(answering{option: "continuing"}, interaction.ProjectionOptions{Confidence: 0.9})
+	policies.TurnProjection = other
+	if err := policies.Validate(); err == nil {
+		t.Fatal("a floor consulting a different projection than the set reports must be refused")
+	}
+	// The shipped default pairs a VAD-only projection with a floor that has
+	// no projection at all; that is one policy, not a disagreement.
+	if err := interaction.Defaults().Validate(); err != nil {
+		t.Fatalf("defaults: %v", err)
 	}
 }

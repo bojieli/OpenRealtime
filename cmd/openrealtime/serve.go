@@ -252,7 +252,8 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.asrModel, "asr-model", qwenasr.DefaultModel,
 		"recogniser model identity; unset selects the provider's default")
 	flags.StringVar(&options.asrLanguage, "asr-language", "",
-		"recognition language; Deepgram defaults to en-US; multi is model-specific and excludes Mandarin on Nova-3; empty inherits -language")
+		"recognition language; Deepgram defaults to en-US; multi is model-specific and excludes Mandarin on Nova-3; "+
+			"empty inherits -language; qwen-asr detects the language itself and refuses one")
 	flags.StringVar(&options.language, "language", "",
 		"legacy shared language hint for recognition and synthesis; role-specific settings take precedence")
 	flags.DurationVar(&options.asrCadence, "asr-cadence", 200*time.Millisecond, "how often the recogniser is advanced")
@@ -260,7 +261,7 @@ func runServe(arguments []string, output io.Writer) error {
 		"ask a batch recogniser for a hypothesis this often by re-transcribing the utterance; "+
 			"0 recognises only at the endpoint, and a streaming recogniser ignores it")
 	flags.DurationVar(&options.asrEndpointing, "asr-endpointing", 300*time.Millisecond,
-		"silence used by a streaming recogniser's own VAD; batch recognisers ignore it")
+		"silence used by Deepgram's own VAD; batch recognisers ignore it and qwen-asr, whose endpoint the engine decides, refuses it")
 
 	// vLLM rather than the generic entry, because the default endpoint below
 	// is vLLM's own port and the quickstart's local stack is vLLM. The
@@ -1524,7 +1525,7 @@ func buildRecogniser(options serveOptions) (func() (v1.PerceptionProvider, error
 		BaseURL:  options.override("asr-url", options.asrURL),
 		APIKey:   os.Getenv("OPENREALTIME_ASR_API_KEY"),
 		Language: recogniserLanguage(options), PartialInterval: options.asrPartial,
-		Endpointing:    options.asrEndpointing,
+		Endpointing:    recogniserEndpointing(options),
 		RequestTimeout: recogniserTimeout(options.asrCadence, options.requestTimeout),
 	})
 }
@@ -1537,9 +1538,15 @@ func buildRecogniser(options serveOptions) (func() (v1.PerceptionProvider, error
 // does not include Mandarin for Nova-3) and measuring it on its languages.
 func recogniserLanguage(options serveOptions) string {
 	if language := strings.TrimSpace(options.asrLanguage); language != "" {
+		// An explicit role-specific choice always reaches the provider
+		// layer, which refuses it for a recogniser that cannot honour it.
 		return language
 	}
-	if language := strings.TrimSpace(options.language); language != "" {
+	if language := strings.TrimSpace(options.language); language != "" &&
+		providers.ASRAcceptsLanguage(options.asrProvider) {
+		// The shared legacy hint also configures synthesis. A recogniser
+		// that detects the language itself simply does not take part in it,
+		// rather than turning a synthesis choice into a recognition refusal.
 		return language
 	}
 	if recogniser, err := providers.LookupASR(options.asrProvider); err == nil &&
@@ -1547,6 +1554,25 @@ func recogniserLanguage(options serveOptions) string {
 		return "en-US"
 	}
 	return ""
+}
+
+// recogniserEndpointing forwards -asr-endpointing only where it means
+// something.
+//
+// The flag's default exists for Deepgram, whose own VAD reads it. The default
+// recogniser leaves endpointing to the engine's acoustic gate, and the
+// provider layer refuses a value it cannot honour - so the default must not
+// reach it, while an operator who actually typed the flag for such a
+// recogniser is told it does nothing rather than having it dropped.
+func recogniserEndpointing(options serveOptions) time.Duration {
+	if options.chose("asr-endpointing") {
+		return options.asrEndpointing
+	}
+	if recogniser, err := providers.LookupASR(options.asrProvider); err == nil &&
+		recogniser.Dialect == providers.DialectDeepgramListen {
+		return options.asrEndpointing
+	}
+	return 0
 }
 
 // recogniserTimeout bounds one advance of the recogniser.

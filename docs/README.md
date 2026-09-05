@@ -133,7 +133,7 @@ the released system does now.
 - [Reproducible meeting-assistant deployment](guides/meeting-assistant.md)
 - [Native macOS developer app](../macos/README.md)
 - [Provider deployment examples](providers.md#examples)
-- [Maintained key-free component example](../examples/README.md)
+- [Official SDK client example](../examples/README.md)
 
 If a page sent you here and you are still unsure where to go, the
 [quickstart](quickstart.md) is the safest next click.

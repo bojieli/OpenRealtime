@@ -173,10 +173,23 @@ type ASRRequest struct {
 	// which produces them for free.
 	PartialInterval time.Duration
 	// Endpointing configures a streaming service's own VAD. Batch providers
-	// ignore it.
+	// ignore it; Deepgram honours it; the local Qwen3-ASR service, whose
+	// endpoint the engine's own gate decides, refuses it.
 	Endpointing    time.Duration
 	RequestTimeout time.Duration
 	Header         http.Header
+}
+
+// ASRAcceptsLanguage reports whether a recogniser forwards a language hint to
+// its service. The default recogniser detects the language itself and refuses
+// one; composers use this to decide whether a shared, role-agnostic language
+// setting should reach recognition at all.
+func ASRAcceptsLanguage(provider string) bool {
+	entry, err := LookupASR(provider)
+	if err != nil {
+		return false
+	}
+	return entry.Dialect != DialectQwenASR
 }
 
 // DescribeASR validates and normalizes through the same constructor path as a
@@ -234,6 +247,25 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 
 	switch entry.Dialect {
 	case DialectQwenASR:
+		// The local Qwen3-ASR service detects the language itself, has no
+		// vocabulary-hint parameter, and leaves endpointing to the engine's
+		// own acoustic gate. Each of these options used to be accepted and
+		// silently dropped, so a deployment could believe it had configured
+		// recognition it had not. A recogniser that cannot honour an option
+		// must say so rather than run a different configuration than it
+		// reports.
+		if language := strings.TrimSpace(request.Language); language != "" {
+			return nil, fmt.Errorf("recogniser %q detects the language itself and cannot honour language %q; "+
+				"leave -asr-language unset for it", entry.Name, language)
+		}
+		if len(request.Keyterms) > 0 {
+			return nil, fmt.Errorf("recogniser %q has no vocabulary hints and cannot honour keyterms; "+
+				"they are a Deepgram feature", entry.Name)
+		}
+		if request.Endpointing > 0 {
+			return nil, fmt.Errorf("recogniser %q leaves endpointing to the engine's own gate and cannot honour endpointing %s; "+
+				"it configures a streaming service's VAD, which only Deepgram exposes", entry.Name, request.Endpointing)
+		}
 		return func() (v1.PerceptionProvider, error) {
 			return qwenasr.New(qwenasr.Config{
 				BaseURL: baseURL, Model: model, BearerToken: key,

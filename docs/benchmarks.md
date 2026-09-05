@@ -523,7 +523,7 @@ observation-only; every action must still name the declared `screen` source.
 
 This four-case suite puts the voice, vision, action, and slow-cognition paths
 on one deterministic wall clock. The inputs are checked-in 24 kHz PCM
-recordings and a changing browser surface; `testdata/fixtures.json` records the
+recordings and a changing browser surface; `bench/meeting/testdata/fixtures.json` records the
 exact transcript, cue intervals, audio hashes, format, and synthesis
 provenance. The model receives pixels and audio, never evaluator state or a
 visual narration substituted for the screen.

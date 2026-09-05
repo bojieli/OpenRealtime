@@ -19,6 +19,7 @@ package interaction
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/session"
@@ -170,7 +171,67 @@ func (policies Policies) Validate() error {
 	if len(missing) > 0 {
 		return fmt.Errorf("interaction policies are unset: %s", strings.Join(missing, ", "))
 	}
+	return policies.validateProjection()
+}
+
+// validateProjection refuses a turn projection the floor does not consult.
+//
+// Turn projection reaches the conversation only through the floor: it is the
+// floor that asks whether the turn is ending early or still going. A policy
+// set can therefore name a projection while its floor never calls it, and it
+// would report a model projection, flip the evidence capabilities, and project
+// nothing. The serve command has always rebuilt the floor when it installs
+// one, but every other composer had to remember to; make the disagreement a
+// validation error so none of them can forget.
+//
+// The VAD-only projection is the null decision and needs no floor support: a
+// floor with no projection at all and the shipped default are the same policy.
+func (policies Policies) validateProjection() error {
+	if isVADOnly(policies.TurnProjection) {
+		return nil
+	}
+	floor, ok := policies.Floor.(ProjectingFloor)
+	if !ok {
+		return fmt.Errorf("interaction policies: turn_projection %q is set but floor %q does not consult a projection; "+
+			"build the floor with EngineFloorOptions.Projection", policies.TurnProjection.Name(), policies.Floor.Name())
+	}
+	consulted := floor.Projection()
+	if !sameProjection(consulted, policies.TurnProjection) {
+		consultedName := "none"
+		if consulted != nil {
+			consultedName = consulted.Name()
+		}
+		return fmt.Errorf("interaction policies: turn_projection %q is set but floor %q consults %s; "+
+			"the floor must be built around the projection the set reports",
+			policies.TurnProjection.Name(), policies.Floor.Name(), consultedName)
+	}
 	return nil
+}
+
+// sameProjection is true when the floor consults the projection the set
+// reports. Names are the reporting granularity, so they must agree; when both
+// are handles, the floor must also hold the very same one, since two model
+// projections over one decider can still differ in their thresholds.
+func sameProjection(consulted, reported TurnProjection) bool {
+	if consulted == nil || reported == nil {
+		return false
+	}
+	if consulted.Name() != reported.Name() {
+		return false
+	}
+	left, right := reflect.ValueOf(consulted), reflect.ValueOf(reported)
+	if left.Kind() == reflect.Ptr && right.Kind() == reflect.Ptr {
+		return left.Pointer() == right.Pointer()
+	}
+	return true
+}
+
+func isVADOnly(projection TurnProjection) bool {
+	if projection == nil {
+		return true
+	}
+	_, ok := projection.(VADOnlyProjection)
+	return ok || projection.Name() == "vad-only"
 }
 
 // Report is the policy set as evidence. It is what a measurement cell records

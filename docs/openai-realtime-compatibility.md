@@ -326,9 +326,13 @@ is never silently checked against a beta schema.
 - Direction and profile are part of validation, preventing a client event from
   being accepted on a server path merely because it is valid JSON.
 
-Run `./scripts/check_openai_realtime_spec.sh` to refetch the pinned source,
-verify its cryptographic hash, regenerate into a temporary directory, and
-compare both committed generated outputs byte-for-byte.
+The pinned source revision and its SHA-256 are recorded inside the committed
+schema bundle (`x-openrealtime-source` in
+`protocol/openai/openai-realtime-events.schema.json`) and asserted by
+`TestGeneratedDefinitionsMatchSchemaConstants`, so a regenerated bundle from a
+different revision fails the ordinary test run rather than drifting quietly.
+There is no refetch script in this tree; moving the pin is a deliberate
+regeneration that goes through the ageing audit described above.
 
 Run `openrealtime conformance protocol` (or `./scripts/check.sh`) to
 audit all registry/schema links, compile the entire nested closure, confirm the

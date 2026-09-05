@@ -55,6 +55,14 @@ type Floor interface {
 	EngineOwned() bool
 }
 
+// ProjectingFloor is a floor that consults a turn projection. Validation uses
+// it to prove that the projection a policy set reports is the one its floor
+// actually asks.
+type ProjectingFloor interface {
+	Floor
+	Projection() TurnProjection
+}
+
 // EngineFloorOptions configures the engine-owned floor.
 type EngineFloorOptions struct {
 	// SilenceDuration is how much silence ends a turn. Zero selects 500 ms,
@@ -112,6 +120,12 @@ func (floor engineFloor) Name() string {
 }
 
 func (floor engineFloor) EngineOwned() bool { return true }
+
+// Projection reports the turn projection this floor consults, nil when it
+// consults none. Policies.Validate compares it against the policy set's own
+// projection: a projection the floor never asks would be reported and never
+// run, which is the silent no-op a measured factor must never be.
+func (floor engineFloor) Projection() TurnProjection { return floor.options.Projection }
 
 func (floor engineFloor) Endpoint(context Context) EndpointDecision {
 	if context.Revision.Final {

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"time"
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -442,5 +443,47 @@ func TestALoopbackDefaultNeedsNoCredential(t *testing.T) {
 	}
 	for _, entry := range providers.TTSs() {
 		check("tts", entry.Name, entry.BaseURL, entry.Local)
+	}
+}
+
+// The default recogniser detects the language itself, has no vocabulary hints,
+// and leaves endpointing to the engine's own gate. Each of those options used
+// to be accepted and dropped on the floor, so a deployment could believe it
+// had configured something it had not. Refuse instead.
+func TestQwenASRRefusesOptionsItCannotHonour(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		request providers.ASRRequest
+		want    string
+	}{
+		{name: "language", request: providers.ASRRequest{Provider: "qwen-asr", Language: "zh-CN"}, want: "language"},
+		{name: "keyterms", request: providers.ASRRequest{Provider: "qwen-asr", Keyterms: []string{"fennel"}}, want: "keyterms"},
+		{name: "endpointing", request: providers.ASRRequest{Provider: "qwen-asr", Endpointing: 300 * time.Millisecond}, want: "endpointing"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := providers.NewASRFactory(testCase.request)
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("qwen-asr accepted an option it ignores: err=%v", err)
+			}
+			if _, err := providers.DescribeASR(testCase.request); err == nil {
+				t.Fatal("descriptor-only resolution accepted what live construction refuses")
+			}
+		})
+	}
+	if _, err := providers.NewASRFactory(providers.ASRRequest{Provider: "qwen-asr"}); err != nil {
+		t.Fatalf("the bare default request must still build: %v", err)
+	}
+	deepgram := providers.ASRRequest{
+		Provider: "deepgram", APIKey: "k", Language: "en-US",
+		Keyterms: []string{"fennel"}, Endpointing: 300 * time.Millisecond,
+	}
+	if _, err := providers.NewASRFactory(deepgram); err != nil {
+		t.Fatalf("Deepgram honours all three and must keep accepting them: %v", err)
+	}
+	if !providers.ASRAcceptsLanguage("deepgram") || !providers.ASRAcceptsLanguage("openai") ||
+		providers.ASRAcceptsLanguage("qwen-asr") {
+		t.Fatal("ASRAcceptsLanguage disagrees with the dialects that forward a language")
 	}
 }

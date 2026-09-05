@@ -22,6 +22,11 @@
 
 ### Developer experience
 
+- **The examples page describes the example that exists.** It sent readers to
+  `go run ./examples/v1/reference`, a program retired with the legacy
+  experiment scaffolding. It now describes the official-SDK example and where
+  the key-free component fakes actually live.
+
 - **A native macOS client carries the complete session.** The SwiftUI app sends
   PCM16 microphone audio and typed text, plays audio and renders written text,
   captures a selected display and physical camera with ScreenCaptureKit and
@@ -228,6 +233,16 @@
   enumerated word spent its budget on `<think>` and never answered; the empty
   answer scored as unknown, and unknown fell below the confidence threshold. It
   is told not to think, in whichever of the five spellings its endpoint takes.
+- **The default recogniser refuses what it cannot honour.** `-asr-language`,
+  `-asr-keyterms`, and `-asr-endpointing` were accepted for `qwen-asr` and
+  dropped on the floor: the local service detects the language itself, has no
+  vocabulary hints, and leaves the endpoint to the engine's own gate. A
+  deployment could therefore believe it had configured recognition it had not.
+  The provider layer now refuses each of them by name, so every composer gets
+  the same answer; `serve` stops forwarding the Deepgram-only endpointing
+  default to a recogniser that never read it, and the shared legacy
+  `-language` hint, which also configures synthesis, no longer reaches a
+  recogniser that detects the language for itself.
 
 ### Turn-taking
 
@@ -242,6 +257,14 @@
   `-projection-hold` already bounds. The code said so in a comment and then
   gated both on one value, which spends the cheap failure to avoid the
   expensive one.
+- **A projection the floor never asks is a configuration error.** Turn
+  projection reaches the conversation only through the floor, and the policy
+  set could name a model projection while its floor consulted none: the set
+  reported `model:…`, flipped the evidence capabilities, and projected nothing.
+  `serve` has always rebuilt the floor when it installs one; every other
+  composer had to remember to. `Policies.Validate` now compares the projection
+  the floor consults with the one the set reports and refuses a disagreement,
+  so the silent no-op cannot be composed.
 
 ### The release gate
 

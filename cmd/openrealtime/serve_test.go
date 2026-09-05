@@ -254,6 +254,48 @@ func TestDeepgramLanguageDefaultsToEnglishAndRemainsConfigurable(t *testing.T) {
 	if got := recogniserLanguage(options); got != "" {
 		t.Fatalf("another recogniser inherited Deepgram's default: %q", got)
 	}
+	// The legacy shared hint also configures synthesis, so a recogniser that
+	// detects the language itself must not inherit it as a refusal.
+	options.language = "zh-CN"
+	if got := recogniserLanguage(options); got != "" {
+		t.Fatalf("a language-detecting recogniser inherited the shared hint: %q", got)
+	}
+	options.asrLanguage = "zh-CN"
+	if got := recogniserLanguage(options); got != "zh-CN" {
+		t.Fatalf("an explicit -asr-language must reach the provider layer to be refused there: %q", got)
+	}
+}
+
+// The serve default for -asr-endpointing exists for Deepgram's own VAD. The
+// default recogniser leaves endpointing to the engine, so the default must not
+// reach it, while an operator who typed the flag for it must be told it does
+// nothing rather than silently ignored.
+func TestEndpointingReachesOnlyARecogniserThatUsesIt(t *testing.T) {
+	options := defaultOptions()
+	options.asrProvider = "qwen-asr"
+	options.asrEndpointing = 300 * time.Millisecond
+	if _, err := buildRecogniser(options); err != nil {
+		t.Fatalf("the default recogniser must build with the default flags: %v", err)
+	}
+	if got := recogniserEndpointing(options); got != 0 {
+		t.Fatalf("the Deepgram default endpointing leaked to qwen-asr: %v", got)
+	}
+	options.asrProvider = "deepgram"
+	if got := recogniserEndpointing(options); got != 300*time.Millisecond {
+		t.Fatalf("Deepgram lost its default endpointing: %v", got)
+	}
+	options.asrProvider = "qwen-asr"
+	options.explicit = map[string]bool{"asr-endpointing": true}
+	_, err := buildRecogniser(options)
+	if err == nil || !strings.Contains(err.Error(), "endpointing") {
+		t.Fatalf("an explicit endpointing for a recogniser that ignores it was accepted: %v", err)
+	}
+	options.explicit = map[string]bool{"asr-language": true}
+	options.asrLanguage = "zh-CN"
+	_, err = buildRecogniser(options)
+	if err == nil || !strings.Contains(err.Error(), "language") {
+		t.Fatalf("an explicit language for a recogniser that detects it was accepted: %v", err)
+	}
 }
 
 // Turn projection reaches the conversation through the floor, so installing
