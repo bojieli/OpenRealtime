@@ -378,9 +378,19 @@ func publishScenarioGraphReplayFixture(
 			return graphnative.AttemptObservation{Result: result, Media: &reference}, err
 		}, nil
 	}
+	// The bound here is an attempt budget, not the thing under test: this
+	// fixture has no server, no model, and no network, and what it checks is
+	// that a hundred and eighty attempts produce a complete, verifiable
+	// bundle. A one-second budget made that a claim about how busy the machine
+	// was. Each attempt writes a scorer result, a media manifest, and up to
+	// three images through a bundle-wide mutex, which takes about twenty
+	// milliseconds idle and passed one second under a doubly-oversubscribed
+	// gate on 2026-09-05 - twice, in two independent runs, each reporting the
+	// retained media population as short. A real hang is still caught by the
+	// package's own test timeout.
 	outcome, err := executeScenarioGraphChecklist(
 		context.Background(), selection, requirement, adapterFingerprint,
-		repetitions, time.Second, bundle, scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
+		repetitions, time.Minute, bundle, scenario.SpeechVoice{}, bench.SessionConfig{}, newExecutor,
 	)
 	if err != nil {
 		tb.Fatal(err)

@@ -277,7 +277,13 @@ func (bundle *scenarioGraphReviewBundle) sourceAttempts(
 		return nil, fmt.Errorf("index final graph-native scenario checklist: %w", err)
 	}
 	if len(bundle.media) != checklist.Expected || len(checklist.Attempts) != checklist.Expected {
-		return nil, errors.New("scenario review media population differs from the final checklist")
+		// Say which side is short and by how much. The bare sentence this used
+		// to carry sent two people reading the publication path when the
+		// answer was that attempts had failed before retaining anything.
+		return nil, fmt.Errorf(
+			"scenario review expected %d attempts but retained media for %d and listed %d",
+			checklist.Expected, len(bundle.media), len(checklist.Attempts),
+		)
 	}
 	result := make([]graphnative.SourceAttempt, 0, checklist.Expected)
 	for _, record := range checklist.Attempts {
