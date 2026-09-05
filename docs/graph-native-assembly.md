@@ -74,3 +74,12 @@ catalogs contain references only (currently none), never values. The evidence
 manifests contain `profiles: []`, explicitly making no empirical claim until a
 profile is bound to an exact plan fingerprint, element, implementation,
 hardware artifact, and load artifact.
+
+The scenario conversation adapter sends playback-state updates through
+`playback_state_append` into the graph's trajectory store. The update records
+what was heard, including the pending suffix after interruption. Its original
+trajectory prefix supplies provenance while later observations may advance the
+store. The adapter waits for the matching commit and published state before
+releasing the turn. Consequently a following explicit response request can
+sample played history without waiting for another observation. The policy
+still decides whether that request should produce speech or remain silent.

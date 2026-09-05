@@ -3,6 +3,7 @@ package graphs_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -24,135 +25,197 @@ import (
 func TestScenarioConversationPreservesAudibleCountAfterContextAdvances(t *testing.T) {
 	for _, newerRoom := range []bool{false, true} {
 		t.Run(map[bool]string{false: "matching final", true: "later room observation"}[newerRoom], func(t *testing.T) {
-			base := newScenarioProfileFixture(t)
-			config := base.pluginConfig()
-			config.SemanticAdmission.TranscriptEvents = &policyelements.SemanticTranscriptEventConfig{
-				Partial: policyelements.SemanticTranscriptEventRules{Instruction: "Count the current animal.", TimeoutMS: 1000, Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough, coreinteraction.ActKeepSpeaking}},
-				Final:   policyelements.SemanticTranscriptEventRules{Instruction: "Count the current animal.", TimeoutMS: 1000, Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer, coreinteraction.ActKeepSpeaking}},
-			}
-			asr := &scenarioAddressingASRControl{turns: []string{"Count the animals out loud as I mention them and say nothing else.", "A capybara wandered over and sat down next to me.", "The water was calm."}}
-			if !newerRoom {
-				asr.turns = asr.turns[:2]
-			}
-			asr.turns = append(asr.turns, "A capybara joined the first one.")
-			policy := &scenarioSpeechHistoryPolicy{scenarioCountAdmissionPolicy: scenarioCountAdmissionPolicy{descriptor: config.Policy.Descriptor, primary: "answer", activation: "condition-met", primaryConfidence: 0.989, activationConfidence: 0.999}}
-			model := &scenarioSpeechHistoryModel{descriptor: config.Model.Descriptor, started: make(chan continuation.Request, 1), release: make(chan struct{})}
-			tts := &scenarioAddressingTTSControl{}
-			config.ASR.Factory = func(context.Context, legacy.Options) (v1.PerceptionProvider, error) {
-				return &scenarioAddressingASR{control: asr, descriptor: config.ASR.Descriptor}, nil
-			}
-			config.Policy.Factory = func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) { return policy, nil }
-			config.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) { return model, nil }
-			config.SilentModel.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
-				return &scenarioCountAdmissionModel{descriptor: config.SilentModel.Descriptor}, nil
-			}
-			config.TTS.Factory = func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
-				return &scenarioAddressingTTS{control: tts, descriptor: config.TTS.Descriptor}, nil
-			}
-			launchConfig, err := graphs.ScenarioConversationLaunchConfig(config)
-			if err != nil {
-				t.Fatal(err)
-			}
-			recording := newScenarioAddressingGraphRecorder()
-			instrumentScenarioAddressingFactory(t, &launchConfig, "policy.SemanticAdmission", recording, "decision")
-			instrumentScenarioAddressingFactory(t, &launchConfig, "interaction.ModelResultCommit", recording, "outcome")
-			launched, err := graphlaunch.New(t.Context(), launchConfig)
-			if err != nil {
-				t.Fatal(err)
-			}
-			sink := &scenarioSpeechHistorySink{scenarioQueuedCancelSink: &scenarioQueuedCancelSink{scenarioAddressingSink: newScenarioAddressingSink(), audio: make(chan string, 8)}, ended: make(chan legacy.TurnOutcome, 8)}
-			const sessionID = "speech-history"
-			settings := legacy.Settings{Instruction: "Follow the user's standing count.", Voice: config.TTS.Voice, Modalities: []string{"audio"}, Gate: config.Gate}
-			runtime, err := launched.Binding.Start(t.Context(), legacy.Options{SessionID: sessionID, Sink: sink, Settings: settings})
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-				defer cancel()
-				if err := runtime.Close(ctx, errors.New("history test complete")); err != nil {
-					t.Error(err)
-				}
-			})
-			if err = runtime.Update(t.Context(), settings); err != nil {
-				t.Fatal(err)
-			}
-			var clock scenarioAddressingAudioClock
-			driveScenarioAddressingTurn(t, runtime, sink.scenarioAddressingSink, &clock, scenarioAddressingStreamID(sessionID, 1), asr.turns[0])
-			recording.await(t, "semantic_admission.decision", func(e element.Envelope) bool {
-				d, ok := e.Payload.(policyelements.SemanticDecision)
-				return ok && d.StandingAfter == 1 && d.DecisionStage == "standing_coverage"
-			})
-			for i := 0; i < 3; i++ {
-				sendScenarioSupersessionAudio(t, runtime, &clock, false)
-			}
-			request := receiveScenarioAddressing(t, model.started, "partial-trigger model invocation")
-			for i := 0; i < 5; i++ {
-				sendScenarioSupersessionAudio(t, runtime, &clock, true)
-			}
-			awaitSpeechHistoryObservation(t, runtime, asr.turns[1])
-			if newerRoom {
-				for i := 0; i < 8; i++ {
-					sendScenarioSupersessionAudio(t, runtime, &clock, i >= 3)
-				}
-				awaitSpeechHistoryObservation(t, runtime, asr.turns[2])
-			}
-			if runtime.Trajectory().Version <= request.Trajectory.Version {
-				t.Fatal("fixture did not advance canonical context during model work")
-			}
-			close(model.release)
-			if text := receiveScenarioAddressing(t, sink.audio, "count at actual audio boundary"); text != "One." {
-				t.Fatal(text)
-			}
-			outcome := recording.await(t, "model_result_commit.outcome", func(e element.Envelope) bool {
-				o, ok := e.Payload.(interactionelements.ModelCommitOutcome)
-				return ok && o.Kind != interactionelements.ModelIgnored
-			})
-			committed := outcome.Payload.(interactionelements.ModelCommitOutcome)
-			if committed.Kind != interactionelements.ModelSpeechRetained || committed.Code != "stale_speech_history" {
-				t.Fatalf("speech did not survive its strict freshness refusal: %+v", committed)
-			}
-			// Ignore empty setup turns. The exact utterance below must finish cleanly.
-			end := receiveScenarioAddressing(t, sink.ended, "completed count turn")
-			if end.Incomplete {
-				t.Fatalf("count ended incomplete: %+v", end)
-			}
-			snapshot := runtime.Trajectory()
-			visibility := trajectory.AssistantVisibility(snapshot)
-			found := false
-			for _, item := range snapshot.Items {
-				if item.InvocationID != committed.RunID {
-					continue
-				}
-				if item.Kind == trajectory.KindToolProposal || item.Kind == trajectory.KindToolCall {
-					t.Fatal("stale proposal became canonical")
-				}
-				if item.Kind == trajectory.KindAssistant && item.Content == "One." {
-					if visibility[item.ID] != trajectory.VisibilityPlayed {
-						t.Fatalf("retained count not visible as played: %s", visibility[item.ID])
-					}
-					found = true
-				}
-			}
-			if !found {
-				t.Fatal("audible count missing from canonical history")
-			}
-			for i := 0; i < 3; i++ {
-				sendScenarioSupersessionAudio(t, runtime, &clock, false)
-			}
-			next := receiveScenarioAddressing(t, model.started, "next provider context")
-			nextVisibility := trajectory.AssistantVisibility(next.Trajectory)
-			found = false
-			for _, item := range next.Trajectory.Items {
-				if item.InvocationID == committed.RunID && item.Kind == trajectory.KindAssistant &&
-					item.Content == "One." && nextVisibility[item.ID] == trajectory.VisibilityPlayed {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatal("next provider invocation omitted the played count")
-			}
+			testScenarioSpeechHistoryContext(t, newerRoom, false, false)
 		})
+	}
+}
+
+func TestScenarioConversationExplicitResponseIncludesPublishedPlayback(t *testing.T) {
+	for _, test := range []struct {
+		name                 string
+		newerRoom, finalOnly bool
+	}{
+		{"matching final", false, false},
+		{"later room observation", true, false},
+		{"ordinary committed response", false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) { testScenarioSpeechHistoryContext(t, test.newerRoom, true, test.finalOnly) })
+	}
+}
+
+func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOnly bool) {
+	t.Helper()
+	base := newScenarioProfileFixture(t)
+	config := base.pluginConfig()
+	config.SemanticAdmission.TranscriptEvents = &policyelements.SemanticTranscriptEventConfig{
+		Partial: policyelements.SemanticTranscriptEventRules{Instruction: "Count the current animal.", TimeoutMS: 1000, Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough, coreinteraction.ActKeepSpeaking}},
+		Final:   policyelements.SemanticTranscriptEventRules{Instruction: "Count the current animal.", TimeoutMS: 1000, Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer, coreinteraction.ActKeepSpeaking}},
+	}
+	asr := &scenarioAddressingASRControl{turns: []string{"Count the animals out loud as I mention them and say nothing else.", "A capybara wandered over and sat down next to me.", "The water was calm."}}
+	if !newerRoom {
+		asr.turns = asr.turns[:2]
+	}
+	if finalOnly {
+		asr.turns[0] = "Count the animals out loud as I mention them."
+	}
+	asr.turns = append(asr.turns, "A capybara joined the first one.")
+	policy := &scenarioSpeechHistoryPolicy{scenarioCountAdmissionPolicy: scenarioCountAdmissionPolicy{descriptor: config.Policy.Descriptor, primary: "answer", activation: "condition-met", primaryConfidence: 0.989, activationConfidence: 0.999}, finalOnly: finalOnly}
+	model := &scenarioSpeechHistoryModel{descriptor: config.Model.Descriptor, started: make(chan continuation.Request, 1), release: make(chan struct{})}
+	tts := &scenarioAddressingTTSControl{}
+	config.ASR.Factory = func(context.Context, legacy.Options) (v1.PerceptionProvider, error) {
+		return &scenarioAddressingASR{control: asr, descriptor: config.ASR.Descriptor}, nil
+	}
+	config.Policy.Factory = func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) { return policy, nil }
+	config.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) { return model, nil }
+	config.SilentModel.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
+		return &scenarioCountAdmissionModel{descriptor: config.SilentModel.Descriptor}, nil
+	}
+	config.TTS.Factory = func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
+		return &scenarioAddressingTTS{control: tts, descriptor: config.TTS.Descriptor}, nil
+	}
+	launchConfig, err := graphs.ScenarioConversationLaunchConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recording := newScenarioAddressingGraphRecorder()
+	instrumentScenarioAddressingFactory(t, &launchConfig, "policy.SemanticAdmission", recording, "decision")
+	instrumentScenarioAddressingFactory(t, &launchConfig, "interaction.ModelResultCommit", recording, "outcome")
+	launched, err := graphlaunch.New(t.Context(), launchConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sink := &scenarioSpeechHistorySink{scenarioQueuedCancelSink: &scenarioQueuedCancelSink{scenarioAddressingSink: newScenarioAddressingSink(), audio: make(chan string, 8)}, ended: make(chan legacy.TurnOutcome, 8)}
+	const sessionID = "speech-history"
+	settings := legacy.Settings{Instruction: "Follow the user's standing count.", Voice: config.TTS.Voice, Modalities: []string{"audio"}, Gate: config.Gate}
+	runtime, err := launched.Binding.Start(t.Context(), legacy.Options{SessionID: sessionID, Sink: sink, Settings: settings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := runtime.Close(ctx, errors.New("history test complete")); err != nil {
+			t.Error(err)
+		}
+	})
+	if err = runtime.Update(t.Context(), settings); err != nil {
+		t.Fatal(err)
+	}
+	var clock scenarioAddressingAudioClock
+	driveScenarioAddressingTurn(t, runtime, sink.scenarioAddressingSink, &clock, scenarioAddressingStreamID(sessionID, 1), asr.turns[0])
+	recording.await(t, "semantic_admission.decision", func(e element.Envelope) bool {
+		d, ok := e.Payload.(policyelements.SemanticDecision)
+		return ok && d.StandingAfter == 1 && d.DecisionStage == "standing_coverage"
+	})
+	for i := 0; i < 3; i++ {
+		sendScenarioSupersessionAudio(t, runtime, &clock, false)
+	}
+	var request continuation.Request
+	if !finalOnly {
+		request = receiveScenarioAddressing(t, model.started, "partial-trigger model invocation")
+	}
+	for i := 0; i < 5; i++ {
+		sendScenarioSupersessionAudio(t, runtime, &clock, true)
+	}
+	awaitSpeechHistoryObservation(t, runtime, asr.turns[1])
+	if finalOnly {
+		request = receiveScenarioAddressing(t, model.started, "final-trigger model invocation")
+	}
+	if newerRoom {
+		for i := 0; i < 8; i++ {
+			sendScenarioSupersessionAudio(t, runtime, &clock, i >= 3)
+		}
+		awaitSpeechHistoryObservation(t, runtime, asr.turns[2])
+	}
+	if !finalOnly && runtime.Trajectory().Version <= request.Trajectory.Version {
+		t.Fatal("fixture did not advance canonical context during model work")
+	}
+	close(model.release)
+	if text := receiveScenarioAddressing(t, sink.audio, "count at actual audio boundary"); text != "One." {
+		t.Fatal(text)
+	}
+	outcome := recording.await(t, "model_result_commit.outcome", func(e element.Envelope) bool {
+		o, ok := e.Payload.(interactionelements.ModelCommitOutcome)
+		return ok && o.Kind != interactionelements.ModelIgnored
+	})
+	committed := outcome.Payload.(interactionelements.ModelCommitOutcome)
+	wantKind, wantCode := interactionelements.ModelSpeechRetained, "stale_speech_history"
+	if finalOnly {
+		wantKind, wantCode = interactionelements.ModelCommitted, ""
+	}
+	if committed.Kind != wantKind || committed.Code != wantCode {
+		t.Fatalf("unexpected speech history outcome: %+v", committed)
+	}
+	// Ignore empty setup turns. The exact utterance below must finish cleanly.
+	end := receiveScenarioAddressing(t, sink.ended, "completed count turn")
+	if end.Incomplete {
+		t.Fatalf("count ended incomplete: %+v", end)
+	}
+	snapshot := runtime.Trajectory()
+	visibility := trajectory.AssistantVisibility(snapshot)
+	found := false
+	for _, item := range snapshot.Items {
+		if item.InvocationID != committed.RunID {
+			continue
+		}
+		if item.Kind == trajectory.KindToolProposal || item.Kind == trajectory.KindToolCall {
+			t.Fatal("stale proposal became canonical")
+		}
+		if item.Kind == trajectory.KindAssistant && item.Content == "One." {
+			if visibility[item.ID] != trajectory.VisibilityPlayed {
+				t.Fatalf("retained count not visible as played: %s", visibility[item.ID])
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("audible count missing from canonical history")
+	}
+	if explicit {
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		defer cancel()
+		if err := runtime.CreateResponse(ctx); err != nil {
+			t.Fatal(err)
+		}
+		decision := recording.await(t, "semantic_admission.decision", func(e element.Envelope) bool {
+			d, ok := e.Payload.(policyelements.SemanticDecision)
+			return ok && d.Operation == "create"
+		}).Payload.(policyelements.SemanticDecision)
+		if decision.ContextVersion < snapshot.Version {
+			t.Fatal("explicit decision omitted published playback state")
+		}
+		if !finalOnly {
+			// No new animal arrived. The standing say-nothing-else instruction
+			// still permits silence, but evaluating it must observe playback.
+			if decision.Act != coreinteraction.ActStaySilent {
+				t.Fatal("explicit request bypassed standing silence")
+			}
+			return
+		}
+	} else {
+		for i := 0; i < 3; i++ {
+			sendScenarioSupersessionAudio(t, runtime, &clock, false)
+		}
+	}
+	next := receiveScenarioAddressing(t, model.started, "next provider context")
+	nextVisibility := trajectory.AssistantVisibility(next.Trajectory)
+	found = false
+	for _, item := range next.Trajectory.Items {
+		if item.InvocationID == committed.RunID && item.Kind == trajectory.KindAssistant &&
+			item.Content == "One." && nextVisibility[item.ID] == trajectory.VisibilityPlayed {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("next provider invocation omitted the played count")
+	}
+	if explicit {
+		if text := receiveScenarioAddressing(t, sink.audio, "explicit response audio"); text != "One." {
+			t.Fatal(text)
+		}
+		if end := receiveScenarioAddressing(t, sink.ended, "explicit response completion"); end.Incomplete {
+			t.Fatalf("explicit response incomplete: %+v", end)
+		}
 	}
 }
 
@@ -171,11 +234,31 @@ func awaitSpeechHistoryObservation(t *testing.T, runtime legacy.Runtime, text st
 	}
 }
 
-type scenarioSpeechHistoryPolicy struct{ scenarioCountAdmissionPolicy }
+type scenarioSpeechHistoryPolicy struct {
+	scenarioCountAdmissionPolicy
+	finalOnly bool
+}
+
+func (p *scenarioSpeechHistoryPolicy) Generate(ctx context.Context, prompt, text string, budget int) (string, error) {
+	if p.finalOnly {
+		if prompt == coreinteraction.RestrictingInstruction {
+			return "no", nil
+		}
+		if prompt == coreinteraction.ExtractionInstruction {
+			return "pin conversation count the animals out loud as they mention them", nil
+		}
+	}
+	return p.scenarioCountAdmissionPolicy.Generate(ctx, prompt, text, budget)
+}
 
 func (p *scenarioSpeechHistoryPolicy) Decide(ctx context.Context, d coreinteraction.Decision) (coreinteraction.Outcome, error) {
+	if p.finalOnly && d.Prompt == coreinteraction.Instruction {
+		if index := slices.Index(d.Options, "answer"); index >= 0 {
+			return coreinteraction.Outcome{Index: index, Option: "answer", Measured: true, Confidence: 0.999}, nil
+		}
+	}
 	result, err := p.scenarioCountAdmissionPolicy.Decide(ctx, d)
-	if err == nil && result.Option == "speak-through" {
+	if !p.finalOnly && err == nil && result.Option == "speak-through" {
 		result.Confidence = 0.989
 	}
 	return result, err

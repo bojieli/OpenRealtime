@@ -276,6 +276,7 @@ graph scenario_conversation {
     input segmentation_cancel = segmentation_cancel_mux.in;
     input tts_cancel = tts_cancel_mux.in;
     input playback_cancel = playback_cancel_mux.in;
+    input playback_state_append = trajectory_append_mux.in;
     output acoustic_activity = acoustic_activity_copy.out;
     output endpoint_policy_state = endpoint_state_copy.out;
     output endpoint_candidate = endpoint_candidate_copy.out;

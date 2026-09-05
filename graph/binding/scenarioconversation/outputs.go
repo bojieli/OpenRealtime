@@ -351,10 +351,7 @@ func (session *session) recordPlaybackBoundary(ctx context.Context, runID string
 			},
 		}
 	}
-	if err := session.bundle.store.AppendBatch(items); err != nil {
-		return err
-	}
-	return nil
+	return session.commitPlaybackState(ctx, runID, snapshot, items)
 }
 
 func (session *session) awaitAssistantRun(

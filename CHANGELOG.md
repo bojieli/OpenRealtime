@@ -4,6 +4,13 @@
 
 ### Highlights
 
+- Completed playback now publishes its played-word state through the scenario
+  graph before releasing the turn. An explicit response request after speech
+  can evaluate the current conversation immediately; it no longer waits for
+  a later user observation to publish the playback state. Partial playback,
+  concurrent observations, and canceled append waits retain their exact
+  history and ordering.
+
 - The scenario conversation profile preserves sanitized speech history when a
   newer observation makes the original model result stale. Exact original-prefix
   verification and playback receipts keep already-audible words available to

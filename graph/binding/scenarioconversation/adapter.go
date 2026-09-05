@@ -51,6 +51,7 @@ const (
 	segmentationCancelBoundary           = "segmentation_cancel"
 	ttsCancelBoundary                    = "tts_cancel"
 	playbackCancelBoundary               = "playback_cancel"
+	playbackStateAppendBoundary          = "playback_state_append"
 	acousticActivityBoundary             = "acoustic_activity"
 	admissionStateBoundary               = "admission_state"
 	admissionOutcomeBoundary             = "admission_outcome"
@@ -72,6 +73,8 @@ const (
 	modelOutcomeBoundary                 = "model_outcome"
 	segmentationOutcomeBoundary          = "segmentation_outcome"
 	trajectorySnapshotBoundary           = "trajectory_snapshot"
+	trajectoryCommitBoundary             = "trajectory_commit"
+	trajectoryRejectionBoundary          = "trajectory_rejection"
 	provenanceOutcomeBoundary            = "provenance_outcome"
 	actionAdmissionBoundary              = "admission_action_outcome"
 	lookupOutcomeBoundary                = "lookup_outcome"
@@ -103,6 +106,7 @@ type adapterBoundaries struct {
 	update, create, generationCancel, toolResult, audio, text, image, contentCancel element.OutputPort
 	mediaResolve, mediaReturnLease, modelCancel, actionCancel                       element.OutputPort
 	segmentationCancel, ttsCancel, playbackCancel                                   element.OutputPort
+	playbackStateAppend                                                             element.OutputPort
 	outputs                                                                         map[string]element.InputPort
 }
 
@@ -220,21 +224,22 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		direction ir.BoundaryDirection
 		typeOf    element.Type
 	}{
-		invocationUpdateBoundary:   {ir.InputBoundary, policyelements.SessionInvocationUpdateType()},
-		responseCreateBoundary:     {ir.InputBoundary, policyelements.ResponseCreateType()},
-		generationCancelBoundary:   {ir.InputBoundary, policyelements.GenerationCancelType()},
-		toolResultBoundary:         {ir.InputBoundary, actionelements.ClientToolResultType()},
-		audioBoundary:              {ir.InputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "audio")},
-		textBoundary:               {ir.InputBoundary, ingresselements.UserTextType()},
-		imageBoundary:              {ir.InputBoundary, ingresselements.UserImageType()},
-		contentCancelBoundary:      {ir.InputBoundary, ingresselements.ContentCancelType()},
-		mediaResolveBoundary:       {ir.InputBoundary, mediaelements.ResolveRequestType()},
-		mediaReturnLeaseBoundary:   {ir.InputBoundary, mediaelements.ReturnLeaseRequestType()},
-		modelCancelBoundary:        {ir.InputBoundary, cognitionelements.CancelType()},
-		actionCancelBoundary:       {ir.InputBoundary, actionelements.InterruptType()},
-		segmentationCancelBoundary: {ir.InputBoundary, descriptorPortTypeByName("interaction.SegmentPreparedText", "cancel")},
-		ttsCancelBoundary:          {ir.InputBoundary, descriptorPortTypeByName("speech.TTS", "cancel")},
-		playbackCancelBoundary:     {ir.InputBoundary, descriptorPortTypeByName("speech.Playback", "cancel")},
+		invocationUpdateBoundary:    {ir.InputBoundary, policyelements.SessionInvocationUpdateType()},
+		responseCreateBoundary:      {ir.InputBoundary, policyelements.ResponseCreateType()},
+		generationCancelBoundary:    {ir.InputBoundary, policyelements.GenerationCancelType()},
+		toolResultBoundary:          {ir.InputBoundary, actionelements.ClientToolResultType()},
+		audioBoundary:               {ir.InputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "audio")},
+		textBoundary:                {ir.InputBoundary, ingresselements.UserTextType()},
+		imageBoundary:               {ir.InputBoundary, ingresselements.UserImageType()},
+		contentCancelBoundary:       {ir.InputBoundary, ingresselements.ContentCancelType()},
+		mediaResolveBoundary:        {ir.InputBoundary, mediaelements.ResolveRequestType()},
+		mediaReturnLeaseBoundary:    {ir.InputBoundary, mediaelements.ReturnLeaseRequestType()},
+		modelCancelBoundary:         {ir.InputBoundary, cognitionelements.CancelType()},
+		actionCancelBoundary:        {ir.InputBoundary, actionelements.InterruptType()},
+		segmentationCancelBoundary:  {ir.InputBoundary, descriptorPortTypeByName("interaction.SegmentPreparedText", "cancel")},
+		ttsCancelBoundary:           {ir.InputBoundary, descriptorPortTypeByName("speech.TTS", "cancel")},
+		playbackCancelBoundary:      {ir.InputBoundary, descriptorPortTypeByName("speech.Playback", "cancel")},
+		playbackStateAppendBoundary: {ir.InputBoundary, stateelements.AppendType()},
 
 		acousticActivityBoundary:             {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "activity")},
 		admissionStateBoundary:               {ir.OutputBoundary, descriptorPortType(acousticelements.EnergyAdmissionDescriptor(), "state")},
@@ -257,6 +262,8 @@ func validateAdapterBoundaryTypes(graph ir.Graph) (map[string]ir.Boundary, error
 		modelOutcomeBoundary:                 {ir.OutputBoundary, cognitionelements.OutcomeType()},
 		segmentationOutcomeBoundary:          {ir.OutputBoundary, interactionelements.SegmentationOutcomeType()},
 		trajectorySnapshotBoundary:           {ir.OutputBoundary, stateelements.SnapshotType()},
+		trajectoryCommitBoundary:             {ir.OutputBoundary, stateelements.CommitType()},
+		trajectoryRejectionBoundary:          {ir.OutputBoundary, stateelements.RejectionType()},
 		provenanceOutcomeBoundary:            {ir.OutputBoundary, actionelements.OutcomeType()},
 		actionAdmissionBoundary:              {ir.OutputBoundary, actionelements.OutcomeType()},
 		lookupOutcomeBoundary:                {ir.OutputBoundary, actionelements.OutcomeType()},
@@ -495,6 +502,7 @@ type pendingOperation struct {
 	result     chan operationAck
 	completed  bool
 	abandoned  bool
+	playback   *playbackStateAppend
 }
 
 type pendingContent struct {
@@ -623,6 +631,7 @@ func newSession(
 		{mediaReturnLeaseBoundary, &ports.mediaReturnLease}, {modelCancelBoundary, &ports.modelCancel},
 		{actionCancelBoundary, &ports.actionCancel}, {segmentationCancelBoundary, &ports.segmentationCancel},
 		{ttsCancelBoundary, &ports.ttsCancel}, {playbackCancelBoundary, &ports.playbackCancel},
+		{playbackStateAppendBoundary, &ports.playbackStateAppend},
 	}
 	for _, input := range inputs {
 		port, err := ingress(input.name)
@@ -774,6 +783,8 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			}
 		case trajectorySnapshotBoundary:
 			err = session.acceptTrajectorySnapshot(envelope)
+		case trajectoryCommitBoundary, trajectoryRejectionBoundary:
+			err = session.acceptPlaybackStateReply(name, envelope)
 		case provenanceOutcomeBoundary, actionAdmissionBoundary, lookupOutcomeBoundary,
 			argumentNormalizationOutcomeBoundary,
 			confirmationOutcomeBoundary, targetFenceOutcomeBoundary,

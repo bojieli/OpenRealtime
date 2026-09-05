@@ -2957,9 +2957,14 @@ the required new 180-attempt sample.
     transaction preserves prepared speech while excluding stale reasoning,
     proposals, and native state. Package, mounted, and mutation regressions
     support this repair, including played history in the next spoken request.
-    Explicit response creation after playback still waits for unpublished
-    playback-state context; its bounded diagnostic fails in both variants.
-    Fresh live attribution and acceptance remain open.
+    Playback-state updates now pass through the graph's trajectory transaction
+    and publication path before turn completion. Explicit response creation
+    evaluates the published played context, including when the standing policy
+    correctly chooses silence. A nonrestricting continuation also reaches the
+    next model, emits audio, and completes. Focused regressions cover both
+    context-advance variants, normal commits, partial playback, and reordered
+    commit/publication delivery. Historical failures continue to guide further
+    behavioral repairs without requiring a fresh full campaign.
     See the [speech-history investigation](subturn-benchmark-study.md#speech-history-after-a-model-freshness-rejection).
     These findings and short-word recognition uncertainty keep this case and
     the final population open. See the

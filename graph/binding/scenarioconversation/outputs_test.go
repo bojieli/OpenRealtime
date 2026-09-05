@@ -175,6 +175,7 @@ func TestPlaybackBoundaryAggregatesReleasedSentencesIntoContinuationProjection(t
 		bundle: &sessionBundle{store: store}, playback: make(map[string]playbackReceiptState),
 		playbackOrder: []string{"speech-1", "speech-2"},
 	}
+	bindPlaybackStateLoopback(t, session)
 	session.playback["speech-1"] = playbackReceiptState{
 		runID: "run-spoken", sourceSequence: 1, kind: speechelements.PlaybackReleased,
 		utterance: action.Utterance{ID: "speech-1", Text: "One two three."},

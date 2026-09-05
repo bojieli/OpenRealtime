@@ -374,6 +374,7 @@ func TestPlaybackReceiptTrackingHonorsSequenceAcrossConcurrentBoundaries(t *test
 		sessionID: "session-a", playback: make(map[string]playbackReceiptState),
 		speechRuns: make(map[string]int), bundle: &sessionBundle{playback: playbackSink, store: store},
 	}
+	bindPlaybackStateLoopback(t, session)
 	// The terminal lane may be scheduled before the earlier audio lane. Its
 	// higher sequence must retain the terminal tombstone.
 	if err := session.acceptPlaybackReceipt(context.Background(), gatewayTurnEndBoundary,
