@@ -41,6 +41,10 @@ const TimestampRate = 16_000
 type Turn struct {
 	StartMS float64
 	EndMS   float64
+	// AudibleEndMS is where the speech inside the turn actually stops, which
+	// is earlier than EndMS by however much silence the synthesiser left. See
+	// audible.go. It equals EndMS when nothing in the turn falls silent.
+	AudibleEndMS float64
 }
 
 // Conversation is one recording and its annotations.
@@ -129,10 +133,14 @@ func loadConversation(directory, condition, name string) (Conversation, error) {
 		AudioPath: filepath.Join(directory, name+".wav"),
 	}
 	for _, turn := range raw {
+		start := float64(turn.Start) * 1000 / TimestampRate
+		end := float64(turn.End) * 1000 / TimestampRate
 		conversation.Turns = append(conversation.Turns, Turn{
-			StartMS: float64(turn.Start) * 1000 / TimestampRate,
-			EndMS:   float64(turn.End) * 1000 / TimestampRate,
+			StartMS: start, EndMS: end, AudibleEndMS: end,
 		})
+	}
+	if err := measureAudibleEnds(conversation.AudioPath, conversation.Turns); err != nil {
+		return Conversation{}, err
 	}
 	return conversation, nil
 }
@@ -351,7 +359,8 @@ func runConversation(
 func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn, budget float64) {
 	var latencies []float64
 	answered, premature, overrun, missed := 0, 0, 0, 0
-	overlapMS := 0.0
+	prematureAfterSpeech := 0
+	overlapMS, turnEndLead := 0.0, 0.0
 	for index, turn := range turns {
 		// Audio during a turn is the agent and the person talking at once, and
 		// there are two quite different reasons for it. Either the agent was
@@ -368,8 +377,22 @@ func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn
 				overrun++
 			} else {
 				premature++
+				// Whether the person was still talking. The annotated turn
+				// encloses the silence the synthesiser left at the end of the
+				// clip - a p90 of 1.4 s in the ChatTTS conditions and of 20 ms
+				// in the F5-TTS ones - so an agent that endpoints on real
+				// silence and answers quickly lands inside the annotation
+				// without having spoken over anybody. audible.go carries the
+				// measurement. Reported, not scored: this is the number that
+				// would justify changing the rule, and it should be seen on a
+				// run before the rule moves.
+				if onset, found := firstAudioOnsetAfter(transcript, turn.AudibleEndMS); found &&
+					turn.AudibleEndMS+onset < turn.EndMS {
+					prematureAfterSpeech++
+				}
 			}
 		}
+		turnEndLead += turn.EndMS - turn.AudibleEndMS
 		// The window for a reply closes when the next turn begins: after that
 		// the person has moved on, and a reply is not a late answer to the
 		// previous thing, it is an interruption of the next.
@@ -399,9 +422,15 @@ func score(outcome *bench.TaskOutcome, transcript bench.Transcript, turns []Turn
 		// then reporting one number would hide which one a deployment has,
 		// which is the thing this separation was made for.
 		"premature_turns": float64(premature),
-		"overrun_turns":   float64(overrun),
-		"overlap_ms":      overlapMS,
-		"missed_turns":    float64(missed),
+		// How many of those had the agent starting after the person had
+		// actually stopped, inside the silence the annotation encloses.
+		"premature_turns_after_speech_ended": float64(prematureAfterSpeech),
+		// The total of that silence across the conversation's turns, so a
+		// condition can be compared with another on it.
+		"turn_end_lead_ms": turnEndLead,
+		"overrun_turns":    float64(overrun),
+		"overlap_ms":       overlapMS,
+		"missed_turns":     float64(missed),
 	}
 	if len(latencies) > 0 {
 		distribution := bench.Summarise(latencies)

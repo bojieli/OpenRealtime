@@ -94,11 +94,10 @@ func TestCandidateEvidenceBeginsForExactConditionBeforeAudioPlayback(t *testing.
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(
-		filepath.Join(directory, "conversation-001.wav"), []byte("invalid on purpose"), 0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
+	// Playback must never reach this recording: the candidate recorder refuses
+	// the attempt before a session can be opened. It is real audio because the
+	// suite reads every recording once, at load, to find where its turns stop.
+	writeToneWAV(t, filepath.Join(directory, "conversation-001.wav"), 3_000, 200, 800)
 	origin, err := candidate.NewRunOrigin(
 		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:1/v1/realtime",
 	)
@@ -141,13 +140,9 @@ func TestCandidateEvidenceRecoverySkipsFDPlayback(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	// If recovery does not short-circuit bench.Play, this invalid input makes
-	// the run fail before it can report a completed deterministic row.
-	if err := os.WriteFile(
-		filepath.Join(directory, "conversation-001.wav"), []byte("must not be read"), 0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
+	// Recovery has to short-circuit bench.Play; nothing here should reach a
+	// session. The recording is real because the loader reads it.
+	writeToneWAV(t, filepath.Join(directory, "conversation-001.wav"), 3_000, 200, 800)
 	origin, err := candidate.NewRunOrigin(
 		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:1/v1/realtime",
 	)

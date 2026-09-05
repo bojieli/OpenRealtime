@@ -4,6 +4,23 @@
 
 ### Highlights
 
+- FD-Bench measures where each turn's speech actually stops and reports how
+  many of the turns it counted as spoken over had the agent starting after the
+  person had already stopped. The released turn boundaries enclose whatever
+  silence the synthesiser left at the end of the clip, and how much that is
+  follows the synthesiser rather than the condition: sampling six conversations
+  in each of the twenty-one conditions, the audio goes quiet before the
+  annotated end by a p90 of 20 to 200 ms across the seven F5-TTS conditions and
+  1,180 to 1,420 ms across the three ChatTTS ones. An agent that endpoints on
+  real silence and answers quickly lands inside the annotation without having
+  spoken over anybody, and is charged an order of magnitude more often on some
+  conditions than others - underneath the comparisons across conditions the
+  suite exists to invite. The scoring is deliberately unchanged: what is added
+  is the number that would justify changing it, so a run carries its own
+  evidence. Where the measurement cannot read a turn - the 0 dB background
+  conditions, where the noise never stops - it reports the annotation, so
+  nothing there moves.
+
 - A failure to yield is measured against the response that was interrupted,
   not against the clock. The suite followed the agent's audio after an overlap
   until a four-hundred-millisecond gap, which cannot tell the interrupted
