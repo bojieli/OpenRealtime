@@ -1329,3 +1329,26 @@ The server and proxies on 18980–18982 stopped, and the private policy capture
 was removed after safe projection. Shared services and colleague edits were
 preserved. Event-count repetition, playback completion/context, acknowledgement
 content, short-word recognition, and the final 180-attempt population remain open.
+
+### Validation limits at the audible-count checkpoint
+
+Focused race checks pass for the scenario scorer, graph-native harness, and CLI.
+Three full developer-gate attempts retain distinct failures: a queued-speech
+resume timeout, a standing-policy interjection timeout, and WebRTC effect-provider
+recovery after media loss. Each of the first two tests passes ten subsequent
+focused race-enabled repetitions, without a code change; that does not repair
+their intermittent ordering or timing behavior. The third full attempt limits
+Go package parallelism to two and still runs every stage and race check. Its
+browser test passes 31/33 checks but fails replacement effect-provider negotiation
+and the consequent recovered effect. A subsequent focused race-enabled browser
+run passes all 33 checks without a code change; the full-gate failure remains.
+These are validation failures, not skipped
+checks or scorer passes. The official SDK WebSocket/WebRTC claim also remains
+explicitly unverified in this environment. Exact logs and commands remain in
+the investigation bundle's `validation.json`.
+
+The audible-count implementation and evidence notes remain committed on the
+isolated `codex/scenario-audible-counts` branch, rebased over the colleague's
+completed benchmark-resume and LiveKit work. The new LiveKit module separately
+passes vet and race checks. Shared-main integration is pending a clean gate;
+none of the retained failures is hidden by a focused rerun.
