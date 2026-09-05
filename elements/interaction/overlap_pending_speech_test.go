@@ -121,3 +121,28 @@ func TestOverlapBargeInDeduplicatesRunTerminalsBeyondUtteranceCache(t *testing.T
 		t.Fatalf("all unique terminals retained work: %+v", state)
 	}
 }
+
+func TestOverlapBargeInLateSpeechCannotReviveFinishedSegmentAfterCacheEviction(t *testing.T) {
+	h := mountOverlapBargeIn(t, `{"hold_ms":10,"unclassified":"cancel","max_utterances":1}`, nil)
+	defer h.stop(t)
+	const runID = "late-after-eviction"
+	h.sendAndSync(t, "invocation", overlapInvocationEnvelope("invoke", runID))
+	h.sendAndSync(t, "model", overlapModelEnvelope("model", runID))
+	completed := overlapSegmentationEnvelope("completed", runID, OutcomeCompleted)
+	completed.Payload = SegmentationOutcome{Kind: OutcomeCompleted, RunID: runID, Segments: 3}
+	h.sendAndSync(t, "segmentation", completed)
+	for _, id := range []string{"first", "second"} {
+		h.sendAndSync(t, "release", overlapReleaseEnvelope("release-"+id, runID, id, "One.", action.Outcome{Completed: true}))
+		_ = receive(t, h.output(t, "safe_release"))
+	}
+	// The small global terminal cache has evicted "first", but this still-open
+	// run retains its exact terminal membership. Delayed independent speech
+	// and lifecycle lanes must not revive that already-finished utterance.
+	h.sendAndSync(t, "speech", overlapSpeechEnvelope("late-text", runID, "first", "One."))
+	h.sendAndSync(t, "tts", overlapTransitionEnvelope("late-generating", runID, "first", speechelements.StageSynthesis, speechelements.StateGenerating))
+	state := h.sendAndSync(t, "release", overlapReleaseEnvelope("release-third", runID, "third", "Three.", action.Outcome{Completed: true}))
+	_ = receive(t, h.output(t, "safe_release"))
+	if state.AgentOutput.Active || state.ActiveTTS != 0 {
+		t.Fatalf("delayed status revived a finished segment: %+v", state)
+	}
+}

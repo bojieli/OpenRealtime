@@ -65,7 +65,7 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 10 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 11 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v4" {

@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:10"
+	overlapBargeInRuntimeRevision  = "implementation:11"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      10,
+		Revision:      11,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -923,7 +923,7 @@ func (runner *overlapBargeInRunner) acceptSpeechSegment(
 		return runner.refuse(ctx, envelope, "speech", "invalid_text",
 			"speech segment requires bounded canonical spoken text")
 	}
-	if _, terminal := runner.terminalUtterances[utteranceID]; terminal {
+	if runner.utteranceFinished(runID, utteranceID) {
 		return nil
 	}
 	utterance := runner.utterances[utteranceID]
@@ -1058,7 +1058,7 @@ func (runner *overlapBargeInRunner) acceptPlaybackRelease(
 			"playback release requires bounded canonical spoken text",
 		)
 	}
-	if _, terminal := runner.terminalUtterances[utteranceID]; terminal {
+	if runner.utteranceFinished(runID, utteranceID) {
 		return receipt, nil
 	}
 	utterance := runner.utterances[utteranceID]
@@ -1330,7 +1330,7 @@ func (runner *overlapBargeInRunner) acceptSpeechTransition(
 		return runner.refuse(ctx, envelope, string(expected), "invalid_run_id",
 			"speech transition carries a noncanonical run ID")
 	}
-	if _, terminal := runner.terminalUtterances[transition.UtteranceID]; terminal {
+	if runner.utteranceFinished(runID, transition.UtteranceID) {
 		return nil
 	}
 	utterance := runner.utterances[transition.UtteranceID]
@@ -2178,6 +2178,20 @@ func (runner *overlapBargeInRunner) finishUtterance(runID, utteranceID string) e
 	}
 	run.finishedUtterances[utteranceID] = struct{}{}
 	return nil
+}
+
+func (runner *overlapBargeInRunner) utteranceFinished(runID, utteranceID string) bool {
+	if _, terminal := runner.terminalUtterances[utteranceID]; terminal {
+		return true
+	}
+	// A still-pending run can outlive the global terminal cache. Its exact
+	// membership must fence delayed speech/status lanes until the whole emitted
+	// population is terminal, including when the configured cache is small.
+	if run := runner.runs[runID]; run != nil {
+		_, terminal := run.finishedUtterances[utteranceID]
+		return terminal
+	}
+	return false
 }
 
 func (runner *overlapBargeInRunner) rememberTerminalRun(runID string) {
