@@ -1841,7 +1841,7 @@ Current behavior work includes:
 | --- | --- | --- |
 | Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
 | Acknowledgements | Existing recordings exposed unwanted cancellation and a separate omitted purchase confirmation; cancellation repairs have focused coverage | Attribute the content omission at the model, synthesis, or evaluator boundary and repair a reproduced cause |
-| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences now cannot reclassify a result that already released continuation; distinct later results still settle | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish failed-result interpretation and remaining cross-boundary ordering cases; use affected camera and terminal-loop cases for live checks where needed |
+| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences cannot reclassify a result that already released continuation; distinct later results still settle. The evaluator distinguishes explicit failure, later recovery, missing page consequences, and an error-bearing apparent success | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish remaining cross-boundary ordering and full-session failed-result lineage cases; use affected camera and terminal-loop cases for live checks where needed |
 | Full-duplex interaction | Existing FDB cases expose interruption latency and incorrect handling of background or third-party speech | Diagnose the affected hold/yield cases and check policy repairs against both relevant speech and silence controls |
 | Tool use | FDB v3 exposed extra effects and spoken-ID normalization; scorer and mounted normalization repairs exist | Reuse the failed tool cases to check remaining action/result behavior |
 | Broader scenario coverage | Historical FD-Bench and tau-Voice runs remain useful despite incomplete populations or older revisions | Select concrete failures that reveal missing behavior; unrun populations alone are not bugs or publication blockers |
@@ -1862,6 +1862,24 @@ run scope without contributing a separate completion quota.
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, a compiler-backed language-service core exposed through the UI-independent management API, and authenticated rollback-safe stateless, multi-row, and stateful browser implementation replacement | Complete signed-native, topology-changing, and remaining capability-specific presentation replacement gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
+
+### 2026-09-05 failed-effect evaluator coverage
+
+The failed-effect diagnostic now exercises the evaluator's real dispatcher and
+serialized before/action/after handler with a controlled failing surface. Its
+canonical `ToolResult.Error` reaches the session's tool handler, and the exact
+call, error, and page consequence remain available to scoring. An ordinary failed
+effect is a completed failed evaluation, not missing evidence. A different later
+successful effect can recover the task. Apparent page success accompanied by an
+execution error cannot settle it, and removing the failed effect's page
+consequence makes a recovered task fail for missing evidence.
+
+These checks pass under the race detector with the existing implementation;
+no scoring rule was weakened. Removing the execution-error guard makes the
+error-bearing success case fail its regression. Together with the mounted
+failed-effect recovery tests, this covers each side's local semantics. The
+full-session join between production graph lineage and evaluator input remains
+open; a new benchmark campaign or published result is unnecessary for that work.
 
 ### 2026-09-05 atomic continuation commit repair
 
@@ -3922,11 +3940,19 @@ the required new 180-attempt sample.
           `CancelMemory=1`, no tombstone is pruned while an effect depends on it;
           only a complete superseded pair is reclaimable, and an effect awaiting
           terminal acknowledgement is protected.
-        - [ ] Prove scorer treatment and live acceptance of the canonical
-          failed-result lineage. Retain the authored evidence, confirm that the
-          error plus exact consequence is neither scored as successful effect
-          completion nor discarded as missing evidence, and rerun the authored
-          failed-effect case from the frozen candidate.
+        - [x] Verify evaluator treatment of failed effects through the real
+          dispatcher and serialized page/action handler. The session receives
+          the execution error, an ordinary failure retains its exact call and
+          page consequence without becoming missing evidence, and a distinct
+          successful action can recover. Error-bearing page success cannot
+          settle the task; a missing failed-action consequence still fails
+          closed. Race-enabled tests and mutation of the execution-error guard
+          establish these distinctions without a benchmark campaign.
+        - [ ] Exercise the full-session join between the production graph's
+          canonical failed-result/consequence lineage and the evaluator's
+          received tool result. Mounted graph recovery and evaluator-local
+          failure/recovery checks cover the two boundaries independently;
+          their combined session path remains open.
       - [x] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
         `scripts/behavioral-acceptance-targets.json`. Registered 2026-09-05
