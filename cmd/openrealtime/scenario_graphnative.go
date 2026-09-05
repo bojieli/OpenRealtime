@@ -178,7 +178,7 @@ func newScenarioGraphReviewBundle(
 // scripts, preserving the canonical order used by attempt ordinals and media.
 func scenarioGraphCases(contract graphnative.Contract) []scenario.Scenario {
 	byName := make(map[string]scenario.Scenario)
-	for _, item := range scenario.Suite() {
+	for _, item := range scenario.Catalog() {
 		byName[item.Name] = item
 	}
 	selected := make([]scenario.Scenario, 0, len(contract.Cases))
@@ -822,7 +822,7 @@ func reportScenarioGraphOutcome(
 		}
 		byCase[attempt.Key.CaseName] = append(byCase[attempt.Key.CaseName], attempt.Result)
 	}
-	for _, item := range scenario.Suite() {
+	for _, item := range scenario.Catalog() {
 		attempts, selected := byCase[item.Name]
 		if !selected {
 			continue

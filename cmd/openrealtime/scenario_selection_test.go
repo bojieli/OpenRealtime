@@ -51,7 +51,7 @@ func TestScenarioProfileFreezesExactDiagnosticSelection(t *testing.T) {
 }
 
 func TestScenarioListsCanonicalSelectionWithoutResources(t *testing.T) {
-	for _, names := range [][]string{nil, {"an acknowledgement is not an interruption", "a recorded menu"}} {
+	for _, names := range [][]string{nil, {"an acknowledgement is not an interruption", "a recorded menu"}, {scenario.SpeechAcknowledgementDiagnostic}} {
 		args := []string{"-list", "-architecture-manifest", "must-not-be-read.json"}
 		for _, name := range names {
 			args = append(args, "-case", name)
@@ -175,5 +175,40 @@ func TestScenarioDiagnosticSubsetRetainsExactMediaWithoutSuiteCredit(t *testing.
 		if !strings.Contains(output.String(), "NOT REPORTABLE: graph-native checklist") {
 			t.Fatalf("subset report omitted refusal: %s", output.String())
 		}
+	}
+}
+
+func TestSpeechDiagnosticFreezesAndRetainsWithoutReleaseCredit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.yaml")
+	if err := runLaunchProfile([]string{"scenario", "-case", scenario.SpeechAcknowledgementDiagnostic, "-out", path}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := launchprofile.ParseYAML(path, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Cases []string `json:"cases"`
+	}
+	if err := json.Unmarshal(profile.Application.Configuration, &config); err != nil || len(config.Cases) != 1 || config.Cases[0] != scenario.SpeechAcknowledgementDiagnostic {
+		t.Fatalf("profile lost diagnostic: %+v %v", config, err)
+	}
+	t.Chdir("../..")
+	directory, receipt, outcome := publishScenarioGraphPopulationFixture(t, 15, false, scenario.SpeechAcknowledgementDiagnostic)
+	source, err := graphnative.VerifySourceBundle(t.Context(), graphnative.SourceBundleOptions{Directory: directory}, receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Checklist.FullSuite || source.Checklist.Reportable || source.Checklist.Passed || !source.Checklist.Complete || source.Checklist.PassedAttempts != 15 || len(source.Manifest.Attempts) != 15 {
+		t.Fatalf("diagnostic earned suite credit or lost attempts: %+v", source.Checklist)
+	}
+	var output bytes.Buffer
+	reportScenarioGraphOutcome(&output, outcome, 15)
+	if !strings.Contains(output.String(), scenario.SpeechAcknowledgementDiagnostic) || !strings.Contains(output.String(), "NOT REPORTABLE") {
+		t.Fatalf("diagnostic missing from report: %s", output.String())
 	}
 }

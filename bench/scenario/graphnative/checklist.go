@@ -695,7 +695,7 @@ func (checklist Checklist) Validate() error {
 		return fmt.Errorf("scenario checklist plan: %w", err)
 	}
 	if checklist.Repetitions < 1 || checklist.Repetitions > maximumChecklistRepetitions ||
-		len(checklist.Cases) < 1 || len(checklist.Cases) > len(scenario.Suite()) ||
+		len(checklist.Cases) < 1 || len(checklist.Cases) > len(scenario.Catalog()) ||
 		(checklist.MediaPolicy != MediaPolicyRequired && checklist.MediaPolicy != MediaPolicyUnattested) {
 		return errors.New("scenario checklist repetition or media policy is invalid")
 	}
@@ -953,7 +953,7 @@ func checklistErrorDetail(sanitize ErrorSanitizer, err error) string {
 }
 
 func scenarioForChecklist(name string) scenario.Scenario {
-	for _, item := range scenario.Suite() {
+	for _, item := range scenario.Catalog() {
 		if item.Name == name {
 			return item
 		}

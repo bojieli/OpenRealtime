@@ -31,9 +31,10 @@ import (
 // have three parties - a user, an agent, and a waiter or a phone menu - and
 // they reach the agent down one microphone, exactly as they would in a room.
 type Line struct {
-	Speaker string
-	Text    string
-	AtMS    int
+	Speaker     string
+	Text        string
+	AtMS        int
+	AfterSpeech *SpeechWindow `json:",omitempty"`
 }
 
 // Check is one claim about what the agent did.
@@ -347,6 +348,7 @@ type Timeline struct {
 	// Sights is when each visual event was scheduled.
 	Sights  []int
 	TotalMS int
+	Cues    []bench.SpeechCue `json:",omitempty"`
 }
 
 // Compose lays the script out on a timeline.
@@ -371,6 +373,7 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 			total = sight.AtMS
 		}
 	}
+	var cues []bench.SpeechCue
 	spoken := make([][]int16, len(item.Script))
 	spans := make([]Span, len(item.Script))
 	// Where the last line finished, whoever said it. The scenarios that are
@@ -383,6 +386,20 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 		samples, err := voice.Speak(ctx, line.Speaker, line.Text)
 		if err != nil {
 			return Timeline{}, fmt.Errorf("synthesise %q: %w", line.Text, err)
+		}
+		if line.AfterSpeech != nil {
+			window := line.AfterSpeech
+			earliest := max(line.AtMS, finished+breathMS)
+			if len(samples) == 0 || len(samples) > 30_000*24 || earliest < window.LookbackMS || earliest > window.LatestMS || window.LatestMS > 120_000 || window.LookbackMS < 20 || window.LookbackMS > 10_000 || window.MinimumActiveMS < 1 || window.MinimumActiveMS > window.LookbackMS || window.RecentMS < 20 || window.RecentMS > window.LookbackMS {
+				return Timeline{}, fmt.Errorf("invalid speech window on line %d", index)
+			}
+			cues = append(cues, bench.SpeechCue{Name: cueName(index), PCM16: samples, EarliestMS: earliest, LatestMS: window.LatestMS, LookbackMS: window.LookbackMS, MinimumActiveMS: window.MinimumActiveMS, RecentMS: window.RecentMS, MinimumGapMS: breathMS})
+			spans[index] = Span{StartMS: -1, EndMS: -1}
+			total = max(total, window.LatestMS+(len(samples)+23)/24)
+			continue
+		}
+		if len(cues) > 0 {
+			return Timeline{}, fmt.Errorf("static line %d follows a speech-triggered line", index)
 		}
 		spoken[index] = samples
 		start := line.AtMS
@@ -432,7 +449,7 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 	for index, sight := range item.Sees {
 		sights[index] = sight.AtMS
 	}
-	return Timeline{Samples: mixed, Spans: spans, Sights: sights, TotalMS: total}, nil
+	return Timeline{Samples: mixed, Spans: spans, Sights: sights, TotalMS: total, Cues: cues}, nil
 }
 
 // Play runs one scenario and scores it.
@@ -485,13 +502,18 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 		}
 		return nil
 	}
+	if len(config.SpeechCues) > 0 {
+		return Result{Scenario: item.Name}, fmt.Errorf("speech cues are owned by the scenario")
+	}
+	config.SpeechCues = timeline.Cues
 	transcript, err := bench.PlaySamples(ctx, config, timeline.Samples)
 	if err != nil {
 		return Result{Scenario: item.Name, Transcript: transcript}, err
 	}
 	ears, _ := voice.(Ears)
 	result := score(item, timeline, transcript, menu, hearing(ctx, ears, captured), &captured)
-	result.Latencies = latencies(item, timeline, transcript)
+	actualTimeline, _ := resolveSpeechCues(item, timeline, transcript, &captured)
+	result.Latencies = latencies(item, actualTimeline, transcript)
 	return result, nil
 }
 
@@ -522,7 +544,9 @@ func ScoreWithAudio(item Scenario, timeline Timeline, transcript bench.Transcrip
 func score(
 	item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard, capture *bench.SessionAudioCapture,
 ) Result {
-	result := Result{ScorerVersion: ScorerVersion, Scenario: item.Name, Transcript: transcript, Passed: true}
+	actualTimeline, cueFailures := resolveSpeechCues(item, timeline, transcript, capture)
+	timeline = actualTimeline
+	result := Result{ScorerVersion: ScorerVersion, Scenario: item.Name, Transcript: transcript, Passed: len(cueFailures) == 0, Failures: cueFailures}
 	if len(item.Checks) == 0 {
 		result.Passed = false
 		result.Failures = append(result.Failures, "scenario has no behavior checks")
@@ -757,6 +781,10 @@ func sights(seen []Sight) ([]bench.ScheduledEvent, error) {
 func latencies(item Scenario, timeline Timeline, transcript bench.Transcript) []Latency {
 	measured := make([]Latency, 0, len(timeline.Spans)+len(timeline.Sights))
 	measure := func(after string, endedMS int) {
+		if endedMS < 0 {
+			measured = append(measured, Latency{After: after, EndedMS: endedMS})
+			return
+		}
 		wait, ok := transcript.FirstAudioAfter(float64(endedMS))
 		entry := Latency{After: after, EndedMS: endedMS, Heard: ok, MS: wait}
 		measured = append(measured, entry)

@@ -185,7 +185,7 @@ profile and evidence workflow.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 5`. Content checks match whole words and numbers, ignoring
+`scorer_version: 6`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -237,17 +237,41 @@ the capture automatically, and `ScoreWithAudio` can examine retained PCM.
 Transcript-only `Score` cannot verify this check. The combined check rules
 out observed protocol interruption within the measured window; it does not
 establish that arbitrary audible content continues the same explanation.
-Content checks and independent media review still matter. The first fixed
-acknowledgement can arrive before speech starts; a future diagnostic anchored
-to observed speech is needed to separate that opportunity from startup timing.
+Content checks and independent media review still matter. The fixed acknowledgement case still measures its original authored timing.
+
+Scorer version 6 adds the explicitly selected diagnostic
+`acknowledgements during observed speech`. Use its exact name with `-case` in
+both `profile scenario` and `scenario`; `scenario -list -case
+'acknowledgements during observed speech'` resolves it without resources. The
+default suite remains twelve cases, requiring 180 release attempts. This
+extension is never a full-suite result, even with fifteen passing repetitions.
+
+The diagnostic retains the same refund instructions, participant words,
+content checks, and acoustic/response hold checks. Its first cue can start
+between 6,000 and 20,000 ms; the second between 11,500 and 26,000 ms. Actual
+synthesis length also enforces a 600 ms breath after the preceding participant
+line. Each cue requires at least 600 ms active agent PCM in the preceding
+1,000 ms and activity in the last 100 ms. Only PCM already played on the
+serialized output clock counts; queued future samples and transcript text do
+not release a cue. The driver samples the opportunity on the input transport's
+frame clock (100 ms WebSocket, 20 ms WebRTC). It sends the pre-synthesized cue
+into reserved input silence and retains its PCM hash, exact start/end, sent
+sample count, and activity measurements in `transcript.speech_cues`.
+
+Missing opportunities fail explicitly. Partial transmission cannot claim a
+complete cue. Scoring independently reproduces the opportunity from agent PCM,
+checks the cue bytes against the retained room channel, and resolves every
+check against actual sent positions. The media-linked review renders those
+positions and measurements. A bounded diagnostic horizon remains after the
+latest cue opportunity; long-term semantic continuation still requires review.
 
 These are deterministic content requirements, not a general semantic judge.
 Negation, contradictory statements, invented dialogue, and audible quality
 still require the separately retained media review and further scorer work.
 The twelve-case wire contract and 180-attempt release population are unchanged.
-Historical results through version 4 retain their original labels and
+Historical results through version 5 retain their original labels and
 receipts; a passing historical recording does not establish a pass under
-version 5. In particular, the retained v28 acknowledgement recording has no
+version 6. In particular, the retained v28 acknowledgement recording has no
 agent activity after its second backchannel and does not meet the new check;
 see the [separately attributed waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit).
 

@@ -156,7 +156,7 @@ func validateLiveSession(config bench.SessionConfig) error {
 	if config.Instructions != "" || len(config.Tools) != 0 || config.Respond != nil ||
 		config.HandleTool != nil || config.ConcurrentTools || config.Realtime ||
 		config.TrailingSilence != 0 || config.CaptureAudio != nil || config.CaptureVideo != nil ||
-		config.CaptureScheduled != nil || len(config.Scheduled) != 0 || len(config.Video) != 0 ||
+		config.CaptureScheduled != nil || len(config.SpeechCues) != 0 || len(config.Scheduled) != 0 || len(config.Video) != 0 ||
 		config.Ready != nil || config.AttestationScope != "" {
 		return errors.New("scenario live executor session contains a scenario-owned override")
 	}

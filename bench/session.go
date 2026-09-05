@@ -79,8 +79,9 @@ const (
 type Transcript struct {
 	Moments []Moment `json:"moments"`
 	// PlaybackMS is how long the input recording was.
-	PlaybackMS float64 `json:"playback_ms"`
-	Failure    string  `json:"failure,omitempty"`
+	PlaybackMS float64                `json:"playback_ms"`
+	SpeechCues []SpeechCueObservation `json:"speech_cues,omitempty"`
+	Failure    string                 `json:"failure,omitempty"`
 	// NegotiatedObservers is the authoritative observer set returned by the
 	// session.updated OpenRealtime negotiation response. A nil slice means the
 	// endpoint returned no OpenRealtime response; a non-nil empty slice means
@@ -319,6 +320,9 @@ type SessionConfig struct {
 	// what lets a scenario ask whether the agent spoke because of something it
 	// saw while nobody was talking, which no amount of audio can express.
 	Scheduled []ScheduledEvent
+	// SpeechCues insert pre-authored PCM into reserved silence after observed
+	// agent speech. They require Realtime and preserve actual cue positions.
+	SpeechCues []SpeechCue
 	// Video streams live frames until the conversation finishes. Unlike a
 	// Scheduled event, a stream keeps observing while the agent acts, which is
 	// necessary for multi-step computer use and transient visual tasks.
@@ -440,6 +444,11 @@ func PlaySamples(
 	}
 	samples = append(samples, make([]int16, int(config.TrailingSilence.Seconds()*24_000))...)
 	audioRecorder.setRoom(samples)
+	cues, err := prepareSpeechCues(config.SpeechCues, samples, config.Realtime)
+	if err != nil {
+		return Transcript{}, err
+	}
+	defer func() { transcript.SpeechCues = append([]SpeechCueObservation(nil), cues.observed...) }()
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
@@ -648,16 +657,18 @@ func PlaySamples(
 			})
 			sent++
 		}
+		frame := cues.frame(offset, samples[offset:end], audioRecorder)
 		if mediaTransport, ok := client.(pcmInput); ok {
-			if err := mediaTransport.SendPCM24k(timed, samples[offset:end]); err != nil {
-				return Transcript{}, err
+			if err := mediaTransport.SendPCM24k(timed, frame); err != nil {
+				return recorder.snapshot(), err
 			}
 		} else if err := client.Send(timed, map[string]any{
 			"type":  "input_audio_buffer.append",
-			"audio": base64.StdEncoding.EncodeToString(encodePCM(samples[offset:end])),
+			"audio": base64.StdEncoding.EncodeToString(encodePCM(frame)),
 		}); err != nil {
-			return Transcript{}, err
+			return recorder.snapshot(), err
 		}
+		cues.sent(offset, frame, audioRecorder)
 		if config.Realtime {
 			elapsed := time.Duration(end) * time.Second / 24_000
 			if wait := elapsed - time.Since(started); wait > 0 {

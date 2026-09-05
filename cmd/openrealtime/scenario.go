@@ -125,7 +125,8 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	started := archbench.NewResult(manifest, selectedCell, len(selected)*runs)
 	architectureResult := &started
 	fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
-	if len(selected) != len(scenario.Suite()) {
+	fullContract, _ := graphnative.BuildContract()
+	if contract.Fingerprint != fullContract.Fingerprint {
 		fmt.Fprintf(output, "  DIAGNOSTIC SUBSET: %d/%d cases; no full-suite acceptance credit\n",
 			len(selected), len(scenario.Suite()))
 	}

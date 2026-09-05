@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- A new graph-native diagnostic, `acknowledgements during observed speech`,
+  sends its cues only after recorded agent audio establishes an opportunity.
+  Scorer version 6 checks actual input positions, full transmission, source
+  PCM identity, and independently recomputed activity. Silence and partial
+  cues fail explicitly. The default twelve-case release population is intact;
+  the extension cannot earn full-suite credit.
 - Scorer version 5 rejects acknowledgement holds when an overlapping response
   is cancelled, fails, or ends incomplete before the measured window closes,
   even when replacement audio continues. Missing/conflicting terminal evidence

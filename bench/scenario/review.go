@@ -529,6 +529,9 @@ func (run *ReviewRun) renderMarkdown(manifest ReviewManifest) string {
 }
 
 func renderReviewTranscript(output *strings.Builder, result Result) {
+	for _, cue := range result.Transcript.SpeechCues {
+		fmt.Fprintf(output, "\n- Speech cue %s: %s; actual input %d–%.3f ms; %.0f ms active in preceding %d ms, %.0f ms active in recent %d ms; sent %d/%d samples.\n", markdownText(cue.Name), markdownText(cue.Status), cue.StartMS, cue.EndMS, cue.ActiveMS, cue.LookbackMS, cue.RecentActiveMS, cue.RecentMS, cue.SentSamples, cue.ExpectedSamples)
+	}
 	for _, hold := range result.Holds {
 		fmt.Fprintf(output, "\n- Acknowledgement line %d: %.0f ms active before, %.0f ms during, %.0f ms after; longest pause %.0f ms (limit %d ms); playout window %d–%d ms.\n",
 			hold.Line, hold.BeforeActiveMS, hold.DuringActiveMS, hold.AfterActiveMS,
@@ -832,6 +835,10 @@ func sanitizedReviewResult(result Result, redact func(string) string) Result {
 		copy.Failures[index] = redact(failure)
 	}
 	copy.Transcript = result.Transcript
+	copy.Transcript.SpeechCues = append([]bench.SpeechCueObservation(nil), result.Transcript.SpeechCues...)
+	for index := range copy.Transcript.SpeechCues {
+		copy.Transcript.SpeechCues[index].Name = redact(copy.Transcript.SpeechCues[index].Name)
+	}
 	copy.Transcript.Failure = redact(result.Transcript.Failure)
 	copy.Transcript.ExecutionError = redact(result.Transcript.ExecutionError)
 	copy.Transcript.Moments = append([]bench.Moment(nil), result.Transcript.Moments...)

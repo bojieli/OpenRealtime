@@ -20,7 +20,9 @@ import (
 // Version 5 also requires attributed audio and rejects responses aborted before
 // the hold ends, even when replacement audio fills the acoustic window.
 // Earlier scores are not evidence for this version.
-const ScorerVersion uint64 = 5
+// Version 6 resolves speech-triggered diagnostic cues from retained input and
+// independently observed agent PCM, failing missing opportunities explicitly.
+const ScorerVersion uint64 = 6
 
 func validateCheckKind(check Check) error {
 	switch check.Kind {

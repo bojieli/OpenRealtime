@@ -102,6 +102,9 @@ type Contract struct {
 // unknown aliases fail closed instead of silently selecting a different slab.
 func BuildContract(selected ...string) (Contract, error) {
 	suite := scenario.Suite()
+	if len(selected) > 0 {
+		suite = scenario.Catalog()
+	}
 	wanted := make(map[string]struct{}, len(selected))
 	for index, name := range selected {
 		if name == "" || name != strings.TrimSpace(name) || strings.ContainsAny(name, "\x00\r\n") {

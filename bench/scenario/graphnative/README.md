@@ -117,6 +117,12 @@ unknown, or whitespace-altered selection cannot silently run a different
 population. Names are ordered by the authored suite regardless of flag order.
 The removed substring-based `-only` flag remains unsupported.
 
+`-case 'acknowledgements during observed speech'` explicitly selects the optional
+speech-triggered diagnostic in both profile creation and execution. Its actual
+cue positions and audible opportunities are retained and rescored from the
+recorded input and output PCM. It is excluded from the default twelve-case
+contract and cannot earn complete-suite credit, regardless of repetitions.
+
 Subset runs retain the same source/media and review receipts as full runs.
 Their case ordinals and media filenames start at one within the selected
 population, with the exact case names and contract fingerprint retained beside
