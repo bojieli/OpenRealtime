@@ -329,6 +329,9 @@ func (session *session) SpeechEnd(ctx context.Context, utterance action.Utteranc
 	session.itemsMu.Lock()
 	wire := session.utterances[utterance.ID]
 	delete(session.utterances, utterance.ID)
+	if wire != nil {
+		session.rememberFinished(wire.itemID, utterance.ID)
+	}
 	session.itemsMu.Unlock()
 	if wire == nil {
 		return nil

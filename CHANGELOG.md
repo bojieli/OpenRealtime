@@ -4,6 +4,17 @@
 
 ### Highlights
 
+- A truncation that arrives just after an answer ended now reaches the runtime,
+  and one naming an item the session never played is refused instead of
+  confirmed. The client is the only party that knows where playback actually
+  stopped, and `conversation.item.truncate` is the only way it can say so. The
+  utterance it names has usually just ended, because the server finished
+  sending while the listener was already talking over it, and the session
+  forgot the item the moment it ended: the message was answered with a
+  confirmation that nothing had acted on, and the server went on recording the
+  whole answer as heard. Sessions now keep the last thirty-two ended
+  utterances, which is a race window rather than a history.
+
 - The full-duplex suite times its windows from the first sound of an event
   rather than from where the event clip was placed. The recordings carry two
   timestamps saying when the event happens, and the clip behind them begins

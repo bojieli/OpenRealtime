@@ -124,6 +124,18 @@ type session struct {
 	// twice reports the same predecessor both times.
 	priorItemID string
 	utterances  map[string]*wireUtterance
+	// finished remembers the wire item of a recently ended utterance so a
+	// truncation that arrives just after it ended can still be applied.
+	//
+	// A client that owns turn detection is the only party that knows where
+	// playback actually stopped, and conversation.item.truncate is the only
+	// way it can say so. The utterance it names has usually just ended - the
+	// server finished sending while the listener was already talking over it -
+	// and dropping the mapping the moment it ends turned that message into a
+	// confirmation that nothing acted on, leaving the server's record saying
+	// the whole answer was heard.
+	finished      map[string]string
+	finishedOrder []string
 	// issuedCalls remembers what a tool call was, from the moment it is handed
 	// to the client until the client returns its result. It is bounded because
 	// nothing else bounds it: the protocol lets a client ignore a call, so the
@@ -1020,17 +1032,52 @@ func (session *session) onTruncate(truncate truncateEvent) error {
 			utteranceID = id
 		}
 	}
+	if utteranceID == "" {
+		utteranceID = session.finished[truncate.ItemID]
+	}
 	session.itemsMu.Unlock()
-	if utteranceID != "" {
-		if err := session.runtime.Truncate(session.ctx, binding.Truncation{
-			ItemID: utteranceID, AudioEndMS: truncate.AudioEndMS,
-		}); err != nil {
-			return err
-		}
+	if utteranceID == "" {
+		// Confirming a truncation that reached nothing is worse than refusing
+		// it: the client goes on believing the server knows the listener
+		// stopped it early, and the server goes on recording the whole answer
+		// as heard.
+		return fmt.Errorf(
+			"conversation.item.truncate names item %q, which this session is not playing and did not recently play",
+			truncate.ItemID,
+		)
+	}
+	if err := session.runtime.Truncate(session.ctx, binding.Truncation{
+		ItemID: utteranceID, AudioEndMS: truncate.AudioEndMS,
+	}); err != nil {
+		return err
 	}
 	return session.send(event("conversation.item.truncated", session.nextID("event"), map[string]any{
 		"item_id": truncate.ItemID, "content_index": 0, "audio_end_ms": truncate.AudioEndMS,
 	}))
+}
+
+// maximumFinishedUtterances bounds what a session remembers of what it has
+// already said. It is a race window, not a history: a truncation that arrives
+// this many utterances later is not describing playback that is still going.
+const maximumFinishedUtterances = 32
+
+// rememberFinished requires itemsMu.
+func (session *session) rememberFinished(itemID, utteranceID string) {
+	if itemID == "" || utteranceID == "" {
+		return
+	}
+	if session.finished == nil {
+		session.finished = make(map[string]string, maximumFinishedUtterances)
+	}
+	if _, known := session.finished[itemID]; !known {
+		session.finishedOrder = append(session.finishedOrder, itemID)
+	}
+	session.finished[itemID] = utteranceID
+	for len(session.finishedOrder) > maximumFinishedUtterances {
+		oldest := session.finishedOrder[0]
+		session.finishedOrder = session.finishedOrder[1:]
+		delete(session.finished, oldest)
+	}
 }
 
 // onItemCreate accepts what a client can add to the conversation directly.
