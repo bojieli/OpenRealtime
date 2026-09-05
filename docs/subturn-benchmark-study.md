@@ -1287,6 +1287,45 @@ waveforms and windows, recognition failure, and changed replay observations.
 Temporary Go overlays prove that removing exact audible matching or outside-window
 silence checking makes the corresponding regressions fail. The diagnostic
 helper's initial scenario-name error and corrected retry are retained separately.
-Focused live validation under a clean scorer-10 candidate and the eventual shared
-180-attempt campaign remain required; this investigation carries no final-candidate
-acceptance credit. No external code, data, prompts, or model weights were imported.
+The investigation carries no final-candidate acceptance credit. No external
+code, data, prompts, or model weights were imported.
+
+### Fresh scorer-10 count and question controls
+
+A separate clean `b8a9be8` diagnostic records three event-count trials and three
+ordinary-question controls under the new production instruction and scorer.
+`artifacts/scenario-audible-count-repair-20260905-01` retains the exact source,
+binary, graph/profile, provider traces, media, commands, and review receipts.
+Event counts pass **2/3**; ordinary questions pass **3/3**. All six independent
+media reviews agree with the deterministic outcomes, including the failed count,
+and all six scores and metrics replay exactly.
+
+The first event-count trial makes two model requests, but the second returns
+`One. Two.`. Synthesis receives three separate punctuated word requests across
+that session: `One.`, `One.`, `Two.`. The second count window is independently
+heard as “One arm. Two.” The scorer and reviewer both reject the repeated count.
+The other two counting trials hear only the correct `One.` and `Two.`. Across
+all six sessions, nine model and ten synthesis exchanges finish upstream.
+Thus the prompt-level repair does not establish event-count acceptance even
+though the new evaluator now exposes the repeated-number failure.
+
+The counting recordings retain another lifecycle/context observation: none of
+the three contains a normal response-terminal event; the adapter reports
+unreleased playback on session shutdown. Their subsequent model request carries
+only user turns, with no prior assistant count. Eight of the fifteen older
+scorer-9 recordings also contain no response-terminal event. These facts require
+a separate graph playback/canonical-context investigation; missing completion
+is not missing audio, and this audit does not establish their cause. The three
+new ordinary-question controls do contain completed response-terminal events.
+`terminal-audit.json` preserves the exact source and request projections.
+
+Exact executable SHA-256:
+`f074a50b29c1f0fee00b5f4bae2d826faedcc61044ba36d6bafb4554a67525bc`.
+Source receipt:
+`sha256:421fcd37e03cfe5acf180da015f147bd862e5cd28d2e5e3cf5863f0947a8a12f`.
+Advisory receipt:
+`sha256:631cc364d3a96f022d1ff8d1f2d2713f82e21a1c57a32251209e07219199b8be`.
+The server and proxies on 18980–18982 stopped, and the private policy capture
+was removed after safe projection. Shared services and colleague edits were
+preserved. Event-count repetition, playback completion/context, acknowledgement
+content, short-word recognition, and the final 180-attempt population remain open.
