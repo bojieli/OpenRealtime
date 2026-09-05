@@ -75,7 +75,7 @@ func TestIntentSettlementContractAndConfigAreExplicit(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.IntentSettlement" || descriptor.Revision != 2 ||
+	if descriptor.Name != "policy.IntentSettlement" || descriptor.Revision != 3 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/intent-settlement-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/policy/intent-settlement-state/v2" {
 		t.Fatalf("intent settlement descriptor = %+v", descriptor)
@@ -124,7 +124,7 @@ func TestIntentSettlementContractAndConfigAreExplicit(t *testing.T) {
 		}
 		if registration.Profile.Artifact.ID !=
 			"builtin://openrealtime/elements/policy.IntentSettlement" ||
-			registration.Profile.Artifact.Revision != "implementation:2" {
+			registration.Profile.Artifact.Revision != "implementation:3" {
 			t.Fatalf("intent settlement registration = %+v", registration.Profile)
 		}
 		validator = registration.Factory.(element.ConfigValidator)
@@ -371,10 +371,25 @@ func TestIntentSettlementContinueReleasesExactHeldEvidence(t *testing.T) {
 	}
 	_ = intentSettlementState(t, harness)
 
-	// Continue is not a terminal latch: the same intent may legitimately
-	// produce another result-linked effect and classification probe.
+	// Re-delivery cannot make the old result authoritative for another decision,
+	// even when a new envelope identity is attached to the same canonical input.
+	for index := 0; index < 3; index++ {
+		sendPolicy(t, harness.ingress(t, "evidence"), settlementEvidenceEnvelope(
+			fmt.Sprintf("replayed-evidence-%d", index), "session-a", uint64(11+index), evidence,
+		))
+		if outcome := intentSettlementOutcome(t, harness); outcome.Kind != policyelements.IntentSettlementIgnored || outcome.Code != "continued_result_replayed" {
+			t.Fatalf("replayed completed result = %+v", outcome)
+		}
+		if state := intentSettlementState(t, harness); state.TrackedIntents != 0 || state.PendingIntents != 0 {
+			t.Fatalf("replay retained work: %+v", state)
+		}
+		assertNoPolicyEnvelope(t, harness.egress(t, "probe"))
+		assertNoPolicyEnvelope(t, harness.egress(t, "admitted"))
+	}
+	// A different result under the same intent still gets a fresh decision.
+	nextEvidence := appendNextSettlementEffect(t, store)
 	sendPolicy(t, harness.ingress(t, "evidence"), settlementEvidenceEnvelope(
-		"candidate-evidence-again", "session-a", 11, evidence,
+		"next-effect-evidence", "session-a", 14, nextEvidence,
 	))
 	second := intentSettlementProbe(t, harness)
 	if second.ProbeID == probe.ProbeID || second.IssuedNS <= probe.IssuedNS {
@@ -405,7 +420,7 @@ func TestIntentSettlementProbeSequenceRejectsStaleDispositionWithConstantClock(t
 	_ = intentSettlementState(t, harness)
 
 	sendPolicy(t, harness.ingress(t, "evidence"), settlementEvidenceEnvelope(
-		"constant-clock-replay", "session-a", 11, evidence,
+		"constant-clock-next-effect", "session-a", 11, appendNextSettlementEffect(t, store),
 	))
 	second := intentSettlementProbe(t, harness)
 	if second.IssuedNS != first.IssuedNS || second.Sequence <= first.Sequence ||
@@ -2521,6 +2536,29 @@ func settlementEvidenceFixture(
 	return store, admitSettlementEvidence(t, store, store.Snapshot().Version)
 }
 
+// Append another actual call/result/consequence, preserving the durable intent.
+// Reusing the first result would test duplicate delivery, not multi-step work.
+func appendNextSettlementEffect(t *testing.T, store *trajectory.Store) policyelements.AdmittedTemporalEvidence {
+	t.Helper()
+	snapshot := store.Snapshot()
+	version := snapshot.Version
+	call := snapshot.Items[2]
+	call.ID, call.InvocationID, call.MonotonicNS = "call-item-2", "generation-2", version+1
+	call.CausalParentIDs = []string{"intent-1"}
+	callCopy := *call.ToolCall
+	callCopy.CallID = "call-2"
+	call.ToolCall = &callCopy
+	result := snapshot.Items[3]
+	result.ID, result.InvocationID, result.MonotonicNS = "result-item-2", "generation-2", version+2
+	result.CausalParentIDs = []string{call.ID}
+	resultCopy := *result.ToolResult
+	resultCopy.CallID = "call-2"
+	result.ToolResult = &resultCopy
+	observation := temporalObserver("post-screen-2", "post-screen-event-2", "vision", "screen", 40, version+3, "intent-1", result.ID)
+	appendTemporalItems(t, store, call, result, observation)
+	return admitSettlementEvidence(t, store, version+3)
+}
+
 func admitSettlementEvidence(
 	t *testing.T, store *trajectory.Store, version uint64,
 ) policyelements.AdmittedTemporalEvidence {
@@ -2729,7 +2767,7 @@ func assertIntentSettlementLiveResolution(t *testing.T, mounted *graphruntime.Mo
 	resolution := mounted.Live().Nodes["settlement"].Resolution
 	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 		resolution.Runtime.ID != "builtin://openrealtime/elements/policy.IntentSettlement" ||
-		resolution.Runtime.Revision != "implementation:2" ||
+		resolution.Runtime.Revision != "implementation:3" ||
 		resolution.CapabilitiesEvidence != inspect.EvidenceLive || len(resolution.Capabilities) != 0 {
 		t.Fatalf("intent settlement live resolution = %+v", resolution)
 	}

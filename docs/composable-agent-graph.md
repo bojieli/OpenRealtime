@@ -1841,7 +1841,7 @@ Current behavior work includes:
 | --- | --- | --- |
 | Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
 | Acknowledgements | Existing recordings exposed unwanted cancellation and a separate omitted purchase confirmation; cancellation repairs have focused coverage | Attribute the content omission at the model, synthesis, or evaluator boundary and repair a reproduced cause |
-| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage | Finish forged/reordered settlement and failed-result interpretation cases; use affected camera and terminal-loop cases for live checks where needed |
+| Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences now cannot reclassify a result that already released continuation; distinct later results still settle | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish failed-result interpretation and remaining cross-boundary ordering cases; use affected camera and terminal-loop cases for live checks where needed |
 | Full-duplex interaction | Existing FDB cases expose interruption latency and incorrect handling of background or third-party speech | Diagnose the affected hold/yield cases and check policy repairs against both relevant speech and silence controls |
 | Tool use | FDB v3 exposed extra effects and spoken-ID normalization; scorer and mounted normalization repairs exist | Reuse the failed tool cases to check remaining action/result behavior |
 | Broader scenario coverage | Historical FD-Bench and tau-Voice runs remain useful despite incomplete populations or older revisions | Select concrete failures that reveal missing behavior; unrun populations alone are not bugs or publication blockers |
@@ -1862,6 +1862,36 @@ run scope without contributing a separate completion quota.
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, a compiler-backed language-service core exposed through the UI-independent management API, and authenticated rollback-safe stateless, multi-row, and stateful browser implementation replacement | Complete signed-native, topology-changing, and remaining capability-specific presentation replacement gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
+
+### 2026-09-05 settlement replay repair
+
+Following the historical post-success loops into the remaining ordering cases
+exposed a production-graph defect: after a `continue` decision, the settlement
+gate deleted its pending record and would classify a replay of that same
+canonical result again. A new terminal decision for the old generation could
+then occupy settlement while the next real effect was in progress.
+
+`policy.IntentSettlement` revision 3 remembers the last continued canonical
+result position in one bounded watermark. Verified delayed consequences at or
+before that position are ignored before they can create a probe. A distinct
+later call/result/consequence still receives its own decision. The watermark
+is scoped to the mounted session; cancellation cleanup remains a separate lane.
+The corrected element fixture now creates a real second result rather than
+using replayed evidence as a stand-in for multi-step work.
+
+Mounted regressions reproduce the replay, require the next real effect to
+settle, and preserve focus→type→submit and failed-effect recovery. Additional
+production-boundary checks reject altered probe results, disposition results
+and detectors, and terminal generation/prefix data while allowing the original
+decision to finish. Delayed duplicate terminals cannot clear a new intent.
+A terminal arriving before activation's model-result copy waits for that exact
+copy; cancellation recorded before terminal delivery waits for acknowledged
+cleanup and then completes. A mismatched acknowledgement cannot release the
+pending terminal; the exact acknowledgement completes it, and duplicates are
+ignored. Removing the replay guard makes the regression
+fail by creating another probe for the consumed result. These checks address
+runtime ordering; selected-provider behavior and failed-result scorer
+interpretation remain separate work.
 
 ### 2026-09-04 delivery report: production settlement and cancellation
 
@@ -3806,12 +3836,22 @@ the required new 180-attempt sample.
         - [x] Exercise focus→type→submit through two `continue` decisions and
           one terminal `succeeded` decision, then suppress five changing screen
           frames and admit a new durable intent only with fresh visual evidence.
-        - [ ] Exercise forged cross-node settlement evidence through the full
-          locked production profile; temporal-admission source/mode forgery
-          coverage alone does not close this case.
+        - [x] Exercise forged cross-node settlement evidence through the full
+          locked production profile. Altered probe result identity, disposition
+          result/detector, and terminal generation/prefix values are refused at
+          the receiving node; releasing the genuine value still settles the
+          original effect without another model call.
         - [ ] Exercise duplicate and reordered terminal decisions through the
           full locked production profile, including terminal/result and
           cancellation/terminal reorderings at every connected boundary.
+          The production graph now covers a replayed continued consequence,
+          old duplicate terminals after a new intent starts, terminal delivery
+          before activation's model-result copy, and cancellation recorded
+          before a delayed terminal is delivered. The replay case exposed and
+          now guards the consumed-result watermark repair. Remaining exact
+          disposition/acknowledgement reorder combinations keep this broad item
+          open. A separate mounted acknowledgement test rejects a different
+          generation, then accepts the exact value and ignores three duplicates.
         - [x] Implement and exercise explicit bounded `indeterminate` retry as
           graph policy while preserving the immutable probe, serialized client
           use, cancellation/reset quiescence, terminal stop, typed exhaustion,

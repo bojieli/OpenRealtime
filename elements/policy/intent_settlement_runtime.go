@@ -23,7 +23,7 @@ import (
 
 const (
 	intentSettlementRuntimeID          = "builtin://openrealtime/elements/policy.IntentSettlement"
-	intentSettlementRuntimeRevision    = "implementation:2"
+	intentSettlementRuntimeRevision    = "implementation:3"
 	intentSettlementInvalidInputItemID = "intent-settlement-invalid-input"
 )
 
@@ -196,6 +196,12 @@ type intentSettlementRunner struct {
 	acknowledged      map[string]struct{}
 	acknowledgedOrder []string
 	state             IntentSettlementState
+
+	// Canonical result positions increase within this mounted session. Once a
+	// result has released continuation, delayed evidence for it cannot create
+	// another probe: its old generation may already have yielded to a new one.
+	// One watermark retains that fact without an unbounded per-result history.
+	continuedResultVersion uint64
 }
 
 type intentSettlementInput struct {
@@ -380,6 +386,14 @@ func (runner *intentSettlementRunner) acceptEvidence(ctx context.Context, envelo
 	result, candidate, err := intentSettlementCandidate(snapshot, evidence, runner.config.CandidateSources)
 	if err != nil {
 		return runner.refuse(ctx, envelope, "evidence", "invalid_post_effect_evidence", err.Error(), IntentSettlementProbe{})
+	}
+	if candidate && result.StoreVersion <= runner.continuedResultVersion {
+		return runner.ignore(ctx, envelope, "evidence", "continued_result_replayed",
+			"the canonical result already released continuation; delayed evidence cannot classify it again",
+			IntentSettlementProbe{
+				SessionID: envelope.SessionID, DurableIntent: *evidence.DurableIntent,
+				TriggerObservation: evidence.TriggerObservation, Result: result,
+			})
 	}
 	var probe IntentSettlementProbe
 	if candidate {
@@ -668,6 +682,7 @@ func (runner *intentSettlementRunner) acceptDisposition(
 		if err := runner.publishReleasedAdmission(ctx, released); err != nil {
 			return err
 		}
+		runner.continuedResultVersion = max(runner.continuedResultVersion, probe.Result.StoreVersion)
 		delete(runner.records, key)
 		runner.state.Admitted++
 		before := runner.state.Revision

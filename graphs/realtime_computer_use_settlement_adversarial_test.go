@@ -496,7 +496,9 @@ func newFailedEffectCancellationFixture(t *testing.T, blockAt int32) *failedEffe
 }
 
 func newFailedEffectCancellationFixtureWithGate(
-	t *testing.T, blockAt int32, gate *realtimeCUActivationCancelGate,
+	t *testing.T, blockAt int32, gate interface {
+		install(*testing.T, *graphlaunch.Config)
+	},
 ) *failedEffectCancellationFixture {
 	t.Helper()
 	target := computeruse.Target{

@@ -165,8 +165,8 @@
       "reference": "policy.IntentSettlement",
       "identity": {
         "name": "policy.IntentSettlement",
-        "revision": 2,
-        "digest": "sha256:e5e7925966753b502c6cb1d91918934b1158bdf8ba58d52a3cd6ef3942abb74e"
+        "revision": 3,
+        "digest": "sha256:25e24955d299b1b0e9c827a8a84a333ef89da458cf24adc4e6616bf6eda8852f"
       }
     },
     {

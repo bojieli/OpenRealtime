@@ -56,7 +56,7 @@ func IntentSettlementDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "policy.IntentSettlement",
-		Revision:      2,
+		Revision:      3,
 		Ports: []element.Port{
 			{Name: "evidence", Direction: element.Input, Type: temporalEvidenceAdmittedType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
