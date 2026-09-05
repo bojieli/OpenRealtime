@@ -789,7 +789,14 @@ func TestTimedOutVisualReflexFallsBackToTheExistingSlowLane(t *testing.T) {
 		t.Fatalf("video: %v", err)
 	}
 	waitFor(t, func() bool { return slow.invocations() > before }, "timed-out reflex did not fall back to slow")
-	if elapsed := time.Since(started); elapsed > time.Second {
+	// The claim is that the fallback does not wait on some longer deadline -
+	// the provider timeout is thirty seconds - not that it meets a scheduling
+	// budget. One second is a scheduling budget: it failed the verification
+	// gate under the race detector at load average 70, where a ten-millisecond
+	// reflex timeout and a five-millisecond poll are both far inside the
+	// noise. Five seconds still separates a prompt fallback from one that
+	// waited for anything else in this system.
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("reflex timeout delayed fallback by %s", elapsed)
 	}
 }

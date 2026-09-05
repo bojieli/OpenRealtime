@@ -549,6 +549,17 @@
   make first. Under a loaded race run that turned a refused collision into an
   ordinary held probe and failed the gate. Both mounts now read a fixed clock,
   which is the collision the test exists to provoke.
+- **Three gate failures were assertions about the machine, not the system.**
+  Each pinned a number tighter than the property it was testing, and each
+  failed the verification gate at load average 70 while passing alone. Two
+  speech-cue tests bounded where a cue lands to a 300 ms slice inside its own
+  authored window, when what proves the sent-audio clock is the equality
+  beside it - the tone present at exactly that position in the retained audio,
+  and the score's trigger matching it - which holds wherever in the window the
+  cue lands. The third gave a fallback from a ten-millisecond reflex timeout a
+  one-second budget, when the claim is that it does not wait on the
+  thirty-second provider deadline. The windows are now the authored ones and
+  the budget is five seconds; every discrimination they were making survives.
 - **The Go sweep now enforces the bound it claims.** The race gate is allowed
   sixty minutes, but `go test` applies its own ten-minute default *per
   package*, and `cmd/openrealtime` spawns real servers in most of its tests:

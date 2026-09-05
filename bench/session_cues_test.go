@@ -175,8 +175,15 @@ func TestSpeechCueWireInputMatchesRetainedAudioAndActualClock(t *testing.T) {
 		t.Fatalf("cue playback: %+v %v", transcript.SpeechCues, err)
 	}
 	cue := transcript.SpeechCues[0]
-	if cue.Status != "sent" || cue.StartMS < 1200 || cue.StartMS > 1500 || cue.SentSamples != 3000 {
-		t.Fatalf("cue used arrival/authored clock: %+v", cue)
+	// The window is the authored one, not a narrower guess at where the cue
+	// lands. What proves the sent-audio clock is the equality below: the tone
+	// is present at exactly StartMS in the retained room audio, which an
+	// arrival or authored clock cannot arrange. A tighter bound here proved
+	// nothing extra and did fail the verification gate at load average 70,
+	// where the agent's audio arrived later and the cue landed at 1600 ms -
+	// inside its authored window and correct.
+	if cue.Status != "sent" || cue.StartMS <= 1000 || cue.StartMS > 2000 || cue.SentSamples != 3000 {
+		t.Fatalf("cue outside its authored window: %+v", cue)
 	}
 	mu.Lock()
 	wire := slices.Clone(input)

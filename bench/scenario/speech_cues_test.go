@@ -83,7 +83,16 @@ func TestSpeechTriggeredScenarioUsesSentPositionsThroughRecordedWAVAndReview(t *
 					t.Fatalf("missing opportunity did not fail: %+v", result)
 				}
 			} else {
-				if cue.Status != "sent" || cue.StartMS < 1200 || cue.StartMS > 1500 || result.Holds[0].TriggerStartMS != cue.StartMS || result.Holds[0].TriggerEndMS != int(cue.EndMS) {
+				// The window is the cue's own: at or after the authored 1000 ms
+				// and no later than its 1700 ms deadline. What proves the score
+				// used the sent position rather than the authored one is the
+				// equality that follows it, which holds wherever inside that
+				// window the cue lands. A tighter bound proved nothing extra
+				// and failed the verification gate under load, where the
+				// agent's audio arrived later and the cue landed legally late.
+				if cue.Status != "sent" || cue.StartMS < 1000 || cue.StartMS > 1700 ||
+					result.Holds[0].TriggerStartMS != cue.StartMS ||
+					result.Holds[0].TriggerEndMS != int(cue.EndMS) {
 					t.Fatalf("score used authored cue instead of sent position: %+v", result.Holds)
 				}
 				if mode == "cancelled" && !strings.Contains(strings.Join(result.Failures, " "), "cancelled") {
