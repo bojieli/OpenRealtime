@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- Concurrent graph shutdown callers now wait for the same completed cleanup
+  even when the graph was mounted but never run. Each caller can cancel its
+  own wait while resource retirement continues, and subsequent callers receive
+  the final cleanup error. Buffered terminal output remains readable.
+
 - Standing-instruction extraction presents a split spoken request once.
   Earlier endpoint clauses and their superseded recognition hypotheses no
   longer appear both in recent conversation and in the reconstructed request.

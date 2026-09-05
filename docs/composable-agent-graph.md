@@ -1887,6 +1887,8 @@ previous history construction fails the projection, mounted policy, and full
 conversation-graph regressions. This removes a source of false repetition when
 interpreting speech; it does not claim to attribute every historical hold/yield
 or standing-policy failure to this defect.
+The affected policy and full graph suites pass under the race detector, and
+the full `scripts/check.sh` gate passes on the integrated work-branch state.
 
 ### 2026-09-05 policy conversation playback projection repair
 
@@ -5548,6 +5550,25 @@ the required new 180-attempt sample.
     Chromium coverage are green.
 
 ### Phase 7: dynamic reconciliation
+
+- [x] Join pre-run graph retirement across concurrent shutdown callers.
+  A mounted graph can already own workers, subscriptions, and other effects
+  before its reaction loops start. `Close` now gives their cleanup one bounded
+  graph-owned lifetime; all callers wait on the same completion signal and
+  read the final cleanup result after it closes. Canceling one caller's wait
+  leaves cleanup running. Run cannot reopen a retiring graph, cleanup executes
+  once, and queued terminal output remains drainable before EOF. The mounted
+  regression blocks a real disposer and reproduces premature success, ignored
+  caller cancellation, and a lost cleanup failure in the former pre-run path;
+  it exercises the running path as a control. This fixes retirement semantics
+  without claiming that graph-plan replacement is implemented.
+  The complete graph packages and production graph suite pass race testing;
+  the shutdown and recorder-clock controls pass twenty repeated race runs,
+  and the full `scripts/check.sh` gate passes. Restoring the old close path
+  reproduces the cleanup failures. The recorder test now waits for post-send
+  telemetry before regressing its injected clock; disabling recorder clamping
+  still fails on the invalid timestamp, so the corrected synchronization does
+  not hide the behavior it tests.
 
 - [ ] Implement scoped dependencies and reversible lifecycle effects across
   graph/session reconciliation; that wider ownership is incomplete.

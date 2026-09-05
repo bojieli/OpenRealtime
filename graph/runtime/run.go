@@ -141,31 +141,12 @@ func (mounted *Mounted) Close(ctx context.Context) error {
 		return errors.New("close graph: nil context")
 	}
 	mounted.mu.Lock()
-	if mounted.closed {
-		done := mounted.done
-		started := mounted.started
-		shutdownErr := mounted.shutdownErr
-		mounted.mu.Unlock()
-		if started {
-			select {
-			case <-done:
-				return shutdownErr
-			case <-ctx.Done():
-				return context.Cause(ctx)
-			}
-		}
-		return shutdownErr
-	}
-	if !mounted.started {
+	if !mounted.closed && !mounted.started {
 		mounted.closed = true
-		mounted.mu.Unlock()
-		err := mounted.shutdownResources()
-		mounted.mu.Lock()
-		mounted.runErr = ErrGraphClosed
-		mounted.mu.Unlock()
-		_ = mounted.recorder.finish(mounted)
-		close(mounted.done)
-		return err
+		// Mount can own workers and effects before Run. Their cleanup has the
+		// graph's bounded lifetime, independent of any one caller's wait. The
+		// closed bit refuses Run; done attests that retirement really finished.
+		go mounted.closeBeforeRun()
 	}
 	cancel := mounted.cancel
 	done := mounted.done
@@ -182,6 +163,15 @@ func (mounted *Mounted) Close(ctx context.Context) error {
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+func (mounted *Mounted) closeBeforeRun() {
+	_ = mounted.shutdownResources()
+	mounted.mu.Lock()
+	mounted.runErr = ErrGraphClosed
+	mounted.mu.Unlock()
+	_ = mounted.recorder.finish(mounted)
+	close(mounted.done)
 }
 
 func (mounted *Mounted) Done() <-chan struct{} { return mounted.done }

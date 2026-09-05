@@ -159,6 +159,23 @@ func TestRecordedTraceClampsAndAttestsRegressingMonotonicClock(t *testing.T) {
 		Type: element.Event(element.Named("test.Value")), ItemID: "clock-regression",
 		RunID: "clock-regression", TraceID: "clock-regression", Payload: "value",
 	})
+	// Receiving the boundary value can precede the sender's post-send output
+	// observer. Finish that telemetry before regressing the recorder's clock;
+	// otherwise this test also moves time backwards inside an active reaction.
+	deadline := time.Now().Add(time.Second)
+	for {
+		settled := true
+		for _, node := range mounted.Live().Nodes {
+			settled = settled && node.FirstTriggerNS != 0 && node.FirstOutputNS != 0
+		}
+		if settled {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("output telemetry did not finish before the recorder clock regression")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	live := mounted.Live()
 	minimumAtNS := uint64(0)
 	for _, node := range live.Nodes {
