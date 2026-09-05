@@ -1536,6 +1536,9 @@ func TestSemanticAdmissionGroundsAStandingPolicyAcrossSplitEndpoints(t *testing.
 		!strings.Contains(generations[1], want) {
 		t.Fatalf("split standing extraction inputs = %+v", generations)
 	}
+	if strings.Count(generations[0], first.Content) != 1 {
+		t.Fatalf("the extractor received the earlier clause twice: %s", generations[0])
+	}
 }
 
 func TestSupersededStandingExtractionCannotLeakIntoNewerDecision(t *testing.T) {

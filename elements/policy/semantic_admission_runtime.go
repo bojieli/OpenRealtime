@@ -1793,6 +1793,19 @@ func semanticActivationEvidence(situation coreinteraction.Situation) bool {
 func semanticHeardSince(
 	items []trajectory.Item, currentID, speaker string, maximum int,
 ) string {
+	endpoints := semanticUnansweredEndpoints(items, currentID, speaker, maximum)
+	parts := make([]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		parts = append(parts, strings.TrimSpace(endpoint.Content))
+	}
+	return strings.Join(parts, " ")
+}
+
+// Keep the canonical items that supply the utterance, so extraction can omit
+// those same observations from recent history without matching their text.
+func semanticUnansweredEndpoints(
+	items []trajectory.Item, currentID, speaker string, maximum int,
+) []trajectory.Item {
 	if maximum <= 0 {
 		maximum = defaultSemanticRecentLines
 	}
@@ -1814,34 +1827,34 @@ func semanticHeardSince(
 			audible[item.ID] = struct{}{}
 		}
 	}
-	parts := make([]string, 0, min(maximum, 8))
+	parts := make([]trajectory.Item, 0, min(maximum, 8))
 	for index := current; index >= 0 && len(parts) < maximum; index-- {
 		item := items[index]
 		switch item.Kind {
 		case trajectory.KindAssistantState:
 			if item.AssistantState != nil && item.AssistantState.Visibility == trajectory.VisibilityPlayed {
 				if _, spoken := audible[item.AssistantState.AssistantItemID]; spoken {
-					return strings.Join(parts, " ")
+					return parts
 				}
 			}
 		case trajectory.KindAssistant:
 			if _, spoken := audible[item.ID]; spoken && item.Visibility == trajectory.VisibilityPlayed {
-				return strings.Join(parts, " ")
+				return parts
 			}
 		case trajectory.KindObservation:
 			if !semanticExtractableObservation(item) {
 				continue
 			}
 			if coreinteraction.SpeakerOf(item) != speaker {
-				return strings.Join(parts, " ")
+				return parts
 			}
 			text := strings.TrimSpace(item.Content)
 			if text != "" {
-				parts = append([]string{text}, parts...)
+				parts = append([]trajectory.Item{item}, parts...)
 			}
 		}
 	}
-	return strings.Join(parts, " ")
+	return parts
 }
 
 func cloneSemanticImages(source []coreinteraction.Image) []coreinteraction.Image {
@@ -1858,10 +1871,42 @@ func semanticRecentBefore(items []trajectory.Item, currentID string, maximum int
 	if currentID == "" {
 		return coreinteraction.RecentLines(items, maximum)
 	}
-	before := make([]trajectory.Item, 0, len(items))
-	for _, item := range items {
+	current := len(items)
+	for index, item := range items {
 		if item.ID == currentID {
+			current = index
 			break
+		}
+	}
+	// The finished utterance already contains its earlier endpoint clauses.
+	// Showing those clauses again as recent conversation invents repetition.
+	// Exact item and recognizer-stream identities also let us omit the partial
+	// hypotheses superseded by those endpoints, including corrected wording or
+	// speaker attribution. Other turns with the same text remain history.
+	consumed := make(map[string]struct{})
+	type revisionStream struct{ source, correlation string }
+	finalized := make(map[revisionStream]uint64)
+	if current < len(items) && semanticExtractableObservation(items[current]) {
+		for _, endpoint := range semanticUnansweredEndpoints(
+			items[:current+1], currentID, coreinteraction.SpeakerOf(items[current]), maximum,
+		) {
+			consumed[endpoint.ID] = struct{}{}
+			if endpoint.Event.CorrelationID != "" && endpoint.SourceRevision > 0 {
+				stream := revisionStream{endpoint.Event.Source, endpoint.Event.CorrelationID}
+				finalized[stream] = max(finalized[stream], endpoint.SourceRevision)
+			}
+		}
+	}
+	before := make([]trajectory.Item, 0, current)
+	for _, item := range items[:current] {
+		if _, included := consumed[item.ID]; included {
+			continue
+		}
+		if semanticSpokenObservation(item) && strings.HasSuffix(item.Event.Type, ".revision") {
+			stream := revisionStream{item.Event.Source, item.Event.CorrelationID}
+			if revision, found := finalized[stream]; found && item.SourceRevision > 0 && item.SourceRevision < revision {
+				continue
+			}
 		}
 		before = append(before, item)
 	}

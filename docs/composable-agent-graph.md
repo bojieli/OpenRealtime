@@ -1863,6 +1863,31 @@ run scope without contributing a separate completion quota.
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
+### 2026-09-05 standing extraction duplicate-context repair
+
+- [x] Keep recent conversation separate from the endpoint clauses already
+  included in the current reconstructed standing-instruction request. Semantic
+  admission now shares one canonical endpoint selection between the utterance
+  and history projection. Exact source/stream identities and canonical revision
+  bounds remove those endpoints' older recognition hypotheses even when wording
+  or speaker attribution changed. Older identical turns, other speakers,
+  visual observations, unplayed drafts, and uncorrelated hypotheses remain
+  available as context. The existing utterance-length bound and immutable
+  committed prefix remain in force. Descriptor revision 9 now uses
+  implementation revision 15.
+
+The existing mounted split-endpoint test reproduced the defect at the actual
+extractor input: the silence-condition clause appeared once in recent history
+and again inside `They just said`. The repaired projection presents it once
+while still grounding the complete delayed-trigger policy. A production
+conversation-graph regression commits both partials and endpoints for a split
+counting instruction, verifies one copy at the extractor, preserves silence
+during setup, and hears exactly one count on the next animal. Restoring the
+previous history construction fails the projection, mounted policy, and full
+conversation-graph regressions. This removes a source of false repetition when
+interpreting speech; it does not claim to attribute every historical hold/yield
+or standing-policy failure to this defect.
+
 ### 2026-09-05 policy conversation playback projection repair
 
 - [x] Make policy history distinguish words the listener received from speech

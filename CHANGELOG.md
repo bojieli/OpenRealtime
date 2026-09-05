@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- Standing-instruction extraction presents a split spoken request once.
+  Earlier endpoint clauses and their superseded recognition hypotheses no
+  longer appear both in recent conversation and in the reconstructed request.
+  Canonical item and stream identities preserve unrelated history, including
+  older turns with identical words and other speakers.
+
 - Conversation policy now distinguishes played words from prepared, queued,
   and canceled speech. After interruption, it sees the heard prefix, any word
   cut short, and the unplayed remainder separately. A completed model response
