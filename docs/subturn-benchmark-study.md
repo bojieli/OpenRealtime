@@ -940,3 +940,114 @@ validation identities are retained in their corresponding directories.
 No shared services were stopped. These focused recordings
 close neither the per-case fifteen-repeat requirements nor the twelve-case
 180-attempt campaign, and add no credit to the final 7,501-attempt ledger.
+
+## Queued speech after completed preparation
+
+The preceding v9 recording exposed speech continuing after cancellation. A
+mounted regression now reproduces a concrete gap in the overlap controller:
+once segmentation was terminal, cancellation no longer addressed it, although
+its prepared sentences could still be waiting for synthesis or playback. The
+controller also retired a completed model/segmentation run whenever no utterance
+was currently active, including between segments or before their independent
+status lanes arrived. This lost the run address needed to revoke queued speech.
+
+The repair retains the segmentation outcome's emitted count until exact distinct
+speech terminals arrive. Prepared speech remains visible as queued work, and
+both a semantic stop and an acoustic interruption address the entire segmented
+stream after preparation completes. Cancellation before synthesis closes an
+utterance without requiring a nonexistent playback receipt. Per-run terminal
+membership also prevents a delayed speech/status lane from reviving a finished
+segment after the bounded global terminal cache evicts its entry.
+
+The regression fails on the old code for speech-before-completion,
+completion-before-speech, and release-before-completion. The production-graph
+test prepares eight numbers, emits the first number's audio, processes a spoken
+stop, and checks cancellation of all queued sentences, no subsequent canceled
+audio at the sink, and successful speech for a new request. Ten race-enabled
+repetitions pass. Restoring active-only segmentation cancellation fails that
+mounted test; dropping the emitted population and ignoring per-run terminal
+membership each fail their corresponding ordering regression. These prove the
+repaired mechanism, rather than establishing every historical failure's cause.
+
+Six live recordings used clean `bc909ad` with overlap implementation 10 and
+unchanged scenario scorer 9. The executable SHA-256 is recorded in
+`artifacts/scenario-queued-speech-cancel-20260905-01/identity.json`.
+
+| Case | Original deterministic result | Retained observations |
+| --- | --- | --- |
+| Event count, trial 1 | Fail | First animal count omitted; only “2” emitted for the second animal |
+| Event count, trial 2 | Fail | First animal count omitted again |
+| Event count, trial 3 | Pass | Both requested counts emitted |
+| Interrupted count, trial 1 | Pass | Prefix 1–6, resumed 7–14, zero quiet-window activity |
+| Interrupted count, trial 2 | Fail | Whisper reports prefix 1–10 and resumption at 7; zero quiet-window activity |
+| Interrupted count, trial 3 | Pass | Prefix 1–7, resumption at 7 through 15, zero quiet-window activity |
+
+All three interrupted-count recordings have zero measured active audio in
+`[19496, 25000)` ms, compared with the earlier trial's 3,164 ms. This is a
+three-trial diagnostic improvement, not full case or suite acceptance. Event
+counting remains unreliable at 1/3 in this sample; it cannot be described as
+repaired. Every original outcome and metric replays, and all six source/review
+records reopen. The isolated server stopped after recording.
+
+The second count recording's exact-window recognizer audit reproduces the
+discrepancy: SenseVoice hears 1–6, while Whisper hears 1–10; both recognize the
+resumed 7–15. Only two approximately 93 ms audio chunks from the interrupted
+“Seven” response occur after “Six”; the next queued text is canceled. The
+advisory reviewer also describes counting to six and resuming at seven, yet
+reports binary agreement with the failure because the agent did not reach forty.
+That rationale again exceeds the bounded stopping/resumption contract. The
+original failure and all contradictory observations remain retained; no result
+is replaced by runtime text or a preferred recognizer.
+
+The first repair's full developer gate passed. After rebasing onto the
+colleague's evidence-formatting gate change, the separate cache-eviction repair
+advanced overlap to implementation 11. Its exact validation identity, focused
+race checks, graph lock, mutation, and final full-gate log are retained alongside
+the earlier campaign; it does not retroactively change that campaign's binary.
+
+The six-trial source receipt is
+`sha256:aec156fbbcb4863a3f591e8ccd63eb5d3e45f74e649dac0f1c12788cbf21992f`;
+its advisory receipt is
+`sha256:7ad9fe83ca70f48f8587333cf88fd2e56828a23ecb8fa2db653f1501ccacd202`.
+
+## Event-count omission before the provider boundary
+
+A separate three-trial event-count campaign from clean
+`92ec459c9c9c5ab61d429f71226767d4b2c3fc90` uses overlap implementation 11 and
+transparent local model/TTS tracing proxies. It again passes only 1/3. The two
+failures omit the first animal count; the third emits both counts. All three
+recordings, exact provider projections, advisory evaluations, receipts, and
+deterministic replay are retained in
+`artifacts/scenario-event-count-boundary-trace-20260905-01`.
+
+| Trial | Model HTTP requests observed | Synthesis requests observed | Original outcome |
+| --- | --- | --- | --- |
+| 1 | One, returning `2` with upstream EOF / STOP | `2`, completed upstream | Fail: first count omitted |
+| 2 | One, returning `2` with upstream EOF / STOP | `2`, completed upstream | Fail: first count omitted |
+| 3 | Two, returning `1` then `2`, both upstream EOF / STOP | `1` then `2`, completed upstream | Pass |
+
+The missing first counts therefore disappear before the traced model HTTP
+boundary. They are not cases where a returned `1` failed to reach synthesis.
+This does not yet distinguish non-admission, stale invocation rejection, or
+cancellation before the HTTP request. The policy projection retains
+`speak-through`, trigger `yes`, final `condition-met`, and final `answer` for
+the first animal in both failures. Such model choices are not themselves
+proof that the downstream invocation was accepted.
+
+Both failing trials receive a complete partial transcript for the capybara
+sentence before the identical final; the passing trial proceeds from a shorter
+partial to the final. This is a concrete scheduling correlation for the next
+mounted reproduction, not a demonstrated root cause. Preserve the failed
+sources while tracing semantic admission through committed invocation and the
+model's admission/cancellation boundary.
+
+The exact executable SHA-256 is
+`fd32dd973753f5a5bebb965c41daa5940fb59347a49b106e703591d29c051e08`.
+Source receipt:
+`sha256:644533336815a13ad9c6a4561a5f5556e2de14e1db8aa94bf28a6b715d8ebb27`.
+Advisory receipt:
+`sha256:882e3feb32a4368567cb7d5f61dcb9a7727c484a38767fb17667bbbb92a8ba4d`.
+The server and both run-owned proxies stopped after recording; no shared
+service was stopped. Traces retain safe text/audio projections and hashes,
+without authentication headers, hidden reasoning, or thought signatures.
+This campaign supplies no full-suite or final-candidate credit.
