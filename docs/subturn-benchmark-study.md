@@ -1,10 +1,11 @@
 # Sub-turn interaction benchmark study
 
 Status: 2026-09-05. This note records the retained twelve-case checkpoint and
-the paired Full-Duplex-Bench (FDB) diagnostic that followed it. The FDB run is
-an intentionally focused diagnostic (five recordings per category), not a
-release result: the complete FDB v1.5 population is 498 recordings and every
-limited cell below is marked non-reportable by the runner.
+the paired Full-Duplex-Bench (FDB) and FD-Bench diagnostics that followed it.
+These are intentionally focused diagnostics, not release results: the complete
+FDB v1.5 population is 498 recordings, each selected FD-Bench condition has 293
+conversations, and every limited cell below is marked non-reportable by the
+runner.
 
 ## Runtime under test
 
@@ -21,12 +22,15 @@ client reached Google through the standard `HTTPS_PROXY` endpoint
 `http://23.135.236.242:3128`; local services and `api.deepgram.com` were kept
 in `NO_PROXY`. No credential value is part of any retained artifact.
 
-The code and shipped Deepgram profile used for the run are at commit
-`8e7065b99623` (`interaction: classify active transcript overlap`). The profile
-keeps the narrow local Qwen classifier on ordinary active-output transcript
-events: directed speech yields `stop-speaking`, while a listener backchannel or
-side speech yields `keep-speaking`. A protected same-stream continuation still
-uses the general event policy so correction/resume behavior is not lost.
+The twelve-case checkpoint and FDB study use the code and shipped Deepgram
+profile at commit `8e7065b99623` (`interaction: classify active transcript
+overlap`). The profile keeps the narrow local Qwen classifier on ordinary
+active-output transcript events: directed speech yields `stop-speaking`, while
+a listener backchannel or side speech yields `keep-speaking`. A protected
+same-stream continuation still uses the general event policy so
+correction/resume behavior is not lost. The later FD-Bench v7 study uses commit
+`01c82bdd8363` and the same runtime providers after extending the runtime-note
+quarantine to the strict graph-native cognition stream.
 
 ## Twelve-case retained checkpoint
 
@@ -58,13 +62,15 @@ and 12 evaluation records verified against their receipts.
 The retained bundle is immutable evidence for the profile run that produced
 it. A later live diagnostic found that a model could copy the reserved
 `[runtime: ...]` note used to describe prepared-but-unheard speech into its
-answer. The current continuation runner now removes that reserved annotation
-before building `RunResult.AssistantText`, committing assistant trajectory
-content, or handing text to the speech boundary; adjacent streamed chunks are
-coalesced before the check. The regression is covered by continuation and
-cascade end-to-end tests. This repair does not rewrite or re-label the sealed
-v28 recordings, and scratch reruns remain non-reportable unless they acquire a
-new graph-native source receipt.
+answer. The legacy continuation runner now removes that annotation before
+building `RunResult.AssistantText` or committing assistant trajectory content.
+The strict graph-native `cognition.TextModel` also applies a bounded streaming
+filter before publishing prepared text: it handles markers split across
+provider chunks without buffering the ordinary response, and the same
+sanitized bytes form its completed result. Continuation, graph-native cognition,
+and cascade regressions cover both boundaries. These repairs do not rewrite or
+re-label the sealed v28 recordings, and scratch reruns remain non-reportable
+unless they acquire a new graph-native source receipt.
 
 The canonical source media index is:
 
@@ -144,6 +150,105 @@ credentials in this repository:
 | baseline / background | `sha256:bbb116ca2927c07552c64ce1a51cfadc62deb91d04b3936b9113293fc86c09ff` | `sha256:dfc39c1fb4ac4a0cfddfe25737c4bc0aefbe42e237fbeb70c8bf453701f52459` |
 | baseline / other | `sha256:f099274e6df5ee6a4ffd38d9eb37ee177e1556178fafc88a32a37c86c20c6c84` | `sha256:d125dad26f26fadb3562a6bd35a29810fe7ba38f8ba3c32d068fd05920cf0cd2` |
 
+## FD-Bench paired diagnostic
+
+The post-repair study is retained under
+`.runtime/fdbench-subturn-study-v7`. Its binary is built from pushed commit
+`01c82bdd8363` and has digest
+`sha256:47cb7c71be3d81d721009c20c0bae960fcc178b0f2c5298b80e337c0ef60b55f`.
+Both arms use the same five lexicographically selected conversations
+(`conversation_1`, `conversation_10`, `conversation_100`, `conversation_101`,
+and `conversation_102`) in each of four conditions. The arms ran sequentially
+against the same local and remote services to avoid shared-load confounding.
+
+The graph-native launch profiles are:
+
+| Arm | F8 | Partial acts | Profile fingerprint |
+| --- | --- | --- | --- |
+| Baseline | `turn-boundary` | `listen`, `keep-speaking` | `sha256:145c66aa9e40b605529570a9a5ca8ae6dbfb91e907487bba36161c8048d368c3` |
+| Treatment | `subturn-qwen` | `listen`, `speak-through`, `interrupt`, `act-silently`, `keep-speaking`, `stop-speaking` | `sha256:d3112d62c0edf73a3e6cb2aac0adcd7fb64000ad30ac46ff800771e6f9e3f856` |
+
+The profile diff contains only the name, partial-act list, and fingerprints or
+digests derived from those values. In both arms, every Deepgram partial is
+presented to the local Qwen interaction model; the baseline constrains the
+decision to passive acts, while the treatment permits all six sub-turn acts.
+Gemini 3.5 Flash with budget 512 remains the response-content model in both
+arms.
+
+The study retained **40 canonical source WAVs** (20 per arm), all PCM16,
+24 kHz, and stereo. It also retained a content-addressed reviewer copy of each
+recording. Gemini 3.7 Flash evaluated all **40/40** recordings; all were usable,
+all advisory outcomes were `fail`, and all agreed with the deterministic
+scorer. Every cell completed five attempts with no infrastructure failure, but
+every cell is **non-reportable** because 288 of its 293 conversations were not
+attempted.
+
+### Deterministic results
+
+Values are baseline → treatment means over the same five conversation IDs.
+“Latency” is response-onset latency only for turns that produced a measurable
+answer, so its sample changes when one arm answers fewer turns and should not
+be compared alone.
+
+| Condition | Clean | Answered | Missed turns | Overrun turns | Premature turns | Overlap (ms) | Latency (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `f5tts-single-round-combine-easy` | 0/5 → 0/5 | 0.4 → 0.8 | 3.8 → 3.4 | 2.6 → 2.4 | 0.0 → 0.0 | 1,830 → 1,839 | 1,945 → 1,960 |
+| `f5tts-single-round-combine-hard` | 0/5 → 0/5 | 0.8 → 0.6 | 3.4 → 3.6 | 3.0 → 3.2 | 0.0 → 0.0 | 3,353 → 2,916 | 1,865 → 1,837 |
+| `f5tts-single-round-combine-easy-noisy-bg-0dB` | 0/5 → 0/5 | 0.0 → 0.0 | 4.2 → 4.2 | 0.0 → 0.0 | 0.0 → 0.0 | 0 → 0 | — → — |
+| `cosyvoice2-single-round-combine-easy-noisy-gap-0dB` | 0/5 → 0/5 | 0.6 → 0.2 | 3.6 → 4.0 | 0.2 → 0.0 | 0.2 → 0.2 | 241 → 37 | 703 → 1,942 |
+
+This slice does not support a claim that the expanded partial policy improves
+FD-Bench overall. It cut hard-condition mean overlap by 437 ms and reduced
+noisy-gap overlap by 204 ms, but clean-easy overlap was unchanged and the
+noisy-gap arm answered fewer turns. No condition produced a clean conversation.
+The lower noisy-gap overlap is therefore partly silence from missed responses,
+not an unqualified interaction win.
+
+### Failure attribution and repair evidence
+
+The retained timelines and Gemini reviews separate four mechanisms:
+
+- Clean F5-TTS failures are chiefly late playback cancellation and response/TTS
+  duration. Both arms start measurable answers near the two-second budget and
+  then continue into later user speech. Permitting `stop-speaking` on partials
+  can reduce some overlap, but does not make cancellation immediate or shorten
+  generated speech.
+- At 0 dB continuous background noise, both arms have identical zero-answer
+  and 4.2-missed-turn means. Deepgram/endpointing commonly joins several user
+  turns and intervening noise into one late transcript, so the interaction
+  model does not receive clean per-turn evidence to repair.
+- In noisy-gap audio, the treatment reduces acoustic overlap but more often
+  remains silent or batches multiple questions into one late answer. This is a
+  mixed endpointing/ASR and activation-latency result, not evidence that the
+  Qwen act choice alone solved the condition.
+- Gemini also hears response-generation artifacts in selected recordings:
+  clause restarts and repetitions, prompt-like phrases, and, in two noisy
+  recordings, scratchpad or `<thought>`-like prose. These are cognition/output
+  hygiene failures distinct from partial interaction classification and remain
+  visible in the failed advisory records.
+
+The first post-twelve-case FD-Bench attempt, retained separately under
+`.runtime/fdbench-subturn-study-v6`, proved that the earlier legacy-runner
+sanitizer did not cover strict graph-native streaming: Gemini heard the
+reserved `[runtime: ... Prepared but never spoken ...]` projection in
+`f5tts-single-round-combine-easy/conversation_10`. Commit `01c82bdd8363`
+added the missing graph-native boundary. In v7, a scan of all 40 canonical
+`agent_text` timelines finds no reserved runtime marker, and none of the 40
+Gemini reviews reports that projection leak. The v6 failure remains immutable
+diagnostic evidence; no successful retry overwrote it.
+
+### FD-Bench receipt index
+
+The values below are the receipts' own `receipt_sha256` identities, not hashes
+of the receipt JSON container files.
+
+| Condition | Baseline source | Baseline Gemini aggregate | Treatment source | Treatment Gemini aggregate |
+| --- | --- | --- | --- | --- |
+| F5-TTS easy | `sha256:c88cfa9896ba31b061bc6f39b0fdd352c306c9ced789987244562c26a9ee7e67` | `sha256:147ea8748577c4e7f809af2ed9421e5483fdb1748eed67d1f160bd6a782c7579` | `sha256:5e90ad53a6bc8b0b7b0fc974a09d5e5d97c2c72249ec84dc6a71d37d48bbcbd5` | `sha256:4922f170b2b7aff287030b51e14cca6c1589a492db8f7fc748d745c1ed7d5572` |
+| F5-TTS hard | `sha256:43e6f150d31e1c62a50fbc62d051f83bb51940c5a96c90de74bf93e0f1ab179d` | `sha256:ca6519717127db1293ac047e2c0bd4b00785882f82d51cd0e43ed3d30bf6bedc` | `sha256:7c3768df5bbe2d0993e85a9a61ae9261ceb59d845734f805a7221288a8c93c6d` | `sha256:dbe5bd1cce9870e285da9f7d4ad0b4d936c24abcfdf61abe75e8886faaf83b66` |
+| F5-TTS easy, noisy background 0 dB | `sha256:f3247d97b514cdbb0c7aef96a08ecefaaf0b51d5b7eb6454acaa053002e7cc8b` | `sha256:614c7c63dc7982b3249a2cd838ae116130f7cd3fe517d11c41e51053ad04cf71` | `sha256:7b110ac8ec042cc3f4f8793b060094f0313153858604d4a26b936ebb0dd6ee87` | `sha256:eb0dfe30625aa9a7124c2ec82e904b31297f5cf6fc23106fa6333faaa56c46ad` |
+| CosyVoice2 easy, noisy gap 0 dB | `sha256:7b23c47b65c40d93359bf18275e56f604660f7ade1f02b0ce9432b4b28ab513c` | `sha256:9a02d240186692c5bfed79d0be40495ff4aa006ea70cd875fe48ea88dcac0def` | `sha256:17d4e396651d63eeb145ff6322cb619aab3c50805e94a6e8a9fc0aab7f7c8a62` | `sha256:875e0d7a04467e9eaeec4596d80cde1771e8abf6e82794468818b4adeff3b45f` |
+
 ## Which benchmark suites benefit
 
 Sub-turn classification is an interaction/timing intervention, not a universal
@@ -159,10 +264,11 @@ model upgrade. The recommended scope is:
 | DynaCU-Bench | **Low broad applicability** | The suite is primarily a screenshot/action loop. Introducing a word-level floor policy changes action timing without testing the suite’s dynamic-page question, so leave it out of the general condition. |
 | τ-Voice | **Leave unchanged** | tau2-bench owns the task simulator, databases, speech conditions, and reward. Its control/regular comparison and interaction metrics are the published contract; changing the profile would create a new, non-comparable system treatment. Keep the existing τ-Voice runner and add a separately identified experiment only if a benchmark owner requests one. |
 
-The practical next step is a preregistered full FDB pair using the already frozen
-profiles, followed by selected Meeting/FD-Bench cases. The focused v4 result is
-useful for diagnosing policy and audio behavior, but it is not evidence that a
-sub-turn policy improves every suite or that τ-Voice should be changed.
+The practical next step is a preregistered full FDB pair, followed by a larger
+FD-Bench population only after the ASR/endpointing and response-duration
+failures above are repaired. The focused v4 and v7 results are useful for
+diagnosing policy and audio behavior, but they are not evidence that a sub-turn
+policy improves every suite or that τ-Voice should be changed.
 
 ## Reopening the retained evidence
 
@@ -187,3 +293,23 @@ Each FDB review chain was likewise reopened with:
 identifiers `user-interruption`, `user-backchannel`, `background-speech`, or
 `talking-to-other` in the artifact prefix (the source category itself remains
 underscore-separated). All eight commands returned 5/5 verified.
+
+The eight FD-Bench v7 chains were reopened with the same candidate verifier:
+
+```sh
+for arm in turn-boundary subturn-qwen; do
+  for cell in \
+    f5tts-easy \
+    f5tts-hard \
+    f5tts-easy-noisy-bg-0db \
+    cosyvoice2-easy-noisy-gap-0db
+  do
+    .runtime/fdbench-subturn-study-v7/bin/openrealtime \
+      bench verify-candidate-review \
+      -review-prefix ".runtime/fdbench-subturn-study-v7/$arm/evidence/20260905-01-$cell"
+  done
+done
+```
+
+All eight commands returned 5/5 verified, for 40/40 independently reopened
+recordings and reviews.
