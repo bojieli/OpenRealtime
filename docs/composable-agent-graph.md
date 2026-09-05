@@ -2922,6 +2922,14 @@ the required new 180-attempt sample.
   - [ ] `waiting out a silence they asked for`
   - [ ] `somebody else's conversation`
   - [ ] `an acknowledgement is not an interruption`
+    Scorer version 3 now checks recorded acoustic continuation across both
+    backchannels, including activity before/during/after and a 500 ms pause
+    limit. The retained v28 case passed its original scorer but has zero
+    agent activity after the second acknowledgement under the new check.
+    The [waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit)
+    preserves the original receipt and records the new interpretation
+    separately. Hermetic protocol, retained-WAV, and review regressions prove
+    the scoring path; the fifteen-repeat live requirement remains open.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`

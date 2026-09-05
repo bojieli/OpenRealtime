@@ -13,12 +13,22 @@ import (
 
 // ScorerVersion changes whenever the deterministic checks or their matching
 // semantics change. Earlier unversioned results used substring matching and
-// weaker translation requirements; they are not evidence for this version.
-const ScorerVersion uint64 = 2
+// weaker translation requirements. Version 2 added whole-word content checks;
+// version 3 also requires recorded acoustic continuity across acknowledgements.
+// Earlier scores are not evidence for this version.
+const ScorerVersion uint64 = 3
 
 func validateCheckKind(check Check) error {
 	switch check.Kind {
 	case CheckSilent, CheckSpoke, CheckAnsweredWithin, CheckResumed:
+	case CheckHeldAcross:
+		if check.Line < 0 || check.Sight != 0 || check.FromMS != 0 ||
+			check.BeforeMS <= 0 || check.AfterMS <= 0 || check.MaxGapMS <= 0 {
+			return errors.New("held-across check requires a spoken line and positive before, after, and gap windows")
+		}
+		if check.BeforeMS > 10_000 || check.AfterMS > 10_000 || check.MaxGapMS > 10_000 {
+			return errors.New("held-across check window exceeds ten seconds")
+		}
 	case CheckToolCalled:
 		if strings.TrimSpace(check.Tool) == "" {
 			return errors.New("tool check has no tool name")

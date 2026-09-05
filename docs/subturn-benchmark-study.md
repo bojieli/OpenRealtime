@@ -63,7 +63,9 @@ The retained bundle is immutable evidence for the profile run that produced
 it. It predates deterministic scenario scorer version 2, which rejects word
 fragments and requires every appointment detail in the translation case. Its
 12/12 score remains the original checkpoint's result; it has not been rescored
-or promoted under those stronger checks.
+or promoted under those stronger checks. Version 3 additionally requires
+recorded acoustic continuation across both acknowledgements; the separate
+waveform audit below exposes a failure in that historical recording.
 
 A later live diagnostic found that a model could copy the reserved
 `[runtime: ...]` note used to describe prepared-but-unheard speech into its
@@ -93,6 +95,34 @@ The canonical source media index is:
 | 10 | telling them what it saw | `10-telling-them-what-it-saw-trial-01.stereo.wav` | `d13d125a7186bd26b32692bb16c9d35dd4ad7d2e03a8629d22e12b8e1a748b18` |
 | 11 | an ordinary question | `11-an-ordinary-question-trial-01.stereo.wav` | `18b207e19d476e78ab10fb0340d3ce882909205063156c382f59b30e7701a56b` |
 | 12 | picking up where it was cut off | `12-picking-up-where-it-was-cut-off-trial-01.stereo.wav` | `19a9458cf80883850fa342eb664323e97605ac0e6672eefaab7ae630732495b7` |
+
+## Acknowledgement waveform audit
+
+The 2026-09-05 audit applied scorer version 3's new `held-across` checks to
+the retained case-9 agent channel. It verified the original stereo WAV digest
+`sha256:e8c5b653c74f744024ca32bc6e9a385e35fb50064ec48f43a1bb9acc031662a5`.
+Line starts are 9,000 and 11,500 ms from the unchanged authored script; their
+ends, 9,696 and 12,800 ms, come from the source result's retained latency
+anchors. Neither line was displaced by composition's 600 ms minimum breath
+after the preceding line.
+
+| Acknowledgement | Active before | Active during | Active after | Longest interior pause | Version-3 check |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Mhm | 1,000 ms | 696 ms | 740 ms | 260 ms | Pass |
+| Right, yeah | 1,000 ms | 200 ms | 0 ms | 280 ms | Fail: no continuation afterwards |
+
+The old scorer passed this recording because it required earlier speech and
+the absence of a few restart phrases, without requiring continued speech.
+The waveform does not demonstrate continuation through the second
+acknowledgement. This observation alone does not establish whether the agent
+yielded or naturally finished its explanation; either way, the required
+continuation was not demonstrated.
+
+This is a new analysis of one historical recording, not a new execution or a
+version-3 score for the full suite. The original 12/12 checkpoint and its
+receipts remain unchanged. The diagnostic command, input hashes, exact scorer
+revision, and output are retained separately under
+`artifacts/scenario-acknowledgement-hold-v3-20260905`.
 
 ## FDB v1.5 paired diagnostic
 

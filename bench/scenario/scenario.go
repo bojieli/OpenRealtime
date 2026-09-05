@@ -94,6 +94,11 @@ type Check struct {
 	// window after that answer, or it measures the acknowledgement it asked
 	// for.
 	FromMS int
+	// BeforeMS and MaxGapMS belong to CheckHeldAcross. The check requires
+	// audible activity before, during, and after the named line, allowing no
+	// interior pause longer than MaxGapMS on the recorded playout clock.
+	BeforeMS int
+	MaxGapMS int
 	// Tool is the call that must have happened, for CheckToolCalled.
 	Tool string
 	// Any is a set of whole-word phrases, one of which must appear for
@@ -114,6 +119,10 @@ const (
 	CheckSilent CheckKind = "silent"
 	// CheckSpoke asserts the agent produced audio in a window.
 	CheckSpoke CheckKind = "spoke"
+	// CheckHeldAcross requires captured agent audio to continue across a
+	// backchannel. This is acoustic continuity; phrase checks and media review
+	// separately assess whether the content continues the same explanation.
+	CheckHeldAcross CheckKind = "held-across"
 	// CheckToolCalled asserts a named tool was called.
 	CheckToolCalled CheckKind = "tool"
 	// CheckReachedMenu asserts the call ended where it was going.
@@ -285,12 +294,13 @@ func (tool Tool) FunctionDeclaration() (FunctionToolDeclaration, error) {
 type Result struct {
 	// ScorerVersion identifies the deterministic scoring semantics. Zero is
 	// reserved for historical unversioned results and unscored attempts.
-	ScorerVersion uint64           `json:"scorer_version,omitempty"`
-	Scenario      string           `json:"scenario"`
-	Passed        bool             `json:"passed"`
-	Failures      []string         `json:"failures,omitempty"`
-	Latencies     []Latency        `json:"latencies,omitempty"`
-	Transcript    bench.Transcript `json:"transcript"`
+	ScorerVersion uint64            `json:"scorer_version,omitempty"`
+	Scenario      string            `json:"scenario"`
+	Passed        bool              `json:"passed"`
+	Failures      []string          `json:"failures,omitempty"`
+	Latencies     []Latency         `json:"latencies,omitempty"`
+	Holds         []HoldMeasurement `json:"holds,omitempty"`
+	Transcript    bench.Transcript  `json:"transcript"`
 }
 
 // Latency is how long after something happened the agent could be heard.
@@ -480,25 +490,37 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 		return Result{Scenario: item.Name, Transcript: transcript}, err
 	}
 	ears, _ := voice.(Ears)
-	result := score(item, timeline, transcript, menu, hearing(ctx, ears, captured))
+	result := score(item, timeline, transcript, menu, hearing(ctx, ears, captured), &captured)
 	result.Latencies = latencies(item, timeline, transcript)
 	return result, nil
 }
 
-// Score applies a scenario's checks to what happened.
+// Score applies checks available from the transcript. Waveform-dependent
+// checks fail as unverified; ScoreWithAudio or Play supplies their evidence.
 func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result {
 	var menu *Menu
 	if item.Menu != nil {
 		menu = item.Menu()
 	}
-	return score(item, timeline, transcript, menu, nil)
+	return score(item, timeline, transcript, menu, nil, nil)
+}
+
+// ScoreWithAudio supplies the captured playout needed by CheckHeldAcross.
+// CheckResumed also needs independent transcription and remains unavailable
+// here; Play supplies that through the voice's Ears implementation.
+func ScoreWithAudio(item Scenario, timeline Timeline, transcript bench.Transcript, capture bench.SessionAudioCapture) Result {
+	var menu *Menu
+	if item.Menu != nil {
+		menu = item.Menu()
+	}
+	return score(item, timeline, transcript, menu, nil, &capture)
 }
 
 // score is Score against a menu that has already been played, which is the
 // only way the menu checks mean anything: Score building its own would score a
 // call nobody made.
 func score(
-	item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard,
+	item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard, capture *bench.SessionAudioCapture,
 ) Result {
 	result := Result{ScorerVersion: ScorerVersion, Scenario: item.Name, Transcript: transcript, Passed: true}
 	if len(item.Checks) == 0 {
@@ -507,7 +529,15 @@ func score(
 		return result
 	}
 	for _, check := range item.Checks {
-		if failure := apply(check, timeline, transcript, menu, listen); failure != "" {
+		failure := ""
+		if check.Kind == CheckHeldAcross {
+			measurement, problem := heldAcross(check, timeline, capture)
+			result.Holds = append(result.Holds, measurement)
+			failure = problem
+		} else {
+			failure = apply(check, timeline, transcript, menu, listen)
+		}
+		if failure != "" {
 			result.Passed = false
 			result.Failures = append(result.Failures, failure)
 		}
@@ -568,6 +598,8 @@ func apply(
 	}
 	where := fmt.Sprintf("%d-%dms", from, to)
 	switch check.Kind {
+	case CheckHeldAcross:
+		return "NOT VERIFIED: holding through an acknowledgement requires captured agent audio"
 	case CheckSilent:
 		// Audio from turns that began in the window, not audio playing in it.
 		// The question is whether something here made the agent speak, and a

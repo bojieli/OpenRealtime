@@ -171,7 +171,7 @@ nobody is using.
 
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
-`scorer_version: 2`. Content checks match whole words and numbers, ignoring
+`scorer_version: 3`. Content checks match whole words and numbers, ignoring
 case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
 satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
 timeline anchors or menu evidence, and invalid time windows fail explicitly.
@@ -179,12 +179,33 @@ The translation case separately requires the greeting and introduction, then
 the meeting, day, time, afternoon, and office. Mentioning one appointment
 keyword no longer passes the whole translation.
 
+The acknowledgement scenario now requires acoustic continuation across both
+“Mhm” and “Right, yeah.” Each `held-across` check uses the captured agent
+channel on the serialized playout clock, with one second before and after
+the actual synthesized line. It requires more than 120 ms of activity before
+and after, and more than the smaller of 120 ms or half the line's duration
+during the acknowledgement. Interior pauses may not exceed 500 ms. Activity
+uses 20 ms frames with RMS at least 128 on PCM16 (about -48 dBFS), so emitted
+silence and low-level dither do not earn speech credit. Missing or malformed
+capture is explicitly unverified. Arrival timestamps, text, and the room
+channel cannot substitute for the recorded agent audio.
+
+Results retain each check's windows, activity durations, and longest pause in
+`holds`; the media-linked review renders the same measurements. `Play` supplies
+the capture automatically, and `ScoreWithAudio` can examine retained PCM.
+Transcript-only `Score` cannot verify this check. This tests acoustic
+continuation, not whether arbitrary audible content continues the same
+explanation; the content checks and independent media review still matter.
+
 These are deterministic content requirements, not a general semantic judge.
 Negation, contradictory statements, invented dialogue, and audible quality
 still require the separately retained media review and further scorer work.
 The twelve-case wire contract and 180-attempt release population are unchanged.
-Historical unversioned results retain their original labels and receipts; a
-passing historical recording does not establish a pass under scorer version 2.
+Historical unversioned and version-2 results retain their original labels and
+receipts; a passing historical recording does not establish a pass under
+version 3. In particular, the retained v28 acknowledgement recording has no
+agent activity after its second backchannel and does not meet the new check;
+see the [separately attributed waveform audit](subturn-benchmark-study.md#acknowledgement-waveform-audit).
 
 **FDB v1.5** has four categories: yield to an interruption, hold through a backchannel, background speech,
 and speech addressed to somebody else. A system that scores well by always

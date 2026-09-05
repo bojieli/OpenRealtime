@@ -262,6 +262,10 @@ func Suite() []Scenario {
 			TrailingMS: 6000,
 			Checks: []Check{
 				{Kind: CheckSpoke, Line: 0, AfterMS: 5000, Note: "they asked for detail"},
+				{Kind: CheckHeldAcross, Line: 1, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,
+					Note: "mhm acknowledges the explanation; the agent must keep speaking through it"},
+				{Kind: CheckHeldAcross, Line: 2, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,
+					Note: "right, yeah is another backchannel; the explanation must continue through it too"},
 				{Kind: CheckNotSaid, Line: 2, AfterMS: 4000,
 					Any:  []string{"what would you like", "how can I help", "anything else", "sorry"},
 					Note: "an acknowledgement is not a new question and must not restart the turn",

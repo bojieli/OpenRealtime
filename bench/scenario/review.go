@@ -529,6 +529,11 @@ func (run *ReviewRun) renderMarkdown(manifest ReviewManifest) string {
 }
 
 func renderReviewTranscript(output *strings.Builder, result Result) {
+	for _, hold := range result.Holds {
+		fmt.Fprintf(output, "\n- Acknowledgement line %d: %.0f ms active before, %.0f ms during, %.0f ms after; longest pause %.0f ms (limit %d ms); playout window %d–%d ms.\n",
+			hold.Line, hold.BeforeActiveMS, hold.DuringActiveMS, hold.AfterActiveMS,
+			hold.LongestGapMS, hold.GapLimitMS, hold.FromMS, hold.ToMS)
+	}
 	output.WriteString("\nTranscript:\n\n")
 	userTurns, agentTurns := result.Transcript.UserTurns(), result.Transcript.AgentTurns()
 	if len(userTurns) == 0 {
@@ -796,6 +801,7 @@ func (run *ReviewRun) redactMany(values []string) []string {
 
 func sanitizedReviewResult(result Result, redact func(string) string) Result {
 	copy := result
+	copy.Holds = append([]HoldMeasurement(nil), result.Holds...)
 	copy.Failures = make([]string, len(result.Failures))
 	for index, failure := range result.Failures {
 		copy.Failures[index] = redact(failure)
