@@ -4,6 +4,13 @@
 
 ### Highlights
 
+- Event-count scorer version 10 requires independent recognition of exactly
+  the expected number in captured agent audio and silence outside the authored
+  response windows. Reported digits cannot certify garbled synthesis. Results,
+  media reviews, and exact replay retain each hearing, activity measurement,
+  and recognizer error. Scenario continuation instructions now request
+  punctuated number words for counts; retained synthesis controls support that
+  input form without establishing general speech-quality acceptance.
 - A confidently verified standing trigger can recover an uncertain final
   `answer` just as it can recover `listen`. The ordinary confidence threshold
   previously suppressed the first animal count even after the independent

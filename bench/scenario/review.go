@@ -529,6 +529,14 @@ func (run *ReviewRun) renderMarkdown(manifest ReviewManifest) string {
 }
 
 func renderReviewTranscript(output *strings.Builder, result Result) {
+	for _, counts := range result.EventCounts {
+		fmt.Fprintf(output, "\n- Event-count audio: %.0f ms active outside the allowed response windows.\n", counts.OutsideActiveMS)
+		for _, count := range counts.Events {
+			fmt.Fprintf(output, "- Count %d, line %d: %.0f ms active in %d–%d ms; independent hearing %d–%d ms: %s; error: %s.\n",
+				count.Number, count.Line, count.ActiveMS, count.FromMS, count.ToMS, count.HeardFromMS, count.HeardToMS,
+				markdownText(count.Heard), markdownText(count.Error))
+		}
+	}
 	for _, resume := range result.Resumptions {
 		fmt.Fprintf(output, "\n- Interrupted count, line %d to line %d: independently heard [%s] before and [%s] after; %.0f ms active in pre-interruption window %d–%d ms.\n", resume.Interrupted, resume.Line,
 			describeNumbers(resume.BeforeNumbers), describeNumbers(resume.AfterNumbers), resume.RecentActiveMS, resume.RecentFromMS, resume.RecentToMS)
@@ -838,6 +846,14 @@ func sanitizedReviewResult(result Result, redact func(string) string) Result {
 		copy.Replay = &evidence
 	}
 	copy.Holds = append([]HoldMeasurement(nil), result.Holds...)
+	copy.EventCounts = append([]EventCountMeasurement(nil), result.EventCounts...)
+	for index := range copy.EventCounts {
+		copy.EventCounts[index].Events = append([]EventCountObservation(nil), result.EventCounts[index].Events...)
+		for j := range copy.EventCounts[index].Events {
+			observation := &copy.EventCounts[index].Events[j]
+			observation.Heard, observation.Error = redact(observation.Heard), redact(observation.Error)
+		}
+	}
 	copy.Resumptions = append([]ResumeMeasurement(nil), result.Resumptions...)
 	for index := range copy.Resumptions {
 		copy.Resumptions[index].BeforeNumbers = append([]int(nil), result.Resumptions[index].BeforeNumbers...)

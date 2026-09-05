@@ -11,12 +11,10 @@ import (
 
 // Ears transcribes the agent's own audio.
 //
-// It exists for one kind of claim, and that kind is worth naming, because most
-// of this suite does not need it. Every other check here asks what the agent
-// said, and the wire already answers that: the transcript of a turn is
-// delivered with the turn. This asks what the user *heard*, which is a
-// different question the moment somebody interrupts - the wire carries the
-// whole sentence and the loudspeaker stopped partway through it.
+// Reported text alone cannot establish audible content: synthesis can emit
+// different words, and interruption can stop a sentence before it finishes.
+// Event-count and resumed-count checks therefore ask what the user heard in
+// captured agent audio, independently of the generation and playback cursors.
 //
 // The runtime has its own answer to that question now, and that answer is
 // exactly what is under test. Scoring against it would be scoring the runtime
@@ -175,7 +173,7 @@ func describeNumbers(numbers []int) string {
 	return strings.Join(parts, " ")
 }
 
-// resumed scores the one claim that has to be grounded in the waveform: after
+// resumed scores a claim grounded in the waveform: after
 // being cut off and told to carry on, the agent continued from the number the
 // user actually heard.
 //

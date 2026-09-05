@@ -223,6 +223,22 @@ their complete source PCM is absent from the room recording. Successful replay
 checks deterministic decisions given retained observations; it does not
 independently transcribe speech, authenticate the provider or runtime, establish
 a canonical run specification, or meet the final population and target gates.
+Scorer version 10 adds independent audible content to `count-as-they-go`.
+Each event requires more than 120 ms of captured activity and a separately
+recognized exact number, as digits or English number words. Extra words,
+repeated counts, missing recognition, and ambiguous homophones cannot pass.
+The response window begins with the triggering line and ends at its deadline
+or the next counting event, whichever comes first. Leading and trailing silence
+are trimmed for recognition with 200 ms padding; interior pauses and extra
+speech remain. More than 120 ms of active audio outside all count windows
+fails, including setup and capture beyond the authored horizon. Results retain
+`event_counts`, verbatim hearings, errors, and exact recognition windows; replay
+binds those hearings to captured PCM digests. `Play` supplies independent ears;
+`Score` and `ScoreWithAudio` cannot establish this content without them.
+Recognition remains an observation, so a refused count is not automatically
+a proven synthesis defect. The [retrospective audit](subturn-benchmark-study.md#audible-event-count-evaluation)
+retains all fifteen older recordings and their separately attributed new scores.
+
 Replay support itself did not change version-7 scoring semantics. Version 9
 strengthens interrupted counting: the authored range is 1–40, with
 at least three independently recognized numbers before and after interruption.
@@ -727,7 +743,7 @@ second acceptance source of truth:
 
 | Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
 | --- | ---: | --- | ---: |
-| Interaction scenarios | 180 | Historical 12×1 checkpoints passed earlier scorers. Sustained-counting checks exposed queued-speech cancellation, now repaired with zero quiet-window activity in three fresh trials. First-count omission was repaired at the admission confidence guard. The fifteen-trial event-count diagnostic scores 15/15 and replays exactly, but advisory agreement is 14/15 and exact upstream synthesis WAVs contain unwanted speech in affected counts. Audible-count evaluation, short-number TTS, acknowledgement content, and recognizer disagreements remain open | 0/180 |
+| Interaction scenarios | 180 | Historical 12×1 checkpoints passed earlier scorers. Sustained-counting checks exposed queued-speech cancellation, now repaired with zero quiet-window activity in three fresh trials. First-count omission was repaired at the admission confidence guard. The fifteen-trial event-count diagnostic scores 15/15 and replays exactly, but advisory agreement is 14/15 and exact upstream synthesis WAVs contain unwanted speech in affected counts. Scorer 10 now requires exact audible counts and outside-window silence; separate rescoring establishes 2/15 old recordings. Punctuated-number synthesis controls support an instruction repair. Fresh live validation, acknowledgement content, and recognizer disagreements remain open | 0/180 |
 | Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
 | Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
 | FDB v1.5 | 498 | Historical diagnostic completed 498; 287/430 applicable passes, 68 not applicable (original nominal score 355/498); interruption 15/156 applicable. A 2026-09-05 rerun on `8276a03` reached 309/408 applicable with interruption at 80/161 and yield p50/p95 of 1,002/2,269 ms, but `background_speech` fell to 61/73 and `talking_to_other` to 76/82, and one recording reached no evaluation, so it is not reportable | 0/498 |

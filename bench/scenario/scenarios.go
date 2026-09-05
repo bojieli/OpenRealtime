@@ -18,12 +18,9 @@ func Suite() []Scenario {
 			Instructions: "You are a voice assistant. Follow the instructions the person gives you about when to speak.",
 			Script: []Line{
 				{Speaker: "user", AtMS: 0, Text: "I'm going to tell you about my afternoon. Count the animals out loud as I mention them, and say nothing else."},
-				// The gap after the instruction is deliberate. A person who sets a
-				// policy waits for the "okay" before starting, and measured
-				// response latency here is about two seconds - so a story that
-				// began two seconds after the instruction ended guaranteed the
-				// acknowledgement would land inside the first line's window and
-				// be scored as counting the wrong thing.
+				// The gap exposes unsolicited acknowledgements before the story.
+				// "Say nothing else" requires silence here as well as between
+				// animals; setup speech cannot satisfy a later count window.
 				{Speaker: "user", AtMS: 13000, Text: "It was a warm afternoon and I was walking along by the river."},
 				{Speaker: "user", AtMS: 21000, Text: "A capybara wandered over and sat down next to me."},
 				{Speaker: "user", AtMS: 29000, Text: "Then a heron landed on the far bank and stared at us."},
@@ -36,10 +33,10 @@ func Suite() []Scenario {
 				// capability; how soon is a latency, and folding them into one
 				// window scored a run that counted both correctly as a failure
 				// for being three hundred milliseconds late.
-				{Kind: CheckSaid, Line: 2, AfterMS: 5000, Any: []string{"one", "1"},
-					Note: "counting means saying the count, for the animal that was mentioned"},
-				{Kind: CheckSaid, Line: 3, AfterMS: 5000, Any: []string{"two", "2"},
-					Note: "and the second animal is two"},
+				{Kind: CheckEventCounts, Events: []CountEvent{
+					{Line: 2, Number: 1, WithinMS: 5000},
+					{Line: 3, Number: 2, WithinMS: 5000},
+				}, Note: "hear exactly one count for each animal, and nothing else anywhere in the recording"},
 				{Kind: CheckNotSaid, Line: 2, AfterMS: 5000, Any: []string{"?"},
 					Note: "they asked to be counted at, not interviewed"},
 				{Kind: CheckAnsweredWithin, Line: 2, AfterMS: 5000, DuringTrigger: true,

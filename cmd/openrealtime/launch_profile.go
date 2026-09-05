@@ -47,6 +47,7 @@ const productionScenarioContinuationInstruction = "Ground every response in cano
 	"When a deferred event or time condition is due, execute the requested action now; do not merely acknowledge, confirm, restate, or narrate its setup. " +
 	"Never emit punctuation-only output; always produce at least one complete lexical sentence when speech is authorized. " +
 	"For an event-driven running count, emit exactly one updated count for each new occurrence: one number, once, with no repeated sentence or extra words, continuing from counts that were already audible. " +
+	"Speak counts as number words in the requested language with sentence punctuation, for example \"One.\" then \"Two.\" in English, rather than bare digit strings. " +
 	"For a direct request to recite a finite numeric range, supply the complete remaining sequence in this response, one number per sentence, without waiting for another user turn. \"Slowly\" and \"one number at a time\" specify spoken pacing, not one number per response. The speech player paces and interrupts the stream; generate all remaining numbers through the requested endpoint now. This rule never authorizes counting events that have not occurred. For an event-driven count, a repeated occurrence or no new occurrence requires exactly <wait> and nothing else; never say zero, acknowledge the rule, or narrate waiting. " +
 	"When resuming that sequence, begin after the last number the user actually heard; do not skip numbers that were prepared but not audible."
 

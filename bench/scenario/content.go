@@ -28,11 +28,26 @@ import (
 // interruption, within its authored range, and recent captured speech before it.
 // Version 9 includes speech heard during the allowed stopping interval in the
 // resumed prefix and requires captured silence until the request to resume.
-const ScorerVersion uint64 = 9
+// Version 10 independently recognizes exact event-count content and checks
+// captured silence everywhere outside the authored count-response windows.
+const ScorerVersion uint64 = 10
 
 func validateCheckKind(check Check) error {
 	switch check.Kind {
 	case CheckSilent, CheckSpoke, CheckAnsweredWithin:
+	case CheckEventCounts:
+		if len(check.Events) == 0 || len(check.Events) > 64 || check.Line != 0 || check.Sight != 0 ||
+			check.FromMS != 0 || check.AfterMS != 0 || check.Count != nil || len(check.Any) != 0 ||
+			check.Interrupted != 0 || check.BeforeMS != 0 || check.MaxGapMS != 0 || check.DuringTrigger || check.Tool != "" {
+			return errors.New("event counts require one bounded authored event inventory without another window or content rule")
+		}
+		previous := -1
+		for _, event := range check.Events {
+			if event.Line <= previous || event.Number < 1 || event.Number > 99 || event.WithinMS < 1 || event.WithinMS > 10000 {
+				return errors.New("event counts require increasing source lines, numbers from 1 to 99, and response windows up to ten seconds")
+			}
+			previous = event.Line
+		}
 	case CheckResumed:
 		count := check.Count
 		if count == nil || count.From < 1 || count.Through > 99 || count.Through <= count.From ||
@@ -71,6 +86,14 @@ func validateCheckKind(check Check) error {
 }
 
 func validateCheckAnchor(check Check, lines, sights int) error {
+	if check.Kind == CheckEventCounts {
+		for _, event := range check.Events {
+			if event.Line < 0 || event.Line >= lines {
+				return errors.New("count event is absent from the timeline")
+			}
+		}
+		return nil
+	}
 	// These two checks concern the call's complete action history, not a
 	// timed response. Their zero-valued Line does not require spoken input.
 	if check.Kind == CheckToolCalled || check.Kind == CheckReachedMenu {

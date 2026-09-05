@@ -56,6 +56,9 @@ type Check struct {
 	// for CheckResumed. BeforeMS bounds its acoustic lookback before the
 	// interruption, so an already-silent count is not an interruption trial.
 	Count *CountRequirement `json:",omitempty"`
+	// Events declares the exact audible running counts for CheckEventCounts.
+	// Each event owns a bounded response window; all other audio must be quiet.
+	Events []CountEvent `json:",omitempty"`
 	// Sight indexes Sees instead, when the moment being checked is something
 	// the agent saw. It is one-based so that the zero value keeps meaning
 	// "use Line", and it can anchor absolutely where a spoken line cannot:
@@ -188,6 +191,9 @@ const (
 	// for carrying on from wherever it believed it had, which is the belief
 	// under test.
 	CheckResumed CheckKind = "resumed"
+	// CheckEventCounts verifies exact count words from independent recognition
+	// of captured agent audio, plus silence outside the authored event windows.
+	CheckEventCounts CheckKind = "event-counts"
 )
 
 // saidBetween is what the agent said inside a window, or everything it said
@@ -313,15 +319,16 @@ func (tool Tool) FunctionDeclaration() (FunctionToolDeclaration, error) {
 type Result struct {
 	// ScorerVersion identifies the deterministic scoring semantics. Zero is
 	// reserved for historical unversioned results and unscored attempts.
-	ScorerVersion uint64              `json:"scorer_version,omitempty"`
-	Scenario      string              `json:"scenario"`
-	Passed        bool                `json:"passed"`
-	Failures      []string            `json:"failures,omitempty"`
-	Latencies     []Latency           `json:"latencies,omitempty"`
-	Holds         []HoldMeasurement   `json:"holds,omitempty"`
-	Resumptions   []ResumeMeasurement `json:"resumptions,omitempty"`
-	Transcript    bench.Transcript    `json:"transcript"`
-	Replay        *ReplayEvidence     `json:"replay,omitempty"`
+	ScorerVersion uint64                  `json:"scorer_version,omitempty"`
+	Scenario      string                  `json:"scenario"`
+	Passed        bool                    `json:"passed"`
+	Failures      []string                `json:"failures,omitempty"`
+	Latencies     []Latency               `json:"latencies,omitempty"`
+	Holds         []HoldMeasurement       `json:"holds,omitempty"`
+	Resumptions   []ResumeMeasurement     `json:"resumptions,omitempty"`
+	EventCounts   []EventCountMeasurement `json:"event_counts,omitempty"`
+	Transcript    bench.Transcript        `json:"transcript"`
+	Replay        *ReplayEvidence         `json:"replay,omitempty"`
 }
 
 // Latency is how long after something happened the agent could be heard.
@@ -509,9 +516,8 @@ func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Sce
 	if config.TrailingSilence == 0 {
 		config.TrailingSilence = time.Duration(item.TrailingMS) * time.Millisecond
 	}
-	// The agent's own waveform is kept for the one check that has to be scored
-	// against what a loudspeaker produced rather than against what the wire
-	// said. A host that already captures it keeps its own copy: this wraps that
+	// Keep the agent's waveform for acoustic continuity, silence and independently
+	// recognized count content. A host that captures it keeps its own copy: this wraps that
 	// hook instead of replacing it, because the evidence bundle and the score
 	// need the same bytes and neither owns them.
 	hostCapture := config.CaptureAudio
@@ -556,8 +562,8 @@ func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result
 	return score(item, timeline, transcript, menu, nil, nil)
 }
 
-// ScoreWithAudio supplies the captured playout needed by CheckHeldAcross.
-// CheckResumed also needs independent transcription and remains unavailable
+// ScoreWithAudio supplies captured playout for acoustic checks. CheckResumed
+// and CheckEventCounts also need independent transcription and remain unverified
 // here; Play supplies that through the voice's Ears implementation.
 func ScoreWithAudio(item Scenario, timeline Timeline, transcript bench.Transcript, capture bench.SessionAudioCapture) Result {
 	var menu *Menu
@@ -591,6 +597,10 @@ func score(
 				failure = heldResponseContinuity(&measurement, transcript, capture)
 			}
 			result.Holds = append(result.Holds, measurement)
+		} else if check.Kind == CheckEventCounts {
+			measurement, problem := eventCounts(check, timeline, listen, capture)
+			failure = problem
+			result.EventCounts = append(result.EventCounts, measurement)
 		} else if check.Kind == CheckResumed {
 			measurement, problem := resumedAcross(check, timeline, listen, capture)
 			failure = problem

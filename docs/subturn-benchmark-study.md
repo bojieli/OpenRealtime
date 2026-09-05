@@ -1241,3 +1241,52 @@ serialization error and corrected retry are retained separately; existing
 observations were reused without replacement. The server and proxies on
 18977–18979 stopped, and private intermediate policy capture was removed after
 safe projection. Shared services and colleague processes were preserved.
+
+## Audible event-count evaluation
+
+Scorer 10 replaces the event-count case's reported-text assertions with exact
+independent recognition of captured agent speech. Each event owns a response
+window bounded by its source line, deadline, and the next counting event. The
+scorer preserves interior gaps and speech islands, rejects unrelated or repeated
+words, and requires captured silence outside all count windows, including any
+extra recording after the authored horizon. Missing waveform or independent
+recognition remains unverified. Review projections and deterministic replay
+retain the exact observations without replacing them with generated text.
+
+`artifacts/scenario-audible-count-investigation-20260905-01` retains a separate
+rescoring of all fifteen sealed scorer-9 recordings. Newly requested Whisper
+observations establish both audible counts on only trials 9 and 15: **2/15**.
+All fifteen new decisions and metrics replay exactly against the original WAVs;
+the original 15/15 labels, media, receipts, and manifests are unchanged. This is
+retrospective evaluation, not fifteen new live attempts. Several transcriptions
+retain previously identified extraneous speech; others are short-word ambiguities
+or empty recognition. The 13 refusals do not establish 13 synthesis defects or
+make Whisper a speech-quality oracle. Every window, PCM digest, exact recognition
+request/response, new result, and source result/media digest is retained.
+
+The same investigation compares twelve sequential native Fish TTS requests:
+three repetitions each of `1`, `One.`, `2`, and `Two.`. Only request text changes
+from the prior exact native configuration. Both SenseVoice and Whisper recognize
+all six punctuated-word requests as the expected number. The digit controls
+include “Tangerine,” “A hundred,” and “Tupac,” alongside valid or ambiguous
+single-number observations. Exact upstream WAVs, request bodies, recognizer
+responses, and the TTS deployment health identity are retained. The sample is
+small, sequential, and stochastic; it supports a prompt-level input-form repair,
+not a general synthesis-quality or paired runtime-performance claim.
+
+Production scenario continuation instructions now request number words in the
+requested language with sentence punctuation. This preserves the distinction
+between full-range counting and one count per new event. Shared synthesis
+services and reference voices are unchanged. The event-count recognizer contract
+currently supports English words and digits; multilingual acceptance is not
+established by the English case.
+
+Regression coverage includes correct reported digits with garbled audio,
+unlicensed setup/late speech, overlapping allowances, missing or malformed
+waveforms and windows, recognition failure, and changed replay observations.
+Temporary Go overlays prove that removing exact audible matching or outside-window
+silence checking makes the corresponding regressions fail. The diagnostic
+helper's initial scenario-name error and corrected retry are retained separately.
+Focused live validation under a clean scorer-10 candidate and the eventual shared
+180-attempt campaign remain required; this investigation carries no final-candidate
+acceptance credit. No external code, data, prompts, or model weights were imported.
