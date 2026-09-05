@@ -2,6 +2,7 @@ package graphs_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -43,7 +44,11 @@ func TestScenarioConversationExplicitResponseIncludesPublishedPlayback(t *testin
 	}
 }
 
-func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOnly bool) {
+func TestScenarioConversationReleaseUpdatesPolicyBeforeNextResponse(t *testing.T) {
+	testScenarioSpeechHistoryContext(t, false, true, true, &scenarioDelayedAgentOutputGate{})
+}
+
+func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOnly bool, gates ...*scenarioDelayedAgentOutputGate) {
 	t.Helper()
 	base := newScenarioProfileFixture(t)
 	config := base.pluginConfig()
@@ -80,6 +85,10 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 	recording := newScenarioAddressingGraphRecorder()
 	instrumentScenarioAddressingFactory(t, &launchConfig, "policy.SemanticAdmission", recording, "decision")
 	instrumentScenarioAddressingFactory(t, &launchConfig, "interaction.ModelResultCommit", recording, "outcome")
+	for _, gate := range gates {
+		gate.install(t, &launchConfig)
+		defer gate.open()
+	}
 	launched, err := graphlaunch.New(t.Context(), launchConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -172,10 +181,16 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 		t.Fatal("audible count missing from canonical history")
 	}
 	if explicit {
+		for _, gate := range gates {
+			receiveScenarioAddressing(t, gate.blocked, "delayed inactive policy state")
+		}
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
 		if err := runtime.CreateResponse(ctx); err != nil {
 			t.Fatal(err)
+		}
+		for _, gate := range gates {
+			gate.open()
 		}
 		decision := recording.await(t, "semantic_admission.decision", func(e element.Envelope) bool {
 			d, ok := e.Payload.(policyelements.SemanticDecision)
@@ -216,6 +231,93 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 		if end := receiveScenarioAddressing(t, sink.ended, "explicit response completion"); end.Incomplete {
 			t.Fatalf("explicit response incomplete: %+v", end)
 		}
+	}
+}
+
+// Sampled State can lag the independent completion path. Suppress inactive
+// observations until the next request is admitted, while still draining the
+// connection so this test does not introduce unrelated upstream backpressure.
+type scenarioDelayedAgentOutputGate struct {
+	blocked chan struct{}
+	release chan struct{}
+}
+
+func (gate *scenarioDelayedAgentOutputGate) open() {
+	select {
+	case <-gate.release:
+	default:
+		close(gate.release)
+	}
+}
+
+func (gate *scenarioDelayedAgentOutputGate) install(t *testing.T, config *graphlaunch.Config) {
+	t.Helper()
+	gate.blocked = make(chan struct{})
+	gate.release = make(chan struct{})
+	for i := range config.Catalog.Assembly.Implementations {
+		registration := &config.Catalog.Assembly.Implementations[i]
+		if registration.Factory.Descriptor().Name == "policy.SemanticAdmission" {
+			registration.Factory = scenarioDelayedAgentOutputFactory{registration.Factory, gate}
+			return
+		}
+	}
+	t.Fatal("semantic admission factory missing")
+}
+
+type scenarioDelayedAgentOutputFactory struct {
+	element.Factory
+	gate *scenarioDelayedAgentOutputGate
+}
+
+func (factory scenarioDelayedAgentOutputFactory) ValidateConfig(raw json.RawMessage) error {
+	return factory.Factory.(element.ConfigValidator).ValidateConfig(raw)
+}
+
+func (factory scenarioDelayedAgentOutputFactory) Mount(ctx context.Context, mount element.MountContext) (element.Runnable, error) {
+	mount.Ports = scenarioDelayedAgentOutputPorts{mount.Ports, factory.gate}
+	return factory.Factory.Mount(ctx, mount)
+}
+
+type scenarioDelayedAgentOutputPorts struct {
+	element.Ports
+	gate *scenarioDelayedAgentOutputGate
+}
+
+func (ports scenarioDelayedAgentOutputPorts) Input(name string) (element.InputPort, error) {
+	input, err := ports.Ports.Input(name)
+	if err != nil || name != "agent_output" {
+		return input, err
+	}
+	return &scenarioDelayedAgentOutputInput{InputPort: input, gate: ports.gate}, nil
+}
+
+type scenarioDelayedAgentOutputInput struct {
+	element.InputPort
+	active bool
+	held   bool
+	gate   *scenarioDelayedAgentOutputGate
+}
+
+func (input *scenarioDelayedAgentOutputInput) Receive(ctx context.Context) (element.Envelope, error) {
+	for {
+		envelope, err := input.InputPort.Receive(ctx)
+		if err != nil {
+			return envelope, err
+		}
+		output := envelope.Payload.(coreinteraction.AgentOutput)
+		if input.active && !output.Active {
+			if !input.held {
+				input.held = true
+				close(input.gate.blocked)
+			}
+			select {
+			case <-input.gate.release:
+			default:
+				continue
+			}
+		}
+		input.active = input.active || output.Active
+		return envelope, nil
 	}
 }
 

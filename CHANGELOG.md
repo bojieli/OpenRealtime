@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- Scenario conversation completion now waits for the producing response's
+  model and segmentation terminals and applies its output state in semantic
+  policy before notifying the client. A request immediately after completed
+  speech no longer sees the old response as still speaking. Queued segments
+  and other active responses retain their speech-control behavior.
+
 - Computer-use cancellation keeps settlement complete after its terminal
   acknowledgement. Replaying an earlier pending update can no longer strand
   cancellation while another component is stopping, and later publications

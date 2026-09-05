@@ -65,7 +65,7 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 11 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 12 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v4" {
@@ -140,12 +140,18 @@ func TestOverlapBargeInReleaseBarrierRetiresSpeechBeforeForwarding(t *testing.T)
 		t.Fatalf("release did not retire both speech horizons: %+v", state)
 	}
 	forwarded := receive(t, harness.output(t, "safe_release"))
-	receipt, ok := forwarded.Payload.(speechelements.PlaybackReceipt)
+	boundary, ok := forwarded.Payload.(speechelements.PlaybackRelease)
+	receipt := boundary.Receipt
 	if !ok || receipt.Kind != speechelements.PlaybackReleased ||
 		receipt.Utterance.ID != utteranceID || !receipt.Outcome.Completed ||
 		forwarded.ItemID == release.ItemID ||
 		!slices.Contains(forwarded.CausalParents, release.ItemID) {
 		t.Fatalf("ordered playback-release pass-through = %+v / %#v", forwarded, forwarded.Payload)
+	}
+	if !reflect.DeepEqual(boundary.AgentOutput, state.AgentOutput) ||
+		boundary.AgentOutput.Active || boundary.AgentOutputItemID == "" ||
+		!slices.Contains(forwarded.CausalParents, boundary.AgentOutputItemID) {
+		t.Fatalf("release did not carry its exact retired output state: %+v", boundary)
 	}
 
 	// The gateway may submit new audio as soon as it observes safe_release.
@@ -258,7 +264,8 @@ func TestOverlapBargeInReleaseAcceptsFailedZeroAudioPunctuationMarker(t *testing
 		t.Fatalf("failed zero-audio release retained speech work: %+v", state)
 	}
 	forwarded := receive(t, harness.output(t, "safe_release"))
-	receipt, ok := forwarded.Payload.(speechelements.PlaybackReceipt)
+	boundary, ok := forwarded.Payload.(speechelements.PlaybackRelease)
+	receipt := boundary.Receipt
 	if !ok || receipt.Utterance.Text != "..." || receipt.Outcome.Completed ||
 		receipt.Outcome.PlayedMS != 0 || receipt.Outcome.Reason == "" ||
 		!slices.Contains(forwarded.CausalParents, release.ItemID) {

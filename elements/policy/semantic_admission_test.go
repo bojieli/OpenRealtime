@@ -29,6 +29,8 @@ const semanticAdmissionGraph = `graph semantic_admission_test {
     input context = admission.context;
     input update = admission.update;
     input agent_output = admission.agent_output;
+    input release = admission.release;
+    output safe_release = admission.safe_release;
     input committed = admission.committed;
     input create = admission.create;
     input quiet = admission.quiet;
@@ -56,7 +58,7 @@ func TestSemanticAdmissionContractRejectsUnpinnedProvidersAndUnboundedValues(t *
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 8 ||
+	if descriptor.Name != "policy.SemanticAdmission" || descriptor.Revision != 9 ||
 		descriptor.ConfigSchema != "schema://openrealtime/policy/semantic-admission-config/v3" {
 		t.Fatalf("semantic admission descriptor = %+v", descriptor)
 	}

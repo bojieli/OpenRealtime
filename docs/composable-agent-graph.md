@@ -1863,6 +1863,45 @@ run scope without contributing a separate completion quota.
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
+### 2026-09-05 playback completion and semantic state ordering repair
+
+The ordinary explicit-response regression exposed an intermittent behavioral
+failure: after hearing a completed count, the next request still encountered
+the `keep-speaking` / `stop-speaking` choices for the old response. Holding the
+inactive `agent_output` update reproduced it through the locked production
+conversation graph. Diagnosis also found that playback can finish before the
+independent segmentation terminal reaches the overlap controller.
+
+Overlap revision 12 retires the exact played utterance immediately, keeps its
+completion receipt within the configured utterance bound, and forwards it once
+that producing run's model and segmentation are terminal. The receipt carries
+the current output snapshot and its causal state identity. Semantic admission
+revision 9 (implementation 13) consumes this snapshot before forwarding the
+plain playback receipt to the client boundary. Higher policy state revisions
+survive delayed older releases. Audio continues streaming; another active run
+or an unplayed segment remains active, and an unrelated unfinished run does
+not prevent a ready run's completion.
+
+A forty-segment control also exposed completion backpressure blocking the model
+result needed by the history consumer. The controller now queues immutable
+completion envelopes within the same pending bound and uses one lifecycle-owned
+writer with one in-flight envelope. Blocked release delivery leaves the model
+result path available, and cancellation joins the writer during shutdown.
+A mounted forty-sentence WebSocket regression also verifies that all speech
+reaches the client and every response completes through the unchanged endpoint.
+
+The mounted delayed-state regression and the original explicit-response cases
+pass ten repetitions under the race detector. Focused tests cover both terminal
+orders, an unseen queued segment, independent runs, bounded pending receipts,
+delayed state replay, and rejection of conflicting revisions or receipt lineage.
+Removing policy's state application reproduces the original mounted failure;
+removing the preparation barrier makes the terminal-order controls fail on
+premature completion. Restoring synchronous delivery makes the burst control
+fail while waiting for the model result. This closes the reproduced
+completion/state defect and
+adds no benchmark campaign or reporting requirement. The broader architecture
+and unresolved provider behavior listed above remain open.
+
 ### 2026-09-05 monotonic cancellation acknowledgement repair
 
 The remaining connected ordering checks exposed a real cancellation stall.
@@ -2460,8 +2499,9 @@ Integrated checkpoint ledger:
 - [ ] Complete the remaining visual/UI rendering, reconciliation, direct
   benchmark execution, and obsolete launch-path deletion.
 
-Active acceptance queue (work in the shared worktree remains unchecked until
-it has been reviewed, tested, and committed with its evidence):
+Historical acceptance ledger: measurement populations, recording archives, and
+review/reporting requirements here are retired. The current phase summaries
+and definition of done identify the remaining implementation checks.
 
 - [ ] Complete the retained multimodal-review and recording checkpoint.
   - [x] Seal the exact scenario source population and the exact

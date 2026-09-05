@@ -118,6 +118,15 @@ func TestScenarioConversationSpeechCoalescesShortClausesAndKeepsShortAnswers(t *
 	testScenarioConversationGraphRoundTrip(t, test)
 }
 
+func TestScenarioConversationCompletionBurstDrainsThroughRealtimeEndpoint(t *testing.T) {
+	test := scenarioEndpointToolCases()[0]
+	for i := 0; i < 40; i++ {
+		test.wantSpeechPlans = append(test.wantSpeechPlans, fmt.Sprintf("This is sentence number %d.", i+1))
+	}
+	test.reply = strings.Join(test.wantSpeechPlans, " ")
+	testScenarioConversationGraphRoundTrip(t, test)
+}
+
 func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpointToolCase) {
 	t.Helper()
 	fixture := newScenarioEndpointFixture(t, toolCase)

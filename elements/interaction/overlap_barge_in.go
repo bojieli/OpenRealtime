@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:11"
+	overlapBargeInRuntimeRevision  = "implementation:12"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      11,
+		Revision:      12,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -107,7 +107,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
 			{Name: "safe_result", Direction: element.Output, Type: safeModelResultType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "safe_release", Direction: element.Output, Type: speechelements.PlaybackReceiptType(),
+			{Name: "safe_release", Direction: element.Output, Type: speechelements.PlaybackReleaseType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "decision", Direction: element.Output, Type: overlapDecisionType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
@@ -420,6 +420,11 @@ type overlapUtterance struct {
 	playbackAudible      bool
 }
 
+type overlapPendingRelease struct {
+	cause   element.Envelope
+	receipt speechelements.PlaybackReceipt
+}
+
 type overlapInputKind uint8
 
 const (
@@ -497,6 +502,8 @@ type overlapBargeInRunner struct {
 	utterances             map[string]*overlapUtterance
 	terminalUtterances     map[string]struct{}
 	terminalUtteranceOrder []string
+	pendingReleases        []overlapPendingRelease
+	readyReleases          []element.Envelope
 	semantic               map[string]overlapSemanticRecord
 	semanticOrder          []string
 	speech                 *overlapSpeech
@@ -541,6 +548,30 @@ func (runner *overlapBargeInRunner) Run(parent context.Context) (runErr error) {
 	classified := make(chan overlapClassification, 1)
 	failures := make(chan error, 1)
 	var receivers sync.WaitGroup
+	// A completion consumer may need the model result to record played
+	// history. Never let completion backpressure block that independent result
+	// path. The actor owns the bounded queue and immutable snapshots; this one
+	// lifecycle-owned writer only delivers one selected envelope at a time,
+	// outside the pending-queue bound.
+	releases := make(chan element.Envelope)
+	released := make(chan error)
+	receivers.Add(1)
+	go func() {
+		defer receivers.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case envelope := <-releases:
+				err := broadcastInteraction(ctx, runner.ports.safeRelease, envelope)
+				select {
+				case released <- err:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
 	for _, source := range []struct {
 		kind overlapInputKind
 		port element.InputPort
@@ -566,10 +597,24 @@ func (runner *overlapBargeInRunner) Run(parent context.Context) (runErr error) {
 		cancel(nil)
 		receivers.Wait()
 	}()
+	releaseBusy := false
 	for {
+		var releaseSend chan<- element.Envelope
+		var nextRelease element.Envelope
+		if !releaseBusy && len(runner.readyReleases) != 0 {
+			releaseSend, nextRelease = releases, runner.readyReleases[0]
+		}
 		select {
 		case <-ctx.Done():
 			return nil
+		case releaseSend <- nextRelease:
+			runner.readyReleases = slices.Delete(runner.readyReleases, 0, 1)
+			releaseBusy = true
+		case err := <-released:
+			if err != nil {
+				return err
+			}
+			releaseBusy = false
 		case err := <-failures:
 			return err
 		case input := <-inputs:
@@ -609,7 +654,10 @@ func (runner *overlapBargeInRunner) accept(
 		if err := runner.publishState(ctx, input.envelope); err != nil {
 			return err
 		}
-		return runner.publishSafeResult(ctx, input.envelope, result)
+		if err := runner.publishSafeResult(ctx, input.envelope, result); err != nil {
+			return err
+		}
+		return runner.flushPlaybackReleases()
 	}
 	if input.kind == overlapInputRelease {
 		receipt, err := runner.acceptPlaybackRelease(input.envelope)
@@ -625,7 +673,13 @@ func (runner *overlapBargeInRunner) accept(
 		if err := runner.publishState(ctx, input.envelope); err != nil {
 			return err
 		}
-		return runner.publishSafeRelease(ctx, input.envelope, receipt)
+		if len(runner.pendingReleases)+len(runner.readyReleases) >= runner.config.MaxUtterances {
+			return errors.New("overlap pending playback releases exceed the utterance bound")
+		}
+		runner.pendingReleases = append(runner.pendingReleases, overlapPendingRelease{
+			cause: input.envelope.Clone(), receipt: receipt,
+		})
+		return runner.flushPlaybackReleases()
 	}
 	var err error
 	switch input.kind {
@@ -656,7 +710,10 @@ func (runner *overlapBargeInRunner) accept(
 	if !runner.hasAgentWork() {
 		runner.disarmOverlap()
 	}
-	return runner.publishState(ctx, input.envelope)
+	if err := runner.publishState(ctx, input.envelope); err != nil {
+		return err
+	}
+	return runner.flushPlaybackReleases()
 }
 
 func (runner *overlapBargeInRunner) acceptActivity(
@@ -1083,20 +1140,47 @@ func (runner *overlapBargeInRunner) acceptPlaybackRelease(
 	return receipt, nil
 }
 
-func (runner *overlapBargeInRunner) publishSafeRelease(
-	ctx context.Context, cause element.Envelope, receipt speechelements.PlaybackReceipt,
+// Sink effects can finish before model and segmentation terminals drain. Keep
+// streaming audio, but withhold client completion until this producing run has
+// closed both preparation stages. Other runs and unplayed segments remain in
+// the output snapshot; this boundary never implies global silence.
+func (runner *overlapBargeInRunner) flushPlaybackReleases() error {
+	for i := 0; i < len(runner.pendingReleases); {
+		pending := runner.pendingReleases[i]
+		runID := pending.cause.RunID
+		_, terminal := runner.terminalRuns[runID]
+		run := runner.runs[runID]
+		if !terminal && (run == nil || !run.modelTerminal || !run.segmentationTerminal) {
+			i++
+			continue
+		}
+		if err := runner.queuePlaybackRelease(pending.cause, pending.receipt); err != nil {
+			return err
+		}
+		runner.pendingReleases = slices.Delete(runner.pendingReleases, i, i+1)
+	}
+	return nil
+}
+
+func (runner *overlapBargeInRunner) queuePlaybackRelease(
+	cause element.Envelope, receipt speechelements.PlaybackReceipt,
 ) error {
 	sequence, err := runner.sequences.Next(runner.instance + ".safe-release")
 	if err != nil {
 		return err
 	}
 	envelope := cause.Clone()
-	envelope.Type = speechelements.PlaybackReceiptType()
+	envelope.Type = speechelements.PlaybackReleaseType()
 	envelope.ItemID = fmt.Sprintf("%s:safe_release:%d", runner.instance, sequence)
 	envelope.Sequence = sequence
 	envelope.CausalParents = appendUniqueString(envelope.CausalParents, cause.ItemID)
-	envelope.Payload = receipt
-	return broadcastInteraction(ctx, runner.ports.safeRelease, envelope)
+	stateItemID := fmt.Sprintf("%s:agent_output:%d", runner.instance, runner.agentOutputRevision)
+	envelope.CausalParents = appendUniqueString(envelope.CausalParents, stateItemID)
+	envelope.Payload = speechelements.PlaybackRelease{
+		Receipt: receipt, AgentOutput: runner.state.AgentOutput, AgentOutputItemID: stateItemID,
+	}
+	runner.readyReleases = append(runner.readyReleases, envelope)
+	return nil
 }
 
 func (runner *overlapBargeInRunner) startClassification(

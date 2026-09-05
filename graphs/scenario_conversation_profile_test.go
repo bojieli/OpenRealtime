@@ -515,6 +515,7 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		{"playback", "status", "playback_status_copy", "in"},
 		{"playback_status_copy", "out", "overlap_barge_in", "playback"},
 		{"playback", "released", "overlap_barge_in", "release"},
+		{"overlap_barge_in", "safe_release", "semantic_admission", "release"},
 		{"segment", "model_cancel", "segment_model_cancel_copy", "in"},
 		{"segment_model_cancel_copy", "out", "model_cancel_mux", "in"},
 		{"overlap_barge_in", "model_cancel", "model_cancel_mux", "in"},
@@ -539,6 +540,7 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		{"silent_model", "outcome", "overlap_barge_in", "model"},
 		{"control_quarantine", "safe_result", "model_result_mux", "in"},
 		{"playback", "released", "", "gateway_turn_end"},
+		{"overlap_barge_in", "safe_release", "", "gateway_turn_end"},
 	} {
 		if forbidden[2] == "" {
 			for _, boundary := range graph.Boundaries {
@@ -563,7 +565,7 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		"segmentation_outcome":         {Node: "segmentation_outcome_copy", Port: "out"},
 		"tts_status":                   {Node: "tts_status_copy", Port: "out"},
 		"playback_status":              {Node: "playback_status_copy", Port: "out"},
-		"gateway_turn_end":             {Node: "overlap_barge_in", Port: "safe_release"},
+		"gateway_turn_end":             {Node: "semantic_admission", Port: "safe_release"},
 		"segment_model_cancel_request": {Node: "segment_model_cancel_copy", Port: "out"},
 		"overlap_decision":             {Node: "overlap_barge_in", Port: "decision"},
 		"overlap_state":                {Node: "overlap_barge_in", Port: "state"},

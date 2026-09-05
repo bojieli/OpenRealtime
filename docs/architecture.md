@@ -32,6 +32,20 @@ Across these compositions, canonical history, causal provenance, bounded
 queues, cancellation, and independent action authority remain explicit
 contracts. A model's role or output alone does not authorize an external effect.
 
+In Scenario Conversation, playback completion is an ordered control path.
+The overlap controller retires the exact played utterance and waits for its
+producing model and segmentation to finish. It then sends the receipt with
+the current output state through semantic admission, which applies that state
+before forwarding completion to the session. The session publishes the played
+history before notifying the client. A subsequent explicit response therefore
+observes completed speech in both conversation history and policy state.
+Audio continues streaming during preparation; pending completion receipts are
+bounded by the controller's `max_utterances` setting. Queued segments and other
+active runs remain visible, and an older release cannot overwrite newer policy
+state. One lifecycle-owned writer delivers completion receipts, so a blocked
+completion consumer cannot prevent the model result needed to publish history
+from reaching the session.
+
 ## Existing binding-based voice configurations
 
 The rest of this page describes the earlier voice composition still selected

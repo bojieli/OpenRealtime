@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
@@ -32,7 +33,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID        = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision  = "implementation:12"
+	semanticAdmissionRuntimeRevision  = "implementation:13"
 	defaultSemanticRecentLines        = 12
 	defaultSemanticPending            = 64
 	defaultSemanticTerminalMemory     = 512
@@ -238,7 +239,7 @@ func (registry *SemanticDeciderRegistry) Open(
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 8,
+		Name:          "policy.SemanticAdmission", Revision: 9,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -246,6 +247,10 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "agent_output", Direction: element.Input, Type: coreinteraction.AgentOutputType(),
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
+			{Name: "release", Direction: element.Input, Type: speechelements.PlaybackReleaseType(),
+				Cardinality: element.One, Required: true, DefaultDepth: 16},
+			{Name: "safe_release", Direction: element.Output, Type: speechelements.PlaybackReceiptType(),
+				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "committed", Direction: element.Input, Type: semanticCommitType,
 				Cardinality: element.Variadic, Required: true, MinConnections: 1, DefaultDepth: 32},
 			{Name: "create", Direction: element.Input, Type: semanticCreateType,
@@ -274,9 +279,9 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 1},
 		},
 		Reaction: element.Reaction{
-			Triggers: []string{"committed", "create", "quiet"}, SampledState: []string{"context", "update", "agent_output"},
+			Triggers: []string{"committed", "create", "quiet", "release"}, SampledState: []string{"context", "update", "agent_output"},
 			Interrupts:     []string{"cancel"},
-			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "silent_cancel", "decision", "state", "outcome", "resolved"},
+			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "silent_cancel", "decision", "state", "outcome", "resolved", "safe_release"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/policy/semantic-admission-state/v2",

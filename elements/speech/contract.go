@@ -17,6 +17,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -46,13 +47,26 @@ var (
 
 // Public type helpers let graph boundaries construct exact envelopes without
 // exporting mutable package-level Type values.
-func TextSegmentType() element.Type        { return textSegmentType.Clone() }
-func CancelType() element.Type             { return cancelType.Clone() }
-func AudioType() element.Type              { return audioType.Clone() }
-func TransitionType() element.Type         { return transitionType.Clone() }
-func SynthesisOutcomeType() element.Type   { return synthesisOutcomeType.Clone() }
-func PlaybackOutcomeType() element.Type    { return playbackOutcomeType.Clone() }
-func PlaybackReceiptType() element.Type    { return playbackReceiptType.Clone() }
+func TextSegmentType() element.Type      { return textSegmentType.Clone() }
+func CancelType() element.Type           { return cancelType.Clone() }
+func AudioType() element.Type            { return audioType.Clone() }
+func TransitionType() element.Type       { return transitionType.Clone() }
+func SynthesisOutcomeType() element.Type { return synthesisOutcomeType.Clone() }
+func PlaybackOutcomeType() element.Type  { return playbackOutcomeType.Clone() }
+func PlaybackReceiptType() element.Type  { return playbackReceiptType.Clone() }
+
+// PlaybackReleaseType carries the exact output state that a policy consumer
+// must apply before exposing the corresponding turn completion.
+func PlaybackReleaseType() element.Type {
+	return element.Event(element.Named("speech.PlaybackRelease"))
+}
+
+type PlaybackRelease struct {
+	Receipt           PlaybackReceipt             `json:"receipt"`
+	AgentOutput       coreinteraction.AgentOutput `json:"agent_output"`
+	AgentOutputItemID string                      `json:"agent_output_item_id"`
+}
+
 func ProviderResolutionType() element.Type { return providerResolutionType.Clone() }
 func SinkResolutionType() element.Type     { return sinkResolutionType.Clone() }
 

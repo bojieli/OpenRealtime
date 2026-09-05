@@ -31,13 +31,16 @@ func TestOverlapBargeInCancelsCompletedStreamBeforeQueuedSpeechIsVisible(t *test
 			if order == "one release first" {
 				h.sendAndSync(t, "release", overlapReleaseEnvelope("release-1", runID, "utterance-1", "1.",
 					action.Outcome{Completed: true, PlayedMS: 40}))
-				_ = receive(t, h.output(t, "safe_release"))
+				assertNoEnvelope(t, h.output(t, "safe_release"))
 			}
 			completed := overlapSegmentationEnvelope("segments-done", runID, OutcomeCompleted)
 			completed.Payload = SegmentationOutcome{Kind: OutcomeCompleted, RunID: runID, Segments: 3}
 			state := h.sendAndSync(t, "segmentation", completed)
 			if !state.AgentOutput.Active || !state.AgentOutput.Queued || state.AgentOutput.Audible {
 				t.Fatalf("completed preparation lost unplayed speech: %+v", state.AgentOutput)
+			}
+			if order == "one release first" {
+				_ = receive(t, h.output(t, "safe_release"))
 			}
 			h.sendAndSync(t, "semantic", overlapSemanticEnvelope("stop", "user-stream", 2, coreinteraction.ActStopSpeaking))
 			envelope, decision := receiveOverlapDecision(t, h.output(t, "decision"))

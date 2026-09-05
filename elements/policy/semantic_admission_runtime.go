@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
+	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
@@ -114,6 +115,8 @@ func (semanticAdmissionFactory) Mount(
 
 type semanticAdmissionPorts struct {
 	context, update, agentOutput, committed, create, quiet, cancel element.InputPort
+	release                                                        element.InputPort
+	safeRelease                                                    element.OutputPort
 	voiceCommitted, silentCommitted, voiceCreate, silentCreate     element.OutputPort
 	silentCancel, decision, state, outcome, resolved               element.OutputPort
 }
@@ -129,6 +132,7 @@ func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, er
 	}{
 		{"context", &result.context}, {"update", &result.update},
 		{"agent_output", &result.agentOutput},
+		{"release", &result.release},
 		{"committed", &result.committed}, {"create", &result.create},
 		{"quiet", &result.quiet}, {"cancel", &result.cancel},
 	} {
@@ -145,6 +149,7 @@ func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, er
 		{"voice_committed", &result.voiceCommitted}, {"silent_committed", &result.silentCommitted},
 		{"voice_create", &result.voiceCreate}, {"silent_create", &result.silentCreate},
 		{"silent_cancel", &result.silentCancel},
+		{"safe_release", &result.safeRelease},
 		{"decision", &result.decision}, {"state", &result.state},
 		{"outcome", &result.outcome}, {"resolved", &result.resolved},
 	} {
@@ -345,6 +350,7 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 	}{
 		{kind: "context", port: runner.ports.context}, {kind: "update", port: runner.ports.update},
 		{kind: "agent_output", port: runner.ports.agentOutput},
+		{kind: "release", port: runner.ports.release},
 		{kind: "committed", port: runner.ports.committed, variadic: true},
 		{kind: "create", port: runner.ports.create}, {kind: "quiet", port: runner.ports.quiet},
 		{kind: "cancel", port: runner.ports.cancel},
@@ -436,6 +442,10 @@ func (runner *semanticAdmissionRunner) acceptInput(
 		if err := runner.acceptAgentOutput(ctx, input.envelope); err != nil {
 			return err
 		}
+	case "release":
+		if err := runner.acceptPlaybackRelease(ctx, input.envelope); err != nil {
+			return err
+		}
 	case "committed":
 		if err := runner.enqueueCommit(ctx, input.envelope); err != nil {
 			return err
@@ -455,6 +465,45 @@ func (runner *semanticAdmissionRunner) acceptInput(
 		return err
 	}
 	return runner.publishState(ctx, input.envelope)
+}
+
+// Playback completion permits another client request. Apply its causal output
+// state in this actor before forwarding that permit; the sampled State lane
+// can be delayed or coalesced independently.
+func (runner *semanticAdmissionRunner) acceptPlaybackRelease(ctx context.Context, envelope element.Envelope) error {
+	release, ok := envelope.Payload.(speechelements.PlaybackRelease)
+	if !ok || !envelope.Type.Equal(speechelements.PlaybackReleaseType()) {
+		return errors.New("semantic admission playback release has an invalid type")
+	}
+	if err := validateSemanticAgentOutput(release.AgentOutput); err != nil {
+		return err
+	}
+	if !canonicalSemanticIdentity(release.AgentOutputItemID) ||
+		!slices.Contains(envelope.CausalParents, release.AgentOutputItemID) ||
+		!canonicalSemanticIdentity(envelope.ItemID) || !canonicalSemanticIdentity(envelope.SessionID) ||
+		!canonicalSemanticIdentity(envelope.RunID) ||
+		(runner.contextSession != "" && envelope.SessionID != runner.contextSession) ||
+		envelope.Sequence == 0 ||
+		release.Receipt.Kind != speechelements.PlaybackReleased || release.Receipt.Sequence == 0 ||
+		!canonicalSemanticIdentity(release.Receipt.Utterance.ID) ||
+		envelope.SourceID != release.Receipt.Utterance.ID ||
+		envelope.CancellationScope != release.Receipt.Utterance.ID {
+		return errors.New("semantic admission playback release has invalid state or receipt lineage")
+	}
+	if release.AgentOutput.Revision == runner.agentOutput.Revision &&
+		!reflect.DeepEqual(release.AgentOutput, runner.agentOutput) {
+		return errors.New("semantic admission playback release conflicts with its output revision")
+	}
+	if release.AgentOutput.Revision > runner.agentOutput.Revision {
+		runner.agentOutput = cloneSemanticAgentOutput(release.AgentOutput)
+	}
+	forwarded := envelope.Clone()
+	forwarded.Type = speechelements.PlaybackReceiptType()
+	forwarded.ItemID = envelope.ItemID + ":policy-applied"
+	forwarded.CausalParents = appendUnique(forwarded.CausalParents, envelope.ItemID)
+	forwarded.Payload = release.Receipt
+	_, err := runner.ports.safeRelease.Broadcast(ctx, forwarded)
+	return err
 }
 
 func (runner *semanticAdmissionRunner) acceptAgentOutput(

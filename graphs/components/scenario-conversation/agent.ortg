@@ -160,6 +160,7 @@ graph scenario_conversation {
     semantic_decision_copy.out -> overlap_barge_in.semantic;
     semantic_admission.silent_cancel -> model_cancel_mux.in;
     overlap_barge_in.agent_output -> semantic_admission.agent_output;
+    overlap_barge_in.safe_release -> semantic_admission.release;
     voice_session_invocation.trigger -> voice_model.trigger;
     silent_session_invocation.trigger -> silent_model.trigger;
     voice_session_invocation.authority -> invocation_authority_mux.in;
@@ -366,5 +367,5 @@ graph scenario_conversation {
     output gateway_speech_text = playback.text_committed;
     output gateway_speech_audio = playback.audio_emitted;
     output gateway_speech_end = playback.ended;
-    output gateway_turn_end = overlap_barge_in.safe_release;
+    output gateway_turn_end = semantic_admission.safe_release;
 }
