@@ -102,6 +102,15 @@ func NewEnergyGate(config GateConfig, sampleRate uint32) (*EnergyGate, error) {
 // Speaking reports whether the gate currently believes the user is audible.
 func (gate *EnergyGate) Speaking() bool { return gate.speaking }
 
+// WrittenMS is how much audio this gate has consumed.
+//
+// The positions a gate reports are its own: they count from the first sample
+// it was given. A caller that builds a second gate part-way through a session
+// - because the sample rate changed, or because it keeps one gate per
+// utterance - owns the difference between those positions and the session's,
+// and cannot compute it without this.
+func (gate *EnergyGate) WrittenMS() int { return samplesToMS(gate.total, gate.sampleRate) }
+
 // SilenceNS reports how long the gate has seen silence within an utterance.
 func (gate *EnergyGate) SilenceNS() uint64 {
 	return gate.silence * uint64(time.Second) / uint64(gate.sampleRate)

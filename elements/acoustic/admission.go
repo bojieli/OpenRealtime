@@ -17,7 +17,19 @@ type admissionRunner struct {
 	ports      admissionPorts
 	resolution element.ResolutionReporter
 
-	gate               *coreperception.EnergyGate
+	gate *coreperception.EnergyGate
+	// retiredMS is how much audio earlier gates consumed in this session.
+	//
+	// The wire says audio_start_ms counts "from the start of all audio written
+	// to the buffer during the session", and a client uses it to find the
+	// speech inside the audio it sent. This element keeps one gate per stream
+	// and every stream's gate counts from zero, so without this the second
+	// utterance is reported at the position of the first, the third at the
+	// position of the second, and the error grows for as long as the session
+	// lasts. Measured against a probe that wrote two bursts at known offsets,
+	// the second was reported three seconds early - exactly the length of the
+	// first utterance.
+	retiredMS          int
 	policyReady        bool
 	mode               EndpointMode
 	policySequence     uint64
@@ -264,7 +276,7 @@ func (runner *admissionRunner) handleAudio(ctx context.Context, envelope element
 		if err := runner.publishActivity(ctx, envelope, SpeechActivity{
 			Kind: SpeechStarted, StreamID: runner.streamID, Source: runner.source,
 			AtNS:         firstNonzero(input.Frame.CapturedNS, envelope.CaptureNS, envelope.ReceiveNS),
-			SampleRateHz: runner.sampleRate, AudioStartMS: result.AudioStartMS,
+			SampleRateHz: runner.sampleRate, AudioStartMS: runner.sessionMS(result.AudioStartMS),
 		}); err != nil {
 			return err
 		}
@@ -293,7 +305,7 @@ func (runner *admissionRunner) handleAudio(ctx context.Context, envelope element
 			ID:       candidateIdentifier(runner.instance, runner.streamID, sequence),
 			StreamID: runner.streamID, Source: runner.source,
 			DetectedNS: firstNonzero(input.Frame.CapturedNS, envelope.CaptureNS, envelope.ReceiveNS),
-			AudioEndMS: result.AudioEndMS, SilenceNS: result.SilenceNS,
+			AudioEndMS: runner.sessionMS(result.AudioEndMS), SilenceNS: result.SilenceNS,
 			SampleRateHz: runner.sampleRate, Sequence: sequence,
 		}
 		runner.pending = &candidate
@@ -340,11 +352,33 @@ func (runner *admissionRunner) validateFrame(frame coreperception.Frame) error {
 	return nil
 }
 
+// sessionMS turns a position this stream's gate reported into a position in
+// the session, which is the only frame of reference the client shares.
+func (runner *admissionRunner) sessionMS(gateMS int) int {
+	return runner.retiredMS + gateMS
+}
+
+// retireGate carries the outgoing gate's count into the session total.
+//
+// Called wherever a gate stops being the one in use, so that dropping a gate
+// cannot silently rewind the clock the client is reading.
+func (runner *admissionRunner) retireGate() {
+	if runner.gate == nil {
+		return
+	}
+	written := runner.gate.WrittenMS()
+	if written > 0 {
+		runner.retiredMS += written
+	}
+	runner.gate = nil
+}
+
 func (runner *admissionRunner) replaceGate(rate uint32) error {
 	gate, err := coreperception.NewEnergyGate(runner.config.gate, rate)
 	if err != nil {
 		return err
 	}
+	runner.retireGate()
 	runner.gate = gate
 	saturatingIncrement(&runner.gateGeneration)
 	return nil
@@ -435,7 +469,8 @@ func (runner *admissionRunner) handleCommand(ctx context.Context, envelope eleme
 		if runner.pending != nil {
 			endMS, candidateID = runner.pending.AudioEndMS, runner.pending.ID
 		} else if runner.gate != nil {
-			endMS, _ = runner.gate.ForceStop()
+			gateEndMS, _ := runner.gate.ForceStop()
+			endMS = runner.sessionMS(gateEndMS)
 		}
 		return runner.closeStream(ctx, envelope, endMS, candidateID, "force_closed")
 	default:
@@ -513,7 +548,7 @@ func (runner *admissionRunner) handleCancel(ctx context.Context, envelope elemen
 }
 
 func (runner *admissionRunner) clearStream() {
-	runner.gate = nil
+	runner.retireGate()
 	runner.streamID = ""
 	runner.source = ""
 	runner.sampleRate = 0

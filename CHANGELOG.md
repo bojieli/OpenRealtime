@@ -4,6 +4,19 @@
 
 ### Highlights
 
+- Speech activity now reports its position from the start of the session's
+  audio, as the wire defines it. The acoustic element keeps one gate per
+  utterance and each gate counted from its own first sample, so every
+  utterance after the first was reported at the position of the one before
+  it, and the error grew for as long as the session lasted. Probed with two
+  tone bursts written at known offsets, the second came back three seconds
+  early - exactly the length of the first utterance - and now comes back
+  where it was written. A client that trims its own recording at
+  `audio_start_ms`, or cuts playback where the person began speaking, gets
+  the offset it asked for. The values reach only the wire, so no decision
+  changes. The cascade and sidecar bindings keep one gate per session and
+  were already correct.
+
 - The full-duplex suite can keep the timed record each score was derived
   from, with `-transcripts`. A score is one word per recording and the
   interruption category is decided inside a window of one second, so the
