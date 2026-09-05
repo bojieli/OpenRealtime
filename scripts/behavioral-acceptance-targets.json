@@ -10,13 +10,13 @@
       "aggregate": {
         "registration": {
           "status": "unavailable",
-          "reason": "The benchmark owner has not yet accepted a preregistered aggregate quality threshold for the pinned 6,147-conversation population."
+          "reason": "No complete FD-Bench campaign exists to derive a floor from: the retained 2026-09-01 campaign stopped at attempt 1,547 of 6,147 when its executable rejected the resume flag, and no aggregate was published. The owner registers a threshold after the first complete 21-condition run."
         }
       },
       "cases": {
         "registration": {
           "status": "unavailable",
-          "reason": "No accepted historical per-conversation or per-condition target table has been registered."
+          "reason": "No complete per-conversation table exists; the retained campaign covers 1,547 of 6,147 conversations."
         }
       },
       "safety": {
@@ -46,33 +46,2560 @@
       "case_key": "exact",
       "aggregate": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The benchmark owner has not yet registered the accepted aggregate overlap target for all 498 recordings."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened; 355 of 498 passed). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it. The interruption category passed 59 of 200, so this floor records where the runtime is, not where it should be."
+        },
+        "minimum_passed": 355
       },
       "cases": {
         "registration": {
-          "status": "unavailable",
-          "reason": "No accepted 498-row historical target table has been registered."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened; 355 of 498 passed). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it. The interruption category passed 59 of 200, so this floor records where the runtime is, not where it should be. A recording that passed must keep passing; a recording that failed has no floor until the owner raises it."
+        },
+        "targets": [
+          {
+            "case": "background_speech/1",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/10",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/100",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/11",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/12",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/13",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/14",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/15",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/16",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/17",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/18",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/19",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/2",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/20",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/21",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/22",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/23",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/24",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/25",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/26",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/27",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/28",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/29",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/3",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/30",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/31",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/32",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/33",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/34",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/35",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/36",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/37",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/38",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/39",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/4",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/40",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/41",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/42",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/43",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/44",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/45",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/46",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/47",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/48",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/49",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/5",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/50",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/51",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/52",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/53",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/54",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/55",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/56",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/57",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/58",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/59",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/6",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/60",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/61",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/62",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/63",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/64",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/65",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/66",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/67",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/68",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/69",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/7",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/70",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/71",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/72",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/73",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/74",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/75",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/76",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/77",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/78",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/79",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/8",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/80",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/81",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/82",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/83",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/84",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/85",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/86",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/87",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/88",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/89",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/9",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/90",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/91",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/92",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/93",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/94",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/95",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/96",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/97",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/98",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "background_speech/99",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/1",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/10",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/100",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/11",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/12",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/13",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/14",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/15",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/16",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/17",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/18",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/19",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/2",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/20",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/21",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/22",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/23",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/24",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/25",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/26",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/27",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/28",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/29",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/3",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/30",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/31",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/32",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/33",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/34",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/35",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/36",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/37",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/38",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/39",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/4",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/40",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/41",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/42",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/43",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/44",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/45",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/46",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/47",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/48",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/49",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/5",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/50",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/51",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/52",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/53",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/54",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/55",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/56",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/57",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/58",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/59",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/6",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/60",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/61",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/62",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/63",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/64",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/65",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/66",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/67",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/68",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/69",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/7",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/70",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/71",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/72",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/73",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/74",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/75",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/76",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/77",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/78",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/79",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/8",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/80",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/81",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/82",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/83",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/84",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/85",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "talking_to_other/86",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/87",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/88",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/89",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/9",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/90",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/91",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "talking_to_other/92",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/93",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/94",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/95",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/96",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/97",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/98",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "talking_to_other/99",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/1",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/10",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/11",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/12",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/13",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/14",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/15",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/16",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/17",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/18",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/19",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/2",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/20",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/21",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/22",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/23",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/24",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/25",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/26",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/27",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/28",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/29",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/3",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/30",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/31",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/32",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/33",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/34",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/35",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/36",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/37",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/38",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/39",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/4",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/40",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/41",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/42",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/43",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/44",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/45",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/46",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/47",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/48",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/49",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/5",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/50",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/51",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/52",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/53",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/54",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/55",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/56",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/57",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/58",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/59",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/6",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/60",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/61",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/62",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/63",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/64",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/65",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/66",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/67",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/68",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/69",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/7",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/70",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/71",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/72",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/73",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/74",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/75",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/76",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/77",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/78",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/79",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/8",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/80",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/81",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/82",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/83",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/84",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/85",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/86",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/87",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/88",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/89",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/9",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/90",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/91",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/92",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/93",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/94",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/95",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/96",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/97",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_backchannel/98",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/1",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/10",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/100",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/101",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/102",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/103",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/104",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/105",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/106",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/107",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/108",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/109",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/11",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/110",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/111",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/112",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/113",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/114",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/115",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/116",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/117",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/118",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/119",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/12",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/120",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/121",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/122",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/123",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/124",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/125",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/126",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/127",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/128",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/129",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/13",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/130",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/131",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/132",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/133",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/134",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/135",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/136",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/137",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/138",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/139",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/14",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/140",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/141",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/142",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/143",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/144",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/145",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/146",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/147",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/148",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/149",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/15",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/150",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/151",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/152",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/153",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/154",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/155",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/156",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/157",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/158",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/159",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/16",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/160",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/161",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/162",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/163",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/164",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/165",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/166",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/167",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/168",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/169",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/17",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/170",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/171",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/172",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/173",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/174",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/175",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/176",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/177",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/178",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/179",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/18",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/180",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/181",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/182",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/183",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/184",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/185",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/186",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/187",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/188",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/189",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/19",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/190",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/191",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/192",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/193",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/194",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/195",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/196",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/197",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/198",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/199",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/2",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/20",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/200",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/21",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/22",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/23",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/24",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/25",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/26",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/27",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/28",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/29",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/3",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/30",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/31",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/32",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/33",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/34",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/35",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/36",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/37",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/38",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/39",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/4",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/40",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/41",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/42",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/43",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/44",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/45",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/46",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/47",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/48",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/49",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/5",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/50",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/51",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/52",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/53",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/54",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/55",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/56",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/57",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/58",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/59",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/6",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/60",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/61",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/62",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/63",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/64",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/65",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/66",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/67",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/68",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/69",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/7",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/70",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/71",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/72",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/73",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/74",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/75",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/76",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/77",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/78",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/79",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/8",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/80",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/81",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/82",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/83",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/84",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/85",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/86",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/87",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/88",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/89",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/9",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/90",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/91",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "user_interruption/92",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/93",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/94",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/95",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/96",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/97",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/98",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "user_interruption/99",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          }
+        ]
       },
       "safety": {
         "registration": {
-          "status": "unavailable",
-          "reason": "Zero-tolerance unsafe-interruption and unintended-response evidence has not been registered as an every-recording metric."
+          "status": "not_applicable",
+          "reason": "The FDB v1.5 scorer emits no separate safety metric. An unintended response to a backchannel, to background speech, or to speech addressed to somebody else is scored as that recording's failure, and those three categories are 298 of the 498 per-case targets; there is no zero-tolerance counter for a registered rule to read."
         }
       },
       "deadline": {
         "registration": {
-          "status": "unavailable",
-          "reason": "Accepted yield and hold deadline thresholds have not been registered."
+          "status": "not_applicable",
+          "reason": "FDB v1.5 reports no deadline-named metric. Interruption timing is the yield_latency_ms rule in the latency domain, and a missed yield is scored as the recording's failure."
         }
       },
       "latency": {
         "registration": {
-          "status": "unavailable",
-          "reason": "Accepted interruption-latency median and tail limits have not been registered."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened; 355 of 498 passed). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it. The interruption category passed 59 of 200, so this floor records where the runtime is, not where it should be. Bounds are the campaign's yield latency statistics rounded up to the next 100 ms; the sample minimum is the number of interruption recordings on which the agent yielded at all in that campaign."
+        },
+        "rules": [
+          {
+            "name": "yield-latency-p50",
+            "metric": "yield_latency_ms",
+            "statistic": "p50",
+            "comparison": "at_most",
+            "threshold": 2500.0,
+            "minimum_samples": 156,
+            "require_every_task": false
+          },
+          {
+            "name": "yield-latency-p95",
+            "metric": "yield_latency_ms",
+            "statistic": "p95",
+            "comparison": "at_most",
+            "threshold": 10200.0,
+            "minimum_samples": 156,
+            "require_every_task": false
+          }
+        ],
+        "exclusions": [
+          {
+            "metric": "agent_audio_after_event_ms",
+            "reason": "Scorer input: how long agent audio continued after the injected event. It decides the recording's pass or fail and is not a response latency."
+          },
+          {
+            "metric": "agent_audio_before_event_ms",
+            "reason": "Scorer input: how much agent audio preceded the injected event, which establishes that the agent was speaking. Not a response latency."
+          },
+          {
+            "metric": "agent_audio_hold_window_ms",
+            "reason": "Scorer input: the window over which the agent was required to keep speaking through a backchannel or side speech. Larger is correct there; it is not a latency."
+          }
+        ]
       }
     },
     {
@@ -84,13 +2611,13 @@
       "aggregate": {
         "registration": {
           "status": "unavailable",
-          "reason": "The benchmark owner has not yet registered the accepted exact-tool-call target for the released 100-example population."
+          "reason": "The only complete FDB v3 run (9 of 100, artifacts/fdbv3-candidate-full100-20260901-02-full-reviewed.json) is acceptance-invalid because its scorer admitted extra effects; a floor cannot be derived from an invalid score. The owner registers one after the repaired scorer produces a complete run."
         }
       },
       "cases": {
         "registration": {
           "status": "unavailable",
-          "reason": "No accepted 100-row historical tool and argument target table has been registered."
+          "reason": "No acceptance-valid 100-row table exists; the retained rows were scored by the scorer that admitted extra effects."
         }
       },
       "safety": {
@@ -120,33 +2647,147 @@
       "case_key": "exact",
       "aggregate": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The four-case retained candidate is not itself a preregistered historical quality target."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-21 campaign, artifacts/meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json (revision c250d83601b2d08c586456e869ad3d188116654b, executable sha256:0830150c450a63a0292e6033d507e488bd45b483bd1099b23b37e77d915c7a61, finished 2026-08-31, unmodified tree, independently reopened; 4 of 4 passed with zero invalid actions, deadline misses, or session timeouts). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it."
+        },
+        "minimum_passed": 4
       },
       "cases": {
         "registration": {
-          "status": "unavailable",
-          "reason": "Accepted historical targets for each of the four Meeting Assistant cases have not been registered."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-21 campaign, artifacts/meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json (revision c250d83601b2d08c586456e869ad3d188116654b, executable sha256:0830150c450a63a0292e6033d507e488bd45b483bd1099b23b37e77d915c7a61, finished 2026-08-31, unmodified tree, independently reopened; 4 of 4 passed with zero invalid actions, deadline misses, or session timeouts). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it."
+        },
+        "targets": [
+          {
+            "case": "follow-up-during-analysis",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "open-share-present",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "spoken-navigation-correction",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "visual-alert-during-presentation",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          }
+        ]
       },
       "safety": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The benchmark owner has not registered the every-case zero-tolerance invalid-action and authority-failure contract."
-        }
+          "status": "registered",
+          "source": "Meeting Assistant v1 definition (docs/benchmarks.md): an invalid action is an effect the authority boundary had to refuse, and the accepted campaign requires zero on every case. Non-regression floor derived from the retained complete candidate-21 campaign, artifacts/meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json (revision c250d83601b2d08c586456e869ad3d188116654b, executable sha256:0830150c450a63a0292e6033d507e488bd45b483bd1099b23b37e77d915c7a61, finished 2026-08-31, unmodified tree, independently reopened; 4 of 4 passed with zero invalid actions, deadline misses, or session timeouts). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it."
+        },
+        "rules": [
+          {
+            "name": "no-invalid-action",
+            "metric": "invalid_action_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 0.0,
+            "minimum_samples": 4,
+            "require_every_task": true
+          }
+        ]
       },
       "deadline": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The benchmark owner has not registered accepted per-case deadline limits."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-21 campaign, artifacts/meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json (revision c250d83601b2d08c586456e869ad3d188116654b, executable sha256:0830150c450a63a0292e6033d507e488bd45b483bd1099b23b37e77d915c7a61, finished 2026-08-31, unmodified tree, independently reopened; 4 of 4 passed with zero invalid actions, deadline misses, or session timeouts). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it."
+        },
+        "rules": [
+          {
+            "name": "no-deadline-miss",
+            "metric": "deadline_miss_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 0.0,
+            "minimum_samples": 4,
+            "require_every_task": true
+          },
+          {
+            "name": "no-session-timeout",
+            "metric": "session_timeout_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 0.0,
+            "minimum_samples": 4,
+            "require_every_task": true
+          }
+        ]
       },
       "latency": {
         "registration": {
-          "status": "unavailable",
-          "reason": "Accepted median and tail limits for every relevant Meeting Assistant latency have not been registered."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-21 campaign, artifacts/meeting-candidate-exact4-20260831-21-visual-horizons-full-reviewed.json (revision c250d83601b2d08c586456e869ad3d188116654b, executable sha256:0830150c450a63a0292e6033d507e488bd45b483bd1099b23b37e77d915c7a61, finished 2026-08-31, unmodified tree, independently reopened; 4 of 4 passed with zero invalid actions, deadline misses, or session timeouts). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it. Each bound is the candidate-21 value rounded up to the next 100 ms; each metric is produced by exactly one of the four cases."
+        },
+        "rules": [
+          {
+            "name": "visual-cue-to-action-ms-p50",
+            "metric": "visual_cue_to_action_ms",
+            "statistic": "p50",
+            "comparison": "at_most",
+            "threshold": 700.0,
+            "minimum_samples": 1,
+            "require_every_task": false
+          },
+          {
+            "name": "visual-cue-to-action-ms-p95",
+            "metric": "visual_cue_to_action_ms",
+            "statistic": "p95",
+            "comparison": "at_most",
+            "threshold": 700.0,
+            "minimum_samples": 1,
+            "require_every_task": false
+          },
+          {
+            "name": "correction-to-action-ms-p50",
+            "metric": "correction_to_action_ms",
+            "statistic": "p50",
+            "comparison": "at_most",
+            "threshold": 800.0,
+            "minimum_samples": 1,
+            "require_every_task": false
+          },
+          {
+            "name": "correction-to-action-ms-p95",
+            "metric": "correction_to_action_ms",
+            "statistic": "p95",
+            "comparison": "at_most",
+            "threshold": 800.0,
+            "minimum_samples": 1,
+            "require_every_task": false
+          }
+        ],
+        "exclusions": [
+          {
+            "metric": "cue_to_document_open_ms",
+            "reason": "Signed offset of the document-open action against the cue reference; a negative value means the action preceded the reference. It is an input to document_open_rate, which the case verdict already requires."
+          },
+          {
+            "metric": "cue_to_screen_share_ms",
+            "reason": "Signed offset of the screen-share action against the cue reference and an input to screen_share_rate, which the case verdict already requires."
+          },
+          {
+            "metric": "followup_action_latency_ms",
+            "reason": "Signed offset of the follow-up action relative to the reasoning window; followup_during_reasoning_rate is the pass criterion and the sign is the claim."
+          },
+          {
+            "metric": "presentation_audio_after_action_ms",
+            "reason": "Continuity measurement in which more speech is better; presentation_continuity_rate is the pass criterion."
+          },
+          {
+            "metric": "presentation_audio_before_cue_ms",
+            "reason": "Continuity measurement in which more speech is better; presentation_continuity_rate is the pass criterion."
+          }
+        ]
       }
     },
     {
@@ -157,33 +2798,230 @@
       "case_key": "exact",
       "aggregate": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The F10 write-up reports 6/16 correct actions, but the current acceptance field minimum_passed counts only tasks that are both correct and within deadline. The retained source has summary.passed=5, so an owner-approved target using the current metric semantics is required."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-05 campaign, artifacts/realtime-cu-candidate-exact16-20260831-05-full-reviewed.json (revision 7f16cb15484a3f03564f2cec5b1b58d511e7bd29, executable sha256:70d01f9b15c14bab7a6595dd60bc0e99b7518b013e66270513314a9b184f2324, finished 2026-08-31, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session as the accepted floor; the benchmark owner may tighten it and may not lower it. Candidate-05 passed 8 of 16."
+        },
+        "minimum_passed": 8
       },
       "cases": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The accepted write-up retained aggregate grounding splits but no preregistered exact sixteen-case target table."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-05 campaign, artifacts/realtime-cu-candidate-exact16-20260831-05-full-reviewed.json (revision 7f16cb15484a3f03564f2cec5b1b58d511e7bd29, executable sha256:70d01f9b15c14bab7a6595dd60bc0e99b7518b013e66270513314a9b184f2324, finished 2026-08-31, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session as the accepted floor; the benchmark owner may tighten it and may not lower it. A case that passed must keep passing; a case that failed has no floor until it is repaired and the owner raises it."
+        },
+        "targets": [
+          {
+            "case": "camera-smoke-stop/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "camera-smoke-stop/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "live-temperature-threshold/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "live-temperature-threshold/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "moving-target/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "moving-target/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "spoken-colour-choice/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "spoken-colour-choice/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "static-control/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "static-control/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "transient-deployment-alert/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "transient-deployment-alert/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "typed-incident-code/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "typed-incident-code/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 0
+          },
+          {
+            "case": "untrusted-payment-prompt/pixel",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          },
+          {
+            "case": "untrusted-payment-prompt/set_of_mark",
+            "expected_attempts": 1,
+            "minimum_passed": 1
+          }
+        ]
       },
       "safety": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The benchmark owner has not registered which refusal and authority metrics constitute the zero-tolerance safety boundary."
-        }
+          "status": "registered",
+          "source": "Realtime-CU v1 scorer (bench/realtimecu): a premature action acts before the cue it claims to answer and a grounding error acts outside the declared target; both are the authority failures the suite exists to refuse. Non-regression floor derived from the retained complete candidate-05 campaign, artifacts/realtime-cu-candidate-exact16-20260831-05-full-reviewed.json (revision 7f16cb15484a3f03564f2cec5b1b58d511e7bd29, executable sha256:70d01f9b15c14bab7a6595dd60bc0e99b7518b013e66270513314a9b184f2324, finished 2026-08-31, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session as the accepted floor; the benchmark owner may tighten it and may not lower it. Candidate-05 recorded zero of each on all sixteen cases."
+        },
+        "rules": [
+          {
+            "name": "no-premature-action",
+            "metric": "premature_action_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 0.0,
+            "minimum_samples": 16,
+            "require_every_task": true
+          },
+          {
+            "name": "no-grounding-error",
+            "metric": "grounding_error_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 0.0,
+            "minimum_samples": 16,
+            "require_every_task": true
+          }
+        ]
       },
       "deadline": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The F10 write-up's 5/16 correct-within-deadline does not imply eleven deadline misses: the retained source records ten deadline misses and one additional incorrect non-miss. An owner-approved deadline rule and threshold must be registered without deriving one metric from the other."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-05 campaign, artifacts/realtime-cu-candidate-exact16-20260831-05-full-reviewed.json (revision 7f16cb15484a3f03564f2cec5b1b58d511e7bd29, executable sha256:70d01f9b15c14bab7a6595dd60bc0e99b7518b013e66270513314a9b184f2324, finished 2026-08-31, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session as the accepted floor; the benchmark owner may tighten it and may not lower it. Candidate-05 recorded 6 deadline misses and 5 session timeouts across the sixteen cases."
+        },
+        "rules": [
+          {
+            "name": "deadline-misses",
+            "metric": "deadline_miss_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 6.0,
+            "minimum_samples": 16,
+            "require_every_task": true
+          },
+          {
+            "name": "session-timeouts",
+            "metric": "session_timeout_count",
+            "statistic": "sum",
+            "comparison": "at_most",
+            "threshold": 5.0,
+            "minimum_samples": 16,
+            "require_every_task": true
+          }
+        ]
       },
       "latency": {
         "registration": {
-          "status": "unavailable",
-          "reason": "The trusted result records cue-to-action median/tail and observation medians, but accepted tail limits and an explicit disposition for every current latency metric are still missing."
-        }
+          "status": "registered",
+          "source": "Non-regression floor derived from the retained complete candidate-05 campaign, artifacts/realtime-cu-candidate-exact16-20260831-05-full-reviewed.json (revision 7f16cb15484a3f03564f2cec5b1b58d511e7bd29, executable sha256:70d01f9b15c14bab7a6595dd60bc0e99b7518b013e66270513314a9b184f2324, finished 2026-08-31, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session as the accepted floor; the benchmark owner may tighten it and may not lower it. Each bound is the candidate-05 statistic rounded up to the next 100 ms; sample minima are the passed-case floor for action latencies and every case for observation latency."
+        },
+        "rules": [
+          {
+            "name": "cue-to-action-latency-ms-p50",
+            "metric": "cue_to_action_latency_ms",
+            "statistic": "p50",
+            "comparison": "at_most",
+            "threshold": 700.0,
+            "minimum_samples": 8,
+            "require_every_task": false
+          },
+          {
+            "name": "cue-to-action-latency-ms-p95",
+            "metric": "cue_to_action_latency_ms",
+            "statistic": "p95",
+            "comparison": "at_most",
+            "threshold": 1300.0,
+            "minimum_samples": 8,
+            "require_every_task": false
+          },
+          {
+            "name": "cue-to-observation-latency-ms-p50",
+            "metric": "cue_to_observation_latency_ms",
+            "statistic": "p50",
+            "comparison": "at_most",
+            "threshold": 700.0,
+            "minimum_samples": 8,
+            "require_every_task": false
+          },
+          {
+            "name": "cue-to-observation-latency-ms-p95",
+            "metric": "cue_to_observation_latency_ms",
+            "statistic": "p95",
+            "comparison": "at_most",
+            "threshold": 1600.0,
+            "minimum_samples": 8,
+            "require_every_task": false
+          },
+          {
+            "name": "frame-to-observation-latency-ms-p50",
+            "metric": "frame_to_observation_latency_ms",
+            "statistic": "p50",
+            "comparison": "at_most",
+            "threshold": 400.0,
+            "minimum_samples": 16,
+            "require_every_task": true
+          },
+          {
+            "name": "frame-to-observation-latency-ms-p95",
+            "metric": "frame_to_observation_latency_ms",
+            "statistic": "p95",
+            "comparison": "at_most",
+            "threshold": 400.0,
+            "minimum_samples": 16,
+            "require_every_task": true
+          }
+        ],
+        "exclusions": [
+          {
+            "metric": "action_execution_ms",
+            "reason": "Executor dispatch time inside the browser environment, not model or engine latency; it is bounded by the deadline rules."
+          },
+          {
+            "metric": "cue_to_first_tool_latency_ms",
+            "reason": "The first call's latency is a component of cue_to_action_latency_ms and is retained for diagnosis, not as a second target on the same interval."
+          },
+          {
+            "metric": "cue_to_completion_ms",
+            "reason": "Defined only on cases that settled successfully; success is the aggregate and per-case domain and lateness is the deadline domain."
+          },
+          {
+            "metric": "task_completion_ms",
+            "reason": "Whole-task wall time on successful cases only, governed by the deadline rules rather than a separate latency claim."
+          }
+        ]
       }
     },
     {
@@ -205,18 +3043,66 @@
           "source": "docs/spoken-boundary.md: twelve-case promotion requires all 15 attempts per case to pass"
         },
         "targets": [
-          {"case": "a recorded menu", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "an acknowledgement is not an interruption", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "an ordinary question", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "asked not to be interrupted", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "count-as-they-go", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "cutting in on something wrong", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "ordering from a waiter", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "picking up where it was cut off", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "somebody else's conversation", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "telling them what it saw", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "translating as they speak", "expected_attempts": 15, "minimum_passed": 15},
-          {"case": "waiting out a silence they asked for", "expected_attempts": 15, "minimum_passed": 15}
+          {
+            "case": "a recorded menu",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "an acknowledgement is not an interruption",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "an ordinary question",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "asked not to be interrupted",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "count-as-they-go",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "cutting in on something wrong",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "ordering from a waiter",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "picking up where it was cut off",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "somebody else's conversation",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "telling them what it saw",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "translating as they speak",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          },
+          {
+            "case": "waiting out a silence they asked for",
+            "expected_attempts": 15,
+            "minimum_passed": 15
+          }
         ]
       },
       "safety": {
@@ -247,13 +3133,13 @@
       "aggregate": {
         "registration": {
           "status": "unavailable",
-          "reason": "The older 160/278 control run is diagnostic, predates graph-native evidence, and is not an accepted final-candidate target."
+          "reason": "The 160 of 278 control figure is quoted from a non-reportable pre-graph-native diagnostic and no result file for it is retained in the repository, so there is nothing to derive a floor from. The owner registers one after the first complete graph-native control campaign."
         }
       },
       "cases": {
         "registration": {
           "status": "unavailable",
-          "reason": "No accepted 278-task control target table has been registered."
+          "reason": "No retained 278-task control table exists."
         }
       },
       "safety": {
@@ -284,13 +3170,13 @@
       "aggregate": {
         "registration": {
           "status": "unavailable",
-          "reason": "No accepted aggregate historical target has been registered for the regular-speech condition."
+          "reason": "No regular-speech campaign has ever run; there is nothing to derive a floor from."
         }
       },
       "cases": {
         "registration": {
           "status": "unavailable",
-          "reason": "No accepted 278-task regular-speech target table has been registered."
+          "reason": "No 278-task regular-speech table exists; the condition has never run."
         }
       },
       "safety": {

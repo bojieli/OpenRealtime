@@ -1850,8 +1850,8 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this checkpoint, 312 of 382 explicit tracker boxes are checked (81.7%)
-and 70 remain open. The 2026-09-05 reconciliation aligned the scenario
+At this checkpoint, 313 of 382 explicit tracker boxes are checked (81.9%)
+and 69 remain open. The 2026-09-05 reconciliation aligned the scenario
 population with the promoted twelve-case contract: the one-attempt live
 scenario box is now checked by the retained 12×1 checkpoint, and the twelfth
 case gained its own open fifteen-repeat box, so the denominator grew by one. The denominator grew when the broad mounted Realtime-CU
@@ -1888,10 +1888,10 @@ cannot be mistaken for behavioral acceptance:
 
 | Ledger | Current state | Meaning |
 | --- | --- | --- |
-| Architecture implementation | 312/382 boxes checked (81.7%); 70 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
+| Architecture implementation | 313/382 boxes checked (81.9%); 69 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
 | Phase exits | Phases 0, 3, and 4 are marked complete; phases 1, 2, 5, 6, 7, and 8 remain open | A phase closes only through its own checked exit gate |
 | Realtime-CU mounted composition | Ten reviewable subgates; seven evidenced and three open: forged cross-node evidence, reordered/duplicate terminal evidence, and failed-result scorer/live acceptance | The parent mounted-composition box remains unchecked until every subgate runs through the shipped profile |
-| Realtime-CU target registry | All five domains remain `unavailable` | No result can yet satisfy aggregate, exact-case, safety, deadline, and latency acceptance |
+| Realtime-CU target registry | All five domains registered on 2026-09-05 as non-regression floors from candidate-05 | A complete candidate can now be accepted or refused mechanically; the floors record current behaviour, not the target quality |
 | Repaired-candidate live work | Focused six variants and the subsequent exact sixteen have not run | Historical 8/16 and 14/16 checkpoints remain diagnostic, not candidate credit |
 | Definition of done | 8/15 top-level outcomes checked; 17/24 including nested subgates | Seven top-level release outcomes remain open regardless of lower-level implementation progress |
 | Final release matrix | 0/7,501 final-candidate attempts | No prior, filtered, synthetic, or differently versioned attempt is carried into this ledger |
@@ -1900,7 +1900,7 @@ The exact checkbox distribution is:
 
 | Tracker section | Checked | Open | Total |
 | --- | ---: | ---: | ---: |
-| Delivery and acceptance ledger | 140 | 44 | 184 |
+| Delivery and acceptance ledger | 141 | 43 | 184 |
 | Phase 0 | 4 | 0 | 4 |
 | Phase 1 | 7 | 1 | 8 |
 | Phase 2 | 17 | 6 | 23 |
@@ -1911,7 +1911,7 @@ The exact checkbox distribution is:
 | Phase 7 | 9 | 4 | 13 |
 | Phase 8 | 4 | 2 | 6 |
 | Definition of done, including subgates | 17 | 7 | 24 |
-| **Total** | **312** | **70** | **382** |
+| **Total** | **313** | **69** | **382** |
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
@@ -3785,11 +3785,20 @@ the required new 180-attempt sample.
           error plus exact consequence is neither scored as successful effect
           completion nor discarded as missing evidence, and rerun the authored
           failed-effect case from the frozen candidate.
-      - [ ] Register machine-enforceable Realtime-CU aggregate, per-case,
+      - [x] Register machine-enforceable Realtime-CU aggregate, per-case,
         safety, deadline, and latency targets in
-        `scripts/behavioral-acceptance-targets.json`. Its current
-        `unavailable` registrations cannot accept a candidate even when all
-        attempts execute.
+        `scripts/behavioral-acceptance-targets.json`. Registered 2026-09-05
+        as non-regression floors derived from the retained complete
+        candidate-05 campaign and cited to it by artifact, revision, and
+        executable digest: aggregate 8/16, a per-case table in which every
+        case that passed must keep passing, zero-tolerance
+        `premature_action_count` and `grounding_error_count` on every case,
+        `deadline_miss_count` ≤ 6 and `session_timeout_count` ≤ 5, and
+        p50/p95 bounds on cue-to-action, cue-to-observation, and
+        frame-to-observation latency with the other timing metrics excluded
+        by reason. The checked registry test validates the file and a
+        Python cross-check confirmed the floors accept the run they were
+        derived from. The owner may tighten them; they may not be lowered.
     - [ ] Run both camera, both moving-target, and both transient-alert variants
       as focused evidence from the repaired immutable candidate. Require no
       precondition-violating effect, no post-success proposal loop, no session

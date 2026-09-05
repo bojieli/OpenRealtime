@@ -68,6 +68,17 @@ therefore says `release_complete: false` and lists the unrun or blocked
 required performance and provisioned gates under `missing_required_gates`. This is
 deliberate; local CI success is not model, dataset, or signed-native evidence.
 
+## Efficiency gate
+
+`local.efficiency` runs `openrealtime efficiency` for ten seconds of simulated
+1080p video at 3 fps and retains the JSON report beside the run. It is a
+default local gate: it needs no model, dataset, or network, and it fails
+closed if the report is not written or does not reach the audio gate. The
+report's numbers are the ones [efficiency](efficiency.md) publishes for the
+reference machine; the gate does not compare them against thresholds, because
+the release claim is that every efficiency number is measured and stated
+against its machine, not that a build host matches the reference machine.
+
 ## Checked performance protocol
 
 The direct audiovisual review-bundle benchmark is opt-in because it performs
@@ -141,10 +152,18 @@ machine, graph execution requirement, run specification, pre-run inventory,
 source receipts, deterministic scorer, task population, and repair lineage.
 The gate refuses incomplete populations, mixed candidates, unregistered
 targets, material regressions, and a repair history that ends in a diagnostic
-subset. The checked registry still records several unavailable trusted targets,
-so the gate correctly remains blocked until benchmark owners register them;
-implementing the gate does not close a benchmark or non-regression checklist
-item.
+subset. As of 2026-09-05 the checked registry carries registered targets for
+Realtime-CU, the cascade Meeting Assistant, FDB v1.5, and the scenario suite's
+aggregate and per-case domains. Each registered floor cites the retained,
+independently reopened complete run it was derived from, by artifact path,
+revision, and executable digest; it is a non-regression floor, not a quality
+claim, and the benchmark owner may tighten it but not lower it. FD-Bench, FDB
+v3, and both τ-Voice conditions remain `unavailable`, each with the reason
+there is no complete acceptance-valid run to derive a floor from, and the
+scenario suite's safety, deadline, and latency domains remain unavailable
+because a one-attempt checkpoint cannot bound them. The gate therefore stays
+blocked on those suites until their first complete run; implementing the gate
+does not close a benchmark or non-regression checklist item.
 
 ### Behavioral acceptance control artifacts
 

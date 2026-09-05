@@ -540,6 +540,21 @@
       "skip_policy": "forbid"
     },
     {
+      "id": "local.efficiency",
+      "description": "Produce the efficiency report on this machine: idle and changing video gating, bandwidth, context growth, and the audio gate",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "run", "./cmd/openrealtime", "efficiency", "-seconds", "10", "-out", "{artifacts}/efficiency.json"],
+      "timeout": "10m",
+      "skip_policy": "forbid",
+      "assertions": [
+        {"kind": "file_nonempty", "value": "{artifacts}/efficiency.json"},
+        {"kind": "stdout_regex", "value": "\"audio_gate\""}
+      ]
+    },
+    {
       "id": "local.fuzz.authority.canonical-effect-arguments",
       "description": "Fuzz canonical effect arguments",
       "availability": "local",

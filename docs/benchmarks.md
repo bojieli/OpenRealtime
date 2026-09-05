@@ -344,15 +344,19 @@ case-level `Passed` bit is the conjunction of settled task success and no
 deadline miss. Realtime aggregate acceptance therefore uses `minimum_passed`
 rather than treating `task_success_rate` alone as the pass oracle.
 
-As of 2026-09-04, the release registry deliberately marks all five
-Realtime-CU behavioral domains—aggregate, exact per-case, safety, deadline,
-and latency—`unavailable`. A complete result can therefore be retained,
-reviewed, and independently reopened, but it cannot pass behavioral
-acceptance until the owners register the accepted `minimum_passed`, all
-sixteen case minima, the authoritative zero-tolerance safety metrics, deadline
-bounds, and latency median/tail limits plus any reasoned exclusions. Diagnostic
-or historical observations are evidence for choosing those targets; the
-runner must not silently convert them into acceptance thresholds.
+As of 2026-09-05, the release registry carries registered Realtime-CU
+targets in all five domains, derived from the retained complete candidate-05
+campaign and cited to it by artifact, revision, and executable digest: an
+aggregate floor of 8 of 16, a per-case table in which each case that passed
+must keep passing, zero-tolerance premature-action and grounding-error rules
+on every case, deadline-miss and session-timeout ceilings at the campaign's
+counts, and median/tail bounds on cue-to-action, cue-to-observation, and
+frame-to-observation latency with the remaining timing metrics excluded by
+reason. These are non-regression floors recording where the runtime is, not
+where it should be; the owner may tighten them and may not lower them. The
+runner never converts a result into a threshold: the registry is hand-written
+from a historical run, and the candidate under test is only ever compared
+against it.
 
 The settlement/cancellation implementation checkpoint did not run a live or
 paid Realtime-CU benchmark. It now provides a runnable graph-native

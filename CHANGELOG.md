@@ -279,6 +279,31 @@
 
 ### The release gate
 
+- **The reference sidecars are run, not only shipped.** Qwen3-Omni, MiniCPM-o,
+  and Moshi each accept `--mock` so their plumbing can be verified without a
+  model, and nothing ran them: the Python suite covers the framing library and
+  the Qwen adapter's parsing, and the Go suite drove a Go echo sidecar. A
+  reference sidecar could stop speaking the protocol it ships for and every
+  gate would stay green. `TestReferenceSidecarsPassConformanceInMockMode` now
+  runs each as the engine would, at version 1 and at the highest version it
+  declares, and both CI gate jobs install the numpy and Pillow it needs.
+- **Efficiency is a gate in the matrix, not only a page.** The efficiency
+  numbers were called release gates and nothing ran the command that produces
+  them. `local.efficiency` runs it for ten seconds of simulated video and
+  retains the JSON report, failing closed if the report is not written or does
+  not reach the audio gate; it compares no thresholds, because the claim is
+  that every number is measured and stated against its machine.
+- **Three suites have acceptance targets.** The behavioral acceptance gate was
+  blocked on every suite but the scenario aggregate, because no floor had been
+  registered. Realtime-CU, the cascade Meeting Assistant, and FDB v1.5 now
+  carry registered aggregate, per-case, safety, deadline, and latency targets
+  derived from their retained, independently reopened complete runs and cited
+  to them by artifact, revision, and executable digest. They are non-regression
+  floors - Realtime-CU's aggregate is 8 of 16 and FDB v1.5's interruption
+  yield median is 2.5 seconds, which is where the runtime is rather than where
+  it should be - and a cross-check confirmed each floor accepts the run it came
+  from. FD-Bench, FDB v3, and both τ-Voice conditions stay unavailable, each
+  now saying exactly why there is nothing to derive a floor from.
 - **A missing tool is a failure in a release run, everywhere.** The official
   client, portable client, and Python sidecar stages of `check.sh` already
   refused to report a claim they had not checked; the Go tests that need

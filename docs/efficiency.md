@@ -11,6 +11,10 @@ Reproduce them:
 openrealtime efficiency -seconds 60
 ```
 
+The release matrix runs the same command as the `local.efficiency` gate and
+retains its JSON report, so a release record carries the numbers for the
+machine it was cut on beside the reference numbers below.
+
 ## Reference machine
 
 | | |
