@@ -294,6 +294,53 @@
 
 ### Operations
 
+- **A session can no longer be held open forever by a client that stopped
+  reading.** The write used the session context, which ends only when the
+  session does, so a client whose receive window closed blocked the write with
+  nothing left to end it: the writer stopped draining, the send buffer filled,
+  the handler blocked, and the read loop blocked handing it the next event. The
+  session was wedged for the life of the process, holding a binding runtime and
+  its provider connections, while every health check reported a healthy server.
+  `-write-timeout` bounds one send. Separately, nothing told the server its peer
+  was gone — the library answers a client's pings, and a peer that vanishes
+  without a FIN leaves a connection open on this side only, which no write
+  discovers in a session where neither side is speaking, because the HTTP
+  server's `IdleTimeout` stops applying at the upgrade. `-keepalive-interval`
+  pings after an idle interval. Both causes are named in the log, because "the
+  peer stopped reading" and "the peer stopped answering" reach an operator as
+  the same symptom and have different fixes.
+- **A gateway can be told how many sessions it will take.** Admission checked
+  only whether the gateway was closing, and past that point a session holds a
+  runtime and its provider connections — so an unbounded gateway does not
+  degrade under load, it exhausts the process and takes every established
+  session with it. `-max-sessions` turns that into a 503 with `Retry-After`.
+  It defaults to unbounded, because capping an existing deployment at a number
+  chosen here would be a worse surprise than the exhaustion it prevents;
+  `/metrics` now reports `sessions_in_flight` and `sessions_rejected` so the
+  number can be chosen from evidence rather than guessed.
+- **Connecting costs 34 ms less and 1.6 MiB less.** Every session compiled the
+  pinned 370 KiB Realtime schema bundle into its own copy of 133 schemas before
+  it could check its first event. Correct, identical for every session, and
+  invisible to every test — the cost was connect latency and resident memory,
+  which at a thousand concurrent sessions is a third of a CPU-second and
+  1.6 GiB of duplicated immutable data. One process-wide bundle now serves them
+  all.
+- **Live providers share one warm connection pool.** Every adapter built its
+  own `http.Client`, which inherits a two-connection idle pool per host: right
+  for a program that talks to many hosts occasionally, wrong for a runtime that
+  calls one recogniser several times a second across every session, where the
+  third concurrent call pays a redial and a TLS handshake on the path a person
+  is waiting on. There is still no shared request deadline, because a
+  recogniser answering in tens of milliseconds and a reasoner answering in tens
+  of seconds cannot share one that means anything.
+- **The dependencies carried thirty-one advisories this code reached.** Both
+  modules pinned a Go 1.25.0 toolchain and `golang.org/x` releases that predated
+  their fixes; every advisory had been fixed upstream, some for months, and
+  nothing in the repository was arranged to notice. Both now declare the exact
+  patched toolchain, which is also what makes the release build reproducible
+  rather than reproducible-per-machine. CI runs `govulncheck` on every change,
+  Dependabot proposes the updates, and the container image is built on every
+  change like the release binaries already were.
 - **A policy model with no partial transcript measures as no effect.**
   Backchannel and turn projection answer a question about the partial
   transcript, and a batch recogniser asked for nothing before the endpoint
