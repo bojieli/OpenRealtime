@@ -320,7 +320,13 @@
   comes from the session and has no deadline. The Gemini Live client had the
   same gap on the foreground voice. All three are bounded now, each by its own
   cadence rather than a shared number, and `WriteTimeout` on the two adapters
-  is configurable.
+  is configurable. The shared Realtime client is the fourth: `Send` takes a
+  context, which is the right shape for a library, but the callers that matter
+  — the `upstream` binding forwarding a caller's audio to a remote endpoint,
+  and the WebRTC adapter bridging a peer — hold a session-scoped socket and
+  pass the session's context, which has no deadline. Every one of these fails
+  the same way: not slowly, but silently and forever, because the write holds
+  a lock that every later write needs.
 - **A gateway can be told how many sessions it will take.** Admission checked
   only whether the gateway was closing, and past that point a session holds a
   runtime and its provider connections — so an unbounded gateway does not

@@ -43,6 +43,22 @@ type Config struct {
 	ReadLimit int64
 	// DialTimeout bounds connection establishment.
 	DialTimeout time.Duration
+	// WriteTimeout bounds one send on an established connection. Zero selects
+	// the shipped default; a negative value removes the bound.
+	//
+	// Send takes a context, so a caller can always bound its own call - but
+	// the callers that matter here hold a session-scoped socket and pass the
+	// session's context, which ends when the conversation does. A peer that
+	// stops reading then blocks the send with nothing left to end it, and
+	// because Send holds the write lock, every later send blocks behind the
+	// first. The upstream binding forwards a caller's audio through this, so
+	// what stops is the conversation, with no error anywhere to say why.
+	//
+	// Thirty seconds rather than a cadence: this client carries whole Realtime
+	// events to a Realtime server rather than frames to one provider, and the
+	// bound only has to be past any stall a congested link produces and short
+	// of forever. A caller whose traffic has a tighter cadence sets its own.
+	WriteTimeout time.Duration
 	// LifetimeContext optionally owns the established connection's receive
 	// loop independently from the Dial call's setup context. Most callers leave
 	// it nil. Measurement drivers use it when a task deadline must stop behavior
@@ -118,6 +134,9 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 	if config.DialTimeout <= 0 {
 		config.DialTimeout = 30 * time.Second
 	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = 30 * time.Second
+	}
 	url := config.URL
 	if strings.TrimSpace(config.Model) != "" && !strings.Contains(url, "model=") {
 		separator := "?"
@@ -177,7 +196,15 @@ func (client *Client) Send(ctx context.Context, value any) error {
 	if client.closed.Load() {
 		return errors.New("Realtime client is closed")
 	}
-	return client.connection.Write(ctx, websocket.MessageText, encoded)
+	if client.config.WriteTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, client.config.WriteTimeout)
+		defer cancel()
+	}
+	if err := client.connection.Write(ctx, websocket.MessageText, encoded); err != nil {
+		return fmt.Errorf("send to the Realtime endpoint: %w", err)
+	}
+	return nil
 }
 
 // Close ends the connection.
