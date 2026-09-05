@@ -22,6 +22,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/review"
 	reviewmedia "github.com/bojieli/OpenRealtime/bench/review/media"
 	"github.com/bojieli/OpenRealtime/bench/review/media/ffmpeg"
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestRealFFmpegProducesAttestedSynchronizedReviewBundle(t *testing.T) {
@@ -386,7 +387,7 @@ func requireTools(t *testing.T) ffmpeg.Options {
 	for _, name := range []string{"ffmpeg", "ffprobe", "bwrap"} {
 		path, err := exec.LookPath(name)
 		if err != nil {
-			t.Skipf("%s is not installed", name)
+			testgate.Missing(t, name)
 		}
 		absolute, err := filepath.Abs(path)
 		if err != nil {

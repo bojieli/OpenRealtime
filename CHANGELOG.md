@@ -109,6 +109,17 @@
 
 ### The protocol surface
 
+- **Sidecar protocol version 4 has a document.** It is the version the
+  graph-native runtime speaks - the locked omni, duplex, and upstream
+  external-model references dial it and `elements/model` mounts it - and it
+  was described only inside the implementation tracker. The reference now
+  covers the descriptor-backed handshake, attested readiness, per-port wire
+  and media negotiation, element frames, the limits, the Python base class,
+  mounting, and the fifteen-check conformance suite. The version table in the
+  v1 document and the `serve -sidecar-protocol` help say which versions the
+  legacy presets negotiate and that version 4 is reached through a launch
+  profile instead.
+
 - **An agent that is thinking keeps its turn open.** The reasoning phase is
   silent by construction, so a turn that needs it goes quiet for as long as the
   question is hard — and nothing said whether work was owed or the conversation
@@ -267,6 +278,19 @@
   so the silent no-op cannot be composed.
 
 ### The release gate
+
+- **A missing tool is a failure in a release run, everywhere.** The official
+  client, portable client, and Python sidecar stages of `check.sh` already
+  refused to report a claim they had not checked; the Go tests that need
+  node, Chromium, ffmpeg, ffprobe, bubblewrap, python3, or git still skipped
+  under `OPENREALTIME_RELEASE_GATE`, and `go test` printed ok for each. Every
+  such test now goes through `internal/testgate`: an ordinary run skips and
+  names the tool, a release run fails, and the helper's own subprocess test
+  proves both. Provisioned inputs that no gate installs - the pinned FDB v3
+  dataset, the local SenseVoice runtime - keep skipping, but say
+  `NOT VERIFIED` in one wording so a recorded skip reads as an unchecked
+  claim. The companion command gate also stops reading the variable as
+  exactly `1` while the script reads it as non-empty.
 
 - **The official-SDK check no longer races its own handshake.** It waited for
   `session.created` and then asserted `session.updated` had also arrived, which

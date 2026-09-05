@@ -425,7 +425,7 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.sidecarFloor, "floor", "", "who decides endpoints: engine or model; empty selects the binding's default")
 	flags.StringVar(&options.sidecarInteraction, "interaction-owner", "", "who selects interaction acts for a composed sidecar: engine or model")
 	flags.StringVar(&options.sidecarCapabilities, "sidecar-capabilities", "audio-input,audio-output,turn-generation", "available capabilities for -binding sidecar: audio-input, audio-output, visual-input, transcription, turn-generation, concurrent-io, native-floor, native-interaction, interaction-acts, text-injection")
-	flags.IntVar(&options.sidecarProtocol, "sidecar-protocol", 0, "sidecar protocol version; 0 selects the preset default (v1, v2 for typed interaction, or v3 for visual input)")
+	flags.IntVar(&options.sidecarProtocol, "sidecar-protocol", 0, "sidecar protocol version for the legacy presets; 0 selects the preset default (v1, v2 for typed interaction, or v3 for visual input); v4 element sidecars are mounted by a graph launch profile, not by this flag")
 	flags.StringVar(&options.sidecarVoice, "sidecar-voice", "",
 		"voice for a model that has more than one; empty leaves the choice to the model")
 	flags.SetOutput(output)

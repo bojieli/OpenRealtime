@@ -11,12 +11,13 @@ import (
 	"testing"
 
 	"github.com/bojieli/OpenRealtime/bench"
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestPinnedReleasedInventoryLoadsExactHundredTasks(t *testing.T) {
 	root := filepath.Join("..", "..", ".runtime", "full-duplex-bench-v3", "dataset", "fdb_v3_data_released")
 	if _, err := os.Stat(root); err != nil {
-		t.Skipf("prepared pinned FDB v3 dataset unavailable: %v", err)
+		testgate.Unprepared(t, "the prepared pinned FDB v3 dataset", err)
 	}
 	tasks, err := loadDataset(root, 0, &pinnedReleasedInventory)
 	if err != nil {

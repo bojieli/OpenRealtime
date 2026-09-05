@@ -25,6 +25,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench"
 	revieweval "github.com/bojieli/OpenRealtime/bench/review"
 	reviewmedia "github.com/bojieli/OpenRealtime/bench/review/media"
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 type fixtureReviewVideoFactory struct {
@@ -737,7 +738,7 @@ func TestReviewBundleRealChromiumOptInEndToEnd(t *testing.T) {
 	}
 	for _, tool := range []string{"chromium", "ffmpeg", "ffprobe", "bwrap"} {
 		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s is not installed", tool)
+			testgate.Missing(t, tool)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -855,7 +856,7 @@ func TestReviewBundleRealChromiumFFmpegFullDecodeExactSixteenOptInEndToEnd(t *te
 	}
 	for _, tool := range []string{"chromium", "ffmpeg", "ffprobe", "bwrap"} {
 		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s is not installed", tool)
+			testgate.Missing(t, tool)
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)

@@ -70,6 +70,7 @@ The binding-specific references are:
 | External model process boundary | Stable base | [Sidecar protocol v1](sidecar-protocol-1.md) |
 | Interaction acts over sidecars | Experimental additive reference | [Sidecar protocol v2](sidecar-protocol-2.md) |
 | Direct images and bounded fast actions | Experimental additive reference | [Sidecar protocol v3](sidecar-protocol-3.md) |
+| Typed element ports and attested readiness | Current reference for graph-native models | [Sidecar protocol v4](sidecar-protocol-4.md) |
 | Graph launch and inspection | Current reference | [Graph-native assembly](graph-native-assembly.md) |
 | Client and presentation composition | Shipped design | [Composable presentation](composable-presentation.md) |
 | LiveKit adapter | Integration guide | [LiveKit integration](../integrations/livekit/README.md) |

@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestRealtimeCUWhisperServiceHandleRequiresExactWriteSealedMemfd(t *testing.T) {
@@ -70,7 +72,7 @@ func TestRealtimeCUWhisperServiceHandleRequiresExactWriteSealedMemfd(t *testing.
 func TestWhisperPythonServiceIdentityRejectsEveryUnsealedOrMisnamedHandle(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	workingDirectory, err := os.Getwd()
 	if err != nil {

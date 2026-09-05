@@ -11,12 +11,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestExactMatroskaCarriesMicrosecondPTSAndDurations(t *testing.T) {
 	probe, err := exec.LookPath("ffprobe")
 	if err != nil {
-		t.Skip("ffprobe is not installed")
+		testgate.Missing(t, "ffprobe")
 	}
 	root := t.TempDir()
 	paths := []string{"frames/screen/000001.png", "frames/screen/000002.jpg", "frames/screen/000003.png"}

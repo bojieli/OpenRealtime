@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-	"time"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/providers"

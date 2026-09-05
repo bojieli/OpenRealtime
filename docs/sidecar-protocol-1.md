@@ -160,3 +160,10 @@ CI, and how a new sidecar is developed before the GPU is involved.
 Version 1 is frozen at the OpenRealtime v1.0 release. Later versions are
 additive under a higher number; the handshake is where they are negotiated, and
 a sidecar that does not implement the engine's version says so and exits.
+
+| Version | Adds | Document |
+| --- | --- | --- |
+| 1 | the audio binding: PCM in, PCM out, respond and interrupt | this document |
+| 2 | typed interaction acts and selected ownership | [version 2](sidecar-protocol-2.md) |
+| 3 | direct encoded images and live tool catalogs | [version 3](sidecar-protocol-3.md) |
+| 4 | descriptor-declared element ports and attested readiness; the version graph-native external models speak | [version 4](sidecar-protocol-4.md) |

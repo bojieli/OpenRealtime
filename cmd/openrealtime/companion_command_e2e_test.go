@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 	"github.com/bojieli/OpenRealtime/macos"
 	"github.com/bojieli/OpenRealtime/presentation"
 	presentationbrowser "github.com/bojieli/OpenRealtime/presentation/browser"
@@ -30,7 +31,7 @@ import (
 // must appear in one unchanged clean server before shutdown releases every
 // listener and generated native configuration file.
 func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
-	if os.Getenv("OPENREALTIME_RELEASE_GATE") != "1" {
+	if !testgate.Release() {
 		t.Skip("set OPENREALTIME_RELEASE_GATE=1 for the real public companion command gate")
 	}
 	repositoryRoot, err := filepath.Abs(filepath.Join("..", ".."))

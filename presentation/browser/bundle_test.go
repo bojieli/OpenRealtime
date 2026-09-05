@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
 	"github.com/bojieli/OpenRealtime/presentation"
@@ -431,7 +432,7 @@ func TestCachedBundlesReturnMutationIsolatedValuesAndConstructConcurrently(t *te
 func TestEmbeddedBrowserModulesParseAsJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is not installed")
+		testgate.Missing(t, "node")
 	}
 	for _, name := range []string{
 		"bootstrap.js", "slots.js", "transport-websocket.js", "reducer.js", "text-view.js",
@@ -463,7 +464,7 @@ func TestEmbeddedBrowserModulesParseAsJavaScript(t *testing.T) {
 func TestEffectClientFailsClosedAndPublishesOnlyBoundedReferencesInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is not installed")
+		testgate.Missing(t, "node")
 	}
 	temporary := t.TempDir()
 	paths := make([]string, 0, 3)
@@ -491,7 +492,7 @@ func TestEffectClientFailsClosedAndPublishesOnlyBoundedReferencesInJavaScript(t 
 func TestSessionConfigurationComposesScopedContributionsInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is not installed")
+		testgate.Missing(t, "node")
 	}
 	content, err := browserModule("session-configuration.js")
 	if err != nil {
@@ -513,7 +514,7 @@ func TestSessionConfigurationComposesScopedContributionsInJavaScript(t *testing.
 func TestTransportSubscribersAreIsolatedInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is unavailable")
+		testgate.Missing(t, "node")
 	}
 	websocket, err := filepath.Abs(filepath.Join("assets", "transport-websocket.js"))
 	if err != nil {
@@ -535,7 +536,7 @@ func TestTransportSubscribersAreIsolatedInJavaScript(t *testing.T) {
 func TestInspectionClientTreatsOnlyCapabilityRotationAsLifecycleInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is unavailable")
+		testgate.Missing(t, "node")
 	}
 	content, err := browserModule("inspection-client.js")
 	if err != nil {
@@ -557,7 +558,7 @@ func TestInspectionClientTreatsOnlyCapabilityRotationAsLifecycleInJavaScript(t *
 func TestInspectionViewJoinsExactStaticAndLiveEvidenceAsTextInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is unavailable")
+		testgate.Missing(t, "node")
 	}
 	content, err := browserModule("inspection-view.js")
 	if err != nil {
@@ -579,7 +580,7 @@ func TestInspectionViewJoinsExactStaticAndLiveEvidenceAsTextInJavaScript(t *test
 func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is unavailable")
+		testgate.Missing(t, "node")
 	}
 	temporary := t.TempDir()
 	names := []string{
@@ -648,7 +649,7 @@ func TestManagementClientsKeepOperatorAuthorityStrictBoundedAndPrivateInJavaScri
 func TestManagementViewsRenderMetadataAsTextAndDisposeInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is unavailable")
+		testgate.Missing(t, "node")
 	}
 	temporary := t.TempDir()
 	names := []string{
@@ -679,7 +680,7 @@ func TestManagementViewsRenderMetadataAsTextAndDisposeInJavaScript(t *testing.T)
 func TestReducerAdapterPublishesOnlyCanonicalAcceptedEventsInJavaScript(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is not installed")
+		testgate.Missing(t, "node")
 	}
 	content, err := browserModule("reducer.js")
 	if err != nil {

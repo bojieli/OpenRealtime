@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 type mutableRealtimeCUProcessSource struct {
@@ -689,7 +691,7 @@ func TestRealtimeCURuntimePackageRootsUseListenerExecutableAndWorkingDirectory(t
 	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
 		python, err = exec.LookPath("python3")
 		if err != nil {
-			t.Skip("Python is unavailable")
+			testgate.Missing(t, "python3")
 		}
 		python, err = filepath.Abs(python)
 		if err != nil {
@@ -814,7 +816,7 @@ func TestSenseVoiceServiceLoadedModelDigestMatchesIndependentGoVerifier(t *testi
 	repository := filepath.Clean(filepath.Join(workingDirectory, "..", ".."))
 	python := filepath.Join(repository, ".runtime", "sensevoice", "bin", "python")
 	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
-		t.Skip("local SenseVoice Python runtime is unavailable")
+		testgate.Unprepared(t, "the local SenseVoice Python runtime at "+python, nil)
 	}
 	command := exec.Command(python, "-B", "-c",
 		"import server,sys; print(server.loaded_model_digest(sys.argv[1])); print('|'.join(server.service_module_identity()))", root)
@@ -874,7 +876,7 @@ func TestWhisperServiceLoadedModelDigestMatchesIndependentGoVerifier(t *testing.
 	if info, err := os.Stat(python); err != nil || !info.Mode().IsRegular() {
 		python, err = exec.LookPath("python3")
 		if err != nil {
-			t.Skip("Python is unavailable")
+			testgate.Missing(t, "python3")
 		}
 	}
 	command := exec.Command(python, "-B", "-c",
@@ -906,7 +908,7 @@ func TestWhisperServiceLoadedModelDigestMatchesIndependentGoVerifier(t *testing.
 func TestWhisperServiceDependencyDigestMatchesIndependentGoVerifier(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	root := t.TempDir()
 	module := filepath.Join(root, "fixture_dependency")
@@ -968,7 +970,7 @@ print(server.dependency_material_digest([sys.argv[2]]))
 func TestWhisperDependencyImportGuardNeverConsumesPreexistingBytecode(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -1029,7 +1031,7 @@ if guarded.VALUE != "GOOD":
 func TestWhisperDependencyDigestRejectsSymlinkAndExternalHardLinkAliases(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -1094,7 +1096,7 @@ else:
 func TestWhisperServiceRejectsLoaderWindowModelSwap(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	revision := strings.Repeat("b", 40)
 	model := filepath.Join(t.TempDir(), revision)
@@ -1168,7 +1170,7 @@ else:
 func TestWhisperServiceRejectsLoaderWindowCampaignAncestorSwap(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	revision := strings.Repeat("d", 40)
 	model := filepath.Join(t.TempDir(), revision)
@@ -1234,7 +1236,7 @@ else:
 func TestWhisperServiceRejectsDependencyModuleSwapAndRestoreDuringImport(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	revision := strings.Repeat("e", 40)
 	model := filepath.Join(t.TempDir(), revision)
@@ -1298,7 +1300,7 @@ if pathlib.Path(sys.argv[3], "faster_whisper.py").read_text() != "# restored GOO
 func TestWhisperExistingListenerVerifierRejectsStaleProcessAndHTTPFailure(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("Python is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {

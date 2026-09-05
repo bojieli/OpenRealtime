@@ -14,6 +14,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestInspectionViewMatchesClosedInspectionVocabularies(t *testing.T) {
@@ -148,10 +149,7 @@ func requireInspectionChromium(t testing.TB) string {
 	if chromium != "" {
 		return chromium
 	}
-	if os.Getenv("OPENREALTIME_RELEASE_GATE") != "" {
-		t.Fatal("chromium is not installed; the release gate requires the real Chromium presentation tests")
-	}
-	t.Skip("chromium is not installed")
+	testgate.Missing(t, "chromium")
 	return ""
 }
 

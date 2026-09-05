@@ -20,6 +20,7 @@ import (
 	clientreducer "github.com/bojieli/OpenRealtime/client/reducer"
 	"github.com/bojieli/OpenRealtime/graph/manifest"
 	"github.com/bojieli/OpenRealtime/graph/syntax"
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 	"github.com/bojieli/OpenRealtime/internal/testserver"
 	"github.com/bojieli/OpenRealtime/management"
 	"github.com/bojieli/OpenRealtime/plugin"
@@ -1152,13 +1153,7 @@ func compileHostPlan(
 
 func requireBrowser(t *testing.T) (string, string) {
 	t.Helper()
-	missing := func(requirement string) {
-		message := requirement + " is not installed"
-		if os.Getenv("OPENREALTIME_RELEASE_GATE") != "" {
-			t.Fatal(message + "; the release gate requires the real Chromium presentation tests")
-		}
-		t.Skip(message)
-	}
+	missing := func(requirement string) { testgate.Missing(t, requirement) }
 	node, err := exec.LookPath("node")
 	if err != nil {
 		missing("node")
@@ -1199,7 +1194,7 @@ func TestRequireBrowserCannotSkipAReleaseGate(t *testing.T) {
 	}
 	releaseOutput, releaseErr := run(true)
 	if releaseErr == nil || !strings.Contains(string(releaseOutput),
-		"release gate requires the real Chromium presentation tests") {
+		"a release gate cannot skip what it was asked to verify") {
 		t.Fatalf("release browser prerequisite result: err=%v\n%s", releaseErr, releaseOutput)
 	}
 	localOutput, localErr := run(false)

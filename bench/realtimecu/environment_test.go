@@ -5,11 +5,13 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestOwnedBrowserEnvironmentSupportsMarkedGroundingEndToEnd(t *testing.T) {
 	if _, err := exec.LookPath("chromium"); err != nil {
-		t.Skip("chromium is not installed")
+		testgate.Missing(t, "chromium")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -72,7 +74,7 @@ func TestOwnedBrowserEnvironmentSupportsMarkedGroundingEndToEnd(t *testing.T) {
 
 func TestOwnedBrowserEnvironmentReportsStructuredBeforeCondition(t *testing.T) {
 	if _, err := exec.LookPath("chromium"); err != nil {
-		t.Skip("chromium is not installed")
+		testgate.Missing(t, "chromium")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

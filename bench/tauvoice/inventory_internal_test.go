@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 func TestInventoryLoaderUsesCleanPinnedInputsAndExplicitBaseSplit(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is required")
+		testgate.Missing(t, "git")
 	}
 	root := t.TempDir()
 	mustGit(t, root, "init", "--quiet")

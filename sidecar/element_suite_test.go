@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 	"github.com/bojieli/OpenRealtime/sidecar"
 )
 
@@ -63,7 +64,7 @@ func TestRunConformanceV4UsesDescriptorBackedElementProbe(t *testing.T) {
 func TestRunConformanceV4AgainstBundledPythonSDK(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("python3 is unavailable")
+		testgate.Missing(t, "python3")
 	}
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {

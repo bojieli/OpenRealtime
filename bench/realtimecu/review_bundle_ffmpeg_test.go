@@ -12,6 +12,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench"
 	reviewmedia "github.com/bojieli/OpenRealtime/bench/review/media"
 	reviewffmpeg "github.com/bojieli/OpenRealtime/bench/review/media/ffmpeg"
+	"github.com/bojieli/OpenRealtime/internal/testgate"
 )
 
 type realtimeCUFFmpegFactory struct {
@@ -39,7 +40,7 @@ func TestReviewBundleRealFFmpegFullDecodeExactSixteenOptInEndToEnd(t *testing.T)
 	}
 	for _, tool := range []string{"ffmpeg", "ffprobe", "bwrap"} {
 		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s is not installed", tool)
+			testgate.Missing(t, tool)
 		}
 	}
 	directory := filepath.Join(t.TempDir(), "review")
