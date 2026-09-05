@@ -1863,6 +1863,27 @@ run scope without contributing a separate completion quota.
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
+### 2026-09-05 atomic continuation commit repair
+
+Inspection of the safe-point boundary found a separate concurrency defect in
+`trajectory.AppendBatchAfter`: it checked the canonical suffix for superseding
+evidence, released the lock, and reacquired it to append. A user correction
+could enter that gap and be followed by a successfully committed stale tool
+call. The store now holds one lock through validation and the complete batch
+append. Unrelated assistant speech remains compatible with concurrent reasoning;
+the repair does not replace semantic freshness with a strict version check.
+
+A competing-producer regression reproduced the stale booking after a user's
+stop observation on the unchanged implementation. It checks canonical order
+across competing continuation and observation writers. Separate controls require
+a tool call to commit after harmless speech and refuse it after new user
+evidence. The trajectory and continuation packages pass with the race detector;
+restoring the old implementation through a source overlay makes the concurrent
+regression fail on a stale tool call. This fixes the shared safe-point primitive
+used by the continuation runner; it does not attribute any historical
+recording's omission to this race or close the remaining graph-routing and
+lifecycle gates.
+
 ### 2026-09-05 settlement replay repair
 
 Following the historical post-success loops into the remaining ordering cases

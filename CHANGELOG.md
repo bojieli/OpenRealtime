@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- Continuation commits now check for superseding evidence and append output
+  under one trajectory lock. A concurrent user correction can no longer enter
+  between those operations and leave a stale answer or tool call committed
+  after it. Unrelated assistant speech still allows reasoning to complete.
+
 - Computer-use settlement remembers which canonical result already released
   continuation. A delayed copy of its visual consequence can no longer request
   a second completion decision and block settlement of the next action. New

@@ -606,8 +606,8 @@ func (store *Store) AppendBatchAt(expectedVersion uint64, items []Item) error {
 	return store.appendBatch(&expectedVersion, items)
 }
 
-// AppendBatchAfter appends only when nothing that matters has been appended
-// since baseVersion.
+// AppendBatchAfter atomically checks that nothing that matters has been
+// appended since baseVersion and appends the batch.
 //
 // It exists because "the version moved" and "what I reasoned from is no longer
 // true" are different statements, and only the second is a reason to throw
@@ -616,7 +616,8 @@ func (store *Store) AppendBatchAt(expectedVersion uint64, items []Item) error {
 // nothing the reasoner relied on.
 //
 // The caller supplies supersedes, because only the caller knows what its
-// output depended on. The store knows what arrived.
+// output depended on. The store knows what arrived. The predicate runs under
+// the store lock and must not call back into the store or mutate the item.
 func (store *Store) AppendBatchAfter(baseVersion uint64, supersedes func(Item) bool, items []Item) error {
 	if supersedes == nil {
 		return store.AppendBatchAt(baseVersion, items)
@@ -625,21 +626,19 @@ func (store *Store) AppendBatchAfter(baseVersion uint64, supersedes func(Item) b
 		return errors.New("trajectory append batch is empty")
 	}
 	store.mu.Lock()
+	defer store.mu.Unlock()
 	if baseVersion > uint64(len(store.items)) {
 		current := uint64(len(store.items))
-		store.mu.Unlock()
 		return fmt.Errorf("%w: base %d, current %d", ErrVersionConflict, baseVersion, current)
 	}
 	for _, item := range store.items[baseVersion:] {
 		if supersedes(item) {
 			current := uint64(len(store.items))
-			store.mu.Unlock()
 			return fmt.Errorf("%w: %s superseded output derived from version %d, current %d",
 				ErrVersionConflict, item.Kind, baseVersion, current)
 		}
 	}
-	store.mu.Unlock()
-	return store.appendBatch(nil, items)
+	return store.appendBatchLocked(nil, items)
 }
 
 func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
