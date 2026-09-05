@@ -50,7 +50,10 @@ stage() {
 
 check_formatting() {
   local unformatted
-  unformatted="$("${gofmt_bin}" -l . 2>/dev/null | grep -v '^\.runtime/' || true)"
+  # .runtime holds prepared environments and artifacts holds retained
+  # benchmark evidence, whose support programs are copied in verbatim and
+  # sealed by receipts; neither is source this gate may reformat or fail on.
+  unformatted="$("${gofmt_bin}" -l . 2>/dev/null | grep -v -e '^\.runtime/' -e '^artifacts/' || true)"
   if [[ -n "${unformatted}" ]]; then
     echo "these files are not gofmt-clean:" >&2
     printf '  %s\n' ${unformatted} >&2

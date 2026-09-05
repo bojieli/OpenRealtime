@@ -432,6 +432,13 @@
   make first. Under a loaded race run that turned a refused collision into an
   ordinary held probe and failed the gate. Both mounts now read a fixed clock,
   which is the collision the test exists to provoke.
+- **Retained evidence is not source the gofmt gate may fail on.** Benchmark
+  evidence directories under `artifacts/` carry the support programs that
+  produced them, copied in verbatim and sealed by receipts. The gofmt gate
+  walked them and failed the local matrix on formatting inside sealed
+  evidence, which could only be fixed by breaking a receipt. Both the matrix
+  gate and `check.sh` now exclude `artifacts/` the way they exclude
+  `.runtime/`; Go tooling already ignores those dot-directories.
 - **A missing tool is a failure in a release run, everywhere.** The official
   client, portable client, and Python sidecar stages of `check.sh` already
   refused to report a claim they had not checked; the Go tests that need

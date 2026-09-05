@@ -18,7 +18,10 @@ case "${action}" in
     go_bin="$(openrealtime_go_bin)"
     gofmt_bin="$(dirname -- "${go_bin}")/gofmt"
     cd -- "${repository_root}"
-    unformatted="$("${gofmt_bin}" -l . 2>/dev/null | grep -v '^\.runtime/' || true)"
+    # .runtime holds prepared environments and artifacts holds retained
+    # benchmark evidence, whose support programs are copied in verbatim and
+    # sealed by receipts; neither is source this gate may reformat or fail on.
+    unformatted="$("${gofmt_bin}" -l . 2>/dev/null | grep -v -e '^\.runtime/' -e '^artifacts/' || true)"
     if [[ -n "${unformatted}" ]]; then
       printf 'these files are not gofmt-clean:\n%s\n' "${unformatted}" >&2
       exit 1
