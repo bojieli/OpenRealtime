@@ -342,6 +342,9 @@ func publishScenarioGraphPopulationFixture(
 	newExecutor := func(
 		config graphnative.LiveExecutorConfig,
 	) (graphnative.AttemptExecutor, error) {
+		if config.Contract == nil || config.Contract.Fingerprint != selection.Contract.Fingerprint {
+			tb.Fatal("CLI did not bind the live executor to the selected contract")
+		}
 		return func(
 			ctx context.Context, key graphnative.AttemptKey, item scenario.Scenario,
 		) (graphnative.AttemptObservation, error) {

@@ -54,9 +54,12 @@ type AttemptRetainer func(context.Context, AttemptCapture) (MediaReference, erro
 // Voice and Retain are host-selected plug-ins; this package opens no speech,
 // storage, provider, server, presentation, or credential resource itself.
 type LiveExecutorConfig struct {
-	Voice   scenario.Voice
-	Session bench.SessionConfig
-	Retain  AttemptRetainer
+	// Contract fixes the selected case population and its attempt ordinals.
+	// Nil preserves the complete-suite default for existing callers.
+	Contract *Contract
+	Voice    scenario.Voice
+	Session  bench.SessionConfig
+	Retain   AttemptRetainer
 	// EvidenceContext is owned by the complete checklist run rather than one
 	// attempt. A timed-out attempt may therefore finish retaining bytes that
 	// SessionConfig already captured, while cancellation of the whole run still
@@ -72,6 +75,7 @@ type scenarioPlay func(
 ) (scenario.Result, error)
 
 type liveExecutor struct {
+	contract        Contract
 	voice           scenario.Voice
 	session         bench.SessionConfig
 	retain          AttemptRetainer
@@ -115,10 +119,21 @@ func newLiveExecutor(config LiveExecutorConfig, play scenarioPlay) (*liveExecuto
 	if err := validateLiveSession(config.Session); err != nil {
 		return nil, err
 	}
+	contract, err := BuildContract()
+	if err != nil {
+		return nil, err
+	}
+	if config.Contract != nil {
+		contract = config.Contract.Clone()
+		if err := contract.Validate(); err != nil {
+			return nil, fmt.Errorf("scenario live executor contract: %w", err)
+		}
+	}
 	session := config.Session
 	session.CaptureRuntimeEvidence = true
 	return &liveExecutor{
-		voice: config.Voice, session: session, retain: config.Retain, play: play,
+		contract: contract,
+		voice:    config.Voice, session: session, retain: config.Retain, play: play,
 		evidenceContext: config.EvidenceContext, evidenceTimeout: config.EvidenceTimeout,
 		claim: make(chan struct{}, 1),
 	}, nil
@@ -157,7 +172,7 @@ func (executor *liveExecutor) execute(
 	if cause := context.Cause(ctx); cause != nil {
 		return AttemptObservation{}, cause
 	}
-	if err := validateLiveAttempt(key, item); err != nil {
+	if err := validateLiveAttempt(executor.contract, key, item); err != nil {
 		return AttemptObservation{}, err
 	}
 	select {
@@ -309,15 +324,14 @@ func validateSubmittedResponseCreate(
 	return nil
 }
 
-func validateLiveAttempt(key AttemptKey, item scenario.Scenario) error {
-	suite := scenario.Suite()
-	if key.CaseOrdinal < 1 || key.CaseOrdinal > len(suite) || key.Trial < 1 {
-		return errors.New("scenario live attempt key is outside the canonical suite")
+func validateLiveAttempt(contract Contract, key AttemptKey, item scenario.Scenario) error {
+	if key.CaseOrdinal < 1 || key.CaseOrdinal > len(contract.Cases) || key.Trial < 1 {
+		return errors.New("scenario live attempt key is outside the selected contract")
 	}
-	want := suite[key.CaseOrdinal-1]
+	want := scenarioForChecklist(contract.Cases[key.CaseOrdinal-1].Name)
 	wantTaskID := want.Name + "#" + strconv.Itoa(key.Trial)
 	if key.CaseName != want.Name || key.TaskID != wantTaskID || !sameScenario(item, want) {
-		return errors.New("scenario live attempt key or fixture differs from the canonical suite")
+		return errors.New("scenario live attempt key or fixture differs from the selected contract")
 	}
 	return nil
 }

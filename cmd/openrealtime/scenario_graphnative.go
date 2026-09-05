@@ -752,7 +752,8 @@ func executeScenarioGraphChecklist(
 		return outcome, errors.New("run graph-native scenarios: nil review bundle")
 	}
 	executor, err := newExecutor(graphnative.LiveExecutorConfig{
-		Voice: voice, Session: session, Retain: bundle.Retain,
+		Contract: &selection.Contract,
+		Voice:    voice, Session: session, Retain: bundle.Retain,
 		EvidenceContext: ctx, EvidenceTimeout: scenarioGraphEvidenceTimeout,
 	})
 	if err != nil {

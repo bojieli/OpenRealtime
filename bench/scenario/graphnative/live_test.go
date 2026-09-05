@@ -116,6 +116,42 @@ func TestLiveExecutorInvokesAndRetainsExactTwelveCaseSuite(t *testing.T) {
 	}
 }
 
+func TestLiveExecutorRetainsSelectedCaseWithSubsetOrdinal(t *testing.T) {
+	item := scenario.Suite()[8]
+	contract, err := BuildContract(item.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := AttemptKey{CaseOrdinal: 1, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"}
+	var retained AttemptCapture
+	config := liveExecutorFixture(func(_ context.Context, capture AttemptCapture) (MediaReference, error) {
+		retained = capture
+		return liveMediaReference(capture.Key, submittedReceipts(capture.Submitted)), nil
+	})
+	config.Contract = &contract
+	executor, err := newLiveExecutor(config, successfulLivePlay(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The executor owns a snapshot; later authoring cannot switch its case.
+	contract.Cases[0].Name = "an ordinary question"
+	for _, wrong := range []AttemptKey{
+		{CaseOrdinal: 9, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"},
+		{CaseOrdinal: 1, CaseName: "an ordinary question", Trial: 1, TaskID: "an ordinary question#1"},
+	} {
+		if _, err := executor.execute(t.Context(), wrong, item); err == nil {
+			t.Fatalf("selected contract admitted wrong key: %+v", wrong)
+		}
+	}
+	observation, err := executor.execute(t.Context(), key, item)
+	if err != nil || observation.Media == nil || retained.Key != key {
+		t.Fatalf("selected canonical fixture with subset ordinal: media=%v retained=%+v error=%v", observation.Media, retained.Key, err)
+	}
+	if _, err := newLiveExecutor(config, successfulLivePlay(t)); err == nil {
+		t.Fatal("mutated contract was accepted")
+	}
+}
+
 func TestLiveExecutorRetainsDiagnosticAttemptWithoutPromotingRunFailure(t *testing.T) {
 	item := scenario.Suite()[10]
 	key := AttemptKey{CaseOrdinal: 11, CaseName: item.Name, Trial: 1, TaskID: item.Name + "#1"}
