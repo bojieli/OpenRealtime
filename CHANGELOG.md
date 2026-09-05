@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- Computer-use cancellation keeps settlement complete after its terminal
+  acknowledgement. Replaying an earlier pending update can no longer strand
+  cancellation while another component is stopping, and later publications
+  preserve the original acknowledgement used to authorize downstream cleanup.
+
 - Benchmark sessions now record passive observation and debug traffic without
   extending conversation deadlines. Continuing screen updates can no longer
   turn a recovered, settled computer-use task into a false session timeout.

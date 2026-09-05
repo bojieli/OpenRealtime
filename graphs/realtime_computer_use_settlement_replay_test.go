@@ -93,6 +93,7 @@ type realtimeCUReplayEnvelope struct {
 type realtimeCUReplayGate struct {
 	factoryName, portName string
 	hold, input           bool
+	match                 func(element.Envelope) bool
 	recording             *scenarioAddressingGraphRecorder
 	captured              chan realtimeCUReplayEnvelope
 }
@@ -152,6 +153,9 @@ func (p realtimeCUHeldInput) Receive(ctx context.Context) (element.Envelope, err
 	envelope, err := p.InputPort.Receive(ctx)
 	if err != nil {
 		return envelope, err
+	}
+	if p.gate.match != nil && !p.gate.match(envelope) {
+		return envelope, nil
 	}
 	released := make(chan struct{})
 	var once sync.Once

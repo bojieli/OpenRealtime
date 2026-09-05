@@ -20,6 +20,58 @@ import (
 
 const cancellationCoordinatorTestSession = "cancellation-coordinator-session"
 
+func TestCancellationCoordinatorLatePendingSettlementCannotUndoTerminalAcknowledgement(t *testing.T) {
+	fixture := newCancellationCoordinatorTestFixture(t, true)
+	fixture.request(t, "cancel-request")
+	transaction := fixture.runner.byRequest["cancel-request"]
+	pending := element.Envelope{
+		Type: policyelements.IntentSettlementOutcomeType(), ItemID: "settlement-pending",
+		SessionID: cancellationCoordinatorTestSession, Sequence: 1,
+		CausalParents: []string{transaction.settlement.ItemID, "terminal-decision"},
+		Payload: policyelements.IntentSettlementOutcome{
+			Kind: policyelements.IntentSettlementHeld, Operation: "cancel",
+			SessionID:           cancellationCoordinatorTestSession,
+			DurableIntentItemID: transaction.intent.TrajectoryItemID,
+			Code:                "terminal_ack_pending", StateRevisionBefore: 1, StateRevisionAfter: 2, FinishedNS: 10,
+		},
+	}
+	terminal := pending.Clone()
+	terminal.ItemID, terminal.Sequence = "settlement-terminal", 2
+	outcome := terminal.Payload.(policyelements.IntentSettlementOutcome)
+	outcome.Kind, outcome.Operation, outcome.Code = policyelements.IntentSettlementCanceled, "ack", "canceled_after_terminal_ack"
+	outcome.StateRevisionBefore, outcome.StateRevisionAfter, outcome.FinishedNS = 2, 3, 11
+	terminal.Payload = outcome
+	if err := fixture.runner.acceptSettlementOutcome(t.Context(), pending); err != nil {
+		t.Fatal(err)
+	}
+	if transaction.settlementDone || transaction.activationSent || !fixture.lastOutcome(t).PendingSettlement {
+		t.Fatal("a pending outcome was mistaken for terminal settlement")
+	}
+	if err := fixture.runner.acceptSettlementOutcome(t.Context(), terminal); err != nil {
+		t.Fatal(err)
+	}
+	// Later acknowledgements can be new publications of the same completed
+	// cancellation. They must not replace the first exact authorizer either.
+	laterAck := terminal.Clone()
+	laterAck.ItemID = "later-terminal-publication"
+	laterCancel := pending.Clone()
+	laterCancel.ItemID = "later-cancel-publication"
+	cancelOutcome := laterCancel.Payload.(policyelements.IntentSettlementOutcome)
+	cancelOutcome.Kind, cancelOutcome.Code = policyelements.IntentSettlementIgnored, "duplicate_cancellation"
+	laterCancel.Payload = cancelOutcome
+	for _, envelope := range []element.Envelope{pending, terminal, laterAck, laterCancel} {
+		if err := fixture.runner.acceptSettlementOutcome(t.Context(), envelope); err != nil {
+			t.Fatal(err)
+		}
+		if !transaction.settlementDone || !reflect.DeepEqual(transaction.settlementAuthorizer, terminal) {
+			t.Fatalf("%s revoked or rebound the terminal settlement acknowledgement", envelope.ItemID)
+		}
+		if fixture.lastOutcome(t).PendingSettlement {
+			t.Fatal("consumer was told settlement was pending after terminal acknowledgement")
+		}
+	}
+}
+
 type cancellationCoordinatorTestFixture struct {
 	runner *cancellationCoordinatorRunner
 	store  *trajectory.Store

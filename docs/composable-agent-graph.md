@@ -1863,6 +1863,29 @@ run scope without contributing a separate completion quota.
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
 
+### 2026-09-05 monotonic cancellation acknowledgement repair
+
+The remaining connected ordering checks exposed a real cancellation stall.
+After settlement sent its terminal acknowledgement, replaying the earlier
+`terminal_ack_pending` outcome reset the coordinator's settlement-complete flag.
+If another component was still stopping, cancellation could remain waiting for
+an acknowledgement that had already arrived.
+
+Coordinator revision 5 retains completion and the first terminal authorizer
+through later pending updates, duplicate acknowledgements, and repeated
+cancellation publications. It continues to require each independent downstream
+acknowledgement. The locked production graph now delays activation's terminal
+acknowledgement, records cancellation, and replays the initial pending outcome
+after terminal delivery while the disposition-producer acknowledgement is
+held. A same-input-lane processing sentinel proves the replay was consumed.
+Releasing the producer completes cancellation, changing cadence cannot revive
+the old intent, and a fresh replacement intent executes and settles normally.
+The old coordinator fails both this mounted case and the focused authorizer
+regression when restored with a source overlay. Descriptor, runtime, lock,
+graph/plan identities, and production launch checks advance together. This
+closes the reproduced pending-after-terminal defect; disposition delivery and
+acknowledgement replay across distinct cancellation transactions remain open.
+
 ### 2026-09-05 full-session recovery and passive-traffic timeout repair
 
 A controlled WebSocket regression now connects the locked production
@@ -3910,9 +3933,14 @@ the required new 180-attempt sample.
           old duplicate terminals after a new intent starts, terminal delivery
           before activation's model-result copy, and cancellation recorded
           before a delayed terminal is delivered. The replay case exposed and
-          now guards the consumed-result watermark repair. Remaining exact
-          disposition/acknowledgement reorder combinations keep this broad item
-          open. A separate mounted acknowledgement test rejects a different
+          now guards the consumed-result watermark repair. A further mounted
+          case replays a pending cancellation outcome after the terminal
+          acknowledgement while producer quiescence is delayed; coordinator
+          revision 5 retains completion and the original terminal authorizer.
+          Cancellation completes after producer release and a fresh intent
+          remains usable. Remaining disposition delivery and acknowledgement
+          replay across distinct cancellation transactions keep this broad
+          item open. A separate mounted acknowledgement test rejects a different
           generation, then accepts the exact value and ignores three duplicates.
         - [x] Implement and exercise explicit bounded `indeterminate` retry as
           graph policy while preserving the immutable probe, serialized client

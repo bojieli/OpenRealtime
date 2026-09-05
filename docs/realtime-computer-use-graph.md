@@ -142,6 +142,20 @@ activation publishes the old cancellation and any pending cleanup first and
 then automatically revalidates and replays that retained admission. The newer
 task does not depend on an unrelated subsequent frame to start.
 
+Coordinator revision 5 makes settlement completion monotonic within an exact
+cancellation transaction. After terminal acknowledgement, a delayed copy of
+`terminal_ack_pending` cannot restore the pending flag, and later cancellation
+or acknowledgement publications cannot replace the first terminal authorizer.
+Independent producer, activation, model, and action acknowledgements remain
+required. A locked production-graph regression delays the terminal, records
+cancellation, then replays its earlier pending update after the terminal while
+the producer acknowledgement is held. Releasing the producer completes
+cancellation; cadence leaves the old intent quiet and a fresh intent executes
+and settles normally. The descriptor is
+`sha256:49da736357b7011d3e814cc268b2068a912a7ca7215b9800996eeff4554541f7`,
+with runtime `/session-cancellation-coordinator/v5`, implementation revision 5,
+and an unchanged configuration and state schema.
+
 ## Application profile and plugin registry
 
 The serializable application-owned part of the launch profile contains only

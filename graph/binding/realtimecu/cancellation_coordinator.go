@@ -28,7 +28,7 @@ import (
 const (
 	CancellationCoordinatorReference    = "policy.RealtimeComputerUseCancellationCoordinator"
 	CancellationCoordinatorConfigSchema = "schema://openrealtime/realtime-cu/session-cancellation-coordinator-config/v1"
-	cancellationCoordinatorRuntimeID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v4"
+	cancellationCoordinatorRuntimeID    = "go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v5"
 
 	defaultCancellationTransactions = 64
 	defaultCancellationTombstones   = 256
@@ -68,7 +68,7 @@ func CancellationCoordinatorDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          CancellationCoordinatorReference,
-		Revision:      4,
+		Revision:      5,
 		Ports: []element.Port{
 			{Name: "request", Direction: element.Input, Type: sessionCancellationType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -488,7 +488,7 @@ type cancellationCoordinatorRunner struct {
 
 func (runner *cancellationCoordinatorRunner) Run(parent context.Context) error {
 	if err := reportElementRuntime(runner.resolution, cancellationCoordinatorRuntimeID,
-		"implementation:4", CancellationCoordinatorDescriptor()); err != nil {
+		"implementation:5", CancellationCoordinatorDescriptor()); err != nil {
 		return err
 	}
 	if err := runner.publishState(parent, element.Envelope{ItemID: runner.instance + ":startup"}); err != nil {
@@ -732,16 +732,22 @@ func (runner *cancellationCoordinatorRunner) acceptSettlementOutcome(
 				fmt.Sprintf("settlement cancellation reached %s/%s", outcome.Kind, outcome.Code))
 		}
 		transaction.settlementSeen = true
-		transaction.settlementDone = settlementCancellationTerminal(outcome)
-		if transaction.settlementDone {
+		// Settlement completion is monotonic for this exact cancellation.
+		// A delayed copy of terminal_ack_pending may arrive while another
+		// component is still quiescing; it cannot revoke an acknowledgement
+		// already received or replace the authority used by downstream stages.
+		if !transaction.settlementDone && settlementCancellationTerminal(outcome) {
+			transaction.settlementDone = true
 			transaction.settlementAuthorizer = envelope.Clone()
 		}
 	case "ack":
 		if !transaction.settlementSeen || outcome.Kind != policyelements.IntentSettlementCanceled {
 			return nil
 		}
-		transaction.settlementDone = true
-		transaction.settlementAuthorizer = envelope.Clone()
+		if !transaction.settlementDone {
+			transaction.settlementDone = true
+			transaction.settlementAuthorizer = envelope.Clone()
+		}
 	default:
 		return nil
 	}

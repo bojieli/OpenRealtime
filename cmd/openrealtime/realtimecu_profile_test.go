@@ -77,8 +77,8 @@ func TestFreezeProductionRealtimeCUProfilePublishesExactInspectionCompanions(t *
 	}
 	coordinatorResolution := realtimeCUResolutionElement(t, frozen.Resolution, "cancellation_coordinator")
 	if coordinatorResolution.Runtime.ID !=
-		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v4" ||
-		coordinatorResolution.Runtime.Revision != "implementation:4" {
+		"go://github.com/bojieli/OpenRealtime/graph/binding/realtimecu/session-cancellation-coordinator/v5" ||
+		coordinatorResolution.Runtime.Revision != "implementation:5" {
 		t.Fatalf("frozen cancellation coordinator runtime = %+v", coordinatorResolution.Runtime)
 	}
 	settlementResolution := realtimeCUResolutionElement(t, frozen.Resolution, "settlement")
