@@ -13,6 +13,14 @@
 > Current bindings compose an ownership vector and independent capabilities;
 > the old names remain presets and evidence labels only.
 
+> Two documents this plan cites were never carried into the repository:
+> `docs/api-v2-proposal.md` (§6) and the human-study protocol
+> `docs/research/human-study-protocol-v0.1.md` (§9). The stable component
+> contract shipped as [Component API v1](api-v1.md) instead, and the human
+> preference study remains an unstarted, separate program; the
+> [measurement record](measurement.md#what-it-cannot-settle) says so without
+> naming a file.
+
 **Contents** — [1 What it is](#1-what-openrealtime-is) · [2 Architecture](#2-architecture-a-data-plane-and-an-interaction-control-plane) · [3 Protocol & transports](#3-the-openrealtime-protocol-version-1) · [4 Efficiency](#4-efficiency) · [5 Safety](#5-safety-and-authority) · [6 Exists vs new](#6-what-exists-versus-what-is-new) · [7 Build phases](#7-build-phases) · [8 Definition of done](#8-definition-of-done-for-v10) · [9 Measurement](#9-measurement-program-post-launch-continuous) · [10 Risks](#10-risks) · [11 Decisions](#11-decisions-taken-and-what-remains-open)
 
 ## 1. What OpenRealtime is
