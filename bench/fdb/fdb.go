@@ -350,7 +350,7 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 	// latency rather than about overlap.
 	const lookback = 500.0
 	before := transcript.AudioBetween(retained.EventStartMS-lookback, retained.EventStartMS)
-	speaking := before > 0
+	speaking := before >= audibleMS
 
 	yieldWindow := float64(retained.YieldWindowMS)
 	after := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+yieldWindow)
@@ -392,8 +392,20 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 	holdWindow := float64(retained.HoldWindowMS)
 	held := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+holdWindow)
 	outcome.Metrics["agent_audio_hold_window_ms"] = held
-	outcome.Passed = held > 0
+	outcome.Passed = held >= audibleMS
 }
+
+// audibleMS is the least agent audio that counts as the agent speaking.
+//
+// The measurement is a duration in milliseconds and the tests either side of
+// it used to ask for more than zero, which one sample of 24 kHz audio -
+// 0.0417 ms - satisfies. A recording whose answer ended a single sample inside
+// the lookback window was therefore judged applicable, asked to hold through an
+// overlap it had already finished, and failed for it; two recordings in the
+// 2026-09-05 FDB v1.5 campaign were exactly that. Twenty milliseconds is one
+// packet at the rate this engine works in, which is the smallest quantity of
+// speech anyone could hear and the smallest the pipeline can deliver.
+const audibleMS = 20.0
 
 // stopLatency is how long the interrupted utterance kept going.
 //

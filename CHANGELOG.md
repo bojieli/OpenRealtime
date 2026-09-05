@@ -394,6 +394,25 @@
 
 ### Turn-taking
 
+- **The agent stopped speaking for voices that were not talking to it.** When
+  the agent's voice lifecycle reached the interaction policy, keep-speaking and
+  stop-speaking became the acts available during speech - and the instruction
+  defined them without ever saying how to choose. Every other act it governs is
+  carried by a worked example; these two were the only ones without. A complete
+  FDB v1.5 campaign is what that cost: sixteen recordings that had held through
+  background speech or speech addressed to somebody else now stopped for it,
+  and thirty-five more never reached the overlap at all. The instruction now
+  says that stopping is not the safe answer, that only words directed at the
+  agent and changing what it should do take its floor, and carries a worked
+  example of each act with the agent mid-sentence.
+- **One sample of audio is not the agent speaking.** The FDB scorer's two audio
+  tests asked for more than zero milliseconds, which a single 24 kHz sample -
+  0.0417 ms - satisfies. A recording whose answer ended one sample inside the
+  lookback window was judged applicable, asked to hold through an overlap it
+  had already finished, and failed for it. Both tests now want one packet of
+  audio, which is the least the pipeline can deliver and the least anyone
+  could hear.
+
 - **A final transcript that lands mid-speech no longer kills the session.**
   Since the semantic policy learned whether the agent is speaking, its
   executable acts during speech have been the two speech controls, but the

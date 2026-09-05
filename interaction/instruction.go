@@ -143,6 +143,19 @@ func examples() []workedExample {
 			Speaker: "someone else in the room",
 			Heard:   "did you get the milk on the way in", Silence: "1300ms",
 		}, ActStaySilent, "Nothing makes acting necessary: a different voice asked somebody else in the room a question, and nobody has asked the agent to deal with them."},
+
+		{Situation{
+			Recent:        []string{"user: what is the UV index today"},
+			AgentSpeaking: true, AgentSaying: "The UV index today is 6, which is high",
+			Speaker: "someone else in the room", Heard: "I'm going to take a nap",
+			Silence: "200ms",
+		}, ActKeepSpeaking, "Somebody else in the room said something to nobody in particular while the agent was mid-sentence. It is not a correction, a question, or a request, and stopping would abandon the answer the person actually asked for."},
+
+		{Situation{
+			Recent:        []string{"user: read me the deployment checklist"},
+			AgentSpeaking: true, AgentSaying: "First, confirm the migration ran on the thirteenth",
+			Speaker: "user", Heard: "wait, no, the third", Silence: "150ms",
+		}, ActStopSpeaking, "The person this conversation is with is correcting what the agent is saying as it says it. Carrying on would keep asserting the thing they just told it was wrong."},
 	}
 }
 
@@ -199,6 +212,16 @@ func buildInstruction() string {
 			"worth engaging over, and that saying it out loud would be wasted.\n" +
 			"keep-speaking - the agent is mid-sentence and someone else has started; carry on anyway.\n" +
 			"stop-speaking - the agent is mid-sentence; stop and let them have the floor.\n\n" +
+			"When those two are the choice, the agent is already speaking and the question is only whether " +
+			"to abandon what it is saying. Stopping is not the safe answer: the person asked for the thing " +
+			"being said, and an agent that stops for every voice it hears finishes nothing. Carry on unless " +
+			"the words are directed at the agent and change what it should be doing - a correction of what " +
+			"it is saying, a different request, or an explicit taking of the floor such as wait, hold on, or " +
+			"actually. Speech from somebody else in the room, a remark addressed to nobody, and a listener's " +
+			"acknowledgement are all reasons to carry on, and the same evidence about who is speaking that " +
+			"governs answering governs this: a voice that is not talking to the agent does not take its " +
+			"floor. Judge it on what has actually been heard so far, never on where the sentence might be " +
+			"going.\n\n" +
 			"Anything other than staying silent, or carrying on with what the agent is already saying, needs a reason " +
 			"you could state in a sentence: a standing instruction whose condition has actually been met, an " +
 			"utterance that has genuinely finished, or something that will be too late if it waits. If you " +

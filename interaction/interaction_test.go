@@ -679,3 +679,37 @@ func TestValidateRefusesAProjectionTheFloorDoesNotConsult(t *testing.T) {
 		t.Fatalf("defaults: %v", err)
 	}
 }
+
+// Both speech-control acts must be taught, not merely listed.
+//
+// The two acts became reachable in the generic path when the agent's voice
+// lifecycle reached the policy, but the instruction defined them and said
+// nothing about choosing between them. The 2026-09-05 FDB v1.5 campaign is
+// what that cost: sixteen recordings where the agent had been holding through
+// background speech and speech addressed to somebody else stopped speaking for
+// it instead. Every other act in this instruction is carried by a worked
+// example that shows the evidence rather than the answer; these two were the
+// only ones without.
+func TestTheInstructionTeachesBothSpeechControlActs(t *testing.T) {
+	instruction := interaction.Instruction
+	for _, act := range []interaction.Act{interaction.ActKeepSpeaking, interaction.ActStopSpeaking} {
+		answer := "\n-> " + string(act) + " ("
+		if !strings.Contains(instruction, answer) {
+			t.Errorf("no worked example answers %q", act)
+		}
+	}
+	for _, phrase := range []string{
+		"somebody else in the room",
+		"acknowledgement",
+		"Stopping is not the safe answer",
+	} {
+		if !strings.Contains(instruction, phrase) {
+			t.Errorf("the instruction does not say when to keep speaking: missing %q", phrase)
+		}
+	}
+	// The examples must show a speaking agent, or they teach nothing about
+	// the instant these two acts exist for.
+	if !strings.Contains(instruction, "agent: voice output is queued or audible") {
+		t.Error("no worked example shows the agent mid-sentence")
+	}
+}
