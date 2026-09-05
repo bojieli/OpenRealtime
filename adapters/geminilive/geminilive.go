@@ -54,7 +54,11 @@ const (
 	OutputSampleRateHz = uint32(24_000)
 
 	defaultDialTimeout = 30 * time.Second
-	defaultReadLimit   = int64(8 << 20)
+	// A send here is one turn of audio or one control message. Five seconds
+	// is past any stall a congested link produces and far short of a wait a
+	// speaking person would sit through.
+	defaultWriteTimeout = 5 * time.Second
+	defaultReadLimit    = int64(8 << 20)
 	// pendingLimit bounds audio held while the handshake completes. It is
 	// generous: the handshake is one round trip and the alternative to holding
 	// is losing the opening syllable of a conversation.
@@ -76,6 +80,14 @@ type Config struct {
 	CallerSampleRateHz uint32
 	// DialTimeout bounds connection establishment.
 	DialTimeout time.Duration
+	// WriteTimeout bounds one send on an established connection. Zero selects
+	// the shipped default; a negative value removes the bound.
+	//
+	// The dial was bounded and the sends that follow it were not. The context
+	// reaching them comes from the session and has no deadline, so a stalled
+	// socket blocks a send that carries a caller's audio - and this client is
+	// the foreground voice, so what stops is the conversation.
+	WriteTimeout time.Duration
 	// ReadLimit bounds one inbound message.
 	ReadLimit int64
 	// HTTPClient dials the WebSocket.
@@ -136,6 +148,9 @@ func Dial(ctx context.Context, config Config) (*Client, error) {
 	}
 	if config.DialTimeout <= 0 {
 		config.DialTimeout = defaultDialTimeout
+	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = defaultWriteTimeout
 	}
 	if config.ReadLimit <= 0 {
 		config.ReadLimit = defaultReadLimit

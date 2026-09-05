@@ -309,6 +309,18 @@
   pings after an idle interval. Both causes are named in the log, because "the
   peer stopped reading" and "the peer stopped answering" reach an operator as
   the same symptom and have different fixes.
+- **A stalled socket no longer stops a conversation with no error.** The same
+  unbounded-write defect existed on three surfaces besides the gateway. The
+  presentation effect socket wrote on the session context under one mutex, so
+  a browser that stopped reading blocked not just its own write but every
+  write to that session, and kept one of the host's bounded slots for the life
+  of the process. The Deepgram listener bounded its dial and its drain and not
+  the send between them — the one call on the recogniser's hot path, made every
+  cadence while someone speaks, holding the listener's lock, on a context that
+  comes from the session and has no deadline. The Gemini Live client had the
+  same gap on the foreground voice. All three are bounded now, each by its own
+  cadence rather than a shared number, and `WriteTimeout` on the two adapters
+  is configurable.
 - **A gateway can be told how many sessions it will take.** Admission checked
   only whether the gateway was closing, and past that point a session holds a
   runtime and its provider connections — so an unbounded gateway does not

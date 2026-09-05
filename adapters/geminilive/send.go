@@ -212,6 +212,11 @@ func (client *Client) writeRaw(ctx context.Context, encoded []byte) error {
 		return errors.New("Gemini Live connection is closed")
 	default:
 	}
+	if client.config.WriteTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, client.config.WriteTimeout)
+		defer cancel()
+	}
 	if err := client.connection.Write(ctx, websocket.MessageText, encoded); err != nil {
 		return fmt.Errorf("send to Gemini Live: %w", err)
 	}

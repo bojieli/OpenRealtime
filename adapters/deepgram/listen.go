@@ -33,9 +33,10 @@ const (
 	// own turn-taking, so the general model is the right default here.
 	DefaultListenModel = "nova-3"
 
-	defaultDialTimeout = 15 * time.Second
-	defaultDrain       = 5 * time.Second
-	readLimit          = 1 << 20
+	defaultDialTimeout  = 15 * time.Second
+	defaultWriteTimeout = 5 * time.Second
+	defaultDrain        = 5 * time.Second
+	readLimit           = 1 << 20
 )
 
 // ListenConfig configures one recognition utterance.
@@ -86,6 +87,22 @@ type ListenConfig struct {
 	// DrainTimeout bounds how long Finalize waits for Deepgram to flush the
 	// results it still owes after the stream is closed.
 	DrainTimeout time.Duration
+	// WriteTimeout bounds one send on an established stream. Zero selects the
+	// shipped default; a negative value removes the bound.
+	//
+	// The dial and the drain were bounded and the sends between them were not,
+	// which leaves the one call on the hot path unbounded: PushFrame writes a
+	// frame every cadence, holding this listener's lock, on a context that
+	// comes from the session and therefore has no deadline. A stalled socket
+	// there does not slow recognition down, it stops it - and the block
+	// propagates back through the observer to the binding and then to the
+	// session's own event loop.
+	//
+	// The bound is this provider's cadence rather than a shared default: a
+	// frame of audio is a few kilobytes, and a streaming recogniser that has
+	// not accepted one in five seconds is not keeping up with a conversation
+	// whatever it does next.
+	WriteTimeout time.Duration
 	// HTTPClient dials the WebSocket. Empty uses the default client, which is
 	// what a test server needs overridden.
 	HTTPClient *http.Client
@@ -162,6 +179,9 @@ func NewListener(config ListenConfig) (*Listener, error) {
 	if config.DrainTimeout <= 0 {
 		config.DrainTimeout = defaultDrain
 	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = defaultWriteTimeout
+	}
 	config.Header = config.Header.Clone()
 	return &Listener{
 		config: config,
@@ -211,13 +231,29 @@ func (listener *Listener) PushFrame(
 		}
 		listener.inputRate = frame.SampleRateHz
 	}
-	if err := listener.connection.Write(ctx, websocket.MessageBinary, frame.PCM16LE); err != nil {
+	if err := listener.write(ctx, websocket.MessageBinary, frame.PCM16LE); err != nil {
 		return nil, fmt.Errorf("send Deepgram audio: %w", err)
 	}
 	listener.haveFrame = true
 	listener.nextFrameIndex = frame.Index + 1
 	listener.nextSourceSample = frame.SampleOffset + uint64(len(frame.PCM16LE)/2)
 	return listener.drainAvailable(), nil
+}
+
+// write sends one message with a bound on how long the socket may take it.
+//
+// The caller's context comes from the session and has no deadline of its own,
+// so without this a stalled Deepgram socket blocks the send forever while this
+// listener's lock is held.
+func (listener *Listener) write(
+	ctx context.Context, kind websocket.MessageType, payload []byte,
+) error {
+	if listener.config.WriteTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, listener.config.WriteTimeout)
+		defer cancel()
+	}
+	return listener.connection.Write(ctx, kind, payload)
 }
 
 // Finalize closes the stream, waits for the results Deepgram still owes, and
@@ -237,7 +273,7 @@ func (listener *Listener) Finalize(
 		return v1.PerceptionRevision{}, fmt.Errorf(
 			"Deepgram final source sample is %d; expected %d", sourceSample, listener.nextSourceSample)
 	}
-	if err := listener.connection.Write(ctx, websocket.MessageText, []byte(`{"type":"CloseStream"}`)); err != nil {
+	if err := listener.write(ctx, websocket.MessageText, []byte(`{"type":"CloseStream"}`)); err != nil {
 		return v1.PerceptionRevision{}, fmt.Errorf("close Deepgram stream: %w", err)
 	}
 	if err := listener.drainUntilClosed(ctx); err != nil {

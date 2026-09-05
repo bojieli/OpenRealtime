@@ -357,6 +357,19 @@ type effectConfig struct {
 	ExecutionMS     uint64 `json:"execution_timeout_ms,omitempty"`
 }
 
+// effectWriteTimeout bounds one socket write.
+//
+// It is not a configured limit because it is not a policy about effects: the
+// other bounds say how many calls and how large, and this one says how long a
+// peer may take to accept bytes before it counts as gone. Thirty seconds is
+// past any stall a congested link produces and short of forever.
+//
+// It is a variable rather than a constant only so a test can shorten it. A
+// test that had to wait the shipped bound is a test nobody runs, and this is
+// the one property here that cannot be checked any faster than the peer
+// stalls.
+var effectWriteTimeout = 30 * time.Second
+
 type effectLimits struct {
 	MaxSessions     int
 	MaxMessageBytes int64
@@ -1685,7 +1698,25 @@ func (session *effectSession) write(message effectServerMessage) error {
 	}
 	session.writeMu.Lock()
 	defer session.writeMu.Unlock()
-	return session.connection.Write(session.ctx, websocket.MessageText, encoded)
+	// Bounded, and the mutex above is why it matters more here than it looks.
+	//
+	// websocket.Write returns when the peer's receive window has room or when
+	// its context ends, and the session context ends only when the session
+	// does - so a browser that stops reading blocks this write with nothing
+	// left to end it. Because every write to a session goes through this lock,
+	// the first stalled one then blocks all of them, and the session holds one
+	// of the hub's bounded slots for the life of the process. A hub that has
+	// lost sixty-four peers that way is a hub that refuses everyone.
+	ctx, cancel := context.WithTimeout(session.ctx, effectWriteTimeout)
+	defer cancel()
+	if err := session.connection.Write(ctx, websocket.MessageText, encoded); err != nil {
+		if session.ctx.Err() == nil && ctx.Err() != nil {
+			return fmt.Errorf("effect peer stopped reading and the send did not complete in %s",
+				effectWriteTimeout)
+		}
+		return err
+	}
+	return nil
 }
 
 func (session *effectSession) writeProtocolError(code, message, id string) error {
