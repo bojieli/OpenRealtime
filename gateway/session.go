@@ -1103,12 +1103,23 @@ func (session *session) send(value map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if session.config.ValidateWire && !strings.HasPrefix(fmt.Sprint(value["type"]), "openrealtime.") {
-		message, decodeErr := protocol.Decode(encoded)
-		if decodeErr != nil {
-			return decodeErr
-		}
-		if validateErr := session.validator.Validate(protocol.ProfileRealtime, protocol.DirectionServer, message); validateErr != nil {
+	// The extension has its own vocabulary, and the pinned registry cannot
+	// know about it by construction, so asking the base validator about an
+	// openrealtime.* event would fail every one of them.
+	//
+	// The type is read by assertion rather than by fmt.Sprint because this
+	// runs on every outbound event, including one audio frame every twenty
+	// milliseconds, and formatting a value that is already a string to compare
+	// its prefix allocates for nothing.
+	eventType, _ := value["type"].(string)
+	if session.config.ValidateWire && !strings.HasPrefix(eventType, "openrealtime.") {
+		// ValidateEncoded rather than Decode-then-Validate: the latter parsed
+		// the envelope, copied the payload, and then parsed the whole document
+		// again, which on an audio delta meant copying and re-parsing the
+		// audio for no result the single pass does not produce.
+		if validateErr := session.validator.ValidateEncoded(
+			protocol.ProfileRealtime, protocol.DirectionServer, encoded,
+		); validateErr != nil {
 			return validateErr
 		}
 	}

@@ -53,9 +53,42 @@ func (validator *Validator) Validate(
 	direction Direction,
 	message Message,
 ) error {
-	definition, ok := Lookup(profile, direction, message.Type())
+	return validator.ValidateEncoded(profile, direction, message.raw)
+}
+
+// ValidateEncoded checks one complete encoded event without decoding it twice.
+//
+// It is the form a sender has, and the reason it exists is that the other form
+// made the same bytes into JSON twice: Decode parsed the envelope and copied
+// the payload so that Validate could parse the whole document again. A
+// response.output_audio.delta is a base64 audio frame every twenty
+// milliseconds for the life of every session, so the second parse was a
+// per-frame copy and re-parse of the audio itself.
+//
+// The type comes out of the same decoded document rather than a separate
+// envelope pass, which is where Decode was reading it from anyway.
+func (validator *Validator) ValidateEncoded(
+	profile Profile,
+	direction Direction,
+	raw []byte,
+) error {
+	var value any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return fmt.Errorf("decode event for validation: %w", err)
+	}
+	object, isObject := value.(map[string]any)
+	if !isObject {
+		return errors.New("an event must be a JSON object")
+	}
+	eventType, named := object["type"].(string)
+	if !named || eventType == "" {
+		return errors.New("event type must not be empty")
+	}
+	definition, ok := Lookup(profile, direction, EventType(eventType))
 	if !ok {
-		return fmt.Errorf("event %q is not defined for %s/%s", message.Type(), profile, direction)
+		return fmt.Errorf("event %q is not defined for %s/%s", eventType, profile, direction)
 	}
 	compiled := compiledBundle()
 	if compiled.err != nil {
@@ -65,14 +98,8 @@ func (validator *Validator) Validate(
 	if schema == nil {
 		return fmt.Errorf("schema %s was not compiled", definition.SchemaRef)
 	}
-	var value any
-	decoder := json.NewDecoder(bytes.NewReader(message.raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&value); err != nil {
-		return fmt.Errorf("decode event for validation: %w", err)
-	}
 	if err := schema.Validate(value); err != nil {
-		return fmt.Errorf("%s %s event is not OpenAI-compatible: %w", direction, message.Type(), err)
+		return fmt.Errorf("%s %s event is not OpenAI-compatible: %w", direction, eventType, err)
 	}
 	return nil
 }
