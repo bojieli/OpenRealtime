@@ -288,6 +288,17 @@
 
 ### The benchmark harness
 
+- **Interruption yielding is better, and the remaining floor is not what it
+  looked like.** Repeating the first thirty interruption recordings three
+  times puts the repaired tree at 46/74 applicable where single samples said
+  1/26 in August and 10/26 in September, so the improvement replicates. Six
+  recordings still fail every attempt. Two explanations for their one-second
+  yield were tested and both were wrong: a streaming recogniser is 164 ms
+  *worse* at the median rather than better, and cutting the policy's decision
+  deadline from 1,000 ms to 300 ms moves the latency cluster by 9 ms.
+  Something else holds a floor near one second, which is also FDB's yield
+  window, so the category is decided by tens of milliseconds either side of it.
+
 - **The first complete FDB v1.5 run since the interruption work.** Retained
   under `artifacts/fdb-candidate-full498-20260905-02-*` and not reportable:
   one recording reached no evaluation when the local policy socket broke under

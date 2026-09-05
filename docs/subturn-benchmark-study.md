@@ -826,6 +826,49 @@ support on its first use: every attempt carried execution evidence scoped to
 the recording rather than to the attempt, so every attempt after the first
 looked like evidence for a different task. Fixed, with the refusal as its test.
 
+## Interruption, repeated: what replicates and what sets the floor
+
+The interruption category is the one the September campaign moved most, and it
+had never been repeated. The first thirty `user_interruption` recordings were
+run three times against the repaired tree, then the same thirty against the
+shipped Deepgram profile, then again with one factor changed. Retained under
+`.runtime/fdb-verify-hold` and `.runtime/fdb-deepgram*`.
+
+| Configuration | Applicable passes | Yield p50 | Yield p90 | Yield max |
+| --- | ---: | ---: | ---: | ---: |
+| `fc8195ae`, SenseVoice, one attempt | 1/26 | | | |
+| `8276a03`, SenseVoice, one attempt | 10/26 | | | |
+| repaired, SenseVoice, three attempts | 46/74 | 924 ms | 1,531 ms | 4,162 ms |
+| repaired, Deepgram + event policy, three attempts | 23/70 | 1,088 ms | 1,375 ms | 2,173 ms |
+| the same with the decision deadline at 300 ms | 13/48 | 1,079 ms | 1,375 ms | |
+
+**The improvement replicates.** One attempt each said 1/26 then 10/26; three
+attempts say 46/74. Interruption yielding is substantially better than it was
+in August, and that survives being sampled more than once.
+
+**Six recordings fail every attempt** on the SenseVoice profile and thirteen on
+the Deepgram one. Those are the reproducible defects; the rest of the failures
+in any single run are not.
+
+**The floor is not the recogniser and not the decision deadline.** Both were
+tested and both were wrong. A batch recogniser cannot report an interruption
+until the speaker stops, which predicts that a streaming recogniser would yield
+sooner - it does not: the streaming profile's median yield is 164 ms *worse*.
+Its latencies then pile up immediately below one second - 949, 951, 955, 965,
+974, 983, 991 - exactly where the transcript policy's own 1,000 ms decision
+deadline sits, which predicts that shortening the deadline would move them. Cut
+to 300 ms, the cluster does not move: the median shifts by 9 ms and the p90 is
+identical.
+
+So something else in the stop path holds a floor near one second, and FDB's
+yield window is also one second, which is why the category's pass rate is
+decided by a few tens of milliseconds either side of it. The streaming profile
+is meanwhile much better behaved in the tail - 2,173 ms against 4,162 ms - so
+the two configurations are not ordered, they trade a floor against a tail. The
+next thing to look at is what already-synthesised audio does when cancellation
+arrives, since sentence-granular synthesis would produce exactly this shape;
+that is a hypothesis and it has not been tested.
+
 ## Which benchmark suites benefit
 
 Sub-turn classification is an interaction/timing intervention, not a universal
