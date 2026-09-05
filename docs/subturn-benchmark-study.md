@@ -759,6 +759,40 @@ applicable recordings - this run passes the first and fails the second. A
 complete campaign from a frozen candidate is still required before any of
 this can be acceptance evidence rather than a diagnostic.
 
+## What forty recordings, run three times, say about FDB v1.5
+
+The two repairs above were checked by rerunning the first forty
+`background_speech` recordings against the local profile. The runs are
+retained under `.runtime/fdb-verify-hold`. They are diagnostics, not cells.
+
+| Run | Scorer | Result |
+| --- | --- | ---: |
+| Same forty on `fc8195ae`, from the August campaign | lookback | 35/35 applicable |
+| Same forty on `8276a03`, from the September campaign | lookback | 25/31 applicable |
+| Rerun 1 on `da00505`, after the instruction repair | lookback | 26/30 applicable |
+| Rerun 2 on `da00505`, identical code | lookback | 26/29 applicable |
+| Rerun 3, after the contact repair | contact | 25/27 applicable |
+
+Two things come out of it, and the second was an accident.
+
+**The instruction repair holds up.** Spurious hold failures fell from four to
+two across the reruns, and the two that remain - `background_speech/9` and
+`/21` - had 93 ms and 46 ms of agent audio still arriving at the event and then
+nothing at all through the hold window. Those are the real thing: the agent
+stopped speaking for a voice that was not talking to it. Everything else that
+had been failing was the scorer.
+
+**A single FDB run cannot classify a single recording.** Reruns 1 and 2 are the
+same forty recordings against the same executable, and they disagree on five of
+the forty: one moved from fail to pass, one from pass to fail, one from
+not-applicable to fail, and two from fail to not-applicable. Both runs report
+26 passes, so the category total looked steady while a seventh of the
+recordings underneath it moved. Every per-recording FDB statement in this
+repository, including the eighteen regressions the September campaign
+attributed to the hold categories, carries that much noise and none of them
+were sampled more than once. The scenario suite learned this and answered it
+with fifteen repeats; FDB v1.5 has never been repeated at all.
+
 ## Which benchmark suites benefit
 
 Sub-turn classification is an interaction/timing intervention, not a universal

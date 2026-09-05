@@ -69,3 +69,53 @@ func TestScorerDoesNotCallOneSampleOfAudioSpeaking(t *testing.T) {
 		t.Fatalf("an audible answer that kept speaking was not credited: %+v", held)
 	}
 }
+
+// An answer that finished before the overlap arrived has nothing to hold.
+//
+// The half-second lookback answers "did the agent speak recently", not "was it
+// speaking when the event began", and for a one-line command whose answer is
+// over in a second those are different questions. Four of the first forty
+// background-speech recordings on 2026-09-05 were judged applicable on audio
+// that had stopped hundreds of milliseconds before the event, then failed the
+// hold they had nothing left to hold. Being quick is not a hold failure.
+func TestScorerDoesNotAskAFinishedAnswerToHold(t *testing.T) {
+	finished := bench.Transcript{Moments: []bench.Moment{
+		{AtMS: 500, Kind: bench.MomentAgentAudio, AudioMS: 200},
+		{AtMS: 700, Kind: bench.MomentAgentAudio, AudioMS: 120},
+	}}
+	outcome := bench.TaskOutcome{
+		ID: "background_speech/20", Completed: true,
+		Notes: map[string]string{"category": string(BackgroundSpeech)},
+	}
+	scoreOutcome(&outcome, finished, attemptContext{
+		Category: BackgroundSpeech, EventStartMS: 1000, EventEndMS: 2000,
+		YieldWindowMS: 1000, HoldWindowMS: 1000,
+	})
+	if outcome.Applicability != bench.NotApplicable || outcome.Passed {
+		t.Fatalf("an answer that ended 300ms before the event was asked to hold: %+v", outcome)
+	}
+	if outcome.Metrics["agent_audio_before_event_ms"] < 300 {
+		t.Fatalf("the half-second total must still be reported as evidence: %+v", outcome.Metrics)
+	}
+	if outcome.Metrics["agent_audio_at_event_ms"] != 0 {
+		t.Fatalf("audio that never reached the event was counted at it: %+v", outcome.Metrics)
+	}
+
+	// Audio still flowing into the event is still applicable, and a gap of a
+	// few packets inside the tolerance does not end an utterance.
+	flowing := bench.Transcript{Moments: []bench.Moment{
+		{AtMS: 500, Kind: bench.MomentAgentAudio, AudioMS: 200},
+		{AtMS: 950, Kind: bench.MomentAgentAudio, AudioMS: 60},
+	}}
+	held := bench.TaskOutcome{
+		ID: "background_speech/21", Completed: true,
+		Notes: map[string]string{"category": string(BackgroundSpeech)},
+	}
+	scoreOutcome(&held, flowing, attemptContext{
+		Category: BackgroundSpeech, EventStartMS: 1000, EventEndMS: 2000,
+		YieldWindowMS: 1000, HoldWindowMS: 1000,
+	})
+	if held.Applicability != bench.Applicable {
+		t.Fatalf("audio reaching the event was not counted as speaking: %+v", held)
+	}
+}

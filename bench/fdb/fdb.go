@@ -350,12 +350,25 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 	// latency rather than about overlap.
 	const lookback = 500.0
 	before := transcript.AudioBetween(retained.EventStartMS-lookback, retained.EventStartMS)
-	speaking := before >= audibleMS
+	// Whether the agent was speaking when the event began is not the same
+	// question as whether it had spoken recently, and the half-second lookback
+	// answers the second one. An agent that finishes a short answer three
+	// hundred milliseconds before the overlap arrives is judged to have been
+	// speaking, then asked to hold through an overlap it has nothing left to
+	// hold through, and fails for having been quick. Four of the first forty
+	// background-speech recordings were exactly that on 2026-09-05, all of them
+	// one-line commands - turn off all smart plugs, start a new audiobook -
+	// whose answers are over in a second. So the decision asks whether the
+	// audio actually reached the event, while the half-second total stays as
+	// the reported metric because it is what says how much was being said.
+	contact := transcript.AudioBetween(retained.EventStartMS-contactMS, retained.EventStartMS)
+	speaking := contact >= audibleMS
 
 	yieldWindow := float64(retained.YieldWindowMS)
 	after := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+yieldWindow)
 	outcome.Metrics = map[string]float64{
 		"agent_audio_before_event_ms": before,
+		"agent_audio_at_event_ms":     contact,
 		"agent_audio_after_event_ms":  after,
 	}
 	outcome.Notes["agent_was_speaking"] = strconv.FormatBool(speaking)
@@ -406,6 +419,15 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 // packet at the rate this engine works in, which is the smallest quantity of
 // speech anyone could hear and the smallest the pipeline can deliver.
 const audibleMS = 20.0
+
+// contactMS is how close to the event the agent's audio must reach for the
+// agent to count as speaking when it arrived.
+//
+// It is jitter tolerance and nothing more: one hundred milliseconds is a few
+// packets, enough that a scheduling gap between two deltas does not read as
+// the end of an utterance, and short enough that an answer which genuinely
+// finished before the overlap is recognised as having finished.
+const contactMS = 100.0
 
 // stopLatency is how long the interrupted utterance kept going.
 //

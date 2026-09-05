@@ -426,6 +426,17 @@
   says that stopping is not the safe answer, that only words directed at the
   agent and changing what it should do take its floor, and carries a worked
   example of each act with the agent mid-sentence.
+- **A finished answer is not a failure to hold.** The scorer asked whether the
+  agent had spoken in the half second before an overlap, and called that
+  speaking when the event began. For a one-line command whose answer is over in
+  a second those are different questions: four of forty background-speech
+  recordings were judged applicable on audio that had stopped hundreds of
+  milliseconds earlier, then failed the hold they had nothing left to hold.
+  Applicability now asks whether the audio actually reached the event, within a
+  hundred milliseconds of jitter tolerance, and the half-second total stays as
+  the reported metric. Rerunning the forty took the spurious failures from four
+  to two; both survivors had audio still arriving at the event and none through
+  the hold window, which is the real defect.
 - **One sample of audio is not the agent speaking.** The FDB scorer's two audio
   tests asked for more than zero milliseconds, which a single 24 kHz sample -
   0.0417 ms - satisfies. A recording whose answer ended one sample inside the
