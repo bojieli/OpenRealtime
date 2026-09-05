@@ -329,12 +329,13 @@ func BenchmarkScenarioGraphSourceVerifyOneHundredEightyAttempts(b *testing.B) {
 }
 
 func publishScenarioGraphPopulationFixture(
-	tb testing.TB, repetitions int, retainBehavioralFailure bool,
+	tb testing.TB, repetitions int, retainBehavioralFailure bool, selected ...string,
 ) (string, graphnative.SourceReceipt, scenarioGraphOutcome) {
 	tb.Helper()
-	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(tb)
+	selection, requirement, adapterFingerprint := scenarioGraphCommandFixture(tb, selected...)
 	directory := filepath.Join(tb.TempDir(), "review-population")
-	bundle, err := newScenarioGraphReviewBundle(directory, repetitions, requirement, nil)
+	bundle, err := newScenarioGraphReviewBundle(directory, repetitions, requirement, nil,
+		scenarioGraphCases(selection.Contract)...)
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -587,10 +588,10 @@ func TestScenarioGraphMediaVerifierRejectsRetainedByteTampering(t *testing.T) {
 }
 
 func scenarioGraphCommandFixture(
-	t testing.TB,
+	t testing.TB, selected ...string,
 ) (scenarioGraphSelection, bench.ExecutionRequirement, string) {
 	t.Helper()
-	contract, err := graphnative.BuildContract()
+	contract, err := graphnative.BuildContract(selected...)
 	if err != nil {
 		t.Fatal(err)
 	}

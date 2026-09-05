@@ -169,6 +169,20 @@ nobody is using.
 
 ## What the suites judge
 
+For focused scenario diagnosis, `openrealtime scenario -list` prints canonical
+case names without opening a profile or contacting services. Pass the same
+repeated `-case` flags to `openrealtime profile scenario` and
+`openrealtime scenario`, for example
+`-case 'an acknowledgement is not an interruption'`. Profile creation freezes
+that exact case contract; execution rejects a different selection before
+reading credentials or creating review files. Omitting `-case` selects all
+twelve cases. Subsets retain per-attempt audio, results, submitted visual media,
+and source receipts, and can use the ordinary independent review commands.
+They remain diagnostic: their checklist has `full_suite: false` and cannot
+become reportable even with fifteen passing repetitions. See the
+[scenario launch contract](../bench/scenario/graphnative/README.md) for the
+profile and evidence workflow.
+
 **Interaction scenarios** score timed speech, silence, tool outcomes, and
 content against the authored script. New deterministic results record
 `scorer_version: 3`. Content checks match whole words and numbers, ignoring

@@ -4,6 +4,11 @@
 
 ### Highlights
 
+- Focused graph-native scenario diagnostics now select exact cases with
+  repeated `-case` flags in both profile creation and execution. The frozen
+  populations must match. `scenario -list` lists canonical names without
+  services. Subsets retain audio, visual inputs, results, and source receipts
+  while remaining ineligible for the full-suite acceptance gate.
 - Historical candidate-source receipts reopen after runtime status became
   sparse. The archive verifier recognizes the former status encoding in
   completions and review contexts while enforcing the original file hashes,

@@ -59,6 +59,7 @@ type scenarioProfileOptions struct {
 	name          string
 	revision      uint64
 	architecture  string
+	cases         []string
 
 	asrProvider            string
 	asrModel               string
@@ -183,6 +184,10 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	options := defaultScenarioProfileOptions()
 	flags := flag.NewFlagSet("openrealtime profile scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
+	flags.Func("case", "exact scenario name; repeat to freeze a diagnostic subset (default: all cases)", func(name string) error {
+		options.cases = append(options.cases, name)
+		return nil
+	})
 	flags.StringVar(&options.out, "out", "", "new absolute launch-profile YAML path")
 	flags.StringVar(&options.graphOut, "graph-out", "", "new absolute exact bound Graph IR JSON path")
 	flags.StringVar(&options.valuesOut, "values-out", "", "new absolute exact element-values JSON path")
@@ -403,6 +408,10 @@ func freezeProductionScenarioProfile(
 	if err := context.Cause(ctx); err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
+	contract, err := graphnative.BuildContract(options.cases...)
+	if err != nil {
+		return launchprofile.Document{}, graphlaunch.Result{}, err
+	}
 	artifacts, err := executableServeProfileArtifacts()
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
@@ -440,10 +449,6 @@ func freezeProductionScenarioProfile(
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
 	wordTiming, err := scenarioProfileWordTimingSelection(inventory, options)
-	if err != nil {
-		return launchprofile.Document{}, graphlaunch.Result{}, err
-	}
-	contract, err := graphnative.BuildContract()
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}

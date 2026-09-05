@@ -91,6 +91,7 @@ func prepareScenarioGraphSelection(
 	cell archbench.Cell,
 	requirement bench.ExecutionRequirement,
 	repetitions int,
+	selected ...string,
 ) (scenarioGraphSelection, error) {
 	if strings.TrimSpace(path) == "" {
 		return scenarioGraphSelection{}, errors.New(
@@ -105,7 +106,7 @@ func prepareScenarioGraphSelection(
 	if err != nil {
 		return scenarioGraphSelection{}, fmt.Errorf("parse scenario launch profile: %w", err)
 	}
-	contract, err := graphnative.BuildContract()
+	contract, err := graphnative.BuildContract(selected...)
 	if err != nil {
 		return scenarioGraphSelection{}, err
 	}
@@ -148,9 +149,13 @@ func newScenarioGraphReviewBundle(
 	repetitions int,
 	requirement bench.ExecutionRequirement,
 	secrets []string,
+	selected ...scenario.Scenario,
 ) (*scenarioGraphReviewBundle, error) {
+	if len(selected) == 0 {
+		selected = scenario.Suite()
+	}
 	review, err := scenario.NewReviewRun(scenario.ReviewOptions{
-		Directory: directory, Scenarios: scenario.Suite(), Repeats: repetitions,
+		Directory: directory, Scenarios: selected, Repeats: repetitions,
 		ExecutionRequirement: requirement, Secrets: slices.Clone(secrets),
 	})
 	if err != nil {
@@ -167,6 +172,20 @@ func newScenarioGraphReviewBundle(
 		review: review, root: root, media: make(map[string]graphnative.MediaReference),
 		secrets: slices.Clone(secrets),
 	}, nil
+}
+
+// scenarioGraphCases projects an already validated contract onto the authored
+// scripts, preserving the canonical order used by attempt ordinals and media.
+func scenarioGraphCases(contract graphnative.Contract) []scenario.Scenario {
+	byName := make(map[string]scenario.Scenario)
+	for _, item := range scenario.Suite() {
+		byName[item.Name] = item
+	}
+	selected := make([]scenario.Scenario, 0, len(contract.Cases))
+	for _, item := range contract.Cases {
+		selected = append(selected, byName[item.Name])
+	}
+	return selected
 }
 
 func (bundle *scenarioGraphReviewBundle) Directory() string {
@@ -803,7 +822,10 @@ func reportScenarioGraphOutcome(
 		byCase[attempt.Key.CaseName] = append(byCase[attempt.Key.CaseName], attempt.Result)
 	}
 	for _, item := range scenario.Suite() {
-		attempts := byCase[item.Name]
+		attempts, selected := byCase[item.Name]
+		if !selected {
+			continue
+		}
 		if len(attempts) == 0 {
 			attempts = make([]scenario.Result, 0, repetitions)
 		}

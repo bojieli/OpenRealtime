@@ -105,9 +105,26 @@ go run ./cmd/openrealtime scenario \
 For a graph-native architecture cell the command fails before credentials or
 protocol work unless the launch profile, cell graph requirement, adapter name,
 and the cell's exact runtime adapter-profile fingerprint form one valid frozen
-checklist selection. The graph-native path always runs the complete canonical
-suite through `NewLiveExecutor` and `RunChecklist`; `-only` remains a legacy
-diagnostic compatibility flag and cannot produce a graph-native checklist.
+checklist selection. By default the graph-native path runs the complete
+canonical suite through `NewLiveExecutor` and `RunChecklist`.
+
+For a focused diagnostic, use `scenario -list` to obtain exact case names,
+then pass the same repeated `-case` flags to `profile scenario` and `scenario`.
+For example, select `-case 'an acknowledgement is not an interruption'` when
+freezing the profile and when running its reviewed architecture cell. The
+profile freezes the selected contract; an omitted, additional, duplicate,
+unknown, or whitespace-altered selection cannot silently run a different
+population. Names are ordered by the authored suite regardless of flag order.
+The removed substring-based `-only` flag remains unsupported.
+
+Subset runs retain the same source/media and review receipts as full runs.
+Their case ordinals and media filenames start at one within the selected
+population, with the exact case names and contract fingerprint retained beside
+them. The command labels them `DIAGNOSTIC SUBSET`; `checklist.json` records
+`full_suite: false`, `reportable: false`, and `passed: false`, even with fifteen
+or more repetitions and individually passing cases. Architecture reportability
+describes its declared population; the checklist additionally enforces the
+complete-suite behavioral gate. A subset cannot replace any required campaign.
 
 The selected `-review-dir` plug-in writes create-only per-attempt stereo WAVs,
 the exact submitted visual bytes, independently verified media manifests,

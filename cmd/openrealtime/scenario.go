@@ -29,7 +29,13 @@ import (
 func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	flags := flag.NewFlagSet("scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
+	var caseNames []string
+	flags.Func("case", "exact case name; repeat to select a diagnostic subset matching -launch-profile (default: all cases)", func(name string) error {
+		caseNames = append(caseNames, name)
+		return nil
+	})
 	var (
+		list             = flags.Bool("list", false, "list exact scenario names and stop; no profile or services needed")
 		endpoint         = flags.String("url", "ws://127.0.0.1:8765/v1/realtime", "session endpoint")
 		tokenEnv         = flags.String("token-env", "", "environment variable holding the session credential")
 		model            = flags.String("model", "", "model to request; empty selects the server's own")
@@ -52,6 +58,16 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("scenario accepts flags only")
+	}
+	contract, err := graphnative.BuildContract(caseNames...)
+	if err != nil {
+		return err
+	}
+	if *list {
+		for _, item := range contract.Cases {
+			fmt.Fprintln(output, item.Name)
+		}
+		return nil
 	}
 	if strings.TrimSpace(*experiment) == "" {
 		switch {
@@ -94,14 +110,14 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 		return err
 	}
 
-	selected := scenario.Suite()
+	selected := scenarioGraphCases(contract)
 
 	runs := max(1, *repeat)
 	if strings.TrimSpace(*reviewDir) == "" {
 		return errors.New("graph-native scenario execution requires -review-dir")
 	}
 	graphSelection, err := prepareScenarioGraphSelection(
-		*launchProfile, selectedCell, requirement, runs,
+		*launchProfile, selectedCell, requirement, runs, caseNames...,
 	)
 	if err != nil {
 		return err
@@ -109,6 +125,10 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 	started := archbench.NewResult(manifest, selectedCell, len(selected)*runs)
 	architectureResult := &started
 	fmt.Fprintf(output, "  architecture %s  F52=%s\n", selectedCell.Name, selectedCell.Architecture.Level)
+	if len(selected) != len(scenario.Suite()) {
+		fmt.Fprintf(output, "  DIAGNOSTIC SUBSET: %d/%d cases; no full-suite acceptance credit\n",
+			len(selected), len(scenario.Suite()))
+	}
 
 	config := bench.SessionConfig{
 		Endpoint: *endpoint, Model: *model,
@@ -135,7 +155,7 @@ func runScenario(arguments []string, output io.Writer) (returnErr error) {
 
 	var graphChecklist graphnative.Checklist
 	graphReview, err := newScenarioGraphReviewBundle(
-		*reviewDir, runs, requirement, []string{config.Token},
+		*reviewDir, runs, requirement, []string{config.Token}, selected...,
 	)
 	if err != nil {
 		return err
