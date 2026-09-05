@@ -940,11 +940,34 @@ of 84 ms, with a quartile range of 42 to 101 ms and a worst case of 289 ms over
 
 Eleven of the twenty-five recordings change verdict, and every one of them is
 explained by its own lead: 1,340 ms for recording 7, 720 for 5, 500 for 9 and
-19, 480 for 4. The engine yielded within 878 ms of the user making a sound in
-every attempt of every recording, twice each. The scorer now opens all of its
-windows at the first sound and reports `event_audible_after_ms` and
-`yield_latency_from_annotation_ms` on every task, so a run scored before this
-can be reconciled with one scored after.
+19, 480 for 4. The scorer now opens all of its windows at the first sound and
+reports `event_audible_after_ms` and `yield_latency_from_annotation_ms` on
+every task, so a run scored before this can be reconciled with one scored
+after.
+
+A second run of the same thirty recordings, twice each, through the shipped
+scorer says the same thing from inside:
+
+| Window opens at | Applicable passes | p50 | p75 | p90 |
+| --- | ---: | ---: | ---: | ---: |
+| the annotation | 34 of 50 | 905 ms | 1,090 ms | 1,615 ms |
+| the first sound | 48 of 50 | 622 ms | 757 ms | 846 ms |
+
+Both columns come from the same fifty attempts, so the comparison between them
+holds whatever the machine was doing. No recording failed both of its attempts.
+Ten attempts became inapplicable rather than failing, which is the same
+correction seen from the other side: recording 7's answer is over before its
+1,340 ms of silence ends, so there was never anything to yield.
+
+The two failures are worth naming rather than averaging away, because this run
+was not clean: a full test gate and a second benchmark were running beside it,
+on a box whose swap was exhausted by other tenants. One attempt kept a single
+response going 9.4 s past the overlap where every other attempt in two runs
+stayed under 1.6 s, and one took 1,561 ms. The engine's overlap classifier and
+its 800 ms hold are both on the wall clock, so a starved box makes the agent
+look like it will not yield. That attempt was also scored at 13.3 s rather than
+9.4 s, because the scorer was still ending a yield at a gap in the audio rather
+than at the response boundary; it does not any more.
 
 This does not make the suite easier. The three categories that ask the agent to
 *hold* have almost no lead, so their windows move by tens of milliseconds, and
