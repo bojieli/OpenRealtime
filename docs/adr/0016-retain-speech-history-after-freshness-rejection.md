@@ -1,7 +1,6 @@
 # ADR-0016: Preserve speech history when model freshness expires
 
-- Status: Accepted for the opt-in scenario conversation profile; live and release
-  acceptance require separate retained evidence
+- Status: Accepted for the opt-in scenario conversation profile
 - Date: 2026-09-05
 - Complements: ADR-0003, ADR-0004, ADR-0015
 
@@ -58,6 +57,17 @@ The provider-neutral graph owns both transactions. The session adapter continues
 its existing playback visibility projection; it does not fabricate missing
 assistant content from a synthesis plan or the wire transcript. The public
 Realtime protocol and stable `api/v1` interfaces are unchanged.
+
+Conversation policy uses the same canonical playback boundaries when preparing
+its history. It labels only the heard prefix as agent speech, names a word cut
+short by playback, and keeps the unplayed remainder as a prepared draft.
+Prepared, queued, and canceled turns without word boundaries carry their
+delivery state instead of appearing as completed speech. Playback transitions
+are resolved before the conversation window is truncated, and later corrections
+replace earlier boundaries. Silent reasoning remains background context.
+Bindings without playback measurements keep the established fallback to their
+assistant text; an absent measurement does not imply that nothing was delivered.
+This projection does not rewrite canonical content or grant action authority.
 
 ## Consequences and limits
 

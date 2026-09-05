@@ -1839,7 +1839,7 @@ Current behavior work includes:
 
 | Area | Existing diagnosis and implementation | Remaining useful work |
 | --- | --- | --- |
-| Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
+| Conversation history and counting | Historical repeated counts exposed lost assistant history on model freshness rejection and unpublished played state. Original-prefix speech retention and graph-published playback now have mounted and mutation regressions, including explicit response creation after speech. Policy history also distinguishes heard words from unplayed drafts, with a full conversation-graph cancellation/resumption regression | Use the old audible failures to investigate remaining synthesis and short-word recognition uncertainty; verify any further repair on the affected count |
 | Acknowledgements | Existing recordings exposed unwanted cancellation and a separate omitted purchase confirmation; cancellation repairs have focused coverage | Attribute the content omission at the model, synthesis, or evaluator boundary and repair a reproduced cause |
 | Computer use | Historical camera cases acted before fresh hazard evidence; moving-target and transient tasks continued after success. Temporal admission, result settlement, retry, and cancellation repairs have mounted coverage. Replayed consequences cannot reclassify a result that already released continuation; distinct later results still settle. The evaluator distinguishes explicit failure, later recovery, missing page consequences, and an error-bearing apparent success. Full-session recovery joins canonical result lineage to received tool results and guards a false timeout caused by passive observations | Altered probe/disposition/terminal values, delayed terminal delivery, and terminal-before-model-result have production-graph checks. Finish remaining cross-boundary ordering cases; use affected camera and terminal-loop cases for live checks where needed |
 | Full-duplex interaction | Existing FDB cases exposed interruption latency and apparent background/third-party hold failures. Repeating the existing hold recordings found overlap opportunities that vary with agent timing, without a consistently failing agent case in that diagnostic | Separate missing fixture overlap from actual hold/yield failures before changing policy; check reproduced repairs against relevant speech and silence controls |
@@ -1862,6 +1862,37 @@ run scope without contributing a separate completion quota.
 | 6 — inspection/authoring | In progress | Static rendering, reaction-contract-driven live trigger/run/cancel/outcome timing evidence, first-trigger-relative node latency, closed payload-free live authority outcomes, exact session-scoped static/live browser joins, explicit channel depth/delivery/occupancy/loss/queue-wait views, pseudonymous cross-node flow-stage routes with per-stage timing, direct-parent lineage, and closed observation/state-revision/policy/model-run classification, live graph/node/queue/flow evidence, deterministic semantic graph diff, session-keyed bounded runtime recording, payload-free trace artifacts, exact replay, bounded `.ortg` recovery, strict formatter edits with browser application, compiled-fingerprint-bound canonical `.ortg` and normalized YAML/JSON canvas node rename plus edge removal and creation, resolved values-property metadata, complete browser, LSP plaintext, and native SwiftUI values-contract projections, standards-shaped LSP diagnostics, completions, definition links, and versioned rename/format edits, bounded full-text document synchronization, a transport-neutral strict JSON-RPC/LSP adapter, digest-bound in-memory multi-file/subgraph indexing and navigation, separately authorized rooted source-read/publication boundaries with browser load/create/update controls, source-mapped text-only browser diagnostics, a compiler-backed language-service core exposed through the UI-independent management API, and authenticated rollback-safe stateless, multi-row, and stateful browser implementation replacement | Complete signed-native, topology-changing, and remaining capability-specific presentation replacement gates |
 | 7 — reconciliation | In progress | Compiled scoped dependencies, lifecycle-owned services/workers/disposers, bounded dependency-closure quiescence, and immutable-plan implementation/config/permission/state reconciliation with effect-restricted candidate pre-mount, exact state migration, exact retired-ownership audits, refusal, and rollback | Graph-routing safe points, state-schema-changing and bounded topology-plan changes, and cross-system leak-proof ownership |
 | 8 — obsolete-path deletion | In progress | Historical-attempt reconstruction and benchmark migration/parity code are absent; generic ownership, continuation, Graph IR, and catalog boundaries no longer impose engine-owned/silent slow cognition or mandatory audio; ADR-0015 separates retained invariants from superseded binding-topology mandates; old implementation remains reference-only | Finish direct production/evaluation profiles, then delete unreachable reference code, obsolete switches, and topology-derived catalog/status facts |
+
+### 2026-09-05 policy conversation playback projection repair
+
+- [x] Make policy history distinguish words the listener received from speech
+  that was prepared, queued, or canceled. The rolling interaction window and
+  semantic admission's recent conversation now resolve canonical playback
+  transitions before truncation. Partial turns contain the heard prefix, a
+  separately named cut word, and the unplayed remainder. Later playback
+  corrections win. Completed speech, unmeasured legacy/text responses, and
+  silent background output retain their established treatment. Semantic
+  admission remains descriptor revision 9 with implementation revision 14.
+
+The mounted policy test captures the actual decider input after canonical
+queued, canceled, and partial-playback transitions. The locked
+conversation-graph regression stops an eight-number response while its first
+sentence is being synthesized, waits for cancellation completion, then resumes.
+The resumed policy sees the unplayed counts as a draft, and the new response
+reaches the audio sink. Restoring the old projection fails the unit, mounted
+policy, and full-graph tests because all eight prepared counts appear as speech.
+Boundary controls cover no played words, a later client correction, window
+truncation, complete playback, and bindings without playback measurements.
+The rolling window also preserves its existing ASR partial compaction across
+hidden runtime entries. Affected interaction, policy, cascade, and graph packages
+pass race testing, and the full `scripts/check.sh` gate passes.
+
+This closes a reproduced interruption/resumption context defect. The historical
+refund recording's missing purchase-email detail was already missing from its
+agent text. The available successful provider trace does not establish the
+cause of that failed recording, so this projection repair does not claim to
+resolve the separate content omission. Existing failures remain diagnostic
+inputs; no new measurement campaign or result publication is required.
 
 ### 2026-09-05 playback completion and semantic state ordering repair
 

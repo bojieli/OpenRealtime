@@ -1,8 +1,10 @@
 package interaction
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -57,17 +59,21 @@ func (window *Window) budgets() (lower, upper int) {
 // the upper bound is passed.
 func (window *Window) Lines(items []trajectory.Item) []string {
 	lower, upper := window.budgets()
-	speakable := make([]trajectory.Item, 0, len(items))
-	for _, item := range items {
-		if line := windowLine(item); line != "" {
-			speakable = append(speakable, item)
+	speakable := conversationWindow(items)
+	// Preserve the rolling window's conversation-level ASR compaction: hidden
+	// reasoning or runtime entries between partials do not make a new utterance.
+	compacted := make([]conversationWindowLine, 0, len(speakable))
+	for index, line := range speakable {
+		if index+1 < len(speakable) && trajectory.Continues(line.item, speakable[index+1].item) {
+			continue
 		}
+		compacted = append(compacted, line)
 	}
-	speakable = trajectory.WithoutSupersededPartials(speakable)
+	speakable = compacted
 	start := 0
 	if window.startID != "" {
 		for index, item := range speakable {
-			if item.ID == window.startID {
+			if item.item.ID == window.startID {
 				start = index
 				break
 			}
@@ -79,11 +85,11 @@ func (window *Window) Lines(items []trajectory.Item) []string {
 		}
 	}
 	if start < len(speakable) {
-		window.startID = speakable[start].ID
+		window.startID = speakable[start].item.ID
 	}
 	lines := make([]string, 0, len(speakable)-start)
 	for _, item := range speakable[start:] {
-		lines = append(lines, windowLine(item))
+		lines = append(lines, item.text)
 	}
 	return lines
 }
@@ -95,24 +101,57 @@ func (window *Window) Lines(items []trajectory.Item) []string {
 // often that happens rather than whether anything is correct. A real tokeniser
 // here would be a dependency on the model, which is the thing this type most
 // wants not to know about.
-func cost(items []trajectory.Item) int {
+func cost(items []conversationWindowLine) int {
 	total := 0
 	for _, item := range items {
-		total += len([]rune(windowLine(item)))/4 + 2
+		total += len([]rune(item.text))/4 + 2
 	}
 	return total
 }
 
-// windowLine renders one item as a line of conversation, or empty for items
-// that are not conversation. What an interaction model needs from the past is
-// who said what; reasoning, tool plumbing and assistant state are the agent
-// talking to itself.
 // silentAuthority marks a producer that is never heard. It is the string form
 // of continuation.SpeechAuthoritySilent, spelled out here because interaction
 // cannot import continuation without a cycle.
 const silentAuthority = "silent"
 
-func windowLine(item trajectory.Item) string {
+type conversationWindowLine struct {
+	item trajectory.Item
+	text string
+}
+
+// Resolve playback against the complete prefix before trimming the window.
+// A state transition may follow the assistant item or lie outside the retained
+// conversational lines. Neither the projection nor truncation rewrites history.
+func conversationWindow(items []trajectory.Item) []conversationWindowLine {
+	snapshot := trajectory.Snapshot{Items: items}
+	// Keep absent visibility absent for legacy/text-only callers. The general
+	// trajectory resolver defaults it to prepared, which is not evidence that
+	// an uninstrumented binding withheld its response from the user.
+	visibility := make(map[string]trajectory.Visibility)
+	for _, item := range items {
+		if item.Kind == trajectory.KindAssistantState && item.AssistantState != nil {
+			visibility[item.AssistantState.AssistantItemID] = item.AssistantState.Visibility
+		}
+	}
+	heard := trajectory.AssistantHeard(snapshot)
+	lines := make([]conversationWindowLine, 0, len(items))
+	for _, item := range items {
+		mark, measured := heard[item.ID]
+		visible, explicit := visibility[item.ID]
+		if !explicit {
+			visible = item.Visibility
+		}
+		if line := windowLine(item, visible, mark, measured); line != "" {
+			lines = append(lines, conversationWindowLine{item: item, text: line})
+		}
+	}
+	return lines
+}
+
+// windowLine renders conversation and labels background or unplayed content.
+// Playback state informs the projection without becoming a separate turn;
+// reasoning and tool plumbing remain outside the conversation.
+func windowLine(item trajectory.Item, visibility trajectory.Visibility, mark spoken.Mark, boundary bool) string {
 	text := strings.TrimSpace(item.Content)
 	if text == "" {
 		return ""
@@ -145,6 +184,23 @@ func windowLine(item trajectory.Item) string {
 		if item.Producer.SpeechAuthority == silentAuthority {
 			return "background (not said out loud): " + text
 		}
+		if boundary && !mark.Complete() {
+			var lines []string
+			if said := strings.TrimSpace(mark.Spoken); said != "" {
+				lines = append(lines, "agent: "+said)
+			}
+			if cut := strings.TrimSpace(mark.Cut); cut != "" {
+				lines = append(lines, fmt.Sprintf("playback stopped during: %q", cut))
+			}
+			lines = append(lines, "prepared (not heard): "+strings.TrimSpace(mark.Pending))
+			return strings.Join(lines, "\n")
+		}
+		switch visibility {
+		case trajectory.VisibilityPrepared, trajectory.VisibilityQueued:
+			return "prepared (not yet said): " + text
+		case trajectory.VisibilityCancelled:
+			return "canceled (not said): " + text
+		}
 		return "agent: " + text
 	default:
 		return ""
@@ -166,12 +222,14 @@ func RecentLines(items []trajectory.Item, max int) []string {
 	// present the current utterance once. Without this projection a partial and
 	// its longer replacement look like two separate things the person said,
 	// which causes counting, translation, and menu policies to fire repeatedly.
-	items = trajectory.WithoutSupersededPartials(items)
+	conversation := conversationWindow(trajectory.WithoutSupersededPartials(items))
+	start := len(conversation) - max
+	if start < 0 {
+		start = 0
+	}
 	var lines []string
-	for index := len(items) - 1; index >= 0 && len(lines) < max; index-- {
-		if line := windowLine(items[index]); line != "" {
-			lines = append([]string{line}, lines...)
-		}
+	for _, line := range conversation[start:] {
+		lines = append(lines, line.text)
 	}
 	return lines
 }

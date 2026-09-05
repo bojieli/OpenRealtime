@@ -22,6 +22,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	"github.com/bojieli/OpenRealtime/graphs"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 // Preparation completes while the first sentence is still being synthesized.
@@ -41,9 +42,9 @@ func TestScenarioConversationStopRevokesCompletedQueuedSpeechAndAllowsNewTurn(t 
 		},
 	}
 	asr := &scenarioAddressingASRControl{turns: []string{"Count to eight.", "Hold on a moment.", "Resume now."}}
-	policy := &scenarioQueuedCancelPolicy{scenarioAddressingPolicyDecider{
+	policy := &scenarioQueuedCancelPolicy{scenarioAddressingPolicyDecider: scenarioAddressingPolicyDecider{
 		control: newScenarioAddressingPolicyControl(), descriptor: config.Policy.Descriptor,
-	}}
+	}, resumeEvidence: make(chan string, 8)}
 	model := &scenarioQueuedCancelModel{descriptor: config.Model.Descriptor}
 	tts := &scenarioQueuedCancelTTS{
 		descriptor: config.TTS.Descriptor, started: make(chan string, 1),
@@ -71,7 +72,10 @@ func TestScenarioConversationStopRevokesCompletedQueuedSpeechAndAllowsNewTurn(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	sink := &scenarioQueuedCancelSink{scenarioAddressingSink: newScenarioAddressingSink(), audio: make(chan string, 32)}
+	sink := &scenarioSpeechHistorySink{
+		scenarioQueuedCancelSink: &scenarioQueuedCancelSink{scenarioAddressingSink: newScenarioAddressingSink(), audio: make(chan string, 32)},
+		ended:                    make(chan legacy.TurnOutcome, 32),
+	}
 	settings := legacy.Settings{Instruction: "Follow the user's count and stop requests.", Voice: config.TTS.Voice,
 		Modalities: []string{"audio"}, Gate: config.Gate}
 	runtime, err := launched.Binding.Start(context.Background(), legacy.Options{SessionID: "queued-cancel", Sink: sink, Settings: settings})
@@ -138,6 +142,20 @@ func TestScenarioConversationStopRevokesCompletedQueuedSpeechAndAllowsNewTurn(t 
 		t.Fatalf("canceled queued speech reached the sink: %q", text)
 	default:
 	}
+	// Completion publishes the actual played-word boundary before the next
+	// request. Its policy context must not present all eight prepared counts as
+	// numbers the user heard merely because generation finished successfully.
+	receiveScenarioAddressing(t, sink.ended, "canceled count completion")
+	heard := trajectory.AssistantHeard(runtime.Trajectory())
+	var pending string
+	for _, item := range runtime.Trajectory().Items {
+		if item.Kind == trajectory.KindAssistant && item.InvocationID == runID {
+			pending = heard[item.ID].Pending
+		}
+	}
+	if !strings.Contains(pending, "Eight.") {
+		t.Fatalf("canceled count lacks its unplayed suffix: %q", pending)
+	}
 	driveScenarioAddressingTurn(t, runtime, sink.scenarioAddressingSink, &clock, scenarioAddressingStreamID("queued-cancel", 3), asr.turns[2])
 	if text := receiveScenarioAddressing(t, sink.audio, "new authorized speech"); text != "Resumed." {
 		t.Fatalf("new speech = %q", text)
@@ -145,13 +163,27 @@ func TestScenarioConversationStopRevokesCompletedQueuedSpeechAndAllowsNewTurn(t 
 	if model.calls.Load() != 2 || tts.calls.Load() != 2 {
 		t.Fatalf("generation/synthesis calls = %d/%d, want initial and resumed only", model.calls.Load(), tts.calls.Load())
 	}
+	evidence := receiveScenarioAddressing(t, policy.resumeEvidence, "resume policy history")
+	if !strings.Contains(evidence, "prepared (not heard): "+pending) ||
+		strings.Contains(evidence, "agent: One. Two. Three. Four. Five. Six. Seven. Eight.") {
+		t.Fatalf("resume policy confused prepared counts with played counts: %s", evidence)
+	}
 }
 
 type scenarioQueuedCancelPolicy struct {
 	scenarioAddressingPolicyDecider
+	resumeEvidence chan string
 }
 
 func (policy *scenarioQueuedCancelPolicy) Decide(ctx context.Context, decision coreinteraction.Decision) (coreinteraction.Outcome, error) {
+	if strings.Contains(scenarioAddressingCurrentEvidence(decision.Evidence), "Resume now.") &&
+		slices.Contains(decision.Options, string(coreinteraction.ActAnswer)) {
+		select {
+		case policy.resumeEvidence <- decision.Evidence:
+		case <-ctx.Done():
+			return coreinteraction.Outcome{}, context.Cause(ctx)
+		}
+	}
 	wanted := ""
 	if slices.Contains(decision.Options, string(coreinteraction.ActStaySilent)) && strings.Contains(decision.Prompt, "Wait for the final request.") {
 		wanted = string(coreinteraction.ActStaySilent)

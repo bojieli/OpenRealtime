@@ -4,6 +4,13 @@
 
 ### Highlights
 
+- Conversation policy now distinguishes played words from prepared, queued,
+  and canceled speech. After interruption, it sees the heard prefix, any word
+  cut short, and the unplayed remainder separately. A completed model response
+  no longer tells the next policy decision that the user heard every draft
+  word. Completed speech and unmeasured text responses keep their existing
+  representation.
+
 - Scenario conversation completion now waits for the producing response's
   model and segmentation terminals and applies its output state in semantic
   policy before notifying the client. A request immediately after completed
