@@ -4,6 +4,14 @@
 
 ### Highlights
 
+- `conversation.item.created` and `input_audio_buffer.committed` now name the
+  item they follow. `previous_item_id` was null on every event, which the wire
+  reserves for an item that has no predecessor, so a client reconstructing the
+  conversation was told that every item was the first one - and the events
+  carry no other ordering to repair it from. A commit and the creation that
+  follows it report the same predecessor, so a client that inserts on either
+  builds the same conversation.
+
 - Speech activity now reports its position from the start of the session's
   audio, as the wire defines it. The acoustic element keeps one gate per
   utterance and each gate counted from its own first sample, so every

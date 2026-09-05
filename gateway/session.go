@@ -111,8 +111,19 @@ type session struct {
 	sourcesMu sync.Mutex
 	sources   map[string]*videoSource
 
-	itemsMu    sync.Mutex
-	utterances map[string]*wireUtterance
+	itemsMu sync.Mutex
+	// lastItemID is the conversation item most recently added, which is what
+	// the next one follows.
+	//
+	// conversation.item.created carries previous_item_id so a client can put
+	// the conversation in order, and the field is null only for an item with
+	// no predecessor. Sending null for every item tells a client that every
+	// item is the first one, which an ordered view cannot recover from.
+	lastItemID string
+	// priorItemID is what lastItemID itself follows, so an item announced
+	// twice reports the same predecessor both times.
+	priorItemID string
+	utterances  map[string]*wireUtterance
 	// issuedCalls remembers what a tool call was, from the moment it is handed
 	// to the client until the client returns its result. It is bounded because
 	// nothing else bounds it: the protocol lets a client ignore a call, so the
@@ -258,6 +269,43 @@ func (session *session) bindingSettings() binding.Settings {
 		Gate: session.settings.gate, Observers: slices.Clone(session.settings.observers),
 		ManualTurns: session.settings.manualTurns,
 	}
+}
+
+// addItem records a new conversation item and reports the one it follows.
+//
+// The returned value is written straight into previous_item_id, so it is nil
+// for the first item of a session and a string afterwards. An item announced
+// twice - committed and then created - keeps the predecessor it was announced
+// with rather than becoming its own.
+func (session *session) addItem(itemID string) any {
+	session.itemsMu.Lock()
+	defer session.itemsMu.Unlock()
+	if itemID == "" || itemID == session.lastItemID {
+		return nullableItem(session.priorItemID)
+	}
+	previous := session.lastItemID
+	session.priorItemID, session.lastItemID = previous, itemID
+	return nullableItem(previous)
+}
+
+// predecessorOf reports what an item will follow without adding it, which is
+// what input_audio_buffer.committed announces before the item exists.
+func (session *session) predecessorOf(itemID string) any {
+	session.itemsMu.Lock()
+	defer session.itemsMu.Unlock()
+	if itemID != "" && itemID == session.lastItemID {
+		return nullableItem(session.priorItemID)
+	}
+	return nullableItem(session.lastItemID)
+}
+
+// nullableItem renders an absent predecessor as the protocol's null rather
+// than as an empty string, which is a different thing on the wire.
+func nullableItem(itemID string) any {
+	if itemID == "" {
+		return nil
+	}
+	return itemID
 }
 
 // Run drives the connection until it closes.
@@ -1009,7 +1057,7 @@ func (session *session) onItemCreate(create conversationItemCreateEvent) error {
 		itemID = session.nextID("item")
 	}
 	if err := session.send(event("conversation.item.created", session.nextID("event"), map[string]any{
-		"previous_item_id": nil,
+		"previous_item_id": session.addItem(itemID),
 		"item":             functionOutputItem(itemID, create.Item.CallID, create.Item.Output),
 	})); err != nil {
 		return err
@@ -1056,7 +1104,7 @@ func (session *session) onTextMessage(create conversationItemCreateEvent) error 
 		itemID = session.nextID("item")
 	}
 	if err := session.send(event("conversation.item.created", session.nextID("event"), map[string]any{
-		"previous_item_id": nil, "item": userAudioItem(itemID, text),
+		"previous_item_id": session.addItem(itemID), "item": userAudioItem(itemID, text),
 	})); err != nil {
 		return err
 	}

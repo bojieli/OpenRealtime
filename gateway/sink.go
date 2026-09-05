@@ -38,7 +38,7 @@ func (session *session) Activity(_ context.Context, activity binding.ActivityEve
 	})
 	if activity.Committed {
 		return session.send(event("input_audio_buffer.committed", session.nextID("event"), map[string]any{
-			"item_id": activity.ItemID, "previous_item_id": nil,
+			"item_id": activity.ItemID, "previous_item_id": session.predecessorOf(activity.ItemID),
 		}))
 	}
 	if activity.Started {
@@ -68,7 +68,8 @@ func (session *session) Transcript(_ context.Context, transcript binding.Transcr
 		return nil
 	}
 	if err := session.send(event("conversation.item.created", session.nextID("event"), map[string]any{
-		"previous_item_id": nil, "item": userAudioItem(transcript.ItemID, transcript.Text),
+		"previous_item_id": session.addItem(transcript.ItemID),
+		"item":             userAudioItem(transcript.ItemID, transcript.Text),
 	})); err != nil {
 		return err
 	}
@@ -165,6 +166,10 @@ func (session *session) SpeechBegin(ctx context.Context, utterance action.Uttera
 	}
 	session.itemsMu.Unlock()
 
+	// An assistant item joins the conversation here even though this event
+	// carries no predecessor field of its own, so the next user item follows
+	// it rather than jumping back over the answer.
+	_ = session.addItem(itemID)
 	if err := session.send(event("response.output_item.added", session.nextID("event"), map[string]any{
 		"response_id": responseID, "output_index": index,
 		"item": assistantItem(itemID, "in_progress", "", text),
