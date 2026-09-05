@@ -473,7 +473,7 @@ acknowledgement-retry, schema/catalog, strict-profile, race, and affected-packag
 checks are implementation evidence only. Aggregate, exact-per-case, safety,
 deadline, and latency acceptance remain unavailable; the focused
 two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
-campaign remain open; and the final-candidate ledger remains **0/7,486**.
+campaign remain open; and the final-candidate ledger remains **0/7,501**.
 
 The next benchmark run is intentionally gated on behavior, not on producing a
 new headline number. First complete the three remaining shipped-profile
@@ -497,7 +497,7 @@ second acceptance source of truth:
 
 | Required cell | Required attempts | Retained diagnostic evidence | Final-candidate credit |
 | --- | ---: | --- | ---: |
-| Interaction scenarios | 165 | Latest sealed 11-case diagnostic passed 8/11 | 0/165 |
+| Interaction scenarios | 180 | Twelve cases × 15 since the 2026-09-04 promotion; the retained 12×1 checkpoint passed 12/12, and the earlier sealed 11-case diagnostic passed 8/11 | 0/180 |
 | Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
 | Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
 | FDB v1.5 | 498 | Historical diagnostic passed 355/498 and exposed severe interruption-latency failure | 0/498 |
@@ -505,7 +505,7 @@ second acceptance source of truth:
 | FD-Bench | 6,147 | 1,546 completions and one interrupted attempt are retained; the population is incomplete | 0/6,147 |
 | tau-Voice control | 278 | Older nonreportable diagnostic passed 160/278 | 0/278 |
 | tau-Voice regular | 278 | No graph-native campaign has started | 0/278 |
-| **Total** | **7,486** | Earlier checkpoints remain diagnostic only | **0/7,486** |
+| **Total** | **7,501** | Earlier checkpoints remain diagnostic only | **0/7,501** |
 
 The report also retains cue-to-first-tool, cue-to-effectful-action,
 speech-end-to-action, cue/frame-to-observation, action execution, and total
@@ -560,7 +560,7 @@ do not turn a partial, filtered, dirty-tree, or unavailable-provider run into a
 ranking.
 
 The cascade four-case cell is the required Meeting Assistant result in the
-7,486-attempt behavioral acceptance matrix. The Omni cell is independent,
+7,501-attempt behavioral acceptance matrix. The Omni cell is independent,
 opt-in architecture/provider-quality validation; when selected it still must
 run all four cases, but it does not enter behavioral acceptance or
 `release_complete`.

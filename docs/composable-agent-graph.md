@@ -1803,7 +1803,7 @@ reconstruction, or alternate benchmark path.
 
 ### Living implementation tracker
 
-Last reconciled with the repository on **2026-09-04**. This is the progress
+Last reconciled with the repository on **2026-09-05**. This is the progress
 source of truth for the refactor. It must be updated in the same commit that
 closes or materially advances an implementation item. The checked implementation
 ledger and the reconciled commits already present in branch history identify
@@ -1831,7 +1831,7 @@ The words **complete**, **production-ready**, **regression-free**, and
 **release-ready** are reserved for that final result. A green unit, race, vet,
 protocol, smoke, synthetic-integration, focused benchmark, or earlier complete
 suite run may be reported only with its narrower scope. The release candidate
-is frozen before the first required attempt; all 7,486 required attempts must
+is frozen before the first required attempt; all 7,501 required attempts must
 name the same executable and final-candidate manifest, including its
 preregistered suite-specific graph/values/deployment/model/policy identities.
 Any subsequent behavior-affecting change creates a new candidate and requires
@@ -1839,8 +1839,9 @@ the affected complete suites—and ultimately the final matrix—to be rerun.
 
 Successful execution of all attempts is not behavioral acceptance. The final
 result must meet every registered aggregate, per-case, safety, deadline, and
-latency target; for example, the accepted Scenario baseline is 140/165
-(84.85%), so a substantially lower pass rate cannot be called a successful
+latency target; for example, the accepted eleven-case Scenario baseline was
+140/165 (84.85%) and the promoted twelve-case contract requires all 180
+attempts to pass, so a substantially lower pass rate cannot be called a successful
 refactor merely because the harness and artifact checks completed. A failed or
 materially regressed campaign is retained, diagnosed from its exact evidence,
 and followed by a code/configuration/policy repair, a focused affected-case
@@ -1849,15 +1850,18 @@ cycle repeats until the complete matrix meets the accepted targets. Tests and
 ad hoc integrations are prerequisites for attempting that loop, never a
 substitute for it.
 
-At this checkpoint, 311 of 381 explicit tracker boxes are checked (81.6%)
-and 70 remain open. The denominator grew when the broad mounted Realtime-CU
+At this checkpoint, 312 of 382 explicit tracker boxes are checked (81.7%)
+and 70 remain open. The 2026-09-05 reconciliation aligned the scenario
+population with the promoted twelve-case contract: the one-attempt live
+scenario box is now checked by the retained 12×1 checkpoint, and the twelfth
+case gained its own open fifteen-repeat box, so the denominator grew by one. The denominator grew when the broad mounted Realtime-CU
 composition item was split into ten reviewable subgates; seven are now
 evidenced and three remain open. The lower percentage relative to the earlier,
 coarser ledger is added resolution, not lost implementation. The
 percentage records completed reviewable slices; it does not dilute an open
 parent, benchmark population, platform gate, or definition-of-done requirement.
 
-The release-acceptance numerator is separately **0 of 7,486 final-candidate
+The release-acceptance numerator is separately **0 of 7,501 final-candidate
 attempts**. This does not erase the substantial diagnostic execution below; it
 means no attempt can enter the final ledger until the remaining behavioral
 repairs are committed, one clean candidate is frozen, and every required cell
@@ -1865,7 +1869,7 @@ is rerun against that exact candidate. The current critical path is:
 
 | Required cell | Current evidence and diagnosis | Next acceptance gate |
 | --- | --- | --- |
-| Interaction scenarios (165) | Latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns. The branch now also contains upstream repairs for stable ASR streams, split-endpoint and delayed-trigger standing grounding, unowned partial speak-through, partial silent-action grounding, and count/translation instructions, plus deterministic semantic-decision input ownership. None has been exercised by a new immutable live candidate | Exercise the landed continuation/admission repairs on the failed cases, fix any remaining behavior, then run 11 cases x 15 |
+| Interaction scenarios (180) | The twelfth case, `picking up where it was cut off`, was promoted into the fingerprinted contract on 2026-09-04 (see the spoken-boundary record), so the population is 12 cases × 15; the retained 12×1 checkpoint passed 12/12. Before that promotion the latest sealed 11-case diagnostic passed 8/11; count-as-they-go, requested-silence wording, and second-image response failed, while review exposed invented waiter turns. The branch now also contains upstream repairs for stable ASR streams, split-endpoint and delayed-trigger standing grounding, unowned partial speak-through, partial silent-action grounding, and count/translation instructions, plus deterministic semantic-decision input ownership. None has been exercised by a new immutable live candidate | Exercise the landed continuation/admission repairs on the failed cases, fix any remaining behavior, then run 11 cases x 15 |
 | Meeting Assistant (4) | Earlier clean graph-native campaign passed 4/4 with complete review evidence; it predates the eventual shared candidate | Rerun all 4 from the eventual shared final candidate |
 | Realtime-CU (16) | Two retained checkpoints must not be conflated: candidate-05's settlement-aware artifact reports 8/16, while the later clean `b535b15` campaign executed and reviewed 16/16 and was scored 14/16 under its then-current evaluator. The actionable live defects are unchanged: both camera tasks acted before fresh hazard evidence; moving-target/transient tasks continued after success; repeated invalid actions exhausted authority; and sessions continued to the evaluation horizon. The production graph now binds the reference disposition policy, routes temporal evidence through settlement and an explicit bounded retry element with no activation bypass, and coordinates exact session cancellation through retry, settlement-gate, producer-quiescence, activation, model, model-commit, and action acknowledgements. A distinct typed cleanup lane prevents canceled result consequences from re-entering ordinary activation. Mounted regressions exercise `indeterminate → retry → continue → continue → succeeded`, ordinary failed-effect recovery, cancel-before-failed-consequence cleanup, cancel-after-success-result-before-consequence cleanup, recovery-before-cancel, and cleanup overtaking activation cancellation for both statuses. The connected cleanup outcome is now proven nontransactional at the coordinator, and an already-admitted newer intent resumes after the delayed old cancellation without another frame. Focused and stable-endpoint implementation checks pass, but scorer interpretation, the remaining forged/reordered composition matrix, enforceable targets, and live repair campaign remain open | Complete forged/reordered boundary cases and failed-result scorer/live acceptance, register enforceable targets, run both camera, both moving-target, and both transient variants, repair observed defects, then rerun all 16 from one frozen candidate |
 | FDB v1.5 (498) | Earlier diagnostic completed 498/498 and passed 355; interruption yielded on time in only 15/156, with 2,412/10,132 ms p50/p95 interruption latency. Several general lifecycle, overlap, addressing, and policy-grounding defects are repaired but unmeasured on a new candidate | Run the affected focused slice and a complete 498-task campaign from a new frozen candidate |
@@ -1884,19 +1888,19 @@ cannot be mistaken for behavioral acceptance:
 
 | Ledger | Current state | Meaning |
 | --- | --- | --- |
-| Architecture implementation | 311/381 boxes checked (81.6%); 70 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
+| Architecture implementation | 312/382 boxes checked (81.7%); 70 open | Reviewable implementation/evidence slices only; an open parent or phase exit is not fractionally complete |
 | Phase exits | Phases 0, 3, and 4 are marked complete; phases 1, 2, 5, 6, 7, and 8 remain open | A phase closes only through its own checked exit gate |
 | Realtime-CU mounted composition | Ten reviewable subgates; seven evidenced and three open: forged cross-node evidence, reordered/duplicate terminal evidence, and failed-result scorer/live acceptance | The parent mounted-composition box remains unchecked until every subgate runs through the shipped profile |
 | Realtime-CU target registry | All five domains remain `unavailable` | No result can yet satisfy aggregate, exact-case, safety, deadline, and latency acceptance |
 | Repaired-candidate live work | Focused six variants and the subsequent exact sixteen have not run | Historical 8/16 and 14/16 checkpoints remain diagnostic, not candidate credit |
 | Definition of done | 8/15 top-level outcomes checked; 17/24 including nested subgates | Seven top-level release outcomes remain open regardless of lower-level implementation progress |
-| Final release matrix | 0/7,486 final-candidate attempts | No prior, filtered, synthetic, or differently versioned attempt is carried into this ledger |
+| Final release matrix | 0/7,501 final-candidate attempts | No prior, filtered, synthetic, or differently versioned attempt is carried into this ledger |
 
 The exact checkbox distribution is:
 
 | Tracker section | Checked | Open | Total |
 | --- | ---: | ---: | ---: |
-| Delivery and acceptance ledger | 139 | 44 | 183 |
+| Delivery and acceptance ledger | 140 | 44 | 184 |
 | Phase 0 | 4 | 0 | 4 |
 | Phase 1 | 7 | 1 | 8 |
 | Phase 2 | 17 | 6 | 23 |
@@ -1907,7 +1911,7 @@ The exact checkbox distribution is:
 | Phase 7 | 9 | 4 | 13 |
 | Phase 8 | 4 | 2 | 6 |
 | Definition of done, including subgates | 17 | 7 | 24 |
-| **Total** | **311** | **70** | **381** |
+| **Total** | **312** | **70** | **382** |
 
 | Phase | Current state | What exists now | Principal remaining work |
 | --- | --- | --- | --- |
@@ -2027,7 +2031,7 @@ statuses passed twenty repetitions; the repaired Meeting mounted case passed
 normal and race-enabled stress runs. Those repetitions are diagnostic
 implementation evidence, not committed benchmark attempts. No live or paid
 benchmark was run, no Realtime-CU acceptance target is yet registered, and the
-final-candidate ledger therefore remains 0/7,486.
+final-candidate ledger therefore remains 0/7,501.
 
 The ordered critical path from this checkpoint is:
 
@@ -2051,7 +2055,7 @@ The ordered critical path from this checkpoint is:
 5. Run and independently reopen all 16 Realtime-CU cases from one subsequently
    frozen candidate. Any behavior-affecting repair starts a new candidate and
    requires the affected population again.
-6. Complete the other required suite populations and finally execute all 7,486
+6. Complete the other required suite populations and finally execute all 7,501
    attempts against one shared frozen release candidate. Only accepted results
    from that matrix can close the release.
 
@@ -2291,7 +2295,7 @@ Current checkpoint notes:
   production integration checks do
   not close the still-open complete mounted adversarial matrix, acceptance
   targets, focused live six-case campaign, repaired
-  exact-sixteen campaign, or final 7,486-attempt matrix.
+  exact-sixteen campaign, or final 7,501-attempt matrix.
 - The committed graph-native slice now extends from acoustic and multimodal
   ingress through state, independently triggered cognition, explicit
   interaction/speech routing, tool authority, and external-model topologies.
@@ -2426,12 +2430,12 @@ Active acceptance queue (work in the shared worktree remains unchecked until
 it has been reviewed, tested, and committed with its evidence):
 
 - [ ] Complete the retained multimodal-review and recording checkpoint.
-  - [x] Seal the exact eleven-scenario source population and the exact
-    165-attempt review population behind portable source/evaluation receipts,
+  - [x] Seal the exact scenario source population and the exact
+    per-case-times-fifteen review population behind portable source/evaluation receipts,
     add credential-free bundle verification, and require the exact
     `gemini-3.7-flash` advisory-review population in the release plan. The
     deterministic scorer remains authoritative; the retained live Gemini run
-    currently proves transport and media decoding only, not a live 165-attempt
+    currently proves transport and media decoding only, not a live 180-attempt
     baseline/candidate comparison.
   - [x] Add descriptor-attested FFmpeg encoder and full-decode attestor plugins
     with create-only manifests, exact raw-frame retention, synchronized stereo
@@ -2504,13 +2508,12 @@ it has been reviewed, tested, and committed with its evidence):
     historical bundle, migration input, or baseline registry. The live
     populations remain separately tracked below and are not claimed by this
     wiring checkpoint.
-  - [ ] Run and report one provisioned live attempt for each of the eleven
-    interaction scenarios against the accepted historical trail. The newest
-    sealed 11×1 diagnostic passed 8/11 with all eleven attempts and exact-model
-    evaluations credential-free reopened, but predates the latest repairs.
-    Per the 2026-09-02 operator direction, the next 11×1 pass runs once; code
-    changes do not trigger another complete scenario rerun unless explicitly
-    requested.
+  - [x] Run and report one provisioned live attempt for each interaction
+    scenario against the accepted historical trail. The sealed 11×1 diagnostic
+    passed 8/11; after the twelfth case was promoted, the retained 12×1
+    checkpoint (`.runtime/deepgram-scenario-media-v28`, 2026-09-04) passed
+    12/12 with all twelve attempts and exact-model evaluations credential-free
+    reopened. It is a one-attempt diagnostic, not the fifteen-repeat campaign.
   - [x] Run and independently reopen the live four-case Meeting Assistant
     review. Candidate-21 retained 4/4 reportable graph-native attempts and four
     exact-model evaluations behind the source/evaluation/aggregate receipts
@@ -2586,15 +2589,15 @@ it has been reviewed, tested, and committed with its evidence):
   prove redacted propagation into reviewed candidate evidence.
 - [x] The scenario CLI reconciles a reviewed execution requirement against the
   exact bound Graph IR before reading credentials or starting protocol work.
-- [x] All eleven scenario paths bind authenticated live graph evidence to the
+- [x] All twelve scenario paths bind authenticated live graph evidence to the
   exact `scenario-name#run` attempt scope without retaining inspection tokens.
 - [x] Delete omitted and reference-only scenario execution modes. The
   `scenario` command now accepts only a runnable architecture cell carrying an
-  exact graph-native execution requirement, requires the complete eleven-case
+  exact graph-native execution requirement, requires the complete twelve-case
   suite and retained review bundle, and reconciles the launch profile plus
   `-inspection-graph` before credential access. The former implicit diagnostic
   branch, partial `-only` flag, and unattested raw-record output are removed.
-- [ ] Execute and compare the eleven interaction scenarios; scenario names
+- [ ] Execute and compare the twelve interaction scenarios; scenario names
   remain individually tracked below. A local diagnostic baseline now exists and
   is *not* the reviewed comparison this box requires: fifty-five attempts, five
   per scenario, against a frozen graph-native launch profile
@@ -2860,16 +2863,16 @@ visual description; and 8/15 each for waiter and count-as-they-go. A
 one-attempt-per-case
 operator checkpoint may be retained as diagnostic evidence, but it is not the
 release population and cannot claim statistical parity with or substitute for
-the required new 165-attempt sample.
+the required new 180-attempt sample.
 
 - [x] Bind the shared benchmark/session evidence path to exact Graph IR,
   element/config/deployment identities, selected edges, authenticated live
   resolutions, and capability evidence.
 - [x] Wire the scenario CLI to that authenticated graph-native evidence path,
-  with exact per-attempt scopes for all eleven cases and explicit refusal of
+  with exact per-attempt scopes for all twelve cases and explicit refusal of
   unattested execution behavior.
-- [ ] Re-run and compare all eleven interaction scenarios fifteen times each
-  (exactly 165 newly retained candidate attempts):
+- [ ] Re-run and compare all twelve interaction scenarios fifteen times each
+  (exactly 180 newly retained candidate attempts):
   The exact population, sealed review path, offline verifier, and exact-model
   advisory transport are implemented. The newest sealed 11×1 deterministic
   diagnostic, candidate run 18 at `85b6479`, passed 8/11 with all eleven
@@ -2894,10 +2897,10 @@ the required new 165-attempt sample.
   model-independent evidence and continuation repairs below, but they have not
   yet been exercised by a new immutable live candidate. The required
   fifteen-repetition campaign has not started. This box remains open until all
-  165 attempts are retained and reviewed/reopened and receive an honest
+  180 attempts are retained and reviewed/reopened and receive an honest
   case-by-case and aggregate comparison. Each regression keeps the box open:
   retain it, repair its traced cause, rerun the focused affected cases, and
-  then rerun the complete 165-attempt scenario suite.
+  then rerun the complete 180-attempt scenario suite.
   - [x] Preserve split same-speaker endpoints after the last actually played
     assistant boundary and pass exact typed transcript, quiet, and direct-image
     condition evidence through the activation guard. Commit `0e13305` covers
@@ -2921,6 +2924,7 @@ the required new 165-attempt sample.
   - [ ] `an acknowledgement is not an interruption`
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
+  - [ ] `picking up where it was cut off`
 - [x] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
   production profile. Clean-worktree candidate-21 at commit `c250d83` passed
   four independent focused two-case runs (8/8) before its immutable full run.
@@ -3101,7 +3105,7 @@ the required new 165-attempt sample.
       cannot by itself prove that an adversary omitted a later campaign or
       fabricated a coherent replacement artifact universe.
   - [x] Make the machine-enforced required matrix exact: eight suite identities
-    and 7,486 attempts comprising scenario 165, cascade Meeting Assistant 4,
+    and 7,501 attempts comprising scenario 180, cascade Meeting Assistant 4,
     Realtime-CU 16, FDB v1.5 498, FDB v3 100, FD-Bench 6,147, tau control 278,
     and tau regular 278. The alternate omni Meeting composition and DynaCU are
     retained as independently runnable opt-in validation gates with
@@ -3883,7 +3887,7 @@ the required new 165-attempt sample.
 
   | Required cell | Attempts | Final frozen-candidate status |
   | --- | ---: | --- |
-  | Interaction scenarios, 11 cases × 15 | 165 | Open; no qualifying final-candidate run |
+  | Interaction scenarios, 12 cases × 15 | 180 | Open; no qualifying final-candidate run |
   | Meeting Assistant cascade | 4 | Open; prior campaign is diagnostic for the later candidate |
   | Realtime-CU | 16 | Open; prior campaign is diagnostic for the later candidate |
   | FDB v1.5 | 498 | Open; repair and complete-suite rerun required |
@@ -3891,7 +3895,7 @@ the required new 165-attempt sample.
   | FD-Bench, all 21 conditions | 6,147 | Open; no qualifying final-candidate run |
   | τ-Voice control | 278 | Open; no qualifying final-candidate run |
   | τ-Voice regular | 278 | Open; no qualifying final-candidate run |
-  | **Required total** | **7,486** | **Open** |
+  | **Required total** | **7,501** | **Open** |
 
   Meeting omni and DynaCU remain optional and never enter this total.
 - [ ] If any final-candidate aggregate, per-case behavior, safety result,
@@ -5485,7 +5489,7 @@ Each required comparison must follow this protocol:
    merely non-significant difference is not proof of parity, and remaining
    above 80% is not acceptable when the trusted result was materially higher.
    The interaction-scenario release population is fifteen retained attempts
-   per case (exactly 165 total). Any one-attempt-per-case checkpoint
+   per case (exactly 180 total). Any one-attempt-per-case checkpoint
    is descriptive diagnostic evidence only. Other suites declare their own
    complete candidate population before the run.
 5. Treat any material correctness, interaction, safety, deadline, or latency
@@ -5495,8 +5499,8 @@ Each required comparison must follow this protocol:
    affected suite. Repeat this focused-then-complete cycle until the complete
    immutable candidate passes; a locally repaired slice never closes the gate.
 
-The required final matrix contains exactly 7,486 attempts: fifteen retained
-attempts for each of the eleven interaction scenarios (165 attempts),
+The required final matrix contains exactly 7,501 attempts: fifteen retained
+attempts for each of the twelve interaction scenarios (180 attempts),
 all four Meeting Assistant v1 tasks through the cascade reference, all sixteen
 Realtime-CU v1 cases, all 498 FDB v1.5 tasks, all 100 FDB v3 examples, all
 6,147 FD-Bench conversations in all 21 conditions, and all 278 tau2-bench/
