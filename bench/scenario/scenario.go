@@ -96,8 +96,9 @@ type Check struct {
 	FromMS int
 	// Tool is the call that must have happened, for CheckToolCalled.
 	Tool string
-	// Any is a set of phrases, one of which must appear in what the agent
-	// said, for CheckSaid.
+	// Any is a set of whole-word phrases, one of which must appear for
+	// CheckSaid and none of which may appear for CheckNotSaid. Matching ignores
+	// case and repeated whitespace; punctuation-only assertions remain literal.
 	Any  []string
 	Note string
 }
@@ -282,11 +283,14 @@ func (tool Tool) FunctionDeclaration() (FunctionToolDeclaration, error) {
 
 // Result is one scenario played.
 type Result struct {
-	Scenario   string           `json:"scenario"`
-	Passed     bool             `json:"passed"`
-	Failures   []string         `json:"failures,omitempty"`
-	Latencies  []Latency        `json:"latencies,omitempty"`
-	Transcript bench.Transcript `json:"transcript"`
+	// ScorerVersion identifies the deterministic scoring semantics. Zero is
+	// reserved for historical unversioned results and unscored attempts.
+	ScorerVersion uint64           `json:"scorer_version,omitempty"`
+	Scenario      string           `json:"scenario"`
+	Passed        bool             `json:"passed"`
+	Failures      []string         `json:"failures,omitempty"`
+	Latencies     []Latency        `json:"latencies,omitempty"`
+	Transcript    bench.Transcript `json:"transcript"`
 }
 
 // Latency is how long after something happened the agent could be heard.
@@ -423,6 +427,9 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 
 // Play runs one scenario and scores it.
 func Play(ctx context.Context, voice Voice, config bench.SessionConfig, item Scenario) (Result, error) {
+	if err := validateScenarioChecks(item); err != nil {
+		return Result{Scenario: item.Name}, fmt.Errorf("invalid scenario checks: %w", err)
+	}
 	timeline, err := Compose(ctx, voice, item)
 	if err != nil {
 		return Result{Scenario: item.Name}, err
@@ -493,7 +500,12 @@ func Score(item Scenario, timeline Timeline, transcript bench.Transcript) Result
 func score(
 	item Scenario, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard,
 ) Result {
-	result := Result{Scenario: item.Name, Transcript: transcript, Passed: true}
+	result := Result{ScorerVersion: ScorerVersion, Scenario: item.Name, Transcript: transcript, Passed: true}
+	if len(item.Checks) == 0 {
+		result.Passed = false
+		result.Failures = append(result.Failures, "scenario has no behavior checks")
+		return result
+	}
 	for _, check := range item.Checks {
 		if failure := apply(check, timeline, transcript, menu, listen); failure != "" {
 			result.Passed = false
@@ -513,23 +525,24 @@ const audibleMS = 120
 func apply(
 	check Check, timeline Timeline, transcript bench.Transcript, menu *Menu, listen heard,
 ) string {
+	if err := validateCheck(check, timeline); err != nil {
+		return "invalid scenario check: " + err.Error()
+	}
 	from, to := 0, timeline.TotalMS
 	switch {
 	case check.Sight > 0 && check.Sight <= len(timeline.Sights):
 		from = timeline.Sights[check.Sight-1]
 		to = from + check.AfterMS
-		if to <= from {
-			to = timeline.TotalMS
-		}
 	case check.Line >= 0 && check.Line < len(timeline.Spans):
 		span := timeline.Spans[check.Line]
 		from, to = span.StartMS, span.EndMS+check.AfterMS
 		if check.FromMS != 0 {
 			from = span.EndMS + check.FromMS
 		}
-		if to <= from {
-			to = from + 1
-		}
+	}
+	if (check.Sight > 0 || check.Line >= 0) &&
+		check.Kind != CheckToolCalled && check.Kind != CheckReachedMenu && to <= from {
+		return "invalid scenario check: time window is empty or reversed"
 	}
 	// A latency is measured from the moment the trigger stopped, not from the
 	// moment it started: what a person waits through is the silence after
@@ -603,7 +616,7 @@ func apply(
 		}
 	case CheckReachedMenu:
 		if menu == nil {
-			return ""
+			return "menu outcome is unavailable"
 		}
 		if !menu.Reached() {
 			return fmt.Sprintf("the call ended at %s after %d presses (%s)",
@@ -617,18 +630,18 @@ func apply(
 		}
 		return fmt.Sprintf("never called %s (%s)", check.Tool, check.Note)
 	case CheckSaid:
-		said := strings.ToLower(saidBetween(transcript, check.Line, from, to))
+		said := checkedText(check, transcript, from, to)
 		for _, phrase := range check.Any {
-			if strings.Contains(said, strings.ToLower(phrase)) {
+			if containsPhrase(said, phrase) {
 				return ""
 			}
 		}
 		return fmt.Sprintf("said %q during %s, none of %v (%s)",
 			truncateSaid(said), where, check.Any, check.Note)
 	case CheckNotSaid:
-		said := strings.ToLower(saidBetween(transcript, check.Line, from, to))
+		said := checkedText(check, transcript, from, to)
 		for _, phrase := range check.Any {
-			if strings.Contains(said, strings.ToLower(phrase)) {
+			if containsPhrase(said, phrase) {
 				return fmt.Sprintf("said %q during %s, which contains %q (%s)",
 					truncateSaid(said), where, phrase, check.Note)
 			}

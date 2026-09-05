@@ -168,11 +168,29 @@ func Suite() []Scenario {
 			Checks: []Check{
 				{Kind: CheckSpoke, Line: 1, AfterMS: 4000, Note: "the first sentence should be carried over"},
 				{Kind: CheckSaid, Line: 1, AfterMS: 5000,
-					Any:  []string{"good day", "good afternoon", "hello", "pleased", "nice to meet", "meet you"},
+					Any:  []string{"good day", "good afternoon", "hello", "hi", "greetings"},
 					Note: "and carried over into English rather than commented on"},
+				{Kind: CheckSaid, Line: 1, AfterMS: 5000,
+					Any:  []string{"nice to meet", "pleased to meet", "glad to meet", "happy to meet", "good to meet", "lovely to meet", "pleasure to meet", "pleasure meeting", "nice meeting"},
+					Note: "the greeting also says they are pleased to meet; hello alone omits that"},
+				// Each fact is required separately. One matching word used to
+				// pass the complete appointment, even when its time or place was
+				// omitted. Alternative phrasings within a fact remain acceptable.
 				{Kind: CheckSaid, Line: 2, AfterMS: 5000,
-					Any:  []string{"three", "3", "tomorrow", "office"},
-					Note: "the second sentence too, which means it never stopped to hand the floor back"},
+					Any:  []string{"meet", "meeting", "see you", "get together"},
+					Note: "the second sentence arranges a meeting"},
+				{Kind: CheckSaid, Line: 2, AfterMS: 5000,
+					Any:  []string{"tomorrow"},
+					Note: "the meeting is tomorrow"},
+				{Kind: CheckSaid, Line: 2, AfterMS: 5000,
+					Any:  []string{"three", "3", "15:00", "15.00"},
+					Note: "the meeting time is three"},
+				{Kind: CheckSaid, Line: 2, AfterMS: 5000,
+					Any:  []string{"afternoon", "p.m.", "pm", "p. m.", "15:00", "15.00"},
+					Note: "three in the afternoon, not an unspecified or morning time"},
+				{Kind: CheckSaid, Line: 2, AfterMS: 5000,
+					Any:  []string{"office"},
+					Note: "the meeting place is the office"},
 			},
 		},
 		{

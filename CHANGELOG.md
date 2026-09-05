@@ -4,6 +4,10 @@
 
 ### Highlights
 
+- Interaction scenario scoring now rejects word-fragment false passes and
+  undefined checks, and requires every appointment detail in the translation
+  case. New results identify scorer version 2; historical recordings retain
+  their original scores and receipts.
 - The descriptor-locked browser and native companion clients now share one
   clean Realtime server and explicit presentation APIs.
 - Voice + vision deployments gain a bounded silent visual-action lane while the

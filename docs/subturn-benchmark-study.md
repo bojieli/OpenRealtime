@@ -60,7 +60,12 @@ reopened with `review verify-scenario` after case 12 was added; all 12 source
 and 12 evaluation records verified against their receipts.
 
 The retained bundle is immutable evidence for the profile run that produced
-it. A later live diagnostic found that a model could copy the reserved
+it. It predates deterministic scenario scorer version 2, which rejects word
+fragments and requires every appointment detail in the translation case. Its
+12/12 score remains the original checkpoint's result; it has not been rescored
+or promoted under those stronger checks.
+
+A later live diagnostic found that a model could copy the reserved
 `[runtime: ...]` note used to describe prepared-but-unheard speech into its
 answer. The legacy continuation runner now removes that annotation before
 building `RunResult.AssistantText` or committing assistant trajectory content.

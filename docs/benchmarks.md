@@ -169,6 +169,23 @@ nobody is using.
 
 ## What the suites judge
 
+**Interaction scenarios** score timed speech, silence, tool outcomes, and
+content against the authored script. New deterministic results record
+`scorer_version: 2`. Content checks match whole words and numbers, ignoring
+case and repeated whitespace: `none` cannot satisfy `one`, `undone` cannot
+satisfy `done`, and `30` cannot satisfy `3`. Empty or unknown checks, missing
+timeline anchors or menu evidence, and invalid time windows fail explicitly.
+The translation case separately requires the greeting and introduction, then
+the meeting, day, time, afternoon, and office. Mentioning one appointment
+keyword no longer passes the whole translation.
+
+These are deterministic content requirements, not a general semantic judge.
+Negation, contradictory statements, invented dialogue, and audible quality
+still require the separately retained media review and further scorer work.
+The twelve-case wire contract and 180-attempt release population are unchanged.
+Historical unversioned results retain their original labels and receipts; a
+passing historical recording does not establish a pass under scorer version 2.
+
 **FDB v1.5** has four categories and two of them want the opposite of the other
 two: yield to an interruption, hold through a backchannel, background speech,
 and speech addressed to somebody else. A system that scores well by always
