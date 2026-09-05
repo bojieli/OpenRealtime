@@ -101,6 +101,13 @@ intent, later changed observer evidence may reactivate cognition so a waiting
 condition can be detected; the activation policy still serializes one unsettled
 generation/effect and consumes each exact post-effect screen consequence.
 
+Settlement consumes each continued result once. After a `continue` decision,
+revision 3 remembers the canonical result position so delayed copies of that
+visual consequence cannot start another completion decision for an old effect.
+Distinct later results still receive their own classification. Terminal
+acknowledgements must match the exact pending decision; replayed terminals and
+acknowledgements cannot clear a newer intent's active work.
+
 Canonical results awaiting visual evidence are retained in a bounded FIFO;
 they are never stored in a replaceable "latest result" slot. Each nonempty
 screen observation consumes exactly the oldest result, while camera frames and
