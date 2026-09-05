@@ -431,6 +431,61 @@ limit statistical claims. No threshold was relaxed and no failed trial was
 filtered. The temporary server was stopped; no case-repeat, full-suite, or
 final-candidate gate closes. The inter-phrase pause is the next behavioral gap.
 
+## Clause segmentation repair and remaining within-phrase pause
+
+The preceding third trial sent `First,` to synthesis as its own segment.
+The scenario graph's `minimum_runes: 1` allowed that cut even though the
+reusable splitter's default floor of twelve was designed to avoid short
+introductions running out before the next synthesis arrived.
+Revision `d5bce69f1e33aadf7ca478ae93694ace27b69aea` adds a separate optional
+`minimum_clause_runes` floor and sets it to twelve for this graph. Sentence
+ends retain the existing minimum of one, preserving short complete answers
+and counting sentences; source completion still flushes immediately. Other
+profiles that omit the setting retain their existing behavior.
+
+`artifacts/scenario-speech-anchored-acknowledgement-20260905-03` retains three
+new trials from executable
+`sha256:1c6ed16ed2ba6099bd2d58a810fbfb33d7d924756e6e78cf459e39e9fcf5741d`.
+All three completed and **2/3 passed**, the same overall result as the preceding
+campaign. The isolated introduction is absent in every new recording. All
+first holds contain the full 511 ms of cue-overlap activity. Trial 3 instead
+fails the second hold's unchanged 500 ms gap limit with a **540 ms** pause.
+Gemini 3.7 Flash found usable media and agreed with every outcome. All source
+and review bundles independently reopened:
+
+- Source receipt: `sha256:e79e9b2b216a9b3ec3415fcc5d3151ceb2c52220c7d11fc7dedbd80c34e53f2d`.
+- Advisory receipt: `sha256:26ee146084a391ecc0f3b2babf713675312a9c74001ae000ddf85e96e492d976`.
+
+| Trial | First cue | Second cue | First hold before/during/after | Second hold before/during/after | Result |
+| --- | ---: | ---: | --- | --- | --- |
+| 1 | 10,500 ms | 11,700 ms | 600 / 511 / 849 ms | 1,000 / 1,039 / 1,000 ms | Pass |
+| 2 | 10,400 ms | 11,600 ms | 660 / 511 / 929 ms | 1,000 / 1,259 / 600 ms | Pass |
+| 3 | 10,500 ms | 11,700 ms | 600 / 511 / 1,000 ms | 1,000 / 1,039 / 1,000 ms | Fail: second-hold gap |
+
+All six input identities, cue opportunities, and waveform holds independently
+reproduce; overlapping responses all report `completed`. Trial 3's pause spans
+12,640–13,180 ms inside the first spoken segment. Audio chunks cover 533.96 ms
+of that interval with a maximum delivery gap of 3.11 ms. The next text segment
+does not begin until 16,160.313 ms. This is a low-activity interval within
+near-continuously delivered audio, not a between-segment or 540 ms transport
+stall; its provider-internal cause remains unestablished.
+
+Initial prompt-end-to-audio latencies were 3,986 / 3,757 / 3,985 ms, versus
+3,958 / 3,815 / 3,572 ms previously. These small sequential campaigns on shared
+services do not establish a latency or overall success-rate improvement.
+The emitted first phrase also retains the earlier `purchase Check` omission
+where the supplied policy mentions the purchase email. Its origin is unknown;
+keyword checks and advisory agreement do not prove complete content fidelity.
+
+The artifact retains 79 policy exchanges, exact commands/configuration,
+comparison plan, waveform and delivery audits, and the existing metadata
+authoring limitation. The full repository gate passed; optional official SDK
+tests explicitly skipped for a missing dependency. Splitter, mounted-element,
+and real scenario endpoint regressions each reject an independent restoration
+of the old behavior. No thresholds changed or failed trials were filtered.
+The temporary server was stopped. Within-phrase audio continuity, content
+fidelity, fifteen-repeat cases, the full suite, and final acceptance remain open.
+
 ## FD-Bench paired diagnostic
 
 The post-repair study is retained under

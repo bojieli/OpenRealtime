@@ -2959,6 +2959,14 @@ the required new 180-attempt sample.
     absent. The remaining failure has only 20 ms of activity during the first
     cue after `First,`. Its unchanged acoustic threshold, repeated-case
     requirements, full-suite campaign, and release gate remain open.
+    The subsequent [clause segmentation repair](subturn-benchmark-study.md#clause-segmentation-repair-and-remaining-within-phrase-pause)
+    removes that isolated introduction while preserving short complete answers.
+    Three more reviewed trials still score 2/3: every first cue has 511 ms of
+    overlap activity, but trial 3 has a 540 ms second-hold pause inside the
+    first spoken segment. Near-continuous delivered audio carries the pause;
+    no 540 ms transport or segment-boundary stall explains it. The failed
+    recording, unchanged limits, and content-fidelity limitation remain
+    retained. No repeat, full-suite, or release gate closes.
   - [ ] `telling them what it saw`
   - [ ] `an ordinary question`
   - [ ] `picking up where it was cut off`
