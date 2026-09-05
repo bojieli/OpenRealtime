@@ -427,7 +427,7 @@ func assertSessionInvocationLiveResolution(t *testing.T, mounted *graphruntime.M
 		resolution := mounted.Live().Nodes["policy"].Resolution
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/policy.SessionInvocation" &&
-			resolution.Runtime.Revision == "implementation:3" {
+			resolution.Runtime.Revision == "implementation:4" {
 			return
 		}
 		if time.Now().After(deadline) {

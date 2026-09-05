@@ -241,6 +241,6 @@ func newIngressTestRunner(ports *ingressTestPorts) *userContentRunner {
 		pending: make(map[string]pendingContent), pendingByReply: make(map[string]string),
 		pendingByContent: make(map[string]string), pendingByItem: make(map[string]string),
 		pendingByStream: make(map[string]string), streams: make(map[string]revisionState),
-		terminal: make(map[string]struct{}), preCanceled: make(map[string]string),
+		terminal: make(map[string]struct{}), preCanceled: make(map[contentCancellationAddress]string),
 	}
 }

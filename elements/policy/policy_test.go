@@ -830,7 +830,7 @@ func assertPolicyLiveResolution(t *testing.T, mounted *graphruntime.Mounted) {
 		resolution := mounted.Live().Nodes["activation"].Resolution
 		if resolution != nil && resolution.RuntimeEvidence == inspect.EvidenceLive &&
 			resolution.Runtime.ID == "builtin://openrealtime/elements/policy.GenerateOnObservation" &&
-			resolution.Runtime.Revision == "implementation:3" &&
+			resolution.Runtime.Revision == "implementation:4" &&
 			resolution.CapabilitiesEvidence == inspect.EvidenceLive && len(resolution.Capabilities) == 0 {
 			return
 		}

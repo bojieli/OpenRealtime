@@ -3113,7 +3113,7 @@ func TestSemanticAdmissionProviderFailureAndTimeoutNeverGenerate(t *testing.T) {
 	})
 }
 
-func TestSemanticAdmissionCancellationMemoryIsBoundedAndConsumed(t *testing.T) {
+func TestSemanticAdmissionCancellationMemoryIsBounded(t *testing.T) {
 	entered := make(chan int, 1)
 	decider := &semanticTestDecider{
 		descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer}, entered: entered,

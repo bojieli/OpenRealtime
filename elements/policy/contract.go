@@ -25,7 +25,7 @@ import (
 
 const (
 	generationRuntimeID             = "builtin://openrealtime/elements/policy.GenerateOnObservation"
-	policyImplementationRevision    = "implementation:3"
+	policyImplementationRevision    = "implementation:4"
 	maximumPolicyIdentifierBytes    = 256
 	maximumPolicyReasonBytes        = 1024
 	maximumPolicyInstructionBytes   = 1 << 20
@@ -109,8 +109,12 @@ type GenerateOnObservationConfig struct {
 
 type GenerationCancel struct {
 	GenerationID string `json:"generation_id,omitempty"`
-	StreamID     string `json:"stream_id,omitempty"`
-	Reason       string `json:"reason,omitempty"`
+	// StreamID cancels every revision of this exact stream in the addressed
+	// session while its bounded cancellation record is retained. A new request
+	// uses a new stream identity; one matching revision does not consume this
+	// cancellation. GenerationID instead addresses only one model activation.
+	StreamID string `json:"stream_id,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 	// DurableIntent optionally narrows cancellation to one exact canonical
 	// user-authority epoch. Generic generation policies may ignore it, but a
 	// policy that retains durable intent across several observations must

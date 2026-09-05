@@ -4,6 +4,17 @@
 
 ### Highlights
 
+- Canceling a content or generation stream now suppresses its later revisions
+  through ingress, semantic admission, and static/session-configured generation
+  policies. These paths previously consumed cancellation on the first match,
+  or forgot it after canceling pending work, allowing withdrawn text, images,
+  files, or semantic decisions to restart. Stream cancellation stays within
+  the existing bounded memory. Ingress cancellation now distinguishes content
+  and stream IDs and respects the exact session; explicit stream addresses
+  also take precedence over unrelated envelope run IDs. Fresh streams and
+  cancellation of one specific content request or generation retain their
+  separate scopes.
+
 - FD-Bench measures where each turn's speech actually stops and reports how
   many of the turns it counted as spoken over had the agent starting after the
   person had already stopped. The released turn boundaries enclose whatever
@@ -20,6 +31,7 @@
   evidence. Where the measurement cannot read a turn - the 0 dB background
   conditions, where the noise never stops - it reports the annotation, so
   nothing there moves.
+
 
 - A failure to yield is measured against the response that was interrupted,
   not against the clock. The suite followed the agent's audio after an overlap
@@ -58,6 +70,7 @@
   scored before this can be reconciled with one scored after. The three
   categories that ask the agent to keep speaking have almost no lead, and
   their windows move later, not earlier.
+
 
 - Production computer-use regressions now cover classifications delivered after
   cancellation and replacement, duplicate classifications while cancellation

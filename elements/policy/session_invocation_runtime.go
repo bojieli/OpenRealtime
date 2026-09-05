@@ -528,9 +528,15 @@ func (runner *sessionInvocationRunner) takePreCancel(
 		if !found {
 			continue
 		}
-		delete(runner.preCanceled, address)
-		if index := slices.Index(runner.preCancelOrder, address); index >= 0 {
-			runner.preCancelOrder = slices.Delete(runner.preCancelOrder, index, index+1)
+		// One exact generation is consumed here and remembered as terminal.
+		// A stream address covers every revision of that stream; consuming it
+		// on the first hypothesis would let a later hypothesis restart work.
+		// Keep it within the existing bounded cancellation memory instead.
+		if address.generationID != "" {
+			delete(runner.preCanceled, address)
+			if index := slices.Index(runner.preCancelOrder, address); index >= 0 {
+				runner.preCancelOrder = slices.Delete(runner.preCancelOrder, index, index+1)
+			}
 		}
 		return reason, true
 	}

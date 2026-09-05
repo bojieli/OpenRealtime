@@ -172,7 +172,7 @@ func (userContentFactory) Mount(
 		pending: make(map[string]pendingContent), pendingByReply: make(map[string]string),
 		pendingByContent: make(map[string]string), pendingByItem: make(map[string]string),
 		pendingByStream: make(map[string]string), streams: make(map[string]revisionState),
-		terminal: make(map[string]struct{}), preCanceled: make(map[string]string),
+		terminal: make(map[string]struct{}), preCanceled: make(map[contentCancellationAddress]string),
 	}, nil
 }
 
@@ -228,6 +228,12 @@ type revisionState struct {
 	final    bool
 }
 
+type contentCancellationAddress struct {
+	contentID string
+	streamID  string
+	sessionID string
+}
+
 type userContentRunner struct {
 	instance   string
 	config     UserContentConfig
@@ -246,8 +252,8 @@ type userContentRunner struct {
 	streamOrder      []string
 	terminal         map[string]struct{}
 	terminalOrder    []string
-	preCanceled      map[string]string
-	preCancelOrder   []string
+	preCanceled      map[contentCancellationAddress]string
+	preCancelOrder   []contentCancellationAddress
 }
 
 type ingressInput struct {
@@ -312,7 +318,7 @@ func (runner *userContentRunner) text(ctx context.Context, envelope element.Enve
 	if pendingID := runner.pendingByItem[envelope.ItemID]; pendingID != "" {
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeRefused, Operation: "text", ContentID: contentID, StreamID: streamID, Code: "duplicate_pending", Message: fmt.Sprintf("request is already pending as %q", pendingID)}, false)
 	}
-	if reason, canceled := runner.takePreCancel(contentID, streamID); canceled {
+	if reason, canceled := runner.takePreCancel(contentID, streamID, envelope.SessionID); canceled {
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeCanceled, Operation: "text", ContentID: contentID, StreamID: streamID, SourceRevision: input.Revision, Code: "canceled", Message: reason}, true)
 	}
 	input.Text = strings.TrimSpace(input.Text)
@@ -376,7 +382,7 @@ func (runner *userContentRunner) attachment(ctx context.Context, operation strin
 	if pendingID := runner.pendingByItem[envelope.ItemID]; pendingID != "" {
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeRefused, Operation: operation, ContentID: contentID, StreamID: streamID, SourceRevision: normalized.sourceRevision, Code: "duplicate_pending", Message: fmt.Sprintf("request is already pending as %q", pendingID)}, false)
 	}
-	if reason, canceled := runner.takePreCancel(contentID, streamID); canceled {
+	if reason, canceled := runner.takePreCancel(contentID, streamID, envelope.SessionID); canceled {
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeCanceled, Operation: operation, ContentID: contentID, StreamID: streamID, SourceRevision: normalized.sourceRevision, Code: "canceled", Message: reason}, true)
 	}
 	if err := runner.validateAttachment(normalized); err != nil {
@@ -521,8 +527,10 @@ func (runner *userContentRunner) cancel(ctx context.Context, envelope element.En
 	if _, err := canonicalID(envelope.ItemID, "cancel item_id"); err != nil {
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeRefused, Operation: "cancel", Code: "invalid_identity", Message: err.Error()}, false)
 	}
-	contentID := firstNonempty(request.ContentID, envelope.RunID, envelope.CancellationScope)
-	streamID := request.StreamID
+	contentID, streamID := request.ContentID, request.StreamID
+	if contentID == "" && streamID == "" {
+		contentID = firstNonempty(envelope.RunID, envelope.CancellationScope)
+	}
 	if contentID == "" && streamID == "" {
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeRefused, Operation: "cancel", Code: "missing_address", Message: "cancel requires a content or stream ID"}, false)
 	}
@@ -546,9 +554,16 @@ func (runner *userContentRunner) cancel(ctx context.Context, envelope element.En
 		retainID = runner.pendingByStream[streamID]
 	}
 	pending, found := runner.pending[retainID]
+	found = found && pending.cause.SessionID == envelope.SessionID
+	if !found && contentID != "" {
+		runner.recordPreCancel(contentCancellationAddress{contentID: contentID, sessionID: envelope.SessionID}, request.Reason)
+	}
+	if streamID != "" {
+		// Retain the whole stream even if this interrupt also cancels a
+		// pending retention request. Its eventual reply cannot reopen it.
+		runner.recordPreCancel(contentCancellationAddress{streamID: streamID, sessionID: envelope.SessionID}, request.Reason)
+	}
 	if !found {
-		key := firstNonempty(contentID, streamID)
-		runner.recordPreCancel(key, request.Reason)
 		return runner.finish(ctx, envelope, Outcome{Kind: OutcomeSucceeded, Operation: "cancel", ContentID: contentID, StreamID: streamID, Code: "cancel_recorded", Message: request.Reason}, false)
 	}
 	if pending.canceled {
@@ -850,14 +865,11 @@ func (runner *userContentRunner) rememberTerminal(itemID string) {
 	}
 }
 
-func (runner *userContentRunner) recordPreCancel(key, reason string) {
-	if key == "" {
-		return
+func (runner *userContentRunner) recordPreCancel(address contentCancellationAddress, reason string) {
+	if _, found := runner.preCanceled[address]; !found {
+		runner.preCancelOrder = append(runner.preCancelOrder, address)
 	}
-	if _, found := runner.preCanceled[key]; !found {
-		runner.preCancelOrder = append(runner.preCancelOrder, key)
-	}
-	runner.preCanceled[key] = boundedReason(reason)
+	runner.preCanceled[address] = boundedReason(reason)
 	for len(runner.preCancelOrder) > runner.config.TerminalMemory {
 		oldest := runner.preCancelOrder[0]
 		runner.preCancelOrder = runner.preCancelOrder[1:]
@@ -865,15 +877,22 @@ func (runner *userContentRunner) recordPreCancel(key, reason string) {
 	}
 }
 
-func (runner *userContentRunner) takePreCancel(keys ...string) (string, bool) {
-	for _, key := range keys {
-		reason, found := runner.preCanceled[key]
+func (runner *userContentRunner) takePreCancel(contentID, streamID, sessionID string) (string, bool) {
+	for _, address := range []contentCancellationAddress{
+		{contentID: contentID, sessionID: sessionID},
+		{streamID: streamID, sessionID: sessionID},
+	} {
+		reason, found := runner.preCanceled[address]
 		if !found {
 			continue
 		}
-		delete(runner.preCanceled, key)
-		if index := slices.Index(runner.preCancelOrder, key); index >= 0 {
-			runner.preCancelOrder = slices.Delete(runner.preCancelOrder, index, index+1)
+		// An exact content request is consumed once. A stream covers every
+		// later revision and remains in the bounded cancellation memory.
+		if address.contentID != "" {
+			delete(runner.preCanceled, address)
+			if index := slices.Index(runner.preCancelOrder, address); index >= 0 {
+				runner.preCancelOrder = slices.Delete(runner.preCancelOrder, index, index+1)
+			}
 		}
 		return reason, true
 	}

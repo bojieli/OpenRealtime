@@ -21,7 +21,7 @@ import (
 
 const (
 	userContentRuntimeID     = "builtin://openrealtime/elements/ingress.UserContent"
-	ingressImplementationRev = "implementation:1"
+	ingressImplementationRev = "implementation:2"
 	maximumIngressBytes      = 1 << 30
 	maximumIdentifierBytes   = 256
 	maximumReasonBytes       = 1024
@@ -101,6 +101,13 @@ type UserAttachment struct {
 	CapturedNS     uint64 `json:"captured_ns,omitempty"`
 }
 
+// ContentCancel addresses content within the envelope's exact session. A
+// StreamID cancels all revisions while its bounded cancellation record remains
+// retained, including revisions arriving after pending retention finishes. A
+// ContentID cancels one pending or next matching content request. If both are
+// supplied, the content lookup takes precedence for pending work and the stream
+// cancellation also remains recorded. New requests use new stream identities.
+// RunID/CancellationScope is a content-ID fallback only without explicit IDs.
 type ContentCancel struct {
 	ContentID string `json:"content_id,omitempty"`
 	StreamID  string `json:"stream_id,omitempty"`

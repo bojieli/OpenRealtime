@@ -4304,6 +4304,25 @@ the required new 180-attempt sample.
     pacing/timing control flow keep the parent open.
 - [x] Preserve trajectory compare-and-append and event-loop wake invariants in
   the graph-native store/commit feedback loop and direct behavior-contract tests.
+- [x] Preserve stream-addressed cancellation across later revisions in
+  `ingress.UserContent`, `SemanticAdmission`, `GenerateOnObservation`, and
+  `SessionInvocation` while bounded cancellation memory retains the address.
+  These paths previously consumed the stream after one match; ingress and
+  semantic admission also forgot cancellation when it matched pending work.
+  Ingress now separates content/stream/session identities and gives explicit
+  addresses precedence over envelope fallbacks. Regressions reproduce canceled
+  text/image/file/attachment publication and semantic decisions restarting
+  before arrival, while awaiting context, and after active decision cancellation.
+  Controls cover FIFO eviction, one-slot memory, separate sessions, content-ID
+  collisions, fresh streams, and cancellation of one content request or one
+  generation. The locked audio-free text/file graph commits two provisional
+  revisions and a final revision without a provider call, then executes and
+  canonically commits one fresh request. Original-code regressions fail for
+  the restarted work and crossed cancellation scopes; fixed tests pass with
+  race detection. Runtime implementations advance to ingress 2, semantic 16,
+  and static/session generation 4 with unchanged descriptor contracts. This
+  repairs an activation prerequisite found while reviewing the text/file
+  session path; the production session adapter remains open above.
 - [x] Check in exact-lock conversational fast-only, slow-only, and
   both-speaking reference graphs with an identical non-routing backbone,
   explicit cancellation/timing boundaries, no model-to-model edge, fresh-lock

@@ -801,9 +801,10 @@ func (runner *semanticAdmissionRunner) acceptCancel(ctx context.Context, envelop
 	if err := validatePolicyIdentifier("semantic cancel stream ID", cancel.StreamID, true); err != nil {
 		return runner.publishRefusal(ctx, envelope, "cancel", "invalid_cancel", err.Error())
 	}
-	matched := false
+	// A stream cancellation also covers evidence that has not arrived yet,
+	// even when this interrupt found an active or pending decision.
+	runner.recordPreCancel(cancellationAddress{streamID: cancel.StreamID, sessionID: envelope.SessionID}, reason)
 	if runner.active != nil && semanticSameStream(runner.active.request, envelope.SessionID, cancel.StreamID) {
-		matched = true
 		runner.active.disposition = semanticDecisionCanceled
 		runner.active.message = reason
 		runner.active.cancel(errors.New(reason))
@@ -814,7 +815,6 @@ func (runner *semanticAdmissionRunner) acceptCancel(ctx context.Context, envelop
 			kept = append(kept, pending)
 			continue
 		}
-		matched = true
 		runner.rememberTerminal(pending.key())
 		runner.state.Canceled++
 		if err := runner.publishOutcome(ctx, pending.envelope, SemanticAdmissionOutcome{
@@ -827,9 +827,6 @@ func (runner *semanticAdmissionRunner) acceptCancel(ctx context.Context, envelop
 	}
 	runner.pending = kept
 	runner.state.Pending = len(kept)
-	if !matched {
-		runner.recordPreCancel(cancellationAddress{streamID: cancel.StreamID, sessionID: envelope.SessionID}, reason)
-	}
 	runner.state.Ignored++
 	return runner.publishOutcome(ctx, envelope, SemanticAdmissionOutcome{
 		Kind: SemanticAdmissionIgnored, Operation: "cancel", StreamID: cancel.StreamID,
@@ -949,15 +946,10 @@ func (runner *semanticAdmissionRunner) takePreCancel(request semanticRequest) (s
 	address := cancellationAddress{
 		streamID: request.streamID, sessionID: request.envelope.SessionID,
 	}
+	// Keep the stream address until bounded FIFO eviction. Each revision has
+	// its own terminal key, so consuming this address would reopen the stream.
 	reason, found := runner.canceledStreams[address]
-	if !found {
-		return "", false
-	}
-	delete(runner.canceledStreams, address)
-	if index := slices.Index(runner.canceledOrder, address); index >= 0 {
-		runner.canceledOrder = slices.Delete(runner.canceledOrder, index, index+1)
-	}
-	return reason, true
+	return reason, found
 }
 
 func (runner *semanticAdmissionRunner) inputsFor(
