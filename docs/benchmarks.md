@@ -265,6 +265,13 @@ check against actual sent positions. The media-linked review renders those
 positions and measurements. A bounded diagnostic horizon remains after the
 latest cue opportunity; long-term semantic continuation still requires review.
 
+The runtime's binary backchannel validator distinguishes recognizer punctuation
+from actual question content: a trailing question mark alone cannot turn a
+pure continuer into a request. It still rejects propositions, disagreement,
+repair requests, and floor-taking words. This policy change addresses the
+retained `Right?` rejection path; only subsequent live evidence establishes
+whether the complete conversation now preserves the turn.
+
 These are deterministic content requirements, not a general semantic judge.
 Negation, contradictory statements, invented dialogue, and audible quality
 still require the separately retained media review and further scorer work.

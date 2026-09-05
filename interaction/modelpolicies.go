@@ -393,15 +393,7 @@ func (policy *modelOverlapClassifier) validateOverlapBackchannel(
 	valid := overlapBackchannelLexicalShape(decision.Revision.Text())
 	if valid {
 		outcome, err := policy.decider.Decide(ctx, Decision{
-			Prompt: "Validate a proposed listener backchannel. A valid backchannel is only one or " +
-				"two acknowledgement or continuer tokens whose entire conversational content is " +
-				"keep going, I am listening. Punctuation and capitalization do not change the token " +
-				"meaning. Valid examples are 'mhm', 'yeah', 'mhm yeah', and 'uh-huh'. It contains " +
-				"no subject-plus-verb proposition, new " +
-				"observation, disagreement, question, request, topic shift, or floor-taking marker. " +
-				"Invalid examples are 'I know', 'I think', 'it is starting', 'yeah but', 'actually', " +
-				"'wait', and 'by the way'. Decide only whether the overlapping person's exact words satisfy " +
-				"that closed definition.",
+			Prompt:   "Validate the lexical content of a proposed listener backchannel. The overlap classifier has already proposed that the person is listening while the agent keeps speaking. A valid backchannel consists entirely of one or two acknowledgement or continuer tokens meaning keep going, I am listening, such as mhm, uh-huh, yes, yeah, right, okay, or their equivalents in the speaker's language. No additional conversational content is allowed. The words come from live speech recognition: punctuation and capitalization are not independent evidence of a question. A trailing question mark alone must not turn a pure continuer into a request for information. For example, 'Right?', 'Yeah?', 'Okay?', and '嗯?' can be acknowledgements just like their unpunctuated forms. Reject a question only when the words or conversational context actually express a question or repair request. Reject subject-plus-verb propositions, observations, disagreement, new requests, topic shifts, and floor-taking markers. Invalid examples include 'I know', 'I think', 'it is starting', 'yeah but', 'actually', 'wait', 'why?', 'is that right?', and 'by the way'. Decide whether the overlapping person's exact words contain only a pure acknowledgement or continuer, without inventing an additional intention from ASR punctuation.",
 			Options:  []string{overlapValidBackchannel, overlapInvalidBackchannel},
 			Evidence: evidence,
 		})

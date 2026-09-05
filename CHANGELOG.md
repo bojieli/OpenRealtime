@@ -4,6 +4,10 @@
 
 ### Highlights
 
+- Listener-backchannel validation now treats speech-recognition punctuation
+  as insufficient evidence of a question. The validator uses lexical content
+  and conversational context, preserving genuine requests and floor-taking
+  speech while accepting pure continuers such as ASR-rendered `Right?`.
 - A new graph-native diagnostic, `acknowledgements during observed speech`,
   sends its cues only after recorded agent audio establishes an opportunity.
   Scorer version 6 checks actual input positions, full transmission, source

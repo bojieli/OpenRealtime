@@ -171,7 +171,7 @@ func TestTranscriptEventsValidateBackchannelsBeforeKeepingActiveOutput(t *testin
 	}
 	decisions := decider.decisions()
 	if len(decisions) != 2 ||
-		!strings.Contains(decisions[1].Prompt, "Validate a proposed listener backchannel") {
+		!strings.Contains(decisions[1].Prompt, "Validate the lexical content of a proposed listener backchannel") {
 		t.Fatalf("backchannel validation decisions = %+v", decisions)
 	}
 }
