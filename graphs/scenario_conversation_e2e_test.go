@@ -280,7 +280,25 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	firstSpeech := client.awaitType(10*time.Second, "response.output_audio.delta")
 	assertScenarioEndpointAudio(t, firstSpeech)
 	firstSpeechResponse, _ := firstSpeech["response_id"].(string)
-	client.awaitResponseDone(10*time.Second, firstSpeechResponse, "completed")
+	if toolCase.wantSpeechPlans != nil {
+		client.await(10*time.Second, false, func(message map[string]any) bool {
+			if message["type"] != "response.done" {
+				return false
+			}
+			audioChunks := 0
+			var lastResponse any
+			for _, received := range client.received {
+				if received["type"] == "response.output_audio.delta" {
+					audioChunks++
+					lastResponse = received["response_id"]
+				}
+			}
+			response, _ := message["response"].(map[string]any)
+			return audioChunks >= len(toolCase.wantSpeechPlans) && response["id"] == lastResponse
+		})
+	} else {
+		client.awaitResponseDone(10*time.Second, firstSpeechResponse, "completed")
+	}
 	spokenPlans := fixture.tts.plannedTexts()
 	if spoken := strings.Join(spokenPlans, " "); spoken != toolCase.reply {
 		t.Fatalf("action continuation reached TTS as %q", spoken)
@@ -296,14 +314,17 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 		}
 	}
 	if toolCase.wantSpeechPlans != nil {
-		// This variant ends after the segmented reply. The general endpoint
-		// sequence below assumes one audio item per turn; consuming its pending
-		// segments as the next turn's audio would misidentify that response.
+		// Inspect all segments, including a response opened after earlier
+		// segments completed. All expected speech must reach the client and
+		// every response must finish successfully before this variant ends.
 		var audible []string
 		audioChunks := 0
 		for _, message := range client.received {
-			if message["response_id"] != firstSpeechResponse {
-				continue
+			if message["type"] == "response.done" {
+				response, _ := message["response"].(map[string]any)
+				if response["status"] != "completed" {
+					t.Fatalf("segmented reply ended unsuccessfully: %+v", response)
+				}
 			}
 			if message["type"] == "response.output_audio_transcript.delta" {
 				audible = append(audible, fmt.Sprint(message["delta"]))
