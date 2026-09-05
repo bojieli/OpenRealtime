@@ -97,6 +97,51 @@ type Config struct {
 	// conversation content: a log that leaked what was said would be a worse
 	// problem than having no log.
 	Logger *slog.Logger
+	// WriteTimeout bounds one outbound WebSocket write. Zero selects the
+	// shipped default; a negative value removes the bound.
+	//
+	// Without it a client that stops reading wedges its session permanently.
+	// The socket write blocks once the peer's receive window closes, the
+	// writer goroutine stops draining, the send buffer fills, the handler
+	// blocks in send, and the read loop then blocks handing it the next event
+	// - at which point nothing in the session can make progress and nothing
+	// ends it, because the session context has no deadline of its own. The
+	// binding runtime and its provider connections are held for as long as the
+	// process lives.
+	//
+	// The default is derived rather than chosen: it has to be longer than the
+	// longest stall a healthy receiver can have, and a congested mobile link
+	// can hold a flow for several seconds. Thirty is comfortably past that and
+	// still bounded, and a realtime conversation whose client has not accepted
+	// a frame for thirty seconds is over regardless of what the socket does
+	// next.
+	WriteTimeout time.Duration
+	// KeepaliveInterval is how long a connection may be idle before the server
+	// pings it. Zero selects the shipped default; a negative value disables
+	// the ping.
+	//
+	// The WebSocket library answers the client's pings, so a client that sends
+	// them learns the server is alive. Nothing tells the server the reverse. A
+	// client that disappears without a FIN - a NAT rebind, a laptop lid, a
+	// dropped mobile handover - leaves a connection that is open on this side
+	// only, and in a session where neither side is currently speaking there is
+	// no write to discover it with. The HTTP server's IdleTimeout does not
+	// apply, because the connection was hijacked at the upgrade.
+	//
+	// The ping is sent only after an idle interval, so it costs nothing on a
+	// session that is carrying audio, and it is bounded by the same interval:
+	// a peer that has not answered within one is not answering.
+	KeepaliveInterval time.Duration
+	// MaxSessions bounds concurrently admitted sessions. Zero is unbounded,
+	// which is what an embedder gets unless it says otherwise; a launcher that
+	// owns its deployment's capacity sets a number.
+	//
+	// Admission is the only place a limit can be applied honestly. Past this
+	// point a session holds a binding runtime and its provider connections,
+	// and the way an unbounded gateway fails is by exhausting the process
+	// rather than by refusing anything. A refusal is a 503 the caller can
+	// retry; an exhausted process takes every established session with it.
+	MaxSessions int
 	// InspectionTokenTTL bounds the read-only management capability issued to
 	// a session that explicitly negotiates session debugging. Zero selects one
 	// hour. The capability is revoked earlier when debugging is disabled or the
@@ -136,9 +181,25 @@ type Server struct {
 	closeOnce   sync.Once
 	drained     chan struct{}
 	closing     bool
+	// inFlight counts connections that have been admitted and not yet
+	// finished. It is the authoritative number for the capacity decision and
+	// is kept here rather than on Metrics because that decision is made under
+	// this mutex; Metrics carries a mirror of it for reporting only.
+	inFlight int
 }
 
-var errGatewayClosed = errors.New("gateway is closed")
+var (
+	errGatewayClosed = errors.New("gateway is closed")
+	// errGatewaySaturated is refusal, not failure. It is separate from
+	// errGatewayClosed because the two mean opposite things to a caller: one
+	// says stop, the other says try again.
+	errGatewaySaturated = errors.New("gateway is at session capacity")
+)
+
+const (
+	defaultWriteTimeout      = 30 * time.Second
+	defaultKeepaliveInterval = 20 * time.Second
+)
 
 // New validates the configuration and creates a server.
 func New(config Config) (*Server, error) {
@@ -172,6 +233,15 @@ func New(config Config) (*Server, error) {
 	}
 	if config.VideoLimits.MaxFrameBytes <= 0 {
 		config.VideoLimits.MaxFrameBytes = defaults.MaxFrameBytes
+	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = defaultWriteTimeout
+	}
+	if config.KeepaliveInterval == 0 {
+		config.KeepaliveInterval = defaultKeepaliveInterval
+	}
+	if config.MaxSessions < 0 {
+		return nil, fmt.Errorf("gateway session capacity must not be negative, got %d", config.MaxSessions)
 	}
 	if config.Metrics == nil {
 		config.Metrics = &Metrics{}
@@ -399,8 +469,16 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if !server.beginSession() {
-		http.Error(writer, "gateway closed", http.StatusServiceUnavailable)
+	if err := server.beginSession(); err != nil {
+		if errors.Is(err, errGatewaySaturated) {
+			server.config.Metrics.sessionsRejected.Add(1)
+			// Retry-After makes the refusal actionable. A load balancer that
+			// sees a bare 503 has to guess whether to take the instance out of
+			// rotation; one that is told to come back in a second knows this
+			// is capacity rather than a broken process.
+			writer.Header().Set("Retry-After", "1")
+		}
+		http.Error(writer, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	var admitted *session
@@ -450,14 +528,19 @@ func (server *Server) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	_ = connection.Close(websocket.StatusNormalClosure, "session closed")
 }
 
-func (server *Server) beginSession() bool {
+func (server *Server) beginSession() error {
 	server.lifecycleMu.Lock()
 	defer server.lifecycleMu.Unlock()
 	if server.closing {
-		return false
+		return errGatewayClosed
 	}
+	if server.config.MaxSessions > 0 && server.inFlight >= server.config.MaxSessions {
+		return errGatewaySaturated
+	}
+	server.inFlight++
+	server.config.Metrics.sessionsInFlight.Store(int64(server.inFlight))
 	server.sessionWait.Add(1)
-	return true
+	return nil
 }
 
 func (server *Server) admitSession(current *session) bool {
@@ -471,11 +554,13 @@ func (server *Server) admitSession(current *session) bool {
 }
 
 func (server *Server) finishSession(current *session) {
+	server.lifecycleMu.Lock()
 	if current != nil {
-		server.lifecycleMu.Lock()
 		delete(server.sessions, current)
-		server.lifecycleMu.Unlock()
 	}
+	server.inFlight--
+	server.config.Metrics.sessionsInFlight.Store(int64(server.inFlight))
+	server.lifecycleMu.Unlock()
 	server.sessionWait.Done()
 }
 

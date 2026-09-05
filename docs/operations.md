@@ -96,6 +96,51 @@ would be a worse problem than having no metrics endpoint.
 | `video_frames_in` | frames accepted from clients, before gating |
 | `video_frames_dropped` | frames refused by the negotiated rate cap. A number that climbs says a client is not conforming to the limits it was told at negotiation. |
 | `tool_calls_out` | authoritative calls handed to clients |
+| `sessions_in_flight` | sessions admitted and not yet finished |
+| `sessions_rejected` | upgrade requests refused because `-max-sessions` was reached. A number that climbs says add instances, not that the process is unwell. |
+
+## Capacity and liveness
+
+```sh
+openrealtime serve -max-sessions 256 -write-timeout 30s -keepalive-interval 20s
+```
+
+Past admission a session holds a binding runtime and its provider connections,
+so an unbounded gateway does not degrade under load; it exhausts the process
+and takes every established session with it. `-max-sessions` turns that into a
+`503` with `Retry-After`, which is a thing a load balancer can act on. It
+defaults to `0`, meaning unbounded, because capping an existing deployment at a
+number chosen here would be a worse surprise than the exhaustion it prevents —
+but a production deployment should set it. Watch `sessions_in_flight` for a
+while and pick a number above its peak.
+
+The two liveness bounds exist because a WebSocket has no timeout of its own
+once it is upgraded — the HTTP server's `IdleTimeout` stops applying at the
+handshake.
+
+`-write-timeout` bounds one send. A client that stops reading closes its
+receive window, and without a bound the send blocks on the session context,
+which ends only when the session does. Nothing ends it: the writer stops
+draining, the send buffer fills, the handler blocks, the read loop blocks
+handing it the next event, and the session is wedged for the life of the
+process while every health check reports a healthy server. Thirty seconds is
+past any stall a congested link produces and short of forever.
+
+`-keepalive-interval` is the other direction. The server answers a client's
+pings, so a client that sends them knows the server is alive; nothing tells the
+server the reverse. A peer that disappears without a FIN — a NAT rebind, a
+closed laptop, a dropped mobile handover — leaves a connection that is open on
+this side only, and in a session where neither side is speaking there is no
+write to discover it with. The ping is sent only after an idle interval, so a
+session carrying audio never pays for it.
+
+Both default to a working value and both take `0` to remove the bound. Sessions
+that end this way are counted in `sessions_failed` and named in the log:
+`client stopped reading` and `peer did not answer a keepalive ping` are
+different problems with different fixes.
+
+A `-launch-profile` composition takes the shipped write and keepalive defaults;
+capacity is owned by the flag on `serve`.
 
 ## Logs
 

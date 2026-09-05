@@ -73,6 +73,10 @@ type serveOptions struct {
 	requestTimeout  time.Duration
 	shutdownTimeout time.Duration
 
+	maxSessions       int
+	writeTimeout      time.Duration
+	keepaliveInterval time.Duration
+
 	asrProvider    string
 	asrURL         string
 	asrModel       string
@@ -226,6 +230,20 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.StringVar(&options.tokenEnv, "token-env", "OPENREALTIME_TOKEN", "environment variable holding the bearer token; empty disables authentication")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", 2*time.Minute, "per-request provider timeout")
 	flags.DurationVar(&options.shutdownTimeout, "shutdown-timeout", 15*time.Second, "graceful shutdown timeout")
+	// Capacity is a deployment choice, so it is a flag rather than a shipped
+	// default: only the operator knows how many concurrent conversations this
+	// host's models and memory can carry. Unbounded stays the default because
+	// silently capping an existing deployment at some number chosen here would
+	// be a worse surprise than the exhaustion it prevents - but an unbounded
+	// gateway fails by exhausting the process, so a production deployment
+	// should set it. /metrics reports sessions_in_flight and sessions_rejected
+	// so the number can be chosen from evidence.
+	flags.IntVar(&options.maxSessions, "max-sessions", 0,
+		"maximum concurrent realtime sessions; 0 is unbounded")
+	flags.DurationVar(&options.writeTimeout, "write-timeout", 30*time.Second,
+		"how long one send to a client may take before its session ends; 0 removes the bound")
+	flags.DurationVar(&options.keepaliveInterval, "keepalive-interval", 20*time.Second,
+		"how long a session may be idle before the server pings it; 0 disables the ping")
 
 	flags.StringVar(&options.asrProvider, "asr-provider", "qwen-asr",
 		"recogniser provider; openrealtime providers lists them")
@@ -434,12 +452,27 @@ func runServe(arguments []string, output io.Writer) error {
 	return serve(options, output)
 }
 
+// disabledWhenZero translates an operator-facing "0 means no bound" flag into
+// the gateway's "negative means no bound" configuration.
+func disabledWhenZero(value time.Duration) time.Duration {
+	if value == 0 {
+		return -1
+	}
+	return value
+}
+
 func serve(options serveOptions, output io.Writer) (returnErr error) {
 	if strings.TrimSpace(options.listen) == "" {
 		return errors.New("a listen address is required")
 	}
 	if options.shutdownTimeout <= 0 || options.shutdownTimeout > 2*time.Minute {
 		return errors.New("shutdown timeout must be in (0,2m]")
+	}
+	if options.maxSessions < 0 {
+		return errors.New("maximum concurrent sessions must not be negative")
+	}
+	if options.writeTimeout < 0 || options.keepaliveInterval < 0 {
+		return errors.New("write timeout and keepalive interval must not be negative; 0 disables the bound")
 	}
 	logger, err := buildLogger(options)
 	if err != nil {
@@ -498,9 +531,17 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 			Gateway: gateway.Config{
 				Token: gatewayToken, Model: options.model,
 				TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
-				Logger:     logger,
-				Recogniser: recogniserReport(recogniser),
-				Warm:       warmed.Load,
+				Logger:      logger,
+				Recogniser:  recogniserReport(recogniser),
+				Warm:        warmed.Load,
+				MaxSessions: options.maxSessions,
+				// The flag says 0 for "no bound" because that is what an
+				// operator expects a limit of zero to mean. gateway.Config
+				// reserves 0 for "use the shipped default" and spells no bound
+				// as a negative, so the two are translated here rather than
+				// leaving a flag whose documented value does nothing.
+				WriteTimeout:      disabledWhenZero(options.writeTimeout),
+				KeepaliveInterval: disabledWhenZero(options.keepaliveInterval),
 			},
 			ProviderArtifact: artifact, GatewayArtifact: artifact,
 		})

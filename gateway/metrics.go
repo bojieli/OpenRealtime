@@ -17,6 +17,17 @@ type Metrics struct {
 	videoFramesDropped atomic.Uint64
 	audioFramesOut     atomic.Uint64
 	toolCallsOut       atomic.Uint64
+	// sessionsRejected counts upgrade requests refused because the gateway was
+	// already at its declared session capacity. It is the number that says a
+	// deployment needs more instances rather than that it is broken, and
+	// without it a capacity limit is indistinguishable from clients that
+	// stopped connecting.
+	sessionsRejected atomic.Uint64
+	// sessionsInFlight mirrors the admitted-session count for reporting. The
+	// gateway owns the authoritative count under its lifecycle mutex and
+	// writes this in the same critical section; nothing reads it to make a
+	// decision.
+	sessionsInFlight atomic.Int64
 }
 
 // MetricsSnapshot is a consistent-enough view for reporting.
@@ -29,6 +40,8 @@ type MetricsSnapshot struct {
 	VideoFramesDropped uint64 `json:"video_frames_dropped"`
 	AudioFramesOut     uint64 `json:"audio_frames_out"`
 	ToolCallsOut       uint64 `json:"tool_calls_out"`
+	SessionsRejected   uint64 `json:"sessions_rejected"`
+	SessionsInFlight   int64  `json:"sessions_in_flight"`
 }
 
 // Snapshot reads the counters.
@@ -42,6 +55,8 @@ func (metrics *Metrics) Snapshot() MetricsSnapshot {
 		VideoFramesDropped: metrics.videoFramesDropped.Load(),
 		AudioFramesOut:     metrics.audioFramesOut.Load(),
 		ToolCallsOut:       metrics.toolCallsOut.Load(),
+		SessionsRejected:   metrics.sessionsRejected.Load(),
+		SessionsInFlight:   metrics.sessionsInFlight.Load(),
 	}
 }
 

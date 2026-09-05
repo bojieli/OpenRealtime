@@ -24,6 +24,16 @@ import (
 	"github.com/coder/websocket"
 )
 
+// The two liveness causes a session can end with that are not the client's
+// doing and not a fault in the conversation. They are named rather than
+// anonymous because they arrive at an operator as a session that simply
+// stopped, and "the peer stopped reading" and "the peer stopped answering" are
+// different problems with different fixes.
+var (
+	errClientStoppedReading = errors.New("client stopped reading and the send did not complete")
+	errPeerUnreachable      = errors.New("peer did not answer a keepalive ping")
+)
+
 type settings struct {
 	instruction string
 	tools       []action.ToolSpec
@@ -84,6 +94,11 @@ type session struct {
 	// slow provider call without the read loop blocking on the send.
 	events chan queuedEvent
 	wait   sync.WaitGroup
+	// activeNS is the last time this connection demonstrably carried bytes in
+	// either direction, as Unix nanoseconds. The keepalive reads it so that a
+	// session in the middle of a conversation is never asked to prove it is
+	// there: the audio it is exchanging already proved it.
+	activeNS atomic.Int64
 
 	settingsMu sync.RWMutex
 	settings   settings
@@ -230,9 +245,14 @@ func (session *session) bindingSettings() binding.Settings {
 // Run drives the connection until it closes.
 func (session *session) Run() error {
 	defer session.closeInspection()
+	session.markActive()
 	session.wait.Add(2)
 	go session.writerLoop()
 	go session.handlerLoop()
+	if session.config.KeepaliveInterval > 0 {
+		session.wait.Add(1)
+		go session.keepaliveLoop()
+	}
 	if err := session.send(session.sessionEvent("session.created")); err != nil {
 		session.cancel(err)
 		session.wait.Wait()
@@ -257,12 +277,90 @@ func (session *session) writerLoop() {
 		case <-session.ctx.Done():
 			return
 		case message := <-session.sendChannel:
-			if err := session.connection.Write(session.ctx, websocket.MessageText, message); err != nil {
+			if err := session.write(message); err != nil {
 				session.cancel(err)
 				return
 			}
 		}
 	}
+}
+
+// write sends one frame with a bound on how long the socket may take it.
+//
+// The bound is the whole point. websocket.Write returns when the peer's
+// receive window has room or when its context ends, and the session context
+// ends only when the session does - so a peer that stops reading blocks this
+// goroutine with nothing left to end it. The failure that produces is not a
+// slow session but a permanently wedged one, holding a binding runtime and its
+// provider connections, invisible to every health check because the process is
+// fine and it is one session that is gone.
+//
+// A write that times out closes the connection underneath, so the read loop
+// returns and the session ends with a cause that names what happened rather
+// than with an unexplained disconnect.
+func (session *session) write(payload []byte) error {
+	ctx := session.ctx
+	if session.config.WriteTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, session.config.WriteTimeout)
+		defer cancel()
+	}
+	if err := session.connection.Write(ctx, websocket.MessageText, payload); err != nil {
+		if session.ctx.Err() == nil && ctx.Err() != nil {
+			return fmt.Errorf("%w after %s", errClientStoppedReading, session.config.WriteTimeout)
+		}
+		return err
+	}
+	session.markActive()
+	return nil
+}
+
+// keepaliveLoop proves the peer is still there when nothing else does.
+//
+// It runs on its own goroutine rather than inside the writer because a ping
+// waits for its pong, and making outbound audio queue behind that wait would
+// trade a rare failure for a routine one. Every Conn method except Read may be
+// called concurrently, so the ping and the writer share the connection safely.
+//
+// The pong is read by the read loop, which is the property that makes this
+// worth having in a system whose read loop is deliberately kept free of
+// conversational work: if a stalled handler has backed events up far enough to
+// block the reader, the pong is not collected either, and the session that
+// cannot answer is the session that should end.
+func (session *session) keepaliveLoop() {
+	defer session.wait.Done()
+	interval := session.config.KeepaliveInterval
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-session.ctx.Done():
+			return
+		case <-ticker.C:
+			if time.Since(session.lastActive()) < interval {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(session.ctx, interval)
+			err := session.connection.Ping(ctx)
+			cancel()
+			if err != nil {
+				if session.ctx.Err() != nil {
+					return
+				}
+				session.cancel(fmt.Errorf("%w: %w", errPeerUnreachable, err))
+				return
+			}
+			session.markActive()
+		}
+	}
+}
+
+func (session *session) markActive() {
+	session.activeNS.Store(time.Now().UnixNano())
+}
+
+func (session *session) lastActive() time.Time {
+	return time.Unix(0, session.activeNS.Load())
 }
 
 // queuedEvent is one decoded client event on its way to the handler.
@@ -289,6 +387,7 @@ func (session *session) readLoop() error {
 		if err != nil {
 			return err
 		}
+		session.markActive()
 		if messageType != websocket.MessageText {
 			session.sendError("invalid_event", "Realtime client events must be JSON text messages")
 			continue
