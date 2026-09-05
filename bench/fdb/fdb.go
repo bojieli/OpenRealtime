@@ -365,10 +365,12 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 		// category; recording it as a failure would blame overlap handling for
 		// a latency problem. It is reported as its own thing.
 		outcome.Notes["applicable"] = "false"
-		outcome.Passed = true
+		outcome.Applicability = bench.NotApplicable
+		outcome.Passed = false
 		return
 	}
 	outcome.Notes["applicable"] = "true"
+	outcome.Applicability = bench.Applicable
 
 	if retained.ShouldYield {
 		// Yielding means the audio stops, and the number that says whether it
@@ -434,7 +436,8 @@ func Breakdown(result bench.Result) map[Category]CategorySummary {
 			summaries[category] = summary
 			continue
 		}
-		if task.Notes["applicable"] == "false" {
+		if task.Applicability == bench.NotApplicable ||
+			task.Applicability == "" && task.Notes["applicable"] == "false" {
 			summary.NotApplicable++
 			summaries[category] = summary
 			continue

@@ -154,6 +154,15 @@ type campaignFixture struct {
 
 func newCampaignFixture(t testing.TB, cases ...string) campaignFixture {
 	t.Helper()
+	outcomes := make([]bench.TaskOutcome, len(cases))
+	for index, caseID := range cases {
+		outcomes[index] = bench.TaskOutcome{ID: caseID, Completed: true, Passed: index%2 == 0}
+	}
+	return newCampaignOutcomeFixture(t, outcomes...)
+}
+
+func newCampaignOutcomeFixture(t testing.TB, outcomes ...bench.TaskOutcome) campaignFixture {
+	t.Helper()
 	root := t.TempDir()
 	fixture := campaignFixture{
 		root: root, source: filepath.Join(root, "source"),
@@ -175,8 +184,8 @@ func newCampaignFixture(t testing.TB, cases ...string) campaignFixture {
 	provenance := bench.Provenance{
 		Revision: "campaign-fixture", StartedAt: "2026-08-30T00:00:00Z",
 	}
-	var outcomes []bench.TaskOutcome
-	for index, caseID := range cases {
+	for index, outcome := range outcomes {
+		caseID := outcome.ID
 		specification, err := candidate.NewAttempt(
 			"campaign-suite", caseID, index+1, cell, provenance, origin,
 			map[string]any{"criterion": "listen to exact audio", "case": caseID},
@@ -194,7 +203,6 @@ func newCampaignFixture(t testing.TB, cases ...string) campaignFixture {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		outcome := bench.TaskOutcome{ID: caseID, Completed: true, Passed: index%2 == 0}
 		if err := attempt.Complete(context.Background(), candidate.Completion{
 			Attempt: specification, Outcome: outcome,
 			Transcript: bench.Transcript{PlaybackMS: 10, Moments: []bench.Moment{{
@@ -203,7 +211,6 @@ func newCampaignFixture(t testing.TB, cases ...string) campaignFixture {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		outcomes = append(outcomes, outcome)
 	}
 	result := bench.Result{
 		Suite: "campaign-suite", Cell: cell, Provenance: provenance,

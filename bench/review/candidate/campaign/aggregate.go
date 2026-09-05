@@ -399,6 +399,9 @@ func deterministicLabel(outcome bench.TaskOutcome) string {
 	if !outcome.Completed {
 		return "infrastructure_failure"
 	}
+	if outcome.Applicability == bench.NotApplicable {
+		return "not_applicable"
+	}
 	if outcome.Passed {
 		return "pass"
 	}

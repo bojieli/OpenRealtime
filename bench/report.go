@@ -115,6 +115,10 @@ type TaskOutcome struct {
 	// Passed is the suite's own judgement. It is meaningful only when the task
 	// completed.
 	Passed bool `json:"passed"`
+	// Applicability separates a completed recording from an opportunity to
+	// evaluate behavior. Empty preserves historical/ordinary scored outcomes;
+	// suites with conditional scoring explicitly declare either value.
+	Applicability Applicability `json:"applicability,omitempty"`
 	// Error is why an incomplete task did not finish.
 	Error string `json:"error,omitempty"`
 	// Metrics are suite-specific numbers, in milliseconds where they are
@@ -153,6 +157,9 @@ func (outcome TaskOutcome) Validate() error {
 	}
 	if !outcome.Completed && outcome.Passed {
 		return errors.New("incomplete task outcome is marked passed")
+	}
+	if err := outcome.validateApplicability(); err != nil {
+		return err
 	}
 	if err := validateTaskOutcomeText("task outcome error", outcome.Error, maximumTaskOutcomeTextBytes); err != nil {
 		return err
@@ -294,10 +301,12 @@ type Result struct {
 
 // Summary is the derived view of a cell.
 type Summary struct {
-	Completed int `json:"completed"`
-	Failed    int `json:"failed"`
-	Passed    int `json:"passed"`
-	// PassRate is meaningful only when the cell is complete.
+	Completed     int `json:"completed"`
+	Failed        int `json:"failed"`
+	Passed        int `json:"passed"`
+	NotApplicable int `json:"not_applicable,omitempty"`
+	// PassRate is over Completed-NotApplicable, and is meaningful only when
+	// the cell is complete and that denominator is positive.
 	PassRate       float64                 `json:"pass_rate"`
 	Complete       bool                    `json:"complete"`
 	Incompleteness string                  `json:"incompleteness,omitempty"`
@@ -318,7 +327,9 @@ func (result *Result) Finish() {
 			continue
 		}
 		summary.Completed++
-		if task.Passed {
+		if task.Applicability == NotApplicable {
+			summary.NotApplicable++
+		} else if task.Passed {
 			summary.Passed++
 		}
 		for name, value := range task.Metrics {
@@ -330,8 +341,8 @@ func (result *Result) Finish() {
 		distribution.Unit = UnitOf(name)
 		summary.Distributions[name] = distribution
 	}
-	if summary.Completed > 0 {
-		summary.PassRate = float64(summary.Passed) / float64(summary.Completed)
+	if applicable := summary.Completed - summary.NotApplicable; applicable > 0 {
+		summary.PassRate = float64(summary.Passed) / float64(applicable)
 	}
 	switch {
 	case result.Expected <= 0:
@@ -493,6 +504,7 @@ func Pair(baseline, variant Result) Comparison {
 	if err := variant.Reportable(); err != nil {
 		refusals = append(refusals, err.Error())
 	}
+	refusals = append(refusals, applicabilityPairingFailures(baseline, variant)...)
 	if len(refusals) > 0 {
 		comparison.Refusal = strings.Join(refusals, "; ")
 		return comparison

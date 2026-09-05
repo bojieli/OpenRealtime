@@ -165,7 +165,8 @@ func TestCandidateEvidenceRecoverySkipsFDBPlayback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if plugin.beginCalls != 0 || plugin.recoverCalls != 1 || len(result.Tasks) != 1 ||
-		!result.Tasks[0].Completed || !result.Tasks[0].Passed || !plugin.result.Summary.Complete {
+		!result.Tasks[0].Completed || result.Tasks[0].Passed ||
+		result.Tasks[0].Applicability != bench.NotApplicable || !plugin.result.Summary.Complete {
 		t.Fatalf("recovered run: begin=%d recover=%d result=%+v finish=%+v",
 			plugin.beginCalls, plugin.recoverCalls, result, plugin.result)
 	}

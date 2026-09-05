@@ -188,6 +188,20 @@ failures, not zeroes. A candidate therefore cannot replace a stronger checked
 target with a generic 80% floor or use an aggregate pass to hide a severe
 case-level, safety, deadline, or latency regression.
 
+FDB v1.5 additionally requires an explicit positive aggregate
+`minimum_applicable` and a `minimum_applicable` for every case. The registered
+floor is 287 passes over at least 430 applicable recordings, with all 498
+recordings completed. It translates the retained campaign's 355 nominal
+passes by removing its 68 inapplicable recordings; the original artifacts and
+receipts remain unchanged. Every previously applicable case, including a
+behavioral failure, retains an applicability minimum of one. Historically
+inapplicable cases retain completion requirements and zero applicability and
+pass minima. Aggregate and case applicability floors are enforced separately,
+so silencing a failing case cannot improve acceptance. New final FDB outcomes
+must carry typed applicability; legacy nominal scores cannot certify a final
+candidate. All execution, safety, deadline, latency, and media requirements
+still apply to inapplicable recordings.
+
 The second control artifact is supplied through the absolute path in
 `OPENREALTIME_BEHAVIORAL_CANDIDATE`. It must exist before the final campaigns
 start and is strict JSON of this shape (abbreviated to one suite here):

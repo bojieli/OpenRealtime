@@ -184,12 +184,15 @@ func aggregateReview(
 	output.WriteString("The deterministic benchmark scorer is authoritative. ")
 	output.WriteString("The selected multimodal provider is an advisory reviewer.\n\n")
 	passes, failures, infrastructure, agreements, usable := 0, 0, 0, 0, 0
+	notApplicable := 0
 	for _, evaluation := range evaluations {
 		switch evaluation.Deterministic {
 		case "pass":
 			passes++
 		case "fail":
 			failures++
+		case "not_applicable":
+			notApplicable++
 		default:
 			infrastructure++
 		}
@@ -209,6 +212,9 @@ func aggregateReview(
 		markdownText(result.Provider.APIRevision), passes, failures, infrastructure,
 		agreements, len(evaluations), usable, len(evaluations),
 	))
+	if notApplicable > 0 {
+		output.WriteString(fmt.Sprintf("- Not applicable: %d (excluded from behavioral passes and failures)\n\n", notApplicable))
+	}
 	output.WriteString("| Case | Trial | Deterministic | Advisory | Agreement | Media | Confidence | Recording |\n")
 	output.WriteString("| --- | ---: | --- | --- | --- | --- | ---: | --- |\n")
 	for _, evaluation := range evaluations {

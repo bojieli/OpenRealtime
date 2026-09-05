@@ -4,6 +4,12 @@
 
 ### Highlights
 
+- FDB overlap evaluation now separates completed recordings from applicable
+  behavior in scores, sealed reviews, comparisons, and release acceptance.
+  Inapplicable recordings cannot earn passes. The retained 498-recording
+  floor translates to 287 passes and 430 applicable cases, with per-case
+  exposure requirements that prevent silence from improving acceptance.
+  Historical artifacts and receipts remain unchanged.
 - Interaction scenario scoring now rejects word-fragment false passes and
   undefined checks, and requires every appointment detail in the translation
   case. New results identify scorer version 2; historical recordings retain

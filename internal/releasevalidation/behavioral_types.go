@@ -87,8 +87,9 @@ type Registration struct {
 }
 
 type AggregateTarget struct {
-	Registration  Registration `json:"registration"`
-	MinimumPassed *int         `json:"minimum_passed,omitempty"`
+	Registration      Registration `json:"registration"`
+	MinimumPassed     *int         `json:"minimum_passed,omitempty"`
+	MinimumApplicable *int         `json:"minimum_applicable,omitempty"`
 }
 
 type CaseTargetSet struct {
@@ -97,9 +98,10 @@ type CaseTargetSet struct {
 }
 
 type CaseTarget struct {
-	Case             string `json:"case"`
-	ExpectedAttempts int    `json:"expected_attempts"`
-	MinimumPassed    int    `json:"minimum_passed"`
+	Case              string `json:"case"`
+	ExpectedAttempts  int    `json:"expected_attempts"`
+	MinimumPassed     int    `json:"minimum_passed"`
+	MinimumApplicable *int   `json:"minimum_applicable,omitempty"`
 }
 
 type EvidenceTargetSet struct {
@@ -284,6 +286,17 @@ func (suite BehavioralSuiteTarget) validate() error {
 	if err := suite.Cases.validate(suite.ID, suite.ExpectedPopulation); err != nil {
 		return err
 	}
+	if suite.Suite == "fdb-v1.5" {
+		if suite.Aggregate.Registration.Status == RegistrationRegistered &&
+			(suite.Aggregate.MinimumApplicable == nil || *suite.Aggregate.MinimumApplicable == 0) {
+			return fmt.Errorf("suite %s aggregate requires a positive minimum applicable population", suite.ID)
+		}
+		for _, target := range suite.Cases.Targets {
+			if target.MinimumApplicable == nil {
+				return fmt.Errorf("suite %s requires explicit minimum applicable for case %q", suite.ID, target.Case)
+			}
+		}
+	}
 	if err := suite.Safety.validate(suite.ID, "safety"); err != nil {
 		return err
 	}
@@ -331,7 +344,10 @@ func (target AggregateTarget) validate(id string, population int) error {
 		if target.MinimumPassed == nil || *target.MinimumPassed < 0 || *target.MinimumPassed > population {
 			return fmt.Errorf("%s has invalid minimum passed", label)
 		}
-	} else if target.MinimumPassed != nil {
+		if target.MinimumApplicable != nil && (*target.MinimumApplicable < 0 || *target.MinimumApplicable > population) {
+			return fmt.Errorf("%s has invalid minimum applicable", label)
+		}
+	} else if target.MinimumPassed != nil || target.MinimumApplicable != nil {
 		return fmt.Errorf("%s has a threshold without a registered target", label)
 	}
 	return nil
@@ -358,6 +374,9 @@ func (set CaseTargetSet) validate(id string, population int) error {
 			target.ExpectedAttempts <= 0 || target.MinimumPassed < 0 ||
 			target.MinimumPassed > target.ExpectedAttempts {
 			return fmt.Errorf("%s has an invalid case target", label)
+		}
+		if target.MinimumApplicable != nil && (*target.MinimumApplicable < 0 || *target.MinimumApplicable > target.ExpectedAttempts) {
+			return fmt.Errorf("%s has an invalid minimum applicable for case %q", label, target.Case)
 		}
 		if previous != "" && previous >= target.Case {
 			return fmt.Errorf("%s targets must be uniquely sorted by case", label)

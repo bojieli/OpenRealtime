@@ -197,7 +197,9 @@ func sourceReview(result bench.Result, attempts []AttemptEntry, guard sensitiveG
 	for _, attempt := range attempts {
 		deterministic := "incomplete"
 		if attempt.Deterministic.Completed {
-			if attempt.Deterministic.Passed {
+			if attempt.Deterministic.Applicability == bench.NotApplicable {
+				deterministic = "not_applicable"
+			} else if attempt.Deterministic.Passed {
 				deterministic = "pass"
 			} else {
 				deterministic = "fail"
@@ -216,8 +218,14 @@ func sourceReview(result bench.Result, attempts []AttemptEntry, guard sensitiveG
 		output.WriteString(recording + " | pending |\n")
 	}
 	output.WriteString("\nSummary: ")
-	output.WriteString(fmt.Sprintf("%d/%d deterministic passes; %d completed; bundle population %d.\n",
-		result.Summary.Passed, result.Expected, result.Summary.Completed, len(attempts)))
+	if result.Summary.NotApplicable > 0 {
+		output.WriteString(fmt.Sprintf("%d/%d applicable deterministic passes; %d not applicable; %d completed; bundle population %d.\n",
+			result.Summary.Passed, result.Summary.Completed-result.Summary.NotApplicable,
+			result.Summary.NotApplicable, result.Summary.Completed, len(attempts)))
+	} else {
+		output.WriteString(fmt.Sprintf("%d/%d deterministic passes; %d completed; bundle population %d.\n",
+			result.Summary.Passed, result.Expected, result.Summary.Completed, len(attempts)))
+	}
 	payload := []byte(output.String())
 	if guard.rejects(payload) {
 		return []byte("# Candidate audio review bundle\n\nReview text was withheld because it contained a declared sensitive value. Deterministic result and retained source manifests remain available.\n")

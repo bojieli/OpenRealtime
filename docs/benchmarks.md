@@ -155,7 +155,7 @@ that warns is a measurement program that gets ignored.
     "machine": { "cpu": "…", "gpu": "…" }
   },
   "expected_tasks": 498,
-  "tasks": [ { "id": "user_interruption/1", "completed": true, "passed": true,
+  "tasks": [ { "id": "user_interruption/1", "completed": true, "passed": true, "applicability": "applicable",
                "metrics": { "yield_latency_ms": 194 } } ],
   "summary": {
     "complete": true, "pass_rate": 0.87,
@@ -186,8 +186,7 @@ The twelve-case wire contract and 180-attempt release population are unchanged.
 Historical unversioned results retain their original labels and receipts; a
 passing historical recording does not establish a pass under scorer version 2.
 
-**FDB v1.5** has four categories and two of them want the opposite of the other
-two: yield to an interruption, hold through a backchannel, background speech,
+**FDB v1.5** has four categories: yield to an interruption, hold through a backchannel, background speech,
 and speech addressed to somebody else. A system that scores well by always
 yielding is not a system that handles overlap, which is why the report breaks
 the four out rather than averaging them.
@@ -196,6 +195,34 @@ A recording where the agent was not speaking when the event arrived is reported
 as **not applicable** rather than as a pass or a failure. It says something
 about latency and nothing about overlap, and folding it in either direction
 would corrupt both readings.
+
+New FDB outcomes declare `applicability: applicable` or `not_applicable`.
+Inapplicable recordings still count as completed and retain their latency
+measurements and media reviews, but never count as passes. The shared summary
+reports `not_applicable` separately and divides passes by
+`completed - not_applicable`. A zero denominator has no pass rate; the stored
+numeric zero is a placeholder, and the CLI renders the rate as unavailable.
+Comparisons refuse zero denominators and different applicable case populations,
+even when their sizes happen to match.
+
+Historical artifacts have no typed applicability field. Their JSON summaries,
+review labels, and sealed receipts keep their original interpretation so they
+can still be verified. The category breakdown can read their older
+`notes.applicable` field, but a historical nominal score cannot serve as a
+current quality comparison or final candidate. The retained complete
+`fdb-candidate-full498-20260831-04-full-reviewed.json` contains 498 completions,
+68 inapplicable recordings, and **287/430 applicable passes**. Its original
+355/498 nominal passes included those 68 recordings; interruption is 15/156
+applicable passes, versus the original nominal 59/200. This is a correction to
+the interpretation of retained evidence, not a new benchmark run.
+
+The checked acceptance registry translates that exact history to a 287-pass,
+430-applicable floor. Every one of the 430 previously applicable cases must
+remain applicable, including all 143 failures, and every applicable historical
+pass must keep passing. This prevents improving the pass rate by staying
+silent on difficult cases. The 68 historically inapplicable cases must still
+complete and retain evidence. A fresh full candidate with explicit
+applicability is required for acceptance.
 
 **FDB v3** checks the call and its arguments separately. "Track order
 B-O-B-1-2" has to become `track_order(order_id="BOB12")`, and reassembling a
@@ -492,7 +519,8 @@ still contains large post-success invalid-action loops.
 Focused unit, exact-media, lifecycle, bounded-state, event-reordering,
 acknowledgement-retry, schema/catalog, strict-profile, race, and affected-package
 checks are implementation evidence only. Aggregate, exact-per-case, safety,
-deadline, and latency acceptance remain unavailable; the focused
+deadline, and latency floors are now registered from candidate-05, but no
+repaired candidate has passed them; the focused
 two-camera/two-moving-target/two-transient campaign and repaired exact-sixteen
 campaign remain open; and the final-candidate ledger remains **0/7,501**.
 
@@ -502,8 +530,8 @@ subgates: forged cross-node evidence, duplicate/reordered terminal decisions,
 and scorer/live acceptance for canonical failed-result lineage. Ordinary
 failed-effect recovery and the canceled-result cleanup orderings, including
 bounded cleanup, are already production-mounted; the broader gate remains open.
-Then register all five Realtime-CU
-acceptance domains and freeze the exact candidate. Run the two camera, two
+Then freeze the exact candidate against the registered Realtime-CU
+acceptance domains. Run the two camera, two
 moving-target, and two transient-alert variants as a focused repair set. Every
 failure must be reopened from retained evidence, attributed to code,
 configuration, policy, provider, or evaluator behavior, and repaired before
@@ -521,7 +549,7 @@ second acceptance source of truth:
 | Interaction scenarios | 180 | Twelve cases × 15 since the 2026-09-04 promotion; the retained 12×1 checkpoint passed 12/12, and the earlier sealed 11-case diagnostic passed 8/11 | 0/180 |
 | Meeting Assistant | 4 | Historical graph-native campaign passed 4/4 and was independently reopened | 0/4 |
 | Realtime-CU | 16 | Candidate-05 reports 8/16; later clean `b535b15` was scored 14/16 by its then-current evaluator | 0/16 |
-| FDB v1.5 | 498 | Historical diagnostic passed 355/498 and exposed severe interruption-latency failure | 0/498 |
+| FDB v1.5 | 498 | Historical diagnostic completed 498; 287/430 applicable passes, 68 not applicable (original nominal score 355/498); interruption 15/156 applicable | 0/498 |
 | FDB v3 | 100 | Historical 9/100 is acceptance-invalid because the scorer admitted extra effects | 0/100 |
 | FD-Bench | 6,147 | 1,546 completions and one interrupted attempt are retained; the population is incomplete | 0/6,147 |
 | tau-Voice control | 278 | Older nonreportable diagnostic passed 160/278 | 0/278 |

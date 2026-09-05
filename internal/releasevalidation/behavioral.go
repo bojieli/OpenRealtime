@@ -64,6 +64,7 @@ type BehavioralSuiteReport struct {
 	ObservedPopulation int                        `json:"observed_population"`
 	Completed          int                        `json:"completed"`
 	Passed             int                        `json:"passed"`
+	NotApplicable      int                        `json:"not_applicable,omitempty"`
 	Execution          *BehavioralExecutionReport `json:"execution,omitempty"`
 	Lineage            []RunLineage               `json:"lineage,omitempty"`
 	BlockedBy          []string                   `json:"blocked_by,omitempty"`
@@ -189,6 +190,7 @@ func EvaluateBehavioralAcceptance(
 		suiteReport.ObservedPopulation = len(result.Tasks)
 		suiteReport.Completed = result.Summary.Completed
 		suiteReport.Passed = result.Summary.Passed
+		suiteReport.NotApplicable = result.Summary.NotApplicable
 
 		validateCampaignClosureControl(
 			&suiteReport, target, frozen, frozenFound, candidate, candidateSHA256, verified,
@@ -207,6 +209,10 @@ func EvaluateBehavioralAcceptance(
 				suiteReport.Failures = append(suiteReport.Failures, fmt.Sprintf(
 					"aggregate passed %d tasks, below preregistered target %d",
 					result.Summary.Passed, minimum))
+			}
+			if target.Aggregate.MinimumApplicable != nil {
+				evaluateApplicabilityFloor(&suiteReport, "aggregate", "minimum-applicable",
+					result.Summary.Completed-result.Summary.NotApplicable, *target.Aggregate.MinimumApplicable, len(result.Tasks))
 			}
 		}
 		if target.Cases.Registration.Status == RegistrationRegistered {
@@ -434,6 +440,10 @@ func validateBehavioralResult(
 			report.Failures = append(report.Failures,
 				fmt.Sprintf("task %q did not complete", task.ID))
 		}
+		if target.Suite == "fdb-v1.5" && task.Applicability == "" {
+			report.Failures = append(report.Failures,
+				fmt.Sprintf("FDB task %q lacks explicit applicability; historical nominal passes cannot certify a final candidate", task.ID))
+		}
 	}
 	derived := result
 	derived.Finish()
@@ -512,6 +522,7 @@ func validateBehavioralResult(
 
 func equalSummaries(left, right bench.Summary) bool {
 	if left.Completed != right.Completed || left.Failed != right.Failed || left.Passed != right.Passed ||
+		left.NotApplicable != right.NotApplicable ||
 		left.PassRate != right.PassRate || left.Complete != right.Complete ||
 		left.Incompleteness != right.Incompleteness || len(left.Distributions) != len(right.Distributions) {
 		return false
@@ -529,7 +540,7 @@ func evaluateCaseTargets(
 	target BehavioralSuiteTarget,
 	tasks []bench.TaskOutcome,
 ) {
-	type observedCase struct{ attempts, passed int }
+	type observedCase struct{ attempts, applicable, passed int }
 	observed := make(map[string]observedCase)
 	for _, task := range tasks {
 		key, err := behavioralCaseKey(target.CaseKey, task.ID)
@@ -539,8 +550,11 @@ func evaluateCaseTargets(
 		}
 		value := observed[key]
 		value.attempts++
-		if task.Passed {
-			value.passed++
+		if task.Completed && task.Applicability != bench.NotApplicable {
+			value.applicable++
+			if task.Passed {
+				value.passed++
+			}
 		}
 		observed[key] = value
 	}
@@ -562,6 +576,10 @@ func evaluateCaseTargets(
 			Threshold: float64(expected.MinimumPassed), Observed: float64(actual.passed),
 			Samples: actual.attempts, Reason: reason,
 		})
+		if expected.MinimumApplicable != nil {
+			evaluateApplicabilityFloor(report, "case", expected.Case+"/minimum-applicable",
+				actual.applicable, *expected.MinimumApplicable, actual.attempts)
+		}
 	}
 	if len(observed) != 0 {
 		keys := make([]string, 0, len(observed))
@@ -572,6 +590,20 @@ func evaluateCaseTargets(
 		report.Failures = append(report.Failures,
 			"candidate has unregistered cases: "+strings.Join(keys, ", "))
 	}
+}
+
+func evaluateApplicabilityFloor(report *BehavioralSuiteReport, domain, name string, actual, minimum, attempts int) {
+	passed := actual >= minimum
+	reason := ""
+	if !passed {
+		reason = fmt.Sprintf("%s has %d applicable attempts, below preregistered minimum %d", name, actual, minimum)
+		report.Failures = append(report.Failures, reason)
+	}
+	report.Checks = append(report.Checks, BehavioralCheck{
+		Domain: domain, Name: name, Passed: passed, Metric: "applicable", Statistic: StatisticSum,
+		Comparison: ComparisonAtLeast, Threshold: float64(minimum), Observed: float64(actual),
+		Samples: attempts, Reason: reason,
+	})
 }
 
 func behavioralCaseKey(mode, taskID string) (string, error) {

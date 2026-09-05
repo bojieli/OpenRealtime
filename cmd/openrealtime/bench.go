@@ -1149,18 +1149,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	fmt.Fprintf(output, "provenance : %s\n", result.Provenance)
 	fmt.Fprintf(output, "tasks      : %d completed, %d failed, of %d expected\n",
 		result.Summary.Completed, result.Summary.Failed, result.Expected)
-	for _, category := range fdb.Categories() {
-		summary, present := fdb.Breakdown(result)[category]
-		if !present {
-			continue
-		}
-		want := "hold"
-		if category.ShouldYield() {
-			want = "yield"
-		}
-		fmt.Fprintf(output, "  %-18s %s  %d/%d applicable  %.0f%%  (%d not applicable)\n",
-			category, want, summary.Passed, summary.Applicable, summary.Rate*100, summary.NotApplicable)
-	}
+	writeFDBScores(output, result)
 	if reportErr := result.Reportable(); reportErr != nil {
 		fmt.Fprintf(output, "\nNOT REPORTABLE: %v\n", reportErr)
 	} else {
@@ -1173,6 +1162,40 @@ func runFDB(arguments []string, output io.Writer) error {
 		fmt.Fprintf(output, "written to %s\n", out)
 	}
 	return nil
+}
+
+func writeFDBScores(output io.Writer, result bench.Result) {
+	breakdown := fdb.Breakdown(result)
+	passed, applicable, notApplicable := 0, 0, 0
+	for _, summary := range breakdown {
+		passed += summary.Passed
+		applicable += summary.Applicable
+		notApplicable += summary.NotApplicable
+	}
+	rate := func(passed, applicable int) string {
+		if applicable == 0 {
+			return "unavailable (no applicable recordings)"
+		}
+		if !result.Summary.Complete {
+			return "unavailable (incomplete campaign)"
+		}
+		return fmt.Sprintf("%.1f%%", 100*float64(passed)/float64(applicable))
+	}
+	fmt.Fprintf(output, "score      : %d/%d applicable, %s (%d not applicable)\n",
+		passed, applicable, rate(passed, applicable), notApplicable)
+	for _, category := range fdb.Categories() {
+		summary, present := breakdown[category]
+		if !present {
+			continue
+		}
+		want := "hold"
+		if category.ShouldYield() {
+			want = "yield"
+		}
+		fmt.Fprintf(output, "  %-18s %s  %d/%d applicable  %s  (%d not applicable)\n",
+			category, want, summary.Passed, summary.Applicable,
+			rate(summary.Passed, summary.Applicable), summary.NotApplicable)
+	}
 }
 
 // resolveCell builds the cell this run measures.

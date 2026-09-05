@@ -47,2505 +47,3004 @@
       "aggregate": {
         "registration": {
           "status": "registered",
-          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened; 355 of 498 passed). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it. The interruption category passed 59 of 200, so this floor records where the runtime is, not where it should be."
+          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session. Applicability correction: the historical 355 nominal passes include 68 not-applicable recordings; the same evidence contains 287 behavioral passes across 430 applicable recordings, with all 498 completed. Interruption has 15 passes across 156 applicable recordings (historically 59 nominal passes across 200 completed). These thresholds translate the original floor to explicit applicability without weakening it or rewriting historical evidence; every previously applicable case must remain applicable, including failures. The benchmark owner may tighten the floor and may not lower it."
         },
-        "minimum_passed": 355
+        "minimum_passed": 287,
+        "minimum_applicable": 430
       },
       "cases": {
         "registration": {
           "status": "registered",
-          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened; 355 of 498 passed). Registered 2026-09-05 by the maintainer's autonomous session; the benchmark owner may tighten it and may not lower it. The interruption category passed 59 of 200, so this floor records where the runtime is, not where it should be. A recording that passed must keep passing; a recording that failed has no floor until the owner raises it."
+          "source": "Non-regression floor derived from the retained complete graph-native campaign, artifacts/fdb-candidate-full498-20260831-04-full-reviewed.json (revision fc8195aed665dad989b52e0a674ea76166ff9cd6, executable sha256:0a59da1456a95a1a1bcb97218ad844e9e1dacd930ef17a72dc7d3a0ccaab4a93, finished 2026-09-01, unmodified tree, independently reopened). Registered 2026-09-05 by the maintainer's autonomous session. Applicability correction: the historical 355 nominal passes include 68 not-applicable recordings; the same evidence contains 287 behavioral passes across 430 applicable recordings, with all 498 completed. Interruption has 15 passes across 156 applicable recordings (historically 59 nominal passes across 200 completed). These thresholds translate the original floor to explicit applicability without weakening it or rewriting historical evidence; every previously applicable case must remain applicable, including failures. The benchmark owner may tighten the floor and may not lower it. Every applicable historical pass must keep passing; historical failures retain an applicability floor of one and a pass floor of zero. Historical not-applicable recordings retain completion requirements with applicability and pass floors of zero."
         },
         "targets": [
           {
             "case": "background_speech/1",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/10",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/100",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/11",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/12",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/13",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/14",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/15",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/16",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/17",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/18",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/19",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/2",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/20",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/21",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/22",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/23",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/24",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/25",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/26",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/27",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/28",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/29",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/3",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/30",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/31",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/32",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/33",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/34",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/35",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/36",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/37",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/38",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/39",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/4",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/40",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/41",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/42",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/43",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/44",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/45",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/46",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/47",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/48",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/49",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/5",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/50",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/51",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/52",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/53",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/54",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/55",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/56",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/57",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/58",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/59",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/6",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/60",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/61",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/62",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/63",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/64",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/65",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/66",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/67",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/68",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/69",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/7",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/70",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/71",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/72",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/73",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/74",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/75",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/76",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/77",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/78",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/79",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/8",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/80",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/81",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/82",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/83",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/84",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/85",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/86",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/87",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/88",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/89",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/9",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/90",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/91",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/92",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/93",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/94",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/95",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "background_speech/96",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/97",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/98",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "background_speech/99",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/1",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/10",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/100",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/11",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/12",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/13",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/14",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/15",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/16",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/17",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/18",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/19",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/2",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/20",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/21",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/22",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/23",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/24",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/25",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/26",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/27",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/28",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/29",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/3",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/30",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/31",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/32",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/33",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/34",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/35",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/36",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/37",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/38",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/39",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/4",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/40",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/41",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/42",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/43",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/44",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/45",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/46",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/47",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/48",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/49",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/5",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/50",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/51",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/52",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/53",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/54",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/55",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/56",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/57",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/58",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/59",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/6",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/60",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "talking_to_other/61",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/62",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/63",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/64",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/65",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/66",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/67",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/68",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "talking_to_other/69",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/7",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/70",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/71",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/72",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/73",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "talking_to_other/74",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "talking_to_other/75",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/76",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/77",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/78",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/79",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/8",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/80",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/81",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/82",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/83",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/84",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/85",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/86",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/87",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/88",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/89",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/9",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/90",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "talking_to_other/91",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/92",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/93",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/94",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/95",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/96",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/97",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/98",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "talking_to_other/99",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/1",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/10",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/11",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/12",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/13",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/14",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/15",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/16",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/17",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/18",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/19",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/2",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/20",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/21",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/22",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/23",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/24",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/25",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/26",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/27",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/28",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/29",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/3",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/30",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/31",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/32",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/33",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/34",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/35",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/36",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/37",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/38",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/39",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/4",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/40",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/41",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/42",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/43",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/44",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/45",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/46",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/47",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/48",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/49",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/5",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/50",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/51",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/52",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/53",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/54",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/55",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/56",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/57",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/58",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/59",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/6",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/60",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/61",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/62",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/63",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/64",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/65",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/66",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/67",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/68",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/69",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/7",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/70",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/71",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/72",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/73",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/74",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/75",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/76",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/77",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/78",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/79",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/8",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/80",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/81",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/82",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/83",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/84",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/85",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/86",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/87",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/88",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/89",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/9",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/90",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_backchannel/91",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/92",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/93",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/94",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/95",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/96",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/97",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_backchannel/98",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/1",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/10",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/100",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/101",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/102",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/103",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/104",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/105",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/106",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/107",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/108",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/109",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/11",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/110",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/111",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/112",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/113",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/114",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/115",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/116",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/117",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/118",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/119",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/12",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/120",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/121",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/122",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/123",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/124",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/125",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/126",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/127",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/128",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/129",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/13",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/130",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/131",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/132",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/133",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/134",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/135",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/136",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/137",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/138",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/139",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/14",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/140",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/141",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/142",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/143",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/144",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/145",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/146",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/147",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/148",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/149",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/15",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/150",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/151",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/152",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/153",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/154",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/155",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/156",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/157",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/158",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/159",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/16",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/160",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/161",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/162",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/163",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/164",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/165",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/166",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/167",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/168",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/169",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/17",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/170",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/171",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/172",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/173",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/174",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/175",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/176",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/177",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/178",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/179",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/18",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/180",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/181",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/182",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/183",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/184",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/185",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/186",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/187",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/188",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/189",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/19",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/190",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/191",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/192",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/193",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/194",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/195",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/196",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/197",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/198",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/199",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/2",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/20",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/200",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/21",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/22",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/23",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/24",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/25",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/26",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/27",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/28",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/29",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/3",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/30",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/31",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/32",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/33",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/34",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/35",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/36",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/37",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/38",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/39",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/4",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/40",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/41",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/42",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/43",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/44",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/45",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/46",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/47",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/48",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/49",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/5",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/50",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/51",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/52",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/53",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/54",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/55",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/56",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/57",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/58",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/59",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/6",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/60",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/61",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/62",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/63",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/64",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/65",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/66",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/67",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/68",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/69",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/7",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/70",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/71",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/72",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/73",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/74",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/75",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/76",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/77",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/78",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/79",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/8",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/80",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/81",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/82",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/83",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/84",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/85",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/86",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 0,
+            "minimum_applicable": 0
           },
           {
             "case": "user_interruption/87",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/88",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/89",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/9",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/90",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/91",
             "expected_attempts": 1,
-            "minimum_passed": 1
+            "minimum_passed": 1,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/92",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/93",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/94",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/95",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/96",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/97",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/98",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           },
           {
             "case": "user_interruption/99",
             "expected_attempts": 1,
-            "minimum_passed": 0
+            "minimum_passed": 0,
+            "minimum_applicable": 1
           }
         ]
       },
