@@ -65,7 +65,7 @@ func TestOverlapBargeInDescriptorAndFactoryAreRegistered(t *testing.T) {
 	if err := descriptor.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 9 ||
+	if descriptor.Name != "interaction.OverlapBargeIn" || descriptor.Revision != 10 ||
 		!descriptor.Reaction.BreaksCycles || descriptor.ConfigSchema !=
 		"schema://openrealtime/interaction/overlap-barge-in-config/v1" ||
 		descriptor.StateSchema != "schema://openrealtime/interaction/overlap-state/v4" {
@@ -406,8 +406,8 @@ func TestOverlapBargeInDirectedSpeechCancelsOnlyExactIndependentAddresses(t *tes
 	defer harness.stop(t)
 
 	// Finish only segmentation for one run and only the model for another.
-	// This proves those lifecycle addresses do not collapse into one guessed
-	// "current response" cancellation.
+	// Prepared speech still requires segmentation cancellation after TextEnd;
+	// model cancellation remains limited to the independently active model.
 	harness.sendAndSync(t, "invocation", overlapInvocationEnvelope("invoke-model", "run-model"))
 	harness.sendAndSync(t, "segmentation", overlapSegmentationEnvelope(
 		"segment-model-done", "run-model", OutcomeCompleted,
@@ -445,12 +445,14 @@ func TestOverlapBargeInDirectedSpeechCancelsOnlyExactIndependentAddresses(t *tes
 		!reflect.DeepEqual(decision.ActiveRunIDs, []string{"run-model", "run-segment"}) ||
 		!reflect.DeepEqual(decision.ActiveUtteranceIDs,
 			[]string{"utterance-playback", "utterance-tts"}) ||
-		decision.ModelCancels != 1 || decision.SegmentationCancels != 1 ||
+		decision.ModelCancels != 1 || decision.SegmentationCancels != 2 ||
 		decision.TTSCancels != 1 || decision.PlaybackCancels != 1 {
 		t.Fatalf("directed overlap decision = %+v", decision)
 	}
 
 	assertExactOverlapRunCancel(t, harness.output(t, "model_cancel"),
+		decisionEnvelope.ItemID, "run-model")
+	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"),
 		decisionEnvelope.ItemID, "run-model")
 	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"),
 		decisionEnvelope.ItemID, "run-segment")

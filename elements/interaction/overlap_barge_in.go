@@ -37,7 +37,7 @@ const (
 	// production graph normally uses the element-owned system scheduler.
 	OverlapBargeInSchedulerService = "interaction.overlap-barge-in.scheduler"
 	overlapBargeInRuntimeID        = "builtin://openrealtime/elements/interaction.OverlapBargeIn"
-	overlapBargeInRuntimeRevision  = "implementation:9"
+	overlapBargeInRuntimeRevision  = "implementation:10"
 
 	defaultOverlapHoldMS       = 800
 	maximumOverlapHoldMS       = 60_000
@@ -73,7 +73,7 @@ func OverlapBargeInDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "interaction.OverlapBargeIn",
-		Revision:      9,
+		Revision:      10,
 		Ports: []element.Port{
 			{Name: "activity", Direction: element.Input, Type: acousticelements.ActivityType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -402,6 +402,10 @@ type overlapRun struct {
 	segmentationActive       bool
 	segmentationTerminal     bool
 	segmentationCancelIssued bool
+	// Preparation may finish before independently routed speech is visible.
+	// Keep the declared emitted population until its exact terminals arrive.
+	segments           int
+	finishedUtterances map[string]struct{}
 }
 
 type overlapUtterance struct {
@@ -861,7 +865,7 @@ func (runner *overlapBargeInRunner) runsSupersededBy(
 				continue
 			}
 		}
-		if run.modelActive || run.segmentationActive || runner.runHasActiveUtterance(runID) {
+		if run.modelActive || run.segmentationActive || runner.runHasPendingSpeech(runID) {
 			runIDs = append(runIDs, runID)
 		}
 	}
@@ -881,7 +885,7 @@ func deliberateSpokeOver(act coreinteraction.Act) bool {
 func (runner *overlapBargeInRunner) protectActiveContinuation(streamID string) {
 	for runID, run := range runner.runs {
 		if run == nil || !deliberateSpokeOver(run.act) ||
-			(!run.modelActive && !run.segmentationActive && !runner.runHasActiveUtterance(runID)) {
+			(!run.modelActive && !run.segmentationActive && !runner.runHasPendingSpeech(runID)) {
 			continue
 		}
 		run.protectedStreamID = streamID
@@ -1072,6 +1076,9 @@ func (runner *overlapBargeInRunner) acceptPlaybackRelease(
 	}
 	delete(runner.utterances, utteranceID)
 	runner.rememberTerminalUtterance(utteranceID)
+	if err := runner.finishUtterance(runID, utteranceID); err != nil {
+		return speechelements.PlaybackReceipt{}, err
+	}
 	runner.pruneRun(runID)
 	return receipt, nil
 }
@@ -1271,6 +1278,10 @@ func (runner *overlapBargeInRunner) acceptSegmentation(
 	if outcome.Kind == OutcomeIgnored {
 		return nil
 	}
+	if outcome.Segments < 0 || outcome.Segments > maximumOverlapActiveMemory {
+		return runner.refuse(ctx, envelope, "segmentation", "segment_bound",
+			"segmentation outcome exceeds the bounded speech population")
+	}
 	runID, err := exactOverlapIdentity(outcome.RunID, envelope.RunID, envelope.CancellationScope)
 	if err != nil || !boundedOverlapIdentity(runID) {
 		if err == nil {
@@ -1287,6 +1298,7 @@ func (runner *overlapBargeInRunner) acceptSegmentation(
 	}
 	run.segmentationActive = false
 	run.segmentationTerminal = true
+	run.segments = max(run.segments, outcome.Segments)
 	runner.pruneRun(runID)
 	return nil
 }
@@ -1372,7 +1384,10 @@ func (runner *overlapBargeInRunner) acceptSpeechTransition(
 	if utterance.ttsTerminal && utterance.playbackTerminal {
 		delete(runner.utterances, transition.UtteranceID)
 		runner.rememberTerminalUtterance(transition.UtteranceID)
-		runner.pruneRun(runID)
+		if err := runner.finishUtterance(utterance.runID, transition.UtteranceID); err != nil {
+			return err
+		}
+		runner.pruneRun(utterance.runID)
 		return nil
 	}
 	if active {
@@ -1588,7 +1603,7 @@ func (runner *overlapBargeInRunner) cancelSelectedRuns(
 			run.modelCancelIssued = true
 			modelIDs = append(modelIDs, runID)
 		}
-		if run.segmentationActive && !run.segmentationCancelIssued {
+		if (run.segmentationActive || runner.runHasPendingSpeech(runID)) && !run.segmentationCancelIssued {
 			run.segmentationCancelIssued = true
 			segmentIDs = append(segmentIDs, runID)
 		}
@@ -1664,10 +1679,13 @@ func (runner *overlapBargeInRunner) cancelSelectedRuns(
 	return nil
 }
 
-func (runner *overlapBargeInRunner) runHasActiveUtterance(runID string) bool {
+func (runner *overlapBargeInRunner) runHasPendingSpeech(runID string) bool {
+	if run := runner.runs[runID]; run != nil && run.segments > len(run.finishedUtterances) {
+		return true
+	}
 	for _, utterance := range runner.utterances {
 		if utterance != nil && utterance.runID == runID &&
-			(utterance.ttsActive || utterance.playbackActive) {
+			!(utterance.ttsTerminal && utterance.playbackTerminal) {
 			return true
 		}
 	}
@@ -1694,7 +1712,7 @@ func (runner *overlapBargeInRunner) cancelActive(
 			modelIDs = append(modelIDs, runID)
 			runSet[runID] = struct{}{}
 		}
-		if run.segmentationActive && !run.segmentationCancelIssued {
+		if (run.segmentationActive || runner.runHasPendingSpeech(runID)) && !run.segmentationCancelIssued {
 			run.segmentationCancelIssued = true
 			segmentIDs = append(segmentIDs, runID)
 			runSet[runID] = struct{}{}
@@ -2005,7 +2023,7 @@ func (runner *overlapBargeInRunner) agentOutputSnapshot() coreinteraction.AgentO
 	protected := make([]string, 0, len(runner.runs))
 	for runID, run := range runner.runs {
 		if run == nil || run.streamID == "" || !deliberateSpokeOver(run.act) ||
-			(!run.modelActive && !run.segmentationActive && !runner.runHasActiveUtterance(runID)) {
+			(!run.modelActive && !run.segmentationActive && !runner.runHasPendingSpeech(runID)) {
 			continue
 		}
 		protected = append(protected, run.streamID)
@@ -2069,13 +2087,13 @@ func (runner *overlapBargeInRunner) activeAgentText() string {
 }
 
 func (runner *overlapBargeInRunner) hasAgentWork() bool {
-	for _, run := range runner.runs {
-		if run.modelActive || run.segmentationActive {
+	for runID, run := range runner.runs {
+		if run.modelActive || run.segmentationActive || runner.runHasPendingSpeech(runID) {
 			return true
 		}
 	}
 	for _, utterance := range runner.utterances {
-		if utterance.ttsActive || utterance.playbackActive {
+		if !(utterance.ttsTerminal && utterance.playbackTerminal) {
 			return true
 		}
 	}
@@ -2090,11 +2108,11 @@ func (runner *overlapBargeInRunner) hasAgentWork() bool {
 // output through cancelSelectedRuns, while ordinary answers retain the bounded
 // acoustic fallback.
 func (runner *overlapBargeInRunner) hasActionableOverlapWork() bool {
-	for _, run := range runner.runs {
+	for runID, run := range runner.runs {
 		if runner.runProtectedFromCurrentSpeech(run) {
 			continue
 		}
-		if run.modelActive || run.segmentationActive {
+		if run.modelActive || run.segmentationActive || runner.runHasPendingSpeech(runID) {
 			return true
 		}
 	}
@@ -2102,7 +2120,7 @@ func (runner *overlapBargeInRunner) hasActionableOverlapWork() bool {
 		if utterance == nil || runner.runProtectedFromCurrentSpeech(runner.runs[utterance.runID]) {
 			continue
 		}
-		if utterance.ttsActive || utterance.playbackActive {
+		if !(utterance.ttsTerminal && utterance.playbackTerminal) {
 			return true
 		}
 	}
@@ -2131,13 +2149,35 @@ func (runner *overlapBargeInRunner) pruneRun(runID string) {
 		!run.segmentationTerminal || run.modelActive || run.segmentationActive {
 		return
 	}
-	for _, utterance := range runner.utterances {
-		if utterance.runID == runID && (utterance.ttsActive || utterance.playbackActive) {
-			return
-		}
+	if runner.runHasPendingSpeech(runID) {
+		return
 	}
 	delete(runner.runs, runID)
 	runner.rememberTerminalRun(runID)
+}
+
+func (runner *overlapBargeInRunner) finishUtterance(runID, utteranceID string) error {
+	if runID == "" {
+		return nil
+	}
+	if _, terminal := runner.terminalRuns[runID]; terminal {
+		return nil
+	}
+	run, err := runner.ensureRun(runID)
+	if err != nil {
+		return err
+	}
+	if run.finishedUtterances == nil {
+		run.finishedUtterances = make(map[string]struct{})
+	}
+	if _, found := run.finishedUtterances[utteranceID]; found {
+		return nil
+	}
+	if len(run.finishedUtterances) >= maximumOverlapActiveMemory {
+		return errors.New("overlap terminal-utterance population exceeds the run bound")
+	}
+	run.finishedUtterances[utteranceID] = struct{}{}
+	return nil
 }
 
 func (runner *overlapBargeInRunner) rememberTerminalRun(runID string) {

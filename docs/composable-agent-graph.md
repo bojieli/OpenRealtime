@@ -2994,6 +2994,15 @@ the required new 180-attempt sample.
     acceptance remain open. This bounded scenario does not establish eventual
     completion of all forty numbers. See the
     [sustained-count evidence](subturn-benchmark-study.md#sustained-counting-and-the-audible-stopping-boundary).
+    The subsequent queued-speech repair retains the declared emitted segment
+    population after preparation completes, keeps the producing run addressable
+    between playback segments, and sends run-level segmentation cancellation
+    for that entire horizon. Exact distinct speech terminals close it, including
+    synthesis canceled before playback. Mounted regressions cover completion
+    overtaking speech, releases overtaking completion, terminal deduplication,
+    acoustic cancellation between segments, and a spoken stop followed by a new
+    request through the production graph. These implementation checks do not
+    establish that the retained live failures or full case population pass.
 - [x] Run all four OpenRealtime Meeting Assistant v1 tasks through the new
   production profile. Clean-worktree candidate-21 at commit `c250d83` passed
   four independent focused two-case runs (8/8) before its immutable full run.

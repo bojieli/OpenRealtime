@@ -4,6 +4,13 @@
 
 ### Highlights
 
+- Spoken stops and acoustic interruption now revoke a prepared speech stream
+  even after text generation and segmentation finish. The overlap controller
+  retains the emitted segment count until exact speech terminals arrive, so
+  queued sentences remain cancellable between playback segments. Duplicate and
+  reordered terminal receipts cannot retire unplayed speech or revive completed
+  work. A mounted scenario-graph regression verifies quiet after stopping and
+  successful speech on a later request.
 - Interrupted-count scorer version 9 requires at least three observed numbers
   before and after interruption, an ordered prefix within the requested range,
   and captured speech near the interruption. A lone “One” followed by “Two”
