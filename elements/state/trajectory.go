@@ -23,7 +23,7 @@ import (
 const TrajectoryStoreService = "state.trajectory.store"
 
 const (
-	trajectoryStoreImplementationRevision   = "implementation:2"
+	trajectoryStoreImplementationRevision   = "implementation:3"
 	observationCommitImplementationRevision = "implementation:4"
 )
 
@@ -88,6 +88,10 @@ type Append struct {
 	Compare         bool              `json:"compare,omitempty"`
 	ExpectedVersion uint64            `json:"expected_version,omitempty"`
 	Items           []trajectory.Item `json:"items"`
+	// Prefix selects provenance-only history insertion against an exact earlier
+	// prefix. It cannot combine with Compare. Commit timestamps advance to the
+	// insertion boundary; no claim of current action authority is implied.
+	Prefix *trajectory.PrefixIdentity `json:"prefix,omitempty"`
 }
 
 func (Append) InspectionCause() element.InspectionCauseKind {
@@ -265,6 +269,12 @@ func (runner *trajectoryStoreRunner) Run(ctx context.Context) error {
 func (runner *trajectoryStoreRunner) append(request Append) error {
 	if len(request.Items) == 0 {
 		return errors.New("trajectory append batch is empty")
+	}
+	if request.Prefix != nil {
+		if request.Compare || request.ExpectedVersion != request.Prefix.Version {
+			return errors.New("history append requires one exact prefix basis without compare-and-append")
+		}
+		return runner.store.AppendBatchOnPrefix(*request.Prefix, request.Items)
 	}
 	if request.Compare {
 		return runner.store.AppendBatchAt(request.ExpectedVersion, request.Items)

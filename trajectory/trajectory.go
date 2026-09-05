@@ -648,6 +648,33 @@ func (store *Store) appendBatch(expectedVersion *uint64, items []Item) error {
 	}
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	return store.appendBatchLocked(expectedVersion, items)
+}
+
+// AppendBatchOnPrefix records history derived from an exact immutable prefix,
+// even when later records have arrived. This proves provenance, not freshness
+// or authority to perform a new effect. Callers must keep stale proposals out
+// of this path. Canonical commit timestamps advance to the insertion boundary;
+// the original source prefix and causal parents remain unchanged.
+func (store *Store) AppendBatchOnPrefix(prefix PrefixIdentity, items []Item) error {
+	if len(items) == 0 {
+		return errors.New("trajectory append batch is empty")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := VerifyPrefix(Snapshot{Version: uint64(len(store.items)), Items: store.items}, prefix); err != nil {
+		return fmt.Errorf("trajectory history prefix: %w", err)
+	}
+	items = cloneItems(items)
+	boundary := store.lastNS
+	for index := range items {
+		items[index].MonotonicNS = max(items[index].MonotonicNS, boundary)
+		boundary = items[index].MonotonicNS
+	}
+	return store.appendBatchLocked(nil, items)
+}
+
+func (store *Store) appendBatchLocked(expectedVersion *uint64, items []Item) error {
 	if expectedVersion != nil && *expectedVersion != uint64(len(store.items)) {
 		return fmt.Errorf("%w: expected %d, current %d", ErrVersionConflict, *expectedVersion, len(store.items))
 	}

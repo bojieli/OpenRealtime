@@ -2951,8 +2951,18 @@ the required new 180-attempt sample.
     controls; all six reviews agree and every result replays. The failed count
     synthesizes `One. Two.` for the second animal. Missing response terminals
     and absent assistant-count history in subsequent model requests require a
-    separate playback/context investigation. These findings and short-word
-    recognition uncertainty keep this case and the final population open. See the
+    separate playback/context investigation. A mounted context-advance fixture
+    now reproduces audible `One.` followed by a version-conflict refusal and
+    absent canonical assistant history. The opt-in original-prefix speech
+    transaction preserves prepared speech while excluding stale reasoning,
+    proposals, and native state. Package, mounted, and mutation regressions
+    support this repair, including played history in the next spoken request.
+    Explicit response creation after playback still waits for unpublished
+    playback-state context; its bounded diagnostic fails in both variants.
+    Fresh live attribution and acceptance remain open.
+    See the [speech-history investigation](subturn-benchmark-study.md#speech-history-after-a-model-freshness-rejection).
+    These findings and short-word recognition uncertainty keep this case and
+    the final population open. See the
     [audible-count evidence](subturn-benchmark-study.md#audible-event-count-evaluation).
   - [ ] `asked not to be interrupted`
   - [ ] `a recorded menu`

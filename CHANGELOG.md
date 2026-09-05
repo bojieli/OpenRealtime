@@ -4,6 +4,13 @@
 
 ### Highlights
 
+- The scenario conversation profile preserves sanitized speech history when a
+  newer observation makes the original model result stale. Exact original-prefix
+  verification and playback receipts keep already-audible words available to
+  later continuations. Stale reasoning, native state, and tool proposals stay
+  outside the separate history transaction; its `speech_retained` outcome does
+  not grant action authority.
+
 - Event-count scorer version 10 requires independent recognition of exactly
   the expected number in captured agent audio and silence outside the authored
   response windows. Reported digits cannot certify garbled synthesis. Results,

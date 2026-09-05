@@ -102,7 +102,8 @@ nodes:
     max_candidate_bytes: 4194304
     max_blocks: 1024
     max_active_streams: 32
-  model_result_commit: {}
+  model_result_commit:
+    retain_rejected_speech: true
   segment:
     minimum_runes: 1
     minimum_clause_runes: 12

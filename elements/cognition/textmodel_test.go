@@ -951,7 +951,7 @@ func assertTextModelLiveResolution(
 	resolution := mounted.Live().Nodes["model"].Resolution
 	if resolution == nil || resolution.RuntimeEvidence != inspect.EvidenceLive ||
 		resolution.Runtime.ID != "builtin://openrealtime/elements/cognition.TextModel" ||
-		resolution.Runtime.Revision != "implementation:3" ||
+		resolution.Runtime.Revision != "implementation:4" ||
 		resolution.CapabilitiesEvidence != inspect.EvidenceLive {
 		t.Fatalf("text model live resolution = %+v", resolution)
 	}
@@ -961,7 +961,7 @@ func assertTextModelLiveResolution(
 			capability.Provider.Revision == "prepared-model" &&
 			capability.Provider.Digest == descriptorDigest && capability.Adapter != nil &&
 			capability.Adapter.ID == "builtin://openrealtime/adapters/cognition.TextModel-continuation" &&
-			capability.Adapter.Revision == "implementation:3" {
+			capability.Adapter.Revision == "implementation:4" {
 			return
 		}
 	}

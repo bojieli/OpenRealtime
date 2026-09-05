@@ -109,8 +109,8 @@
       "reference": "interaction.ModelResultCommit",
       "identity": {
         "name": "interaction.ModelResultCommit",
-        "revision": 2,
-        "digest": "sha256:a870b95caedde1348dfc3bf0950aa4379c5e70c556f395e32160faff23442d18"
+        "revision": 3,
+        "digest": "sha256:c3fdf3b43e31f4409fa33a513a37690c15167a131d4dd660e56ea2bc91c07a12"
       }
     },
     {

@@ -1352,3 +1352,83 @@ isolated `codex/scenario-audible-counts` branch, rebased over the colleague's
 completed benchmark-resume and LiveKit work. The new LiveKit module separately
 passes vet and race checks. Shared-main integration is pending a clean gate;
 none of the retained failures is hidden by a focused rerun.
+
+
+## Speech history after a model freshness rejection
+
+`artifacts/scenario-playback-context-investigation-20260905-01` preserves a
+mounted reproduction of lost canonical count history. A confident partial
+starts the voice model at trajectory version 3. Before the provider emits,
+the matching final transcript commits at version 4. The provider then returns
+`One.`, which reaches the audio sink, but the original model-result transaction
+receives `version_conflict: expected 3, current 4`. No canonical assistant item
+exists for playback visibility or later provider context. A second fixture
+advances context with an unrelated room observation and exposes the same loss.
+This proves a concrete context-advance defect; it does not attribute every
+missing terminal or repeated count in earlier live recordings to this cause.
+
+The opt-in scenario profile now preserves sanitized voice-authorized speech
+through the separate original-prefix transaction described in
+[ADR-0016](adr/0016-retain-speech-history-after-freshness-rejection.md). The
+ordinary version check still rejects the original stale result. Historical
+insertion verifies the immutable source prefix under the store lock, advances
+canonical insertion time, and retains only instruction and prepared assistant
+items. Reasoning, proposals, and opaque provider state are excluded even from
+mixed or interrupted output. The distinct `speech_retained` outcome grants no
+stale action authority; exact playback receipts still determine visibility.
+Legacy results without a verified source prefix and profiles without the
+option keep strict rejection.
+
+Race-enabled package regressions cover invalid and duplicate prefixes, atomic
+batch refusal, exact timestamp normalization, changed receipts, silent/unbound
+results, and mixed speech plus stale proposals. The mounted graph regressions
+require actual count audio, a clean terminal, played canonical visibility, and
+the played count in the next spoken turn's provider request. Both mounted cases
+pass three successive race-enabled repetitions. The fixture permits keeping
+speech active when a delayed final decision overlaps its output; its earlier
+restricted act set could fail with no act available, which is retained as a
+fixture failure rather than attributed to production policy.
+Three retained mutation overlays fail as intended: disabling speech retention
+reproduces the exact version conflicts; retaining the full stale result leaks
+non-speech items; bypassing prefix verification accepts a forged digest.
+
+The investigation retains unsuccessful diagnostic helpers as well: the first
+held provider completion after a short text delta that the segmenter had not
+yet released, and the second attempted a third input turn before draining the
+fixture's previous activity events. The corrected reproduction deliberately
+holds the provider before any output. Neither failed helper is a benchmark
+attempt. The initial implementation tests also retain corrected schema and
+runtime-revision expectations. Initial graph lock refresh omitted local
+Meeting descriptors and failed explicitly; rerunning with the declared bundles
+refreshed all nine affected locks. The subsequent fixture comparison records
+only changed graph identities and the derived aggregate digest, without
+changing expected safe-point behavior.
+
+The first full developer gate compiled while some locks were still stale and
+failed graph resolution and fixture identities. Its complete log is retained.
+After lock and fixture corrections, the fresh full `./scripts/check.sh` gate
+passes, including root and LiveKit vet/race, protocol, prompt-injection,
+JavaScript/Swift, Python, and shell stages. Its separate
+`history-final-check.log` retains explicit official-SDK WebSocket/WebRTC skips;
+those compatibility claims remain unverified. The implementation is committed
+on the isolated `codex/preserve-rejected-speech` branch. Shared-main integration
+remains pending while the colleague has active edits. A fresh traced live
+campaign remains required for behavioral acceptance.
+
+The next-context extension exposes an additional unresolved boundary. An
+explicit `CreateResponse` immediately after completed playback waits inside
+`responseCreateContext`: the direct playback-state append advances the canonical
+store while the method waits for the graph's last published snapshot to catch
+up. The initial unbounded diagnostic was stopped with a stack trace; a separate
+two-second bounded diagnostic then times out in both context-change cases.
+A separate overlay against unchanged main `a68e51b` also times out after an
+ordinary, successfully committed final-triggered response. That control confirms
+the publication gap predates the speech-history repair; no main file was edited.
+A subsequent spoken observation publishes context and its provider request does
+contain the played count. The explicit response path still requires a separate
+publication repair, regression, and mutation proof. These are mounted fixture
+observations, not new live attempts, and remain negative evidence in this bundle.
+Existing sealed evidence is unchanged.
+No external code, data, prompts, or model weights were imported. The count case,
+all twelve fifteen-repeat scenario populations, and the final 7,501-attempt
+ledger remain open.

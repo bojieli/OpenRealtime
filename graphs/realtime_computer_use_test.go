@@ -85,10 +85,10 @@ func TestRealtimeComputerUseGraphLaunchesResourceFreeAndCommitsClientEffectFeedb
 	}
 	identity := launched.Plan.Identity()
 	if identity.SourceDigest != "sha256:c4e359429b829c4d33aa13771717ed04f239bf6afa2da4275d637936903e6085" ||
-		identity.LockDigest != "sha256:5a5956210bf6599ed7ba03c830cb55792c653aad79937a2ef358fdafcc38a406" ||
+		identity.LockDigest != "sha256:a46510acec80d1adc33fa15926fdf8ad2c6851ebd3e8319f27b4728d580317c8" ||
 		identity.ValuesDigest != "sha256:ca50f15e6193b0684436f31d7c624e6321287ce4acc2dee38e77eb1e56248d01" ||
-		identity.GraphFingerprint != "sha256:762753ea42dbdee3333a0bc805693623b4b29dce72046330160170d43601e654" ||
-		identity.PlanFingerprint != "sha256:7fd06c0c1f1a7187bf719324a6a434aa90a8ff31bcf279506377c1809decb4fd" {
+		identity.GraphFingerprint != "sha256:4e9702df8e6b65270f3e050f500ef850ade99a7782a01b7f6dce9f389144a4cc" ||
+		identity.PlanFingerprint != "sha256:72ec3b3b71c32b09ef26b4e4c6b3d7a361b303d77cbdc7025f6422cd3aa1bb89" {
 		t.Fatalf("Realtime-CU graph artifacts drifted: %+v", identity)
 	}
 	if modelFactories.Load() != 0 || observerFactories.Load() != 0 {

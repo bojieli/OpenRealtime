@@ -227,10 +227,13 @@ type Result struct {
 	Descriptor        continuation.Descriptor `json:"descriptor"`
 	ContextVersion    uint64                  `json:"context_version"`
 	ContextTailID     string                  `json:"context_tail_id,omitempty"`
-	Invocation        continuation.Invocation `json:"invocation"`
-	Outputs           []PreparedOutput        `json:"outputs,omitempty"`
-	AssistantText     string                  `json:"assistant_text,omitempty"`
-	ReasoningText     string                  `json:"reasoning_text,omitempty"`
+	// ContextPrefix binds the immutable input independently of later appends.
+	// It is provenance for retaining speech history, never fresh action authority.
+	ContextPrefix trajectory.PrefixIdentity `json:"context_prefix,omitzero"`
+	Invocation    continuation.Invocation   `json:"invocation"`
+	Outputs       []PreparedOutput          `json:"outputs,omitempty"`
+	AssistantText string                    `json:"assistant_text,omitempty"`
+	ReasoningText string                    `json:"reasoning_text,omitempty"`
 	// ReasoningRetained attests that every textual reasoning delta emitted by
 	// the provider is present in Outputs and ReasoningText. False is the
 	// fail-closed default: an opaque native provider state can then contain

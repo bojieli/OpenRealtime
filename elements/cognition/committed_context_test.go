@@ -41,7 +41,7 @@ func TestTextModelReconstructsCommittedPrefixFromLaterStateAndRefusesReplay(t *t
 	resultEnvelopeV1 := receive(t, mustEgress(t, mounted, "result"))
 	resultV1 := resultEnvelopeV1.Payload.(cognitionelements.Result)
 	outcomeV1 := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
-	if resultV1.ContextVersion != 1 || resultV1.ContextTailID != "observation-v1" ||
+	if resultV1.ContextVersion != 1 || resultV1.ContextTailID != "observation-v1" || resultV1.ContextPrefix != v1.Prefix ||
 		outcomeV1.Kind != cognitionelements.OutcomeSucceeded {
 		t.Fatalf("late v1 result/outcome = %+v / %+v", resultV1, outcomeV1)
 	}
@@ -58,7 +58,7 @@ func TestTextModelReconstructsCommittedPrefixFromLaterStateAndRefusesReplay(t *t
 	resultEnvelopeV2 := receive(t, mustEgress(t, mounted, "result"))
 	resultV2 := resultEnvelopeV2.Payload.(cognitionelements.Result)
 	outcomeV2 := receive(t, mustEgress(t, mounted, "outcome")).Payload.(cognitionelements.Outcome)
-	if resultV2.ContextVersion != 2 || resultV2.ContextTailID != "observation-v2" ||
+	if resultV2.ContextVersion != 2 || resultV2.ContextTailID != "observation-v2" || resultV2.ContextPrefix != v2.Prefix ||
 		outcomeV2.Kind != cognitionelements.OutcomeSucceeded ||
 		!contains(resultEnvelopeV2.CausalParents, "context-v2") {
 		t.Fatalf("v2 result/outcome/parents = %+v / %+v / %v",

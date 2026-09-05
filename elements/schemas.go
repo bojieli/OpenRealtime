@@ -419,7 +419,7 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		),
 		"schema://openrealtime/interaction/model-result-commit-config/v1": standardObject(
 			"schema://openrealtime/interaction/model-result-commit-config/v1",
-			schemaObject{"max_pending": integerSchema(1, 4096)},
+			schemaObject{"max_pending": integerSchema(1, 4096), "retain_rejected_speech": schemaObject{"type": "boolean"}},
 		),
 		"schema://openrealtime/interaction/post-commit-silence-config/v1": standardObject(
 			"schema://openrealtime/interaction/post-commit-silence-config/v1",

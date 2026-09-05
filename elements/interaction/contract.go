@@ -180,7 +180,7 @@ func SpeechArbiterDescriptor() element.Descriptor {
 func ModelResultCommitDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "interaction.ModelResultCommit", Revision: 2,
+		Name:          "interaction.ModelResultCommit", Revision: 3,
 		Ports: []element.Port{
 			{Name: "result", Direction: element.Input, Type: safeModelResultType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
@@ -251,6 +251,9 @@ const (
 	ModelRejected  ModelCommitKind = "rejected"
 	ModelRefused   ModelCommitKind = "refused"
 	ModelIgnored   ModelCommitKind = "ignored"
+	// ModelSpeechRetained records prepared speech after rejecting the original
+	// stale transaction. It does not commit reasoning, proposals, or effects.
+	ModelSpeechRetained ModelCommitKind = "speech_retained"
 )
 
 // ModelCommitOutcome is the policy-visible terminal result of one prepared
@@ -325,6 +328,9 @@ type SpeechArbiterConfig struct {
 
 type ModelResultCommitConfig struct {
 	MaxPending int `json:"max_pending,omitempty"`
+	// RetainRejectedSpeech preserves safe, voice-authorized assistant text after
+	// a version conflict. Exact playback receipts still control its visibility.
+	RetainRejectedSpeech bool `json:"retain_rejected_speech,omitempty"`
 }
 
 type ControlSerializationQuarantineConfig struct {

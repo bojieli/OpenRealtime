@@ -6,7 +6,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 )
 
-const cognitionImplementationRevision = "implementation:3"
+const cognitionImplementationRevision = "implementation:4"
 
 const (
 	textModelRuntimeID = "builtin://openrealtime/elements/cognition.TextModel"

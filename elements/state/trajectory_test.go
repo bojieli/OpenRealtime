@@ -757,7 +757,7 @@ func assertPureStateResolution(
 	deadline := time.Now().Add(time.Second)
 	for {
 		resolution := mounted.Live().Nodes[node].Resolution
-		wantRevision := "implementation:2"
+		wantRevision := "implementation:3"
 		if elementName == "state.ObservationCommit" {
 			wantRevision = "implementation:4"
 		}

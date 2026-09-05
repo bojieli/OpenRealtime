@@ -115,6 +115,10 @@ type pendingModelCommit struct {
 	contextTailID   string
 	itemIDs         []string
 	itemsDigest     [sha256.Size]byte
+	prefix          trajectory.PrefixIdentity
+	history         bool
+	items           []trajectory.Item
+	historyResult   *cognitionelements.Result
 }
 
 type modelResultCommitRunner struct {
@@ -234,6 +238,13 @@ func (runner *modelResultCommitRunner) acceptResult(
 			Kind: ModelRefused, RunID: runID, Code: "invalid_result", Message: err.Error(),
 		})
 	}
+	return runner.startResultCommit(ctx, envelope, result, false)
+}
+
+func (runner *modelResultCommitRunner) startResultCommit(
+	ctx context.Context, envelope element.Envelope, result cognitionelements.Result, history bool,
+) error {
+	runID := result.RunID
 	items, err := runner.buildResultItems(result)
 	if err != nil {
 		return err
@@ -250,7 +261,26 @@ func (runner *modelResultCommitRunner) acceptResult(
 	pending := pendingModelCommit{
 		cause: envelope.Clone(), runID: runID, expectedVersion: result.ContextVersion,
 		contextTailID: result.ContextTailID, itemIDs: slices.Clone(itemIDs),
-		itemsDigest: digestTrajectoryItems(items),
+		itemsDigest: digestTrajectoryItems(items), prefix: result.ContextPrefix,
+		history: history,
+	}
+	if history {
+		pending.items = cloneTrajectoryItems(items)
+	} else if runner.config.RetainRejectedSpeech &&
+		result.Descriptor.EffectiveSpeechAuthority() == continuation.SpeechAuthorityVoice &&
+		strings.TrimSpace(result.AssistantText) != "" && result.ContextPrefix.Digest != "" {
+		// Retain only the sanitized speech surface. Native provider state can
+		// contain tool calls or reasoning and cannot be relabeled as speech.
+		speech := result
+		speech.Outputs = nil
+		for _, output := range result.Outputs {
+			if output.Kind == cognitionelements.PreparedAssistant {
+				speech.Outputs = append(speech.Outputs, output)
+			}
+		}
+		speech.ReasoningText, speech.ReasoningRetained = "", false
+		speech.ToolProposals, speech.Completion = nil, continuation.Completion{}
+		pending.historyResult = &speech
 	}
 	runner.pending[requestID] = pending
 	runner.pendingRun[runID] = requestID
@@ -259,9 +289,14 @@ func (runner *modelResultCommitRunner) acceptResult(
 	appendEnvelope.ItemID = requestID
 	appendEnvelope.RunID = runID
 	appendEnvelope.CausalParents = appendUniqueString(appendEnvelope.CausalParents, envelope.ItemID)
-	appendEnvelope.Payload = stateelements.Append{
+	request := stateelements.Append{
 		Compare: true, ExpectedVersion: result.ContextVersion, Items: cloneTrajectoryItems(items),
 	}
+	if history {
+		prefix := result.ContextPrefix
+		request.Compare, request.Prefix = false, &prefix
+	}
+	appendEnvelope.Payload = request
 	delivery, err := runner.appendOutput.Broadcast(ctx, appendEnvelope)
 	if err != nil {
 		runner.removePending(requestID, pending)
@@ -286,6 +321,9 @@ func validateCognitionResult(result cognitionelements.Result) error {
 	}
 	if result.ContextVersion > 0 && strings.TrimSpace(result.ContextTailID) == "" {
 		return errors.New("non-empty context requires its tail item ID")
+	}
+	if result.ContextPrefix.Digest != "" && result.ContextPrefix.Version != result.ContextVersion {
+		return errors.New("context prefix disagrees with the result context version")
 	}
 	var assistant strings.Builder
 	var reasoning strings.Builder
@@ -440,7 +478,14 @@ func (runner *modelResultCommitRunner) acceptCommit(
 		return fmt.Errorf("trajectory commit reply %s overflows the expected version", envelope.ItemID)
 	}
 	wantVersion := pending.expectedVersion + uint64(len(pending.itemIDs))
-	if commit.Version != wantVersion || commit.Snapshot.Version != commit.Version ||
+	versionValid := commit.Version == wantVersion
+	if pending.history {
+		versionValid = commit.Version >= wantVersion
+		if err := trajectory.VerifyPrefix(commit.Snapshot, pending.prefix); err != nil {
+			return fmt.Errorf("speech history commit changed its source prefix: %w", err)
+		}
+	}
+	if !versionValid || commit.Snapshot.Version != commit.Version ||
 		uint64(len(commit.Snapshot.Items)) != commit.Snapshot.Version {
 		return fmt.Errorf("trajectory commit reply %s has inconsistent version/snapshot: got %d/%d/%d, want %d",
 			envelope.ItemID, commit.Version, commit.Snapshot.Version,
@@ -466,14 +511,34 @@ func (runner *modelResultCommitRunner) acceptCommit(
 				envelope.ItemID, index, item.ID, pending.itemIDs[index])
 		}
 	}
-	if got := digestTrajectoryItems(committedTail); got != pending.itemsDigest {
+	wantDigest := pending.itemsDigest
+	if pending.history {
+		// The history append owns canonical insertion time. Reconstruct its
+		// exact timestamp normalization; every other source byte must match.
+		expected := cloneTrajectoryItems(pending.items)
+		boundary := uint64(0)
+		start := len(commit.Snapshot.Items) - len(expected)
+		if start > 0 {
+			boundary = commit.Snapshot.Items[start-1].MonotonicNS
+		}
+		for index := range expected {
+			expected[index].MonotonicNS = max(expected[index].MonotonicNS, boundary)
+			boundary = expected[index].MonotonicNS
+		}
+		wantDigest = digestTrajectoryItems(expected)
+	}
+	if got := digestTrajectoryItems(committedTail); got != wantDigest {
 		return fmt.Errorf("trajectory commit reply %s changed appended item contents", envelope.ItemID)
 	}
 	runner.removePending(requestID, pending)
 	runner.rememberResolved(pending.runID)
+	kind, code := ModelCommitted, ""
+	if pending.history {
+		kind, code = ModelSpeechRetained, "stale_speech_history"
+	}
 	return runner.publishModelCommitOutcome(ctx,
 		modelCommitReplyCause(pending, requestID, envelope), ModelCommitOutcome{
-			Kind: ModelCommitted, RunID: pending.runID, RequestID: requestID,
+			Kind: kind, Code: code, RunID: pending.runID, RequestID: requestID,
 			StoreVersion: commit.Version, ItemIDs: slices.Clone(pending.itemIDs),
 		})
 }
@@ -500,6 +565,13 @@ func (runner *modelResultCommitRunner) acceptRejection(
 			envelope.ItemID, rejection.ExpectedVersion, pending.expectedVersion)
 	}
 	runner.removePending(requestID, pending)
+	if !pending.history && pending.historyResult != nil && rejection.Code == "version_conflict" &&
+		rejection.CurrentVersion > pending.expectedVersion {
+		// Freshness refusal remains the cause of this separate history
+		// transaction. Its committed payload contains no stale proposal.
+		return runner.startResultCommit(ctx, modelCommitReplyCause(pending, requestID, envelope),
+			*pending.historyResult, true)
+	}
 	runner.rememberResolved(pending.runID)
 	return runner.publishModelCommitOutcome(ctx,
 		modelCommitReplyCause(pending, requestID, envelope), ModelCommitOutcome{

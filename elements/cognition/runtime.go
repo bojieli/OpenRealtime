@@ -1042,10 +1042,17 @@ func (runner *textModelRunner) completeGeneration(
 		}
 	}
 	finished := runner.clock.NowNS()
+	prefix := trajectory.PrefixIdentity{}
+	if committed := execution.generate.CommittedContext; committed != nil {
+		// sampleForTrigger already verified this exact source prefix. Legacy
+		// unconstrained contexts cannot acquire history-retention authority.
+		prefix = committed.Prefix
+	}
 	result := Result{
 		RunID: execution.runID, ProviderReference: runner.reference,
 		Descriptor:     runner.entry.descriptor,
 		ContextVersion: execution.sampled.snapshot.Version,
+		ContextPrefix:  prefix,
 		Invocation:     cloneInvocation(execution.generate.Invocation),
 		Outputs:        clonePreparedOutputs(execution.outputs),
 		AssistantText:  execution.assistant.String(), ReasoningText: execution.reasoning.String(),
