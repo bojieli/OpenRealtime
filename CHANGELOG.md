@@ -357,6 +357,13 @@
   it should be - and a cross-check confirmed each floor accepts the run it came
   from. FD-Bench, FDB v3, and both τ-Voice conditions stay unavailable, each
   now saying exactly why there is nothing to derive a floor from.
+- **A settlement test stops depending on how busy the machine is.** The
+  probe-collision test hashed the issue time into the probe identity and gave
+  each mount an advancing clock, so whether the second mount reproduced the
+  predictor's probe depended on how many clock reads its startup happened to
+  make first. Under a loaded race run that turned a refused collision into an
+  ordinary held probe and failed the gate. Both mounts now read a fixed clock,
+  which is the collision the test exists to provoke.
 - **A missing tool is a failure in a release run, everywhere.** The official
   client, portable client, and Python sidecar stages of `check.sh` already
   refused to report a claim they had not checked; the Go tests that need

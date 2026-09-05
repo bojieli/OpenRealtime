@@ -771,11 +771,14 @@ func TestIntentSettlementGeneratedOutputsCannotNameThemselvesAsParents(t *testin
 
 func TestIntentSettlementRejectsPredictedProbeLineageWithoutStateLeak(t *testing.T) {
 	store, evidence := settlementEvidenceFixture(t, false, true)
-	newClock := func() func() uint64 {
-		var clock atomic.Uint64
-		return func() uint64 { return clock.Add(100) }
-	}
-	predictor := mountIntentSettlementWithClock(t, store, 4, newClock())
+	// The probe identity hashes the issue time. The collision this test
+	// provokes needs the second mount to derive exactly the predictor's probe,
+	// so both read a fixed clock: an advancing one made the identity depend on
+	// how many reads the mount's startup happened to make before the probe,
+	// which varied with scheduling under a loaded race run and turned a
+	// refused collision into an ordinary held probe.
+	fixedClock := func() uint64 { return 100 }
+	predictor := mountIntentSettlementWithClock(t, store, 4, fixedClock)
 	consumeIntentSettlementStartup(t, predictor)
 	sendPolicy(t, predictor.ingress(t, "evidence"), settlementEvidenceEnvelope(
 		"predict-probe", "session-a", 10, evidence,
@@ -785,7 +788,7 @@ func TestIntentSettlementRejectsPredictedProbeLineageWithoutStateLeak(t *testing
 	_ = intentSettlementState(t, predictor)
 	predictor.stop(t)
 
-	harness := mountIntentSettlementWithClock(t, store, 4, newClock())
+	harness := mountIntentSettlementWithClock(t, store, 4, fixedClock)
 	defer harness.stop(t)
 	consumeIntentSettlementStartup(t, harness)
 	input := settlementEvidenceEnvelope("colliding-probe", "session-a", 11, evidence)
