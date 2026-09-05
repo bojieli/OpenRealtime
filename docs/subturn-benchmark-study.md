@@ -973,17 +973,41 @@ This does not make the suite easier. The three categories that ask the agent to
 *hold* have almost no lead, so their windows move by tens of milliseconds, and
 they move later, which asks the agent to hold slightly longer.
 
-**The same question is open in FD-Bench and is harder there.** Its scorer
-measures response latency from a turn's annotated end and counts agent audio
-inside the annotated turn as speaking over the person. Sampling twelve
-conversations in each of eight conditions, the audio inside a turn goes quiet a
-median of 220 to 350 ms before the annotated end, with a p90 between 500 and
-1,460 ms. An agent that endpoints on real silence and answers quickly therefore
-produces audio inside the annotated turn and is charged for it. The fix that
-worked for FDB v1.5 does not transfer unaltered: in the `noisy-bg-0dB`
-condition the background never falls below a fixed floor, so the same
-measurement reports no trailing silence at all. This is recorded as measured
-and unfixed.
+**The same question is open in FD-Bench, and there it follows the
+synthesiser.** Its scorer measures response latency from a turn's annotated end
+and counts agent audio inside the annotated turn as speaking over the person.
+Sampling six conversations in each of its twenty-one conditions, the audio
+inside a turn goes quiet before the annotated end by an amount that depends
+almost entirely on which system generated the speech:
+
+| Turn audio ends before the annotation | Median | p90 | Max |
+| --- | ---: | ---: | ---: |
+| the seven `f5tts-` conditions | 0-30 ms | 20-200 ms | 560 ms |
+| the seven `cosyvoice2-` conditions | 0-340 ms | 420-640 ms | 920 ms |
+| the three `chattts-` conditions | 100-260 ms | 1,180-1,420 ms | 1,620 ms |
+
+An agent that endpoints on real silence and answers quickly produces audio
+inside the annotated turn and is charged for it, and it is charged an order of
+magnitude more often on the ChatTTS conversations than on the F5-TTS ones.
+FD-Bench invites comparison across its conditions - easy against hard, clean
+against noisy - and a synthesiser artifact of this size sits underneath those
+comparisons.
+
+The fix that worked for FDB v1.5 does transfer, and more safely than it first
+looked: anchoring the turn's end at its last audible block degrades to the
+annotation exactly where a fixed floor cannot find an end, because in the
+`noisy-bg-0dB` conditions the background never falls below it and the last
+audible block is the last block. Nothing gets worse there and the clean
+conditions stop charging the agent for the speaker's own pause. This is
+recorded as measured; `bench fdbench -transcripts` exists so the effect can be
+confirmed on a run before the scoring is changed.
+
+**The meeting suite was audited the same way and is fine.** Its four checked-in
+cue recordings end 240 to 275 ms after their last sound, and the cue boundaries
+in the task table are the file durations, so its cue-to-action deadlines give
+the agent a quarter-second head start. The deadlines are 1.4 to 8 seconds, and
+the distortion is in the forgiving direction rather than the punishing one, so
+it is noted rather than corrected.
 
 ## Which benchmark suites benefit
 
