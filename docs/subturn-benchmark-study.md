@@ -896,15 +896,20 @@ one-second window: had the endpoint reported the speech at the annotated
 moment, all eighteen would have passed.
 
 The engine's own log says why the second column is what it is. Over the run it
-recorded "overlapping speech is directed at the agent" 66 times and
-"configured unclassified-overlap fallback yields the floor" 6 times, counted
-over the seventy-nine turns that produced no speech. The semantic classifier is
-answering, not timing out, so the half second is what the engine spends between
-hearing the overlap and having a decision it can act on. The 800 ms hold is a
-ceiling that binds one turn in twelve. That also explains the refuted deadline
-experiment in the section above: the `-transcript-timeout-ms` knob belongs to
-the transcript-event policy, which accounted for five of those seventy-nine. It
-was never on the path.
+accounts for all seventy-nine turns that produced no speech: 66 because the
+overlapping speech was classified as directed at the agent, 6 because the
+800 ms unclassified-overlap hold expired, 5 on an explicit stop-speaking
+decision, 2 on other causes. The semantic classifier is answering, not timing
+out, so the half second is what the engine spends between hearing the overlap
+and having a decision it can act on, and the 800 ms hold is a ceiling that
+binds one turn in twelve.
+
+That also explains why the deadline experiment in the section above could not
+have moved anything. `-transcript-timeout-ms` configures the transcript-event
+policy, and this profile leaves that policy unconfigured - `transcript_events`
+is null in its values - so the knob is not on this path at all. On the Deepgram
+profile, where the policy is configured and the knob is live, cutting it from
+1,000 ms to 300 ms still moved the median by 9 ms.
 
 **Then detection turned out not to be the engine's either.** The recordings
 carry two timestamps saying when the event happens. Treating the first as the
