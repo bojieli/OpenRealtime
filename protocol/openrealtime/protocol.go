@@ -75,13 +75,19 @@ const (
 	DebugTool      DebugCategory = "tool"
 	DebugSession   DebugCategory = "session"
 	DebugError     DebugCategory = "error"
+	// DebugGraph carries element-graph execution traces. Graph-native
+	// deployments were already producing these and naming them "graph", which
+	// no client could select, so every one of them was dropped by the category
+	// filter on the way out. A category a client cannot ask for is an emitter
+	// that does not exist.
+	DebugGraph DebugCategory = "graph"
 )
 
 // DebugCategories is every category this implementation may emit.
 func DebugCategories() []DebugCategory {
 	return []DebugCategory{
 		DebugVAD, DebugASR, DebugVideo, DebugCognition, DebugPolicy,
-		DebugTTS, DebugTool, DebugSession, DebugError,
+		DebugTTS, DebugTool, DebugSession, DebugError, DebugGraph,
 	}
 }
 

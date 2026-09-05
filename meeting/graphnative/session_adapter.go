@@ -24,6 +24,7 @@ import (
 	graphbinding "github.com/bojieli/OpenRealtime/graph/binding"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -1274,7 +1275,7 @@ func (session *meetingSessionAdapter) publishBackgroundOutcome(
 		return nil
 	}
 	return debug.Debug(ctx, legacy.DebugEvent{
-		Category: "graph", Name: "meeting.background_injection", Phase: "slow",
+		Category: string(openrealtime.DebugGraph), Name: "meeting.background_injection", Phase: "slow",
 		CorrelationID: outcome.RunID, Message: outcome.Message,
 		Attributes: map[string]any{"kind": outcome.Kind, "bytes": outcome.Bytes, "code": outcome.Code},
 	})

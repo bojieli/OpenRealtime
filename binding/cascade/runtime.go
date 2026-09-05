@@ -21,6 +21,7 @@ import (
 	"github.com/bojieli/OpenRealtime/internal/clock"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/session"
 	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -431,7 +432,7 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		Interval: bind.config.WordTimingInterval,
 		Report: func(err error) {
 			result.debug(result.ctx, binding.DebugEvent{
-				Category: "speech", Name: "speech.word_timing_failed", Phase: "error",
+				Category: string(openrealtime.DebugTTS), Name: "speech.word_timing_failed", Phase: "error",
 				Attributes: map[string]any{"error": err.Error()},
 			})
 		},

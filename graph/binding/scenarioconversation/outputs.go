@@ -22,6 +22,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -1615,7 +1616,7 @@ func (session *session) publishDebug(
 		return nil
 	}
 	return sink.Debug(ctx, legacy.DebugEvent{
-		Category: "graph", Name: name, Phase: "output", CorrelationID: envelope.ItemID,
+		Category: string(openrealtime.DebugGraph), Name: name, Phase: "output", CorrelationID: envelope.ItemID,
 		Attributes: map[string]any{
 			"run_id": envelope.RunID, "session_id": envelope.SessionID,
 			"type": envelope.Type.String(),

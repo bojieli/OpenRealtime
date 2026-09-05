@@ -21,6 +21,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graph/ir"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -678,7 +679,7 @@ func (session *session) publishDebug(ctx context.Context, name string, envelope 
 		attributes["generation_id"] = outcome.GenerationID
 	}
 	return sink.Debug(ctx, legacy.DebugEvent{
-		Category: "graph", Name: name, Phase: "output", CorrelationID: envelope.ItemID,
+		Category: string(openrealtime.DebugGraph), Name: name, Phase: "output", CorrelationID: envelope.ItemID,
 		Attributes: attributes,
 	})
 }

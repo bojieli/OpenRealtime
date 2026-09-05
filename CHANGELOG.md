@@ -4,6 +4,15 @@
 
 ### Highlights
 
+- Element-graph traces reach the clients that ask for them. Three graph-native
+  bindings and the word-timing reporter were labelling their debug entries with
+  category names no client could select, so the gateway's category filter
+  discarded every one of them before the wire: the emitters looked
+  implemented, the client saw nothing, and neither end could tell that apart
+  from a subsystem with nothing to say. Graph execution now has its own
+  advertised category, word-timing failures are reported under speech
+  synthesis, and a test reads the emitters rather than trusting them.
+
 - `conversation.item.created` and `input_audio_buffer.committed` now name the
   item they follow. `previous_item_id` was null on every event, which the wire
   reserves for an item that has no predecessor, so a client reconstructing the
