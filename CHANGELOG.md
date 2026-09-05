@@ -272,6 +272,18 @@
 
 ### Perception
 
+- **The speaker-identity adapter has a contract test.** It was the one adapter
+  with no test at all, so a service that renamed the sample-rate header or the
+  embedding field would have failed only in a live session. Six tests now pin
+  the request shape, the no-embedding answer for an utterance too short to
+  identify, refusal of empty audio before any request, the reported status of
+  a failed service, rejection of a non-JSON body, and the request timeout.
+- **Local default ports agree with the documented stack.** The whisper and
+  generic transcription catalogue entries defaulted to :8001, which the
+  streaming Qwen3-ASR service owns, and the OpenAI-compatible speech adapter
+  defaulted to :8080, the language-model port, while the catalogue said
+  :8081. A test now pins every local default to the ports the quickstart and
+  local-stack guide document.
 - **"I heard nothing" is part of the perception contract.** `PerceptionRevision`
   had no documentation at all, so what an empty or punctuation-only transcript
   meant was left to each consumer to guess, and one guessed that it was
@@ -346,6 +358,11 @@
   retains the JSON report, failing closed if the report is not written or does
   not reach the audio gate; it compares no thresholds, because the claim is
   that every number is measured and stated against its machine.
+- **Sidecar conformance is a dedicated gate.** The broad Go sweep tolerates
+  skips by design, so the one place the bundled Python element and the three
+  reference sidecars were exercised could be skipped without anyone noticing.
+  `local.conformance.sidecar` runs both tests as real subprocesses with the
+  release gate set and forbids a skip.
 - **Three suites have acceptance targets.** The behavioral acceptance gate was
   blocked on every suite but the scenario aggregate, because no floor had been
   registered. Realtime-CU, the cascade Meeting Assistant, and FDB v1.5 now

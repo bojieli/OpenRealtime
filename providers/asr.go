@@ -121,7 +121,10 @@ var asrCatalog = []ASR{
 		Common: Common{
 			Name: "whisper-server", Aliases: []string{"whisper", "faster-whisper"},
 			Label: "Local whisper server", Dialect: DialectOpenAITranscriptions,
-			BaseURL: "http://127.0.0.1:8001/v1", Auth: AuthNone, Local: true,
+			// :8003, not :8001: the streaming Qwen3-ASR service owns :8001 in
+			// the documented local stack, and a whisper server defaulting to the
+			// same port would silently answer the wrong dialect on it.
+			BaseURL: "http://127.0.0.1:8003/v1", Auth: AuthNone, Local: true,
 			KeyEnv: []string{"OPENREALTIME_ASR_API_KEY"},
 			Notes:  "whisper.cpp, faster-whisper-server, or anything else serving the OpenAI route.",
 		},
@@ -131,7 +134,7 @@ var asrCatalog = []ASR{
 		Common: Common{
 			Name: "openai-compatible", Aliases: []string{"custom"},
 			Label:   "Any OpenAI-compatible transcription endpoint",
-			Dialect: DialectOpenAITranscriptions, BaseURL: "http://127.0.0.1:8001/v1",
+			Dialect: DialectOpenAITranscriptions, BaseURL: "http://127.0.0.1:8003/v1",
 			Auth: AuthBearer, Local: true, KeyEnv: []string{"OPENREALTIME_ASR_API_KEY"},
 			Notes: "The escape hatch: point the base URL anywhere serving the OpenAI route.",
 		},

@@ -30,8 +30,10 @@ import (
 
 const (
 	// DefaultEndpoint is the OpenAI-compatible speech endpoint exposed by a
-	// local SGLang-Omni server.
-	DefaultEndpoint = "http://127.0.0.1:8080/v1/audio/speech"
+	// local SGLang-Omni server. It matches the provider catalogue and the
+	// quickstart; :8080 is the local language-model port and was a stale
+	// default here that the catalogue never used.
+	DefaultEndpoint = "http://127.0.0.1:8081/v1/audio/speech"
 	// DefaultModel is the initial accelerated TTS condition.
 	DefaultModel = "fishaudio/s2-pro"
 

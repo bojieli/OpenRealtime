@@ -540,6 +540,22 @@
       "skip_policy": "forbid"
     },
     {
+      "id": "local.conformance.sidecar",
+      "description": "Drive the bundled protocol-v4 Python element and the three reference model sidecars in mock mode through the sidecar conformance suite as real subprocesses",
+      "availability": "local",
+      "selection": "default",
+      "required": true,
+      "working_directory": ".",
+      "command": ["{go}", "test", "-count=1", "-v", "./sidecar", "-run", "^(TestRunConformanceV4AgainstBundledPythonSDK|TestReferenceSidecarsPassConformanceInMockMode)$"],
+      "environment": {"OPENREALTIME_RELEASE_GATE": "1"},
+      "timeout": "10m",
+      "skip_policy": "forbid",
+      "assertions": [
+        {"kind": "stdout_regex", "value": "(?m)^--- PASS: TestRunConformanceV4AgainstBundledPythonSDK"},
+        {"kind": "stdout_regex", "value": "(?m)^--- PASS: TestReferenceSidecarsPassConformanceInMockMode"}
+      ]
+    },
+    {
       "id": "local.efficiency",
       "description": "Produce the efficiency report on this machine: idle and changing video gating, bandwidth, context growth, and the audio gate",
       "availability": "local",

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bojieli/OpenRealtime/adapters/openaitts"
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/providers"
 	"github.com/bojieli/OpenRealtime/trajectory"
@@ -485,5 +486,38 @@ func TestQwenASRRefusesOptionsItCannotHonour(t *testing.T) {
 	if !providers.ASRAcceptsLanguage("deepgram") || !providers.ASRAcceptsLanguage("openai") ||
 		providers.ASRAcceptsLanguage("qwen-asr") {
 		t.Fatal("ASRAcceptsLanguage disagrees with the dialects that forward a language")
+	}
+}
+
+// The documented local stack puts the streaming Qwen3-ASR service on :8001,
+// whisper on :8003, the language model on :8080, and speech synthesis on
+// :8081. Two catalogue entries and one adapter default disagreed with that,
+// which is the kind of drift a reader only discovers when the wrong service
+// answers on a port.
+func TestLocalDefaultPortsAgreeWithTheDocumentedStack(t *testing.T) {
+	t.Parallel()
+	want := map[string]string{
+		"qwen-asr": "http://127.0.0.1:8001", "whisper-server": "http://127.0.0.1:8003/v1",
+		"openai-compatible": "http://127.0.0.1:8003/v1", "sensevoice": "http://127.0.0.1:8002/v1",
+	}
+	for name, base := range want {
+		entry, err := providers.LookupASR(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if entry.BaseURL != base {
+			t.Errorf("recogniser %q defaults to %s, documented stack uses %s", name, entry.BaseURL, base)
+		}
+	}
+	tts, err := providers.LookupTTS("openai-compatible")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const documentedSpeech = "http://127.0.0.1:8081/v1/audio/speech"
+	if tts.BaseURL != documentedSpeech {
+		t.Errorf("speech default %s, documented stack uses %s", tts.BaseURL, documentedSpeech)
+	}
+	if openaitts.DefaultEndpoint != documentedSpeech {
+		t.Errorf("speech adapter default %s disagrees with the catalogue's %s", openaitts.DefaultEndpoint, documentedSpeech)
 	}
 }
