@@ -18,6 +18,15 @@
 # measurement suites (`openrealtime bench`, `scripts/prepare-*.sh`), which are
 # reported rather than gated, because a gate that cannot run offline is a gate
 # that fails for reasons unrelated to the change.
+#
+# OPENREALTIME_TEST_PARALLEL bounds how many packages `go test` runs at once.
+# Unset is Go's own default, one per CPU, which is right on a CI runner and on
+# an idle workstation. It is wrong on a large shared machine: this suite's
+# end-to-end tests each start real servers and hold real deadlines, so
+# thirty-two of those packages at once on a box already carrying somebody
+# else's work starves them, and a rotating handful fail while every one of
+# them passes alone. Set it to a small number there. It changes how long the
+# gate takes and nothing about what it checks.
 
 set -euo pipefail
 
@@ -75,8 +84,12 @@ check_formatting() {
 # still means something is stuck.
 check_module() {
   local module_directory="$1"
+  local -a parallel=()
+  if [[ -n "${OPENREALTIME_TEST_PARALLEL:-}" ]]; then
+    parallel=(-p "${OPENREALTIME_TEST_PARALLEL}")
+  fi
   (cd "${module_directory}" && "${go_bin}" vet ./... &&
-    "${go_bin}" test -race -count=1 -timeout 20m ./...)
+    "${go_bin}" test -race -count=1 -timeout 20m "${parallel[@]}" ./...)
 }
 
 # check_official_client is the compatibility claim, and it is the one claim in

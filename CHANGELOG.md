@@ -554,6 +554,15 @@
   make first. Under a loaded race run that turned a refused collision into an
   ordinary held probe and failed the gate. Both mounts now read a fixed clock,
   which is the collision the test exists to provoke.
+- **The gate can stop oversubscribing a shared machine.** `go test ./...` runs
+  one package per CPU, which serialises this suite's end-to-end tests on a CI
+  runner and does the opposite on a thirty-two core box already carrying other
+  people's work: thirty-two packages at once, each starting real servers and
+  holding real deadlines, and a different handful fails every run while every
+  one of them passes alone. Two full gate runs at load average 60 failed on
+  five different tests between them; one run with `OPENREALTIME_TEST_PARALLEL=4`
+  passed every stage. The variable bounds how many packages run at once and
+  changes nothing about what is checked. Unset stays Go's default.
 - **Three gate failures were assertions about the machine, not the system.**
   Each pinned a number tighter than the property it was testing, and each
   failed the verification gate at load average 70 while passing alone. Two
