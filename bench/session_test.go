@@ -971,15 +971,15 @@ func TestSessionAttestorPropagatesIndependentGraphEvidence(t *testing.T) {
 	}
 }
 
-// A capture that outlives the conversation horizon still ends in the horizon.
+// A capture that outlives the conversation horizon still ends in the horizon,
+// whichever worker notices the horizon first.
 //
-// This pins the ordinary path: the sender notices the expired context and
-// stops, and the driver reports the typed timeout with its transcript rather
-// than a transport fault. The rare case it cannot reach from here is the
-// deadline expiring inside the socket write itself, which is what failed a
-// release-matrix run on a machine at load average 70 and what the guard in
-// PlaySamples now covers; reproducing that one needs an injection point the
-// driver deliberately does not have.
+// The horizon cancels every worker at once, so under load the deadline lands
+// inside a socket write and the driver used to publish that raw error - an
+// infrastructure failure where the horizon means the opposite, that the agent
+// was still working. This test took both branches on a loaded machine: it
+// passed on an idle one and failed the verification gate at load average 70
+// with "failed to write frame: context deadline exceeded".
 func TestAHorizonThatOutlivesASlowCaptureIsStillTheHorizon(t *testing.T) {
 	for attempt := range 8 {
 		stub := &realtimeStub{done: make(chan struct{})}

@@ -465,6 +465,14 @@
   make first. Under a loaded race run that turned a refused collision into an
   ordinary held probe and failed the gate. Both mounts now read a fixed clock,
   which is the collision the test exists to provoke.
+- **The Go sweep now enforces the bound it claims.** The race gate is allowed
+  sixty minutes, but `go test` applies its own ten-minute default *per
+  package*, and `cmd/openrealtime` spawns real servers in most of its tests:
+  at load average 70 the package reached that bound while doing real work and
+  panicked with a stack naming whichever three-second test was running, which
+  reads exactly like a hang. Both gates and `check.sh` now state twenty
+  minutes, which the largest package cannot reach by being slow, so a timeout
+  there still means something is stuck.
 - **Two gates stopped depending on how loaded the machine is.** The matrix's
   race sweep failed twice on this host at load average 70, each time on a
   different test, each passing alone. One asserted a gauge in the statement

@@ -451,6 +451,25 @@ func PlaySamples(
 	defer func() { transcript.SpeechCues = append([]SpeechCueObservation(nil), cues.observed...) }()
 
 	timed, cancel := context.WithTimeout(ctx, config.Timeout)
+	// Whatever noticed the conversation horizon first, the outcome is the
+	// horizon. It cancels every worker in the session at once, so a handshake,
+	// a send, or a frame write that was in flight when it expired fails with
+	// that deadline and would otherwise be published as an infrastructure
+	// failure - the opposite of what the horizon means, which is that the
+	// agent was still working and that is a scored negative. On an idle
+	// machine the horizon almost always wins the race and the driver looked
+	// deterministic; under load it does not. A transport fault that is not the
+	// horizon, a protocol failure the endpoint reported, and a caller who
+	// cancelled all still surface as themselves.
+	defer func() {
+		switch {
+		case runErr == nil,
+			errors.Is(runErr, ErrConversationTimeout), errors.Is(runErr, ErrSessionFailure),
+			ctx.Err() != nil, !errors.Is(timed.Err(), context.DeadlineExceeded):
+			return
+		}
+		runErr = ErrConversationTimeout
+	}()
 	defer cancel()
 	// The conversation horizon bounds task behavior, not the underlying
 	// connection's identity lifetime. Keep the transport alive until terminal

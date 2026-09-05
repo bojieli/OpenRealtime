@@ -841,7 +841,7 @@
       "selection": "default",
       "required": true,
       "working_directory": "integrations/livekit",
-      "command": ["{go}", "test", "-json", "-count=1", "./..."],
+      "command": ["{go}", "test", "-json", "-count=1", "-timeout", "20m", "./..."],
       "timeout": "15m",
       "skip_policy": "record",
       "covers": ["go:normal:integrations/livekit"]
@@ -853,7 +853,7 @@
       "selection": "default",
       "required": true,
       "working_directory": "integrations/livekit",
-      "command": ["{go}", "test", "-json", "-race", "-count=1", "./..."],
+      "command": ["{go}", "test", "-json", "-race", "-count=1", "-timeout", "20m", "./..."],
       "timeout": "30m",
       "skip_policy": "record",
       "covers": ["go:race:integrations/livekit"]
@@ -877,7 +877,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-json", "-count=1", "./..."],
+      "command": ["{go}", "test", "-json", "-count=1", "-timeout", "20m", "./..."],
       "timeout": "30m",
       "skip_policy": "record",
       "covers": ["go:normal:."]
@@ -889,7 +889,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-json", "-race", "-count=1", "./..."],
+      "command": ["{go}", "test", "-json", "-race", "-count=1", "-timeout", "20m", "./..."],
       "timeout": "60m",
       "skip_policy": "record",
       "covers": ["go:race:."]

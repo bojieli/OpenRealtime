@@ -66,9 +66,17 @@ check_formatting() {
 # The repository is several modules, not one: the LiveKit integration is
 # separate so that a server build does not inherit its dependency tree, and a
 # gate that only covered the root module would leave it to rot.
+# The explicit -timeout is the point rather than a detail. Go's default is ten
+# minutes *per package*, and cmd/openrealtime spawns real servers in most of its
+# tests: on a loaded machine it reaches that bound while doing real work, and
+# the package panics with a stack that names whichever three-second test
+# happened to be running. That reads exactly like a hang and is not one. State
+# a bound the largest package cannot reach by being slow, so a timeout here
+# still means something is stuck.
 check_module() {
   local module_directory="$1"
-  (cd "${module_directory}" && "${go_bin}" vet ./... && "${go_bin}" test -race -count=1 ./...)
+  (cd "${module_directory}" && "${go_bin}" vet ./... &&
+    "${go_bin}" test -race -count=1 -timeout 20m ./...)
 }
 
 # check_official_client is the compatibility claim, and it is the one claim in
