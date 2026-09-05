@@ -33,15 +33,18 @@ import (
 // of deployment identity per attempt, it is already carried in the result, and
 // it says nothing about when anything happened.
 type TranscriptRecord struct {
-	Case         string            `json:"case"`
-	Recording    string            `json:"recording"`
-	Trial        int               `json:"trial"`
-	Category     Category          `json:"category"`
-	EventStartMS float64           `json:"event_start_ms"`
-	EventEndMS   float64           `json:"event_end_ms"`
-	ShouldYield  bool              `json:"should_yield"`
-	Outcome      bench.TaskOutcome `json:"outcome"`
-	Transcript   bench.Transcript  `json:"transcript"`
+	Case         string   `json:"case"`
+	Recording    string   `json:"recording"`
+	Trial        int      `json:"trial"`
+	Category     Category `json:"category"`
+	EventStartMS float64  `json:"event_start_ms"`
+	EventEndMS   float64  `json:"event_end_ms"`
+	// EventAudibleAfterMS is how long after the annotation the event's speech
+	// actually begins, which is where the scorer's windows open.
+	EventAudibleAfterMS float64           `json:"event_audible_after_ms"`
+	ShouldYield         bool              `json:"should_yield"`
+	Outcome             bench.TaskOutcome `json:"outcome"`
+	Transcript          bench.Transcript  `json:"transcript"`
 }
 
 // WriteTranscript records one attempt under dir, named after the case.

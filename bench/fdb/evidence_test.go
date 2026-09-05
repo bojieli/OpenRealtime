@@ -88,11 +88,11 @@ func TestCandidateEvidenceBeginsBeforePlaybackAndFinishesIncompleteSuite(t *test
 	if err := os.WriteFile(filepath.Join(directory, "metadata.json"), []byte(metadata), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// Playback must never reach this deliberately invalid WAV because the
-	// candidate recorder refuses the attempt before a session can be opened.
-	if err := os.WriteFile(filepath.Join(directory, "input.wav"), []byte("not a wav"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// Playback must never reach this recording: the candidate recorder refuses
+	// the attempt before a session can be opened. It is real audio because the
+	// suite reads every recording once, at load, to find where its event's
+	// speech begins.
+	writeFixtureWAV(t, filepath.Join(directory, "input.wav"), 1_200, 1_000)
 	origin, err := candidate.NewRunOrigin(
 		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:1/v1/realtime",
 	)
@@ -147,9 +147,7 @@ func TestCandidateEvidenceRecoverySkipsFDBPlayback(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "metadata.json"), []byte(metadata), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "input.wav"), []byte("must not be read"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeFixtureWAV(t, filepath.Join(directory, "input.wav"), 1_200, 1_000)
 	origin, err := candidate.NewRunOrigin(
 		candidate.OriginHermetic, bench.TransportWebSocket, "ws://127.0.0.1:1/v1/realtime",
 	)

@@ -4,6 +4,22 @@
 
 ### Highlights
 
+- The full-duplex suite times its windows from the first sound of an event
+  rather than from where the event clip was placed. The recordings carry two
+  timestamps saying when the event happens, and the clip behind them begins
+  with whatever silence the speaker left: nothing worth counting for
+  backchannels, side speech, and background speech, a median of 260 ms for
+  interruptions, and 1,460 ms in the worst case. Interruption is the one
+  category scored against a one-second deadline, so a third of it was charging
+  the agent for time in which there was nothing to react to. On thirty
+  recordings run twice each, 32 of 50 attempts yielded inside the window when
+  timed from the annotation and all 50 did when timed from the first sound,
+  with the slowest falling from 1,709 ms to 878 ms. Every task now reports
+  `event_audible_after_ms` and `yield_latency_from_annotation_ms`, so a run
+  scored before this can be reconciled with one scored after. The three
+  categories that ask the agent to keep speaking have almost no lead, and
+  their windows move later, not earlier.
+
 - Production computer-use regressions now cover classifications delivered after
   cancellation and replacement, duplicate classifications while cancellation
   waits, and old acknowledgements replayed during a different cancellation.

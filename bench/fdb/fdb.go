@@ -68,6 +68,10 @@ type Sample struct {
 	// own annotations rather than from anything this harness detects.
 	EventStartMS float64
 	EventEndMS   float64
+	// EventAudibleAfterMS is how long after EventStartMS the recording first
+	// carries sound. See audible.go: the annotation says where the event clip
+	// was placed, and the clip begins with whatever silence the speaker left.
+	EventAudibleAfterMS float64
 }
 
 type metadata struct {
@@ -131,12 +135,18 @@ func loadSample(directory string, category Category, identifier int) (Sample, er
 	if _, err := os.Stat(audioPath); err != nil {
 		return Sample{}, fmt.Errorf("%s/%d has no input audio: %w", category, identifier, err)
 	}
+	eventStartMS := decoded.Timestamps[0] * 1000
+	audibleAfter, err := eventAudibleAfterMS(audioPath, eventStartMS)
+	if err != nil {
+		return Sample{}, fmt.Errorf("%s/%d: %w", category, identifier, err)
+	}
 	return Sample{
 		ID: fmt.Sprintf("%s/%d", category, identifier), Category: category, AudioPath: audioPath,
-		ContextText:  decoded.ContextText,
-		EventText:    firstNonEmpty(decoded.CurrentTurnText, decoded.BackchannelText, decoded.BackgroundText),
-		EventStartMS: decoded.Timestamps[0] * 1000,
-		EventEndMS:   decoded.Timestamps[1] * 1000,
+		ContextText:         decoded.ContextText,
+		EventText:           firstNonEmpty(decoded.CurrentTurnText, decoded.BackchannelText, decoded.BackgroundText),
+		EventStartMS:        eventStartMS,
+		EventEndMS:          decoded.Timestamps[1] * 1000,
+		EventAudibleAfterMS: audibleAfter,
 	}, nil
 }
 
@@ -279,6 +289,10 @@ type attemptContext struct {
 	ShouldYield   bool     `json:"should_yield"`
 	YieldWindowMS int64    `json:"yield_window_ms"`
 	HoldWindowMS  int64    `json:"hold_window_ms"`
+	// EventAudibleAfterMS shifts every window below to the first sound rather
+	// than to where the event clip was placed. A recovered attempt from before
+	// this was measured leaves it zero, which is exactly the old behaviour.
+	EventAudibleAfterMS float64 `json:"event_audible_after_ms,omitempty"`
 }
 
 func validateRecoveredOutcome(
@@ -325,8 +339,10 @@ func runSample(
 			sample.ID, trial, attemptContext{
 				Category: sample.Category, ContextText: sample.ContextText, EventText: sample.EventText,
 				EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
-				ShouldYield:   sample.Category.ShouldYield(),
-				YieldWindowMS: options.YieldWindow.Milliseconds(), HoldWindowMS: options.HoldWindow.Milliseconds(),
+				ShouldYield:         sample.Category.ShouldYield(),
+				YieldWindowMS:       options.YieldWindow.Milliseconds(),
+				HoldWindowMS:        options.HoldWindow.Milliseconds(),
+				EventAudibleAfterMS: sample.EventAudibleAfterMS,
 			},
 		)
 		if err != nil {
@@ -371,8 +387,9 @@ func runSample(
 		evidenceErr = errors.Join(evidenceErr, WriteTranscript(options.Transcripts, TranscriptRecord{
 			Case: caseID, Recording: sample.ID, Trial: trial, Category: sample.Category,
 			EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
-			ShouldYield: sample.Category.ShouldYield(),
-			Outcome:     outcome, Transcript: transcript,
+			EventAudibleAfterMS: sample.EventAudibleAfterMS,
+			ShouldYield:         sample.Category.ShouldYield(),
+			Outcome:             outcome, Transcript: transcript,
 		}))
 	}()
 	if err != nil {
@@ -387,19 +404,29 @@ func runSample(
 	scoreOutcome(&outcome, transcript, attemptContext{
 		Category: sample.Category, ContextText: sample.ContextText, EventText: sample.EventText,
 		EventStartMS: sample.EventStartMS, EventEndMS: sample.EventEndMS,
-		ShouldYield:   sample.Category.ShouldYield(),
-		YieldWindowMS: options.YieldWindow.Milliseconds(), HoldWindowMS: options.HoldWindow.Milliseconds(),
+		ShouldYield:         sample.Category.ShouldYield(),
+		YieldWindowMS:       options.YieldWindow.Milliseconds(),
+		HoldWindowMS:        options.HoldWindow.Milliseconds(),
+		EventAudibleAfterMS: sample.EventAudibleAfterMS,
 	})
 	return outcome, evidenceErr
 }
 
 func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retained attemptContext) {
+	// Every window below opens at the first sound of the event, not at the
+	// annotation. The annotation records where the event clip was placed in
+	// the mix and the clip begins with whatever silence the speaker left,
+	// which is nothing worth counting in three categories and up to 1.34 s in
+	// the fourth. An agent cannot react to silence, and a suite that starts
+	// its stopwatch in the middle of it is timing the recording rather than
+	// the engine. audible.go carries the measurement and what it changed.
+	eventMS := retained.EventStartMS + retained.EventAudibleAfterMS
 
 	// Was the agent actually making sound when the event began? Everything
 	// below depends on it, and a task where it was not is a fact about
 	// latency rather than about overlap.
 	const lookback = 500.0
-	before := transcript.AudioBetween(retained.EventStartMS-lookback, retained.EventStartMS)
+	before := transcript.AudioBetween(eventMS-lookback, eventMS)
 	// Whether the agent was speaking when the event began is not the same
 	// question as whether it had spoken recently, and the half-second lookback
 	// answers the second one. An agent that finishes a short answer three
@@ -411,15 +438,19 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 	// whose answers are over in a second. So the decision asks whether the
 	// audio actually reached the event, while the half-second total stays as
 	// the reported metric because it is what says how much was being said.
-	contact := transcript.AudioBetween(retained.EventStartMS-contactMS, retained.EventStartMS)
+	contact := transcript.AudioBetween(eventMS-contactMS, eventMS)
 	speaking := contact >= audibleMS
 
 	yieldWindow := float64(retained.YieldWindowMS)
-	after := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+yieldWindow)
+	after := transcript.AudioBetween(eventMS, eventMS+yieldWindow)
 	outcome.Metrics = map[string]float64{
 		"agent_audio_before_event_ms": before,
 		"agent_audio_at_event_ms":     contact,
 		"agent_audio_after_event_ms":  after,
+		// How much of the event's own silence the older windows were counting.
+		// It is reported on every task so a run can be reconciled with one
+		// scored before this was measured.
+		"event_audible_after_ms": retained.EventAudibleAfterMS,
 	}
 	outcome.Notes["agent_was_speaking"] = strconv.FormatBool(speaking)
 
@@ -440,20 +471,22 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 		// did is how long it kept going. A ratio of audio volumes would
 		// conflate "stopped late" with "never stopped", and those are
 		// different failures with different causes.
-		latency, found := stopLatency(transcript, retained.EventStartMS)
+		latency, found := stopLatency(transcript, eventMS)
 		if !found {
 			// No audio at all after the event: it stopped immediately.
 			outcome.Metrics["yield_latency_ms"] = 0
+			outcome.Metrics["yield_latency_from_annotation_ms"] = 0
 			outcome.Passed = true
 			return
 		}
 		outcome.Metrics["yield_latency_ms"] = latency
+		outcome.Metrics["yield_latency_from_annotation_ms"] = latency + retained.EventAudibleAfterMS
 		outcome.Passed = latency <= yieldWindow
 		return
 	}
 	// Holding means the audio continues.
 	holdWindow := float64(retained.HoldWindowMS)
-	held := transcript.AudioBetween(retained.EventStartMS, retained.EventStartMS+holdWindow)
+	held := transcript.AudioBetween(eventMS, eventMS+holdWindow)
 	outcome.Metrics["agent_audio_hold_window_ms"] = held
 	outcome.Passed = held >= audibleMS
 }

@@ -1320,6 +1320,13 @@ func encodePCM(samples []int16) []byte {
 }
 
 // loadPCM24k reads a WAV file as 24 kHz mono PCM16, resampling if needed.
+// LoadPCM24k reads a recording as the samples a session would play.
+//
+// Suites that judge a recording against its own annotations need the audio the
+// harness sends, not the file as it sits on disk: the rate conversion is part
+// of what the endpoint hears.
+func LoadPCM24k(path string) ([]int16, error) { return loadPCM24k(path) }
+
 func loadPCM24k(path string) ([]int16, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
