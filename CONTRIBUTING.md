@@ -52,6 +52,25 @@ go_bin="$(openrealtime_go_bin)"
 "$go_bin" test -race ./eventloop/...
 ```
 
+The gate declares the exact patched Go toolchain in `go.mod`, so a machine
+without it downloads that toolchain once. "Go 1.25" alone is whichever patch a
+host was installed with, which is how a build picks up standard-library
+advisories that were fixed months earlier; pinning it is also what makes the
+release build reproducible rather than reproducible-per-machine.
+
+The measurement suites write to `.runtime` and `artifacts`, which are
+gitignored and grow without bound — model weights, datasets, and the evidence
+behind every run. Neither is under version control, so nothing there is
+recoverable, which is why the inventory reports by default:
+
+```bash
+./scripts/workspace-inventory.sh -older-than 30
+./scripts/workspace-inventory.sh -older-than 30 -delete
+```
+
+Entries marked `dep` are named by a tracked file — a prepare script, a
+document, a test — and are never offered for removal.
+
 Model-, dataset-, browser-, and GPU-dependent checks are provisioned release or
 measurement gates rather than part of the offline developer gate. A skipped
 optional integration is not evidence that the integration passed; the release
