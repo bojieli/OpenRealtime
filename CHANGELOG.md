@@ -169,6 +169,17 @@
 
 ### The protocol surface
 
+- **A VP8 video track reaches the engine.** The in-process WebRTC adapter
+  ignored inbound video tracks, so a stock client that published a screen
+  share was audio-only. It now bridges the track's key frames as the same
+  source and frame events a client sends, only after the client negotiated
+  `video.input`, scaled and encoded within the limits the server answered
+  with, and at no more than the negotiated frame-rate cap. Key frames only:
+  there is no pure-Go inter-frame decoder and libvpx would cost the static
+  binary, so the adapter requests a key frame a second with an RTCP
+  picture-loss indication, which is the cadence the observer wanted anyway.
+  Other video codecs are logged and drained. The decoder and scaler come from
+  `golang.org/x/image`.
 - **Sidecar protocol version 4 has a document.** It is the version the
   graph-native runtime speaks - the locked omni, duplex, and upstream
   external-model references dial it and `elements/model` mounts it - and it

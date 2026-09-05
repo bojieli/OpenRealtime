@@ -64,6 +64,12 @@ type Config struct {
 	// PacketDuration is the outbound RTP packetisation interval. Zero selects
 	// 20 ms, which is what every endpoint in the field expects.
 	PacketDuration time.Duration
+	// VideoKeyframeInterval is how often the adapter asks a video sender for
+	// a key frame once the client has negotiated video input. Only key frames
+	// are bridged (see video.go), so this is the frame cadence the engine
+	// sees, bounded above by the negotiated frame-rate cap. Zero selects one
+	// second.
+	VideoKeyframeInterval time.Duration
 	// ConnectTimeout bounds establishing the protocol connection.
 	ConnectTimeout time.Duration
 	// SessionTimeout bounds one whole session. Zero means no bound.

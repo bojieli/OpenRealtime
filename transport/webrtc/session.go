@@ -52,6 +52,14 @@ type session struct {
 	// frame boundaries.
 	encoder    opusEncoder
 	pendingPCM []int16
+
+	// video is what the server answered about video input, read from the
+	// session events passing through to the client. The key-frame bridge in
+	// video.go forwards nothing until the client has negotiated video and
+	// conforms to the limits the server declared.
+	videoMu    sync.Mutex
+	video      videoNegotiation
+	videoKnown bool
 }
 
 // prepare wires the peer connection before the offer is applied.
@@ -88,10 +96,12 @@ func (session *session) prepare() error {
 	}()
 
 	session.connection.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		if remote.Kind() != webrtc.RTPCodecTypeAudio {
-			return
+		switch remote.Kind() {
+		case webrtc.RTPCodecTypeAudio:
+			session.pumpInbound(remote)
+		case webrtc.RTPCodecTypeVideo:
+			session.pumpVideo(remote)
 		}
-		session.pumpInbound(remote)
 	})
 
 	session.connection.OnDataChannel(func(channel *webrtc.DataChannel) {
@@ -270,6 +280,9 @@ func (session *session) pumpOutbound(ctx context.Context) {
 			if event.Type == "response.output_audio.delta" {
 				session.playAudio(event.Raw)
 				continue
+			}
+			if event.Type == "session.created" || event.Type == "session.updated" {
+				session.observeVideoNegotiation(event.Raw)
 			}
 			session.forwardToClient(event.Raw)
 		}

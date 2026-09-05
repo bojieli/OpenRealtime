@@ -17,10 +17,12 @@ require (
 	github.com/pion/interceptor v0.1.47
 	github.com/pion/webrtc/v4 v4.2.18
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	golang.org/x/sys v0.46.0
-	golang.org/x/text v0.39.0
+	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.41.0
 	gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302
 )
+
+require golang.org/x/image v0.45.0
 
 require (
 	github.com/google/uuid v1.6.0 // indirect
@@ -31,8 +33,8 @@ require (
 	github.com/pion/mdns/v2 v2.1.0 // indirect
 	github.com/pion/opus v0.1.0
 	github.com/pion/randutil v0.1.0 // indirect
-	github.com/pion/rtcp v1.2.17 // indirect
-	github.com/pion/rtp v1.10.5 // indirect
+	github.com/pion/rtcp v1.2.17
+	github.com/pion/rtp v1.10.5
 	github.com/pion/sctp v1.11.1 // indirect
 	github.com/pion/sdp/v3 v3.0.19 // indirect
 	github.com/pion/srtp/v3 v3.0.12 // indirect

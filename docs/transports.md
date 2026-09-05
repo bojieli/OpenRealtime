@@ -214,15 +214,35 @@ Video always enters the engine as protocol events. The descriptor-locked WebRTC
 browser profile captures a selected screen/camera, encodes retained JPEG/PNG
 frames, and sends those events over the WebRTC data channel; the audio track
 remains RTP.
-The in-process adapter currently ignores inbound video tracks rather than
-pretending encoded RTP is a model image. Likewise, the LiveKit integration
-forwards video events in data packets but does not decode room video tracks.
+
+The in-process adapter also bridges an inbound **VP8 video track**, and it
+does so as a protocol client rather than a second entrance: once the client
+has negotiated `video.input` in `session.update`, the adapter decodes the
+track's key frames, scales them to the negotiated `max_dimension`, encodes
+JPEG under the negotiated `max_frame_bytes`, and sends the same
+`openrealtime.input_video_source.update` and
+`openrealtime.input_video_frame.append` events a client would, at no more than
+the negotiated `fps_cap`. Nothing is sent before video is negotiated, and a
+session that never negotiates it is voice-only with the track drained.
+
+It bridges key frames only. There is no pure-Go decoder for VP8 inter frames,
+and a cgo dependency on libvpx would cost the static binary the same way
+libopus does; the key-frame decoder in `golang.org/x/image` builds
+everywhere. So the adapter asks the sender for a key frame at a fixed cadence
+with an RTCP picture-loss indication (`VideoKeyframeInterval`, one second by
+default) and discards the inter frames between them. The engine's video
+observer samples at a few hertz and gates on pixel change, so a key frame a
+second is the observation it wanted; the inter frames it cannot decode are
+the ones it would have discarded. H.264, VP9, and AV1 tracks are logged as
+unbridged and drained. The LiveKit integration still forwards video events in
+data packets and does not decode room video tracks.
 
 | Client path | Audio | Direct screen pixels |
 | --- | --- | --- |
 | composable browser WebRTC profile | RTP media track | protocol frames on the data channel |
 | custom LiveKit client publishing protocol frames | room audio track | protocol frames in data packets |
-| stock WebRTC or LiveKit client publishing only a video track | RTP/room audio | not yet bridged |
+| stock WebRTC client publishing a VP8 video track | RTP audio | key frames bridged after `video.input` is negotiated |
+| stock WebRTC client publishing H.264/VP9/AV1, or a LiveKit client publishing only a video track | RTP/room audio | not bridged |
 
 This still preserves one engine entrance and the same server-side adaptive
 observation gate. Transport adapters may decode a track into those events in a
