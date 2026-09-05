@@ -124,6 +124,50 @@ receipts remain unchanged. The diagnostic command, input hashes, exact scorer
 revision, and output are retained separately under
 `artifacts/scenario-acknowledgement-hold-v3-20260905`.
 
+## Twelve-case diagnostic on the 2026-09-05 tree (v29)
+
+A second single-trial checkpoint, `.runtime/deepgram-scenario-media-v29`, was
+frozen from clean revision `d70cd903a300ab9fb5c3e7b1034201f9e7a2dc26`
+(executable `sha256:9dd088496342d4ae27e21bb04bc6cfe54970ed9af07b779ca2b6f75826c1ac6a`)
+with the same Deepgram Nova-3, local Qwen policy, Gemini 3.5 Flash, Fish, and
+faster-Whisper selections as v28 and the transcript rules the tree shipped at
+that revision. Those rules are longer than v28's: rule 1 of both the partial
+and final rules carries the floor-taking, vocative, and acknowledgement
+priority decisions added on 2026-09-04. The graph fingerprint moved to
+`sha256:0d5b4c4b511508b7ef0752e2f74b75723cbbd3288dd48e88e6d947d681ec8379`
+because the cognition stream gained its runtime-note filter after v28.
+`bench architecture inspect` still refuses the sparse status a launch-profile
+server emits, so the cell carries the v28 architecture declaration with the
+live profile digest and the instruction-revision pin replaced;
+`config/authoring-limitations.json` records that, and the per-attempt
+authenticated inspection binds what executed.
+
+Two runs were made. The first, `diagnostic-12x1-20260905-01`, was scored
+against a cell that still named the v28 profile digest and is therefore
+non-reportable as a cell; it passed 11/12, failing *ordering from a waiter*:
+the agent did not speak through when the sea bass was named at 25.5 s and
+answered only at 29.9 s, after the waiter's next line, whereas v28 spoke
+through at 25.4 s. The second, `diagnostic-12x1-20260905-02`, against the
+correctly authored cell, is a reportable architecture cell and passed
+**12/12**, including the waiter. The single-trial split between the two runs
+is the variance the fifteen-repeat design exists for; the waiter case was 8/15
+in the accepted eleven-case baseline.
+
+The Gemini 3.7 Flash advisory review of the second run evaluated 12/12 with
+usable media and agreed on 11. It observed a failure in *count-as-they-go*:
+the agent counted both animals on time but first said "I will count the
+animals as you mention them," breaching "and say nothing else" and overlapping
+the user's next line. The scorer at revision `d70cd90` did not check that
+constraint, so the deterministic pass stands for that revision; the later
+scorer-v7 content checks are the place such a rule belongs.
+
+- source receipt `sha256:91869c6295333b4e346897f6cd742d0125aef80c47d476833237c9eae4ca650d`
+- advisory review receipt `sha256:06eeff42c52779a05a158476d557d7f96e65e481220468566555f2d4fcc7045a`
+
+Both source and evaluation bundles reopen with `review verify-scenario`
+(12/12 verified). This is a one-attempt diagnostic of that revision, not the
+fifteen-repeat campaign, and it adds no final-candidate credit.
+
 ## FDB v1.5 paired diagnostic
 
 The frozen study is `.runtime/fdb-subturn-study-v4` (binary digest
