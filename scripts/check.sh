@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 #
-# The verification gate. One command, no arguments, no network, no GPU:
+# The verification gate. One command, no arguments, no GPU, and no network
+# except for the one thing Go itself may fetch: the module declares the exact
+# patched toolchain it is built with, so a machine that does not have that
+# toolchain yet downloads it once. Pinning it is deliberate - "some 1.25" is
+# whichever patch a build host was installed with, and this module reached
+# twenty-six standard-library advisories that way - and it is also what makes
+# the release build reproducible rather than reproducible-per-machine.
 #
 #   ./scripts/check.sh
 #

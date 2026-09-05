@@ -207,3 +207,71 @@ jobs:
           python -m pip install --quiet -r sidecars/requirements-test.txt
           python -m compileall -q sidecars
           python -m pytest sidecars -q
+
+  # Known advisories against the code that actually reaches them.
+  #
+  # This job is not in scripts/check.sh for the same reason the benchmarks are
+  # not: it needs the network. The vulnerability database is fetched at scan
+  # time, so a gate that ran it offline would either fail for a reason
+  # unrelated to the change or, worse, pass against a stale database and report
+  # a clean scan it did not perform.
+  #
+  # It runs govulncheck rather than reading the module graph, because the
+  # question is reachability. When this job was written the module was pinned
+  # to a Go 1.25.0 toolchain and to golang.org/x/text and golang.org/x/net
+  # releases that predated their fixes, and thirty-one advisories were reachable
+  # from this code - in crypto/tls, crypto/x509, net/http, net/url,
+  # encoding/asn1, os, and the two x modules. Every one of them had been fixed
+  # upstream. Nothing in the repository was arranged to notice.
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      # The standard library govulncheck reports is the one the build used, so
+      # the toolchain this job resolves is part of the claim rather than
+      # incidental to it.
+      - name: Report the toolchain under test
+        run: go version
+
+      - name: Known advisories reachable from this code
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+      - name: Known advisories in the LiveKit integration
+        working-directory: integrations/livekit
+        run: "$(go env GOPATH)/bin/govulncheck ./..."
+
+  # The container is built on every change for the same reason the release
+  # binaries are: a build that is only exercised at release time is a build
+  # that breaks at release time. deploy/Dockerfile was the one artifact this
+  # repository publishes that no job built, so it could have stopped working at
+  # any point between releases with every other job green.
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the server image
+        run: docker build -f deploy/Dockerfile -t openrealtime:ci .
+
+      # A distroless image has no shell, so this is also the check that the
+      # entrypoint is the binary and not something that needed one. The version
+      # output is what a binary found running somewhere reports about itself,
+      # which is the claim deploy/README.md makes for it.
+      - name: The image runs and reports what it was built from
+        run: |
+          printed="$(docker run --rm openrealtime:ci version)"
+          echo "${printed}"
+          case "${printed}" in
+            "openrealtime "*) ;;
+            *) echo "unexpected version output" >&2; exit 1 ;;
+          esac

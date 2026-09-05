@@ -2,13 +2,23 @@ module github.com/bojieli/OpenRealtime
 
 go 1.25.0
 
+// The patched 1.25 line, not merely "some 1.25".
+//
+// govulncheck reports the standard library that a build actually used, and
+// 1.25.0 carries twenty-six advisories this code reaches - in crypto/tls,
+// crypto/x509, net/http, net/url, encoding/asn1, and os - every one of them
+// fixed in a 1.25 patch release. A module that asks only for 1.25 gets
+// whichever patch the machine happens to have, which on a long-lived build
+// host is the one it was installed with.
+toolchain go1.25.14
+
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/pion/interceptor v0.1.47
 	github.com/pion/webrtc/v4 v4.2.18
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	golang.org/x/sys v0.41.0
-	golang.org/x/text v0.34.0
+	golang.org/x/sys v0.46.0
+	golang.org/x/text v0.39.0
 	gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302
 )
 
@@ -30,8 +40,8 @@ require (
 	github.com/pion/transport/v4 v4.0.2 // indirect
 	github.com/pion/turn/v5 v5.0.12 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )

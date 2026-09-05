@@ -1,0 +1,38 @@
+# Dependency updates arrive as pull requests, which is the only form this
+# repository can act on: every change goes through the same gate, and a
+# dependency bump is a change.
+#
+# It exists because the alternative was noticing. golang.org/x/text and
+# golang.org/x/net were each several releases behind a fix for an advisory this
+# code reaches, and nothing in the repository was arranged to say so - the
+# module graph is only read when something else forces it to be.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # One pull request for the golang.org/x modules. They move together and
+      # are pinned to each other through the transitive graph, so separate
+      # bumps produce pull requests that conflict with each other.
+      golang-x:
+        patterns:
+          - golang.org/x/*
+    open-pull-requests-limit: 5
+
+  # The LiveKit integration is a separate module so that a server build does
+  # not inherit its dependency tree. That is also why it needs its own entry:
+  # the root module's updates never reach it.
+  - package-ecosystem: gomod
+    directory: /integrations/livekit
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Actions are pinned by major version, which floats within a major and
+  # silently stops at the next one. This is what moves them across it.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
