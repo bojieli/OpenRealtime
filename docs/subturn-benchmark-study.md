@@ -1081,6 +1081,30 @@ partials. Mounted controls also reject unmet and uncertain conditions; passing
 cases deliver one count through the real graph's model, TTS, and audio sink.
 The original regression fails before the repair and all five cases pass after
 it. Logs are retained under
-`artifacts/scenario-count-admission-repair-20260905-01`. Repeated live validation
-and full-case acceptance are still required; the earlier failed recordings
-and scores remain unchanged.
+`artifacts/scenario-count-admission-repair-20260905-01`. Restoring the old
+admission code through a test overlay fails at the same confidence guard.
+Focused race tests and the complete developer gate pass. The official SDK
+WebSocket/WebRTC checks explicitly skip because the SDK is not installed.
+
+Six live recordings from clean `0424eaf6064fda4d7e93e62260024b8003e1126f`
+pass: three event counts and three ordinary-question controls. Their executable
+SHA-256 is `e2a1940959a4089b456626dd1903387a6b6d7119737782ea5cd658bcfd42c68a`.
+All six exact-model advisory reviews agree, all sources/evaluations verify,
+and all outcomes and metrics replay. Nine model requests and nine synthesis
+requests complete upstream. Each count session returns `1` followed by `2`;
+each control answers the capital-of-France question. Count trial 3 reproduces
+the old 0.6511 final `answer` and 0.9989 `condition-met`, but now makes the
+first-count model request and receives `1`. The other two trials act on more
+confident partials, so they do not independently exercise the repaired branch.
+
+The trial-3 reviewer retains an unusual pronunciation of `1` as a minor
+observation, despite accepting the count. This acoustic observation is not
+erased by the deterministic pass. Source receipt:
+`sha256:8881937b2b9c5dd35badf3590463d7ae43001a1f50deefd19632d14240fb9159`.
+Advisory receipt:
+`sha256:8bac374919efc0d85b4ac01904806dd961c8adc63aee42f12e13bf5d1c21ad0c`.
+The bundle includes exact tracked source, binary, configuration, provider
+projections, commands, regression/mutation logs, and the developer gate.
+The isolated server and tracing proxies stopped without touching shared
+services. The complete fifteen-trial case and final-candidate acceptance remain
+open; the earlier failed recordings and scores remain unchanged.
