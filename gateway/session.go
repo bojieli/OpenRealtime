@@ -111,10 +111,16 @@ type session struct {
 	sourcesMu sync.Mutex
 	sources   map[string]*videoSource
 
-	itemsMu     sync.Mutex
-	utterances  map[string]*wireUtterance
-	callNames   map[string]string
-	callStarted map[string]time.Time
+	itemsMu    sync.Mutex
+	utterances map[string]*wireUtterance
+	// issuedCalls remembers what a tool call was, from the moment it is handed
+	// to the client until the client returns its result. It is bounded because
+	// nothing else bounds it: the protocol lets a client ignore a call, so the
+	// entries are added by the model and removed by the client, and a client
+	// that never answers leaves them for the life of the session. A meeting
+	// that runs for hours is exactly where that accumulates and exactly where
+	// nobody is watching.
+	issuedCalls map[string]issuedCall
 
 	responseMu sync.Mutex
 	// response is the turn currently producing output. One response carries
@@ -132,6 +138,18 @@ type session struct {
 	outstanding  int
 	reservations map[string]struct{}
 }
+
+// issuedCall is a tool call the client has been handed and has not answered.
+type issuedCall struct {
+	name    string
+	started time.Time
+}
+
+// maxOutstandingCalls bounds how many unanswered tool calls one session
+// remembers. It is far above any turn's fan-out and far below a number that
+// matters, which is the range a bound on something a client controls should
+// sit in.
+const maxOutstandingCalls = 256
 
 // wireResponse is one turn as the protocol renders it.
 type wireResponse struct {
@@ -171,7 +189,7 @@ func newSession(parent context.Context, connection *websocket.Conn, config Confi
 		validator: protocol.NewValidator(), sendChannel: make(chan []byte, 512),
 		events:  make(chan queuedEvent, 512),
 		sources: make(map[string]*videoSource), utterances: make(map[string]*wireUtterance),
-		callNames: make(map[string]string), callStarted: make(map[string]time.Time),
+		issuedCalls:  make(map[string]issuedCall),
 		reservations: make(map[string]struct{}),
 	}
 	// The session's own identity comes from the server, not from its item
@@ -981,11 +999,11 @@ func (session *session) onItemCreate(create conversationItemCreateEvent) error {
 		return errors.New("conversation.item.create accepts message and function_call_output items")
 	}
 	session.itemsMu.Lock()
-	name := session.callNames[create.Item.CallID]
-	started := session.callStarted[create.Item.CallID]
-	delete(session.callNames, create.Item.CallID)
-	delete(session.callStarted, create.Item.CallID)
+	issued := session.issuedCalls[create.Item.CallID]
+	delete(session.issuedCalls, create.Item.CallID)
 	session.itemsMu.Unlock()
+	name := issued.name
+	started := issued.started
 	itemID := create.Item.ID
 	if itemID == "" {
 		itemID = session.nextID("item")
@@ -1175,7 +1193,32 @@ func (session *session) recordCallNames(calls []trajectory.ToolCall) {
 	defer session.itemsMu.Unlock()
 	now := time.Now()
 	for _, call := range calls {
-		session.callNames[call.CallID] = call.Name
-		session.callStarted[call.CallID] = now
+		session.issuedCalls[call.CallID] = issuedCall{name: call.Name, started: now}
+	}
+	session.forgetOldestCalls()
+}
+
+// forgetOldestCalls keeps the outstanding-call record bounded.
+//
+// A client is allowed to ignore a tool call, so an entry is added when the
+// model issues one and removed when the client answers it, and the two are not
+// the same rate. Nothing in the protocol closes the gap and nothing else in
+// the session does either: these entries outlive the response that produced
+// them, because a client may legitimately answer a call several turns later.
+//
+// The oldest go first because the record only feeds the name and the elapsed
+// time on a tool-result debug event. An answer that arrives after this many
+// unanswered calls loses its name and its duration, and still reaches the
+// runtime intact - which is the right thing to give up, and far better than a
+// map that only grows in the sessions that run longest.
+func (session *session) forgetOldestCalls() {
+	for len(session.issuedCalls) > maxOutstandingCalls {
+		oldestID, oldest := "", time.Time{}
+		for callID, call := range session.issuedCalls {
+			if oldestID == "" || call.started.Before(oldest) {
+				oldestID, oldest = callID, call.started
+			}
+		}
+		delete(session.issuedCalls, oldestID)
 	}
 }
