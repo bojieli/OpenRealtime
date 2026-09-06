@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- The LiveKit half of the vulnerability scan could not run, and had not run for
+  days. `integrations/livekit` declares `go 1.26` because its LiveKit
+  dependencies now require it, while the job installed one govulncheck with Go
+  1.25 and used it for both modules. govulncheck can only load packages up to
+  the language version of the Go it was built with, so the second scan died
+  with a loader error - `package requires newer Go version go1.26` - rather
+  than reporting anything about advisories. The root-module scan passed the
+  whole time, so the job's failure said nothing about what it had or had not
+  looked at. Each module is now scanned by a govulncheck built with that
+  module's own Go, and the root module keeps the 1.25 toolchain the released
+  binaries are actually built with.
+
 ## v0.1.0 — 2026-09-06
 
 The first release. It is numbered 0.1.0 rather than 1.0.0 deliberately: the

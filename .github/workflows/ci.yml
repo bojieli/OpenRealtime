@@ -310,15 +310,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Two modules, two language versions. The root module pins the 1.25
+      # toolchain it is released with; integrations/livekit declares go 1.26
+      # because its LiveKit dependencies now require it. govulncheck can only
+      # load packages up to the language version of the Go it was itself built
+      # with, so one binary cannot scan both: a govulncheck built with 1.25
+      # fails to load livekit/protocol with "package requires newer Go version
+      # go1.26", which is a loader error and not a clean report.
+      #
+      # That is how this job spent days red while saying nothing about
+      # advisories - the root-module scan passed, the second one could not run,
+      # and the difference between "no vulnerabilities" and "could not look" is
+      # the whole value of the job. Each module is now scanned by a govulncheck
+      # built with that module's own Go.
+      #
+      # The standard library govulncheck reports is the one the build used, so
+      # the toolchain each scan resolves is part of its claim rather than
+      # incidental to it: the root module's advisories are the ones the
+      # released binaries actually reach.
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
           check-latest: true
 
-      # The standard library govulncheck reports is the one the build used, so
-      # the toolchain this job resolves is part of the claim rather than
-      # incidental to it.
-      - name: Report the toolchain under test
+      - name: Report the toolchain the released binaries use
         run: go version
 
       - name: Known advisories reachable from this code
@@ -326,9 +341,19 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           "$(go env GOPATH)/bin/govulncheck" ./...
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          check-latest: true
+
+      - name: Report the toolchain the LiveKit integration uses
+        run: go version
+
       - name: Known advisories in the LiveKit integration
         working-directory: integrations/livekit
-        run: "$(go env GOPATH)/bin/govulncheck ./..."
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
 
   # The container is built on every change for the same reason the release
   # binaries are: a build that is only exercised at release time is a build
