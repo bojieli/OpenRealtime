@@ -120,7 +120,7 @@ jobs:
           done
           echo "all binaries reproduced byte for byte"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: openrealtime-binaries
           path: |
@@ -255,7 +255,7 @@ jobs:
           ./scripts/release-validate.sh -mode run -scope local \
             -artifacts "$evidence" -report "$evidence/report.json"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: release-matrix-local-${{ github.run_id }}-${{ github.run_attempt }}
