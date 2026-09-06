@@ -69,7 +69,7 @@ has held since 2012.
 
 ### WebRTC strengthens the decision, and postdates the original
 
-The v1.0 plan adds in-process WebRTC termination and a LiveKit agent participant
+The v0.1.0 plan adds in-process WebRTC termination and a LiveKit agent participant
 (`docs/openrealtime-v1-plan.md` §3.6, M13). Pion is the most mature non-C WebRTC
 implementation and is pure Go, and LiveKit's own server is Go built on Pion. Both
 transport adapters are therefore same-language work. This argument did not exist

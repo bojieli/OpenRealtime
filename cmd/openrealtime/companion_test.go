@@ -473,7 +473,7 @@ func TestCompanionReadinessStopsOnPermanentValidationFailure(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := waitCompanionHTTPReady(
-		ctx, server.Client(), server.URL, process,
+		ctx, server.Client(), server.URL, "", process,
 		func(int, http.Header, []byte) error {
 			return permanentCompanionReadiness(errors.New("immutable identity mismatch"))
 		},
@@ -498,7 +498,7 @@ func TestCompanionReadinessRetriesTransientValidationFailure(t *testing.T) {
 	defer cancel()
 	var validations atomic.Int32
 	err := waitCompanionHTTPReady(
-		ctx, server.Client(), server.URL, process,
+		ctx, server.Client(), server.URL, "", process,
 		func(int, http.Header, []byte) error {
 			if validations.Add(1) == 1 {
 				return errors.New("still warming")

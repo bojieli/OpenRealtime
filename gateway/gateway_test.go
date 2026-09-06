@@ -1085,3 +1085,99 @@ func getHealth(t *testing.T, base string) map[string]any {
 	}
 	return health
 }
+
+// A deployment configures a token because it is reachable, and the health
+// payload names the binding, the model, the live component digests, and the
+// server-profile fingerprint. Handing that to an anonymous caller was a
+// disclosure the endpoint's own documentation did not claim: /healthz was
+// described as the fastest way to see what a process is running, and /metrics
+// as counters that never leak content, while both answered anyone.
+//
+// The split has to hold in both directions. Liveness stays public, because a
+// load balancer cannot present a credential and a 401 would take a healthy
+// server out of rotation. The inventory does not.
+func TestHealthAndMetricsDetailRequireTheTokenWhenOneIsConfigured(t *testing.T) {
+	bind, err := cascade.New(cascade.Config{
+		Perception: func() (v1.PerceptionProvider, error) { return staticASR{text: "hi"}, nil },
+		Fast:       fast(), Slow: slow(), Speech: toneSpeech{},
+	})
+	if err != nil {
+		t.Fatalf("new cascade: %v", err)
+	}
+	server, err := gateway.New(gateway.Config{Binding: bind, Model: "openrealtime-test", Token: "secret"})
+	if err != nil {
+		t.Fatalf("new gateway: %v", err)
+	}
+	http := httptest.NewServer(testGatewayHandler(server))
+	defer http.Close()
+
+	anonymous := decodeGatewayJSON(t, http, "/healthz", "")
+	if anonymous["status"] != "ok" {
+		t.Fatalf("an anonymous caller must still get liveness, got %v", anonymous["status"])
+	}
+	for _, disclosed := range []string{"binding", "model", "capabilities", "ownership", "protocol", "sessions", "server_profile", "recogniser"} {
+		if _, present := anonymous[disclosed]; present {
+			t.Fatalf("anonymous health disclosed %q", disclosed)
+		}
+	}
+
+	authorized := decodeGatewayJSON(t, http, "/healthz", "secret")
+	if authorized["binding"] != "cascade" || authorized["model"] != "openrealtime-test" {
+		t.Fatalf("authorized health lost its detail: %v", authorized)
+	}
+
+	response := getGateway(t, http, "/metrics", "")
+	defer response.Body.Close()
+	if response.StatusCode != 401 {
+		t.Fatalf("anonymous /metrics status = %d, want 401", response.StatusCode)
+	}
+	if challenge := response.Header.Get("WWW-Authenticate"); challenge != "Bearer" {
+		t.Fatalf("anonymous /metrics challenge = %q, want Bearer", challenge)
+	}
+	counters := decodeGatewayJSON(t, http, "/metrics", "secret")
+	if _, present := counters["sessions_started"]; !present {
+		t.Fatalf("authorized /metrics lost its counters: %v", counters)
+	}
+}
+
+// A deployment with no token has no credential anyone could present, and it is
+// the loopback and development case. Gating the detail on a token that does
+// not exist would mean it is never available at all.
+func TestHealthKeepsItsDetailWhenNoTokenIsConfigured(t *testing.T) {
+	server := startServer(t, fast(), slow(), "hello")
+	health := decodeGatewayJSON(t, server, "/healthz", "")
+	if health["binding"] != "cascade" || health["model"] != "openrealtime-test" {
+		t.Fatalf("health without a configured token lost its detail: %v", health)
+	}
+	counters := decodeGatewayJSON(t, server, "/metrics", "")
+	if _, present := counters["sessions_started"]; !present {
+		t.Fatalf("metrics without a configured token lost its counters: %v", counters)
+	}
+}
+
+func getGateway(t *testing.T, server *httptest.Server, path, credential string) *http.Response {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("request %s: %v", path, err)
+	}
+	if credential != "" {
+		request.Header.Set("Authorization", "Bearer "+credential)
+	}
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("get %s: %v", path, err)
+	}
+	return response
+}
+
+func decodeGatewayJSON(t *testing.T, server *httptest.Server, path, credential string) map[string]any {
+	t.Helper()
+	response := getGateway(t, server, path, credential)
+	defer response.Body.Close()
+	var payload map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode %s: %v", path, err)
+	}
+	return payload
+}

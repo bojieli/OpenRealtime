@@ -25,17 +25,28 @@ func TestStableTimingAndOverflowValidation(t *testing.T) {
 	}
 }
 
+// Version names the component contract frozen at the api/v1 import path, and
+// it is deliberately not the release version. This test used to require the
+// two to be equal, which read as a consistency check and was really a
+// coupling: it meant the contract constant had to move every time the project
+// cut a release, and it meant a release could not be numbered independently of
+// a contract that is supposed to be frozen. The release version is checked
+// against the VERSION file in cmd/openrealtime instead, where it belongs.
+//
+// What stays asserted here is the freeze itself. Changing this constant is a
+// change to the promise in docs/api-v1.md, and a breaking change needs api/v2
+// rather than a new number here.
 func TestVersionAndDescriptorAreStable(t *testing.T) {
 	t.Parallel()
 	if Version != "1.0.0" {
 		t.Fatalf("unexpected API version %q", Version)
 	}
-	releaseVersion, err := os.ReadFile("../../VERSION")
+	release, err := os.ReadFile("../../VERSION")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(releaseVersion)) != Version {
-		t.Fatalf("VERSION and api/v1 disagree: %q versus %q", releaseVersion, Version)
+	if strings.TrimSpace(string(release)) == "" {
+		t.Fatal("VERSION is empty, so the release the contract ships in cannot be named")
 	}
 	descriptor := Descriptor{Name: "example", Version: "1", Capabilities: Capabilities{CapabilityDeterministic: true}}
 	if err := descriptor.Validate(); err != nil || !descriptor.Capabilities.Has(CapabilityDeterministic) {

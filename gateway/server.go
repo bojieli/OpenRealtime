@@ -400,7 +400,23 @@ func (server *Server) readLimit() int64 {
 	return limit
 }
 
-func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
+// health answers what this process is running. The liveness half of that
+// answer is public and the inventory half is not.
+//
+// The payload names the binding, the model identities, the live component
+// digests, and the server-profile fingerprint - which is the right answer to
+// "what is this process actually running" and the wrong thing to hand an
+// anonymous caller on a deployment that has a token precisely because it is
+// reachable. Splitting it is what keeps both true: the status code and the
+// status word stay open, because a load balancer cannot present a credential
+// and taking a healthy server out of rotation for a 401 would be a worse
+// failure than the disclosure; everything else needs the same bearer token the
+// Realtime endpoint needs.
+//
+// A deployment with no token configured is a loopback or development one, and
+// it keeps the whole payload: there is no credential to present, and gating on
+// one that does not exist would only mean the detail is never available.
+func (server *Server) health(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "application/json")
 	warm := server.config.Warm == nil || server.config.Warm()
 	var profile *pluginruntime.Live
@@ -416,6 +432,10 @@ func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusServiceUnavailable)
 	} else {
 		writer.WriteHeader(http.StatusOK)
+	}
+	if !server.authorized(request) {
+		_ = json.NewEncoder(writer).Encode(map[string]any{"status": status})
+		return
 	}
 	payload := map[string]any{
 		"status": status, "model": server.config.Model,
@@ -457,7 +477,17 @@ func validServerProfile(live pluginruntime.Live) bool {
 	return true
 }
 
-func (server *Server) metrics(writer http.ResponseWriter, _ *http.Request) {
+// metrics reports counters, never content - and on a deployment that has a
+// token, only to a caller that presents it. Session and media volume is not
+// conversation, but it is still this deployment's traffic, and there is no
+// liveness argument for publishing it the way there is for the health status
+// word: nothing routes on /metrics.
+func (server *Server) metrics(writer http.ResponseWriter, request *http.Request) {
+	if !server.authorized(request) {
+		writer.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(writer, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(writer).Encode(server.config.Metrics.Snapshot())
 }

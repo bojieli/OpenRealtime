@@ -81,11 +81,14 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 	serverURL := "http://" + serverAddress
 	webRTCURL := "http://" + webRTCAddress
 	presentationURL := "http://" + presentationAddress
+	// This companion runs with a bearer token, so the health inventory the
+	// validators below read is served only to a caller that presents it.
+	credential := secret
 	readyContext, cancelReady := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancelReady()
 	client := &http.Client{Timeout: 2 * time.Second}
 	if err := waitCompanionHTTPReady(
-		readyContext, client, serverURL+"/healthz", process,
+		readyContext, client, serverURL+"/healthz", credential, process,
 		func(status int, header http.Header, body []byte) error {
 			return validateCompanionServerHealth(status, header, body, model)
 		},
@@ -93,7 +96,7 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 		t.Fatalf("public companion server readiness: %v\n%s", err, output.String())
 	}
 	if err := waitCompanionHTTPReady(
-		readyContext, client, webRTCURL+"/healthz", process,
+		readyContext, client, webRTCURL+"/healthz", credential, process,
 		func(status int, header http.Header, body []byte) error {
 			return validateCompanionWebRTCHealth(
 				status, header, body, "ws://"+serverAddress+"/v1/realtime",
@@ -107,7 +110,7 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := waitCompanionHTTPReady(
-		readyContext, client, presentationURL+"/client/v1/manifest", process,
+		readyContext, client, presentationURL+"/client/v1/manifest", "", process,
 		func(status int, header http.Header, body []byte) error {
 			if status != http.StatusOK {
 				return fmt.Errorf("manifest status is %d", status)

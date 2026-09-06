@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-v1.0 is the first release. Security fixes land on `main` and in the next
+v0.1.0 is the first release. Security fixes land on `main` and in the next
 patch release; only the latest release and `main` are supported.
 
 ## Reporting a vulnerability

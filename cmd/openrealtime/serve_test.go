@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -886,5 +887,94 @@ func TestWebRTCUpstreamAuthorityResolvesAWildcardBind(t *testing.T) {
 		if got := webrtcUpstreamAuthority(listen); got != want {
 			t.Errorf("webrtcUpstreamAuthority(%q) = %q, want %q", listen, got, want)
 		}
+	}
+}
+
+// A routable Realtime listener with no bearer token is an open endpoint that
+// spends the deployment's own model credentials, so serve refuses to start
+// one. Loopback keeps working without a token, because that is the quickstart,
+// but it says so rather than starting silently.
+func TestGatewayListenerCredentialRefusesARoutableListenerWithoutAToken(t *testing.T) {
+	for _, row := range []struct {
+		name              string
+		listen            string
+		token             string
+		wantUnauthedStart bool
+		want              string
+	}{
+		{name: "loopback ipv4", listen: "127.0.0.1:8765", wantUnauthedStart: true},
+		{name: "loopback ipv6", listen: "[::1]:8765", wantUnauthedStart: true},
+		{name: "loopback name", listen: "localhost:8765", wantUnauthedStart: true},
+		{name: "loopback with token", listen: "127.0.0.1:8765", token: "granted"},
+		{name: "wildcard with token", listen: "0.0.0.0:8765", token: "granted"},
+		{name: "ipv6 wildcard with token", listen: "[::]:8765", token: "granted"},
+		{name: "routable with token", listen: "203.0.113.7:8765", token: "granted"},
+		{
+			name: "wildcard", listen: "0.0.0.0:8765",
+			want: "routable and the Realtime endpoint has no bearer token",
+		},
+		{
+			// The container image's own default CMD. An omitted host is every
+			// interface, which is the case most likely to be typed by
+			// accident and the one an image ships with.
+			name: "omitted host", listen: ":8080",
+			want: "routable and the Realtime endpoint has no bearer token",
+		},
+		{
+			name: "ipv6 wildcard", listen: "[::]:8765",
+			want: "routable and the Realtime endpoint has no bearer token",
+		},
+		{
+			name: "routable address", listen: "203.0.113.7:8765",
+			want: "routable and the Realtime endpoint has no bearer token",
+		},
+		{
+			// A name that does not resolve here may resolve elsewhere, so the
+			// unknown case is guarded rather than waved through.
+			name: "named host", listen: "realtime.example:8765",
+			want: "routable and the Realtime endpoint has no bearer token",
+		},
+		{
+			name: "whitespace is not a token", listen: "0.0.0.0:8765", token: "   ",
+			want: "routable and the Realtime endpoint has no bearer token",
+		},
+		{
+			name: "not an address", listen: "8765",
+			want: "is not host:port",
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			unauthenticated, err := gatewayListenerCredential(row.listen, row.token)
+			if row.want == "" {
+				if err != nil {
+					t.Fatalf("guard error = %v, want none", err)
+				}
+				if unauthenticated != row.wantUnauthedStart {
+					t.Fatalf("unauthenticated = %v, want %v", unauthenticated, row.wantUnauthedStart)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), row.want) {
+				t.Fatalf("guard error = %v, want %q", err, row.want)
+			}
+			if unauthenticated {
+				t.Fatal("a refused listener must not also report an unauthenticated start")
+			}
+		})
+	}
+}
+
+// serve itself has to apply the guard. The unit above can pass while the
+// server still starts, which is the shape that let the hole exist: the WebRTC
+// adapter had the rule and the endpoint it protects was never the one anyone
+// connected to.
+func TestServeRefusesARoutableListenerWithoutAToken(t *testing.T) {
+	// The real command, with the real defaults, which is the configuration an
+	// operator actually types.
+	t.Setenv("OPENREALTIME_TOKEN", "")
+	err := runServe([]string{"-listen", "0.0.0.0:0"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "routable and the Realtime endpoint has no bearer token") {
+		t.Fatalf("serve error = %v, want the routable-listener refusal", err)
 	}
 }

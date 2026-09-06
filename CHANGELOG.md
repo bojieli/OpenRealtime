@@ -1,6 +1,63 @@
 # Changelog
 
-## Unreleased
+## v0.1.0 — 2026-09-06
+
+The first release. It is numbered 0.1.0 rather than 1.0.0 deliberately: the
+graph runtime is still replacing the binding-based launch paths, `serve` still
+carries flags that a launch profile is meant to own, and the
+[implementation tracker](docs/composable-agent-graph.md#living-implementation-tracker)
+names that work. A 1.0.0 says none of that is true.
+
+A `v1.0.0` tag was cut on 2026-08-17 and pushed. It named a tree the project
+then moved 1,450 commits past while every binary built from it went on
+printing `1.0.0`, because nothing checked the version constant against the
+`VERSION` file or against the tag. That tag is superseded; this is the release
+line. What follows is everything in it, including the work that tag contained.
+
+### Highlights
+
+- **The release is numbered, published, and checked against itself.** `VERSION`,
+  the constant the binary prints, and the tag are now compared before anything
+  is published, and a disagreement fails the release rather than shipping an
+  artifact that misreports what it is. A tag builds the reproducible binaries
+  and their checksums into a GitHub Release and pushes a multi-platform image
+  to GHCR; until now both were built on every change and then discarded, so the
+  only install path anyone had was a clone and a Go toolchain. The container
+  cross-compiles instead of emulating a toolchain, so `linux/arm64` costs a
+  cross-build rather than an emulated one.
+
+- **A routable Realtime listener with no bearer token is refused.**
+  `serve -listen 0.0.0.0:8765` with the token variable unset used to start,
+  print a normal banner, and complete anonymous sessions against whatever
+  provider credentials the process held. The WebRTC adapter had enforced
+  exactly this rule for its own listener since it was written; the endpoint
+  clients actually connect to did not, and the operations guide asked the
+  reader to notice instead. Loopback still starts without a token, because that
+  is the quickstart - and says so in the log, because something in front of it
+  can publish a loopback origin without the server ever seeing that happen.
+
+- **The health inventory and the metrics counters need the token when one is
+  configured.** `/healthz` names the binding, the model identities, the live
+  component digests, and the server-profile fingerprint, and `/metrics` reports
+  session and media volume; both answered anyone who could reach the port. The
+  status word and status code stay public, because an external health check
+  cannot present a credential and a 401 would take a healthy server out of
+  rotation. Everything else does not. A deployment with no token keeps the
+  whole payload: there is no credential to present.
+
+- **Cloudflare Tunnel is the documented way to publish it.** The server has no
+  TLS listener and does not want one - a certificate to renew and reload
+  without dropping live sessions is the wrong problem for a process whose job
+  is holding connections open. `cloudflared` dials out to a loopback origin, so
+  there is no inbound port and no certificate on the box.
+  [deploy/README.md](deploy/README.md) has the configuration, including the two
+  things that do not travel through an HTTP tunnel and the reason a tunnelled
+  deployment still needs the bearer token.
+
+- **The portable JavaScript client reducer is a package.** It was a directory
+  of `.mjs` files with no manifest, which made the shared client contract
+  something to vendor by hand rather than install.
+
 
 ### Highlights
 
@@ -1100,7 +1157,9 @@
 
 </details>
 
-## v1.0.0
+## Earlier work in this release
+
+Written while the tree was tagged `v1.0.0`, and part of v0.1.0 above.
 
 The first release of the current architecture. The engine was rebuilt around
 four subsystems over a session core — perception, cognition, action, and an

@@ -194,8 +194,12 @@ func runCompanionContext(
 	}()
 	readyContext, cancelReady := context.WithTimeout(ctx, options.readyTimeout)
 	defer cancelReady()
+	// The children read the credential out of the inherited environment by
+	// name; this reads the same variable so the readiness probes can present
+	// it. It is never placed in argv or printed.
+	credential := strings.TrimSpace(os.Getenv(options.tokenEnvironment))
 	if err := waitCompanionHTTPReady(
-		readyContext, runtime.httpClient, ready.ServerURL+"/healthz", server,
+		readyContext, runtime.httpClient, ready.ServerURL+"/healthz", credential, server,
 		func(status int, header http.Header, body []byte) error {
 			return validateCompanionServerHealth(status, header, body, options.model)
 		},
@@ -203,7 +207,7 @@ func runCompanionContext(
 		return fmt.Errorf("companion server readiness: %w", err)
 	}
 	if err := waitCompanionHTTPReady(
-		readyContext, runtime.httpClient, "http://"+options.webRTCAddress+"/healthz", server,
+		readyContext, runtime.httpClient, "http://"+options.webRTCAddress+"/healthz", credential, server,
 		func(status int, header http.Header, body []byte) error {
 			return validateCompanionWebRTCHealth(
 				status, header, body, "ws://"+options.serverAddress+"/v1/realtime",
@@ -236,7 +240,10 @@ func runCompanionContext(
 	}()
 	if err := waitCompanionHTTPReady(
 		readyContext, runtime.httpClient, ready.PresentationURL+"/client/v1/manifest",
-		presentationProcess,
+		// The presentation host is not the Realtime gateway and holds no
+		// bearer token of its own; its manifest is served to the local
+		// browser.
+		"", presentationProcess,
 		func(status int, header http.Header, body []byte) error {
 			if status != http.StatusOK {
 				return fmt.Errorf("manifest status is %d", status)
@@ -684,10 +691,20 @@ func (process *companionProcess) killGroup() error {
 	return err
 }
 
+// waitCompanionHTTPReady polls a child's readiness endpoint until it attests
+// what this launch expects.
+//
+// The credential is presented rather than omitted because the health payload
+// the validators read - the model, the active server profile, its fingerprint -
+// is only served to an authorized caller once a token is configured. A
+// companion that launched its children with a token and then probed them
+// anonymously would read the liveness half of the answer, find no profile in
+// it, and report a readiness failure for a server that was ready.
 func waitCompanionHTTPReady(
 	ctx context.Context,
 	client *http.Client,
 	url string,
+	credential string,
 	process *companionProcess,
 	validate func(int, http.Header, []byte) error,
 ) error {
@@ -700,6 +717,9 @@ func waitCompanionHTTPReady(
 			return err
 		}
 		request.Header.Set("Accept", "application/json")
+		if credential != "" {
+			request.Header.Set("Authorization", "Bearer "+credential)
+		}
 		response, err := client.Do(request)
 		if err == nil {
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, companionMaximumReadyBytes+1))

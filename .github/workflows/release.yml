@@ -1,0 +1,187 @@
+name: release
+
+# Publishing was the half of the release that existed only as a script someone
+# had to remember to run. ci.yml already built the cross-platform binaries and
+# the container image on every change - and then threw both away, because a CI
+# artifact expires and a locally built image goes nowhere. So the only install
+# path anyone outside this repository had was `git clone` plus a Go toolchain,
+# for a project whose quickstart claims five minutes.
+#
+# This job turns a tag into the two things people actually consume: a GitHub
+# Release carrying the reproducible binaries and their checksums, and a
+# multi-platform image on GHCR.
+
+on:
+  push:
+    tags: ['v*']
+  # A release process that is only exercised at release time is a release
+  # process that breaks at release time, so it can also be driven by hand
+  # against a tag to rehearse it.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # The tag, the VERSION file, and what the binary says about itself are three
+  # separate claims about which release this is, and nothing used to compare
+  # them. That is precisely how a tree ends up 1,450 commits past the tag whose
+  # number every binary built from it still printed. A disagreement fails here,
+  # before anything is published, because a published artifact that misreports
+  # its own version cannot be recalled.
+  identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - id: resolve
+        name: The tag, VERSION, and the binary must name one release
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          declared="$(tr -d '[:space:]' < VERSION)"
+          reported="$(go run ./cmd/openrealtime version | sed -n 's/^openrealtime \([^,]*\),.*/\1/p')"
+          echo "tag=${tag} VERSION=${declared} binary=${reported}"
+          if [ "${version}" != "${declared}" ]; then
+            echo "tag ${tag} and VERSION ${declared} name different releases" >&2
+            exit 1
+          fi
+          if [ "${version}" != "${reported}" ]; then
+            echo "tag ${tag} and the binary's own ${reported} name different releases" >&2
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    needs: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      - name: Cross-platform release build
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+        run: |
+          mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
+          ./scripts/build-release.sh dist
+
+      # The checksums are only worth publishing because the build is
+      # reproducible, so the property is checked on the artifacts being
+      # published rather than assumed from the run on main.
+      - name: Builds are reproducible
+        env:
+          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
+        run: |
+          ./scripts/build-release.sh dist-again
+          for binary in dist/openrealtime-*; do
+            name="$(basename "$binary")"
+            cmp "$binary" "dist-again/$name" \
+              || { echo "$name is not reproducible" >&2; exit 1; }
+          done
+          echo "all binaries reproduced byte for byte"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="$(mktemp)"
+          {
+            echo "See [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${TAG}/CHANGELOG.md) for what changed."
+            echo
+            echo 'Binaries are static and reproducible: the same source tree and Go toolchain produce byte-identical output anywhere, which is what makes the checksums worth verifying.'
+            echo
+            echo '```'
+            echo "sha256sum -c SHA256SUMS-${TAG#v}.txt"
+            echo '```'
+          } > "$notes"
+          # --verify-tag refuses to invent a tag that is not already pushed,
+          # and the release stays a draft for nothing: publishing is the point
+          # of the job.
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "$notes" \
+            --verify-tag \
+            dist/openrealtime-* dist/SHA256SUMS-*.txt
+
+  container:
+    needs: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # The Dockerfile cross-compiles rather than emulating a toolchain, so
+      # both platforms build on this runner without QEMU.
+      - name: Multi-platform builder
+        run: docker buildx create --use --driver docker-container
+
+      - name: Sign in to the registry
+        run: |
+          echo '${{ github.token }}' \
+            | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+      - name: Build and push
+        env:
+          VERSION: ${{ needs.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          docker buildx build \
+            --file deploy/Dockerfile \
+            --platform linux/amd64,linux/arm64 \
+            --tag "${image}:${VERSION}" \
+            --tag "${image}:latest" \
+            --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
+            --label org.opencontainers.image.version="${VERSION}" \
+            --label org.opencontainers.image.revision="${GITHUB_SHA}" \
+            --push .
+          echo "published ${image}:${VERSION}"
+
+      # A distroless image has no shell, so this is also the check that the
+      # entrypoint is the binary. The published image must report the version
+      # it was published as.
+      - name: The published image reports the release it was published as
+        env:
+          VERSION: ${{ needs.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          printed="$(docker run --rm --pull always "${image}:${VERSION}" version)"
+          echo "${printed}"
+          case "${printed}" in
+            "openrealtime ${VERSION},"*|"openrealtime ${VERSION}") ;;
+            *) echo "the published image reports ${printed}, not ${VERSION}" >&2; exit 1 ;;
+          esac

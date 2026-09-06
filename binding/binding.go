@@ -773,7 +773,7 @@ type Options struct {
 //
 // It exists so a deployment names a binding in configuration and so third
 // parties can register their own. The names are part of the stable extension
-// surface from v1.0.
+// surface from v0.1.0.
 type Registry struct {
 	mu       sync.RWMutex
 	bindings map[string]Binding

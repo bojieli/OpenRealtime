@@ -1,0 +1,34 @@
+# cloudflared configuration for an OpenRealtime deployment.
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create openrealtime
+#   cloudflared tunnel route dns openrealtime realtime.example.com
+#   cloudflared tunnel --config deploy/cloudflared/config.example.yml run
+#
+# The origin is loopback on purpose: the server has no inbound port, no TLS
+# listener, and no certificate to renew. TLS is terminated at Cloudflare's edge
+# and cloudflared dials out to reach it.
+#
+# The server must still be started with a bearer token. A tunnel publishes a
+# loopback origin, which the server cannot distinguish from a laptop - its
+# routable-address guard will not fire, and the endpoint would be open.
+
+tunnel: openrealtime
+credentials-file: /etc/cloudflared/openrealtime.json
+
+# WebSockets are proxied without extra configuration. The server's default
+# 20-second keepalive ping (-keepalive-interval) is what keeps an idle session
+# from being reaped at the edge mid-conversation.
+ingress:
+  - hostname: realtime.example.com
+    service: http://127.0.0.1:8765
+    originRequest:
+      # A realtime session is long-lived and mostly idle between turns. The
+      # default connect timeout is about the dial, not the session, but state
+      # it rather than inherit whatever a future default becomes.
+      connectTimeout: 10s
+      noTLSVerify: false
+
+  # Everything that did not match a hostname above. cloudflared requires a
+  # catch-all rule and refuses to start without one.
+  - service: http_status:404

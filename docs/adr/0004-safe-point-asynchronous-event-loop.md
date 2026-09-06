@@ -93,7 +93,7 @@ specify how upstream producers react to returned backpressure.
 The complete operational contract is in
 [architecture.md](../architecture.md).
 
-Amended after v1.0: slow no longer runs on every observation. Whether a turn
+Amended after v0.1.0: slow no longer runs on every observation. Whether a turn
 needs deliberation is the fast phase's judgement, expressed as a control marker
 that never reaches the trajectory or the user; a turn the voice can answer
 outright is answered once, which is what stops a simple question being
@@ -101,7 +101,7 @@ processed - and heard - twice. Every completion travels back as an event
 rather than being acted on where it happened, so the gate decides when anything
 is heard, and one turn may therefore span several responses.
 
-Amended at v1.0: the loop gained the state this decision described but could
+Amended at v0.1.0: the loop gained the state this decision described but could
 not represent. Committing an event and acting on it are now separate steps, a
 deferral records what it is waiting for, and every deferral condition declares
 the transition that releases it. It also gained a parallel branch, so a quick

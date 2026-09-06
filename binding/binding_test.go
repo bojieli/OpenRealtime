@@ -115,7 +115,7 @@ func TestEveryOwnershipColumnMustNameARealOwner(t *testing.T) {
 	}
 }
 
-// The registry is the stable extension surface from v1.0: a deployment names a
+// The registry is the stable extension surface from v0.1.0: a deployment names a
 // binding in configuration and a third party registers its own.
 func TestRegistryRefusesWhatCannotBeNamedOrRun(t *testing.T) {
 	registry := binding.NewRegistry()

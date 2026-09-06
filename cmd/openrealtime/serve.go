@@ -551,6 +551,16 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 		}
 		providerName = bind.Name()
 	}
+	unauthenticated, err := gatewayListenerCredential(options.listen, gatewayToken)
+	if err != nil {
+		return err
+	}
+	if unauthenticated {
+		logger.Warn("the Realtime endpoint has no bearer token",
+			"listen", options.listen, "token_env", options.tokenEnv,
+			"detail", "anything that can reach this address can open a session, "+
+				"including a tunnel or proxy placed in front of it")
+	}
 	realm, err := bundle.Mount(ctx)
 	if err != nil {
 		return err
@@ -2254,20 +2264,75 @@ func webrtcClientCredential(options serveOptions) (string, error) {
 	if strings.TrimSpace(options.webrtcListen) == "" {
 		return "", nil
 	}
-	host, _, err := net.SplitHostPort(options.webrtcListen)
+	routable, err := listenerIsRoutable(options.webrtcListen)
 	if err != nil {
 		return "", fmt.Errorf("WebRTC listen address %q is not host:port", options.webrtcListen)
 	}
-	if host == "localhost" {
-		return "", nil
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	if !routable {
 		return "", nil
 	}
 	return "", fmt.Errorf(
 		"WebRTC listen address %q is routable and has no credential: set -webrtc-token-env, "+
 			"because this endpoint opens sessions with the deployment's own upstream token",
 		options.webrtcListen,
+	)
+}
+
+// listenerIsRoutable reports whether an address can be reached from somewhere
+// other than this machine.
+//
+// Loopback is the one address a process can bind without publishing anything,
+// so it is the one address where an absent credential is a local development
+// choice rather than an open door. Everything else - a wildcard bind, a
+// specific interface, a name that is not localhost - is treated as reachable.
+// A name that does not resolve here is not evidence that it will not resolve
+// somewhere else, so the unknown case is the guarded one.
+func listenerIsRoutable(address string) (bool, error) {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(address))
+	if err != nil {
+		return false, err
+	}
+	if host == "localhost" {
+		return false, nil
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return false, nil
+	}
+	return true, nil
+}
+
+// gatewayListenerCredential refuses a routable Realtime listener that has no
+// bearer token, and reports whether the operator is running without one.
+//
+// This is the same rule the WebRTC adapter above has always enforced, and its
+// absence here was the larger hole: `serve -listen 0.0.0.0:8765` with the
+// token variable unset started, printed a normal banner, and completed
+// anonymous sessions against whatever provider credentials the process held.
+// docs/operations.md said a deployment reachable from anywhere with no token
+// "is one you want to notice"; nothing made anyone notice.
+//
+// Loopback keeps working without a token, because that is the quickstart and
+// because a loopback bind publishes nothing by itself. It can still be
+// published by something else - a tunnel or a reverse proxy pointed at it - and
+// no check here can see that, so an unauthenticated start says so out loud
+// rather than silently.
+func gatewayListenerCredential(listen, token string) (unauthenticated bool, err error) {
+	if strings.TrimSpace(token) != "" {
+		return false, nil
+	}
+	routable, err := listenerIsRoutable(listen)
+	if err != nil {
+		return false, fmt.Errorf("listen address %q is not host:port", listen)
+	}
+	if !routable {
+		return true, nil
+	}
+	return false, fmt.Errorf(
+		"listen address %q is routable and the Realtime endpoint has no bearer token: "+
+			"set the token variable named by -token-env, or bind loopback and publish it "+
+			"through a tunnel or proxy that authenticates. An open Realtime endpoint spends "+
+			"this deployment's own model credentials for anyone who can reach the port",
+		listen,
 	)
 }
 

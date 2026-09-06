@@ -1,0 +1,31 @@
+{
+  "name": "@openrealtime/client-reducer",
+  "version": "0.1.0",
+  "description": "Reference client-side reducer for the OpenRealtime Realtime protocol: applies a server event stream to client state, with the same conformance corpus the Go and Swift implementations run.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bojieli/OpenRealtime.git",
+    "directory": "client/reducer/javascript"
+  },
+  "homepage": "https://github.com/bojieli/OpenRealtime/tree/main/client/reducer",
+  "type": "module",
+  "exports": {
+    ".": "./reducer.mjs"
+  },
+  "main": "./reducer.mjs",
+  "bin": {
+    "openrealtime-reducer-conformance": "./conformance.mjs"
+  },
+  "files": [
+    "reducer.mjs",
+    "conformance.mjs"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test reducer.test.mjs"
+  },
+  "sideEffects": false
+}

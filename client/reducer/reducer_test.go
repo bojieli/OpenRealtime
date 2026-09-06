@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -410,5 +411,59 @@ func applyOK(t *testing.T, machine *reducer.Reducer, atMS int64, operation reduc
 	t.Helper()
 	if err := machine.Apply(atMS, operation); err != nil {
 		t.Fatalf("apply %s at %d: %v", operation.Kind, atMS, err)
+	}
+}
+
+// The JavaScript reducer is published as a package, which means its version is
+// a fourth copy of a number that already exists in VERSION, in the constant the
+// binary prints, and on the tag. Three of those are checked against each other;
+// an unchecked fourth is how a published package ends up claiming a release it
+// was not built from.
+//
+// The manifest is also what makes the shared client contract installable rather
+// than something to vendor by hand, so the fields the install path depends on
+// are asserted rather than assumed present.
+func TestJavaScriptPackageDeclaresTheReleaseAndItsEntryPoints(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("javascript/package.json")
+	if err != nil {
+		t.Fatalf("read package manifest: %v", err)
+	}
+	var manifest struct {
+		Name    string            `json:"name"`
+		Version string            `json:"version"`
+		Type    string            `json:"type"`
+		License string            `json:"license"`
+		Exports map[string]string `json:"exports"`
+		Files   []string          `json:"files"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatalf("decode package manifest: %v", err)
+	}
+	release, err := os.ReadFile(filepath.Join("..", "..", "VERSION"))
+	if err != nil {
+		t.Fatalf("read VERSION: %v", err)
+	}
+	if got, want := manifest.Version, strings.TrimSpace(string(release)); got != want {
+		t.Fatalf("package.json says %q and VERSION says %q; they name the same release", got, want)
+	}
+	if manifest.Type != "module" {
+		t.Fatalf("package type = %q, want module: the sources are ES modules", manifest.Type)
+	}
+	if manifest.License != "Apache-2.0" {
+		t.Fatalf("package license = %q, want Apache-2.0", manifest.License)
+	}
+	if manifest.Exports["."] != "./reducer.mjs" {
+		t.Fatalf("package entry point = %q, want ./reducer.mjs", manifest.Exports["."])
+	}
+	// A published package that omits a source file installs and then fails to
+	// import, which is a failure nothing in this repository would see.
+	for _, required := range []string{"reducer.mjs", "conformance.mjs"} {
+		if !slices.Contains(manifest.Files, required) {
+			t.Fatalf("package.json does not publish %s: %v", required, manifest.Files)
+		}
+		if _, err := os.Stat(filepath.Join("javascript", required)); err != nil {
+			t.Fatalf("published file %s does not exist: %v", required, err)
+		}
 	}
 }
