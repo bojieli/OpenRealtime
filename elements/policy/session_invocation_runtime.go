@@ -32,6 +32,10 @@ func (sessionInvocationFactory) Mount(
 	if err != nil {
 		return nil, fmt.Errorf("policy.SessionInvocation %s config: %w", mount.InstanceID, err)
 	}
+	return mountSessionInvocation(mount, config)
+}
+
+func mountSessionInvocation(mount element.MountContext, config SessionInvocationConfig) (*sessionInvocationRunner, error) {
 	clockValue, _, found := mount.Services.Lookup(graphruntime.ClockServiceName)
 	if !found {
 		return nil, errors.New("session invocation policy has no runtime clock service")
@@ -118,6 +122,13 @@ func (runner *sessionInvocationRunner) Run(parent context.Context) error {
 	artifact := liveidentity.Artifact{
 		ID: sessionInvocationRuntimeID, Revision: sessionInvocationRuntimeRevision,
 	}
+	return runner.run(parent, artifact, runner.acceptCommit, runner.acceptCreate)
+}
+
+func (runner *sessionInvocationRunner) run(
+	parent context.Context, artifact liveidentity.Artifact,
+	acceptCommit, acceptCreate func(context.Context, element.Envelope) error,
+) error {
 	if err := liveidentity.Report(runner.resolution, artifact, nil); err != nil {
 		return err
 	}
@@ -153,9 +164,9 @@ func (runner *sessionInvocationRunner) Run(parent context.Context) error {
 			case "update":
 				err = runner.acceptUpdate(ctx, input.envelope)
 			case "committed":
-				err = runner.acceptCommit(ctx, input.envelope)
+				err = acceptCommit(ctx, input.envelope)
 			case "create":
-				err = runner.acceptCreate(ctx, input.envelope)
+				err = acceptCreate(ctx, input.envelope)
 			case "cancel":
 				err = runner.acceptCancel(ctx, input.envelope)
 			default:
@@ -230,11 +241,18 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 	if err := validateSemanticGrant(grant, runner.config.Role); err != nil {
 		return runner.refuse(ctx, envelope, "committed", "", "invalid_commit", err.Error())
 	}
+	return runner.emitCommit(ctx, envelope, commit, grant.Act)
+}
+
+func (runner *sessionInvocationRunner) emitCommit(
+	ctx context.Context, envelope element.Envelope,
+	commit stateelements.ObservationCommitOutcome, act coreinteraction.Act,
+) error {
 	if runner.invocation.Revision == 0 {
 		return runner.refuse(ctx, envelope, "committed", "", "invocation_unset",
 			"session invocation must be installed before an observation can activate cognition")
 	}
-	runner.state.ContextVersion = commit.StoreVersion
+	runner.state.ContextVersion = max(runner.state.ContextVersion, commit.StoreVersion)
 	generationID := generationIdentifier(runner.config.Role, envelope.SessionID, commit)
 	if runner.isTerminal(generationID) {
 		return runner.ignoreDuplicate(ctx, envelope, "committed", generationID)
@@ -259,7 +277,7 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 		Invocation:             invocationForCommit(runner.invocation, commit),
 		ExpectedContextVersion: &version, ExpectedContextItemID: commit.Context.StateItemID,
 		CommittedContext: &committedContext,
-		SpokeOver:        grant.Act == coreinteraction.ActSpeakThrough || grant.Act == coreinteraction.ActInterrupt,
+		SpokeOver:        act == coreinteraction.ActSpeakThrough || act == coreinteraction.ActInterrupt,
 	}
 	trigger := runner.triggerEnvelope(envelope, generationID, payload)
 	for _, parent := range []string{commit.Context.StateItemID, commit.TrajectoryItemID, commit.TriggerItemID} {
@@ -278,7 +296,7 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 	if _, err := runner.ports.authority.Broadcast(ctx, candidateEnvelope); err != nil {
 		return err
 	}
-	return runner.finishEmission(ctx, envelope, "committed", generationID, commit, grant.Act)
+	return runner.finishEmission(ctx, envelope, "committed", generationID, commit, act)
 }
 
 func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelope element.Envelope) error {

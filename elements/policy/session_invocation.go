@@ -20,7 +20,7 @@ import (
 
 const (
 	sessionInvocationRuntimeID          = "builtin://openrealtime/elements/policy.SessionInvocation"
-	sessionInvocationRuntimeRevision    = "implementation:4"
+	sessionInvocationRuntimeRevision    = "implementation:5"
 	defaultSessionInvocationTerminalMax = 512
 	postCommitSilenceInstruction        = "Trusted runtime purpose: the post-commit silence timer reached the due point for a standing user instruction. Execute that due standing action now from the canonical conversation context. Do not merely acknowledge, confirm, restate, or describe the instruction."
 )

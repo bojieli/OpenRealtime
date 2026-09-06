@@ -48,8 +48,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 43 {
-		t.Fatalf("standard config schema count = %d, want 43", len(references))
+	if len(references) != 44 {
+		t.Fatalf("standard config schema count = %d, want 44", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -419,6 +419,7 @@ func standardValidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/intent-disposition-retry-config/v1":              `{"initial_delay_ms":100,"backoff_factor":2,"max_delay_ms":1000,"max_retries":3,"max_elapsed_ms":5000,"max_pending":64,"terminal_memory":512,"cancel_memory":256}`,
 		"schema://openrealtime/policy/intent-settlement-config/v1":                     `{"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`,
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{"decider":"semantic-primary","direct_visual_input":true,"standing_extraction":true,"verify_voice_activation":true,"verify_silent_action":true,"minimum_activation_confidence":0.75,"transcript_events":{"partial":{"instruction":"Choose a live act.","acts":["listen","interrupt"],"timeout_ms":250},"final":{"instruction":"Choose a final act.","acts":["listen","answer"],"timeout_ms":250}}}`,
+		"schema://openrealtime/policy/observation-invocation-config/v1":                `{"role":"text","generate_on_commit":true}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{"role":"fast"}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"camera"}]}`,
 		"schema://openrealtime/realtime-cu/activation-config/v2":                       `{"role":"computer-use","invocation":{"instruction":"Act."},"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"expected_settlement":{"expected_admission":{"mode":"after_intent","source_set":"observed_before_intent"},"candidate_sources":[{"observer":"vision","source":"screen"}],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}}`,
@@ -467,6 +468,7 @@ func standardStructurallyInvalidConfigSamples() map[string]string {
 		"schema://openrealtime/policy/intent-disposition-retry-config/v1":              `{"max_retries":0}`,
 		"schema://openrealtime/policy/intent-settlement-config/v1":                     `{"expected_admission":{"mode":"after_intent","source_set":"explicit","required":[{"observer":"vision","source":"screen"}]},"candidate_sources":[],"detector":{"reference":"settlement-primary","revision":"v1","configuration_digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}`,
 		"schema://openrealtime/policy/semantic-admission-config/v3":                    `{}`,
+		"schema://openrealtime/policy/observation-invocation-config/v1":                `{}`,
 		"schema://openrealtime/policy/session-invocation-config/v1":                    `{}`,
 		"schema://openrealtime/policy/temporal-evidence-admission-config/v1":           `{"mode":"eventually"}`,
 		"schema://openrealtime/realtime-cu/activation-config/v2":                       `{"role":"computer-use","invocation":{"instruction":"Act."}}`,

@@ -8,7 +8,7 @@ graph text_file_cognition {
     media.ResolveAttachment :: resolver;
     state.ObservationCommit :: observation_commit;
     state.TrajectoryStore :: trajectory;
-    policy.GenerateOnObservation :: activation;
+    policy.ObservationInvocation :: activation;
     cognition.TextModel :: model;
     interaction.ControlSerializationQuarantine :: model_control_quarantine;
     interaction.ModelResultCommit :: model_result_commit;
@@ -50,6 +50,8 @@ graph text_file_cognition {
     model_control_quarantine.safe_result -> model_result_copy.in;
     model_result_copy.out -> model_result_commit.result;
 
+    input invocation_update = activation.update;
+    input response_create = activation.create;
     input text = content.text;
     input image = content.image;
     input file = content.file;

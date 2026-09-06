@@ -4,6 +4,17 @@
 
 ### Highlights
 
+- The audio-free text/file graph now accepts session instruction updates and
+  explicit response creation. `policy.ObservationInvocation` owns the selected
+  settings and automatic-versus-explicit activation, binds each model call to
+  the committed conversation prefix, and preserves bounded stream cancellation.
+  It accepts ordinary observation commits without inventing a conversational
+  semantic decision. The graph remains a component reference; its production
+  gateway adapter is still unfinished.
+  The shared session policy also keeps its context version from moving backward
+  when an older observation commit arrives late, preventing a subsequent manual
+  response from using stale conversation history.
+
 - Canceled speech recognition can no longer publish late provider text into
   conversation history or reopen an utterance from delayed audio and endpoint
   messages. ASR checks cancellation before publishing revisions, keeps bounded

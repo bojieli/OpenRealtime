@@ -487,6 +487,13 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				"cancel_memory": largeBoundedState,
 			}, "role", "invocation",
 		),
+		"schema://openrealtime/policy/observation-invocation-config/v1": standardObject(
+			"schema://openrealtime/policy/observation-invocation-config/v1",
+			schemaObject{
+				"role": identifier(256), "terminal_memory": largeBoundedState,
+				"cancel_memory": largeBoundedState, "generate_on_commit": schemaObject{"type": "boolean"},
+			}, "role",
+		),
 		"schema://openrealtime/policy/session-invocation-config/v1": standardObject(
 			"schema://openrealtime/policy/session-invocation-config/v1",
 			schemaObject{

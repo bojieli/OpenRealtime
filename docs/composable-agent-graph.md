@@ -4323,6 +4323,29 @@ the required new 180-attempt sample.
   and static/session generation 4 with unchanged descriptor contracts. This
   repairs an activation prerequisite found while reviewing the text/file
   session path; the production session adapter remains open above.
+- [x] Add graph-owned session updates and explicit response creation to the
+  audio-free text/file reference. `policy.ObservationInvocation` accepts ordinary
+  observation commits, snapshots revisioned settings, and chooses automatic or
+  explicit activation from `generate_on_commit` in graph values. Explicit
+  creation binds the exact committed prefix, carries no observation authority,
+  and rejects transport-supplied semantic purposes. The element shares the
+  existing settings, generation, and bounded-cancellation machinery without
+  manufacturing semantic grants. The locked graph's two-response integration
+  consumes updated instructions, retained file bytes, and the first canonical
+  answer in the second request. Provider and canonical-history assertions cover
+  the consumer boundary; policy tests cover delayed commits, settings replay,
+  invalid context, durable cancellation, and malformed grants. The ordinary
+  reference retains automatic activation; an explicit configuration is exercised
+  separately. Both invocation policies preserve the greatest observed context
+  version across delayed commits; restoring the old assignment reproduces a
+  stale manual response. Negative controls also detect automatic activation in
+  explicit mode, stale instructions, and injected semantic purposes. Ten focused
+  race repetitions and the full repository check pass, including SDK WebSocket
+  and WebRTC sessions and portable-client/sidecar checks. The new element starts
+  at implementation 1; the shared session policy advances to implementation 5.
+  This completes the invocation prerequisite only: the production
+  text/file gateway adapter, multipart translation, and presentation lifecycle
+  remain open. No benchmark campaign or score-reporting requirement is added.
 - [x] Keep canceled audio out of canonical history and subsequent transcript
   activation. ASR previously published valid provider revisions before checking
   cancellation, and forgot the stream when closing the provider. Its final

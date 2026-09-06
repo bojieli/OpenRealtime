@@ -48,7 +48,7 @@ func TestTextFileCognitionReferenceIsLockedCompleteAndAudioFree(t *testing.T) {
 		"resolver":                  "media.ResolveAttachment",
 		"observation_commit":        "state.ObservationCommit",
 		"trajectory":                "state.TrajectoryStore",
-		"activation":                "policy.GenerateOnObservation",
+		"activation":                "policy.ObservationInvocation",
 		"model":                     "cognition.TextModel",
 		"model_control_quarantine":  "interaction.ControlSerializationQuarantine",
 		"model_result_commit":       "interaction.ModelResultCommit",
@@ -98,6 +98,7 @@ func TestTextFileCognitionReferenceIsLockedCompleteAndAudioFree(t *testing.T) {
 	}
 
 	wantBoundaries := map[string]ir.BoundaryDirection{
+		"invocation_update": ir.InputBoundary, "response_create": ir.InputBoundary,
 		"text": ir.InputBoundary, "image": ir.InputBoundary,
 		"file": ir.InputBoundary, "attachment": ir.InputBoundary,
 		"content_cancel": ir.InputBoundary, "media_resolve": ir.InputBoundary,
@@ -212,6 +213,8 @@ func TestTextFileCognitionReferenceExecutesTextAndRetainedFileTurns(t *testing.T
 		t.Fatalf("text/file trajectory seed = %+v", seed)
 	}
 	textFileDrain(t, runContext, mounted, "activation_state", "trajectory_snapshot", "retention_metrics")
+
+	textFileInstallInvocation(t, mounted, "text-file-session", 1, "Answer from committed participant text and resolve retained files when relevant.")
 
 	textResponse := "Text received; send the retained report."
 	textFileSend(t, mounted, "text", element.Envelope{
@@ -369,6 +372,30 @@ func textFileDrain(t *testing.T, ctx context.Context, mounted *graphruntime.Moun
 	}
 }
 
+func textFileInstallInvocation(t *testing.T, mounted *graphruntime.Mounted, session string, revision uint64, instruction string) {
+	t.Helper()
+	textFileSend(t, mounted, "invocation_update", element.Envelope{
+		Type: policyelements.SessionInvocationUpdateType(), ItemID: fmt.Sprintf("settings-%d", revision),
+		SessionID: session, Payload: policyelements.SessionInvocationUpdate{
+			Revision: revision, Invocation: continuation.Invocation{Instruction: instruction, MaxOutputTokens: 1024},
+		},
+	})
+	for {
+		outcome := textFileReceive(t, mounted, "activation_outcome").Payload.(policyelements.SessionInvocationOutcome)
+		if outcome.Kind == policyelements.SessionInvocationUpdated && outcome.InvocationRevision == revision {
+			return
+		}
+		// A trajectory store without a configured session publishes an unbound
+		// startup snapshot; its observation outcome cannot activate cognition.
+		if outcome.Kind == policyelements.SessionInvocationIgnored && outcome.Code == "observation_not_committed" {
+			continue
+		}
+		if outcome.Kind != policyelements.SessionInvocationRefused || outcome.Code != "invalid_commit" {
+			t.Fatalf("install text/file invocation outcome = %+v", outcome)
+		}
+	}
+}
+
 func textFileAwaitTurn(t *testing.T, mounted *graphruntime.Mounted, operation, response string) {
 	t.Helper()
 	ingressOutcome := textFileReceive(t, mounted, "ingress_outcome").Payload.(ingresselements.Outcome)
@@ -381,12 +408,15 @@ func textFileAwaitTurn(t *testing.T, mounted *graphruntime.Mounted, operation, r
 	}
 	emitted := false
 	for range 4 {
-		outcome := textFileReceive(t, mounted, "activation_outcome").Payload.(policyelements.GenerationOutcome)
-		if outcome.Kind == policyelements.GenerationEmitted {
+		outcome := textFileReceive(t, mounted, "activation_outcome").Payload.(policyelements.SessionInvocationOutcome)
+		if outcome.Kind == policyelements.SessionInvocationEmitted {
 			emitted = true
 			break
 		}
-		if outcome.Kind != policyelements.GenerationRefused || outcome.Code != "missing_session" {
+		if outcome.Kind == policyelements.SessionInvocationIgnored && outcome.Code == "observation_not_committed" {
+			continue
+		}
+		if outcome.Kind != policyelements.SessionInvocationRefused || outcome.Code != "invalid_commit" {
 			t.Fatalf("%s activation outcome = %+v", operation, outcome)
 		}
 	}
@@ -394,15 +424,32 @@ func textFileAwaitTurn(t *testing.T, mounted *graphruntime.Mounted, operation, r
 		t.Fatalf("%s activation did not emit", operation)
 	}
 
-	wantBoundaries := []cognitionelements.TextBoundary{
-		cognitionelements.TextBegin, cognitionelements.TextChunk, cognitionelements.TextEnd,
+	textFileAwaitModelCommit(t, mounted, operation, response)
+}
+
+func textFileAwaitModelCommit(t *testing.T, mounted *graphruntime.Mounted, operation, response string) {
+	t.Helper()
+	begin := textFileReceive(t, mounted, "prepared_text").Payload.(cognitionelements.PreparedTextDelta)
+	if begin.Boundary != cognitionelements.TextBegin || begin.Text != "" {
+		t.Fatalf("%s prepared text begin = %+v", operation, begin)
 	}
-	for index, want := range wantBoundaries {
+	var text strings.Builder
+	for {
 		delta := textFileReceive(t, mounted, "prepared_text").Payload.(cognitionelements.PreparedTextDelta)
-		if delta.Boundary != want || (index == 1 && delta.Text != response) ||
-			(index != 1 && delta.Text != "") {
-			t.Fatalf("%s prepared text %d = %+v, want boundary %s", operation, index, delta, want)
+		if delta.Boundary == cognitionelements.TextEnd {
+			text.WriteString(delta.Text)
+			if delta.Interrupted {
+				t.Fatalf("%s prepared text end = %+v", operation, delta)
+			}
+			break
 		}
+		if delta.Boundary != cognitionelements.TextChunk {
+			t.Fatalf("%s unexpected text boundary = %+v", operation, delta)
+		}
+		text.WriteString(delta.Text)
+	}
+	if text.String() != response {
+		t.Fatalf("%s streamed text = %q, want %q", operation, text.String(), response)
 	}
 	result := textFileReceive(t, mounted, "model_result").Payload.(cognitionelements.Result)
 	if result.AssistantText != response || result.Interrupted || len(result.ToolProposals) != 0 ||

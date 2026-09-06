@@ -80,15 +80,16 @@ func TestTextFileCognitionCanceledStreamCannotReactivateOnFinalRevision(t *testi
 			textFileDrain(t, ctx, mounted, boundary.Name)
 		}
 	}
+	textFileInstallInvocation(t, mounted, "canceled-content-session", 1, "Answer from committed participant text and resolve retained files when relevant.")
 	textFileSend(t, mounted, "activation_cancel", element.Envelope{
 		Type: policyelements.GenerationCancelType(), ItemID: "cancel-content-stream",
 		SessionID: "canceled-content-session", Payload: policyelements.GenerationCancel{
 			StreamID: "withdrawn-request", Reason: "request withdrawn",
 		},
 	})
-	nextActivation := func() policyelements.GenerationOutcome {
+	nextActivation := func() policyelements.SessionInvocationOutcome {
 		t.Helper()
-		return textFileReceive(t, mounted, "activation_outcome").Payload.(policyelements.GenerationOutcome)
+		return textFileReceive(t, mounted, "activation_outcome").Payload.(policyelements.SessionInvocationOutcome)
 	}
 	if outcome := nextActivation(); outcome.Code != "cancel_recorded" {
 		t.Fatalf("cancellation = %+v", outcome)
@@ -103,7 +104,7 @@ func TestTextFileCognitionCanceledStreamCannotReactivateOnFinalRevision(t *testi
 				Final: revision == 3,
 			},
 		})
-		if outcome := nextActivation(); outcome.Kind != policyelements.GenerationCanceled || outcome.StreamID != "withdrawn-request" {
+		if outcome := nextActivation(); outcome.Kind != policyelements.SessionInvocationCanceled || outcome.StreamID != "withdrawn-request" {
 			t.Fatalf("canceled content revision %d reactivated cognition: %+v", revision, outcome)
 		}
 	}
@@ -118,7 +119,7 @@ func TestTextFileCognitionCanceledStreamCannotReactivateOnFinalRevision(t *testi
 			Text: "Read the report I send next.", Revision: 1, Final: true,
 		},
 	})
-	if outcome := nextActivation(); outcome.Kind != policyelements.GenerationEmitted || outcome.StreamID != "replacement-request" {
+	if outcome := nextActivation(); outcome.Kind != policyelements.SessionInvocationEmitted || outcome.StreamID != "replacement-request" {
 		t.Fatalf("replacement activation = %+v", outcome)
 	}
 	var answer string

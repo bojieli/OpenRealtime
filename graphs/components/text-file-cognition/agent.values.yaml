@@ -10,10 +10,7 @@ nodes:
   trajectory: {}
   activation:
     role: text-file
-    invocation:
-      instruction: Answer from committed participant text and resolve retained files when relevant.
-      max_output_tokens: 1024
-    max_pending: 64
+    generate_on_commit: true
     terminal_memory: 512
     cancel_memory: 256
   model:

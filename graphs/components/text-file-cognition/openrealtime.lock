@@ -66,11 +66,11 @@
       }
     },
     {
-      "reference": "policy.GenerateOnObservation",
+      "reference": "policy.ObservationInvocation",
       "identity": {
-        "name": "policy.GenerateOnObservation",
-        "revision": 3,
-        "digest": "sha256:7c43ec6bd816082a56a62808573faac2e8949d3c2d594bd348a4d3464fcae5aa"
+        "name": "policy.ObservationInvocation",
+        "revision": 1,
+        "digest": "sha256:0b6e7bfa33a89334cfe2dcdaa3d91ab4e46344a46ba8dcb0458cae15974f96de"
       }
     },
     {

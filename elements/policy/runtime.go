@@ -602,6 +602,11 @@ func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 			},
 		},
 		factoryprofile.Entry{
+			Factory: observationInvocationFactory{}, Artifact: inspect.ArtifactIdentity{
+				ID: observationInvocationRuntimeID, Revision: observationInvocationRuntimeRevision,
+			},
+		},
+		factoryprofile.Entry{
 			Factory: semanticAdmissionFactory{}, Artifact: inspect.ArtifactIdentity{
 				ID: semanticAdmissionRuntimeID, Revision: semanticAdmissionRuntimeRevision,
 			},
