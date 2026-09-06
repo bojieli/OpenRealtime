@@ -1,6 +1,6 @@
 # The OpenRealtime Protocol, version 1
 
-**Status:** proposed. Implemented by OpenRealtime v1.0.
+**Status:** implemented extension reference (protocol version 1).
 **Wire namespace:** `openrealtime.`
 **Base protocol:** the OpenAI Realtime API (GA), unmodified.
 
@@ -10,8 +10,15 @@ reporting, and computer use. The total addition is three events and two object
 extensions; no existing event changes shape and no existing field changes
 meaning.
 
-The protocol has no abbreviation. Written in full on first use, "the protocol"
-thereafter.
+This page defines the extension's wire contract. The server's implemented base
+API is a subset; consult [Compatibility](../openai-realtime-compatibility.md)
+for supported events and settings. The additive design below does not imply
+full hosted-service parity.
+
+**Read in order:** negotiate capabilities (§2), declare and send video (§3),
+consume observations (§4), then configure computer-use tools (§5). A base-only
+client needs none of these extensions. Capability support depends on the
+selected deployment; use the server's `enabled` response.
 
 The key words MUST, MUST NOT, REQUIRED, SHOULD, SHOULD NOT, and MAY are to be
 interpreted as described in RFC 2119.
@@ -403,7 +410,7 @@ surface and is never emitted without an explicit opt-in.
 
 ## 9. Versioning
 
-Version 1 is frozen at the OpenRealtime v1.0 release. Subsequent versions will
+Version 1 is frozen at the OpenRealtime v0.1.0 release. Subsequent versions will
 be additive under a higher `version` number; a server MAY implement several and
 negotiates the highest the client also declares. Removing or changing the
 meaning of anything in this document requires a new version number, not an

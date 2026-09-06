@@ -19,19 +19,18 @@ sidecar is reached through a graph launch profile.
 
 ## Why a fourth version rather than a fourth capability
 
-Versions 2 and 3 grew the audio binding by adding message kinds - an
-`interaction_act`, an `image`, a `tools_update` - and each addition taught the
-transport something about models. A transport that knows what audio is cannot
-carry a model that has none, and a transport that knows what a tool call looks
-like has decided what a tool call is for every sidecar at once. Version 4 moves
-all of that into the ports: the transport carries envelopes and validates them
-against a descriptor, and what an envelope means is the element's business.
+Versions 1–3 describe audio-model messages. Version 4 describes typed element
+ports, allowing audio, text, images, and tools to use the same envelope
+transport. Port descriptors define payload meaning and validation.
 
-The other thing version 4 adds is proof. A version 1 `ready` names a model
-string. A version 4 `ready` attests the exact descriptor, the digest of the
-configuration it applied, an immutable runtime artifact, and a provider and
-adapter identity for every capability - so a benchmark cell can bind its result
-to what actually ran rather than to what the launch command asked for.
+The handshake also identifies the exact descriptor, applied configuration,
+runtime artifact, and provider/adapter identities. A host can compare those
+identities with its deployment plan before admitting the model.
+
+**Implementation order:** [handshake](#handshake) → [ports and media](#ports-formats-and-media)
+→ [frames](#element-frames) → [limits](#limits) → [conformance](#conformance).
+The [Python example](#writing-a-version-4-sidecar) shows the adapter structure;
+[Sidecars](sidecars.md) explains how this differs from binding-based launch.
 
 ## Handshake
 

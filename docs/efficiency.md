@@ -1,19 +1,19 @@
 # Efficiency gates
 
-Efficiency is a stated requirement, so it has numbers rather than adjectives.
-Each of these is a release gate rather than a comparative claim, and each is
-stated against the machine it was measured on — a number without its machine is
-not a number, and putting the machine in a footnote is how it stops being read.
+This page records resource and latency diagnostics for a named reference
+machine. They measure runtime overhead in specific configurations, not overall
+model quality or a hardware-independent performance promise.
+
+The release matrix exposes `local.efficiency` as an optional diagnostic. Its
+report captures the machine and measured values for that run. See
+[Release validation](release-validation.md#optional-efficiency-diagnostic) for
+selection and evidence requirements.
 
 Reproduce them:
 
 ```sh
 openrealtime efficiency -seconds 60
 ```
-
-The release matrix runs the same command as the `local.efficiency` gate and
-retains its JSON report, so a release record carries the numbers for the
-machine it was cut on beside the reference numbers below.
 
 ## Reference machine
 

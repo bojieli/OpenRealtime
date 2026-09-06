@@ -1,19 +1,25 @@
 # Stable component API v1
 
-Import `github.com/bojieli/OpenRealtime/api/v1`. The semantic import path and
-`v1.Version == "1.0.0"` freeze the component contract independently from the
-experimental engine packages.
+Use `github.com/bojieli/OpenRealtime/api/v1` when implementing a Go provider
+against the stable component contract. For external model processes, see the
+[sidecar guide](sidecars.md); for session assembly, see [Architecture](architecture.md).
 
-This is a Go import-path version for OpenRealtime components; it does not imply
-an OpenAI Realtime protocol revision, and it is separate from the protocol
-versions in [protocol/openrealtime-1.md](protocol/openrealtime-1.md) and
-[sidecar-protocol-1.md](sidecar-protocol-1.md).
+The import path and `v1.Version == "1.0.0"` identify this contract. They are
+independent of the binary version in [VERSION](../VERSION), the client protocol,
+and sidecar versions. A breaking component change requires `api/v2`.
 
-The v1.0 architecture introduced its own extension points - `Binding`,
-`Observer`, `Narrator`, `Vision`, `Decider`, and `computeruse.Surface` - which
-carry the same promise from v1.0 without living in this package. They are new
-interfaces in new packages rather than changes here, which is what kept this
-contract untouched through the restructuring.
+## Implement a provider
+
+1. Select the role and interface in [`api/v1/api.go`](../api/v1/api.go).
+2. Declare its name, version, and supported capabilities.
+3. Implement cancellation, streaming, and ownership rules below.
+4. Run provider conformance with a deterministic adapter-specific probe.
+5. Connect the provider through a documented binding or graph integration.
+
+The additional `Binding`, `Observer`, `Narrator`, `Vision`, `Decider`, and
+`computeruse.Surface` extension interfaces live in their own packages. Consult
+their contracts when implementing those roles; internal engine packages do not
+share the stable API promise.
 
 ## Compatibility promise
 

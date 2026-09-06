@@ -1,8 +1,13 @@
 # Fish Speech 1.5
 
-The speech the agent produces is synthesised by Fish Speech 1.5 running locally.
-It replaced S2-Pro on SGLang-Omni, which answered a one-sentence request in about
-900ms; this path answers a comma-length phrase in 111-230ms.
+This directory provides a local Fish Speech 1.5 server for the runtime's Fish
+adapter. It is an optional model service, not a dependency of every voice
+configuration.
+
+Earlier measurements observed 111–230 ms for short phrases on this path and
+about 900 ms for a one-sentence request through S2-Pro on SGLang-Omni. The inputs
+and stacks differ, so those numbers are diagnostic context rather than a
+controlled model comparison.
 
 ## Why not the upstream server
 
@@ -21,13 +26,25 @@ decoder and leaves the allocator alone.
 
 ## Setup
 
-    git clone https://github.com/fishaudio/fish-speech .runtime/fish/fish-speech
-    cd .runtime/fish/fish-speech && git checkout v1.5.1
-    git apply /path/to/tools/fish15/cuda-graph-ownership.patch
-    touch .project-root
-    ln -s <hf snapshot of fishaudio/fish-speech-1.5> checkpoints/fish-speech-1.5
+You need a CUDA-capable PyTorch environment, the Fish Speech v1.5.1 dependencies,
+and a local `fishaudio/fish-speech-1.5` checkpoint. Install the upstream runtime
+dependencies for your GPU before starting this service. From the OpenRealtime
+repository root:
 
-    PYTHONPATH=$PWD python tools/fish15/server.py --port 8123
+```bash
+git clone --branch v1.5.1 https://github.com/fishaudio/fish-speech .runtime/fish/fish-speech
+git -C .runtime/fish/fish-speech apply ../../../tools/fish15/cuda-graph-ownership.patch
+touch .runtime/fish/fish-speech/.project-root
+```
+
+Set the checkpoint path to the downloaded weights, then start this repository's
+server with the upstream model code on `PYTHONPATH`:
+
+```bash
+export FISH15_CHECKPOINT="/absolute/path/to/fish-speech-1.5"
+PYTHONPATH="$PWD/.runtime/fish/fish-speech" python tools/fish15/server.py \
+  --checkpoint "$FISH15_CHECKPOINT" --port 8123
+```
 
 Startup compiles the CUDA graphs and warms the decoder shapes, which takes about
 21 seconds. Requests that arrive before `ready on :PORT` would otherwise pay that

@@ -1,5 +1,16 @@
 # Graph-native interaction-scenario launch contract
 
+Use this reference to prepare a scenario profile, understand its required
+interfaces, and interpret retained evidence. For suite selection, start with
+[Benchmarks](../../../docs/benchmarks.md); for the case descriptions, see
+[Demos](../../../docs/demos.md).
+
+**Reading order:** composition contract → local protocol check → live run →
+focused selection → retained artifacts. Local conformance checks exercise
+wiring and lifecycle; live behavior requires model services and recorded input.
+
+## Composition contract
+
 This package is the scenario suite's fail-closed composition boundary. It does
 not contain a server, model, provider, credential, UI, or binding-name switch.
 It decorates an explicitly selected `graph/launch` adapter plugin, checks the
@@ -43,6 +54,8 @@ artifacts before it can open a listener or start a session. Presentation hosts
 remain clients of the same Realtime and management APIs; this package installs
 no HTTP or UI route.
 
+## Local protocol check
+
 `TestProfiledGraphNativeWebSocketExercisesExactTwelveScenarioContract` is the
 credential-free protocol checkpoint. It starts twelve independent sessions
 through that generic profile registry and exact graph-native server path. Every
@@ -80,6 +93,8 @@ committed prefix. That establishes the case-7 mechanism, not a live behavioral
 pass: the model still has to interpret the user's request and produce the
 requested check-in in the retained 15-repeat run.
 
+## Run a live evaluation
+
 The provisioned candidate remains wired as
 `external.benchmark.scenario` in `scripts/release-matrix.json`. It runs the
 existing public scenario client against the graph-native endpoint with the
@@ -108,6 +123,8 @@ and the cell's exact runtime adapter-profile fingerprint form one valid frozen
 checklist selection. By default the graph-native path runs the complete
 canonical suite through `NewLiveExecutor` and `RunChecklist`.
 
+## Select a focused case
+
 For a focused diagnostic, use `scenario -list` to obtain exact case names,
 then pass the same repeated `-case` flags to `profile scenario` and `scenario`.
 For example, select `-case 'an acknowledgement is not an interruption'` when
@@ -131,6 +148,8 @@ them. The command labels them `DIAGNOSTIC SUBSET`; `checklist.json` records
 or more repetitions and individually passing cases. Architecture reportability
 describes its declared population; the checklist additionally enforces the
 complete-suite behavioral gate. A subset cannot replace any required campaign.
+
+## Retained results and verification
 
 The selected `-review-dir` plug-in writes create-only per-attempt stereo WAVs,
 the exact submitted visual bytes, independently verified media manifests,

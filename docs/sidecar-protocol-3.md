@@ -10,6 +10,11 @@ It does not add visual narration: a sidecar declaring `visual_input` receives
 the pixels themselves. Versions 1 and 2 retain their original meanings and
 must be selected explicitly when an older sidecar is used.
 
+**Use this version when:** a binding-based sidecar needs image pixels or a
+replacement tool catalog during a session. Implement v1 framing and the v2
+interaction contract first. The image, tool-update, and authority rules below
+are the additions. For graph-native models, use [v4](sidecar-protocol-4.md).
+
 ## Direct images
 
 The engine sends an `image` frame with a JPEG or PNG binary payload:

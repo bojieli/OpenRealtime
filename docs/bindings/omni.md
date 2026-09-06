@@ -17,13 +17,11 @@ plumbing before a GPU is involved.
 
 ## The engine keeps the floor
 
-Deliberately. The reference configuration is a turn-based generator handed a
-turn by an external detector; the Omni label does not constrain every
-speech-to-speech model to that capability set. Voice activity detection
-mis-endpoints on spelled
-identifiers and digit strings — exactly the inputs a tool-using voice agent
-depends on getting right. This is a measurable claim rather than an assertion,
-and `-floor model` is the other level of it.
+The reference configuration uses an external detector to decide when to
+request a model turn. Speech-to-speech models can expose other ownership
+choices; use `-floor model` when the selected model supports native floor
+control. Test endpointing on your inputs, especially spelled identifiers and
+digit strings where pauses may occur within a request.
 
 ## Compose an external interaction policy
 
@@ -59,9 +57,8 @@ does not turn the foreground into an ASR→LLM→TTS cascade.
 openrealtime conformance sidecar -- python3 sidecars/qwen3_omni_sidecar.py --mock
 ```
 
-The suite is the contract. A sidecar that passes it works with the engine
-whatever it is written in; one that does not is broken before anybody spends a
-GPU-hour finding out. See the frozen [v1 sidecar
+The mock check verifies the process contract without loading weights. Follow
+it with a real model turn to validate inference and audio output. See the [v1 sidecar
 protocol](../sidecar-protocol-1.md) and the [typed-act v2
 extension](../sidecar-protocol-2.md). Direct pixels and live tool catalogs use
 the [v3 multimodal extension](../sidecar-protocol-3.md).

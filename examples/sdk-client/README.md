@@ -1,107 +1,119 @@
-# OpenAI's own client, against this server
+# Tool use with the official Realtime SDK
 
-The project claims an official OpenAI Realtime client connects unchanged. This
-is the thing that checks it.
+This example connects the published `@openai/agents-realtime` SDK to
+OpenRealtime, asks about the weather, executes a client-side function, and
+receives an audio response with a transcript. The `get_weather` tool returns
+fixed example data: 14 degrees and rain. It does not contact a weather service.
 
-```sh
-npm install
-node websocket.mjs ws://127.0.0.1:8765/v1/realtime
+Use it to understand the tool-call round trip or check a client integration.
+For a microphone conversation, start with the [browser quickstart](../../docs/quickstart.md).
+
+## Prerequisites
+
+- Go 1.25+ and the cloned repository.
+- Node.js 22+ and npm.
+- Chromium for the WebRTC check; WebSocket does not need a browser.
+
+## Run a complete example without provider keys
+
+From the repository root:
+
+```bash
+cd examples/sdk-client
+npm ci
+cd ../..
+go test -v -count=1 ./examples/sdk-client/
 ```
 
-```text
-PASS  the official SDK connects to an OpenRealtime server
-PASS  the server completes the SDK's session handshake
-PASS  the unsupported field is refused by name, not silently substituted
-PASS  nothing else in the session was refused
-PASS  the SDK's tool was called and executed by the SDK
-PASS  a response completed
-PASS  the SDK received the tool call on the event it expects
-PASS  speech came back as audio and as a transcript
-PASS  the session completed a turn despite the error
-```
+The Go test starts a real local server with deterministic in-process providers,
+then runs the SDK through WebSocket and, when Chromium is available, WebRTC.
+No model weights, GPU, microphone, or provider key are needed. Installing npm
+and Go dependencies may require network access.
 
-Nothing here is written against OpenRealtime. It is
-[`@openai/agents-realtime`](https://www.npmjs.com/package/@openai/agents-realtime)
-as published, configured the way its own documentation says to configure it,
-with one URL pointed somewhere else:
+Look for the SDK's `PASS` lines for the handshake, tool execution, completed
+response, and audio/transcript output, followed by passing Go tests. A `SKIP`
+means a dependency was unavailable; it is not a successful transport check.
+Set `CHROMIUM` to the browser executable's path if it is not discovered.
+
+## Follow the round trip
+
+1. `RealtimeAgent` declares `get_weather` and its argument schema.
+2. `RealtimeSession` connects and sends the agent's session settings.
+3. The client sends “What is the weather in Cambridge? Use your tool.”
+4. The server emits a function call; the SDK runs the local `execute` callback.
+5. The SDK returns the tool result and the server produces a response.
+6. The script records transcript text and counts received audio bytes.
+
+The Node script does not play the returned audio through your speakers. Its
+output verifies receipt of audio and prints the transcript.
+
+The connection uses the SDK's standard URL option:
 
 ```js
 const transport = new OpenAIRealtimeWebSocket({ url, useInsecureApiKey: true });
 const session = new RealtimeSession(agent, { transport });
 ```
 
-It runs a **tool-using** turn, because tool use is where an implementation is
-most likely to diverge: the call goes out on one event, the result comes back
-as a conversation item, and the SDK is particular about the shape of both.
+See [websocket.mjs](websocket.mjs) for the complete configuration, event
+handlers, tool, and checks. The SDK package itself is unmodified.
 
-## Both transports
+## Connect to your own server
 
-The SDK's WebRTC transport only runs in a browser — it needs
-`RTCPeerConnection` and `getUserMedia`, and there is no Node equivalent. So
-that half is bundled with esbuild and driven in Chromium:
+Start a configured OpenRealtime server using the
+[quickstart](../../docs/quickstart.md), then run from this directory:
 
-```sh
+```bash
+node websocket.mjs ws://127.0.0.1:8765/v1/realtime
+```
+
+If the server uses authentication, set `OPENREALTIME_TOKEN` in the client
+terminal to the same token. You can override the model label with
+`OPENREALTIME_MODEL` and pass a different tool-using prompt as the second
+argument:
+
+```bash
+node websocket.mjs ws://127.0.0.1:8765/v1/realtime \
+  "What is the weather in London? Use your tool."
+```
+
+Live results depend on the chosen models. The script includes a regression
+assertion that `semantic_vad` is refused by name. A deployment that supports
+that setting can complete the conversation and still fail this particular
+assertion. The deterministic test above is the reference configuration for
+all assertions; this script is not a universal health probe.
+
+## WebRTC
+
+The Go test builds and runs the browser example automatically. For a manual
+run against an existing adapter, build the browser bundle from this directory:
+
+```bash
+./node_modules/.bin/esbuild webrtc.mjs \
+  --bundle --format=esm --outfile=dist/webrtc.js
 node browser.mjs http://127.0.0.1:8766/v1/realtime/calls
 ```
 
-The page is served from **a different origin than the adapter**, because that
-is what every real deployment looks like: the adapter is a port on a server and
-the application is a site. A same-origin test would pass while proving nothing
-about whether anyone can actually do this — which is exactly the trap the first
-version of this fell into, and how the missing CORS support was found.
+The driver uses headless Chromium with simulated microphone input and serves
+its page on a temporary loopback origin. For this local test, the adapter must
+allow that origin; a local-only adapter can use `-webrtc-allow-origin '*'`.
+Production deployments should name their actual application origins. See
+[Transports](../../docs/transports.md#reaching-the-adapter-from-a-browser).
 
-That means the adapter has to be told which origins may reach it:
+## Troubleshooting
 
-```sh
-openrealtime serve -webrtc-listen 127.0.0.1:8766 \
-  -webrtc-allow-origin https://your-app.example.com
-```
+| Symptom | Check |
+| --- | --- |
+| The Go test skips the SDK | Run `npm ci` in this directory and ensure Node is on `PATH`. |
+| WebRTC is skipped or cannot start | Install Chromium or set `CHROMIUM` to its executable. |
+| WebSocket connects but no tool result arrives | Check the selected model, provider credentials, and server errors. |
+| Browser SDP exchange fails | Check the adapter URL, token, and allowed origin. |
+| Audio check passes but nothing is audible locally | Expected for the Node script; it counts audio bytes without playing them. |
+| Only the unsupported-setting assertion fails on a live server | Check whether that deployment accepts `semantic_vad`. |
 
-Empty is the default and answers no browser at all, which is right for a
-server-to-server deployment. The endpoint has no credential of its own and
-starting a session is all it does, so a wildcard would let any page a user
-visits open a session against any adapter their browser can route to. `*` is
-accepted for local development and says what it is.
+## What this establishes
 
-## Run it in the gate
-
-```sh
-go test ./examples/sdk-client/
-```
-
-Skipped when Node, Chromium, or `node_modules` is missing, so the gate still
-runs offline. `npm install` here is what turns it on.
-
-## What it found
-
-Four defects, all of which had gone unnoticed because nothing had ever run an
-official client against this server:
-
-**A null the specification asks for and the schema forbids.** The SDK sends
-`noise_reduction: null` on every connection. OpenAI's own specification gives
-that field `"type": "object"`, `"default": null`, and a description saying it
-can be set to null to turn the feature off — three statements that do not
-agree. Converted to JSON Schema the type won, so a validator built from it was
-stricter than the API it describes, and rejected OpenAI's own client while
-claiming compatibility with it. The generator now reconciles the two where the
-specification declares null as the default.
-
-**An unsupported option that took the whole session with it.** The SDK defaults
-to `semantic_vad`. This server has server VAD, and refused the entire
-`session.update` — discarding the instructions, the tools, and the audio
-formats that arrived in the same event, so an unmodified client could not
-configure a session at all. Now everything else applies, the field does not,
-and an `error` names it with `param` and `code: unsupported_value`. The session
-stays open, and this example is what proves the SDK is fine with that: it
-completes the whole tool-using turn after receiving the error.
-
-**Turn detection parameters read as zero.** A client that names a detector
-without naming its numbers is asking for the deployment's. Reading absent as
-zero produced a gate with no silence duration, which the gate itself refuses —
-so a session failed on a field the client never set.
-
-**A WebRTC adapter no browser could reach.** The SDP exchange carries a bearer
-credential and an `application/sdp` body, so a browser preflights it; the
-adapter answered 405 and had no notion of an allowed origin. Since the SDK's
-WebRTC transport is browser-only, the WebRTC half of the compatibility claim
-was unreachable by construction.
+These checks validate a tool-using SDK session on two transports. They do not
+establish full hosted API parity, live-provider reliability, or model quality.
+See the [compatibility reference](../../docs/openai-realtime-compatibility.md)
+for supported events and limitations, and the
+[release matrix](../../docs/release-validation.md) for provisioned checks.

@@ -1,21 +1,17 @@
 # The spoken boundary
 
-A cascade decides a whole sentence, hands it to a synthesiser, and paces the
-audio out at the rate it plays. When somebody interrupts, the audio stops
-wherever it had got to. Until this existed, the runtime recorded that as a
-duration — "the agent was audible for 2.1 seconds" — and a duration cannot say
-where in the sentence the audio stopped.
+When a user interrupts an answer, generated text and heard speech diverge.
+OpenRealtime tracks the boundary within the utterance so a later response can
+continue from what the listener actually heard.
 
-Everything downstream then had two options and both are wrong:
+For example, if the model generated “one, two, three, four” but playback stopped
+partway through “three”, the history should distinguish completed words, the
+cut word, and pending words. Recording the entire sentence as spoken skips
+unheard content; recording none of it causes repetition.
 
-- Believe the agent said the whole sentence. Ask it to read a long list,
-  interrupt it, and it resumes after the last item it *wrote*, past items nobody
-  heard.
-- Believe it said none of the sentence. It starts again from the beginning, so
-  the person who interrupted is answered with a repetition of what they just
-  heard.
-
-The honest answer is a boundary inside the sentence. That is what this is.
+This technical note explains the representation, timing sources, provider
+context, and evaluation. Start with [Core concepts](concepts.md) for the
+session model, or jump to [Running it](#running-it) for word-timing setup.
 
 ## What is measured
 

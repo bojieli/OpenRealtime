@@ -1,15 +1,30 @@
-# Graph-native production assembly
+# Prepare a graph deployment
 
-`openrealtime graph preflight` is the non-legacy startup gate. It reads the
-locked topology, values, deployment, optional channel overlay, and optional
-graph-scoped secret catalog; resolves them against the executable catalog
-compiled into the binary; reduces that broad catalog to the exact immutable
-plan; and emits the public sealed preparation. It does not mount factories,
-resolve secret values, or route through `serve`/binding switches.
+Use graph preparation to validate a typed topology and its dependencies before
+starting a session. This is an integration workflow: the included component
+files do not by themselves provide a complete set of running model services.
+For a first conversation, use the [quickstart](quickstart.md).
+
+## Inputs and stages
+
+| Input | What it selects |
+| --- | --- |
+| `.ortg` and lock | Topology and exact component descriptors |
+| Values | Component configuration |
+| Deployment | Implementation and service bindings |
+| Optional channel overlay | Deployment-specific channel settings |
+| Secret catalog | Secret references, not secret values |
+
+`openrealtime graph preflight` selects the exact plan from the binary's catalog,
+validates configuration and dependencies, and emits a sealed preparation. It
+does not instantiate providers, open devices, or resolve secret values. Mounting
+the selected application acquires runtime resources separately.
+
+## Run a preflight check
 
 For example, this audits the shipped acoustic component. Its two standard
 configuration contracts resolve and validate; the command then exits at the
-first genuinely missing deployment service rather than launching a partial
+first missing deployment service rather than launching a partial
 graph:
 
 ```sh
@@ -20,6 +35,8 @@ openrealtime graph preflight \
   -secrets graphs/components/acoustic-endpoint/agent.secrets.yaml \
   graphs/components/acoustic-endpoint/agent.ortg
 ```
+
+## Inspect available implementations
 
 The built-in catalog currently contributes 34 exact in-process factory
 profiles and exact mount-owned identities for `runtime.clock`,
@@ -35,6 +52,8 @@ emitted as JSON:
 ```sh
 openrealtime graph inventory
 ```
+
+## Supply required services
 
 Required service plugins are:
 
@@ -58,6 +77,8 @@ Descriptor-declared optional services are `cognition.media.resolver`,
 `-optional-dependency` selections; an unselected optional service cannot
 appear later as ambient mount state.
 
+## Configuration validation
+
 The same inventory output lists all 27 standard config-schema references
 provided by this binary. Each is a strict, self-contained Draft 2020-12 object
 schema. Plan creation checks every representable field shape, required field,
@@ -68,12 +89,16 @@ bounding another. A selected plugin descriptor whose schema is absent remains
 in `unresolved_config_schemas` and fails the `RequireResolved` plan gate. No
 permissive placeholder schema or empty provider registry is fabricated.
 
+## Secrets and evidence
+
 Every shipped component has separate `agent.deployment.yaml`,
 `agent.secrets.yaml`, and `agent.evidence.yaml` artifacts. The shipped secret
 catalogs contain references only (currently none), never values. The evidence
 manifests contain `profiles: []`, explicitly making no empirical claim until a
 profile is bound to an exact plan fingerprint, element, implementation,
 hardware artifact, and load artifact.
+
+## Playback history in Scenario Conversation
 
 The scenario conversation adapter sends playback-state updates through
 `playback_state_append` into the graph's trajectory store. The update records

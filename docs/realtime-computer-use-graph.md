@@ -1,5 +1,26 @@
 # Graph-native Realtime Computer Use
 
+## Overview
+
+This application graph observes a changing screen, reasons about a task, and
+requests bounded computer actions. It is silent: speech output is not part of
+this composition. The host supplies models, observers, and the action target.
+
+Read the [core architecture](architecture.md) and [safety model](safety.md)
+first. This page then covers:
+
+- [Protocol input and output](#stable-protocol-surface).
+- [Action and visual-feedback ordering](#effect-and-visual-feedback-cycle).
+- [Application configuration and plugins](#application-profile-and-plugin-registry).
+- [Validation and the 16-case suite](#validation-and-the-sixteen-case-suite).
+
+The long validation section records implementation details and evidence. It is
+not required to understand the high-level observe → decide → act → verify
+cycle, but it matters when changing cancellation, action admission, or result
+settlement.
+
+## Host and graph responsibilities
+
 The production Realtime-CU checkpoint is the locked
 `realtime_computer_use` graph in
 `graphs/components/realtime-computer-use`. It is exposed to the generic server

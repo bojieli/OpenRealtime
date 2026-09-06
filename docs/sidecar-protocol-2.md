@@ -8,6 +8,11 @@ meaning of `respond` or `interrupt`, and v1 remains the engine default. A
 deployment selects v2 explicitly with `sidecar.Config.ProtocolVersion`; the
 sidecar must answer `ready` with version 2.
 
+**Use this version when:** a binding-based audio model needs typed decisions
+from an external interaction controller. Read [v1 framing](sidecar-protocol-1.md#1-framing)
+first, then the capabilities and `interaction_act` schema below. For graph-native
+models, select [v4](sidecar-protocol-4.md) instead.
+
 ## Why a new version
 
 An external interaction controller chooses *what kind of conversational act

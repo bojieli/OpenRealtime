@@ -3,16 +3,15 @@
 Joins a LiveKit room as an agent participant and proxies it to an OpenRealtime
 endpoint.
 
-This is a **separate Go module**, and deliberately so. It is an agent that
-joins a room and speaks the protocol — a client, not a component. It can ship
-on its own release cycle, be replaced by an equivalent for another RTC
-provider, or be rewritten by somebody else entirely, and the server does not
-need to know it exists.
+The adapter is a separate Go module with its own SDK dependencies and toolchain
+requirement. It communicates through the public protocol and can be deployed
+independently of the server.
 
-Because it is separate, its dependency on the LiveKit SDK stays out of the
-server's build. That SDK currently requires a newer Go toolchain than the
-server does; keeping it here is what stops that from becoming everyone's
-problem.
+## Prerequisites
+
+Start an OpenRealtime endpoint with working providers. You also need a LiveKit
+room deployment, API key and secret, and the toolchain declared in this
+module's `go.mod`. Run the commands below from `integrations/livekit`.
 
 ## Run it
 

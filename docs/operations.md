@@ -1,8 +1,19 @@
 # Operations
 
+Use this reference to configure a running service, monitor it, and diagnose
+provider or session failures. Begin with [Deployment](../deploy/README.md) for
+containers and network exposure, or the [quickstart](quickstart.md) for local
+development.
+
+**On this page:** [Startup](#running-it) · [Authentication](#authentication-and-where-the-endpoint-is-reachable-from) ·
+[Health](#health) · [Metrics](#metrics) · [Capacity](#capacity-and-liveness) ·
+[Resources](#resources) · [Timing](#the-silence-thresholds-and-how-they-compose) ·
+[Failures](#failure-behaviour)
+
 ## Running it
 
 ```sh
+export OPENREALTIME_TOKEN="replace-with-a-long-random-token"
 openrealtime serve -listen 0.0.0.0:8765 -token-env OPENREALTIME_TOKEN
 ```
 
@@ -24,13 +35,27 @@ contradicts the selected definition, startup refuses
 instead of silently changing the architecture. External catalogs use
 `-architecture-catalog`; unpinned names are never accepted.
 
-Authentication is a bearer token when `-token-env` names a variable that is
-set, and absent when it is not. There is no middle setting: a deployment that
-is reachable from anywhere and has no token is one you want to notice.
+## Authentication, and where the endpoint is reachable from
 
-Every flag has a default that works on localhost. The ones that change
-behaviour rather than location are listed under
-[bindings](bindings/README.md); the rest are addresses and credentials.
+Authentication is a bearer token when `-token-env` names a variable that is
+set, and absent when it is not. There is no middle setting.
+
+A token is optional on loopback and required on other listen addresses.
+Startup refuses a non-loopback listener when the selected token variable is
+unset. An unauthenticated loopback startup logs a warning because a reverse
+proxy or tunnel can still expose that address externally.
+
+There is no TLS listener and no certificate to configure. The server speaks
+plain HTTP and WebSocket to something that terminates TLS in front of it; the
+deployment shape this project uses is a Cloudflare Tunnel to a loopback origin,
+which is written up in [deployment](../deploy/README.md#exposing-it-cloudflare-tunnel).
+**A tunnel does not remove the need for a token** — it publishes a loopback
+origin, so the guard above cannot fire, and an unauthenticated origin behind a
+tunnel is an open Realtime endpoint with a domain name.
+
+The default addresses point to local services, which must already be running.
+Select providers explicitly for hosted deployments. See [Providers](providers.md)
+and [Bindings](bindings/README.md) for model and interaction configuration.
 
 ## Health
 
@@ -42,6 +67,16 @@ Reports the binding, its ownership declaration, its capabilities, the protocol
 versions, and session counters. It is the fastest way to answer "what is this
 process actually running", which is a question that comes up more often than it
 should.
+
+When a token is configured, anonymous health checks receive only the status.
+Supply the bearer token to read detailed component and session information:
+
+```bash
+curl -s -H "Authorization: Bearer $OPENREALTIME_TOKEN" \
+  http://127.0.0.1:8765/healthz
+```
+
+Without a configured token, the full health payload is available.
 
 The process-level health response names the adapter. The post-handshake session
 status is stronger evidence because it also carries the selected architecture
@@ -86,8 +121,14 @@ takes a working server out of rotation for something a retry would have fixed.
 curl -s http://127.0.0.1:8765/metrics
 ```
 
-Counters only, and never content. A metrics endpoint that leaked conversation
-would be a worse problem than having no metrics endpoint.
+Metrics contain counters, not conversation content.
+
+When authentication is enabled, metrics require the bearer token:
+
+```bash
+curl -s -H "Authorization: Bearer $OPENREALTIME_TOKEN" \
+  http://127.0.0.1:8765/metrics
+```
 
 | Metric | Meaning |
 | --- | --- |
@@ -162,12 +203,13 @@ waiting and how long it has waited. Work that is deferred and never released is
 the failure the invariant exists to prevent, so a deferral that persists is
 worth alerting on.
 
-**Policy-model refusals.** A policy model that keeps answering off its
-enumerated list is a model too small for the job. The count is what tells you.
+**Policy-model refusals.** Repeated invalid decisions can indicate missing
+context, an incompatible output format, or an unsuitable model. Inspect the
+actual request and failure before changing models.
 
-**Repair obligations.** A rising rate means commitments are being made too
-early — the commitment policy is emitting before certainty more often than the
-conversation supports.
+**Repair obligations.** A rising rate can indicate that early commitments are
+being invalidated by later observations. Inspect transcript revisions and the
+commitment policy together.
 
 ## Resources
 
@@ -177,16 +219,10 @@ conversation supports.
 | `omni` / `duplex` | one model process per session, or one shared | use `-sidecar-address` to share an expensive model rather than loading it per session |
 | `upstream` | one outbound WebSocket, plus the reasoner | the lightest to run; the remote does the work |
 
-Every adapter that reaches a provider over HTTP shares one connection pool,
-which keeps sixty-four idle connections per host rather than the two Go's
-default transport keeps. Two is right for a program that talks to many hosts
-occasionally and wrong for this one, which talks to a handful constantly: past
-the second concurrent call the finished connection is closed instead of pooled,
-and the next call pays a redial and a TLS handshake on the path a person is
-waiting on. There is no shared request deadline — each adapter bounds its own
-call by its own cadence, because a recogniser answering in tens of milliseconds
-and a reasoner answering in tens of seconds cannot share a number that means
-anything for either.
+HTTP provider adapters share a connection pool with up to 64 idle connections
+per host, reducing repeated connection and TLS setup. Each adapter applies
+its own call deadline; recognition and long-running reasoning have different
+timing requirements.
 
 All local model work can compete under one admission governor with three
 classes: interactive above speculative preparation above background. Policy
@@ -198,12 +234,9 @@ existing beside it.
 openrealtime serve -compute-capacity 8
 ```
 
-It is **off by default**, and that is a deliberate refusal rather than an
-oversight: the unit is abstract, the right number depends on the machine and
-the models, and a governor with a made-up capacity would throttle a deployment
-that was perfectly healthy. A deployment that is contending states its own
-number; one whose providers are hosted competes for nothing local and should
-leave it off.
+The compute governor is off by default. Its capacity unit is abstract and must
+be tuned for the local machine and models. Enable it when local inference
+contends for resources; hosted providers do not share that local GPU budget.
 
 With it on, watch the class timings. A speculative class whose wait time climbs
 is preparation that will not be ready by the endpoint, which costs tokens and
@@ -281,17 +314,12 @@ older than it looks.
 
 - **A policy model fails or times out.** The policy falls back to its rule:
   backchannel to silence, projection to silence-only endpointing.
-- **The agent goes quiet while it thinks.** The reasoning phase never speaks,
-  so a turn that needs it produces a gap with nothing in it, and how long the
-  gap lasts is a property of the question rather than of anything going wrong.
-  What distinguishes it from a finished conversation is that the turn is still
-  open: deliberation runs inside the response, so a client sees
-  `response.created` without `response.done` and knows work is owed.
-
-  Anything waiting on this system should wait on that rather than on a silence
-  timer. A driver that ends a conversation after a few quiet seconds is
-  measuring how fast the agent thinks, and reporting it as how well the agent
-  works.
+- **The agent goes quiet while it thinks.** Silence can occur during background
+  reasoning. An open response or outstanding tool call indicates work is still
+  pending, but one `response.done` does not close an entire multi-response turn.
+  Drivers also need an appropriate quiet interval for asynchronous work and a
+  separate working timeout. See
+  [conversation completion](benchmark-reference.md#when-a-conversation-is-over).
 - **A model names a tool that does not exist.** It is recorded as a
   non-executable proposal and the conversation continues. It cannot execute —
   the dispatcher checks the name again at the point of effect — and it is not
@@ -323,7 +351,7 @@ older than it looks.
 | --- | --- |
 | `api/v1` | stable. Breaking changes require a new import path. |
 | OpenAI Realtime compatibility | pinned to a specific revision, validated in both directions on every session |
-| The OpenRealtime Protocol | version 1, frozen at v1.0. Later versions are additive and negotiated. |
-| The sidecar protocol | version 1, frozen at v1.0. Handshake refuses a mismatch rather than negotiating down. |
-| `Binding`, `Observer`, `Narrator`, `Vision`, `Decider`, `Surface` | versioned from v1.0. A binding written against v1.0 keeps working. |
+| The OpenRealtime Protocol | version 1, frozen at v0.1.0. Later versions are additive and negotiated. |
+| The sidecar protocol | version 1, frozen at v0.1.0. Handshake refuses a mismatch rather than negotiating down. |
+| `Binding`, `Observer`, `Narrator`, `Vision`, `Decider`, `Surface` | versioned from v0.1.0. A binding written against v0.1.0 keeps working. |
 | Everything else | internal, and may change |

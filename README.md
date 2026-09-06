@@ -9,16 +9,17 @@
 <h1 align="center">OpenRealtime</h1>
 
 <p align="center">
-  <strong>The open runtime for AI that listens, speaks, sees, reasons, and acts.</strong>
+  <strong>Realtime AI that keeps talking while it works.</strong>
 </p>
 
 <p align="center">
-  OpenAI Realtime-compatible at the edge. Composable all the way down.
-  Run it locally, bring your own models, or connect the providers you already use.
+  An open-source runtime for voice and multimodal agents.
+  Choose local or hosted models and connect through an OpenAI Realtime-compatible API.
 </p>
 
 <p align="center">
   <a href="docs/quickstart.md"><strong>Get started</strong></a>
+  · <a href="docs/demos.md">Demos</a>
   · <a href="docs/README.md">Documentation</a>
   · <a href="docs/protocol/openrealtime-1.md">Protocol</a>
   · <a href="examples/README.md">Examples</a>
@@ -33,34 +34,32 @@
 
 ---
 
-Most realtime AI systems make you choose between a closed voice stack and a
-pile of components you have to orchestrate yourself. OpenRealtime gives you a
-third option: one inspectable runtime, one Realtime API, and complete freedom
-behind the endpoint.
+> **Demo videos coming soon — 12 realtime scenarios.**
+> Planned featured clip: interrupt the assistant, then hear it pick up where
+> it was cut off. [Explore the demo gallery](docs/demos.md) for live translation,
+> screen awareness, acknowledgements, and knowing when to stay quiet.
 
-- **Keep your clients.** Official OpenAI Realtime clients connect unchanged;
-  WebSocket and WebRTC compatibility are exercised in CI.
-- **Choose the whole stack.** Compose local or hosted speech recognition,
-  language models, speech synthesis, speech-to-speech models, and policy
-  models without changing the client protocol.
-- **Respond now, reason in parallel.** A fast foreground keeps the
-  conversation moving while a separate reasoner works over the same trajectory
-  and uses tools.
-- **Go beyond voice.** OpenRealtime Protocol v1 adds live video, observations,
-  and bounded computer use as a backward-compatible extension.
-- **See what is real.** Wire events are validated, architectures are versioned,
-  effects are audited, and performance claims are tied to reproducible
-  evidence.
+<!-- Replace this placeholder with one captioned recording or linked thumbnail.
+A second clip can show screen awareness. Keep the link to the full gallery. -->
 
-Use it to build meeting copilots that keep working while people talk, support
-agents that can consult tools without freezing the conversation, screen-aware
-assistants with bounded action authority, or a realtime research platform where
-one model can be replaced without rebuilding the product around it.
+OpenRealtime brings conversation, background reasoning, and model integrations
+into one inspectable runtime. Use it to build voice assistants, meeting
+copilots, or agents that respond to changing screens.
 
-## Start in five minutes
+- **Keep the conversation moving.** Pair a conversational voice with a
+  background reasoner that can use tools and return results for the voice to
+  present. Interaction policies decide when to speak, wait, or interrupt.
+- **Choose your models.** Combine speech recognition, language models, and
+  speech synthesis, or connect a speech-to-speech model or hosted Realtime
+  endpoint. Model services can run locally or remotely.
+- **Build on a familiar API.** The official `@openai/agents-realtime` SDK is
+  tested over WebSocket and WebRTC. Negotiated OpenRealtime extensions add
+  video, observations, and bounded computer use.
 
-The fastest live-turn-verified path uses Gemini for the realtime voice and
-background reasoner. It needs Go 1.25+ and an API key:
+## Run your first conversation
+
+The recommended hosted path needs **Go 1.25+, Git, a Chromium-based browser,
+and a Gemini API key**. No GPU is required. Provider usage may incur charges.
 
 ```bash
 git clone https://github.com/bojieli/OpenRealtime.git
@@ -74,166 +73,103 @@ export GEMINI_API_KEY="your-key"
   -slow-provider google
 ```
 
-`companion` starts the Realtime server, its WebRTC adapter, and the standalone
-browser client. It then opens `http://127.0.0.1:8767`. Allow microphone access
-and start talking.
+The command starts the server and browser client, then opens
+`http://127.0.0.1:8767`. Allow microphone access, connect, and ask a question.
+Keep the terminal running; press **Ctrl+C** to stop.
 
-Already running local models? The default `cascade` binding connects a
-recogniser, an LLM, and a speech synthesiser on your machine:
+For a first interaction, ask the assistant to explain a topic, then interrupt
+with a shorter follow-up. Listen for when it stops and how it responds. This
+checks the configured conversation path; the [12 demo scenarios](docs/demos.md)
+will include their own configurations and reproduction instructions.
 
-```bash
-./openrealtime companion
-```
+See the [quickstart](docs/quickstart.md) for expected output, troubleshooting,
+and other hosted providers. To connect your own application, start with the
+[SDK tool-use walkthrough](examples/sdk-client/README.md).
 
-The default background reasoner remains Gemini; the local guide shows how to
-bring that role onto your machine too. Every service and model choice is
-explicit—there are no bundled weights or hidden downloads. Follow the
-[local stack guide](docs/guides/local-stack.md) for endpoints, all-local
-reasoning, and voice + vision setup, or use the [full
-quickstart](docs/quickstart.md) for provider alternatives and connection checks.
+### Use local models
 
-## One protocol, many architectures
+OpenRealtime connects to model servers you run; it does not bundle weights or
+start those services automatically. The default cascade uses local speech
+recognition, a local language model, and local speech synthesis, with Gemini
+as the background reasoner. The [local stack guide](docs/guides/local-stack.md)
+explains the endpoints and how to make the reasoner local too.
 
-The API boundary stays stable while the runtime behind it changes. Use a
-classic cascade, a speech-to-speech model, a native duplex model, a remote
-Realtime endpoint, or your own sidecar.
+## How it works
 
-| Binding | Voice path | Reach for it when… |
-| --- | --- | --- |
-| [`cascade`](docs/bindings/cascade.md) | ASR → LLM → TTS | you want every model and interaction policy under your control |
-| [`upstream`](docs/bindings/upstream.md) | remote Realtime endpoint | you want the shortest path to a hosted voice stack or have no GPU |
-| [`omni`](docs/bindings/omni.md) | speech-to-speech model | you want native audio generation with an engine-owned floor |
-| [`duplex`](docs/bindings/duplex.md) | full-duplex model | the model natively owns concurrent I/O, floor, and interaction |
-| `sidecar` | any external runtime | you are integrating a model or stack that does not run in Go |
-
-Bindings are concrete adapters, not permanent model categories. For a durable
-deployment, the [architecture catalog](docs/architecture.md) pins ownership,
-capabilities, interaction evidence, controllers, and arbitration to an exact
-revision.
-
-## A voice with a second brain
-
-The default voice configuration pairs a conversational foreground with a
-background reasoner over one canonical trajectory. The foreground speaks;
-the background can work with tools and return results for the foreground to
-present.
-
-These roles are choices of composition. The graph runtime also includes
-[fast-only](graphs/components/conversational-fast-only/agent.ortg),
-[slow-only](graphs/components/conversational-slow-only/agent.ortg), and
-[both-speaking](graphs/components/conversational-both/agent.ortg) reference
-graphs, plus [silent computer use](docs/realtime-computer-use-graph.md).
-Either cognition role can produce speech when connected to the speech path.
-Every tool proposal still needs independent action admission, confirmation,
-target checks, and a committed result. See the
-[architecture reference](docs/architecture.md) for the implemented compositions
-and remaining transition from binding-based launch paths.
-
-The default voice arrangement looks like this:
+A session shares conversation history across perception, reasoning, and action.
+Interaction policies decide when work should run and when output can reach the
+user. In the default voice arrangement, the foreground speaks and the
+background reasoner returns information and tool results for it to present.
 
 ```mermaid
 flowchart LR
-    Client[Realtime clients] <--> Gateway[OpenAI-compatible gateway]
-
-    subgraph Runtime[OpenRealtime runtime]
-        Perception[Perception] --> Trajectory[(Shared trajectory)]
-        Trajectory <--> Fast[Fast voice]
-        Trajectory <--> Slow[Slow reasoner]
-        Trajectory --> Action[Speech · tools · computer use]
-        Interaction[Interaction control plane] -. decides when .-> Perception
-        Interaction -.-> Fast
-        Interaction -.-> Slow
-        Interaction -.-> Action
-    end
-
-    Gateway --> Perception
-    Action --> Gateway
+    Client[Browser or API client] <--> Runtime[OpenRealtime runtime]
+    Runtime <--> Voice[Conversational voice]
+    Runtime <--> Reasoner[Background reasoner]
+    Reasoner <--> Tools[Tools]
+    Policy[Interaction policies] -. when to speak or wait .-> Runtime
 ```
 
-That interaction control plane is where turn-taking, preparation, barge-in,
-commitment, repair, and fast/slow rollout live. They are named policies that
-can be inspected and measured—not prompt folklore hidden inside a model.
+Choose an adapter for the voice path:
 
-## See it. Act on it. Keep it bounded.
+| Binding | Voice path | Use it when |
+| --- | --- | --- |
+| [`upstream`](docs/bindings/upstream.md) | hosted Realtime endpoint | you want a first conversation without local model services |
+| [`cascade`](docs/bindings/cascade.md) | speech recognition → language model → speech synthesis | you want to select each component |
+| [`omni`](docs/bindings/omni.md) | speech-to-speech model | you want native audio generation with runtime turn control |
+| [`duplex`](docs/bindings/duplex.md) | model with concurrent audio input and output | you want the model's native interaction and turn control |
 
-OpenRealtime Protocol v1 extends the Realtime session with three events and two
-object extensions for video, durable observations, and computer use. A client
-that never negotiates the extension sees an ordinary Realtime API.
+The graph runtime supports additional compositions, including alternative
+speech roles and silent computer use. See [Architecture](docs/architecture.md)
+for the relationship between graphs and the existing binding launch paths,
+including work still in progress.
 
-Computer use is designed around authority, not optimism:
+## Compatibility and current scope
 
-- observed screen text remains untrusted data;
-- fast model calls cannot execute by default;
-- every effect is constrained to a declared target and coordinate space;
-- confirmation requirements are declared by the tool, not guessed by a model;
-- committed actions pass through one audited effect boundary.
+OpenRealtime implements a **tested subset** of the OpenAI Realtime API.
+Compatibility checks cover schema validation and tool-using sessions with the
+published SDK on both transports. Some events and session settings are
+unsupported; see the [compatibility reference](docs/openai-realtime-compatibility.md)
+before migrating an application.
 
-Read the [protocol specification](docs/protocol/openrealtime-1.md) and
-[safety model](docs/safety.md) before enabling effects.
+Video and computer use require a capable deployment and explicit extension
+negotiation. The hosted `upstream` binding does not expose those capabilities.
+Actions also require declared tools, targets, and authority; see the
+[protocol](docs/protocol/openrealtime-1.md) and [safety model](docs/safety.md).
 
-## Compatibility you can verify
+The source version is recorded in [VERSION](VERSION). Run
+`./openrealtime version` to identify a built binary. The
+[changelog](CHANGELOG.md) records changes, and the
+[release validation matrix](docs/release-validation.md) describes the checks
+behind release claims.
 
-“Compatible” is a testable claim here:
+## Documentation
 
-- every client and server event is checked against a pinned schema in every
-  session by default;
-- the published `@openai/agents-realtime` SDK completes a tool-using session
-  over WebSocket and WebRTC in the release gate;
-- protocol extensions are negotiated and never leak into a base-only session;
-- the stable Go component contract lives at `api/v1`;
-- release binaries are reproducible and report their source revision.
-
-See the [compatibility report](docs/openai-realtime-compatibility.md),
-[stable API contract](docs/api-v1.md), and [release validation
-matrix](docs/release-validation.md).
-
-## Find failures with the benchmark harness
-
-The harness exercises conversations, interruptions, meeting work, tools, and
-computer use through the same protocol clients use. Existing recordings and
-partial runs help locate agent, provider, and evaluator failures. Reproduce a
-bad case, fix its cause, and check the affected behavior.
-
-```bash
-./openrealtime bench realtime-cu -out results/realtime-cu.json
-```
-
-The [benchmark guide](docs/benchmarks.md) explains suite selection and setup.
-Full campaigns, external reviews, and published benchmark scores are optional.
-The [measurement record](docs/measurement.md) preserves earlier experiments
-as diagnostic reference material.
-
-## Find your path
-
-| I want to… | Start here |
+| Goal | Start here |
 | --- | --- |
-| run my first conversation | [Quickstart](docs/quickstart.md) |
-| use local or hosted models | [Providers](docs/providers.md) · [Local stack](docs/guides/local-stack.md) |
-| understand the runtime | [Architecture](docs/architecture.md) · [Bindings](docs/bindings/README.md) |
-| connect a client | [Transports](docs/transports.md) · [Official SDK example](examples/sdk-client/README.md) |
-| add a model integration | [Component API v1](docs/api-v1.md) · [Sidecar protocol](docs/sidecar-protocol-1.md) |
-| deploy safely | [Operations](docs/operations.md) · [Deployment](deploy/README.md) · [Security](SECURITY.md) |
-| build a multimodal agent | [Protocol v1](docs/protocol/openrealtime-1.md) · [macOS client](macos/README.md) |
-| understand the evidence | [Benchmarks](docs/benchmarks.md) · [Measurement](docs/measurement.md) |
+| Try a conversation | [Quickstart](docs/quickstart.md) · [Demo gallery](docs/demos.md) |
+| Select models | [Providers](docs/providers.md) · [Local setup](docs/guides/local-stack.md) |
+| Connect an application | [SDK example](examples/sdk-client/README.md) · [Transports](docs/transports.md) |
+| Understand or extend the runtime | [Architecture](docs/architecture.md) · [Component API](docs/api-v1.md) · [Sidecars](docs/sidecars.md) |
+| Deploy | [Deployment](deploy/README.md) · [Operations](docs/operations.md) |
+| Explore the research | [Research overview](docs/research.md) · [Benchmarks](docs/benchmarks.md) |
 
-The [documentation home](docs/README.md) separates guides, current reference,
-evidence, proposals, and historical design records so you always know what kind
-of document you are reading.
+The [documentation index](docs/README.md) links to the full reference,
+application guides, and design records.
 
-## Join the project
+## Contribute
 
-OpenRealtime is Apache 2.0 software, built in the open. Contributions are
-welcome across the runtime, model adapters, clients, benchmarks, documentation,
-and examples.
+Useful contributions include model adapters, runnable examples, interaction
+bug reports, and improvements to setup and error messages. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for starter tasks, development checks, and
+the pull request workflow.
 
-Before opening a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md). Please
-use [GitHub Security Advisories](SECURITY.md) for vulnerabilities and follow
-the [Code of Conduct](CODE_OF_CONDUCT.md) in project spaces.
-
-Current release: **v1.0.0**. See the [changelog](CHANGELOG.md) for shipped and
-unreleased work.
+Follow the [Code of Conduct](CODE_OF_CONDUCT.md) in project spaces. Report
+vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE) and the third-party provenance in
-[LICENSES.md](LICENSES.md).
+Software is licensed under [Apache 2.0](LICENSE); documentation is CC BY 4.0.
+See [LICENSES.md](LICENSES.md) for original fixtures, third-party provenance,
+and license exceptions. Model weights and external services have their own
+licenses and terms.

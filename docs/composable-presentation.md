@@ -33,6 +33,25 @@ OpenAI protocol can still use the realtime endpoint. Graph inspection,
 multimodal extensions, and client composition are explicitly negotiated and
 versioned under the OpenRealtime namespace.
 
+## Reading guide
+
+The design separates the Realtime server from the software that captures media,
+renders a conversation, inspects a graph, or executes host tools. A presentation
+host serves the browser; native clients implement the same logical contracts.
+
+| Task | Sections |
+| --- | --- |
+| Understand the process boundaries | §1–2 |
+| Implement or replace a plugin | §3 and its lifecycle/service contract |
+| Connect a client or presentation host | §4 API boundaries and §5 shared state |
+| Review effects and permissions | §6 security model |
+| Check implementation and release status | §7–9, including unchecked items |
+| Implement client performance evidence | §8.1 metric and artifact contract |
+
+For user setup, use the [quickstart](quickstart.md) or
+[macOS guide](../macos/README.md). This record includes target behavior and
+validation work beyond the currently shipped workflow.
+
 ## 1. Presentation boundary
 
 The shipped browser and macOS clients are compositions of one client platform,

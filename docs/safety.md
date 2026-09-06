@@ -1,7 +1,13 @@
-# The safety model
+# Safety and action authority
 
-Five concerns, five mechanisms. Each is enforced somewhere specific, and each
-has a test that fails if the enforcement is removed.
+OpenRealtime separates a model's request from permission to execute it. Use
+this reference when adding tools, enabling computer use, or implementing a
+client that executes effects. For event schemas, see
+[Protocol v1](protocol/openrealtime-1.md).
+
+An action follows this path: model output → committed call → authority and
+confirmation checks → target validation → effect → recorded result. The
+checks apply whether the server or the client performs the effect.
 
 | Concern | Mechanism | Enforced in |
 | --- | --- | --- |
@@ -88,12 +94,9 @@ That is the same fence the dispatcher enforces on coordinates, stated once as
 a confirmation answer, and it is deliberately narrower than "yes" — a tool that
 declares `always` is a different question and this does not answer it.
 
-Getting that wrong is not a safe failure. With no policy supplied, `policy`
-reads as `always`, and `always` with no confirmer denies — so a deployment that
-turned computer use on would get an agent that can move the pointer and take
-screenshots and can never press anything. A capability that cannot be
-exercised is not a safe capability, it is a broken one, and it looks like a
-broken model rather than a configuration nobody could satisfy.
+Without a confirmation policy, `policy` falls back to `always`; without a human
+confirmer, such actions are denied. Configure the target policy or a confirmer
+before expecting clicks and other effects to execute.
 
 `-computer-confirm always` is therefore refused at startup rather than at
 dispatch: this server has no confirmer to offer, so every action would be
@@ -139,8 +142,9 @@ does not own is refused, and so is a coordinate outside the space the model was
 shown — refused rather than clamped, because an action that lands somewhere
 nobody looked at is not a near-miss.
 
-The shipped target is a browser context. There is no ambient-desktop option,
-and that is not an omission.
+The browser target restricts effects to its declared context. Native host
+effects use separately composed profiles and negotiated authority; see the
+[macOS guide](../macos/README.md). Enabling a voice session alone grants neither.
 
 ## 5. Everything is auditable
 

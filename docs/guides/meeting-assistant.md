@@ -171,7 +171,7 @@ user text for the background reasoner. The cell is therefore deliberately
 
 ## Interpret results carefully
 
-Read the [meeting benchmark definition](../benchmarks.md#openrealtime-meeting-assistant-v1)
+Read the [meeting benchmark definition](../benchmark-reference.md#openrealtime-meeting-assistant-v1)
 before comparing result files. In particular, do not infer any of these from a
 cascade-only run:
 

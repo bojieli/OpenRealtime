@@ -1,51 +1,42 @@
 # Providers
 
-A self-hostable Realtime API is only as useful as the set of models it can be
-pointed at. This page is the catalogue: which providers this build reaches for
-each of the three roles a voice stack needs, what each one is named, and what
-it needs in the environment.
+Use this catalog to choose models, endpoints, and credentials for each role.
+For a first hosted conversation, follow the [quickstart](quickstart.md). For
+local services, use the [local stack guide](guides/local-stack.md).
 
-The catalogue is data, not documentation. It lives in
-[`providers/`](../providers), the server resolves every provider through it,
-and it is checked by tests: every entry has to resolve by name and by alias,
-carry an endpoint that parses, name a credential, and build an adapter for both
-the fast and the slow phase. A provider that would fail on the first session
-fails in CI instead.
+## Choose a role
 
-```sh
-openrealtime providers                 # the whole catalogue
-openrealtime providers -role upstream  # one role
+| Role | Selection flags | Reference |
+| --- | --- | --- |
+| Foreground/background language model | `-fast-provider`, `-slow-provider` | [Language models](#language-models) |
+| Speech recognition | `-asr-provider` | [Recognisers](#recognisers) |
+| Speech synthesis | `-tts-provider` | [Synthesisers](#synthesisers) |
+| Hosted Realtime voice | `-upstream-provider` | [Realtime endpoints](#realtime-endpoints-the-upstream-binding) |
+| Visual descriptions | See narration settings | [Narration](#narration) |
+
+The built-in catalog lives in [`providers/`](../providers). Inspect the entries
+and configured credentials in your binary:
+
+```bash
+openrealtime providers
+openrealtime providers -role upstream
 openrealtime providers -probe openai
 ```
 
+Catalog tests check adapter construction and configuration. They do not prove
+that a vendor endpoint or model is available to your account. A real turn is
+the final connection check.
+
 ## Two kinds of fact
 
-Every entry separates two things that age at different rates.
+Endpoint URLs, credential variables, and API dialects describe how to connect.
+Default model names are suggestions that can age as vendors change their
+catalogs. Override them with role-specific model flags and use `-probe` to
+query available models where supported.
 
-**The endpoint, the credential, and the wire dialect** are durable. They change
-on the timescale of API versions, and they are what makes a provider reachable
-at all.
-
-**The default model is a hint.** A vendor ships something new and the constant
-in this repository is wrong the same week. So a default model is never
-required — every provider takes `-fast-model` and `-slow-model` — the listing
-prints when the defaults were last reviewed, and `-probe` asks the provider
-itself what it serves rather than trusting this file:
-
-```console
-$ openrealtime providers -probe openai
-openai serves 124 models at https://api.openai.com/v1/models
-
-  gpt-5.6-luna
-  gpt-5.6-sol
-  gpt-5.6-terra
-  ...
-```
-
-One consequence is deliberate: **a marketplace has no default model.** Groq,
-OpenRouter, Together, Fireworks, SiliconFlow, Cerebras, and NVIDIA serve other
-people's models, and there is no default that is right for anyone. Selecting
-one without naming a model is refused, with the probe command in the error.
+Marketplace providers such as OpenRouter and Together require an explicit
+model name. They serve multiple vendors, so OpenRealtime does not choose one
+implicitly. See [Examples](#examples) and [Credentials](#credentials).
 
 ## Language models
 
@@ -60,10 +51,9 @@ providers are available:
 | Speech | voiced | silent |
 | Default model | the provider's small model | the provider's large model |
 
-Those are properties of the arrangement, not of the vendor. The catalogue knows
-how to reach a provider; the arrangement knows what the provider is for. That
-separation is what stops a fast provider acquiring tool authority because its
-vendor happens to support tools.
+These roles describe the binding-based voice arrangement. Graph compositions
+can connect speech differently. Provider support for tools does not itself grant
+execution authority; the runtime checks authority at the action boundary.
 
 For a vision-capable reflex model, a hosted Gemini configuration is:
 
@@ -393,28 +383,35 @@ Resolution order, for a model credential:
    profiles of one vendor on separate keys;
 3. the provider's conventional variable.
 
-A local provider needs none of them.
+An unauthenticated local endpoint needs no provider key. Configure an explicit
+token variable when your local service requires authentication.
 
 ## Examples
 
-Everything local, nothing to sign up for — the default:
+Default local voice services with the hosted Gemini background reasoner:
 
-```sh
+```bash
+export GEMINI_API_KEY="your-key"
 openrealtime serve
 ```
 
-A hosted reasoner behind a local voice, which is the arrangement the fast/slow
-split was designed for:
+ASR, the foreground model, and TTS must already be running. For an all-local
+configuration, also point the reasoner at a local service:
 
-```sh
-export ANTHROPIC_API_KEY=...
-openrealtime serve -slow-provider anthropic
+```bash
+openrealtime serve \
+  -slow-provider openai-compatible \
+  -slow-url http://127.0.0.1:8010/v1 \
+  -slow-model your-reasoner
 ```
 
-Hosted end to end:
+See the [local guide](guides/local-stack.md) for the complete service layout.
+To use hosted providers for every voice role:
 
-```sh
-export OPENAI_API_KEY=... DEEPGRAM_API_KEY=...
+```bash
+export OPENAI_API_KEY="your-key"
+export ANTHROPIC_API_KEY="your-key"
+export DEEPGRAM_API_KEY="your-key"
 openrealtime serve \
   -fast-provider openai -slow-provider anthropic \
   -asr-provider deepgram -tts-provider deepgram

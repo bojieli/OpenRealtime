@@ -1,8 +1,11 @@
 # Portable client performance evidence
 
-This package is the first Go implementation slice of the
-`presentation.client.performance_evidence` v1 service described in
-`docs/composable-presentation.md` §8.1.
+This package records bounded, payload-free client performance measurements.
+It implements the Go portion of the
+[`presentation.client.performance_evidence` v1 service](../../docs/composable-presentation.md#81-performance-evidence-service-contract).
+Use it when adding a client probe; it does not record conversation content.
+
+## Provider and recorder lifecycle
 
 The client composition runtime mounts a `Provider` through a `MountScope` and
 injects a source-scoped `Recorder` into each selected probe plugin. Identities,
@@ -12,6 +15,8 @@ integers. There is deliberately no field or method for arbitrary labels,
 payloads, URLs, host names, session/response/item IDs, paths, device names, or
 diagnostic strings.
 
+## Duration buckets
+
 Durations use these fixed inclusive, non-cumulative bucket upper bounds (ns):
 
 ```
@@ -20,6 +25,8 @@ Durations use these fixed inclusive, non-cumulative bucket upper bounds (ns):
 2000000000, 5000000000, 10000000000, 30000000000, 60000000000,
 300000000000, 3600000000000, 86400000000000
 ```
+
+## Sampling and snapshots
 
 Sampling hashes the schema identity, seed, generation, canonical source index,
 metric, canonical dimensions, and zero-based attempt ordinal with SHA-256. The

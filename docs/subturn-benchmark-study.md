@@ -7,6 +7,24 @@ FDB v1.5 population is 498 recordings, each selected FD-Bench condition has 293
 conversations, and every limited cell below is marked non-reportable by the
 runner.
 
+## Study overview
+
+This study asks whether interrupted speech resumes from what was actually
+heard, and whether acknowledgement, overlap, and endpoint measurements identify
+the intended behavior. It combines scripted scenario recordings with focused
+external-benchmark diagnostics.
+
+The retained 12/12 checkpoint is an early result under its original scorer.
+Later waveform audits and stricter content checks expose limits of that score.
+Read the checkpoint together with the following acknowledgement audit and
+subsequent corrections; it is not evidence of a current universal pass rate.
+
+**Reading order:** runtime configuration → retained checkpoint → waveform audit
+→ dated repair and benchmark diagnostics. For the broader motivation, see
+[The spoken boundary](spoken-boundary.md); for the planned public recordings,
+see [Demos](demos.md). Artifact directories under `.runtime` and `artifacts`
+refer to locally retained evidence and are not downloads bundled with a clone.
+
 ## Runtime under test
 
 The tested cascade is:

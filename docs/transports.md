@@ -1,40 +1,25 @@
 # Transports
 
-The protocol over WebSocket is the only entrance to a session. Everything else
-sits strictly above it and speaks it like any other client.
+Clients reach an OpenRealtime session through WebSocket directly or through a
+media adapter. All adapters use the same public protocol; none bypasses session
+validation or gains extra action authority.
 
-```text
-  browser (WebRTC)  ─┐
-  mobile  (WebRTC)  ─┼─►  transport adapter  ─┐
-  LiveKit room      ─┘                        │
-                                              ├─►  OpenRealtime Protocol  ─►  session core
-  plain WebSocket client  ────────────────────┘         (WebSocket)
-```
-
-Four rules, and the third is the one that matters:
-
-1. The protocol over WebSocket is the only entrance to a session.
-2. A transport adapter is a protocol client. It terminates media, handles ICE
-   and jitter and loss concealment, and then speaks exactly the events any
-   other client speaks.
-3. **No adapter has privileged access.** If an adapter can express something a
-   plain WebSocket client cannot, that is a defect, not a feature.
-4. Adapters may run in-process where that is cheaper, but stay semantically
-   identical to the wire form and are tested through the real protocol.
-
-The reason is compatibility over time. A transport that reached the session
-core directly would become a second place the protocol can drift, and every
-such place multiplies the compatibility surface until a feature exists on one
-path and not the other.
-
-Rule 3 has a test rather than a promise: the adapter suite checks every event
-the adapter sends against the set a plain client can send.
-
-| Adapter | Handles | For |
+| Connection | Use it for | Media path |
 | --- | --- | --- |
-| *(none — direct)* | nothing | server-to-server, local development, the simplest client |
-| WebRTC (in-process, Pion) | ICE, jitter, loss concealment, RTP pacing | browsers and mobile |
-| LiveKit agent participant | a provider's room, tracks, and data channel | deployments already running RTC infrastructure |
+| WebSocket | Server applications and custom local clients | Protocol events carrying audio and other content |
+| WebRTC | Browsers and mobile clients | Audio tracks plus a protocol data channel |
+| LiveKit | An existing RTC room | An agent participant bridges tracks and data packets |
+
+The [quickstart](quickstart.md) launches the browser and adapters together.
+For a custom client, use the [SDK example](../examples/sdk-client/README.md)
+and check [API compatibility](openai-realtime-compatibility.md).
+
+## WebSocket
+
+The default endpoint is `ws://127.0.0.1:8765/v1/realtime`. Send protocol events
+as JSON text messages. When a server token is configured, supply it as the
+bearer credential. Production TLS terminates in front of the server; see
+[Deployment](../deploy/README.md).
 
 ## WebRTC
 
@@ -57,40 +42,23 @@ openrealtime serve -webrtc-listen 127.0.0.1:8766 \
   -webrtc-allow-origin https://your-app.example.com
 ```
 
-Empty is the default and answers no browser, which is right for a
-server-to-server deployment. It is a list rather than a switch because this
-endpoint has no credential of its own and starting a session is all it does: a
-wildcard would let any page a user visits open a session against any adapter
-their browser can route to. `*` is accepted for local development.
+The default allowlist is empty. Direct cross-origin browser clients must have
+their origin listed; `*` is available for local development. Configure the
+actual application origin for deployment. The adapter answers allowed
+preflight requests and echoes the requested headers.
 
-This is not an optional convenience. A browser is always on a different origin
-from the adapter - the adapter is a port on a server and the application is a
-site - and OpenAI's own SDK only speaks WebRTC from a browser. Without it, an
-unmodified official client cannot reach this endpoint at all.
+The shipped browser uses a presentation-host relay instead of connecting
+directly across origins:
 
-The requested headers are echoed rather than enumerated, because a client sends
-its own alongside the two the exchange needs and a server cannot know in
-advance what every client will identify itself with.
-
-That is the adapter's half. The browser half is now one descriptor-locked
-composition served by the standalone presentation host. Its manifest declares
-only relative public routes (`/client/v1/realtime` or
-`/client/v1/realtime/calls`), and its shell policy permits those same-origin
-WebSocket/WebRTC requests. The host relay, not page JavaScript, owns any bearer
-credential and the explicit upstream endpoint directory. Neither is serialized
-into the client manifest or inferred from the page origin.
-
-This gives every shipped browser profile one transport rule:
-
-| Browser profile | Browser destination | Upstream selection and credential |
+| Browser profile | Browser destination | Credential handling |
 | --- | --- | --- |
-| WebSocket | same-origin `/client/v1/realtime` | explicit host endpoint directory; credential held by the relay |
-| WebRTC | same-origin `/client/v1/realtime/calls` | explicit host endpoint directory; credential held by the relay |
+| WebSocket | same-origin `/client/v1/realtime` | Host relay holds the upstream credential |
+| WebRTC | same-origin `/client/v1/realtime/calls` | Host relay holds the upstream credential |
 
-A deployment that wants direct cross-origin access can compose a different
-transport plug-in and declare that permission and endpoint explicitly. There is
-no same-origin inference or query-parameter endpoint fallback in the normal
-client.
+The host has an explicit directory of upstream endpoints. The browser manifest
+contains relative public routes and does not expose the upstream token. Custom
+transport plugins must declare their endpoints and permissions explicitly.
+See [Presentation design](composable-presentation.md) for the detailed contract.
 
 ### Large events: chunk framing
 
@@ -156,32 +124,21 @@ on a session that stays up, instead of a disconnection it has to guess at.
 
 ### Codecs, and an honest limitation
 
-The two directions do not share a codec, because they do not have the same
-constraint.
+| Direction | Default codec | Consequence |
+| --- | --- | --- |
+| Inbound audio | Opus, decoded to 24 kHz PCM | Browser microphone audio reaches recognition as PCM. |
+| Outbound audio | G.711 mu-law at 8 kHz | The default pure-Go build has telephone-bandwidth output. |
 
-**Inbound is Opus**, decoded to 24 kHz PCM by a pure-Go decoder. That direction
-carries the user's voice into speech recognition, where bandwidth is accuracy.
-
-**Outbound is G.711 mu-law** — 8 kHz, telephone quality. There is no pure-Go
-Opus encoder. The alternatives are writing one, which is a codec nobody here
-can verify against a reference, or taking a cgo dependency on libopus, which
-trades a static binary and a reproducible build for wideband synthesis. Neither
-is obviously right, and the cost of the choice made is stated here rather than
-hidden: synthesised speech reaches a browser at telephone bandwidth.
-
-A deployment that needs wideband output should use an RTC provider, which is
-what the LiveKit path is for. The cgo encoder behind the `opus` build tag is
-kept compiling and tested by the `local.go.webrtc.opus` release gate, which
-is blocked rather than failed on a host without the libopus and libopusfile
-development files.
+Wideband output requires an appropriate RTC integration or the optional
+`opus` build, which uses libopus through cgo. The `local.go.webrtc.opus` release
+check requires libopus and libopusfile development dependencies. Use the
+[release matrix](release-validation.md) to inspect that prerequisite.
 
 ### Clean audio is the client's responsibility
 
-Echo cancellation and noise suppression happen before audio reaches the
-protocol. This is a stated requirement on clients rather than an omission: a
-browser's WebRTC stack already does both well, doing them again server-side
-would be worse than doing them once, and a server compensating for unknown
-client-side processing would be guessing.
+Apply echo cancellation and noise suppression in the capture client. The
+server expects already processed input; duplicating unknown client processing
+can damage recognition. Browser clients can use the WebRTC capture controls.
 
 ## LiveKit
 
@@ -199,14 +156,11 @@ go run ./cmd/openrealtime-livekit \
   -endpoint ws://127.0.0.1:8765/v1/realtime
 ```
 
-The current participant subscribes to room audio and publishes agent audio.
-It also forwards protocol events carried as LiveKit data packets, so a custom
-room client can send `openrealtime.input_video_frame.append` exactly as the
-descriptor-locked browser client does. It does **not** yet decode an ordinary
-LiveKit screen-share or camera video track. A stock meeting client that only
-publishes a video track is therefore audio-only to this agent; use a protocol
-frame publisher or add a codec-to-JPEG bridge before calling that deployment
-voice+vision.
+The participant subscribes to room audio, publishes agent audio, and forwards
+protocol events in data packets. With `-video`, it also bridges VP8 video key
+frames after negotiating the extension. Without that flag, ordinary video
+tracks do not become observations; a custom client can still publish protocol
+video events in data packets. See the [integration guide](../integrations/livekit/README.md).
 
 ## Video
 
@@ -253,7 +207,6 @@ separately should not depend on the server's internals.
 | stock LiveKit client publishing a VP8 video track, agent run with `-video` | room audio | key frames bridged after `video.input` is negotiated |
 | any client publishing H.264, VP9, or AV1 video | RTP/room audio | not bridged; the track is drained and logged |
 
-This still preserves one engine entrance and the same server-side adaptive
-observation gate. Transport adapters may decode a track into those events in a
-future implementation, but the current production boundary must be described
-by what it actually carries.
+All supported paths produce the same protocol video events and use the same
+server-side observation gate. The table describes the codecs and capture paths
+currently implemented; other track formats need a separate conversion step.

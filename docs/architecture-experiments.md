@@ -6,6 +6,17 @@
 > [Architecture](architecture.md). For commands and result interpretation,
 > read [the benchmark harness](benchmarks.md).
 
+## Study overview
+
+The experiment varies policy placement, the evidence available to that policy,
+and arbitration between multiple controllers. A comparison is meaningful only
+when the other model and deployment choices are controlled.
+
+The tables below define the experiment cells and the exact identity checks.
+Catalog maturity labels describe deployment status, not comparative quality.
+For the implementation, see [Architecture](architecture.md); for the evaluation
+workflow, see [Benchmarks](benchmarks.md).
+
 F52 asks three narrow questions: where should interaction policy live, what
 evidence should it see, and—when more than one selector is composed—which
 arbitration rule gives the system one authoritative act? It does not define

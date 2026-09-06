@@ -18,7 +18,7 @@ from a lucky draw - and several conclusions in docs/measurement.md had to be
 retracted for exactly that reason (F62, F63).
 
 A case here is one turn, one prompt, one answer, at temperature zero. It
-reproduces a defect exactly and shows whether it is gone. It cannot tell you
+isolates the request that exposed a defect and allows repeated comparison. It cannot tell you
 whether a scenario will pass, and F64 records a fix that was real here and
 invisible there. Both measurements are needed and they answer different
 questions.

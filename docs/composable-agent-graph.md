@@ -31,6 +31,25 @@ configuration switches are reference material only; production paths must use
 the new graph, plug-in, and profile contracts, and unchecked boxes must not be
 reported as complete.
 
+## Reading guide
+
+This is a detailed design specification and implementation record. For an
+introduction to the implemented system, read [Architecture](architecture.md).
+For terminology, use [Core concepts](concepts.md).
+
+| Reader | Recommended sections |
+| --- | --- |
+| Evaluating the design | Executive summary, §1–5 motivation and related work, §28–29 risks and decisions |
+| Implementing an element | §6–9 terminology and contracts, §12–13 channels and cancellation, §19 execution |
+| Authoring a graph | §10–11 syntax and IR, §17 configuration, §23 reference compositions |
+| Integrating a model or host | §15 descriptors, §18 lifecycle, §20 authority, §27 compatibility |
+| Checking progress | [Living implementation tracker](#living-implementation-tracker), §26 tests, §30 completion criteria |
+
+The numbered design sections specify intended contracts. The tracker separates
+implemented work from open items and retains older planning history. An example
+or checked primitive does not establish that every end-to-end launch path is
+finished. Use the current references to determine what your build can run.
+
 ## Executive summary
 
 The central decision is:
@@ -3260,7 +3279,7 @@ the required new 180-attempt sample.
   applicability for every historical applicable case, including failures.
   The original nominal 355/498 score and its receipts remain historical;
   this correction is implementation evidence and adds no final-candidate
-  credit. See [the applicability contract](benchmarks.md#what-the-suites-judge).
+  credit. See [the applicability contract](benchmark-reference.md#what-the-suites-judge).
 - [ ] Run all 100 released FDB v3 examples through the repaired, pinned
   graph-native harness and scorer and retain per-attempt review media.
   - [x] Preserve the earlier 100-attempt Candidate-02 campaign strictly as

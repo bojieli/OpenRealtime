@@ -1,5 +1,20 @@
 # Release validation matrix
 
+Use this page to distinguish ordinary development checks, provisioned release
+checks, and optional performance experiments. The matrix reports what ran,
+what passed, what failed, and what could not run in the available environment.
+
+| Goal | Command or section |
+| --- | --- |
+| Check a change during development | `./scripts/check.sh`; see [Contributing](../CONTRIBUTING.md) |
+| Validate the matrix without executing gates | `./scripts/release-validate.sh -mode validate -report -` |
+| Inspect prerequisites | `-mode plan -scope all` as shown below |
+| Run provisioned checks | [Provisioned gates](#provisioned-gates) |
+| Understand optional campaigns | [Complete-campaign comparison](#optional-complete-campaign-comparison) |
+| Understand failure and skip handling | [Fail-closed rules](#fail-closed-rules) |
+
+## Matrix and basic workflow
+
 `scripts/release-matrix.json` is the versioned, machine-readable inventory of
 release tests and optional diagnostic tools. `scripts/release-validate.sh` validates
 and runs it. The matrix is intentionally separate from `scripts/check.sh`:

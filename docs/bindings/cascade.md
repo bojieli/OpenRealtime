@@ -9,12 +9,15 @@ openrealtime serve   # cascade is the default
 
 ## Why it is the default
 
-It is fully local, needs no third-party account, and is the right first
-impression for an open implementation. It is also the honest test of the
-interaction plane: a recogniser knows nothing about turn-taking, a language
-model knows nothing about the conversation's timing, and a synthesiser knows
-nothing at all. Every bit of responsiveness a cascade session exhibits was
-manufactured by the runtime.
+Cascade exposes recognition, language generation, speech synthesis, and
+interaction policies as separate components. This makes it useful for model
+integration and controlled experiments.
+
+The default voice services are local, but background reasoning uses Gemini.
+Start those services and configure its credential before running the command
+above. For an all-local setup, follow the
+[local stack guide](../guides/local-stack.md). For a first conversation without
+model servers, use the hosted [quickstart](../quickstart.md).
 
 ## Components
 
@@ -39,9 +42,9 @@ between turns.
 3. The floor decides the turn ended. A canonical observation commits.
 4. The deferral gate decides whether to act now. If the agent is still audible,
    the observation waits and playback completion wakes it.
-5. The rollout plans: fast answers immediately. If fast hands the turn on, slow
-   reasons and acts; what it finds re-enters as its own event, and the voice
-   speaks again when the gate lets it.
+5. The default rollout schedules a foreground answer and background reasoning
+   for the observation. Background results re-enter as events; the foreground
+   presents them when the interaction policy permits.
 6. Authoritative calls go to whoever executes them — in-process when a
    dispatcher is declared, to the client otherwise.
 

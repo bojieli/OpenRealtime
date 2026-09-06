@@ -11,6 +11,18 @@ acts, so that the next person does not rediscover it. The design itself is
 ADR-0009; the numbers are in `measurement.md` under F13–F18. This is the part
 that is neither: the bugs, and the shape they kept taking.
 
+## Main findings
+
+The early experiments repeatedly found missing context at a decision boundary:
+the model could not use a transcript, tool, instruction, or history item that
+had never reached its request. Other apparent model failures came from audio
+conversion and measurement errors.
+
+The practical method is to inspect the exact model input and the recorded
+output before changing a prompt or model. The sections below retain individual
+examples and subsequent refinements. Their counts and timing values describe
+those experiments, not a general error rate for the runtime.
+
 ## Almost every bug was a missing input
 
 Nine defects were found across this work. Seven were the same bug wearing

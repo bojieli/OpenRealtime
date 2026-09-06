@@ -1,23 +1,27 @@
 # The `upstream` binding
 
-A remote Realtime endpoint owns perception, the voice, and action. The engine
-adds the background reasoner.
+Use a hosted Realtime endpoint for voice while OpenRealtime manages a separate
+background reasoner and tool execution. This is the recommended first-run path
+when you do not have local model services.
 
-```sh
-export OPENAI_API_KEY=...
+```bash
+export GEMINI_API_KEY="your-key"
 openrealtime serve \
   -binding upstream \
-  -upstream-url wss://api.openai.com/v1/realtime \
-  -upstream-model gpt-realtime
+  -upstream-provider google \
+  -slow-provider google
 ```
+
+For OpenAI, set `OPENAI_API_KEY` and select `openai` for both provider flags.
+The [provider catalog](../providers.md#realtime-endpoints-the-upstream-binding)
+lists alternatives and current connection status.
 
 ## What it adds
 
-A single-model Realtime server cannot reason in the background while it talks:
-there is no second model and no shared log to put one on. This binding supplies
-both. It mirrors the remote conversation into the canonical trajectory, runs the
-engine's slow provider over it, executes the tools that provider calls, and
-hands the finished answer back for the remote to say.
+The binding mirrors the remote conversation into the shared trajectory. The
+engine's background model reads that context, requests authorized tools, and
+returns information for the remote voice to present. Voice and background
+providers can be configured independently.
 
 ## Two distinctions that carry the design
 

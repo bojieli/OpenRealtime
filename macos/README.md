@@ -1,55 +1,28 @@
 # OpenRealtime Developer for macOS
 
-A native SwiftUI presentation client for the same composable OpenRealtime
-server used by browser and headless clients. Native providers own microphone
-capture/playout, camera/screen/marked-browser capture, strict session state,
-payload-free transport diagnostics, negotiated host effects, immutable
-artifact/download references, scoped graph inspection, and their SwiftUI
-projections.
+A native SwiftUI client for talking to OpenRealtime, sharing camera or screen
+input, and inspecting session behavior. It connects to the same server as the
+browser client. Use the [browser quickstart](../docs/quickstart.md) for the
+simplest first run.
 
-Two exact client distributions ship against the same server API:
+| Profile | Includes | Selection |
+| --- | --- | --- |
+| `observer-developer` | Microphone/playback, visual capture, diagnostics, graph inspection | Default |
+| `effects-developer` | Observer features plus explicitly composed host effects and artifact access | `OPENREALTIME_NATIVE_PROFILE=effects-developer` |
 
-- `observer-developer` is the normal app default. It omits the effects and
-  artifact providers, their permissions, and the
-  effects/artifact/download endpoint declarations. It retains native media,
-  protocol diagnostics, and scoped graph inspection without inventing client
-  authority.
-- `effects-developer` is an explicit authority-bearing distribution that mounts
-  the pinned host-effects and hosted-resource providers.
-
-Set `OPENREALTIME_NATIVE_PROFILE=effects-developer` before launching to opt in
-to the effects manifest. An absent or empty value selects the observer; an
-unknown non-empty value is refused and shown in the launch window, never
-silently mapped to another permission profile.
-
-Each distribution also ships a separate version-1 endpoint directory. It pins
-the exact credential-free absolute URL and protocol identity for every selected
-transport: realtime WebSocket and management for the observer, plus effects,
-artifacts, and downloads for the effects distribution. Its SHA-256 fingerprint
-covers the complete canonical directory. Missing, extra, reordered, tampered,
-credential-bearing, or protocol-substituted destinations are refused before a
-native provider is constructed. No normal-path component derives management,
-effects, or resource origins from the realtime URL.
-
-The view does not execute tools or manufacture effect authority. The client
-composition manifest pins the exact `openrealtime.client-effects.v1` protocol
-and default host catalog digest. After the realtime session negotiates `client.effects`,
-the client accepts only declarations from the matching `ready` message. Each
-tool call must contain the exact declaration digest and an opaque, bounded
-server authority; that authority is sent once to the same-origin
-declared effects socket and is never stored, displayed, or logged.
-Hosts with a replacement effect catalog can build the same provider graph via
-`NewNativeEffectsDeveloperBundleWithEffectsCatalog`; the canonical SHA-256 is
-pinned in the resulting manifest and used for every ready/declaration/call
-check. Hosts replacing both deployment wiring and the catalog can bind them in
-one construction step with
-`NewNativeEffectsDeveloperBundleWithEffectsCatalogAndEndpointDirectory`.
+Selecting an effects profile does not bypass server authorization. Tools and
+resources must also be declared by the host and negotiated by the session.
 
 ## Build and run
 
-Requirements are macOS 14+, Xcode 16+, and
-[uv](https://docs.astral.sh/uv/). Marked browser capture additionally needs a
-loopback Chrome debugging endpoint:
+Requirements are macOS 14+, Xcode 16+, [uv](https://docs.astral.sh/uv/), and a
+built `openrealtime` binary in the repository root. The example below uses a
+Gemini key for voice and reasoning. Chrome and the prepared browser bridge are
+needed for marked browser capture; microphone and ordinary screen/camera use
+do not require the Chrome debugging endpoint.
+
+For browser capture, start Chrome with a separate debugging profile, then build
+and launch the application from the repository root:
 
 ```sh
 open -na "Google Chrome" --args \
@@ -60,7 +33,9 @@ cd macos
 ./prepare-browser-use.sh
 ./build-app.sh
 cd ..
-./openrealtime companion -client macos
+export GEMINI_API_KEY="your-key"
+./openrealtime companion -client macos -- \
+  -binding upstream -upstream-provider google -slow-provider google
 ```
 
 The normal application waits for an explicit **Connect** action. Automated
@@ -117,6 +92,48 @@ The first use of a native medium prompts for its corresponding macOS privacy
 permission. The app never reports a source active before frames are flowing.
 
 ## Provider boundaries
+
+The following contracts matter when extending or replacing native providers.
+For normal app use, the build and connection steps above are sufficient.
+
+Two exact client distributions ship against the same server API:
+
+- `observer-developer` is the normal app default. It omits the effects and
+  artifact providers, their permissions, and the
+  effects/artifact/download endpoint declarations. It retains native media,
+  protocol diagnostics, and scoped graph inspection without inventing client
+  authority.
+- `effects-developer` is an explicit authority-bearing distribution that mounts
+  the pinned host-effects and hosted-resource providers.
+
+Set `OPENREALTIME_NATIVE_PROFILE=effects-developer` before launching to opt in
+to the effects manifest. An absent or empty value selects the observer; an
+unknown non-empty value is refused and shown in the launch window, never
+silently mapped to another permission profile.
+
+Each distribution also ships a separate version-1 endpoint directory. It pins
+the exact credential-free absolute URL and protocol identity for every selected
+transport: realtime WebSocket and management for the observer, plus effects,
+artifacts, and downloads for the effects distribution. Its SHA-256 fingerprint
+covers the complete canonical directory. Missing, extra, reordered, tampered,
+credential-bearing, or protocol-substituted destinations are refused before a
+native provider is constructed. No normal-path component derives management,
+effects, or resource origins from the realtime URL.
+
+The view does not execute tools or manufacture effect authority. The client
+composition manifest pins the exact `openrealtime.client-effects.v1` protocol
+and default host catalog digest. After the realtime session negotiates `client.effects`,
+the client accepts only declarations from the matching `ready` message. Each
+tool call must contain the exact declaration digest and an opaque, bounded
+server authority; that authority is sent once to the same-origin
+declared effects socket and is never stored, displayed, or logged.
+Hosts with a replacement effect catalog can build the same provider graph via
+`NewNativeEffectsDeveloperBundleWithEffectsCatalog`; the canonical SHA-256 is
+pinned in the resulting manifest and used for every ready/declaration/call
+check. Hosts replacing both deployment wiring and the catalog can bind them in
+one construction step with
+`NewNativeEffectsDeveloperBundleWithEffectsCatalogAndEndpointDirectory`.
+
 
 The bundled app registry is an installed implementation catalog keyed by exact
 implementation identity. It preflights every manifest row before constructing

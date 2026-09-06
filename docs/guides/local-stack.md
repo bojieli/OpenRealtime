@@ -10,6 +10,18 @@ reflex.
 > silently download them. Start each model server yourself, then point the
 > runtime at its explicit URL.
 
+## Before you start
+
+You need Go 1.25+, a browser for the companion, and independently running model
+services. Hardware and GPU memory depend on the chosen models; the runtime
+itself connects to their endpoints and does not require a GPU.
+
+Decide whether only the voice services should be local or whether background
+reasoning must also stay local. The default reasoner is hosted, so use
+[Make the reasoner local too](#make-the-reasoner-local-too) for an all-local
+configuration. This guide configures endpoints; follow each model server's
+installation instructions for its dependencies and weights.
+
 ## The default local voice path
 
 From the repository root, build the runtime:
@@ -40,11 +52,16 @@ background reasoner is hosted in the default configuration.
 The repository includes a reproducible SenseVoice preparation path:
 
 ```bash
-./scripts/prepare-sensevoice.sh
+./scripts/prepare-sensevoice.sh --serve
 ```
 
-See [the SenseVoice deployment notes](../../deploy/sensevoice/README.md) before
-running it. Other streaming and batch recognisers use the same runtime surface;
+This script requires a working system PyTorch installation, downloads the
+SenseVoice dependencies and weights, and serves on port 8002. In another
+terminal, select it explicitly with
+`./openrealtime companion -- -asr-provider sensevoice`. The foreground and TTS
+services must still be running. See
+[the deployment notes](../../deploy/sensevoice/README.md) for model-path setup.
+Other streaming and batch recognizers use the same runtime surface;
 list them with:
 
 ```bash

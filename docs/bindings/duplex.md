@@ -14,9 +14,8 @@ The reference sidecar is **Moshi**.
 
 ## What the engine still supplies
 
-The background reasoner, trajectory, tool and authorization boundary, audit,
-and session lifecycle stay outside. A single foreground model has no
-independent slow lane and no shared log on which to run one.
+The engine supplies the background reasoner, trajectory, tool authorization,
+audit, and session lifecycle independently of the foreground model.
 
 Engine interaction and engine floor remain valid controlled selections over a
 duplex-capable model. They do not require deleting its native capabilities or
@@ -25,8 +24,8 @@ desired ownership vector.
 
 ## Where a background answer splices in
 
-This is the one genuinely open question about the binding, and the sidecar
-carries both paths as a flag rather than a rewrite:
+The sidecar exposes two strategies for adding background results. Their
+interaction quality depends on the model and should be evaluated for your task:
 
 ```sh
 --injection inner-monologue   # write into the text stream the model is generating
@@ -35,8 +34,8 @@ carries both paths as a flag rather than a rewrite:
 
 **Inner-monologue conditioning** respects a floor the model owns: the answer
 becomes context and the model decides for itself when to say it.
-**Explicit hand-off** certainly works and is the documented fallback, which is
-why this binding ships regardless of how the research resolves.
+**Explicit hand-off** injects the result and requests a turn. It is the
+documented fallback when implicit conditioning is unsuitable.
 
 ## Overlap
 

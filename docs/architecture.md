@@ -1,351 +1,242 @@
 # Architecture
 
-OpenRealtime has a typed graph runtime alongside the earlier binding-based
-launch paths. The graph implementation already runs Scenario Conversation,
-Meeting Assistant, Realtime-CU, adaptive video, and the locked conversational
-and external-model reference compositions. The
-[living tracker](composable-agent-graph.md#living-implementation-tracker)
-identifies the remaining launch, authoring, and lifecycle work.
+OpenRealtime coordinates perception, model generation, conversation timing,
+and actions within a session. Its public boundary is a Realtime-compatible
+API; the model stack behind that boundary can change independently.
+
+Read [Core concepts](concepts.md) for terminology. This page explains the
+runtime's main responsibilities, its two assembly paths, and the extension
+points. For startup commands, use the [quickstart](quickstart.md).
 
 ## Graph composition
 
-A locked `.ortg` topology or normalized YAML/JSON source compiles to immutable
-Graph IR. Nodes declare typed ports, triggers, cancellation, dependencies, and
-effects. Separate values and deployment artifacts select configuration and
-implementations. A launch profile mounts that exact plan; inspection reports
-its fingerprint and live component identities. The
-[production assembly guide](graph-native-assembly.md) describes preparation,
-and [ADR-0015](adr/0015-agent-topology-is-a-versioned-graph.md) records which
-earlier topology restrictions were superseded.
+The typed graph runtime composes processing elements through declared input and
+output ports. It runs the Scenario Conversation, Meeting Assistant,
+Realtime-CU, adaptive-video, and conversational/external-model reference
+compositions. The [implementation tracker](composable-agent-graph.md#living-implementation-tracker)
+records remaining launch, authoring, and lifecycle work.
 
-Speech and tool roles follow the selected graph. The
+Graph configuration separates four concerns:
+
+| Artifact | Purpose |
+| --- | --- |
+| `.ortg` topology and descriptor lock | Define connected elements and pin their contracts. |
+| Values | Configure the selected elements. |
+| Deployment and service declarations | Select implementations and dependencies. |
+| Launch profile | Select the application and prepared composition to mount. |
+
+The compiler produces immutable Graph IR. Preparation validates the selected
+configuration and dependencies before resources are acquired. Inspection
+identifies the prepared plan and live component implementations. See
+[Graph assembly](graph-native-assembly.md) for commands and current limits.
+
+Speech is a graph connection, not a fixed property of a cognition role. The
 [fast-only](../graphs/components/conversational-fast-only/agent.ortg),
 [slow-only](../graphs/components/conversational-slow-only/agent.ortg), and
-[both-speaking](../graphs/components/conversational-both/agent.ortg) references
-execute complete turns through the same runtime. Text/file cognition and
-[silent computer use](realtime-computer-use-graph.md) omit speech entirely.
-Native and external interaction are alternative connections over the same
-external-model element. Control paths carry typed decisions, interrupts,
-acknowledgements, and the evidence those decisions require.
+[both-speaking](../graphs/components/conversational-both/agent.ortg) reference
+graphs connect speech differently. Text/file cognition and
+[silent computer use](realtime-computer-use-graph.md) can omit speech.
 
-Across these compositions, canonical history, causal provenance, bounded
-queues, cancellation, and independent action authority remain explicit
-contracts. A model's role or output alone does not authorize an external effect.
-
-In Scenario Conversation, playback completion is an ordered control path.
-The overlap controller retires the exact played utterance and waits for its
-producing model and segmentation to finish. It then sends the receipt with
-the current output state through semantic admission, which applies that state
-before forwarding completion to the session. The session publishes the played
-history before notifying the client. A subsequent explicit response therefore
-observes completed speech in both conversation history and policy state.
-Audio continues streaming during preparation; pending completion receipts are
-bounded by the controller's `max_utterances` setting. Queued segments and other
-active runs remain visible, and an older release cannot overwrite newer policy
-state. One lifecycle-owned writer delivers completion receipts, so a blocked
-completion consumer cannot prevent the model result needed to publish history
-from reaching the session.
+Every composition still needs explicit history, cancellation, bounded queues,
+and action authority. Connecting a model to an action path does not by itself
+authorize an external effect.
 
 ## Existing binding-based voice configurations
 
-The rest of this page describes the earlier voice composition still selected
-by the default and binding-based CLI paths. Its single event loop, silent
-background reasoner, timing flags, and ownership presets are properties of
-those configurations. They do not restrict graph compositions. Replacing the
-remaining binding launch paths is still tracked implementation work.
+The default CLI and explicit `-binding` paths still use the earlier voice
+assembly. Their foreground/background roles, event loop, and policy defaults
+are described below. These defaults do not restrict arbitrary graph
+compositions.
 
-Four subsystems over one session core. Three of them move and transform data;
-the fourth decides *when* the other three act.
-
-```text
-┌────────────────────────────────────────────────────────────────┐
-│ Gateway            OpenRealtime wire, session lifecycle        │
-├────────────────────────────────────────────────────────────────┤
-│ INTERACTION        the decisions about *when*                  │
-│   control plane    trigger · preparation · endpoint & floor ·  │
-│                    barge-in · fast/slow rollout · backchannel · │
-│                    turn projection · commitment · repair ·     │
-│                    deferral                                    │
-│                    ── selected from engine predicates, an      │
-│                       external policy, or a native model head ─│
-├──────────────────┬──────────────────┬──────────────────────────┤
-│ Perception       │ Cognition        │ Action                   │
-│                  │                  │                          │
-│ gate → observe   │ providers ·      │ plan → pace → commit     │
-│ → persistent     │ authority ·      │ → speech · tools ·       │
-│ text             │ trajectory       │   computer use           │
-│                  │ continuation     │                          │
-│ world → log      │ log → log        │ log → world              │
-├──────────────────┴──────────────────┴──────────────────────────┤
-│ Session core       trajectory · eventloop · duplex state       │
-│                    append-only log, safe points, atomic commit,│
-│                    cancellation, irreversibility ledger        │
-├────────────────────────────────────────────────────────────────┤
-│ Bindings           compose ownership + available capabilities │
-│                    named presets are benchmark identities      │
-└────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Client[Realtime client] <--> Gateway[Gateway and transport adapters]
+    Gateway --> Perception[Perception: audio, text, images]
+    Perception --> History[(Shared trajectory)]
+    History <--> Cognition[Cognition: foreground and background]
+    Cognition --> Action[Action: speech and tools]
+    Action --> Gateway
+    Action --> History
+    Policy[Interaction policies] -. timing and admission .-> Perception
+    Policy -.-> Cognition
+    Policy -.-> Action
 ```
 
 ## Perception and action are duals
 
-Perception turns a continuous external stream into discrete commitments by
-**gating** — discarding what does not matter. Action turns discrete commitments
-back into a continuous external stream by **pacing** — holding back what is not
-yet safe to emit. The same boundary, crossed in opposite directions.
+Perception converts continuous input into observations the session can use.
+Recognition may revise a transcript as more audio arrives; visual gating
+selects frames worth processing. Accepted observations enter the trajectory.
 
-Cognition is not a boundary at all: it neither reads from nor writes to the
-outside world, it reads the log and appends to the log. What the three have in
-common is only that data flows through them, which is the definition of a data
-plane.
+Cognition reads a valid history prefix and proposes new content or tool calls.
+Action checks that output is still valid and authorized, then emits it. Speech
+is paced for playback; tools pass through confirmation and target checks.
+This separates generating a result from committing it to the outside world.
 
 ## Interaction in the binding reference
 
-Trigger cadence, speculative pre-start, floor ownership, barge-in,
-commit-versus-cancel — these are decisions *about when*, made over evidence
-from all three. Nothing flows through them. The borrowing from networking is
-exact rather than metaphorical: the data plane moves things, the control plane
-decides how.
+Interaction policies decide **when** work happens. They use evidence such as
+speech activity, silence, transcript revisions, conversation state, and tool
+results. A deployment can use rules, an external policy model, or a model's
+native interaction capabilities.
 
-"Control plane" is a structural claim, not a ranking. Interaction may be an
-engine policy, a native model head, or an engine policy handing typed acts to a
-model that is also capable of native interaction. Full duplex, native
-endpointing, and native interaction often arrive together, but none implies
-the others. Treating that bundle as one model species prevents the controlled
-combinations the architecture exists to measure.
-
-Each row is a named policy with an interface and a shipped default, because a
-policy that cannot be swapped cannot be measured:
-
-| Policy | Decides | Default |
+| Policy | Decision | Reference default |
 | --- | --- | --- |
-| Trigger | when a decision opportunity opens | fixed 200 ms cadence |
-| Preparation | whether to speculatively pre-start before the endpoint | off (`-preparation continuous` to enable) |
-| Rollout | when each cognition provider fires; whether slow runs at all | fast, then slow when fast asks |
-| Floor | when the user has finished; who holds the turn | engine, 500 ms silence |
-| Barge-in | whether user speech over agent output cancels it | immediate |
-| Commitment | how much to emit before certainty | complete safe points only |
-| Repair | what to do when a commitment proves wrong | audible correction |
-| Backchannel | whether to say "mm-hm" while the user speaks | off |
-| Turn projection | anticipating the end of a turn before silence confirms it | silence only |
-| Deferral | whether committed work may be acted on now | by duplex state |
-| Overlap | what user speech over agent output is | unclassified |
+| Trigger | When to reconsider the input | 200 ms cadence |
+| Preparation | Whether to generate speculatively before endpoint | Off; enable with `-preparation continuous` |
+| Rollout | Which cognition roles to run | Foreground followed by background on an observation |
+| Floor | When the utterance ends | Engine, 500 ms acoustic silence; projection may extend the turn |
+| Barge-in | Whether overlapping user speech cancels output | Immediate |
+| Commitment | When generated output can be emitted | At complete safe points |
+| Repair | How to address already-heard output invalidated by later input | Record an obligation for an audible correction |
+| Backchannel | Whether to acknowledge while listening | Off |
+| Turn projection | Whether to anticipate or hold an endpoint | Silence-based unless configured |
+| Deferral | Whether accepted work can run now | Based on user and assistant speaking state |
+| Overlap | How to classify speech during assistant output | Unclassified unless configured |
 
-Each of these is consulted on the live path, and the ones that need a model
-degrade to a rule when none is configured. Four of them are worth stating
-concretely, because "named policy" and "policy that changes what happens" are
-not the same claim:
+Preparation can reduce waiting time by starting work while the user speaks.
+Its results remain private until the committed observation matches; otherwise
+they are discarded. It increases provider work and may save no latency when
+input changes frequently.
 
-- **Turn projection** reaches the conversation through the floor. When it
-  projects an ending, the runtime closes the acoustic gate and the turn ends
-  before silence confirms it. Only a *projected* endpoint does this; an
-  ordinary one is the gate's, so the two are never counted together — a
-  projection that was wrong cut the user off, and a late endpoint only cost
-  latency.
-- **Backchannel** decides off the audio path, because a model call that made
-  the recogniser wait would trade what makes a system feel alive for what makes
-  it feel slow. A continuer it chooses is spoken, carries no assistant item, and
-  does not trigger barge-in against itself.
-- **Preparation** starts a continuation while the user is still talking,
-  against what perception has heard so far. Nothing it produces is committed,
-  spoken, or dispatched: the work is adopted at the endpoint only if the
-  canonical observation says the same thing, and discarded otherwise. That is
-  what makes it a latency policy — being wrong costs tokens and nothing else.
-- **Repair** is reached when a later observation invalidates something the user
-  already heard. The obligation is recorded in the ledger, raised into the
-  trajectory at the next safe point, put to the slow provider as an
-  instruction, and discharged against the correction it produces.
+`stable-partial` observation policy permits early admission of a provider's
+stable transcript prefix. It must be paired with a compatible deferral policy;
+waiting for final silence would defeat the early-admission behavior. The
+runtime rejects conflicting selections.
 
-Two policies can contradict each other, and the runtime refuses the pair rather
-than picking one: `stable-partial` observation with a deferral policy that
-waits for the user to stop speaking would hold every partial until the endpoint
-and buy nothing. A runtime that silently overrode one of them would report a
-configuration it was not running.
+For the related timing settings, see
+[Operations](operations.md#the-silence-thresholds-and-how-they-compose).
 
 ## The session core
 
-**One trajectory.** An append-only log of typed items: observations,
-reasoning, assistant content, non-executable tool proposals, executable tool
-calls, results, placeholders, and visibility transitions. Every provider
-compiles a causally valid prefix of it, and output commits by
-compare-and-append against the version it was computed from.
+The binding-based session has three shared structures:
 
-**One event loop**, with one invariant:
+| Structure | Responsibility |
+| --- | --- |
+| Trajectory | Append-only typed history, causal relationships, and revisions |
+| Event loop | Order commits, defer work when needed, and wake deferred work |
+| Duplex state | Track whether the user and assistant are audibly speaking |
 
-> Commit is unconditional; acting is conditional; every deferral has a
-> wake-up. An event that has been committed but not yet acted upon must
-> eventually cause a run. Nothing committed is ever silently dropped.
+Providers generate from a particular trajectory version. Commit checks that
+version rather than accepting a stale result against a changed conversation.
+The history distinguishes observations, assistant content, background state,
+non-executable tool proposals, executable calls, and results.
 
-The third row of that rule is why it is an invariant rather than a table. An
-agent that finishes speaking, with the user silent and a tool result sitting
-unacted, has no natural trigger. A rule written case by case would have covered
-the obvious cases and lost that one.
+Accepted work may wait while speech is playing or another condition holds.
+Every deferral needs a wake-up, including playback completion and tool-result
+arrival. Otherwise a quiet session could leave committed work unprocessed.
 
-**One duplex state**, owning two facts: is the user speaking, and is the agent
-speaking. Agent-speaking means *audio is reaching the user right now* — not
-that a continuation is generating and not that speech was enqueued. Synthesised
-audio takes real time to play, and a design that conflates the decision to
-speak with the user hearing it gets every overlap decision wrong.
+Assistant-speaking state refers to playback, not merely generation or queued
+audio. The [spoken boundary](spoken-boundary.md) explains how an interruption
+splits an utterance into heard and pending words. In Scenario Conversation,
+playback receipts are committed and published before the turn is released, so
+a following explicit response can read the updated history.
 
 ## Cognition roles and boundaries
 
-In this binding reference, Fast is proposal-only by default and can execute
-only an explicitly filtered bounded tool lane. Slow returns background state
-for Fast to present; it is not connected directly to speech.
+The default voice arrangement uses two cognition roles over the same history:
 
-Both are properties of the provider descriptor, checked once at construction
-and enforced where output commits. In the default arrangement a fast
-provider's emitted call becomes a `tool_proposal` — structured working state
-with no execution authority — and the dispatcher re-checks the trajectory
-before any effect, so a proposal cannot become an action however it is routed.
+- **Foreground:** produces speech. Tool requests are proposals by default.
+- **Background:** reasons and uses authorized tools. Its results enter the
+  history as background state for the foreground to present.
 
-The recommended voice+vision profile adds a separate silent visual reflex role.
-It is not a second runtime and does not replace Fast: all roles read and commit
-through the same trajectory and action boundary. The reflex receives a compact
-projection—the latest user task, the newest image observation per source, and
-only the exact direct action schemas selected by the live filter—and returns
-one `act`, `wait`, or `abstain` decision under a hard timeout. It cannot speak,
-iterate screenshots, sleep, or see arbitrary tools. Timeout and malformed
-output fall through to the ordinary rollout; the default voice profile does not
-instantiate it at all.
+The reference `fast+slow` rollout schedules background reasoning on an
+observation; it does not require the foreground to request escalation first.
+A background call with nothing to add can return silently. Separate
+`fast-only` and `endpointed-slow-only` rollouts support other arrangements.
 
-The older `-fast-computer-use` flag remains a compatible explicit exception
-for deployments that intentionally use the voice model for visual reaction.
-Both bounded lanes are narrower than granting a model tools in general:
+The distinction between background state and spoken content matters after an
+interruption: writing a result does not mean the user heard it. Providers see
+that distinction in their context. It helps maintain continuity but does not
+guarantee that model-generated answers will never repeat or contradict.
 
-- cognition attaches filtered tools to the reflex only on a committed visual
-  observation; the compatible voice-model lane may also prepare work that can
-  be adopted only by the matching observation. Neither opens the lane for a
-  holding line, interjection, or background-result narration;
-- only exact direct actions from the standard `computer.*` vocabulary qualify,
-  not a name that merely shares the prefix; `computer.screenshot` and
-  `computer.wait` remain slow-only observation control;
-- server-owned actions must have an in-process dispatcher; client-owned actions
-  must declare a non-empty target and `confirm: never`;
-- undeclared and filtered calls are downgraded to proposals even though the
-  provider descriptor has execution authority;
-- local and client-executed calls both cross the same confirmation, ledger,
-  trajectory-authority, and audit boundary.
+The optional `voice+vision` profile adds a silent visual reflex. It receives a
+compact task, recent images, and a filtered set of direct-action tools. It
+returns `act`, `wait`, or `abstain` under a deadline. Timeout or malformed output
+falls back to the normal slow path. The older `-fast-computer-use` option opens
+a similarly bounded lane on the voice model.
 
-That lane handles a simple click or keypress while its cue is still current.
-Arbitrary business tools, confirmation-requiring client actions, ambiguity,
-planning, and dependent multi-step work remain slow responsibilities.
-
-The second rule is what makes the division of labour legible: one model owns
-what the user hears, one owns what the system does. Slow's output is not an
-assistant turn at all. It is recorded as background state and projected to
-every provider as such, so nothing can mistake a written result for something
-the user was told — and the next fast turn answers *from* it rather than
-reciting it. Fast is therefore always the last writer before audio, and slow
-cannot contradict, or repeat, something already said.
-
-An observation runs slow under the reference fast+slow rollout. This is
-deliberate: making slow conditional on a small fast model's marker lost
-tool-using turns in measurement. A fast action result enters the shared
-trajectory before slow continues, so the reasoner plans from what already
-happened instead of repeating it. `fast-only` and `endpointed-slow-only` remain
-separate rollout controls for measuring what each lane contributes.
+Both lanes require independent execution authority. Exact tool filtering,
+confirmation, target checks, and the action ledger apply to local and
+client-executed effects. General business tools and multi-step work remain in
+the background role. See [Safety](safety.md) for the full contract.
 
 ## Bindings compose ownership and capabilities
 
-A binding is not a pipeline or a model taxonomy. It reports two independent
-things: the selected owner for each subsystem, and the capabilities available
-in the composed stack whether or not they are selected in this cell. That
-distinction permits a native-interaction, concurrent model to run under an
-engine policy without pretending those native capabilities ceased to exist.
-Runtime behavior keys off these fields, never off the string `omni` or
-`duplex`.
+A binding reports both what a stack **can do** and which component **owns a
+role** in the selected configuration. A model can support native interaction
+while a particular deployment selects engine interaction instead.
 
-| Preset | Perception | Fast | Slow | Action | Interaction | Floor |
+| Preset | Perception | Foreground | Background | Action | Interaction | Floor |
 | --- | --- | --- | --- | --- | --- | --- |
 | `cascade` | engine | engine | engine | engine | engine | engine |
-| `omni` | model | model | **engine** | model | engine | engine |
-| `omni+text-policy` | model | model | **engine** | model | engine | engine |
-| `duplex` | model | model | **engine** | model | model | model |
-| `upstream` | remote | remote | **engine** | remote | remote | remote or engine |
+| `omni` | model | model | engine | model | engine | engine |
+| `omni+text-policy` | model | model | engine | model | engine | engine |
+| `duplex` | model | model | engine | model | model | model |
+| `upstream` | remote | remote | engine | remote | remote | remote or engine |
 
-The available capability vector is orthogonal: audio input/output,
-transcription, explicit turn generation, concurrent input/output, native
-floor, native interaction, typed interaction-act acceptance, and text
-injection. `sidecarbinding.Spec` is the generic composition surface. The named
-constructors are compatibility presets and evidence labels over it.
+Action ownership in this table describes the voice adapter; it does not grant
+unrestricted tool execution. Background reasoning remains engine-managed in
+these presets. General graph compositions select their own connections.
 
-The slow column never varies. No binding delegates slow cognition, because no
-foreground model provides it — and supplying it over a shared trajectory is
-what this project adds to whatever stack it is given.
+Capabilities include transcription, audio input/output, explicit turn
+generation, concurrent I/O, native floor, native interaction, typed interaction
+acts, and text injection. `sidecarbinding.Spec` supports combinations beyond
+the named presets. See [Bindings](bindings/README.md) for selection guidance.
 
 ## Architecture definitions evolve above bindings
 
-The repository-owned `architecture` package is the structural authority above
-the adapter layer. A definition is an immutable `id@revision` containing the
-ownership vector, required capability lower bound, interaction evidence,
-selected controllers and arbitration, handoff boundary, maturity stage, and
-explicit lineage. For example,
-`omni.external-policy@2` and `omni.native-policy@1` require the same available
-capabilities and differ in the selected interaction owner. Current exact-
-evidence revisions `omni.external-policy@3` and `omni.native-policy@2` preserve
-that relationship while replacing the old coarse evidence label. Current
-controller-attested revisions `omni.external-policy@4` and
-`omni.native-policy@3` additionally prove which selector is in force.
+The `architecture` catalog pins structural choices as `id@revision`, such as
+`cascade.controlled@3`. A definition records ownership, required capabilities,
+selected interaction evidence, controllers, arbitration, and lineage.
+Provider flags separately select model endpoints and credentials.
 
-Controller composition is another independent axis. `cascade.text-policy@3`
-selects one external act policy for endpoint, overlap, semantic, visual, quiet,
-and silent-tool decisions. `cascade.composed-policy@1` selects the same text
-policy plus narrow predicates under `predicate-floor` arbitration: predicates
-retain endpoint and overlap decisions while the text policy owns the remaining
-acts. Both use the same component topology. This is the controlled T/C question
-represented directly in the project, not a new binding species.
+```bash
+openrealtime architectures list
+openrealtime architectures show cascade.controlled@3
+```
 
-Bindings still do the work. A definition derives one of three provider
-topologies—components, sidecar, or upstream—and several definitions can use
-the same topology. Deployment configuration supplies exact models and
-endpoints. After the live provider handshake, the architecture wrapper refuses
-missing requirements or a different evidence/controller/arbitration/protocol/
-handoff boundary and attests the definition fingerprint in session status.
+A changed definition requires a new revision. After provider negotiation, the
+runtime checks live capabilities and selected policies against the definition.
+Inspection reports its fingerprint so an experiment can identify what ran.
 
-This gives the layers distinct responsibilities:
+Controller composition must name an arbitration rule. For example,
+`cascade.composed-policy@1` uses `predicate-floor`: predicates retain endpoint
+and overlap decisions, while a text policy handles the other acts. Installing
+two controllers alone does not define which one decides.
 
-| Layer | Authority |
-| --- | --- |
-| architecture catalog | structural selection and evolution lineage |
-| deployment configuration | model endpoints, credentials, voices, operating limits |
-| binding | concrete adapter and session machinery |
-| benchmark cell | immutable deployment pins, policies, fixtures, and measured evidence |
-
-Adding a capability combination therefore does not require another binding
-package. Changing an architecture does require a new revision, so old runtime
-and benchmark artifacts never silently acquire a new meaning.
-
-Interaction evidence is itself a capability vector, independent of the voice
-stack vector. It records transcript, acoustic activity, silence clock,
-conversation and tool state, speaker identity, addressing, narrated vision,
-direct pixels, and native model state separately. It is an exact selection,
-not a lower bound: extra live evidence is a different architecture and startup
-refuses it. This is what caught the otherwise invisible difference between a
-text policy launched with and without direct vision.
+Interaction evidence is also explicit: transcript, acoustic activity, silence,
+conversation/tool state, speaker identity, addressing, visual descriptions,
+direct pixels, and native model state are separate channels. Extra selected
+evidence changes the architecture being measured. See
+[Architecture experiments](architecture-experiments.md) for the comparisons.
 
 ## Where things live
 
-| Package | Owns |
+| Package | Responsibility |
 | --- | --- |
-| `trajectory` | the canonical log and its invariants |
-| `eventloop` | ingress, safe points, deferral, wake-ups, the parallel branch |
-| `session` | duplex state, bounded media store |
-| `perception` | observers, gates, narrators |
-| `continuation` | the streamed provider contract and its commit transaction |
-| `cognition` | the provider arrangement and the two boundaries |
-| `interaction` | every policy about *when* |
-| `action` | the irreversibility ledger, speech pacing, tool dispatch |
-| `binding` | the seam, and the four implementations under it |
-| `gateway` | the protocol server: a renderer, deciding nothing |
-| `protocol/openai` | the pinned base wire registry and validator |
-| `protocol/openrealtime` | the extension |
-| `sidecar` | the process boundary for models not written in Go |
-| `computeruse` | the action vocabulary, targets, and dispatch |
-| `transport/webrtc` | a protocol client that terminates media |
+| `graph`, `elements`, `graphs` | Graph execution, element implementations, application compositions |
+| `trajectory` | Shared history and causal invariants |
+| `eventloop`, `session` | Binding session scheduling, duplex state, and media storage |
+| `perception` | Observers, gates, and narrators |
+| `continuation`, `cognition` | Provider generation and cognition roles |
+| `interaction` | Timing and admission policies |
+| `action`, `computeruse` | Speech pacing, tools, targets, and effect checks |
+| `binding` | Voice adapter contracts and implementations |
+| `gateway` | Protocol sessions and event rendering |
+| `protocol/openai`, `protocol/openrealtime` | Base schema validation and negotiated extensions |
+| `sidecar` | External model process protocols |
+| `transport/webrtc` | WebRTC-to-protocol adaptation |
+| `presentation`, `macos` | Browser presentation host and native client |
 
 ## Extension points
 
-`Binding`, `Observer`, `Narrator`, `Vision`, `Decider`, `computeruse.Surface`,
-and the sidecar protocol are what third parties write against. Sidecar protocol
-v1 remains frozen and is still the default. Typed interaction plans use the
-explicitly selected v2 contract.
+Use [API v1](api-v1.md) for stable Go provider contracts and
+[Sidecars](sidecars.md) for external models. Versions 1–3 serve binding-based
+audio integrations; v4 serves graph-native elements. The documented `Binding`,
+`Observer`, `Narrator`, `Vision`, `Decider`, and `computeruse.Surface` interfaces
+provide additional extension points.
+
+Start graph development with [assembly](graph-native-assembly.md), then consult
+the [design and implementation tracker](composable-agent-graph.md) for detailed
+element, lifecycle, and configuration contracts.

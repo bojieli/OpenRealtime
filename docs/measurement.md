@@ -14,6 +14,25 @@ or full benchmark campaign before project publication. The experimental design
 and dated results below are historical reference material; they do not define
 current completion requirements.
 
+## Reading guide
+
+This is the chronological experiment log. Start with [Research](research.md)
+for the questions and [Benchmarks](benchmarks.md) for current commands. Within
+this record:
+
+| Topic | Sections |
+| --- | --- |
+| Experimental setup | [Design](#design), [suites](#suites), and [reporting rules](#reporting-rules) |
+| What timing measurements include | [Overlap](#overlap-what-the-harness-found-while-it-was-being-built) and [the trajectory clock](#the-trajectorys-clock-f13) |
+| Interaction policy development | [F14](#the-interaction-model-f14) and [F15](#the-interaction-model-end-to-end-f15), followed by dated scenario studies |
+| Repeated-run uncertainty | Search for F62–F64; these entries examine variance and the limits of isolated prompt tests. |
+| Later interaction and scoring repairs | Follow the dated F65–F85 entries in order, including revisions to earlier conclusions. |
+
+Experiment IDs are historical labels, not product versions. The log contains
+reused labels, so cite the section title, date, and source revision together.
+Counts and claims belong to their recorded scorer and population. Later
+corrections take precedence for interpretation without rewriting earlier data.
+
 ## Design
 
 A reference configuration with paired cells changing exactly one factor each.

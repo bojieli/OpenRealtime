@@ -26,7 +26,7 @@ go build -o openrealtime ./cmd/openrealtime
 ./openrealtime version
 ```
 
-The final command should print `openrealtime 1.0.0` plus the source revision
+The final command should print `openrealtime 0.1.0` plus the source revision
 and Go toolchain used for the build.
 
 ## 2. Start a hosted voice
@@ -56,16 +56,33 @@ Your browser opens automatically. Allow microphone access, connect, and talk.
 Keep the terminal running; press <kbd>Ctrl</kbd>+<kbd>C</kbd> once to stop the
 supervised processes cleanly.
 
+### Try an interruption
+
+Ask: “Explain how a rainbow forms in a few sentences.” While the assistant is
+speaking, say: “Actually, give me the one-sentence version.” Listen for whether
+it stops and answers the revised request. You should see the conversation
+update and hear the shorter answer.
+
+This is a first-run check of your selected hosted voice. The provider controls
+its turn-taking in this configuration. The [demo gallery](demos.md) covers
+more specialized runtime interaction scenarios, with individual configurations
+to accompany the recordings.
+
+To see a client execute a tool, use the
+[SDK walkthrough](../examples/sdk-client/README.md). Its weather tool returns
+fixed example data, so no weather-service account is needed.
+
 ### What `companion` starts
 
 The command supervises three separate local processes:
 
 1. the clean Realtime server on port 8765;
 2. a WebRTC adapter on port 8766;
-3. a descriptor-locked presentation host on port 8767.
+3. a presentation host serving the browser client on port 8767.
 
-The gateway itself does not serve a UI. Browser and native clients remain
-replaceable consumers of the same public APIs.
+The presentation host connects the browser to the server through public APIs.
+For the component and credential boundaries, see
+[Transports](transports.md#reaching-the-adapter-from-a-browser).
 
 Use `-client none` if you do not want a browser opened:
 
@@ -88,10 +105,17 @@ curl -s http://127.0.0.1:8765/healthz
 curl -s http://127.0.0.1:8765/metrics
 ```
 
-`/healthz` describes the running binding, capabilities, protocols, and session
-counters. It intentionally does not call provider backends. A healthy process
+Without a configured token, `/healthz` describes the running binding,
+capabilities, protocols, and session counters. With a token, detailed health
+and metrics requests need the bearer header; see [Operations](operations.md#health). It intentionally does not call provider backends. A healthy process
 can therefore still report a provider error when the first turn uses a missing
 credential or unavailable model.
+
+This loopback server has no bearer token, so both endpoints answer directly. A
+deployment that sets one serves the health detail and the metrics only to a
+caller presenting it — `curl -H "Authorization: Bearer $OPENREALTIME_TOKEN"` —
+while the health status word stays public so an external check can read it. See
+[Operations](operations.md#authentication-and-where-the-endpoint-is-reachable-from).
 
 To drive a complete audio turn without the browser, pass a 16-bit PCM WAV file:
 
@@ -204,6 +228,7 @@ See the [macOS app guide](../macos/README.md) for setup and permissions.
 | A local cascade produces no speech | Confirm ASR, fast-model, and TTS services are listening on the configured URLs. |
 | The browser cannot use the microphone | Open the loopback URL directly and allow site microphone access. |
 | A port is already in use | Change `-server-listen`, `-webrtc-listen`, or `-presentation-listen` before the `--`. |
+| `serve` refuses a routable listen address | It has no bearer token, and an open Realtime endpoint spends your model credentials. Export the variable named by `-token-env` (`OPENREALTIME_TOKEN` by default), or bind loopback and publish it through something that authenticates. |
 | `probe` reports no transcript for its default input | Expected: the default is a tone. Pass a spoken PCM16 WAV with `-audio`. |
 
 ## Where to go next
@@ -214,6 +239,6 @@ See the [macOS app guide](../macos/README.md) for setup and permissions.
 | Choose a voice architecture | [Bindings](bindings/README.md) |
 | Configure models | [Providers](providers.md) |
 | Add video and computer use | [OpenRealtime Protocol v1](protocol/openrealtime-1.md) |
-| Deploy securely | [Operations](operations.md) and [Safety](safety.md) |
+| Deploy securely | [Operations](operations.md) · [Deployment](../deploy/README.md) · [Safety](safety.md) |
 | Reproduce the full meeting stack | [Meeting-assistant guide](guides/meeting-assistant.md) |
 | Browse every document by purpose | [Documentation home](README.md) |

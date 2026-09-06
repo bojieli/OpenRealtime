@@ -5,6 +5,12 @@ to canonical conversation history before model activation. It resolves retained
 bytes through the explicit media lease path and commits sanitized model output.
 It has no audio dependency or complete tool dispatch/result path.
 
+**Status:** executable component reference. The production Realtime gateway
+adapter and file-upload operation remain unfinished. For ordinary text/image
+sessions, use the current [client API](../../../docs/openai-realtime-compatibility.md).
+
+## Configure and invoke
+
 Install settings through `invocation_update` before requesting a response or
 submitting content with automatic activation enabled:
 
@@ -32,10 +38,14 @@ model waits for the matching canonical prefix even when snapshot and activation
 lanes are scheduled independently. Manual responses have no observation-derived
 tool authority or trusted semantic purpose.
 
+## Cancellation
+
 `activation_cancel` withdraws future matching activation while its bounded
 cancellation memory retains the address. `model_cancel` interrupts an already
 emitted model run. `content_cancel` withdraws pending participant content.
 Canceling one of these stages does not implicitly cancel the others.
+
+## Read and commit output
 
 Consumers must concatenate text carried by both delta and end events on
 `prepared_text`: the serialization filter can release a final buffered suffix

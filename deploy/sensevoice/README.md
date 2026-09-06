@@ -2,8 +2,14 @@
 
 `server.py` serves [SenseVoiceSmall](https://github.com/FunAudioLLM/SenseVoice)
 at `POST /v1/audio/transcriptions`, which is the shape the `sensevoice`
-recogniser already speaks. Nothing in the engine knows what is behind that
-route.
+recogniser already speaks. The adapter selects this service by endpoint and provider name.
+
+## Setup
+
+Run these commands from the repository root. The preparation script requires
+Python with a working PyTorch installation; it creates a virtual environment,
+installs dependencies, and downloads weights. Set `SENSEVOICE_MODEL_PATH` if the
+checkpoint is stored outside the script's default cache path.
 
 ```sh
 ./scripts/prepare-sensevoice.sh          # venv, FunASR, weights
@@ -17,8 +23,8 @@ openrealtime serve -asr-provider sensevoice
 SenseVoice is non-autoregressive: it reads the utterance and emits the whole
 transcript in one forward pass. Cost therefore tracks the *audio*, not the
 transcript, and re-recognising a growing utterance stays cheap — which is what
-a batch recogniser on a realtime cadence does all day. Measured here, one
-utterance costs about 26 ms at a real-time factor near 0.008.
+a batch recogniser on a realtime cadence does all day. An earlier local measurement recorded about 26 ms per utterance at a
+real-time factor near 0.008; actual timing depends on input and hardware.
 
 An autoregressive recogniser decodes token by token, so re-reading a growing
 utterance costs more every time it is asked. On long-form conversation that

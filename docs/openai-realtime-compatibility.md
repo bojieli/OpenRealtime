@@ -1,5 +1,29 @@
 # OpenAI Realtime protocol compatibility
 
+OpenRealtime implements a **schema-validated subset** of the OpenAI Realtime
+API. The published `@openai/agents-realtime` SDK is tested through a tool-using
+session over WebSocket and WebRTC. This does not establish full feature parity
+with the hosted service or compatibility with every client configuration.
+
+Use this page to check an application's required events and settings before
+migrating it. Start with the [SDK walkthrough](../examples/sdk-client/README.md)
+for a runnable integration and [Transports](transports.md) for media setup.
+
+## Compatibility at a glance
+
+| Surface | Current behavior |
+| --- | --- |
+| Connection | Persistent WebSocket; WebRTC through an adapter |
+| Output | Audio with transcript, or text, selected by `output_modalities` |
+| Input | Audio and supported conversation messages containing text/images |
+| Tools | Standard function-call items and client function-call outputs |
+| Turn detection | Server VAD, or explicit client control where the selected binding supports it |
+| Item deletion/retrieval | Not served; see the supported event list below |
+| Session settings | Some values are refused by field name while the rest of the update applies |
+| Video and observations | Require negotiated OpenRealtime extensions and a capable deployment |
+
+## Pinned schema
+
 - Source revision: `openai/openai-openapi@2186421dca0cca7c1e67caa7739005e8b1ccc4dd`
 - Source SHA-256: `542299d304cdeb78deff4172b3790d52c7e7e75fb2b517e9c2787c52f1424acc`
 - Retrieved: 2026-08-17
@@ -7,252 +31,150 @@
 - Generated definitions: 133 across four profiles and two directions
 - Unique wire event names: 66
 
-This document describes schema and codec coverage. The server implements a
-strict, schema-validated subset rather than every decoded Realtime feature;
-an unsupported standard client event returns a standard error and the session
-continues.
+The registry includes decoded definitions that the gateway does not implement.
+Schema coverage and executable feature coverage are different: a recognized but
+unsupported client event receives a standard error and the session continues.
+Both directions are validated against the pinned schema by default
+(`-validate-wire`).
 
-Every event in both directions is validated against this pinned schema on every
-session by default (`-validate-wire`). A compatibility claim that is not
-continuously checked is a compatibility claim that decays, so the check runs in
-production rather than only in tests.
-
-The OpenRealtime Protocol extends this surface additively and only after
-negotiation; see [protocol/openrealtime-1.md](protocol/openrealtime-1.md). A
-client that never mentions it gets an ordinary Realtime session, and the server
-never volunteers the key.
+The [OpenRealtime extension](protocol/openrealtime-1.md) activates through
+negotiation. A base-only client is not sent extension fields or events.
 
 ## Checked against OpenAI's own client
 
-The schema check runs on every session, but a schema is a description of an
-API rather than the API, and the two can disagree. So the suite also runs the
-published `@openai/agents-realtime` package - unmodified, configured as its own
-documentation says - through a tool-using turn on both transports. See
-[examples/sdk-client](../examples/sdk-client/README.md); `go test
-./examples/sdk-client/` runs it, and skips where npm's dependencies are absent.
+The SDK checks exercise session configuration, function calls, returned tool
+results, response completion, and audio/transcript output. The local test is:
 
-It found two places where this server was stricter than the API it describes,
-and both are now reconciled:
+```bash
+go test -v ./examples/sdk-client/
+```
 
-**`noise_reduction: null`.** The source specification gives the field
-`"type": "object"`, `"default": null`, and a description stating it can be set
-to null to turn the feature off. Converted to JSON Schema the type won and the
-default became unrepresentable, so a validator built from it rejected the null
-OpenAI's own API returns and OpenAI's own client sends. The generator now emits
-`["object", "null"]` wherever the specification declares null as the default -
-a mechanical rule reading the specification's own statement, visible in the
-pinned artifact rather than hidden in the validator. It applies to five fields,
-all of them noise reduction.
+Node and the installed npm dependencies are required; WebRTC also requires
+Chromium. Local checks can skip unavailable integrations. The
+[release matrix](release-validation.md) distinguishes those skips from passing
+provisioned checks.
 
-**An unsupported field is refused by name, not by discarding the event.** A
-client may ask for a turn detector this deployment does not have; the SDK's
-default is `semantic_vad`. Three things could happen and only one of them is
-right.
+### Unsupported session settings
 
-Refusing the whole `session.update` discards the instructions, the tools, and
-the audio formats that arrived in the same event, which left every unmodified
-official client unable to configure a session at all. Quietly substituting the
-detector this server does have is worse in a subtler way: the client asked for
-particular endpointing behaviour, did not get it, and would only find out by
-reading a field back and noticing it had changed.
+A partially supported `session.update` applies accepted fields, sends
+`session.updated`, then sends errors naming refused fields. For example, an
+unsupported `semantic_vad` request does not discard instructions and tools
+included in the same update:
 
-So everything else in the event applies, the unsupported field does not, and an
-`error` names it:
-
-```jsonc
-{ "type": "error",
+```json
+{
+  "type": "error",
   "error": {
     "type": "invalid_request_error",
     "code": "unsupported_value",
     "param": "session.audio.input.turn_detection.type",
-    "event_id": "<the client's own event_id, when it sent one>",
-    "message": "turn detection \"semantic_vad\" is not supported: ..." }}
+    "message": "turn detection is not supported by this deployment"
+  }
+}
 ```
 
-The ordering is deliberate: `session.updated` is sent first, then the errors.
-A client told about an error before it has been told the update applied has
-every reason to read the first as the second failing. The session stays open —
-which the base protocol's own description of the error event says is the normal
-case, and which OpenAI's SDK is verified to handle: it completes a tool-using
-turn after receiving one.
+The server includes the triggering `event_id` when provided. Read the effective
+settings from `session.updated`; a requested value may not have taken effect.
 
-Turn detection parameters a client leaves unset resolve to the deployment's
-rather than to zero.
-
-The same treatment covers every session field this server parses and does not
-act on, because a field dropped in silence is the substitution case wearing a
-different hat — `session.updated` reports the value actually in force, so the
-only way to discover the difference is to read the field back and notice it
-changed, and most clients never do:
-
-| Field | Why it is not applied |
+| Field | Limitation |
 | --- | --- |
-| `tool_choice` | Which model may call tools is an authority boundary here, not a session setting: the fast model proposes and cannot execute, the reasoner executes. |
-| `audio.output.speed` | Synthesis runs at the rate the speech provider produces. |
-| `audio.input.transcription.model` | The recogniser is the deployment's, named in `session.updated`. |
-| `reasoning` | Effort belongs to the provider the reasoner runs on, not to a session. |
-| `audio.input.turn_detection: null` | Only on a binding whose model owns the floor. Taking the floor requires someone to hand it over, and `duplex` declares the model holds it. |
-| `audio.output.voice` | Only on a binding that says it cannot honour one. A speech provider is built with its voice, and a speech plan carries text and nothing else, so `cascade` has no per-session voice to give; a binding forwarding to a model with several does, and takes it. |
+| `tool_choice` | Tool authority belongs to the runtime composition, not this session setting. |
+| `audio.output.speed` | Synthesis uses the speech provider's rate. |
+| `audio.input.transcription.model` | The deployment selects the recognizer. |
+| `reasoning` | The deployment configures the reasoner's effort. |
+| `audio.input.turn_detection: null` | Refused when the binding requires a model-owned floor. |
+| `audio.output.voice` | Requires a binding that can honor per-session voice selection; the cascade speech provider has a configured voice. |
 
-`tool_choice` is the one with teeth. A client that asks for no tools and
-receives tool calls is not looking at a cosmetic difference; it is looking at
-behaviour it explicitly turned off. The rest are quieter, and `reasoning` is
-quietest of all, because it is not echoed in `session.updated` at all — a
-client setting it has no field to read back.
+Requesting a setting already in force does not require a change and is not
+refused. Voice is reported only when the binding can identify it;
+`max_output_tokens` reports the enforced limit, or `"inf"` when no limit applies.
 
-Two fields in the session object were stating a default rather than a fact,
-which is the same failure without a client to blame for it:
-
-- `audio.output.voice` was a name from a hosted catalogue on every deployment,
-  including ones synthesising with something else entirely. It is now the voice
-  the binding says is in force, and it is **omitted** where the binding cannot
-  say — a session forwarding to a remote provider does not know the voice that
-  provider will use, and an absent field says "not stated" rather than guessing.
-- `max_output_tokens` was `"inf"` unconditionally. `"inf"` is a claim, not a
-  placeholder: a turn cut short reports `max_output_tokens` as the reason it
-  stopped, and a client told in one breath that no limit exists and in the next
-  that a limit ended its turn has two facts that cannot both be true. It now
-  reports the limit actually enforced, and `"inf"` only where none is.
-
-Asking for what is already in force is not refused. A client that sends the
-server's own defaults back has asked for nothing it will not get, and answering
-that with errors would make the well-behaved clients the noisy ones.
+The pinned schema generator also accepts `null` where the source specification
+explicitly gives it as a default, including noise-reduction fields. This
+reconciles the schema with the values sent by the SDK.
 
 ## Internal synchronization does not change the wire
 
-The canonical trajectory and the safe-point event loop add no client or server
-event types. Asynchronous transcription, response cancellation,
-output-buffer clearing, item truncation, ordinary function calls/results, and
-audio/transcript deltas already provide the observable wire behavior. Fast and slow phase identity, reasoning
-lifecycle, event priority, trajectory versions, observation supersession, and
-audible-repair obligations remain internal.
+Trajectory revisions, background-reasoning state, preparation, causal metadata,
+and repair obligations remain internal. Clients see ordinary transcription,
+response, cancellation, truncation, audio, and function-call events.
 
-In particular, an input transcription may complete independently of response
-events, so the internal runtime correlates it by item/event identity instead of
-assuming arrival order. When output is interrupted, OpenRealtime projects the
-actual playback boundary through the existing cancel/clear/truncate lifecycle;
-content cancelled before playback is excluded from later internal provider
-context. If a later canonical ASR revision invalidates content the client reports
-as played, the internal trajectory records a typed repair obligation and keeps
-it active until a committed slow assistant item supplies the correction. No
-repair event is added to the OpenAI Realtime wire. This preserves compatibility
-while keeping acoustic and cognitive history synchronized.
+An input transcription can complete independently of response events; correlate
+items by identity rather than assuming arrival order. On interruption, report
+the playback boundary through the applicable cancel/clear/truncate lifecycle.
+Canceled, unheard content should not be treated as spoken history. See
+[The spoken boundary](spoken-boundary.md) for the implementation model.
 
 ## Implemented gateway subset
 
-The `gateway` package, served by `openrealtime serve`, serves a persistent
-WebSocket using only standard events. Output is **audio or text**, one of them,
-selected by `output_modalities`. A text session is the same conversation with a
-different output boundary: same observations, same two cognition providers,
-same rollout, same commitment policy — nothing is synthesised and nothing is
-paced, because a turn nobody hears takes no time and cannot be talked over. It
-is what a computer-use client wants, and refusing it made this server unusable
-for exactly the clients the extension exists for.
+The gateway accepts these nine GA Realtime client events:
 
-**A response is one thing the agent did, not the whole turn.** One
-`response.create` produces one response, and it carries every output item that
-*it* produced — spoken or written content and function calls, indexed within
-it. The response closes when what opened it has finished planning *and* every
-utterance it started has finished playing, which are not the same moment:
-speech is paced out over seconds after planning returns.
-
-A turn can span several of them, and normally does. The voice answers in one
-response; the background reasoner's tool calls arrive in another, and what it
-found is spoken in a third, once the gate lets anything be heard. Nothing is
-lost by that. Audio reaches the client on the audio channel rather than inside
-a response envelope, and a client executing a tool reads `function_call` items
-as they arrive — a response being done means that response has no more items,
-not that the session has stopped producing them. An earlier version of this
-document claimed the opposite, and the claim was wrong: it would require
-holding a response open across an unbounded deliberation, so the first answer
-could not complete until the last one did.
-
-Function call arguments arrive as a JSON-encoded **string**, not an object —
-`{"arguments": "{\"path\":\"notes.txt\"}"}` — which is what the official API
-does and what every client executing a tool has to unwrap.
-
-Turn detection is **server VAD or the client's own**. Setting
-`turn_detection` to `null` in `session.update` is a client taking the floor:
-silence stops ending turns, `input_audio_buffer.commit` says where a turn
-ended, and the server stops creating responses until `response.create` asks
-for one. Both halves have to hold or the client gets a session that
-half-listens to it.
-
-It accepts nine of the eleven GA Realtime client events: `session.update`, `input_audio_buffer.append`,
-`input_audio_buffer.clear`, `output_audio_buffer.clear`,
-`input_audio_buffer.commit`, `conversation.item.create` for function outputs
-and for messages carrying text, images, or both, `conversation.item.truncate`,
-`response.create`, and `response.cancel`.
-
-`output_audio_buffer.clear` is refused when nothing is playing, and the
-refusal is worth explaining because it exposes a client-side trap rather than
-creating one. The acknowledgement carries the response it cleared, so with no
-response in progress there is nothing to name, and a client that asked to stop
-hearing something it was not hearing has a bug it wants to see.
-
-The bug it usually has is measuring "the agent is speaking" by item identity.
-An item identifier outlives the sound: it is cleared on
-`response.output_audio.done`, which arrives after the last sample has played
-and never arrives at all if the response was cancelled. A client that unmutes a
-microphone and clears the output buffer whenever it holds an utterance
-identifier will therefore clear an empty buffer every time the person speaks
-after the agent has already finished. The honest measure is the playhead - the
-end of the last scheduled buffer, compared against the clock - because that is
-what "sound is still coming" actually means.
-
-An `input_image` attached to a message is not a video source. A source is a
-stream the server gates, which is what the extension's video events are for; an
-image in a message is content of the turn, shown once because the client chose
-to show it, and gating it could discard the only thing the turn was about. It
-is retained outside the trajectory and referenced by handle from the
-observation, so a provider that can see resolves it and one that cannot reads
-the text and never pays for the bytes.
-
-The other two are refused, and the refusal says why rather than reporting
-"unsupported event" — one of them is structural and no client can work around
-it, which is worth saying out loud.
-
-| Event | Why |
+| Event | Use |
 | --- | --- |
-| `conversation.item.delete` | the conversation is an append-only trajectory: content that reached the world cannot be un-reached, so it is superseded rather than removed |
-| `conversation.item.retrieve` | not served; a client that negotiated `observations` receives what the agent perceived as it happens |
+| `session.update` | Configure supported session fields |
+| `input_audio_buffer.append` | Append audio |
+| `input_audio_buffer.clear` | Discard buffered input |
+| `input_audio_buffer.commit` | Commit buffered input |
+| `output_audio_buffer.clear` | Clear active output playback |
+| `conversation.item.create` | Submit function outputs or supported text/image messages |
+| `conversation.item.truncate` | Report the heard boundary of assistant content |
+| `response.create` | Request a response |
+| `response.cancel` | Cancel a response |
 
-The session continues after any of them. A refusal is an answer, not a
-disconnection.
+`conversation.item.delete` is refused because the trajectory is append-only;
+`conversation.item.retrieve` is not served. Negotiated observations can expose
+perception as it happens, but are not an item-retrieval API.
 
-The server emits the standard session update, error, speech start/stop,
-conversation item/transcription, response, audio/transcript, function-call,
-truncation, and buffer-cleared lifecycles needed by the pinned τ OpenAI
-adapter. Every accepted client event and emitted server event is checked by the
-pinned validator in the production command. Fast/slow authority, reasoning,
-trajectory versions, preparation, and media epochs remain internal.
+### Responses and turns
 
-The `continuous` versus `endpoint-only` preparation setting is also internal.
-It controls whether typed partial transcripts may start private work; standard
-server VAD and transcription events still define the public lifecycle, and the
-same response/function-call events expose the post-endpoint result.
+A response groups the output of one operation. It closes after that operation
+finishes planning and its started utterances finish playing. A user turn can
+span several responses: an initial answer, background tool calls, and a spoken
+follow-up. `response.done` means that response has no more items; it does not
+mean the session cannot produce further work.
 
-Canonical observation policy is separate. Its compatibility default,
-`endpoint-only`, admits only the final transcript. The opt-in post-freeze
-`stable-partial` mode may admit changed non-empty provider-typed `StableText`
-before endpoint, without promoting `UnstableText`. Later promoted revisions
-carry typed supersession provenance and cancel older work at provider/media safe
-points. The frozen benchmark executable uses `endpoint-only`; stable-partial
-behavior is not part of its reported evidence.
+Text output uses the same configured cognition and commitment behavior without
+speech synthesis or paced audio playback. An `input_image` in a message is
+one-time turn content, not a video stream subject to frame gating. Vision-capable
+providers resolve its retained media; other providers can use accompanying text.
 
-External tools use the ordinary protocol sequence: the slow continuation emits
-standard function-call response items; the client sends one
-`function_call_output` item per call followed by `response.create`; the gateway
-validates the complete call-ID/name batch, commits it atomically, and resumes
-slow without rerunning fast. Agent speech uses ordinary output-audio and
-transcript deltas. Local Fish fragments are emitted as real-time-paced 100 ms
-wire frames so server cancellation remains meaningful at the acoustic commit
-horizon.
+### Client turn and playback control
 
-The pinned official τ horizontal provider suite passes 12/12 selected OpenAI
-cases against this live endpoint. This validates the implemented subset; it
-does not imply MCP, DTMF, translation, manual input commits, every item CRUD
-operation, or full parity with the hosted service.
+Where the binding permits client-owned turns, setting `turn_detection: null`
+disables silence-based endpoints and automatic responses. Send
+`input_audio_buffer.commit` to end the input, then `response.create` to ask for
+output.
+
+`output_audio_buffer.clear` requires active playback and is refused when there
+is nothing to clear. A retained item ID alone does not establish that audio is
+still playing. Track actual playback and response state in the client.
+
+### Tool results
+
+Function arguments are a JSON-encoded string, for example:
+
+```json
+{"arguments": "{\"path\":\"notes.txt\"}"}
+```
+
+Return one `function_call_output` per call, then send `response.create`. The
+gateway validates the complete call-ID/name batch, commits it atomically, and
+resumes background work without rerunning the foreground. Calls and results
+use ordinary response and conversation events.
+
+### Preparation and early observations
+
+`continuous` preparation can start private work on partial transcripts. It does
+not add public event types. The default `endpoint-only` observation policy
+commits final transcripts. The opt-in `stable-partial` policy can admit changed,
+nonempty provider-declared stable prefixes and cancel work superseded by later
+revisions. These settings are deployment choices, not extra Realtime fields.
+
+## Schema registry reference
+
+The tables below describe pinned decoding and schema coverage. They do not add
+to the implemented gateway event list above. Historical selected-case results
+validate only the tested subset and configuration.
 
 ## GA Realtime client events (11)
 
@@ -341,67 +263,25 @@ wrong-profile, and missing-required-field rejection.
 
 ## What conformance cannot see
 
-Every check above inspects the wire, and there is a class of defect where the
-wire is entirely correct. **A client is only written against the parts of a
-protocol that were reachable when it was written**, so making a capability
-reachable ages every consumer that predates it — each keeps handling the events
-that existed before and ignoring the ones that did not. Nothing fails, because
-nothing is wrong: the events are valid, correctly named, and correctly
-directed. They are simply not read, and the symptom is an absence.
+Valid wire events do not prove a client handles or displays them correctly.
+When adding a feature, verify the complete path through transport, reducer,
+and presentation. Test new values of existing fields as well as new event
+names; for example, a client can receive `response.done` but ignore an
+unfamiliar status.
 
-Making text-only sessions reachable on `upstream` did this three times in one
-day — to the former mirror, to the former standalone client, and to the pre-GA
-rename table, which had no name to rename onto while nothing downstream
-handled text.
+A useful review checks:
 
-It is not a property of that capability. Letting a client take the floor did
-the same thing to the former standalone client independently: it could declare
-`turn_detection: null` from its session editor and had no way to end a turn, so
-audio flowed, the server correctly waited to be told, and nothing happened —
-with no error anywhere, because nothing was wrong. Two unrelated capabilities,
-the same absence. Expect this of any capability that makes new events
-reachable, and run the audit when adding one rather than when something is
-reported.
+1. Which events and field values can this configuration now produce?
+2. Which component consumes each one?
+3. What state change or visible result should the user receive?
+4. Does a test assert that result at the final consumer?
 
-Not every ageing is a new event, and the subtraction below will not find the
-ones that are not. An incomplete turn added no event at all — it added a new
-*value* to `status` on `response.done`, which every consumer already handled.
-Switching on a status nobody has ever sent looks exactly like switching on one
-that cannot happen, so when a capability widens an existing field, grep for the
-field rather than the event name.
+Forwarding layers do not need to interpret every event. The browser transport
+can forward frames to a reducer while a view renders the result. Likewise,
+intentionally ignored lifecycle events need no artificial handler. Tests
+should establish the behavior required by the selected client capabilities.
 
-The defence is cheaper than the audit and worth building in: **render the value,
-enumerate only the treatment**. A consumer that records whatever `status`
-arrives and enumerates only which statuses deserve a warning cannot be blinded
-by a new one — it shows something unfamiliar rather than nothing, which is a
-question somebody asks rather than an absence nobody notices. A consumer that
-enumerates the rendering instead reintroduces the same silence one layer down.
-The descriptor-locked shared reducer does this now: every status reaches client
-state, and only `incomplete` and `failed` require warning treatment, because
-`cancelled` is the user interrupting on purpose.
-
-The audit is cheap. Enumerate the events the server can emit, subtract the ones
-a consumer handles, and go through the remainder:
-
-```sh
-# the emitted set comes from the pinned registry; the handled set from the client
-grep -o 'case "[^"]*"' binding/upstream/mirror.go | sed 's/case "//;s/"//' | sort -u
-```
-
-The whole audit is in the second step, and the rule is **reachability, not
-coverage**. Most of the remainder is correctly unhandled — lifecycle events,
-acknowledgements of what this side sent, the `.done` twin of a delta already
-accumulated, capabilities this consumer never declares. Handling everything
-would bury the one case that matters under a dozen pointless ones, which is the
-same failure as a test that cannot fail. Ask of each: *can this consumer now
-receive this, and what happens if it does?*
-
-Two worked answers. The descriptor-composed browser WebSocket transport handles
-no text events and needs none: it forwards validated protocol frames to the
-selected reducer service, while a separately replaceable view decides what to
-render. The `upstream` mirror ignores every function call event and should:
-this binding declares no tools to the remote, because the remote is the fast
-voice and has no execution authority.
-
-Assert on what the consumer rendered, never on what crossed the wire. A
-wire-only test agrees there is nothing wrong.
+The shared reducer retains every response status and applies warning treatment
+to `incomplete` and `failed`; cancellation remains distinguishable as an
+interruption. See [Presentation design](composable-presentation.md) for the
+client state contract.

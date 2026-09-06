@@ -6,13 +6,18 @@
 > methodology here to reproduce them and [the benchmark harness](benchmarks.md)
 > to generate current results for your deployment.
 
-What a person in the room waits through, measured in waveform time: from the
-last sample of the thing that triggered a reply to the first sample the agent
-produced. Not from the decision, and not from the start of the trigger.
+This record measures response latency from the end of a triggering input to
+the start of agent audio. It distinguishes that user-facing interval from the
+time spent making an interaction decision.
 
-That distinction is the whole point. The interaction decision takes 25–45ms;
-the wait is one to two seconds. Optimising the decision would be optimising two
-percent of the number anybody experiences.
+In the recorded configuration, interaction decisions took 25–45 ms while total
+waiting time was about one to two seconds. The main optimization question was
+therefore where the remaining time went. The repeated-run and stage breakdowns
+below investigate recognition, generation, and synthesis.
+
+**Read:** [Method](#how-it-is-measured) · [Initial results](#measured) ·
+[Repeated measurements](#measured-again-five-runs-of-every-scenario-f28) ·
+[Stage breakdown](#where-the-time-actually-goes-f31).
 
 ## How it is measured
 

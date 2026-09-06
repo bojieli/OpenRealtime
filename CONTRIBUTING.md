@@ -4,13 +4,8 @@ Thanks for helping build open infrastructure for realtime agents. Contributions
 are welcome across the Go runtime, model adapters, protocol support, clients,
 benchmarks, documentation, examples, and developer experience.
 
-OpenRealtime is production-oriented software with an evidence-first engineering
-standard: behavior should be inspectable, compatibility should be tested, and
-performance claims should be reproducible.
-
-Before participating, read the [Code of Conduct](CODE_OF_CONDUCT.md). Report
-vulnerabilities privately through the process in [SECURITY.md](SECURITY.md), not
-in a public issue.
+Read the [Code of Conduct](CODE_OF_CONDUCT.md) before participating. Report
+vulnerabilities privately through [SECURITY.md](SECURITY.md).
 
 ## Ways to contribute
 
@@ -25,6 +20,17 @@ in a public issue.
 Small, focused pull requests are easiest to review. For a large architecture or
 protocol change, open a discussion or draft ADR before investing in the full
 implementation.
+
+## Good first contributions
+
+- Walk through the quickstart on a clean machine and improve a missing step.
+- Add a minimal example for a supported provider or client integration.
+- Reproduce one interaction failure and include the configuration and observed behavior.
+- Improve a configuration error so it names the setting and how to correct it.
+
+For a bug report, include the source version, launch command with credentials
+removed, expected behavior, actual behavior, and the smallest reproduction you
+can provide. For an integration, state which provider and transport you used.
 
 ## Development setup
 
@@ -52,24 +58,15 @@ go_bin="$(openrealtime_go_bin)"
 "$go_bin" test -race ./eventloop/...
 ```
 
-The gate declares the exact patched Go toolchain in `go.mod`, so a machine
-without it downloads that toolchain once. "Go 1.25" alone is whichever patch a
-host was installed with, which is how a build picks up standard-library
-advisories that were fixed months earlier; pinning it is also what makes the
-release build reproducible rather than reproducible-per-machine.
+The module pins a patched Go toolchain. Initial dependency or toolchain setup
+may need network access; subsequent developer checks run without model services.
+During development, run the tests for the package you changed. Before submitting,
+run the complete gate and report failures or skipped integrations.
 
-The measurement suites write to `.runtime` and `artifacts`, which are
-gitignored and grow without bound — model weights, datasets, and the evidence
-behind every run. Neither is under version control, so nothing there is
-recoverable, which is why the inventory reports by default:
-
-```bash
-./scripts/workspace-inventory.sh -older-than 30
-./scripts/workspace-inventory.sh -older-than 30 -delete
-```
-
-Entries marked `dep` are named by a tracked file — a prepare script, a
-document, a test — and are never offered for removal.
+Benchmark workspaces under `.runtime` and `artifacts` are gitignored. Inspect
+old generated files with `./scripts/workspace-inventory.sh -older-than 30`.
+Adding `-delete` removes eligible entries; these files are not recoverable from
+Git. Entries marked `dep` are referenced by tracked files and are excluded.
 
 Model-, dataset-, browser-, and GPU-dependent checks are provisioned release or
 measurement gates rather than part of the offline developer gate. A skipped
@@ -133,24 +130,14 @@ it into a failure.
 
 ## Performance and benchmark changes
 
-Use benchmarks to find failures and improve agent behavior. Historical results,
-partial runs, and existing recordings are useful diagnostic inputs. Reproduce
-an actionable failure, fix its underlying cause, and test the affected behavior.
-Explain the failure and what the regression check proves, including unresolved
-provider or evaluator uncertainty.
+Use a focused reproduction and a regression check to verify a repair. A full
+campaign, new result archive, external model review, or score report is not
+required for ordinary fixes.
 
-A full benchmark campaign, fresh result archive, external model review, score
-report, or measurement program is not required for a repair, project completion,
-or publication. The release matrix keeps these tools available as optional
-checks. Ordinary behavioral regressions, protocol checks, and integration tests
-remain part of validation.
-
-If a contribution voluntarily makes a quantitative performance claim, provide
-the command, relevant environment and configuration, a suitable comparison,
-and the limitations needed to assess that claim. See
-[the benchmark harness](docs/benchmarks.md) and
-[measurement notes](docs/measurement.md) for the available tools and historical
-experiments.
+If you make a quantitative performance claim, include the command, environment,
+configuration, comparison, sample counts, and limitations. Report negative and
+ambiguous results. See [Benchmarks](docs/benchmarks.md) for tooling and
+[Research](docs/research.md) for how to interpret the evidence.
 
 ## Documentation changes
 
@@ -163,3 +150,12 @@ Use the [documentation home](docs/README.md) to place new material:
 
 Keep the README focused on the value of the project and the shortest successful
 path. Link to depth instead of moving design notebooks back into onboarding.
+
+For readable technical documentation:
+
+- Lead with the task, result, or contract and identify who needs the page.
+- Define unfamiliar terms on first use or link to [Core concepts](docs/concepts.md).
+- Put prerequisites before commands and expected results after them.
+- Keep current behavior separate from debugging history and design targets.
+- Include limits next to the claims they qualify.
+- Link to detailed contracts instead of repeating them in every guide.

@@ -19,26 +19,26 @@ and extension surfaces, but do not attest an immutable architecture revision.
 
 | Binding | Models | Best for |
 | --- | --- | --- |
-| [`cascade`](cascade.md) | recogniser + language model + synthesiser | the default: fully local, every policy in your hands |
+| [`cascade`](cascade.md) | recogniser + language model + synthesiser | selecting each component; local voice services with a hosted reasoner by default |
 | [`upstream`](upstream.md) | any Realtime-compatible endpoint | a hosted voice stack with a background reasoner behind it |
 | [`omni`](omni.md) | Qwen3-Omni, MiniCPM-o 4.5 | turn generation with engine floor |
 | `omni+text-policy` | any turn generator plus policy ASR | speech-to-speech foreground with engine interaction controller |
 | [`duplex`](duplex.md) | Moshi | preset selecting native interaction and floor |
 
-One column never varies. **Slow cognition is always the engine's**, because no
-foreground model provides it, and supplying it over a shared trajectory is what
-this project adds to whatever stack it is given.
+These binding presets keep background reasoning in the engine. Graph-native
+compositions can arrange cognition roles differently; see
+[Architecture](../architecture.md).
 
 ## Choosing
 
-**Start with `cascade`.** It is the default because it is fully local, needs no
-third-party account, and gives you every interaction policy to vary. It is also
-the honest test of the control plane: none of its models knows anything about
-the conversation's timing, so whatever responsiveness you observe was
-manufactured by the runtime.
+**Start with `upstream`** for a first conversation without local model servers.
+The [quickstart](../quickstart.md) configures both the voice and background
+reasoner with one Gemini credential.
 
-**Use `upstream`** when you already have a voice stack you like, or no GPU. It
-is one flag and one credential.
+**Use `cascade`** when you want to choose speech recognition, the foreground
+model, and speech synthesis independently. It is the CLI default, but its
+services must already be running. The background reasoner defaults to Gemini;
+the [local guide](../guides/local-stack.md) explains how to make it local too.
 
 **Use `omni`** when you want a single speech-to-speech generator and an engine
 floor. Add the `omni+text-policy` composition when a separate interaction model

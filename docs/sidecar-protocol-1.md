@@ -1,17 +1,15 @@
 # The OpenRealtime sidecar protocol, version 1
 
-**Status:** stable from OpenRealtime v1.0.
+**Status:** stable from OpenRealtime v0.1.0.
 **Transport:** a duplex byte stream — a child process's stdin and stdout, a
 Unix socket, or TCP.
 
-A sidecar is a model that is not written in Go, running behind a process
-boundary. Models with many different capability combinations live in Python; letting that into the
-engine's build, test, and analysis path would make every one of them slower and
-more fragile. This protocol is what keeps it out.
+This protocol connects the runtime to an external audio model process. For
+version selection and a first integration, read the [sidecar guide](sidecars.md).
+Versions 2 and 3 extend this message set; graph-native v4 inherits only its byte
+framing.
 
-**The conformance suite is the contract.** A sidecar that passes it works with
-the engine whatever it is written in; one that does not is broken before
-anybody spends a GPU-hour finding out:
+Validate the reference process contract without loading weights:
 
 ```sh
 openrealtime conformance sidecar -- python3 sidecars/qwen3_omni_sidecar.py --mock
@@ -26,14 +24,11 @@ exactly `payload_bytes` of binary payload:
 {"type":"audio","payload_bytes":960}\n<960 bytes of PCM16>
 ```
 
-Audio is raw rather than base64. A third more bytes and an encode/decode pass on
-every frame is a real cost on the hot path, and audio is the only thing large
-enough to matter. Everything else is ordinary JSON, so a sidecar can be
-debugged by reading the stream.
+Binary audio avoids base64 expansion and conversion on every frame. Control
+fields remain JSON. Keep diagnostics on stderr so they cannot corrupt framing.
 
-Both sides MUST flush after every frame. A sidecar that buffers is a sidecar
-that appears to hang, and the point of streaming audio is that it arrives while
-it is still useful.
+Both sides MUST flush after every frame so the peer can process streaming
+input without waiting for another message.
 
 Audio payloads are little-endian signed 16-bit mono PCM.
 
@@ -157,7 +152,7 @@ CI, and how a new sidecar is developed before the GPU is involved.
 
 ## 9. Versioning
 
-Version 1 is frozen at the OpenRealtime v1.0 release. Later versions are
+Version 1 is frozen at the OpenRealtime v0.1.0 release. Later versions are
 additive under a higher number; the handshake is where they are negotiated, and
 a sidecar that does not implement the engine's version says so and exits.
 
