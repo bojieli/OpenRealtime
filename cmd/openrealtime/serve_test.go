@@ -972,7 +972,20 @@ func TestGatewayListenerCredentialRefusesARoutableListenerWithoutAToken(t *testi
 func TestServeRefusesARoutableListenerWithoutAToken(t *testing.T) {
 	// The real command, with the real defaults, which is the configuration an
 	// operator actually types.
-	t.Setenv("OPENREALTIME_TOKEN", "")
+	//
+	// The refusal must come before provider configuration, and this test is
+	// what says so: it clears the credentials the default providers want, so a
+	// serve that reached them first would fail with "configure the slow
+	// provider" and never judge the listener at all. That is what it did in CI
+	// while passing on a workstation that happened to have GEMINI_API_KEY set —
+	// the check ran second, behind an unrelated error, and the test could only
+	// observe it somewhere already configured.
+	for _, credential := range []string{
+		"OPENREALTIME_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY",
+		"OPENREALTIME_SLOW_API_KEY", "OPENREALTIME_FAST_API_KEY",
+	} {
+		t.Setenv(credential, "")
+	}
 	err := runServe([]string{"-listen", "0.0.0.0:0"}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "routable and the Realtime endpoint has no bearer token") {
 		t.Fatalf("serve error = %v, want the routable-listener refusal", err)

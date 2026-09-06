@@ -14,17 +14,30 @@
   module's own Go, and the root module keeps the 1.25 toolchain the released
   binaries are actually built with.
 
-- The verification gate had never passed in CI. Five consecutive runs on main
-  failed, each on a different set of tests — ffmpeg review bundles one run, a
-  graph trace and a killed Chromium the next — which is the signature of
-  starvation rather than of a defect. `check.sh` documents
-  `OPENREALTIME_TEST_PARALLEL` for exactly this and explains why: these tests
-  start real servers, real ffmpeg and real Chromium and hold real deadlines, so
-  one package per CPU on a small machine makes a rotating handful fail while
-  every one of them passes alone. CI had never set it. The gate and
-  compatibility jobs now bound it, and the compatibility job's deadline is no
-  longer shorter than the work it was asked to do — it was being killed at
-  twenty minutes rather than finishing.
+- The verification gate had never passed in CI, for two unrelated reasons.
+
+  The larger one was not load, though it looked like it: the media review runs
+  ffmpeg under bubblewrap with `--unshare-all`, bubblewrap brings up loopback
+  inside the new network namespace, and Ubuntu 24.04 restricts unprivileged
+  user namespaces by default — so every ffmpeg test failed with `bwrap:
+  loopback: Failed RTM_NEWADDR: Operation not permitted`. A runner policy
+  reading as a broken sandbox. CI now relaxes that sysctl where it installs
+  bubblewrap; the sandbox flags, which are a security property rather than a CI
+  detail, are unchanged.
+
+  The rest was capacity. `check.sh` documents `OPENREALTIME_TEST_PARALLEL`
+  because these tests start real servers and hold real deadlines, and one
+  package per CPU on a small machine makes a handful fail while every one of
+  them passes alone; CI had never set it. The gate and compatibility jobs now
+  bound it, and the compatibility job's deadline is no longer shorter than the
+  work it was asked to do — it was being killed at twenty minutes rather than
+  finishing.
+
+- The routable-listener refusal is made before providers are configured. It ran
+  after, so a deployment missing both a bearer token and a model credential was
+  told about the credential and never about the open endpoint — and the test
+  covering it could only observe the refusal on a machine where the providers
+  happened to be configured, which is why it passed locally and failed in CI.
 
 ## v0.1.0 — 2026-09-06
 

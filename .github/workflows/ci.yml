@@ -83,6 +83,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
+          # The media review runs ffmpeg under bubblewrap with --unshare-all,
+          # and bubblewrap then brings up loopback inside the new network
+          # namespace. Ubuntu 24.04 restricts unprivileged user namespaces by
+          # default, so that call is denied and every ffmpeg test fails with
+          # "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" -
+          # which reads like a broken sandbox and is a runner policy. Relaxing
+          # it here keeps the sandbox flags themselves unchanged, which is the
+          # half that is a security property rather than a CI detail.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       # The reference sidecars run in mock mode under the Go conformance
       # suite; they need only numpy and Pillow, which is what the sidecar
@@ -195,6 +204,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
+          # The media review runs ffmpeg under bubblewrap with --unshare-all,
+          # and bubblewrap then brings up loopback inside the new network
+          # namespace. Ubuntu 24.04 restricts unprivileged user namespaces by
+          # default, so that call is denied and every ffmpeg test fails with
+          # "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" -
+          # which reads like a broken sandbox and is a runner policy. Relaxing
+          # it here keeps the sandbox flags themselves unchanged, which is the
+          # half that is a security property rather than a CI detail.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo apt-get install -y --no-install-recommends chromium-browser \
             || sudo apt-get install -y --no-install-recommends chromium
           # The test looks for chromium, chromium-browser, then google-chrome on
@@ -250,6 +268,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
+          # The media review runs ffmpeg under bubblewrap with --unshare-all,
+          # and bubblewrap then brings up loopback inside the new network
+          # namespace. Ubuntu 24.04 restricts unprivileged user namespaces by
+          # default, so that call is denied and every ffmpeg test fails with
+          # "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" -
+          # which reads like a broken sandbox and is a runner policy. Relaxing
+          # it here keeps the sandbox flags themselves unchanged, which is the
+          # half that is a security property rather than a CI detail.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo apt-get install -y --no-install-recommends chromium-browser \
             || sudo apt-get install -y --no-install-recommends chromium
           for candidate in chromium chromium-browser google-chrome; do

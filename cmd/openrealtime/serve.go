@@ -500,6 +500,24 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 		profileGraph      *serverprofile.GraphBundle
 		operatorAuthority management.Authorizer
 	)
+	if !profiled {
+		// Resolve the credential and refuse an unsafe listener before any
+		// provider is configured.
+		//
+		// This check also runs below, after the profiled path has resolved its
+		// own token, because that is the only point where the fact is known for
+		// both paths. Running it here as well is not belt-and-braces: a
+		// security refusal that happens after provider configuration is a
+		// refusal an operator sees second, behind whichever credential they
+		// also forgot, and a test of it cannot run anywhere the providers are
+		// not configured. That is exactly how it failed - in CI, with no
+		// GEMINI_API_KEY, serve returned "configure the slow provider" and the
+		// listener was never judged at all.
+		gatewayToken = os.Getenv(options.tokenEnv)
+		if _, err := gatewayListenerCredential(options.listen, gatewayToken); err != nil {
+			return err
+		}
+	}
 	if profiled {
 		composition, err := newProductionProfiledServeComposition(
 			ctx, options, logger,
@@ -525,7 +543,6 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 		if err != nil {
 			return fmt.Errorf("identify server plugin runtime: %w", err)
 		}
-		gatewayToken = os.Getenv(options.tokenEnv)
 		bundle, err = serverprofile.NewBundle(serverprofile.BundleConfig{
 			ProfileName: "openrealtime.server.realtime", ProfileRevision: 1,
 			Provider: bind,
