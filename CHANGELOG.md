@@ -14,6 +14,18 @@
   module's own Go, and the root module keeps the 1.25 toolchain the released
   binaries are actually built with.
 
+- The verification gate had never passed in CI. Five consecutive runs on main
+  failed, each on a different set of tests — ffmpeg review bundles one run, a
+  graph trace and a killed Chromium the next — which is the signature of
+  starvation rather than of a defect. `check.sh` documents
+  `OPENREALTIME_TEST_PARALLEL` for exactly this and explains why: these tests
+  start real servers, real ffmpeg and real Chromium and hold real deadlines, so
+  one package per CPU on a small machine makes a rotating handful fail while
+  every one of them passes alone. CI had never set it. The gate and
+  compatibility jobs now bound it, and the compatibility job's deadline is no
+  longer shorter than the work it was asked to do — it was being killed at
+  twenty minutes rather than finishing.
+
 ## v0.1.0 — 2026-09-06
 
 The first release. It is numbered 0.1.0 rather than 1.0.0 deliberately: the

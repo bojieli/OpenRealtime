@@ -53,9 +53,24 @@ jobs:
           bash -n macos/prepare-browser-use.sh
           bash -n macos/verify-hosted-companion.sh
 
+  # OPENREALTIME_TEST_PARALLEL is set here for the reason check.sh documents at
+  # length: this suite's end-to-end tests each start real servers, real ffmpeg,
+  # and real Chromium and hold real deadlines, so running one package per CPU
+  # starves them and a rotating handful fail while every one of them passes
+  # alone. A four-vCPU runner is a small machine by that measure, and this job
+  # had never once been green on it - five consecutive runs on main failed, each
+  # on a different set of tests, with signatures that name the cause: a Chromium
+  # killed by the OS, a trace that saw three events instead of the rest, a
+  # played count that had not been published yet. Every one of them passes
+  # locally, including under `taskset -c 0-3`.
+  #
+  # This does not make the gate weaker. It changes how many packages run at
+  # once and nothing about what is checked.
   gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      OPENREALTIME_TEST_PARALLEL: '2'
     steps:
       - uses: actions/checkout@v4
 
@@ -144,9 +159,14 @@ jobs:
   # and runs the gate with the flag set, where a skip is a failure. If the SDK
   # publishes a breaking change, this job fails while the gate job stays green,
   # which is the distinction worth having in CI.
+  # Same bound as the gate, and a deadline that fits it: this job runs the whole
+  # of check.sh with a browser and the official SDK on top, and it was being
+  # killed at exactly twenty minutes rather than finishing and reporting.
   compatibility:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      OPENREALTIME_TEST_PARALLEL: '2'
     steps:
       - uses: actions/checkout@v4
 
