@@ -58,8 +58,9 @@ copilots, or agents that respond to changing screens.
 
 ## Run your first conversation
 
-The recommended hosted path needs **Go 1.25+, Git, a Chromium-based browser,
-and a Gemini API key**. No GPU is required. Provider usage may incur charges.
+The conference room uses the project’s twelve-scenario pipeline. It needs
+**Go 1.25+, Git, a Chromium-based browser, Deepgram and Gemini credentials**,
+and the local services listed in [Conversation room](docs/room.md).
 
 ```bash
 git clone https://github.com/bojieli/OpenRealtime.git
@@ -67,10 +68,8 @@ cd OpenRealtime
 go build -o openrealtime ./cmd/openrealtime
 
 export GEMINI_API_KEY="your-key"
-./openrealtime companion -- \
-  -binding upstream \
-  -upstream-provider google \
-  -slow-provider google
+export DEEPGRAM_API_KEY="your-key"
+./openrealtime companion
 ```
 
 The command starts the server and browser client, then opens

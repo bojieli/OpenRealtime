@@ -1,8 +1,8 @@
 # Quickstart
 
 This guide gets a first conversation running in a browser and shows you how to
-verify the server. The recommended path uses a hosted Realtime endpoint, so it
-does not require a GPU.
+verify the server. The recommended room uses the project’s benchmark pipeline,
+with local model services and separate recognition/cognition providers.
 
 Want every model on your own machine? Build the binary here, then switch to the
 [local stack guide](guides/local-stack.md).
@@ -29,19 +29,17 @@ go build -o openrealtime ./cmd/openrealtime
 The final command should print `openrealtime 0.1.0` plus the source revision
 and Go toolchain used for the build.
 
-## 2. Start a hosted voice
+## 2. Start the conversation room
 
-Use the same Gemini credential for Gemini Live in the foreground and Gemini
-background reasoning. This is the provider catalog's live-turn-verified path:
+The room uses the same OpenRealtime pipeline as the twelve interaction
+scenarios: streaming ASR, Qwen interaction policy, Gemini cognition, Fish
+speech, speaker identification, and word timing. Prepare the services and
+credentials listed in [Conversation room](room.md), then run:
 
 ```bash
-export GEMINI_API_KEY="your-key"
-
-./openrealtime companion -- \
-  -binding upstream \
-  -upstream-provider google \
-  -slow-provider google
+./openrealtime companion
 ```
+
 
 When startup succeeds, the command prints:
 
@@ -87,10 +85,7 @@ For the component and credential boundaries, see
 Use `-client none` if you do not want a browser opened:
 
 ```bash
-./openrealtime companion -client none -- \
-  -binding upstream \
-  -upstream-provider google \
-  -slow-provider google
+./openrealtime companion -client none
 ```
 
 Flags after the literal `--` belong to `serve`; flags before it configure the
@@ -126,7 +121,7 @@ To drive a complete audio turn without the browser, pass a 16-bit PCM WAV file:
 Running `probe` without `-audio` sends a generated tone. That checks transport
 and session setup, but a working recogniser should not turn a tone into speech.
 
-## Use another hosted provider
+## Select another pipeline
 
 See what this build supports and which credentials are present:
 
@@ -135,21 +130,15 @@ See what this build supports and which credentials are present:
 ./openrealtime providers -role upstream
 ```
 
-For example, one OpenAI key can supply both the OpenAI Realtime endpoint and an
-OpenAI background model:
+The companion rejects hosted Realtime bindings. To select another pipeline,
+author a strict graph profile and pass it explicitly:
 
 ```bash
-export OPENAI_API_KEY="your-key"
-
-./openrealtime companion -- \
-  -binding upstream \
-  -upstream-provider openai \
-  -slow-provider openai
+./openrealtime companion -- -launch-profile /absolute/path/to/profile.yaml
 ```
 
-Foreground and background providers do not have to match. Provider selection,
-credential precedence, endpoint overrides, and current model defaults are
-documented in the [provider catalog](providers.md).
+See [Conversation room](room.md) for media controls, recording, and the shared
+browser/macOS scenario selector.
 
 ## Run the local cascade
 
@@ -193,10 +182,7 @@ CORS, and production network boundaries.
 To run only the server, skip the presentation stack:
 
 ```bash
-./openrealtime serve \
-  -binding upstream \
-  -upstream-provider google \
-  -slow-provider google
+./openrealtime serve -launch-profile /absolute/path/to/profile.yaml
 ```
 
 ## Native macOS client
@@ -209,10 +195,7 @@ and millisecond traces. Build it on macOS 14+ with Xcode 16+:
 cd macos
 ./build-app.sh
 cd ..
-./openrealtime companion -client macos -- \
-  -binding upstream \
-  -upstream-provider google \
-  -slow-provider google
+./openrealtime companion -client macos
 ```
 
 The shipped developer profile is observation-only. Filesystem, shell, desktop
