@@ -453,8 +453,8 @@ func TestNativeLiveControlsAreDisabledWhileDisconnected(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, fragment := range []string{
-		"Button(\"End turn\") { model.endTurn() }\n                        .disabled(model.connectionState != .connected)",
-		"Button(\"Send\") { model.submitText() }\n                    .keyboardShortcut(.return, modifiers: [.command])\n                    .disabled(model.connectionState != .connected ||",
+		"Button(\"End turn\") { model.endTurn() }\n                    .disabled(model.connectionState != .connected)",
+		"Button(\"Send\") { model.submitText() }\n                    .keyboardShortcut(.return, modifiers: [.command])\n                    .buttonStyle(.borderedProminent)\n                    .disabled(model.connectionState != .connected ||",
 	} {
 		if !strings.Contains(string(view), fragment) {
 			t.Errorf("native view no longer gates a live-session control on the connection: %q", fragment)

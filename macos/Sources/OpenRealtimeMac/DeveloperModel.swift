@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import OpenRealtimeClientCore
 
 @MainActor
@@ -35,6 +36,14 @@ final class DeveloperModel: ObservableObject {
     @Published var composer = ""
     @Published var microphoneActive = false
     @Published var microphoneMuted = false
+    @Published var speakerMuted = false
+    @Published var agentTileHidden = false
+    @Published var previews: [String: Data] = [:]
+    @Published var recording = false
+    @Published var selectedScenario = ""
+    let roomScenarios = RoomScenario.load()
+    private var handledRoomCalls = Set<String>()
+    private var roomRecorder: AnyObject?
     @Published var screenActive = false
     @Published var cameraActive = false
     @Published var browserActive = false
@@ -196,6 +205,8 @@ final class DeveloperModel: ObservableObject {
     }
 
     func disconnect() {
+        handledRoomCalls.removeAll()
+        if #available(macOS 15.0, *), let recorder = roomRecorder as? RoomRecorder { Task { await recorder.stop() } }
         effects?.deactivate()
         artifactService?.deactivate()
         reducer.disconnect()
@@ -232,6 +243,69 @@ final class DeveloperModel: ObservableObject {
     func endTurn() {
         guard connectionState == .connected else { return }
         reducer.endTurn()
+    }
+
+    func applyRoomScenario() {
+        guard connectionState == .connected else { return }
+        let preset = roomScenarios.first { $0.id == selectedScenario }
+        if let preset { systemPrompt = preset.instructions }
+        else { systemPrompt = "You are a realtime assistant. Follow the user's instructions about when to speak. Answer briefly." }
+        reducer.sessionUpdate(["type": "realtime", "instructions": systemPrompt, "tools": preset?.tools ?? []])
+    }
+
+    func toggleSpeaker() { media.toggleSpeaker() }
+
+    func attachImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.jpeg, .png, .webP]
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            guard (values.fileSize ?? 0) <= 10 * 1024 * 1024,
+                  let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
+                throw NativeProviderError("Choose an image smaller than 10 MB.")
+            }
+            let scale = min(1, 1280 / max(image.size.width, image.size.height))
+            let size = NSSize(width: max(1, image.size.width * scale), height: max(1, image.size.height * scale))
+            let resized = NSImage(size: size)
+            resized.lockFocus()
+            image.draw(in: NSRect(origin: .zero, size: size))
+            resized.unlockFocus()
+            guard let tiff = resized.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
+                  let data = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
+                throw NativeProviderError("Could not read this image.")
+            }
+            try video.sendImage(data)
+            record("obs.image", "Image shared", url.lastPathComponent)
+        } catch { sessionErrorText = error.localizedDescription }
+    }
+
+    func toggleRecording() {
+        guard #available(macOS 15.0, *) else {
+            sessionErrorText = "Room recording requires macOS 15 or later. Browser recording is also available."
+            return
+        }
+        if let recorder = roomRecorder as? RoomRecorder {
+            Task { await recorder.stop() }
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.mpeg4Movie]
+        panel.nameFieldStringValue = "OpenRealtime-room.mp4"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let recorder = RoomRecorder()
+        roomRecorder = recorder
+        recorder.setMicrophoneEnabled(microphoneActive && !microphoneMuted)
+        recorder.onStatus = { [weak self] active, error in
+            self?.recording = active
+            if let error { self?.sessionErrorText = error }
+            if !active { self?.roomRecorder = nil }
+        }
+        Task {
+            do { try await recorder.start(url: url) }
+            catch { roomRecorder = nil; sessionErrorText = error.localizedDescription }
+        }
     }
 
     func toggleMicrophone() {
@@ -504,6 +578,10 @@ final class DeveloperModel: ObservableObject {
     private func mediaChanged(_ snapshot: NativeMediaSnapshot) {
         microphoneActive = snapshot.microphoneActive
         microphoneMuted = snapshot.microphoneMuted
+        speakerMuted = snapshot.speakerMuted
+        if #available(macOS 15.0, *), let recorder = roomRecorder as? RoomRecorder {
+            recorder.setMicrophoneEnabled(microphoneActive && !microphoneMuted)
+        }
         audioOutputStatus = snapshot.outputStatus
     }
 
@@ -513,6 +591,7 @@ final class DeveloperModel: ObservableObject {
         browserActive = snapshot.active.contains("browser")
         browserCaption = snapshot.browserCaption
         frameStatus = snapshot.frameStatus
+        previews = snapshot.previews
     }
 
     private func effectsChanged(_ snapshot: NativeEffectsSnapshot) {
@@ -606,6 +685,22 @@ final class DeveloperModel: ObservableObject {
     }
 
     private func project(_ snapshot: [String: Any]) {
+        for event in snapshot["tools"] as? [[String: Any]] ?? [] {
+            if selectedScenario == "a recorded menu", event["status"] as? String == "pending",
+               event["name"] as? String == "press_key", let callID = event["call_id"] as? String,
+               !handledRoomCalls.contains(callID) {
+                handledRoomCalls.insert(callID)
+                let raw = (event["arguments"] as? String ?? "{}").data(using: .utf8) ?? Data()
+                let args = (try? JSONSerialization.jsonObject(with: raw)) as? [String: Any]
+                let digit = args?["digit"] as? String ?? "invalid"
+                let destination = digit == "2" ? "order-status" : "other-option"
+                let result = "{\"ok\":\(digit == "2" ? "true" : "false"),\"destination\":\"\(destination)\"}"
+                Task { @MainActor [weak self] in
+                    self?.reducer.toolResult(callID: callID, status: "done", output: result)
+                }
+            }
+
+        }
         let connection = snapshot["connection"] as? [String: Any] ?? [:]
         let phase = connection["phase"] as? String ?? "disconnected"
         let reason = connection["reason"] as? String ?? ""
@@ -660,6 +755,8 @@ final class DeveloperModel: ObservableObject {
             guard let role = item["role"] as? String,
                   let channel = item["channel"] as? String,
                   let text = item["text"] as? String else { return nil }
+            if role == "observation" && (text == "The user attached an image." || text.hasPrefix("Current shared ")) { return nil }
+            if role == "observation" && items.contains(where: { $0["role"] as? String == "user" && $0["text"] as? String == text }) { return nil }
             let presentationChannel: String
             let title: String
             switch (role, channel) {

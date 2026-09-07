@@ -5,9 +5,10 @@ import WebKit
 struct ContentView: View {
     @ObservedObject var model: DeveloperModel
     @ObservedObject var host: NativeClientHost
+    @State private var columns: NavigationSplitViewVisibility = .detailOnly
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             configuration
                 .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 430)
         } detail: {
@@ -28,6 +29,7 @@ struct ContentView: View {
                 .padding(10)
             }
         }
+        .preferredColorScheme(.dark)
         .sheet(item: $model.pendingConfirmation) { request in
             ConfirmationView(request: request) { approved in
                 model.decideConfirmation(approved)
@@ -161,78 +163,137 @@ struct ContentView: View {
     }
 
     private var liveSession: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            GroupBox("Live media") {
-                HStack(spacing: 10) {
-                    mediaButton(model.microphoneActive
-                                ? (model.microphoneMuted ? "Unmute microphone" : "Mute microphone")
-                                : "Start microphone",
-                                icon: model.microphoneMuted ? "mic" : (model.microphoneActive ? "mic.slash" : "mic")) {
-                        model.toggleMicrophone()
-                    }
-                    mediaButton(model.screenActive ? "Stop screen" : "Share screen", icon: "rectangle.on.rectangle") {
-                        model.toggleScreen()
-                    }
-                    mediaButton(model.cameraActive ? "Stop camera" : "Start camera", icon: "video") {
-                        model.toggleCamera()
-                    }
-                    mediaButton(model.browserActive ? "Stop browser" : "Share marked browser", icon: "safari") {
-                        model.toggleBrowser()
-                    }
-                    Spacer()
-                    Button("End turn") { model.endTurn() }
-                        .disabled(model.connectionState != .connected)
-                }
-                .padding(6)
-            }
-
-            HStack(alignment: .top, spacing: 12) {
-                GroupBox("Conversation") {
-                    List(model.conversation) { record in
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "waveform.circle.fill").font(.system(size: 40)).foregroundStyle(.mint)
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(record.title).font(.caption.bold())
-                                Spacer()
-                                Text(record.timestamp, style: .time).font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Text(record.body).textSelection(.enabled)
-                                .foregroundStyle(record.failed ? .red : .primary)
+                            Text("OpenRealtime").font(.title2.bold())
+                            Text("Your realtime conversation room").foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 3)
+                        Spacer()
+                        if model.recording { Label("Recording", systemImage: "record.circle.fill").foregroundStyle(.red) }
                     }
-                    .listStyle(.plain)
-                }
-
-                GroupBox("Traffic and target") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        statusRow("Audio input", model.microphoneActive ? "live · PCM16 24 kHz" : "off")
-                        statusRow("Audio output", model.audioOutputStatus)
-                        statusRow("Transport", model.transportDiagnosticsText)
-                        statusRow("Host effects", model.effectsStatusText)
-                        statusRow("Screen", model.screenActive ? "live · \(model.frameStatus["screen"] ?? "waiting")" : "off")
-                        statusRow("Camera", model.cameraActive ? "live · \(model.frameStatus["camera"] ?? "waiting")" : "off")
-                        statusRow("Browser", model.browserActive ? "live · \(model.browserCaption)" : "off")
-                        Divider()
-                        Text(model.effectsAvailable
-                             ? "Negotiated client effects execute only through the pinned host-effects protocol. This view can approve a host request but cannot execute tools itself."
-                             : "This observer profile has no effects endpoint, effect provider, artifact provider, or client-side authority.")
-                            .font(.caption).foregroundStyle(.secondary)
+                    DisclosureGroup("Practice an interaction scenario") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Picker("Scenario", selection: $model.selectedScenario) {
+                                    Text("Free conversation").tag("")
+                                    ForEach(model.roomScenarios) { preset in Text(preset.id).tag(preset.id) }
+                                }
+                                Button("Apply scenario") { model.applyRoomScenario() }.disabled(model.connectionState != .connected)
+                            }
+                            if let preset = model.roomScenarios.first(where: { $0.id == model.selectedScenario }) {
+                                Text(preset.note).foregroundStyle(.secondary)
+                                ForEach(Array(preset.script.enumerated()), id: \.offset) { _, line in Text(line).font(.callout).textSelection(.enabled) }
+                            }
+                        }.padding(.top, 10)
                     }
-                    .padding(6)
-                    .frame(minWidth: 300)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 18) {
+                            roomStage.frame(minWidth: 450)
+                            roomConversation.frame(width: 340)
+                        }
+                        VStack(spacing: 18) { roomStage; roomConversation.frame(minHeight: 340) }
+                    }
+                    ViewThatFits(in: .horizontal) {
+                        roomControls
+                        ScrollView(.horizontal) { roomControls }
+                    }
+                    Text("Camera and screen sharing are independent. Recordings stay on this Mac. The agent is an audio participant.")
+                        .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }
+                .padding(20)
+                .frame(minHeight: geometry.size.height, alignment: .top)
             }
+            .background(Color(red: 0.047, green: 0.063, blue: 0.098))
+        }
+    }
 
-            HStack {
-                TextField("Send a text message", text: $model.composer)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { model.submitText() }
-                Button("Send") { model.submitText() }
-                    .keyboardShortcut(.return, modifiers: [.command])
-                    .disabled(model.connectionState != .connected ||
-                              model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    private var roomStage: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 16) {
+                participant("You", subtitle: model.microphoneMuted ? "Microphone muted" : (model.microphoneActive ? "Microphone live" : "Microphone off"), source: "camera", icon: "person.fill", hidden: false)
+                participant("OpenRealtime", subtitle: model.speakerMuted ? "Audio muted" : "Audio participant", source: nil, icon: "waveform", hidden: model.agentTileHidden)
+            }
+            if model.screenActive {
+                participant("Your shared screen", subtitle: "Sharing", source: "screen", icon: "display", hidden: false)
+                    .frame(minHeight: 280)
+            }
+            if model.browserActive {
+                participant("Shared browser", subtitle: model.browserCaption, source: "browser", icon: "safari", hidden: false)
             }
         }
+    }
+
+    private func participant(_ title: String, subtitle: String, source: String?, icon: String, hidden: Bool) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            RoundedRectangle(cornerRadius: 20).fill(Color(red: 0.10, green: 0.14, blue: 0.21))
+            if let source, let data = model.previews[source], let image = NSImage(data: data) {
+                Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !hidden {
+                Image(systemName: icon).font(.system(size: 42)).foregroundStyle(source == nil ? .mint : .secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10)).padding(14)
+        }
+        .frame(maxWidth: .infinity, minHeight: 280)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.12)))
+    }
+
+    private var roomConversation: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Conversation").font(.headline)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if model.conversation.isEmpty {
+                        Text("Join the room to talk, type, or share something you see.").foregroundStyle(.secondary).padding(.vertical)
+                    }
+                    ForEach(model.conversation) { record in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(record.title).font(.caption.bold()).foregroundStyle(.secondary)
+                            Text(record.body).textSelection(.enabled).foregroundStyle(record.failed ? .red : .primary)
+                        }
+                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }.frame(minHeight: 230, maxHeight: 500)
+            HStack {
+                TextField("Message the room…", text: $model.composer).textFieldStyle(.roundedBorder).onSubmit { model.submitText() }
+                Button("Send") { model.submitText() }
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.connectionState != .connected || model.composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(18).background(Color(red: 0.082, green: 0.114, blue: 0.169), in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var roomControls: some View {
+        HStack(spacing: 10) {
+            mediaButton(model.microphoneActive && !model.microphoneMuted ? "Mute mic" : "Enable mic", icon: model.microphoneMuted ? "mic.slash" : "mic") { model.toggleMicrophone() }
+            mediaButton(model.speakerMuted ? "Enable audio" : "Mute agent", icon: model.speakerMuted ? "speaker.slash" : "speaker.wave.2") { model.toggleSpeaker() }
+            mediaButton(model.cameraActive ? "Stop camera" : "Camera", icon: "video") { model.toggleCamera() }
+            mediaButton(model.screenActive ? "Stop sharing" : "Share screen", icon: "rectangle.on.rectangle") { model.toggleScreen() }
+            Button(model.agentTileHidden ? "Show agent" : "Hide agent") { model.agentTileHidden.toggle() }
+            mediaButton("Add image", icon: "photo") { model.attachImage() }
+            mediaButton(model.recording ? "Stop recording" : "Record room", icon: "record.circle") { model.toggleRecording() }
+            Menu("More") {
+                Button(model.browserActive ? "Stop browser" : "Share browser") { model.toggleBrowser() }
+                    .disabled(model.connectionState != .connected)
+                Button("End turn") { model.endTurn() }
+                    .disabled(model.connectionState != .connected)
+                Button("Settings") { columns = .all }
+            }
+        }
+        .controlSize(.large).buttonStyle(.bordered).frame(maxWidth: .infinity)
     }
 
     private func mediaButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

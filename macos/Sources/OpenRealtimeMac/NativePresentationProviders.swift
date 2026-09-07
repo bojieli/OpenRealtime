@@ -6,6 +6,7 @@ import OpenRealtimeClientCore
 struct NativeMediaSnapshot: Equatable {
     let microphoneActive: Bool
     let microphoneMuted: Bool
+    let speakerMuted: Bool
     let outputStatus: String
     let permission: String
 }
@@ -20,6 +21,7 @@ final class NativeMediaBoundary {
     private var listeners: [UUID: (NativeMediaSnapshot) -> Void] = [:]
     private var mounted = false
     private var outputStatus = "idle"
+    private var speakerMuted = false
 
     init(
         transport: any RealtimeTransport,
@@ -71,7 +73,8 @@ final class NativeMediaBoundary {
         if let media = transport as? WebRTCTransport {
             return NativeMediaSnapshot(
                 microphoneActive: media.microphoneActive,
-                microphoneMuted: false,
+                microphoneMuted: !media.microphoneActive,
+                speakerMuted: speakerMuted,
                 outputStatus: media.connected ? "negotiated media" : "idle",
                 permission: audio.permission
             )
@@ -79,6 +82,7 @@ final class NativeMediaBoundary {
         return NativeMediaSnapshot(
             microphoneActive: audio.microphoneActive,
             microphoneMuted: audio.muted,
+            speakerMuted: speakerMuted,
             outputStatus: outputStatus,
             permission: audio.permission
         )
@@ -110,6 +114,13 @@ final class NativeMediaBoundary {
         } else {
             try await audio.startMicrophone()
         }
+        publish()
+    }
+
+    func toggleSpeaker() {
+        speakerMuted.toggle()
+        audio.setSpeakerMuted(speakerMuted)
+        (transport as? WebRTCTransport)?.setSpeakerMuted(speakerMuted)
         publish()
     }
 
@@ -162,6 +173,7 @@ struct NativeVideoSnapshot: Equatable {
     let enabled: Bool
     let active: [String]
     let limits: VideoLimits
+    let previews: [String: Data]
     let geometry: [String: NativeVideoGeometry]
     let frameStatus: [String: String]
     let browserCaption: String
@@ -181,6 +193,7 @@ final class NativeVideoBoundary {
     private var removeContribution: (() -> Void)?
     private var listeners: [UUID: (NativeVideoSnapshot) -> Void] = [:]
     private var active = Set<String>()
+    private var previews: [String: Data] = [:]
     private var geometry: [String: NativeVideoGeometry] = [:]
     private var frameStatus: [String: String] = [:]
     private var limits = VideoLimits()
@@ -238,7 +251,6 @@ final class NativeVideoBoundary {
         browser.onFailure = { [weak self] value in self?.fail("browser", value) }
         removeContribution = try configuration.contribute([
             "supports": ["observations", "video.input"],
-            "observers": ["audio", "video"],
         ])
         unsubscribeState = try reducer.subscribe { [weak self] state in self?.observe(state) }
         publish()
@@ -260,6 +272,7 @@ final class NativeVideoBoundary {
         browser.onCaption = nil
         browser.onFailure = nil
         active.removeAll()
+        previews.removeAll()
         geometry.removeAll()
         frameStatus.removeAll()
         browserCaption = "waiting for a marked frame"
@@ -281,7 +294,7 @@ final class NativeVideoBoundary {
     func snapshot() -> NativeVideoSnapshot {
         NativeVideoSnapshot(
             enabled: enabled, active: active.sorted(), limits: limits,
-            geometry: geometry, frameStatus: frameStatus,
+            previews: previews, geometry: geometry, frameStatus: frameStatus,
             browserCaption: browserCaption,
             diagnostic: diagnostic
         )
@@ -295,6 +308,14 @@ final class NativeVideoBoundary {
         listeners[id] = listener
         listener(snapshot())
         return { [weak self] in self?.listeners.removeValue(forKey: id) }
+    }
+
+    func sendImage(_ data: Data) throws {
+        guard mounted, transport.connected else { throw NativeProviderError("Join the room before sending an image.") }
+        guard data.count <= 2 << 20 else { throw NativeProviderError("The image exceeds 2 MB after resizing.") }
+        transport.send(["type": "conversation.item.create", "item": ["type": "message", "role": "user",
+            "content": [["type": "input_image", "image_url": "data:image/jpeg;base64," + data.base64EncodedString()]]]])
+        transport.send(["type": "response.create"])
     }
 
     func startCamera() async throws { try await start("camera") }
@@ -331,6 +352,7 @@ final class NativeVideoBoundary {
         default: break
         }
         active.remove(source)
+        previews.removeValue(forKey: source)
         geometry.removeValue(forKey: source)
         frameStatus.removeValue(forKey: source)
         publish()
@@ -340,6 +362,7 @@ final class NativeVideoBoundary {
         await capture.stopAll()
         await browser.stop()
         active.removeAll()
+        previews.removeAll()
         geometry.removeAll()
         frameStatus.removeAll()
         publish()
@@ -413,6 +436,7 @@ final class NativeVideoBoundary {
             geometry[source] = NativeVideoGeometry(width: width, height: height)
         } else if state == "closed" {
             active.remove(source)
+            previews.removeValue(forKey: source)
             geometry.removeValue(forKey: source)
         }
         // A source declaration only exists on a session that negotiated
@@ -426,6 +450,7 @@ final class NativeVideoBoundary {
 
     private func frame(_ source: String, data: Data, width: Int, height: Int, timestampMS: Int64) {
         guard mounted, enabled, active.contains(source), data.count <= limits.maxFrameBytes else { return }
+        previews[source] = data
         transport.sendVideo(source: source, data: data, timestampMS: timestampMS)
         geometry[source] = NativeVideoGeometry(width: width, height: height)
         frameStatus[source] = "\(width)×\(height) · \(data.count / 1_024) KiB · \(Self.clock(timestampMS))"

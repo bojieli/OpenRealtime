@@ -36,6 +36,7 @@ final class WebRTCTransport: NSObject, RealtimeTransport {
     private var connection: LKRTCPeerConnection?
     private var channel: LKRTCDataChannel?
     private var localAudio: LKRTCAudioTrack?
+    private var speakerMuted = false
     private var diagnostics: TransportDiagnosticsPublisher?
     private var gathering: CheckedContinuation<Void, Error>?
     private var queuedMessages = 0
@@ -88,6 +89,13 @@ final class WebRTCTransport: NSObject, RealtimeTransport {
     }
 
     var microphoneActive: Bool { microphoneEnabled }
+
+    func setSpeakerMuted(_ muted: Bool) {
+        speakerMuted = muted
+        for receiver in connection?.receivers ?? [] {
+            (receiver.track as? LKRTCAudioTrack)?.isEnabled = !muted
+        }
+    }
 
     func connect(token: String) async throws {
         tearDown(notify: false, reason: "superseded")
@@ -322,7 +330,12 @@ extension WebRTCTransport: LKRTCPeerConnectionDelegate {
     ) {}
     nonisolated func peerConnection(
         _ peerConnection: LKRTCPeerConnection, didAdd stream: LKRTCMediaStream
-    ) {}
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for track in stream.audioTracks { track.isEnabled = !self.speakerMuted }
+        }
+    }
     nonisolated func peerConnection(
         _ peerConnection: LKRTCPeerConnection, didRemove stream: LKRTCMediaStream
     ) {}

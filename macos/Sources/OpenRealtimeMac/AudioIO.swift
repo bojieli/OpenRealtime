@@ -105,6 +105,8 @@ final class AudioIO {
         onStatus?("microphone live · PCM16 24 kHz")
     }
 
+    func setSpeakerMuted(_ muted: Bool) { player.volume = muted ? 0 : 1 }
+
     func toggleMute() {
         guard microphoneActive else { return }
         muted.toggle()

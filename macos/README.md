@@ -1,7 +1,7 @@
 # OpenRealtime Developer for macOS
 
-A native SwiftUI client for talking to OpenRealtime, sharing camera or screen
-input, and inspecting session behavior. It connects to the same server as the
+A native SwiftUI conference room for talking to OpenRealtime, sharing camera,
+screen, images and text, recording a session, and inspecting session behavior. It connects to the same server as the
 browser client. Use the [browser quickstart](../docs/quickstart.md) for the
 simplest first run.
 
@@ -16,8 +16,7 @@ resources must also be declared by the host and negotiated by the session.
 ## Build and run
 
 Requirements are macOS 14+, Xcode 16+, [uv](https://docs.astral.sh/uv/), and a
-built `openrealtime` binary in the repository root. The example below uses a
-Gemini key for voice and reasoning. Chrome and the prepared browser bridge are
+built `openrealtime` binary in the repository root. The room uses the benchmark pipeline described in [Conversation room](../docs/room.md). Chrome and the prepared browser bridge are
 needed for marked browser capture; microphone and ordinary screen/camera use
 do not require the Chrome debugging endpoint.
 
@@ -34,8 +33,8 @@ cd macos
 ./build-app.sh
 cd ..
 export GEMINI_API_KEY="your-key"
-./openrealtime companion -client macos -- \
-  -binding upstream -upstream-provider google -slow-provider google
+export DEEPGRAM_API_KEY="your-key"
+./openrealtime companion -client macos
 ```
 
 The normal application waits for an explicit **Connect** action. Automated
