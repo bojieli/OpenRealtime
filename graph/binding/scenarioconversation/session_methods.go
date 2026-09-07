@@ -89,7 +89,7 @@ func (session *session) invocationForSettings(settings legacy.Settings) (continu
 	if err := validateInitialSettings(settings, session.config); err != nil {
 		return continuation.Invocation{}, err
 	}
-	if strings.TrimSpace(settings.Instruction) == "" || !utf8.ValidString(settings.Instruction) ||
+	if !utf8.ValidString(settings.Instruction) ||
 		len(settings.Instruction) > maximumAdapterTextBytes {
 		return continuation.Invocation{}, fmt.Errorf(
 			"scenario conversation instruction must be non-empty valid UTF-8 no larger than %d bytes",
@@ -97,6 +97,9 @@ func (session *session) invocationForSettings(settings legacy.Settings) (continu
 		)
 	}
 	instruction := settings.Instruction
+	if strings.TrimSpace(instruction) == "" {
+		instruction = "You are a realtime assistant in a conversation room. Follow the user's instructions about when to speak. You can hear audio and see images they explicitly share. Answer briefly."
+	}
 	if policy := session.config.ContinuationInstruction; policy != "" {
 		const separator = "\n\n"
 		if len(instruction) > maximumAdapterTextBytes-len(separator)-len(policy) {
@@ -221,14 +224,62 @@ func (session *session) Audio(ctx context.Context, frame perception.Frame) error
 	}
 }
 
-func (*session) Video(ctx context.Context, _ perception.Frame) error {
+// Video enters the same bounded retained-image and trajectory path as an image
+// attachment. The same explicit evaluation used by the visual scenario lets
+// the interaction policy decide whether new visual evidence warrants speech.
+// One sample per source per second bounds work independently of preview FPS.
+func (session *session) Video(ctx context.Context, frame perception.Frame) error {
 	if err := usableContext(ctx, "send scenario conversation video"); err != nil {
 		return err
 	}
-	return legacy.ErrUnsupported
+	if !session.config.Model.Descriptor.Vision {
+		return legacy.ErrUnsupported
+	}
+	if frame.Kind != perception.FrameImage || (frame.Source != "camera" && frame.Source != "screen" && frame.Source != "browser") {
+		return errors.New("scenario video requires a camera, screen, or browser image frame")
+	}
+	if err := frame.Validate(); err != nil {
+		return err
+	}
+	if frame.CapturedNS == 0 {
+		return errors.New("scenario video requires a capture timestamp")
+	}
+	session.videoMu.Lock()
+	defer session.videoMu.Unlock()
+	if session.videoCaptured == nil {
+		session.videoCaptured = make(map[string]uint64)
+	}
+	previous := session.videoCaptured[frame.Source]
+	if previous != 0 && frame.CapturedNS <= previous {
+		return errors.New("video capture timestamps must increase per source")
+	}
+	if previous != 0 && frame.CapturedNS-previous < 1_000_000_000 {
+		return nil
+	}
+	session.videoCaptured[frame.Source] = frame.CapturedNS
+	if err := session.text(ctx, legacy.TextInput{
+		ItemID: session.nextItemID("video-" + frame.Source), Role: "user",
+		Images: []legacy.Image{{Bytes: frame.Image, MIMEType: frame.MIMEType, Width: frame.Width, Height: frame.Height}},
+	}, "Current shared "+frame.Source+" frame.", frame.CapturedNS); err != nil {
+		return err
+	}
+	// Visual updates remain context while speech is in flight. An explicit
+	// create cannot execute keep-speaking/stop-speaking controls; those are
+	// owned by the graph's concurrent audio/interaction lane.
+	err := session.CreateResponse(ctx)
+	var refusal *semanticAdmissionError
+	if errors.As(err, &refusal) && refusal.outcome.Kind == policyelements.SemanticAdmissionRefused && refusal.outcome.Code == "unsupported_act" &&
+		(refusal.outcome.Act == "keep-speaking" || refusal.outcome.Act == "stop-speaking") {
+		return nil // The frame was retained; the graph owns in-flight speech control.
+	}
+	return err
 }
 
 func (session *session) Text(ctx context.Context, input legacy.TextInput) error {
+	return session.text(ctx, input, "", 0)
+}
+
+func (session *session) text(ctx context.Context, input legacy.TextInput, caption string, capturedNS uint64) error {
 	if err := usableContext(ctx, "send scenario conversation message"); err != nil {
 		return err
 	}
@@ -297,7 +348,7 @@ func (session *session) Text(ctx context.Context, input legacy.TextInput) error 
 			payload: ingresselements.UserImage{
 				ContentID: requestID, StreamID: streamID, MIMEType: strings.TrimSpace(image.MIMEType),
 				Content: slices.Clone(image.Bytes), SHA256: "sha256:" + hex.EncodeToString(digest[:]),
-				Width: image.Width, Height: image.Height, SourceRevision: 1,
+				Width: image.Width, Height: image.Height, SourceRevision: 1, Caption: caption, CapturedNS: capturedNS,
 			},
 		})
 	}

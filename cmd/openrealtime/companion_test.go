@@ -75,7 +75,7 @@ func TestCompanionSupervisesExactPublicProcessesWithNoClientLaunch(t *testing.T)
 			"-client", "none",
 			"-ready-timeout", "10s",
 			"-shutdown-timeout", "2s",
-			"--", "-binding", "upstream", "-upstream-model", "model with spaces",
+			"--", "-binding", "cascade", "-fast-model", "model with spaces",
 		}, output, runtime)
 	}()
 
@@ -174,7 +174,7 @@ func TestCompanionSupervisesExactPublicProcessesWithNoClientLaunch(t *testing.T)
 	companionRequireArgument(t, serveArguments, "-webrtc-listen", webRTCAddress)
 	companionRequireArgument(t, serveArguments, "-webrtc-allow-origin", "http://"+presentationAddress)
 	companionRequireArgument(t, serveArguments, "-token-env", "OPENREALTIME_COMPANION_TEST_TOKEN")
-	companionRequireArgument(t, serveArguments, "-upstream-model", "model with spaces")
+	companionRequireArgument(t, serveArguments, "-fast-model", "model with spaces")
 	companionRequireArgument(t, presentArguments, "-endpoint", "ws://"+serverAddress+"/v1/realtime")
 	companionRequireArgument(t, presentArguments, "-webrtc-endpoint", "http://"+webRTCAddress+"/v1/realtime/calls")
 	companionRequireArgument(t, presentArguments, "-management-endpoint", "http://"+serverAddress+management.APIPrefix)
@@ -682,7 +682,16 @@ func TestCompanionHelperProcess(t *testing.T) {
 		fmt.Println("helper serve stdout")
 		fmt.Fprintln(os.Stderr, "helper serve stderr")
 		serverAddress := companionArgumentValue(t, arguments, "-listen")
-		model := companionArgumentValue(t, arguments, "-model")
+		model := ""
+		if companionHasArgument(arguments, "-launch-profile") {
+			profile, err := readServeLaunchProfile(ctx, companionArgumentValue(t, arguments, "-launch-profile"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			model = profile.Server.Model
+		} else {
+			model = companionArgumentValue(t, arguments, "-model")
+		}
 		server := companionHelperServerHealth(t, serverAddress, model)
 		webRTC := companionHelperWebRTCHealth(
 			t, companionArgumentValue(t, arguments, "-webrtc-listen"),

@@ -50,6 +50,7 @@ const (
 var errScenarioEndpointProvider = errors.New("scripted endpoint provider failure")
 
 type scenarioEndpointToolCase struct {
+	videoSource        string
 	name               string
 	tool               string
 	callID             string
@@ -107,6 +108,16 @@ func TestScenarioConversationGraphRoundTripsUnchangedRealtimeEndpoint(t *testing
 		toolCase := toolCase
 		t.Run(toolCase.name, func(t *testing.T) {
 			testScenarioConversationGraphRoundTrip(t, toolCase)
+		})
+	}
+}
+
+func TestScenarioConversationRoomVideoTraversesRetainedMediaAndModel(t *testing.T) {
+	for _, source := range []string{"camera", "screen"} {
+		t.Run(source, func(t *testing.T) {
+			selected := scenarioEndpointToolCases()[0]
+			selected.videoSource = source
+			testScenarioConversationGraphRoundTrip(t, selected)
 		})
 	}
 }
@@ -352,18 +363,27 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	}
 
 	imageBytes, imageURL := scenarioEndpointJPEG(t, 64, 48)
-	client.send(map[string]any{
-		"type": "conversation.item.create", "event_id": "evt_image",
-		"item": map[string]any{
-			"id": "visual_item_1", "type": "message", "role": "user",
-			"content": []map[string]any{
-				{"type": "input_text", "text": "Inspect the submitted still image."},
-				{"type": "input_image", "image_url": imageURL},
+	if toolCase.videoSource != "" {
+		client.send(map[string]any{"type": "session.update", "session": map[string]any{
+			"type": "realtime", "openrealtime": map[string]any{"version": 1, "supports": []string{"video.input"}},
+		}})
+		client.awaitType(5*time.Second, "session.updated")
+		client.send(map[string]any{"type": "openrealtime.input_video_source.update", "source": toolCase.videoSource, "state": "active", "width": 64, "height": 48})
+		client.send(map[string]any{"type": "openrealtime.input_video_frame.append", "source": toolCase.videoSource, "frame": base64.StdEncoding.EncodeToString(imageBytes), "timestamp_ms": time.Now().UnixMilli()})
+	} else {
+		client.send(map[string]any{
+			"type": "conversation.item.create", "event_id": "evt_image",
+			"item": map[string]any{
+				"id": "visual_item_1", "type": "message", "role": "user",
+				"content": []map[string]any{
+					{"type": "input_text", "text": "Inspect the submitted still image."},
+					{"type": "input_image", "image_url": imageURL},
+				},
 			},
-		},
-	})
-	client.awaitCreatedItem(5*time.Second, "visual_item_1")
-	client.send(map[string]any{"type": "response.create", "event_id": "evt_image_create"})
+		})
+		client.awaitCreatedItem(5*time.Second, "visual_item_1")
+		client.send(map[string]any{"type": "response.create", "event_id": "evt_image_create"})
+	}
 	mediaEvidence := receiveScenarioEndpoint(t, fixture.model.media, "resolved retained image")
 	if mediaEvidence.Handle == "" || mediaEvidence.MIMEType != "image/jpeg" ||
 		mediaEvidence.Width != 64 || mediaEvidence.Height != 48 ||
@@ -374,6 +394,10 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	assertScenarioEndpointAudio(t, imageSpeech)
 	imageResponse, _ := imageSpeech["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, imageResponse, "completed")
+	if toolCase.videoSource != "" {
+		client.assertBalancedResponseLifecycle(t)
+		return
+	}
 
 	client.send(scenarioEndpointTextMessage("cancel_item_1", "Start a response that will be canceled."))
 	client.awaitCreatedItem(5*time.Second, "cancel_item_1")
@@ -1005,7 +1029,28 @@ func (client *scenarioEndpointWireClient) send(value map[string]any) {
 	if err != nil {
 		client.t.Fatalf("decode scenario endpoint client event: %v", err)
 	}
-	if err := client.validator.Validate(protocol.ProfileRealtime, protocol.DirectionClient, message); err != nil {
+	if strings.HasPrefix(fmt.Sprint(value["type"]), "openrealtime.") {
+		switch value["type"] {
+		case "openrealtime.input_video_source.update":
+			var event openrealtime.VideoSourceUpdate
+			if err := json.Unmarshal(payload, &event); err != nil {
+				client.t.Fatal(err)
+			}
+			if err := event.Validate(); err != nil {
+				client.t.Fatal(err)
+			}
+		case "openrealtime.input_video_frame.append":
+			var event openrealtime.VideoFrameAppend
+			if err := json.Unmarshal(payload, &event); err != nil {
+				client.t.Fatal(err)
+			}
+			if _, err := event.Decode(openrealtime.DefaultLimits()); err != nil {
+				client.t.Fatal(err)
+			}
+		default:
+			client.t.Fatalf("unsupported extension fixture %v", value["type"])
+		}
+	} else if err := client.validator.Validate(protocol.ProfileRealtime, protocol.DirectionClient, message); err != nil {
 		client.t.Fatalf("validate scenario endpoint client event %q: %v", value["type"], err)
 	}
 	if err := client.connection.Write(context.Background(), websocket.MessageText, payload); err != nil {

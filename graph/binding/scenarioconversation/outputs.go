@@ -1135,9 +1135,18 @@ func exactGatewaySemanticOutcome(envelope element.Envelope) (string, bool) {
 	return envelope.CausalParents[0], true
 }
 
-func semanticAdmissionOutcomeError(outcome policyelements.SemanticAdmissionOutcome) error {
-	return fmt.Errorf("scenario conversation semantic admission %s reached %s/%s: %s",
+type semanticAdmissionError struct {
+	outcome policyelements.SemanticAdmissionOutcome
+}
+
+func (failure *semanticAdmissionError) Error() string {
+	outcome := failure.outcome
+	return fmt.Sprintf("scenario conversation semantic admission %s reached %s/%s: %s",
 		outcome.Operation, outcome.Kind, outcome.Code, outcome.Message)
+}
+
+func semanticAdmissionOutcomeError(outcome policyelements.SemanticAdmissionOutcome) error {
+	return &semanticAdmissionError{outcome: outcome}
 }
 
 func (session *session) registerEmittedInvocation(

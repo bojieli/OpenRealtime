@@ -1,0 +1,44 @@
+package main
+
+import _ "embed"
+
+// These are the separate partial/final interaction policies used by the
+// twelve-case Deepgram/Qwen/Gemini/Fish scenario pipeline. Keeping them in the
+// executable makes room launches independent of a checkout or .runtime files.
+//
+//go:embed room/partial.txt
+var roomPartialRules string
+
+//go:embed room/final.txt
+var roomFinalRules string
+
+func defaultRoomProfileOptions() scenarioProfileOptions {
+	selection := defaultScenarioProfileOptions()
+	selection.name = "openrealtime.launch.conversation-room"
+	selection.architecture = "cascade.composed-policy-direct-visual-speaker@1"
+	selection.asrProvider = "deepgram"
+	selection.asrModel = "nova-3"
+	selection.asrURL = "wss://api.deepgram.com/v1/listen"
+	selection.asrLanguage = "en-US,zh-CN"
+	selection.asrKeyterms = []string{"sea bass"}
+	selection.asrPartialMS = 0
+	selection.asrEndpointingMS = 300
+	selection.asrCadenceMS = 100
+	selection.speakerURL = "http://127.0.0.1:8124/embed"
+	selection.modelProvider = "google"
+	selection.modelName = "gemini-3.5-flash"
+	selection.modelURL = "https://generativelanguage.googleapis.com/v1beta"
+	selection.modelEffort = "512"
+	selection.modelReason = "on"
+	selection.transcriptPolicy = "event-aware"
+	selection.transcriptTimeoutMS = 1000
+	selection.transcriptPartialActs = "listen,speak-through,interrupt,act-silently,keep-speaking,stop-speaking"
+	selection.transcriptFinalActs = "listen,answer,act-silently,keep-speaking,stop-speaking"
+	selection.transcriptPartialRules = roomPartialRules
+	selection.transcriptFinalRules = roomFinalRules
+	selection.wordTimingsURL = "http://127.0.0.1:8003/v1/audio/transcriptions"
+	selection.wordTimingsModel = "whisper-turbo"
+	selection.wordTimingsLanguage = "en"
+	selection.wordTimingsIntervalMS = 900
+	return selection
+}

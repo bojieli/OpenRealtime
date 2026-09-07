@@ -151,6 +151,7 @@ func bind(plan *graphconfig.Plan, plugin *Plugin) (boundAdapter, error) {
 		},
 		Capabilities: legacy.Capabilities{
 			Observations:    true,
+			Video:           plugin.config.Model.Descriptor.Vision,
 			Voice:           legacy.VoiceControl{InForce: plugin.config.TTS.Voice},
 			MaxOutputTokens: plugin.config.MaxOutputTokens,
 			Stack: legacy.StackCapabilities{
@@ -163,6 +164,7 @@ func bind(plan *graphconfig.Plan, plugin *Plugin) (boundAdapter, error) {
 		Boundaries: []graphbinding.AdapterBoundary{
 			{Operation: graphbinding.AdapterInputUpdate, Boundary: invocationUpdateBoundary, Direction: ir.InputBoundary, Type: selected[invocationUpdateBoundary].Type},
 			{Operation: graphbinding.AdapterInputAudio, Boundary: audioBoundary, Direction: ir.InputBoundary, Type: selected[audioBoundary].Type},
+			{Operation: graphbinding.AdapterInputVideo, Boundary: imageBoundary, Direction: ir.InputBoundary, Type: selected[imageBoundary].Type},
 			{Operation: graphbinding.AdapterInputText, Boundary: textBoundary, Direction: ir.InputBoundary, Type: selected[textBoundary].Type},
 			{Operation: graphbinding.AdapterInputToolResult, Boundary: toolResultBoundary, Direction: ir.InputBoundary, Type: selected[toolResultBoundary].Type},
 			{Operation: graphbinding.AdapterInputCreateResponse, Boundary: responseCreateBoundary, Direction: ir.InputBoundary, Type: selected[responseCreateBoundary].Type},
@@ -551,7 +553,9 @@ type session struct {
 	config    PluginConfig
 	bundle    *sessionBundle
 
-	sequence atomic.Uint64
+	sequence      atomic.Uint64
+	videoMu       sync.Mutex
+	videoCaptured map[string]uint64
 
 	updateMu         sync.Mutex
 	settingsMu       sync.RWMutex

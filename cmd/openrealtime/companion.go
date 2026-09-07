@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/internal/strictjson"
 	"github.com/bojieli/OpenRealtime/macos"
 	"github.com/bojieli/OpenRealtime/management"
@@ -174,14 +176,23 @@ func runCompanionContext(
 	serverOutput := newCompanionPrefixWriter(serialized, "serve")
 	presentationOutput := newCompanionPrefixWriter(serialized, "present")
 
+	// With no explicit server composition, the room uses the same graph-native
+	// application as the twelve interaction scenarios. Never fall back to a
+	// hosted Realtime provider when a local model service is unavailable.
+	cleanupProfile, profiled, err := prepareCompanionPipeline(ctx, &options)
+	if err != nil {
+		return err
+	}
+	defer cleanupProfile()
 	serverArguments := []string{
 		"serve",
 		"-listen", options.serverAddress,
 		"-webrtc-listen", options.webRTCAddress,
 		"-webrtc-allow-origin", ready.PresentationURL,
-		"-model", options.model,
-		"-token-env", options.tokenEnvironment,
 		"-shutdown-timeout", options.shutdownTimeout.String(),
+	}
+	if !profiled {
+		serverArguments = append(serverArguments, "-model", options.model, "-token-env", options.tokenEnvironment)
 	}
 	serverArguments = append(serverArguments, options.serveArguments...)
 	server, err := startCompanionProcess(runtime, serverArguments, serverOutput)
@@ -369,6 +380,87 @@ func parseCompanionOptions(arguments []string, output io.Writer) (companionOptio
 	}
 	options.serveArguments = append([]string(nil), serve...)
 	return options, nil
+}
+
+// prepareCompanionPipeline keeps model and bearer identity aligned with strict
+// profiles; legacy flags must not override a frozen server configuration.
+func prepareCompanionPipeline(ctx context.Context, options *companionOptions) (func(), bool, error) {
+	noop := func() {}
+	explicit := false
+	profilePath := ""
+	for i, argument := range options.serveArguments {
+		name, value, equals := strings.Cut(strings.TrimLeft(argument, "-"), "=")
+		if !strings.HasPrefix(argument, "-") {
+			continue
+		}
+		if !equals && i+1 < len(options.serveArguments) {
+			value = options.serveArguments[i+1]
+		}
+		switch name {
+		case "binding":
+			if value == "upstream" {
+				return noop, false, errors.New("the companion room requires an OpenRealtime pipeline; hosted upstream bindings are not supported")
+			}
+			explicit = true
+		case "config":
+			explicit = true
+			payload, err := os.ReadFile(value)
+			if err != nil {
+				return noop, false, err
+			}
+			var config map[string]any
+			if err := yaml.Unmarshal(payload, &config); err != nil {
+				return noop, false, err
+			}
+			if config["binding"] == "upstream" {
+				return noop, false, errors.New("the companion room requires an OpenRealtime pipeline; hosted upstream bindings are not supported")
+			}
+		case "launch-profile":
+			profilePath = value
+			explicit = true
+		}
+	}
+	if profilePath != "" {
+		profile, err := readServeLaunchProfile(ctx, profilePath)
+		if err != nil {
+			return noop, false, err
+		}
+		options.model = profile.Server.Model
+		options.tokenEnvironment = profile.Server.TokenEnvironment
+		return noop, true, nil
+	}
+	if explicit {
+		return noop, false, nil
+	}
+	selection := defaultRoomProfileOptions()
+	if strings.TrimSpace(os.Getenv(options.tokenEnvironment)) != "" {
+		selection.serverTokenEnv = options.tokenEnvironment
+	}
+	profile, _, err := freezeProductionScenarioProfile(ctx, selection)
+	if err != nil {
+		return noop, false, fmt.Errorf("prepare scenario room pipeline: %w", err)
+	}
+	profile.Server.Model = options.model
+	profile, err = launchprofile.Freeze(profile)
+	if err != nil {
+		return noop, false, err
+	}
+	payload, err := launchprofile.MarshalYAML(profile)
+	if err != nil {
+		return noop, false, err
+	}
+	directory, err := os.MkdirTemp("", "openrealtime-room-")
+	if err != nil {
+		return noop, false, err
+	}
+	cleanup := func() { _ = os.RemoveAll(directory) }
+	path := filepath.Join(directory, "scenario.yaml")
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		cleanup()
+		return noop, false, err
+	}
+	options.serveArguments = append(options.serveArguments, "-launch-profile", path)
+	return cleanup, true, nil
 }
 
 func splitCompanionArguments(arguments []string) (supervisor, serve []string) {
