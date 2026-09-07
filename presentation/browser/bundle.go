@@ -778,6 +778,7 @@ func buildObserverDeveloperWebRTCBundle() (*Bundle, error) {
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientSlotsContract},
 				{Contract: presentation.ClientTransportDiagnosticsContract},
+				{Contract: presentation.ClientConnectionContract},
 			},
 		},
 		{
@@ -983,6 +984,7 @@ func developerWebRTCBundleDefinitions() []moduleDefinition {
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientSlotsContract},
 				{Contract: presentation.ClientTransportDiagnosticsContract},
+				{Contract: presentation.ClientConnectionContract},
 			},
 		},
 		{

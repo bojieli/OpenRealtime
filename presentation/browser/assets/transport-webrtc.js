@@ -289,7 +289,9 @@ export default {
             if (kind === "audio") {
               result.audio_bytes_received += Number(report.bytesReceived ?? 0);
               result.audio_packets_received += Number(report.packetsReceived ?? 0);
-              result.audio_packets_lost += Number(report.packetsLost ?? 0);
+              // RTCP cumulative loss can be negative when duplicate packets arrive.
+              // The room displays a nonnegative lost-packet count.
+              result.audio_packets_lost += Math.max(0, Number(report.packetsLost ?? 0));
             } else if (kind === "video") {
               result.video_bytes_received += Number(report.bytesReceived ?? 0);
             }

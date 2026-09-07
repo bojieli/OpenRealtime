@@ -96,7 +96,7 @@ class PeerFixture extends EventTargetFixture {
   async createOffer() { return { type: "offer", sdp: "fixture-offer" }; }
   async setLocalDescription(value) { this.localDescription = value; }
   async setRemoteDescription() { this.connectionState = "connected"; }
-  async getStats() { return new Map(); }
+  async getStats() { return new Map([["audio", {type: "inbound-rtp", kind: "audio", packetsLost: -4}]]); }
   close() { this.connectionState = "closed"; }
 }
 globalThis.RTCPeerConnection = PeerFixture;
@@ -112,6 +112,7 @@ const media = {
   snapshot: () => ({ audio: { state: "ready" }, video: { active: [] } }),
 };
 let webrtc;
+let webrtcDiagnostics;
 const webrtcDisposers = [];
 await webrtcPlugin.mount({
   manifest: { endpoints: [{ name: "realtime.webrtc", method: "POST", path: "/client/v1/realtime/calls" }] },
@@ -120,6 +121,7 @@ await webrtcPlugin.mount({
   services: { get: (name) => name === "presentation.client.media" ? media : undefined },
   publish(name, value) {
     if (name === "presentation.client.connection") webrtc = value;
+    if (name === "presentation.client.transport_diagnostics") webrtcDiagnostics = value;
   },
   lifecycle: { defer(_name, dispose) { webrtcDisposers.push(dispose); } },
 });
@@ -130,6 +132,7 @@ webrtc.onState((state) => webrtcStates.push(state));
 webrtc.subscribe(() => { throw new Error("faulty WebRTC message consumer"); });
 webrtc.subscribe((message) => webrtcMessages.push(message));
 await webrtc.connect();
+if ((await webrtcDiagnostics.snapshot()).audio_packets_lost !== 0) throw new Error("negative RTCP loss leaked into the room count");
 PeerFixture.instances[0].channel.emit("message", { data: "accepted" });
 if (webrtc.state() !== "connected" || webrtcMessages[0] !== "accepted" ||
     !webrtcStates.includes("connected")) {

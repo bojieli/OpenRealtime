@@ -201,6 +201,12 @@ struct ContentView: View {
                         roomControls
                         ScrollView(.horizontal) { roomControls }
                     }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Connection & debug logs", systemImage: "terminal").font(.headline)
+                        Text(model.latencySummary).font(.caption.monospaced())
+                        Text(model.transportDiagnosticsText).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        protocolInspector.frame(height: 200)
+                    }
                     Text("Camera and screen sharing are independent. Recordings stay on this Mac. The agent is an audio participant.")
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity)
                 }
