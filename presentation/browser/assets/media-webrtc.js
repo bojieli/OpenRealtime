@@ -39,7 +39,11 @@ export default {
       }
     }
     let microphone;
+    let mediaGeneration = 0;
+    let microphoneMuted = false;
+    let speakerMuted = false;
     let speaker;
+    let microphoneSender;
     let captureStartedAt = 0;
     let playoutAttachedAt = 0;
     let captureSerial = 0;
@@ -136,6 +140,8 @@ export default {
     };
 
     const release = () => {
+      mediaGeneration++;
+      microphoneSender = undefined;
       for (const source of [...captures.keys()]) stopVideo(source);
       microphone?.getTracks().forEach((track) => track.stop());
       microphone = undefined;
@@ -149,10 +155,14 @@ export default {
     const media = Object.freeze({
       async microphone() {
         if (microphone?.active) return microphone;
-        microphone = await navigator.mediaDevices.getUserMedia({
+        const generation = mediaGeneration;
+        const acquired = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           video: false,
         });
+        if (generation !== mediaGeneration) { acquired.getTracks().forEach((track) => track.stop()); throw new Error("Microphone capture was cancelled."); }
+        microphone = acquired;
+        microphone.getAudioTracks().forEach((track) => { track.enabled = !microphoneMuted; });
         captureStartedAt = performance.now();
         return microphone;
       },
@@ -164,6 +174,7 @@ export default {
           speaker.hidden = true;
           speaker.dataset.openrealtimeMedia = "remote-audio";
         }
+        speaker.muted = speakerMuted;
         speaker.srcObject = stream;
         playoutAttachedAt = performance.now();
         speaker.play().catch(() => {});
@@ -207,6 +218,24 @@ export default {
           throw error;
         }
       },
+      bindMicrophoneSender(sender) { microphoneSender = sender; },
+      async setMicrophoneMuted(value) {
+        const muted = Boolean(value);
+        if (!muted && !microphone?.active) {
+          const stream = await media.microphone();
+          if (microphoneSender) await microphoneSender.replaceTrack(stream.getAudioTracks()[0]);
+        }
+        microphoneMuted = muted;
+        microphone?.getAudioTracks().forEach((track) => { track.enabled = !microphoneMuted; });
+      },
+      setSpeakerMuted(value) {
+        speakerMuted = Boolean(value);
+        if (speaker) speaker.muted = speakerMuted;
+      },
+      streams() {
+        return { microphone, remote: speaker?.srcObject,
+          camera: captures.get("camera")?.stream, screen: captures.get("screen")?.stream };
+      },
       stopVideo,
       release,
       snapshot() {
@@ -222,6 +251,7 @@ export default {
           });
         }
         return Object.freeze({
+          microphone_muted: microphoneMuted, speaker_muted: speakerMuted,
           microphone_tracks: microphone?.getAudioTracks().filter((track) => track.readyState === "live").length ?? 0,
           remote_tracks: speaker?.srcObject?.getAudioTracks().filter((track) => track.readyState === "live").length ?? 0,
           capture_started_at_ms: Math.floor(captureStartedAt),

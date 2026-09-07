@@ -368,6 +368,11 @@ export default {
           throw error;
         }
       },
+      disconnect() {
+        clearTimeout(retryTimer);
+        apply({ kind: "disconnect", reason: "left room" });
+        connection.close();
+      },
       sendText(value) {
         const text = String(value).trim();
         if (!text) return;

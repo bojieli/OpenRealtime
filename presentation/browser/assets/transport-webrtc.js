@@ -170,9 +170,18 @@ export default {
           const candidatePeer = new RTCPeerConnection();
           peer = candidatePeer;
           try {
-            const stream = await media.microphone();
-            if (peer !== candidatePeer) throw new Error("WebRTC connection was superseded");
-            for (const track of stream.getAudioTracks()) candidatePeer.addTrack(track, stream);
+            // Reserve an audio sender so text-only users can enable their
+            // microphone later without renegotiating this one-shot session.
+            const audio = candidatePeer.addTransceiver("audio", { direction: "sendrecv" });
+            media.bindMicrophoneSender(audio.sender);
+            try {
+              const stream = await media.microphone();
+              if (peer !== candidatePeer) throw new Error("WebRTC connection was superseded");
+              await audio.sender.replaceTrack(stream.getAudioTracks()[0]);
+            } catch (error) {
+              if (!["NotAllowedError", "NotFoundError"].includes(error.name)) throw error;
+              await media.setMicrophoneMuted(true);
+            }
             candidatePeer.addEventListener("track", (event) => media.attachRemote(event.streams[0]));
             const candidateChannel = candidatePeer.createDataChannel("oai-events");
             candidateChannel.binaryType = "arraybuffer";

@@ -91,7 +91,7 @@ class PeerFixture extends EventTargetFixture {
     this.channel = new ChannelFixture();
     PeerFixture.instances.push(this);
   }
-  addTrack() {}
+  addTransceiver() { return { sender: { replaceTrack: async () => {} } }; }
   createDataChannel() { return this.channel; }
   async createOffer() { return { type: "offer", sdp: "fixture-offer" }; }
   async setLocalDescription(value) { this.localDescription = value; }
@@ -106,6 +106,8 @@ let releases = 0;
 const media = {
   microphone: async () => ({ getAudioTracks: () => [] }),
   attachRemote() {},
+  bindMicrophoneSender() {},
+  setMicrophoneMuted: async () => {},
   release() { releases++; },
   snapshot: () => ({ audio: { state: "ready" }, video: { active: [] } }),
 };

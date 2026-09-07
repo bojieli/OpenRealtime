@@ -193,19 +193,18 @@ try {
   const videoStarted = performance.now();
   await evaluate(`document.getElementById("video-camera").click()`);
   const captured = await waitFor("bounded camera frame publication", () => evaluate(
-    `/camera: [1-9][0-9]* frames/.test(document.getElementById("video-state")?.textContent ?? "")`));
+    `Number(document.getElementById("camera-preview")?.dataset.frames) > 0`));
   const firstVideoMS = performance.now() - videoStarted;
   check("camera is a replaceable negotiated media/protocol composition", captured,
     await evaluate(`document.getElementById("video-state")?.textContent ?? ""`));
   await evaluate(`document.getElementById("video-stop").click()`);
   await waitFor("camera scope disposal", () => evaluate(
-    `!(document.getElementById("video-state")?.textContent ?? "").includes("camera:")`));
-  check("camera stop disposes capture state", !(await evaluate(
-    `document.getElementById("video-state")?.textContent ?? ""`)).includes("camera:"));
+    `document.getElementById("camera-preview")?.srcObject === null`));
+  check("camera stop disposes capture state", await evaluate(`document.getElementById("camera-preview")?.srcObject === null`));
   const screenStarted = performance.now();
   await evaluate(`document.getElementById("video-screen").click()`);
   const screenCaptured = await waitFor("bounded screen frame publication", () => evaluate(
-    `/screen: [1-9][0-9]* frames/.test(document.getElementById("video-state")?.textContent ?? "")`), 5000);
+    `Number(document.getElementById("screen-preview")?.dataset.frames) > 0`), 5000);
   const firstScreenMS = performance.now() - screenStarted;
   check("screen is a replaceable negotiated media/protocol composition", screenCaptured,
     await evaluate(`document.getElementById("video-state")?.textContent ?? ""`));
@@ -325,7 +324,7 @@ try {
     document.getElementById("transport-stats") !== null)()`));
   await evaluate(`document.getElementById("video-camera").click()`);
   const replacementCaptured = await waitFor("replacement camera frame publication", () => evaluate(
-    `/camera: [1-9][0-9]* frames/.test(document.getElementById("video-state")?.textContent ?? "")`));
+    `Number(document.getElementById("camera-preview")?.dataset.frames) > 0`));
   check("replacement video controls execute through the retained provider", replacementCaptured);
   await evaluate(`document.getElementById("video-stop").click()`);
 

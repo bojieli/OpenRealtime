@@ -17,9 +17,10 @@ export default {
     let diagnostic = "";
     let latest = state.snapshot();
     let disposed = false;
+    const pending = new Set();
+    let generation = 0;
     const contribution = configuration.contribute({
       supports: ["observations", "video.input"],
-      observers: ["audio", "video"],
     });
 
     const snapshot = () => Object.freeze({
@@ -85,7 +86,8 @@ export default {
       publish();
     };
     const stopAll = () => {
-      for (const source of [...active.keys()]) stop(source);
+      generation++;
+      for (const source of new Set([...active.keys(), ...pending])) stop(source);
     };
     const unsubscribeState = state.subscribe((next) => {
       latest = next;
@@ -109,10 +111,15 @@ export default {
             !latest.session.openrealtime.enabled.includes("video.input")) {
           throw new Error("video input is not negotiated for this session");
         }
+        if (pending.has(source)) throw new Error("Capture is already starting.");
         stop(source);
+        pending.add(source);
+        const requestGeneration = generation;
         const limits = latest.session.openrealtime.video;
-        const handle = await media.startVideo(source, limits, observe);
-        if (disposed) {
+        let handle;
+        try { handle = await media.startVideo(source, limits, observe); }
+        finally { pending.delete(source); }
+        if (disposed || requestGeneration !== generation || !snapshot().enabled) {
           handle.stop();
           throw new Error("video service was disposed while capture started");
         }

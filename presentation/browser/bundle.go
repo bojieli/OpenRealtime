@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	clientreducer "github.com/bojieli/OpenRealtime/client/reducer"
+	"github.com/bojieli/OpenRealtime/client/room"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/plugin"
 	"github.com/bojieli/OpenRealtime/presentation"
@@ -767,6 +768,8 @@ func buildObserverDeveloperWebRTCBundle() (*Bundle, error) {
 			pluginName: "openrealtime.presentation.client.video-controls",
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientVideoContract},
+				{Contract: presentation.ClientMediaContract}, {Contract: presentation.ClientStateContract},
+				{Contract: presentation.ClientConnectionContract},
 			},
 		},
 		{
@@ -970,6 +973,8 @@ func developerWebRTCBundleDefinitions() []moduleDefinition {
 			pluginName: "openrealtime.presentation.client.video-controls",
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientVideoContract},
+				{Contract: presentation.ClientMediaContract}, {Contract: presentation.ClientStateContract},
+				{Contract: presentation.ClientConnectionContract},
 			},
 		},
 		{
@@ -1146,6 +1151,17 @@ func buildBundle(
 }
 
 func browserModule(name string) ([]byte, error) {
+	if name == "video-controls.js" {
+		source, err := modules.ReadFile("assets/" + name)
+		if err != nil {
+			return nil, err
+		}
+		presets, err := room.JSON()
+		if err != nil {
+			return nil, err
+		}
+		return bytes.Replace(source, []byte("/*ROOM_PRESETS*/[]"), presets, 1), nil
+	}
 	if name != "reducer.js" {
 		return modules.ReadFile("assets/" + name)
 	}
