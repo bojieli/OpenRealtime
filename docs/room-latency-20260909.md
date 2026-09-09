@@ -230,3 +230,30 @@ regression also passed both checks: 1,180 ms cessation after interruption onset,
 1,341 ms follow-up latency. The complete policy package and targeted race tests
 passed. Exact timings here come from the recorded metrics, not Gemini's listening
 estimates.
+
+## Final deployed result
+
+Executable `38884e8c` was pushed and redeployed. A fresh three-turn adaptive
+caller conversation passed all answer/acoustic checks and Gemini's qualitative
+review: **1,964, 1,521, and 1,822 ms**, mean **1,769 ms**. All three have complete
+nonoverlapping stage boundaries, and cancelled audio is excluded:
+
+| Observed interval | Mean |
+| --- | ---: |
+| Input end → final transcript | 287 ms |
+| Final transcript → admission | 169 ms |
+| Admission → first usable text | 739 ms |
+| Text → synthesis start | 59 ms |
+| Synthesis → first audio packet | 365 ms |
+| First packet → audible PCM | 151 ms |
+
+Gemini confirmed relevant answers, successful handling of the caller's concerns,
+clear speech, and no clipping or internal-note reading. Public API health and
+the authenticated browser both returned HTTP 200; Qwen policy and Fish health
+checks also passed. The deployed binary records this clean Git revision.
+
+The original rollback executable, `room.env`, service definition, and checksum
+are retained in `.runtime/room-latency-20260909/backup-before-deploy/` with private
+permissions. The intermediate `03855603` executable is also retained. The
+isolated candidate server was stopped after verification. No private traces,
+recordings, credentials, or backup environments are committed.
