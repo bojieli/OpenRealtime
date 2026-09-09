@@ -69,6 +69,77 @@ budget zero for moving to an Ethernet fallback before the caller completed the
 router restart. The proposed 3.7/128 answers had no other flagged issues. This
 narrow review does not certify complex reasoning, tool use, or all room scenarios.
 
+## Returned reasoning-token usage
+
+This section audits the original 135 replay responses; no new model requests
+were made. Requested `thinkingBudget` is separate from the returned
+`usageMetadata.thoughtsTokenCount`. All requests used `includeThoughts: false`;
+that same setting still returned positive usage counts for some configurations.
+The absence of displayed thought text therefore does not answer the token-count
+question.
+
+**For the selected Gemini 3.7/128 configuration, all nine responses omitted
+`thoughtsTokenCount`. In all nine, `totalTokenCount` equalled `promptTokenCount`
+plus `candidatesTokenCount`. Thus zero additional reasoning tokens were separately
+accounted for in the returned totals. This is not an explicit reported zero,
+and does not prove that the model performed no internal reasoning.** The earlier
+selection was supported by latency and the tested answer quality, not evidence
+that this configuration generated 128 reasoning tokens or preserved a measured
+amount of thinking.
+
+Each configuration had nine attempts. The mean/range column uses only responses
+that explicitly returned the thoughts field. The last column is the arithmetic
+residual `totalTokenCount - promptTokenCount - candidatesTokenCount`, averaged
+across all successful responses. It is an accounting cross-check, not a
+replacement measurement of hidden reasoning. Missing fields remain missing in
+the per-request data; they are not silently converted to measured zeros.
+
+| Model | Requested budget | Explicit thoughts field / successes | Reported thoughts: mean (min–max) | Mean accounting residual |
+| --- | ---: | ---: | ---: | ---: |
+| gemini-3-flash-preview | 0 | 0/9 | Not reported | 0.00 |
+| gemini-3-flash-preview | 128 | 0/9 | Not reported | 0.00 |
+| gemini-3-flash-preview | 512 | 0/9 | Not reported | 0.00 |
+| gemini-3.5-flash | 0 | 0/9 | Not reported | 0.00 |
+| gemini-3.5-flash | 128 | 9/9 | 94.56 (25–137) | 94.56 |
+| gemini-3.5-flash | 512 | 9/9 | 93.56 (28–137) | 93.56 |
+| gemini-3.6-flash | 0 | 0/0 | HTTP 400; no usage | N/A |
+| gemini-3.6-flash | 128 | 3/9 | 103.33 (69–169) | 34.44 |
+| gemini-3.6-flash | 512 | 3/9 | 209.67 (99–407) | 69.89 |
+| gemini-3.7-flash | 0 | 1/9 | 72.00 (72–72) | 8.00 |
+| gemini-3.7-flash | 128 | 0/9 | Not reported | 0.00 |
+| gemini-3.7-flash | 512 | 0/9 | Not reported | 0.00 |
+| gemini-3.8-flash | 0 | 0/9 | Not reported | 0.00 |
+| gemini-3.8-flash | 128 | 0/9 | Not reported | 0.00 |
+| gemini-3.8-flash | 512 | 0/9 | Not reported | 0.00 |
+
+No response in this matrix explicitly returned `thoughtsTokenCount: 0`.
+Every response omitting that field had an accounting residual of zero. Every
+response including it had a residual exactly equal to its reported thought count.
+
+Notable returned counts:
+
+- Gemini 3.5/128: 25, 25, 28, 123, 123, 123, 130, 137, 137.
+- Gemini 3.5/512: 28, 28, 28, 118, 118, 118, 130, 137, 137.
+- Gemini 3.6/128: 69, 72, 169 on the three router-concern cases; the six
+  capital-question responses omitted the field.
+- Gemini 3.6/512: 99, 123, 407 on the three router-concern cases; the six
+  capital-question responses omitted the field.
+- Gemini 3.7/0: one router-concern response reported 72; eight responses omitted
+  the field. Both 3.7/128 and 3.7/512 omitted it in all nine responses each.
+
+The 72 tokens at requested budget zero and the 130/137/169 counts at requested
+budget 128 show that these returned results must not be described as a reliably
+enforced numeric ceiling. The captured data cannot distinguish model-specific
+budget interpretation, endpoint handling, or usage-reporting behavior. It also
+cannot establish that changing 3.7 from 128 to 512 increases thinking: neither
+configuration reported separately accounted thoughts in this sample. These
+three short contexts do not establish behavior on harder reasoning tasks.
+
+[Per-request token usage CSV](room-model-token-usage-20260909.csv) contains all
+135 rows, including rejected requests, missing-field indicators, counts, model,
+budget, case, repeat, and first-text latency. It excludes prompts, answer text,
+and credentials. Source: retained `matrix.jsonl` response usage metadata.
+
 ## Fish Speech 1.5 measured directly
 
 The running process and `/health` identify checkpoint
