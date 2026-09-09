@@ -152,3 +152,16 @@ func TestLiveRoomSubstantiveReply(t *testing.T) {
 		Checks: []scenario.Check{{Kind: scenario.CheckAnsweredWithin, Line: 1, AfterMS: 8000}},
 	})
 }
+
+func TestLiveRoomTrailingClarification(t *testing.T) {
+	runLiveRoomDiagnostic(t, scenario.Scenario{
+		Name:         "room question followed by trailing clarification",
+		Instructions: "You are an internet support agent. You have suggested restarting the router. Answer the caller's concern directly in one or two English sentences.",
+		Script:       []scenario.Line{{Speaker: "user", Text: "No, I haven't tried that yet. Do I really have to unplug it? It's about five years old, if that makes a difference."}},
+		TrailingMS:   15000,
+		Checks: []scenario.Check{
+			{Kind: scenario.CheckAnsweredWithin, Line: 0, AfterMS: 8000},
+			{Kind: scenario.CheckSaid, Line: 0, AfterMS: 15000, Any: []string{"restart", "unplug", "power"}},
+		},
+	})
+}

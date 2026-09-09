@@ -160,7 +160,7 @@ async def conversation(args):
                             b"\0" * (offset + len(pcm) - len(agent_audio))
                         )
                     agent_audio[offset : offset + len(pcm)] = pcm
-                    chunks.append((at, pcm))
+                    chunks.append((at, pcm, event.get("response_id")))
                     event["delta"] = "<retained in conversation.wav>"
                 if kind == "response.output_audio_transcript.done":
                     transcript.append(
@@ -180,7 +180,10 @@ async def conversation(args):
                         .get("agent_output", {})
                         .get("active", False)
                     )
-                if kind == "response.done":
+                if (
+                    kind == "response.done"
+                    and event.get("response", {}).get("status") == "completed"
+                ):
                     done.append(now)
                 if kind == "error":
                     failures.append(event.get("error", {}))
@@ -277,8 +280,17 @@ async def conversation(args):
                 if output_active:
                     failures.append(f"turn {index + 1} did not finish within 45s")
                 # First audible 20ms RMS window, measured from recorded input end.
+                annotate_transcript(transcript, events)
+                completed = {
+                    t.get("response_id")
+                    for t in transcript[before + 1 :]
+                    if t["role"] == "assistant"
+                    and t.get("response_status") == "completed"
+                }
                 onset = None
-                for at, data in chunks:
+                for at, data, response_id in chunks:
+                    if response_id not in completed:
+                        continue
                     for offset in range(0, len(data) - 959, 960):
                         stamp = at + offset / 48
                         if (
@@ -290,7 +302,9 @@ async def conversation(args):
                     if onset is not None:
                         break
                 answered = any(
-                    t["role"] == "assistant" and t["text"].strip()
+                    t["role"] == "assistant"
+                    and t["text"].strip()
+                    and t.get("response_status") == "completed"
                     for t in transcript[before + 1 :]
                 )
                 metric = {

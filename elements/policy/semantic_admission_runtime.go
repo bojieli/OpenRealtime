@@ -1428,7 +1428,8 @@ const semanticStandingCoverageInstruction = "The policy extractor listed the sta
 
 const semanticUnansweredRequestInstruction = "You are an unanswered-request guard. " +
 	"The CURRENT ENDPOINT alone was classified wait. Decide whether the UNANSWERED SAME-SPEAKER STRETCH joins endpoint fragments into one explicit, complete question or imperative request addressed to the assistant whose work must start now. " +
-	"direct-request means it does. A trailing manner or output constraint completes an earlier immediate request. " +
+	"direct-request means it does. A trailing manner, clarification, or output constraint completes an earlier immediate request. " +
+	"An answer cut off before completion does not resolve that request. For example, a router question followed by its age and 'if that makes a difference' still needs an answer when the prior reply was cut off. Explicit requests to stop or wait silently remain wait. " +
 	"wait means the stretch is declarative planning or narration, an acknowledgement, a future policy or condition being established, or a past event or condition mentioned only in an earlier endpoint. " +
 	"Do not infer a request from the agent contract. An earlier condition is not current evidence and never counts here. " +
 	"A declarative statement such as 'ship it by Friday' followed by 'which gives us time to finish' is wait. " +
@@ -1802,7 +1803,7 @@ func semanticActivationEvidence(situation coreinteraction.Situation) bool {
 }
 
 // semanticHeardSince reconstructs the bounded completed speech added after
-// the last assistant audio that actually crossed the playback boundary. A
+// the last completed assistant utterance at the playback boundary. A
 // recognizer may endpoint one spoken thought at a breath and a later response
 // may supersede a prepared-but-unheard answer; neither event makes the earlier
 // clause old evidence. Silent cognition and canceled voice output likewise do
@@ -1849,13 +1850,14 @@ func semanticUnansweredEndpoints(
 		item := items[index]
 		switch item.Kind {
 		case trajectory.KindAssistantState:
-			if item.AssistantState != nil && item.AssistantState.Visibility == trajectory.VisibilityPlayed {
+			if item.AssistantState != nil && item.AssistantState.Visibility == trajectory.VisibilityPlayed &&
+				(item.AssistantState.Heard == nil || item.AssistantState.Heard.Complete()) {
 				if _, spoken := audible[item.AssistantState.AssistantItemID]; spoken {
 					return parts
 				}
 			}
 		case trajectory.KindAssistant:
-			if _, spoken := audible[item.ID]; spoken && item.Visibility == trajectory.VisibilityPlayed {
+			if _, spoken := audible[item.ID]; spoken && item.Visibility == trajectory.VisibilityPlayed && !item.Interrupted {
 				return parts
 			}
 		case trajectory.KindObservation:

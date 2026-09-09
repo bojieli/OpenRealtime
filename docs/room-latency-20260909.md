@@ -203,3 +203,30 @@ Validation includes the complete `cmd/openrealtime` package, interaction and
 scenario graph tests, speech/Fish/sentence-adapter tests, targeted race checks,
 and Python profiler unit tests and lint. These are live diagnostic scenarios,
 not a tau-bench certification or a statistical production reliability claim.
+
+## Deployment verification and fragment recovery
+
+Build `03855603` was pushed and deployed with the previous binary, environment,
+and user-service definition backed up privately. Public API health and the
+authenticated browser returned HTTP 200. A fresh adaptive conversation then
+exposed a further failure: the caller's trailing "if that makes a difference"
+cancelled a reply after "Yes", and the policy treated the question as answered.
+This deployment check is retained as a failure, not an end-to-end success.
+
+The unanswered-request boundary now requires a complete spoken utterance when
+an exact playback mark is available. A clipped reply leaves the same-speaker
+question and its trailing clarification together for the existing narrow
+unanswered-request guard. Explicit stop/silence instructions still require wait.
+A regression covers the exact question/partial-answer/tail sequence.
+
+The diagnostic also now waits for completed responses and measures their audio,
+excluding cancelled response IDs. Its earlier 3 ms onset on the first deployed
+turn was leftover cancelled output, not a three-millisecond response, and must
+not be used in a latency comparison.
+
+The recovery candidate passed the live trailing-clarification test and Gemini
+review, with a 2,105 ms input-end-to-audible response. The stop/silence/follow-up
+regression also passed both checks: 1,180 ms cessation after interruption onset,
+1,341 ms follow-up latency. The complete policy package and targeted race tests
+passed. Exact timings here come from the recorded metrics, not Gemini's listening
+estimates.

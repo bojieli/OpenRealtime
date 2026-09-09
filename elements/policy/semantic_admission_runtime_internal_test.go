@@ -16,6 +16,7 @@ import (
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/interaction"
+	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -175,6 +176,20 @@ func TestSemanticHeardSinceUsesOnlyCompletedSpeechAfterTheLastAudibleBoundary(t 
 				endpoint("second", "microphone", "second clause"),
 			},
 			current: "second", speaker: "user", maximum: 12, want: "first clause second clause",
+		},
+		{
+			name: "clipped audible reply leaves question unanswered",
+			items: []trajectory.Item{
+				endpoint("question", "microphone", "Do I need to unplug it? It is five years old."),
+				voice("reply", "Yes, unplugging clears glitches.", trajectory.VisibilityPrepared),
+				{ID: "clipped", Kind: trajectory.KindAssistantState, AssistantState: &trajectory.AssistantState{
+					AssistantItemID: "reply", Visibility: trajectory.VisibilityPlayed, PlayedAudioMS: 100,
+					Heard: &spoken.Mark{Spoken: "Yes", Pending: ", unplugging clears glitches."},
+				}},
+				endpoint("tail", "microphone", "If that makes a difference."),
+			},
+			current: "tail", speaker: "user", maximum: 12,
+			want: "Do I need to unplug it? It is five years old. If that makes a difference.",
 		},
 		{
 			name: "another speaker bounds the evidence",
