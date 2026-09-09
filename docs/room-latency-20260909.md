@@ -30,7 +30,7 @@ WebRTC-device latency is claimed. This is a small sample, not a production p90.
 The older [latency record](latency.md) measured other configurations. Its claim
 that endpointing dominated must not be transferred to this room configuration.
 
-## Controlled model replay
+## Controlled model replay (legacy numeric budget settings)
 
 The authenticated provider model catalog confirmed all five model IDs below.
 Three exact captured contexts (France, Japan after a preceding turn, and a
@@ -68,6 +68,59 @@ answer has only one clause. It also flagged the original 3 Flash preview at
 budget zero for moving to an Ethernet fallback before the caller completed the
 router restart. The proposed 3.7/128 answers had no other flagged issues. This
 narrow review does not certify complex reasoning, tool use, or all room scenarios.
+
+## Official API configuration verification
+
+Checked Google's documentation and the same direct `v1beta` GenerateContent
+API used by the replay. Google recommends `thinkingLevel` for Gemini 3;
+`thinkingBudget` is accepted for backward compatibility, and the budget guidance
+allows under/overflow. Therefore the original 0/128/512 matrix measures legacy
+request settings, not three verified native reasoning modes. HTTP acceptance
+alone did not validate that interpretation. [Google thinking guide](https://ai.google.dev/gemini-api/docs/generate-content/thinking?hl=en).
+
+Both models support `low`, `medium` (default), and `high`; `minimal` is rejected.
+[Gemini 3.7 model reference](https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash),
+[Gemini 3.8 model reference](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash),
+[thinking-level defaults](https://ai.google.dev/gemini-api/docs/generate-content/thinking?hl=en#thinking-levels).
+
+A follow-up API check used one captured router-concern context, one request per
+cell, the same 1,024 output limit and temperature zero, and randomized order.
+These are configuration/usage checks, not repeated latency or quality benchmarks.
+Each request supplied either `thinkingLevel` or `thinkingBudget`, never both.
+Returned `thoughtsTokenCount` values:
+
+| Requested configuration | Gemini 3.7 Flash | Gemini 3.8 Flash |
+| --- | ---: | ---: |
+| `thinkingBudget: 128` | Omitted | Omitted |
+| `thinkingLevel: low` | Omitted | Omitted |
+| `thinkingLevel: medium` | 343 | 132 |
+| `thinkingLevel: high` | 279 | 715 |
+| `thinkingLevel: minimal` | HTTP 400 `INVALID_ARGUMENT` | HTTP 400 `INVALID_ARGUMENT` |
+
+All eight accepted requests completed with `STOP`. Every omitted count again
+had zero residual in the returned token accounting. Both minimal requests
+explicitly said that MINIMAL is unsupported. Positive counts at medium/high
+confirm that both models can report thinking tokens; the original omission
+was not evidence that those models lacked thinking support. One sample cannot
+establish a monotonic token-count relationship between medium and high.
+
+The legacy-to-level mapping is not established by these checks. In particular,
+the data do not prove that 128 is ignored, that it maps exactly to low, or that
+an omitted usage field means no internal reasoning. `includeThoughts: false`
+controls returning thought summaries, not selecting a reasoning level.
+[Thought summaries](https://ai.google.dev/gemini-api/docs/generate-content/thinking?hl=en#thought-summaries).
+
+A native low-latency request should use:
+
+```json
+{"generationConfig":{"thinkingConfig":{"thinkingLevel":"low","includeThoughts":false}}}
+```
+
+The live deployment still uses the previously tested numeric 128 setting.
+This documentation/API investigation does not deploy an unvalidated replacement.
+A production switch should compare native levels using repeated usage, latency,
+and end-to-end voice tests. Raw follow-up responses are retained privately as
+`thinking-level-api-check.jsonl` alongside the original replay evidence.
 
 ## Returned reasoning-token usage
 
