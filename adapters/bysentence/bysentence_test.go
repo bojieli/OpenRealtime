@@ -1,6 +1,8 @@
 package bysentence
 
 import (
+	"context"
+	v1 "github.com/bojieli/OpenRealtime/api/v1"
 	"reflect"
 	"testing"
 )
@@ -122,5 +124,39 @@ func TestTheFirstCutTakesAnyPauseNotJustAFullStop(t *testing.T) {
 	early := Split("Once the review is done, we can ship it by the third.", 12)
 	if len(early) != 2 || early[0] != "Once the review is done," {
 		t.Fatalf("the first break past the minimum wins: %q", early)
+	}
+}
+
+// Each inner HTTP synthesis starts its offsets and chunk IDs from zero.
+type resettingSpeech struct{}
+
+func (resettingSpeech) Descriptor() v1.Descriptor { return v1.Descriptor{} }
+func (resettingSpeech) Synthesize(context.Context, v1.SpeechPlan) ([]v1.SpeechChunk, error) {
+	return nil, nil
+}
+func (resettingSpeech) Stream(_ context.Context, p v1.SpeechPlan, consume func(v1.SpeechChunk) error) error {
+	for i := 0; i < 2; i++ {
+		if err := consume(v1.SpeechChunk{ChunkID: "same", CandidateID: p.CandidateID, SampleOffset: uint64(i), SampleRateHz: 24000, PCM16LE: []byte{1, 0}, Final: i == 1}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func TestStreamJoinsSentenceOffsetsAndIDs(t *testing.T) {
+	p := Provider{Inner: resettingSpeech{}}
+	var chunks []v1.SpeechChunk
+	err := p.Stream(context.Background(), v1.SpeechPlan{CandidateID: "answer", Text: "Find your order number, and verify the request is within thirty days."}, func(c v1.SpeechChunk) error { chunks = append(chunks, c); return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 4 {
+		t.Fatalf("chunks=%d", len(chunks))
+	}
+	ids := map[string]bool{}
+	for i, c := range chunks {
+		if c.SampleOffset != uint64(i) || c.Final != (i == 3) || ids[c.ChunkID] {
+			t.Fatalf("invalid joined chunk %d: %+v", i, c)
+		}
+		ids[c.ChunkID] = true
 	}
 }

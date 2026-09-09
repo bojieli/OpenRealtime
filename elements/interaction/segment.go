@@ -8,10 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/bojieli/OpenRealtime/adapters/bysentence"
 	"github.com/bojieli/OpenRealtime/element"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	"github.com/bojieli/OpenRealtime/elements/speech"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
@@ -136,7 +138,7 @@ type segmentPreparedTextRunner struct {
 func (runner *segmentPreparedTextRunner) Run(parent context.Context) error {
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
-	if err := reportInteractionResolution(runner.resolution, SegmentPreparedTextDescriptor()); err != nil {
+	if err := liveidentity.Report(runner.resolution, liveidentity.Artifact{ID: "builtin://openrealtime/elements/interaction.SegmentPreparedText", Revision: "implementation:3"}, nil); err != nil {
 		return err
 	}
 	inputs := make(chan segmentInput)
@@ -336,7 +338,12 @@ func (runner *segmentPreparedTextRunner) releaseSafeSegments(
 		if err := runner.publishSegment(ctx, cause, pieces[0]); err != nil {
 			return err
 		}
-		runner.active.buffer = pieces[1]
+		// The batch splitter trims both ends of its remainder. In a live
+		// stream the trailing whitespace belongs before the next delta;
+		// dropping it turns "return label " + "to" into "return labelto".
+		original := runner.active.buffer
+		trailing := original[len(strings.TrimRightFunc(original, unicode.IsSpace)):]
+		runner.active.buffer = pieces[1] + trailing
 	}
 	if len(runner.active.buffer) > runner.config.MaxSegmentBytes {
 		return runner.failActive(ctx, cause, OutcomeFailed, "segment_too_large",

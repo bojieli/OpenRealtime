@@ -5,8 +5,9 @@ microphone PCM input. They are live diagnostics, not tau-bench certification.
 Run cases sequentially so overlapping test sessions do not distort latency.
 
 The room requires a model output ceiling that includes both thinking and spoken
-output. With Gemini's 512-token thinking budget, the room uses a 1,024-token
-ceiling. A 128-token ceiling reproduced empty or clipped answers with
+output. The room retains a 1,024-token ceiling and now requests a 128-token thinking
+budget with Gemini 3.7 Flash; see the [latency comparison](room-latency-20260909.md).
+The old 128-token total ceiling reproduced empty or clipped answers with
 `MAX_TOKENS`. Token exhaustion is now an error rather than successful completion.
 
 The bilingual recognizer does not lock an utterance to Chinese based on a short

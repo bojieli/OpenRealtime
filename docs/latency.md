@@ -1,5 +1,7 @@
 # Response latency
 
+For the current deployed room, see the [September 9 stage and model comparison](room-latency-20260909.md). The historical measurements below use different configurations.
+
 > [!NOTE]
 > **Evidence record.** The numbers below belong to the named hardware, models,
 > scenarios, and revisions; they are not a blanket latency promise. Use the

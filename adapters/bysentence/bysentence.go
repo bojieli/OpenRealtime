@@ -21,6 +21,8 @@ package bysentence
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"strings"
 	"unicode"
 
@@ -59,13 +61,33 @@ func (provider Provider) Stream(
 	if len(pieces) <= 1 {
 		return provider.Inner.Stream(ctx, plan, consume)
 	}
+	var base, sequence uint64
+	var rate uint32
 	for index, piece := range pieces {
+		var localEnd uint64
 		part := plan
 		part.Text = piece
 		// The last piece carries the plan's own final marker; the ones before
 		// it must not, or everything downstream treats the turn as over after
 		// the first sentence.
 		if err := provider.Inner.Stream(ctx, part, func(chunk v1.SpeechChunk) error {
+			if err := chunk.Validate(); err != nil {
+				return err
+			}
+			if chunk.SampleOffset != localEnd {
+				return fmt.Errorf("sentence chunk offset is %d, want %d", chunk.SampleOffset, localEnd)
+			}
+			if rate != 0 && rate != chunk.SampleRateHz {
+				return fmt.Errorf("sentence sample rate changed")
+			}
+			rate = chunk.SampleRateHz
+			localEnd, _ = chunk.EndSample()
+			if localEnd > math.MaxUint64-base {
+				return fmt.Errorf("sentence audio offset overflow")
+			}
+			chunk.SampleOffset += base
+			sequence++
+			chunk.ChunkID = fmt.Sprintf("%s-sentence-%06d", plan.CandidateID, sequence)
 			if index < len(pieces)-1 {
 				chunk.Final = false
 			}
@@ -73,6 +95,7 @@ func (provider Provider) Stream(
 		}); err != nil {
 			return err
 		}
+		base += localEnd
 	}
 	return nil
 }

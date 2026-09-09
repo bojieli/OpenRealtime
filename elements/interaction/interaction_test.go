@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -284,6 +285,29 @@ func TestSegmentPreparedTextKeepsShortIntroductionsWithTheirPhrase(t *testing.T)
 	}
 	if outcome := receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted); outcome.Segments != 3 {
 		t.Fatalf("completed segmentation = %+v", outcome)
+	}
+}
+
+func TestSegmentPreparedTextPreservesWhitespaceBeforeFutureDelta(t *testing.T) {
+	for _, space := range []string{" ", "\n", "\u2003"} {
+		t.Run(fmt.Sprintf("%q", space), func(t *testing.T) {
+			mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
+				map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":1,"minimum_clause_runes":12}`)}, nil)
+			defer stopInteractionGraph(t, done, cancel)
+			const runID = "stream-whitespace"
+			text, segments := ingress(t, mounted, "text"), egress(t, mounted, "segments")
+			send(t, text, preparedEnvelope("begin", runID, cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextBegin, Index: 0}))
+			send(t, text, preparedEnvelope("chunk-1", runID, cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: 1, Text: "First, find the order. Attach the return label" + space}))
+			if got := receive(t, segments).Payload.(speech.TextSegment).Text; got != "First, find the order." {
+				t.Fatal(got)
+			}
+			send(t, text, preparedEnvelope("chunk-2", runID, cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: 2, Text: "to the parcel."}))
+			send(t, text, preparedEnvelope("end", runID, cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextEnd, Index: 3}))
+			if got := receive(t, segments).Payload.(speech.TextSegment).Text; got != "Attach the return label"+space+"to the parcel." {
+				t.Fatalf("lost word boundary: %q", got)
+			}
+			receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted)
+		})
 	}
 }
 

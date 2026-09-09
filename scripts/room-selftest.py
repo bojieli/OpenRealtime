@@ -83,6 +83,33 @@ def write_audio(path, user, agent):
         wav.writeframes(stereo)
 
 
+def annotate_transcript(transcript, events):
+    """Distinguish generated text from output cancelled before playback."""
+    completions = {}
+    statuses = {}
+    audible = set()
+    for item in events:
+        event = item["event"]
+        kind = event.get("type")
+        if kind == "response.output_audio_transcript.done":
+            completions[item["at_ms"]] = event.get("response_id")
+        elif kind == "response.done":
+            response = event.get("response", {})
+            statuses[response.get("id")] = response.get("status")
+        elif kind == "response.output_audio.delta":
+            audible.add(event.get("response_id"))
+    for item in transcript:
+        if item.get("role") != "assistant":
+            continue
+        response_id = completions.get(item.get("transcript_completed_at_ms"))
+        item["response_id"] = response_id
+        item["response_status"] = statuses.get(response_id, "unknown")
+        item["audio_received"] = response_id in audible
+        item["text_evidence"] = (
+            "generated transcript; cancelled output may be partly or entirely unspoken"
+        )
+
+
 async def conversation(args):
     root = Path(args.output)
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -211,10 +238,17 @@ async def conversation(args):
                 if index == 0:
                     text = "Hello, my home internet has been very slow today. Can you help me?"
                 else:
+                    annotate_transcript(transcript, events)
+                    caller_context = [
+                        t
+                        for t in transcript
+                        if t["role"] != "assistant"
+                        or t.get("response_status") == "completed"
+                    ]
                     text, _ = await asyncio.to_thread(
                         gemini,
                         args.model,
-                        [{"text": json.dumps(transcript)}],
+                        [{"text": json.dumps(caller_context)}],
                         "Play a mildly impatient nontechnical caller with slow home Wi-Fi. Your phone and laptop are affected, "
                         "the router is five years old, and you have not restarted it. Reply naturally to the agent's latest "
                         "question using these facts, or ask a relevant follow-up. One brief English utterance only; no stage directions.",
@@ -280,6 +314,7 @@ async def conversation(args):
             reader.cancel()
             await asyncio.gather(sender, reader, return_exceptions=True)
     write_audio(root / "conversation.wav", bytes(user_audio), bytes(agent_audio))
+    annotate_transcript(transcript, events)
     report = {
         "kind": "live simulated-caller diagnostic",
         "turns": turns,
@@ -328,6 +363,7 @@ async def review(args, root):
         "Independently review this simulated voice conversation. Stereo left is caller, right is agent. "
         "The recorded ASR/input script identifies caller words; agent_text identifies agent words. Do not reassign agent speech to the caller. "
         "Use reported acoustic metrics as the authority for exact timing; do not substitute listening estimates. "
+        "Generated transcripts from cancelled responses are not claims of delivered speech; intentional cancellation of unplayed output is not a missing-answer failure if the current question receives an audible answer. "
         "Assess answer relevance, correctness against supplied scenario facts, language consistency, clipped or "
         "missing answers, accidental reading of internal notes, repetition, and turn-taking. Listen to the audio. "
         "Report each failing turn and concrete evidence. Assess interruptions only if an actual overlap opportunity "

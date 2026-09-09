@@ -108,7 +108,9 @@ nodes:
     retain_rejected_speech: true
   segment:
     minimum_runes: 1
-    minimum_clause_runes: 12
+    # Keep short sentences intact so each comma does not reset TTS prosody.
+    # Short complete sentences still release immediately via minimum_runes.
+    minimum_clause_runes: 80
     max_segment_bytes: 65536
     max_run_bytes: 1048576
     max_segments: 256
