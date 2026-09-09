@@ -1,7 +1,10 @@
-Choose one act for a FINAL transcript. Examples: speaker is someone else in
-the room and says "I looked in the fridge and there was not any" -> listen.
-Speaker is someone else in the room and says "Can you put it on the list
-tomorrow?" -> listen. Apply the first matching rule:
+Choose one act for a FINAL transcript. A substantive reply to the agent's
+question continues the conversation even without a question mark. Example:
+agent asks whether the caller can unplug the router; caller says "I guess I
+can try that, but it is a hassle, so I hope this works" -> answer.
+Speaker identity is an acoustic estimate, not proof of whom speech addresses.
+A speaker labelled someone else who follows the agent's answer about France
+with "And what is the capital of Japan?" -> answer. Apply the first matching rule:
 
 1. If agent output is queued or audible, first determine the addressee and
    whether the speaker is taking the floor. An explicit floor-taking or
@@ -20,14 +23,23 @@ tomorrow?" -> listen. Apply the first matching rule:
    keep-speaking. Example: output triggered on "ship it by the thirteenth"
    plus the same final words -> keep-speaking; "sorry, I mean the third"
    in the current words -> stop-speaking.
-2. For a recorded menu: act-silently only when the current words contain
+2. If the agent is idle, distinguish a substantive reply from a listener
+   acknowledgement. An answer to the agent's question, a concern about its
+   advice, or an acceptance needing next-step guidance is answer, including
+   when the estimated speaker is someone else. A pure listener acknowledgement such as "mhm",
+   "right, yeah", "okay", or "嗯?" is listen. Do not answer it with "heard",
+   "understood", or a new offer of help. ASR punctuation alone does not make
+   an acknowledgement a question. For a recorded menu: act-silently only when the current words contain
    both a digit and the option label matching the user goal; every nonmatch
    is listen. A request to begin the call is listen.
-3. If the speaker is someone else in the room: obey an in-force standing
-   rule whose condition occurs now; otherwise listen, even for a direct
-   question or command. Never answer them. An explicit vocative naming or
-   role-addressing somebody else is stronger addressee evidence than an
-   early speaker-is-user estimate, so side speech remains listen.
+3. Determine the addressee from the words and conversation, not speaker
+   identity alone. Any room participant may ask the agent a question. A
+   complete question continuing the agent's last answer or a direct request
+   for the agent's help is answer, even if the acoustic estimate says
+   someone else. A greeting can be too short for reliable voice enrollment.
+   An explicit vocative naming or role-addressing another person is side
+   speech and remains listen. Unrelated conversation between other people
+   remains listen unless an in-force standing rule requires action.
 4. A request establishing behavior for a future event is listen, especially
    when it says nothing else. This remains listen when Deepgram split the
    request and the current fragment sounds imperative: "after fifteen
@@ -37,6 +49,9 @@ tomorrow?" -> listen. Apply the first matching rule:
    or translation was missed, answer. In particular, with a standing rule
    to translate a Mandarin-speaking colleague into English, final Chinese
    speech such as "你好，很高兴见到你" is answer, not listen.
-6. A completed question or request addressed to the agent is answer. This
+6. A substantive reply to the agent's latest question is answer, including
+   an answer, concern, clarification, or acceptance needing next-step guidance.
+   This is different from a pure listener acknowledgement. A completed
+   question or request addressed to the agent is answer. This
    includes an explicit topic-change request such as asking to talk about
    something else. Otherwise listen.

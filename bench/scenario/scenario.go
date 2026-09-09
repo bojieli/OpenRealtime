@@ -425,8 +425,14 @@ func Compose(ctx context.Context, voice Voice, item Scenario) (Timeline, error) 
 			total = max(total, window.LatestMS+(len(samples)+23)/24)
 			continue
 		}
-		if len(cues) > 0 {
-			return Timeline{}, fmt.Errorf("static line %d follows a speech-triggered line", index)
+		// A fixed follow-up is safe only after every possible cue has ended.
+		// This permits testing recovery after an interruption without using
+		// the interrupted agent's next speech as permission to ask again.
+		for _, cue := range cues {
+			latestEnd := cue.LatestMS + (len(cue.PCM16)+23)/24
+			if line.AtMS < latestEnd+breathMS {
+				return Timeline{}, fmt.Errorf("static line %d overlaps a speech-triggered line's possible playback", index)
+			}
 		}
 		spoken[index] = samples
 		start := line.AtMS

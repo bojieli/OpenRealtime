@@ -607,7 +607,7 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		t.Fatal(err)
 	}
 	if overlapConfig.Decider == "" || overlapConfig.Decider != semanticConfig.Decider ||
-		overlapConfig.HoldMS != 800 || overlapConfig.Unclassified != "cancel" ||
+		overlapConfig.HoldMS != 1800 || overlapConfig.Unclassified != "cancel" ||
 		overlapConfig.MaxActiveRuns != 256 || overlapConfig.MaxUtterances != 512 {
 		t.Fatalf("scenario overlap policy values = %+v; semantic decider = %q",
 			overlapConfig, semanticConfig.Decider)

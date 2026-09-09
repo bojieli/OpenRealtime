@@ -10,6 +10,9 @@ import (
 
 func TestRoomDefaultUsesBenchmarkPipelineAndFullScenarioContract(t *testing.T) {
 	selection := defaultRoomProfileOptions()
+	if selection.maxOutputTokens < 1024 {
+		t.Fatal("room must leave output capacity beyond the 512-token thinking budget")
+	}
 	if selection.asrProvider != "deepgram" || selection.modelProvider != "google" || selection.policyProvider != "vllm" || selection.ttsProvider != "fish-audio" || selection.speakerURL == "" || selection.wordTimingsURL == "" {
 		t.Fatalf("room pipeline lost a benchmark component: %+v", selection)
 	}

@@ -773,3 +773,24 @@ func TestRetainedNativeStateNeverRestoresWordsTheUserNeverHeard(t *testing.T) {
 		t.Fatalf("heard and prepared halves must both survive: %s", encoded)
 	}
 }
+
+func TestTokenExhaustionIsNotSuccessfulCompletion(t *testing.T) {
+	for _, text := range []string{"", "Yes, I"} {
+		t.Run(text, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				payload, _ := json.Marshal(map[string]any{"candidates": []any{map[string]any{"content": map[string]any{"role": "model", "parts": []any{map[string]any{"text": text}}}, "finishReason": "MAX_TOKENS"}}})
+				w.Write(append(append([]byte("data: "), payload...), []byte("\n\n")...))
+			}))
+			defer server.Close()
+			adapter, err := New(Config{APIKey: "test", Model: "gemini-test", Endpoint: server.URL, Phase: trajectory.PhaseFast, Effort: "512"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			completion, err := adapter.Continue(t.Context(), continuation.Request{InvocationID: "exhausted", Descriptor: adapter.Descriptor(), Invocation: continuation.Invocation{Instruction: "Answer", MaxOutputTokens: 128}, Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "Can you help me?"}}}}, func(continuation.Event) error { return nil })
+			if err == nil || !strings.Contains(err.Error(), "output token limit") || completion.StopReason != "MAX_TOKENS" {
+				t.Fatalf("exhaustion reported as success: %+v %v", completion, err)
+			}
+		})
+	}
+}

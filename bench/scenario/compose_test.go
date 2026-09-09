@@ -52,3 +52,22 @@ func TestOneSpeakerDoesNotRunIntoTheNext(t *testing.T) {
 		t.Fatalf("the second speaker starts %dms after the first stopped", gap)
 	}
 }
+
+func TestStaticFollowupAfterBoundedInterruption(t *testing.T) {
+	item := Scenario{Script: []Line{
+		{Speaker: "user", Text: "Explain"},
+		{Speaker: "user", Text: "Stop", AtMS: 2000, AfterSpeech: &SpeechWindow{LatestMS: 4000, LookbackMS: 1000, MinimumActiveMS: 600, RecentMS: 100}},
+		{Speaker: "user", Text: "Next question", AtMS: 5600},
+	}}
+	timeline, err := Compose(t.Context(), fixedVoice{ms: 1000}, item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timeline.Spans[2].StartMS != 5600 || len(timeline.Cues) != 1 {
+		t.Fatalf("followup changed timing: %+v", timeline.Spans)
+	}
+	item.Script[2].AtMS = 5599
+	if _, err := Compose(t.Context(), fixedVoice{ms: 1000}, item); err == nil {
+		t.Fatal("followup can overlap a late interruption")
+	}
+}

@@ -325,6 +325,9 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	if err != nil {
 		return completion, err
 	}
+	if completion.StopReason == "MAX_TOKENS" {
+		return completion, fmt.Errorf("Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)")
+	}
 	return completion, nil
 }
 

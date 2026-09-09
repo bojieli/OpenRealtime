@@ -192,8 +192,8 @@ struct ContentView: View {
                     }
                     ViewThatFits(in: .horizontal) {
                         HStack(alignment: .top, spacing: 18) {
-                            roomStage.frame(minWidth: 450)
-                            roomConversation.frame(width: 340)
+                            roomStage.frame(width: max(280, (geometry.size.width - 58) * 0.4))
+                            roomConversation.frame(width: max(360, (geometry.size.width - 58) * 0.6))
                         }
                         VStack(spacing: 18) { roomStage; roomConversation.frame(minHeight: 340) }
                     }
@@ -219,7 +219,7 @@ struct ContentView: View {
 
     private var roomStage: some View {
         VStack(spacing: 16) {
-            HStack(spacing: 16) {
+            VStack(spacing: 16) {
                 participant("You", subtitle: model.microphoneMuted ? "Microphone muted" : (model.microphoneActive ? "Microphone live" : "Microphone off"), source: "camera", icon: "person.fill", hidden: false)
                 participant("OpenRealtime", subtitle: model.speakerMuted ? "Audio muted" : "Audio participant", source: nil, icon: "waveform", hidden: model.agentTileHidden)
             }

@@ -16,7 +16,7 @@ export default {
       button[aria-pressed=true] { background:#275c50; border-color:#58c5a5; }
       button:focus-visible,input:focus-visible,summary:focus-visible { outline:3px solid #8ac9ff; outline-offset:3px; }
       input,textarea,select { background:#111827; color:#e9edf5; border:1px solid #354058; border-radius:10px; padding:.8rem; min-width:0; }
-      .room-shell { display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:20px; max-width:1720px; margin:auto; padding:24px; min-height:100dvh; }
+      .room-shell { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr); gap:20px; max-width:1720px; margin:auto; padding:24px; min-height:100dvh; }
       .room-stage { min-width:0; } .room-conversation { min-width:0; }
       .room-text-only { grid-template-columns:1fr; max-width:1000px; }
       .room-tools { grid-column:1/-1; border-top:1px solid #263147; padding:18px 0; color:#9dabc1; }

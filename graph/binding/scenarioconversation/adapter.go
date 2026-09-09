@@ -770,6 +770,9 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.acceptMessageCommit(envelope)
 		case semanticAdmissionOutcomeBoundary:
 			err = session.acceptSemanticAdmissionOutcome(ctx, envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case invocationOutcomeBoundary:
 			err = session.acceptInvocationOutcome(envelope)
 		case dispatchCommitBoundary:

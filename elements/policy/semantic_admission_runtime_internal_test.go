@@ -560,3 +560,17 @@ func TestReceiveSemanticAdmissionUsesVariadicArbitrationForCommittedLanes(t *tes
 		t.Fatal("variadic semantic receiver did not stop after cancellation")
 	}
 }
+
+func TestVoiceActivationRetainsReplyContextWithoutEarlierCallerConditions(t *testing.T) {
+	s := interaction.Situation{Heard: "I can try that, but it is a hassle.", Recent: []string{
+		"user: ship by the thirteenth", "agent: An earlier answer.",
+		"agent: Would you try restarting the router?", "user: I can try that, but it is a hassle.",
+	}}
+	evidence := semanticVoiceActivationEvidence(s)
+	if !strings.Contains(evidence, "Would you try restarting the router?") || !strings.Contains(evidence, s.Heard) {
+		t.Fatalf("missing current reply context: %s", evidence)
+	}
+	if strings.Contains(evidence, "thirteenth") || strings.Contains(evidence, "An earlier answer.") || strings.Contains(evidence, "Recent conversation:") {
+		t.Fatalf("activation reused historical observations: %s", evidence)
+	}
+}

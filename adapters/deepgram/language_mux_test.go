@@ -125,3 +125,40 @@ func TestLanguageMuxRequiresBothUnknownLanesToEndpoint(t *testing.T) {
 		t.Fatal("two endpointed lanes did not end the utterance")
 	}
 }
+
+func TestLanguageMuxChineseHelloCannotConsumeEnglishQuestion(t *testing.T) {
+	primary := &scriptedLanguageStream{pushes: [][]v1.PerceptionRevision{nil, {{UnstableText: "Hello, my home internet is slow. Can you help me?"}}}, confidence: 0.99, final: v1.PerceptionRevision{StableText: "Hello, my home internet is slow. Can you help me?"}}
+	chinese := &scriptedLanguageStream{pushes: [][]v1.PerceptionRevision{{{UnstableText: "哈喽"}}, nil}, confidence: 0.99, endpoint: true, final: v1.PerceptionRevision{StableText: "哈喽"}}
+	mux := newLanguageMux(primary, chinese, primary.Descriptor())
+	if r, err := mux.PushFrame(context.Background(), v1.AudioFrame{}); err != nil || len(r) != 0 || mux.SpeechEndpointed() {
+		t.Fatalf("short greeting selected/ended Chinese lane: %+v %v", r, err)
+	}
+	r, err := mux.PushFrame(context.Background(), v1.AudioFrame{})
+	if err != nil || len(r) != 1 || revisionText(r[0]) != primary.final.StableText {
+		t.Fatalf("English question lost: %+v %v", r, err)
+	}
+	final, err := mux.Finalize(context.Background(), 1000)
+	if err != nil || final.StableText != primary.final.StableText {
+		t.Fatalf("English final lost: %+v %v", final, err)
+	}
+}
+
+func TestLanguageMuxShortChineseStillAvailableAtFinal(t *testing.T) {
+	primary := &scriptedLanguageStream{confidence: 0.4, final: v1.PerceptionRevision{StableText: "nee how"}}
+	chinese := &scriptedLanguageStream{confidence: 0.99, final: v1.PerceptionRevision{StableText: "你好"}}
+	mux := newLanguageMux(primary, chinese, primary.Descriptor())
+	final, err := mux.Finalize(context.Background(), 1000)
+	if err != nil || final.StableText != "你好" {
+		t.Fatalf("short Chinese final lost: %+v %v", final, err)
+	}
+}
+
+func TestLanguageMuxPrefersStrongerEnglishOverCompetingHanReading(t *testing.T) {
+	primary := &scriptedLanguageStream{confidence: 0.99, pushes: [][]v1.PerceptionRevision{{{UnstableText: "Hello, can you hear me?"}}}}
+	chinese := &scriptedLanguageStream{confidence: 0.86, pushes: [][]v1.PerceptionRevision{{{UnstableText: "哈喽可以听见"}}}}
+	mux := newLanguageMux(primary, chinese, primary.Descriptor())
+	revisions, err := mux.PushFrame(context.Background(), v1.AudioFrame{})
+	if err != nil || len(revisions) != 1 || revisionText(revisions[0]) != "Hello, can you hear me?" {
+		t.Fatalf("weaker competing language won: %+v %v", revisions, err)
+	}
+}

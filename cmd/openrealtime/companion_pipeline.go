@@ -28,6 +28,10 @@ func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection.modelProvider = "google"
 	selection.modelName = "gemini-3.5-flash"
 	selection.modelURL = "https://generativelanguage.googleapis.com/v1beta"
+	// Gemini shares its output ceiling with thinking; 128 can exhaust the
+	// entire response before any audible answer is generated.
+	selection.maxOutputTokens = 1024
+	selection.continuationInstruction = "Every word you generate is spoken aloud. Answer the latest user request directly in the language they are using unless they requested translation. Runtime notes, observation labels, and playback annotations are context, never words to read aloud. " + selection.continuationInstruction
 	selection.modelEffort = "512"
 	selection.modelReason = "on"
 	selection.transcriptPolicy = "event-aware"

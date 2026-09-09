@@ -1624,8 +1624,16 @@ func (session *session) publishDebug(
 	if !ok {
 		return nil
 	}
+	// Keep media bytes and arbitrary provider data out of debug traffic.
+	// The gateway withholds these decision details unless payloads are opted in.
+	var payload map[string]any
+	switch name {
+	case "semantic_decision", "semantic_admission_state", "semantic_admission_outcome", "overlap_state", "segmentation_outcome", "model_commit_outcome":
+		payload = map[string]any{"value": envelope.Payload}
+	}
 	return sink.Debug(ctx, legacy.DebugEvent{
 		Category: string(openrealtime.DebugGraph), Name: name, Phase: "output", CorrelationID: envelope.ItemID,
+		Payload: payload,
 		Attributes: map[string]any{
 			"run_id": envelope.RunID, "session_id": envelope.SessionID,
 			"type": envelope.Type.String(),

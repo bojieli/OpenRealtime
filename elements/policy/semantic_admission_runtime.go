@@ -172,15 +172,17 @@ type semanticContextSample struct {
 }
 
 type semanticRequest struct {
-	operation string
-	envelope  element.Envelope
-	commit    stateelements.ObservationCommitOutcome
-	create    ResponseCreate
-	version   uint64
-	stateItem string
-	streamID  string
-	sourceRev uint64
-	context   *stateelements.CommittedContext
+	// A finalized interruption is reconsidered once after the old output retires.
+	afterOutputRevision uint64
+	operation           string
+	envelope            element.Envelope
+	commit              stateelements.ObservationCommitOutcome
+	create              ResponseCreate
+	version             uint64
+	stateItem           string
+	streamID            string
+	sourceRev           uint64
+	context             *stateelements.CommittedContext
 }
 
 func (request semanticRequest) key() string {
@@ -188,6 +190,8 @@ func (request semanticRequest) key() string {
 }
 
 type semanticDecisionResult struct {
+	finalTranscript   bool
+	outputRevision    uint64
 	request           semanticRequest
 	update            SessionInvocationUpdate
 	digest            string
@@ -841,6 +845,9 @@ func (runner *semanticAdmissionRunner) startReadyDecision(
 		return nil
 	}
 	for index, request := range runner.pending {
+		if request.afterOutputRevision != 0 && (runner.agentOutput.Active || runner.agentOutput.Revision <= request.afterOutputRevision) {
+			continue
+		}
 		update, digest, sample, prefix, ready, err := runner.inputsFor(request)
 		if err != nil {
 			runner.pending = append(runner.pending[:index], runner.pending[index+1:]...)
@@ -1275,7 +1282,9 @@ func (runner *semanticAdmissionRunner) decide(
 		}
 	}
 	result := semanticDecisionResult{
-		request: request, update: update, digest: digest, sample: sample, prefix: prefix,
+		finalTranscript: situation.TranscriptEvent == coreinteraction.TranscriptFinal,
+		outputRevision:  agentOutput.Revision,
+		request:         request, update: update, digest: digest, sample: sample, prefix: prefix,
 		act: act, policy: policyName, outcome: outcome, stage: stage, activation: activation,
 		activationOutcome: activationOutcome, standingCoverage: standingCoverage,
 		coverageOutcome: coverageOutcome, standingBefore: standing, standingAfter: standingAfter,
@@ -1432,6 +1441,9 @@ const semanticVoiceActivationInstruction = "You are an activation guard, not a c
 	"Current evidence may be a completed utterance, an image or visual observation, or elapsed silence explicitly named by a standing policy. " +
 	"condition-met means the contract or a standing policy says to answer when some fact occurs, and the current evidence proves that fact now. " +
 	"direct-request means the current evidence directly asks a complete question or requests work that should start now, not later. " +
+	"It also includes a substantive reply to the latest assistant turn that advances the conversation: an answer, clarification, concern, or acceptance needing next-step guidance. " +
+	"The LAST ASSISTANT TURN is context only for interpreting that reply, never evidence that a standing condition happened now. " +
+	"For example, after the assistant asks whether the caller can restart the router, a reply agreeing but expressing concern about the hassle is direct-request. A pure listener acknowledgement such as mhm or right yeah is wait. " +
 	"addressed-elsewhere means the current speech is explicitly addressed to another person by name, title, or other vocative, whether it is a question, " +
 	"request, answer, or statement. A role or title used as a vocative, especially at the start of an utterance, identifies its recipient just as a personal name does; " +
 	"do not reinterpret that person's question as addressed to the assistant. Before choosing addressed-elsewhere, inspect the AGENT CONTRACT for the assistant's explicit identity. " +
@@ -1499,12 +1511,25 @@ func (runner *semanticAdmissionRunner) verifyVoiceActivation(
 	activation := semanticVoiceActivationSituation(situation)
 	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
 		Prompt: semanticVoiceActivationInstruction, Options: options,
-		Evidence: activation.Render(), Images: cloneSemanticImages(activation.Seeing),
+		Evidence: semanticVoiceActivationEvidence(situation), Images: cloneSemanticImages(activation.Seeing),
 	})
 	if err == nil {
 		err = validateSemanticOutcome(outcome, options)
 	}
 	return outcome, err
+}
+
+// Only the most recent assistant turn is retained as reply context. Earlier
+// caller observations cannot satisfy a current standing-policy condition.
+func semanticVoiceActivationEvidence(situation coreinteraction.Situation) string {
+	evidence := semanticVoiceActivationSituation(situation).Render()
+	for i := len(situation.Recent) - 1; i >= 0; i-- {
+		if strings.HasPrefix(situation.Recent[i], "agent: ") {
+			evidence += "\n\nLAST ASSISTANT TURN (reply context only; not current evidence):\n" + situation.Recent[i]
+			break
+		}
+	}
+	return evidence
 }
 
 func (runner *semanticAdmissionRunner) verifyUnansweredRequest(
@@ -2074,6 +2099,22 @@ func (runner *semanticAdmissionRunner) finishDecision(
 		}
 		runner.state.AdmittedVoice++
 	case coreinteraction.ActKeepSpeaking, coreinteraction.ActStopSpeaking:
+		// Stopping the old answer does not consume the new final question.
+		// Wait for a newer idle output state, then let the normal semantic
+		// policy decide whether this exact utterance needs an answer or silence.
+		// Only one retry is permitted; partials wait for their real final event.
+		if result.act == coreinteraction.ActStopSpeaking && request.operation == "committed" &&
+			result.finalTranscript && request.afterOutputRevision == 0 && result.outputRevision != 0 {
+			retry := request
+			retry.afterOutputRevision = result.outputRevision
+			retry.envelope = request.envelope.Clone()
+			retry.envelope.ItemID += ":after-output"
+			retry.envelope.CausalParents = appendUnique(retry.envelope.CausalParents, request.envelope.ItemID)
+			retry.envelope.CausalParents = appendUnique(retry.envelope.CausalParents, decisionItemID)
+			if err := runner.enqueue(ctx, retry); err != nil {
+				return err
+			}
+		}
 		code, message, refused := semanticControlDisposition(request.operation, result.act)
 		if refused {
 			runner.state.Refused++

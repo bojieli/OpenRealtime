@@ -19,7 +19,7 @@ export default {
       .room-heading h1 { font-size:23px; margin:0 0 4px; letter-spacing:-.6px; } .room-heading p { margin:0; color:#94a3b8; font-size:13px; }
       .room-heading .room-badge { margin-left:auto; border:1px solid #354058; padding:8px 12px; border-radius:24px; font-size:12px; }
       .room-scenario { margin-bottom:20px; color:#a7b7cf; line-height:1.6; } .room-scenario summary { cursor:pointer; } .room-scenario select { max-width:70%; }
-      .room-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+      .room-grid { display:grid; grid-template-columns:1fr; gap:16px; }
       .participant { position:relative; overflow:hidden; min-height:310px; background:radial-gradient(ellipse at top,#293951,#182031 70%); border:1px solid #354058; border-radius:20px; display:grid; place-items:center; }
       .participant video { width:100%; height:100%; position:absolute; object-fit:cover; } .participant video[hidden] { display:none; }
       .participant.screen { margin-top:16px; min-height:360px; } .participant.screen video { object-fit:contain; background:#090d14; }

@@ -33,7 +33,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID        = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision  = "implementation:16"
+	semanticAdmissionRuntimeRevision  = "implementation:18"
 	defaultSemanticRecentLines        = 12
 	defaultSemanticPending            = 64
 	defaultSemanticTerminalMemory     = 512

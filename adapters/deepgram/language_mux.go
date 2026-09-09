@@ -77,7 +77,7 @@ func NewLanguageMux(config ListenConfig, languages []string) (*LanguageMux, erro
 		return nil, err
 	}
 	descriptor := primary.Descriptor()
-	descriptor.Version = "deepgram-listen-language-mux-1"
+	descriptor.Version = "deepgram-listen-language-mux-2"
 	return newLanguageMux(primary, chinese, descriptor), nil
 }
 
@@ -118,8 +118,11 @@ func (mux *LanguageMux) PushFrame(
 	if chineseChanged {
 		mux.chineseLatest = chinese[len(chinese)-1]
 	}
-	if !mux.selectedPrimary && carriesHan(revisionText(mux.chineseLatest)) &&
-		mux.chinese.Confidence() >= languageSelectionConfidence {
+	// Short greetings and loanwords (for example 哈喽 for "hello") are
+	// not enough evidence to lock out the rest of an English utterance.
+	if !mux.selectedPrimary && hanCount(revisionText(mux.chineseLatest)) >= 4 &&
+		mux.chinese.Confidence() >= languageSelectionConfidence &&
+		(revisionText(mux.primaryLatest) == "" || mux.chinese.Confidence() > mux.primary.Confidence()) {
 		mux.selectedChinese = true
 		mux.pendingPrimary = nil
 	}
@@ -267,11 +270,14 @@ func revisionText(revision v1.PerceptionRevision) string {
 	return strings.TrimSpace(revision.StableText + revision.UnstableText)
 }
 
-func carriesHan(text string) bool {
+func carriesHan(text string) bool { return hanCount(text) > 0 }
+
+func hanCount(text string) int {
+	count := 0
 	for _, symbol := range text {
 		if unicode.Is(unicode.Han, symbol) {
-			return true
+			count++
 		}
 	}
-	return false
+	return count
 }

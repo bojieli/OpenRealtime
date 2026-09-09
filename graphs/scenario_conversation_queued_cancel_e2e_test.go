@@ -189,6 +189,10 @@ func (policy *scenarioQueuedCancelPolicy) Decide(ctx context.Context, decision c
 		wanted = string(coreinteraction.ActStaySilent)
 	} else if slices.Contains(decision.Options, string(coreinteraction.ActStopSpeaking)) && strings.Contains(scenarioAddressingCurrentEvidence(decision.Evidence), "Hold on a moment.") {
 		wanted = string(coreinteraction.ActStopSpeaking)
+	} else if slices.Contains(decision.Options, string(coreinteraction.ActStaySilent)) && strings.Contains(scenarioAddressingCurrentEvidence(decision.Evidence), "Hold on a moment.") {
+		// The stopped utterance is re-evaluated after cancellation. This
+		// fixture's hold request still asks for silence, not a resumed count.
+		wanted = string(coreinteraction.ActStaySilent)
 	}
 	if wanted != "" {
 		return coreinteraction.Outcome{Index: slices.Index(decision.Options, wanted), Option: wanted, Confidence: 0.99, Measured: true}, nil
