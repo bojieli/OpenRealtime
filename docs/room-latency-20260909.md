@@ -113,14 +113,122 @@ controls returning thought summaries, not selecting a reasoning level.
 A native low-latency request should use:
 
 ```json
-{"generationConfig":{"thinkingConfig":{"thinkingLevel":"low","includeThoughts":false}}}
+{"generationConfig":{"thinkingConfig":{"thinkingLevel":"low","includeThoughts":true}}}
 ```
+
+`includeThoughts` is set for observability. The measurements below show that it
+costs no measurable latency, and also that at `low` it returned nothing to
+observe. See [native thinking-level response time](#native-thinking-level-response-time).
 
 The live deployment still uses the previously tested numeric 128 setting.
 This documentation/API investigation does not deploy an unvalidated replacement.
 A production switch should compare native levels using repeated usage, latency,
 and end-to-end voice tests. Raw follow-up responses are retained privately as
 `thinking-level-api-check.jsonl` alongside the original replay evidence.
+
+## Native thinking-level response time
+
+The checks above requested one sample per cell and measured usage, not time.
+This section measures response time for the native levels. On September 10,
+144 requests covered `gemini-3.7-flash` and `gemini-3.8-flash` across four
+requested settings — `low`, `medium`, `high`, and the deployed legacy
+`thinkingBudget: 128` as an in-run reference — with each setting requested twice
+over, once with `includeThoughts: false` and once with `true`. Each cell used the
+same three captured contexts and three repeats. Conditions match the September 9
+replay: streaming SSE on the same `v1beta` endpoint and proxy path, temperature
+zero, a 1,024-token output ceiling, a persistent HTTP session, and a seeded
+randomized order. A request carried either a level or a budget, never both.
+
+All 144 requests returned HTTP 200, finished `STOP`, and passed the
+nonempty/expected-fact checks. Time is request start to the first nonempty,
+non-thought text. Completion followed that first text by a mean of 55 ms, so for
+these short room answers these are effectively whole-response times rather than a
+streaming head start. Each cell below pools the 9 `includeThoughts: false` and 9
+`includeThoughts: true` samples, which the next subsection shows are not
+separable; the mean/range of reported thought tokens counts only responses that
+returned the field.
+
+| Model | Requested setting | Mean first text | Median | Range | Reported thought tokens |
+| --- | --- | ---: | ---: | ---: | ---: |
+| gemini-3.7-flash | `thinkingLevel: low` | 716 ms | 719 ms | 556–969 ms | none in 18 |
+| gemini-3.7-flash | `thinkingLevel: medium` | 1087 ms | 896 ms | 612–2072 ms | 108.0 (24–433) |
+| gemini-3.7-flash | `thinkingLevel: high` | 1429 ms | 1137 ms | 749–2583 ms | 212.6 (46–566) |
+| gemini-3.7-flash | `thinkingBudget: 128` | 689 ms | 695 ms | 559–889 ms | 1 of 18 reported (44) |
+| gemini-3.8-flash | `thinkingLevel: low` | 892 ms | 649 ms | 481–3991 ms | none in 18 |
+| gemini-3.8-flash | `thinkingLevel: medium` | 1119 ms | 1001 ms | 682–2144 ms | 145.4 (50–425) |
+| gemini-3.8-flash | `thinkingLevel: high` | 1687 ms | 1430 ms | 774–3537 ms | 326.8 (81–979) |
+| gemini-3.8-flash | `thinkingBudget: 128` | 624 ms | 625 ms | 510–791 ms | none in 18 |
+
+Both models order `low` < `medium` < `high`. Paired by model, context, repeat and
+thought setting, `medium` costs a median **+239 ms** over `low` and was slower in
+31 of 36 pairs; `high` costs a median **+585 ms** and was slower in 34 of 36.
+Reported thought tokens and first-text latency correlate at r = 0.90 across the 73
+responses that returned a count, so the gap tracks generated reasoning rather than
+a fixed per-level penalty. One 3,991 ms `3.8/low` sample lifts that cell's mean far
+above its median; it is retained. These are observed request times on this endpoint
+and proxy path, not a model-family ranking or a production p90.
+
+The cost is context-dependent, so a level cannot be scored on short factual turns.
+Median first text for Gemini 3.7 rose from 744 ms at `low` to 2,262 ms at `high` on
+the router-concern context, while the France question moved only 787 → 852 ms.
+Answer lengths were similar across settings (mean 11.4 to 13.9 answer tokens), so
+the differences are not explained by longer replies.
+
+Against the deployed legacy setting, `low` was slower by a paired median of 51 ms
+and lost 22 of 36 pairs — far smaller than any between-level difference, and not a
+result these three short contexts can call decisive. The two also share a reporting
+signature: 0 of 36 `low` responses and 1 of 36 budget-128 responses returned a
+thought-token count. That is consistent with 128 being handled like `low`, but it
+still does not prove how the provider maps the legacy field.
+
+This 18-sample-per-cell data does support the mean/median ordering that the earlier
+single-sample check could not: `high` reported more thought tokens than `medium` for
+both models. Per-request ranges overlap, so individual responses are not ordered.
+
+### What `includeThoughts: true` costs and returns
+
+Measured against `includeThoughts: false` on the same 72 configurations, enabling
+thought summaries has no measurable latency cost: the paired difference is a median
+**−13 ms**, and `true` was the slower half of the pair in 35 of 72. Keeping it on
+for observability is therefore free at this sample size.
+
+What it returns is narrower than the flag suggests:
+
+- `thoughtsTokenCount` came back at `medium` and `high` in 36 of 36 requests under
+  **both** settings. Usage accounting does not require the flag.
+- Thought summary text appeared in 10 of 72 `true` requests and 0 of 72 `false`
+  requests. All 10 were at `medium` or `high`, and all 10 were the router-concern
+  context; the two capital questions never produced one.
+- At `low` — the latency-oriented recommendation above — 18 requests returned no
+  summary text and no thought-token count. Enabling the flag there changed nothing
+  observable in this sample.
+- When a summary did arrive it preceded the first answer text by 40 to 1,153 ms, so
+  it is a genuinely earlier signal where it exists.
+
+The room already has both knobs. `-model-retain-reasoning` sets `RetainReasoning`,
+which becomes `IncludeThoughts` for a Gemini request (`providers/llm.go`), and the
+adapter renders a named effort as `thinkingLevel` and a numeric one as
+`thinkingBudget`, never both (`adapters/gemini/continuation.go`). A native level
+would be `selection.modelEffort` in `cmd/openrealtime/companion_pipeline.go`, which
+is `"128"` today.
+
+Four more requests checked the exact strings that adapter emits, since it
+uppercases a named effort. `thinkingLevel: LOW` was accepted by both models
+(HTTP 200, `STOP`), so setting the room effort to `low` sends a form this endpoint
+takes. `thinkingLevel: MINIMAL` was rejected by both with HTTP 400: *Thinking level
+MINIMAL is not supported for this model.* That is worth noting outside this room,
+because `cmd/openrealtime/meeting_profile.go` configures the meeting background
+model as `google`/`gemini-3.7-flash` with `Effort: continuation.EffortMinimal`,
+which renders as exactly that rejected value. This room profile does not use that
+path, and nothing about it is changed here. Nothing here changes the running room: this measures the model
+endpoint alone, and a production switch still needs the end-to-end voice comparison
+described above. Raw responses are retained privately as
+`thinking-level-latency.jsonl` and `thinking-level-case-check.jsonl`.
+
+[Per-request thinking-level CSV](room-thinking-level-latency-20260910.csv) has all
+144 rows: model, requested level or budget, `includeThoughts`, context, repeat,
+status, finish reason, token counts, summary length, first-text and complete times.
+It excludes prompts, answer text, and credentials.
 
 ## Returned reasoning-token usage
 
@@ -220,7 +328,13 @@ are explicitly retained as exclusions rather than converted into zero latency.
 Use `scripts/room-model-latency.py --cases cases.json --output new-matrix.jsonl`
 with `GEMINI_API_KEY` and any required proxy environment. The case file is an
 array of `{name, expected, body}` with exact captured Gemini request bodies.
-`--models`, `--budgets`, and `--repeats` configure the matrix.
+`--models`, `--budgets`, `--levels`, `--include-thoughts`, `--repeats`, and
+`--seed` configure the matrix. `--levels` requests native `thinkingLevel` values
+instead of a numeric budget, and `--include-thoughts both` measures each cell with
+thought summaries off and on. The September 10 level matrix was
+`--models gemini-3.7-flash gemini-3.8-flash --budgets 128 --levels low medium high
+--include-thoughts both --repeats 3 --seed 20260910`.
+`scripts/test_room_model_latency.py` covers the request construction offline.
 
 Private raw evidence is retained under `.runtime/room-latency-20260909/`, including
 the catalog, request cases, all model responses and usage reports, blinded review
