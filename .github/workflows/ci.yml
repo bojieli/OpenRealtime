@@ -96,7 +96,7 @@ jobs:
       # The reference sidecars run in mock mode under the Go conformance
       # suite; they need only numpy and Pillow, which is what the sidecar
       # unit suite pins too.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Reference sidecar runtime
@@ -194,7 +194,7 @@ jobs:
 
       # Under the release gate a reference sidecar that cannot start is a
       # failure, so the mock-mode runtime is installed rather than tolerated.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Reference sidecar runtime
@@ -260,7 +260,7 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -315,7 +315,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
