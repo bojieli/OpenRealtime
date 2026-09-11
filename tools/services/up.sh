@@ -8,8 +8,14 @@
 # is up but not yet answering looks exactly like a service that is down.
 set -euo pipefail
 
-repository="${REPOSITORY:-/home/ubuntu/or-interaction}"
-shared="${SHARED:-/home/ubuntu/OpenRealtime}"
+# Every service started below is served from this repository - tools/whisper,
+# tools/fish15, tools/speakerid, deploy/sensevoice - so all three roots default
+# to this checkout and a clone runs the script without configuration. They stay
+# separable because runtime state (virtualenvs, model checkouts, voice packs,
+# logs) need not sit beside the sources, and on this machine it does not.
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+repository="${REPOSITORY:-${repository_root}}"
+shared="${SHARED:-${repository_root}}"
 runtime="${RUNTIME_ROOT:-${shared}}"
 logs="${repository}/.runtime/services"
 mkdir -p "${logs}"
@@ -146,7 +152,7 @@ fi
 # The synthesiser. Startup compiles CUDA graphs and warms the decoder, about
 # twenty seconds, and anything arriving before that would pay for it.
 if ! running 8123; then
-  fish_model_repository="${FISH_SPEECH_MODEL_REPOSITORY:-/home/ubuntu/.cache/huggingface/hub/models--fishaudio--fish-speech-1.5}"
+  fish_model_repository="${FISH_SPEECH_MODEL_REPOSITORY:-${HOME}/.cache/huggingface/hub/models--fishaudio--fish-speech-1.5}"
   fish_revision="$(tr -d '[:space:]' < "${fish_model_repository}/refs/main")"
   fish_snapshot="${fish_model_repository}/snapshots/${fish_revision}"
   fish_source="${repository}/.runtime/fish/fish-speech"

@@ -39,9 +39,6 @@
 > it was cut off. [Explore the demo gallery](docs/demos.md) for live translation,
 > screen awareness, acknowledgements, and knowing when to stay quiet.
 
-<!-- Replace this placeholder with one captioned recording or linked thumbnail.
-A second clip can show screen awareness. Keep the link to the full gallery. -->
-
 OpenRealtime brings conversation, background reasoning, and model integrations
 into one inspectable runtime. Use it to build voice assistants, meeting
 copilots, or agents that respond to changing screens.
