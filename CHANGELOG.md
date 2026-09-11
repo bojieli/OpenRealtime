@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Two opt-in pre-ASR audio filters, `profile filtered-room` and `profile
+  target-room`, place a waveform transform ahead of both energy admission and
+  ASR. The ordering is the whole point, and a parallel evidence lane cannot
+  provide it: the filter completes before admission sees a frame, so neither an
+  acoustic interruption nor a partial transcript can be caused by the
+  unfiltered version of that frame, and there is no raw-audio path around the
+  filter. The filter enters as a locked graph node with its own lock entry
+  rather than as a setting, so a profile that names no filter URL still builds
+  a byte-exact topology, values document, and lock - `filtered-room` and
+  `target-room` are the only graphs that change.
+
+  `filtered-room` selects RNNoise, which suppresses stationary noise and does
+  not remove an overlapping speaker. `target-room` selects target-speaker
+  extraction from an initial three-second reference and is **experimental, not
+  validated for live use**: the end-to-end diagnostics recorded in
+  `tools/targetvoice/E2E_RESULTS.md` still show competing-speech transcription
+  leakage, and a playback diagnostic still observed one false interruption, so
+  the extractor is not yet a reliable target-presence gate.
+
 - The LiveKit half of the vulnerability scan could not run, and had not run for
   days. `integrations/livekit` declares `go 1.26` because its LiveKit
   dependencies now require it, while the job installed one govulncheck with Go

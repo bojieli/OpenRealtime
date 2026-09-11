@@ -44,3 +44,26 @@ func TestRoomRejectsHostedRealtimeBinding(t *testing.T) {
 		}
 	}
 }
+
+func TestFilteredRoomProfileFreezesWithPreASRFilter(t *testing.T) {
+	selection := defaultFilteredRoomProfileOptions()
+	if selection.noiseFilterTimeoutMS >= int(selection.asrCadenceMS) || selection.noiseFilterTimeoutMS <= 0 {
+		t.Fatal("filter deadline must precede the ASR polling cadence")
+	}
+	if _, _, err := freezeProductionScenarioProfile(context.Background(), selection); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTargetRoomUsesInitialReferenceWithoutUtteranceSpeakerComparison(t *testing.T) {
+	selection := defaultTargetRoomProfileOptions()
+	if selection.noiseFilterModel != "real-tse" || selection.noiseFilterURL == "" || selection.speakerURL != "" {
+		t.Fatal("target room lost extraction or enabled per-utterance comparison")
+	}
+	if selection.asrProvider != "deepgram" || selection.policyProvider != "vllm" || selection.modelProvider != "google" || selection.ttsProvider != "fish-audio" {
+		t.Fatal("target room changed the downstream pipeline")
+	}
+	if _, _, err := freezeProductionScenarioProfile(context.Background(), selection); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -33,6 +33,7 @@ import (
 	"github.com/bojieli/OpenRealtime/graphs"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/noisefilter"
 	protocol "github.com/bojieli/OpenRealtime/protocol/openai"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	serverplugin "github.com/bojieli/OpenRealtime/server"
@@ -50,6 +51,8 @@ const (
 var errScenarioEndpointProvider = errors.New("scripted endpoint provider failure")
 
 type scenarioEndpointToolCase struct {
+	noiseFilterURL     string
+	noiseFilterModel   string
 	videoSource        string
 	name               string
 	tool               string
@@ -582,6 +585,9 @@ func newScenarioEndpointFixture(
 			MaxPending: 8, MaxActiveLeases: 16,
 		},
 		MaxOutputTokens: 4096,
+	}
+	if toolCase.noiseFilterURL != "" {
+		fixture.application.NoiseFilter = &noisefilter.Config{URL: toolCase.noiseFilterURL, TimeoutMS: 50, Model: toolCase.noiseFilterModel}
 	}
 	fixture.registration = scenarioconversation.ApplicationRegistrationConfig{
 		ApplicationArtifact: fixture.artifact("application", "1"),

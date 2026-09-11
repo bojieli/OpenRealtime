@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/bojieli/OpenRealtime/elements"
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
@@ -20,6 +21,7 @@ import (
 	graphevidence "github.com/bojieli/OpenRealtime/graph/evidence"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
+	"github.com/bojieli/OpenRealtime/graph/resolve"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 )
 
@@ -27,6 +29,7 @@ import (
 //go:embed components/scenario-conversation/agent.values.yaml
 //go:embed components/scenario-conversation/openrealtime.lock
 //go:embed components/scenario-conversation/agent.deployment.yaml
+//go:embed components/scenario-conversation/noise-filter.lock
 //go:embed components/scenario-conversation/agent.evidence.yaml
 var scenarioConversationArtifacts embed.FS
 
@@ -35,7 +38,8 @@ const scenarioConversationArtifactDirectory = "components/scenario-conversation/
 // ScenarioConversationArtifacts returns independent, locked artifacts with
 // only the plugin-selected acoustic and retained-media bounds rewritten into
 // the values document. Topology, descriptor resolution, and deployment remain
-// byte-exact repository artifacts.
+// byte-exact repository artifacts unless the explicitly selected noise filter
+// adds its locked pre-admission node.
 func ScenarioConversationArtifacts(
 	source scenarioconversation.PluginConfig,
 ) (graphconfig.Artifacts, error) {
@@ -118,6 +122,40 @@ func ScenarioConversationArtifacts(
 		if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
 			"transcript_events": config.SemanticAdmission.TranscriptEvents,
 		}); err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+	}
+
+	if config.NoiseFilter != nil {
+		// The opt-in topology has no raw-audio path around the filter. Existing
+		// profiles retain their exact topology and values.
+		if strings.Count(string(topology), "    input audio = admission.audio;") != 1 {
+			return graphconfig.Artifacts{}, fmt.Errorf("filtered topology requires one exact raw audio ingress")
+		}
+		topology = []byte(strings.Replace(string(topology), "    input audio = admission.audio;",
+			"    acoustic.NoiseFilter :: noise_filter;\n    noise_filter.filtered -> admission.audio;\n    input audio = noise_filter.audio;", 1))
+		document.Nodes["noise_filter"], err = json.Marshal(config.NoiseFilter)
+		if err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+		if err := updateScenarioNode(document.Nodes, "overlap_barge_in", map[string]any{"unclassified": "keep_speaking"}); err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+		baseLock, err := resolve.ParseLock(lock)
+		if err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+		filterBytes, err := read("noise-filter.lock")
+		if err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+		filterLock, err := resolve.ParseLock(filterBytes)
+		if err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+		baseLock.Entries = append(baseLock.Entries, filterLock.Entries...)
+		lock, err = baseLock.Marshal()
+		if err != nil {
 			return graphconfig.Artifacts{}, err
 		}
 	}

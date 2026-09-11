@@ -48,8 +48,8 @@ func TestStandardConfigSchemaCatalogCoversEveryFactoryContract(t *testing.T) {
 	if !reflect.DeepEqual(catalog.References(), references) {
 		t.Fatalf("schema references = %v, want %v", catalog.References(), references)
 	}
-	if len(references) != 44 {
-		t.Fatalf("standard config schema count = %d, want 44", len(references))
+	if len(references) != 45 {
+		t.Fatalf("standard config schema count = %d, want 45", len(references))
 	}
 
 	registrations, err := elements.FactoryRegistrations()
@@ -385,6 +385,7 @@ func standardValidatorsBySchema(t *testing.T) map[string]element.ConfigValidator
 
 func standardValidConfigSamples() map[string]string {
 	return map[string]string{
+		"schema://openrealtime/acoustic/noise-filter-config/v1":                        `{"url":"http://127.0.0.1:8125","timeout_ms":30}`,
 		"schema://openrealtime/acoustic/admission-config/v1":                           `{}`,
 		"schema://openrealtime/acoustic/endpoint-policy-config/v1":                     `{}`,
 		"schema://openrealtime/action/authorized-call-commit-config/v1":                `{}`,
@@ -434,6 +435,7 @@ func standardValidConfigSamples() map[string]string {
 
 func standardStructurallyInvalidConfigSamples() map[string]string {
 	return map[string]string{
+		"schema://openrealtime/acoustic/noise-filter-config/v1":                        `{"url":"http://127.0.0.1:8125","timeout_ms":100}`,
 		"schema://openrealtime/acoustic/admission-config/v1":                           `{"threshold":2}`,
 		"schema://openrealtime/acoustic/endpoint-policy-config/v1":                     `{"mode":"external"}`,
 		"schema://openrealtime/action/authorized-call-commit-config/v1":                `{"max_pending":5000}`,

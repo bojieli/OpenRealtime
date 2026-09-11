@@ -1,0 +1,13 @@
+{
+  "format_version": 1,
+  "elements": [
+    {
+      "reference": "acoustic.NoiseFilter",
+      "identity": {
+        "name": "acoustic.NoiseFilter",
+        "revision": 1,
+        "digest": "sha256:7237be1a503274275a49e65c169ad686aa998098b8296b3e37a7483e22c868a5"
+      }
+    }
+  ]
+}

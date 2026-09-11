@@ -56,7 +56,7 @@ func (endpointFactory) Mount(_ context.Context, mount element.MountContext) (ele
 }
 
 func Descriptors() []element.Descriptor {
-	return []element.Descriptor{EnergyAdmissionDescriptor(), EndpointPolicyDescriptor()}
+	return []element.Descriptor{EnergyAdmissionDescriptor(), EndpointPolicyDescriptor(), NoiseFilterDescriptor()}
 }
 
 func RegisterDescriptors(catalog *resolve.Catalog) error {
@@ -89,6 +89,7 @@ func RegisterFactories(registry *graphruntime.Registry) error {
 
 func FactoryRegistrations() ([]graphruntime.FactoryRegistration, error) {
 	return factoryprofile.Registrations(
+		factoryprofile.Entry{Factory: noiseFilterFactory{}, Artifact: inspect.ArtifactIdentity{ID: noiseFilterRuntimeID, Revision: "implementation:1"}},
 		factoryprofile.Entry{Factory: admissionFactory{}, Artifact: inspect.ArtifactIdentity{
 			ID: admissionRuntimeID, Revision: admissionImplementationRevision,
 		}},

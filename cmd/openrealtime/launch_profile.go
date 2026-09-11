@@ -29,10 +29,11 @@ import (
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
 	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/noisefilter"
 	openrealtime "github.com/bojieli/OpenRealtime/protocol/openrealtime"
 )
 
-const launchProfileUsage = `usage: openrealtime profile <scenario|meeting|realtime-cu> [flags]
+const launchProfileUsage = `usage: openrealtime profile <scenario|filtered-room|target-room|meeting|realtime-cu> [flags]
 
 Freeze one strict graph/server profile against the exact running executable
 and explicit provider configurations. Outputs are create-only and contain no
@@ -52,15 +53,18 @@ const productionScenarioContinuationInstruction = "Ground every response in cano
 	"When resuming that sequence, begin after the last number the user actually heard; do not skip numbers that were prepared but not audible."
 
 type scenarioProfileOptions struct {
-	out           string
-	graphOut      string
-	valuesOut     string
-	resolutionOut string
-	executionOut  string
-	name          string
-	revision      uint64
-	architecture  string
-	cases         []string
+	noiseFilterURL       string
+	noiseFilterModel     string
+	noiseFilterTimeoutMS int
+	out                  string
+	graphOut             string
+	valuesOut            string
+	resolutionOut        string
+	executionOut         string
+	name                 string
+	revision             uint64
+	architecture         string
+	cases                []string
 
 	asrProvider            string
 	asrModel               string
@@ -127,8 +131,9 @@ type scenarioProfileOptions struct {
 func defaultScenarioProfileOptions() scenarioProfileOptions {
 	return scenarioProfileOptions{
 		name: "openrealtime.launch.scenario-local", revision: 1,
-		architecture: "cascade.composed-policy-direct-visual@1",
-		asrProvider:  "sensevoice", asrModel: "iic/SenseVoiceSmall",
+		noiseFilterTimeoutMS: 50,
+		architecture:         "cascade.composed-policy-direct-visual@1",
+		asrProvider:          "sensevoice", asrModel: "iic/SenseVoiceSmall",
 		asrURL: "http://127.0.0.1:8002/v1", asrPartialMS: 200,
 		asrTimeoutMS: 30_000, asrCadenceMS: 200,
 		speakerModel: "speechbrain/spkrec-ecapa-voxceleb", speakerTimeoutMS: 5_000,
@@ -167,6 +172,10 @@ func runLaunchProfile(arguments []string, output io.Writer) error {
 		return errors.New(launchProfileUsage)
 	}
 	switch strings.ToLower(strings.TrimSpace(arguments[0])) {
+	case "target-room":
+		return runScenarioProfileFreezeWithOptions(arguments[1:], output, defaultTargetRoomProfileOptions())
+	case "filtered-room":
+		return runScenarioProfileFreezeWithOptions(arguments[1:], output, defaultFilteredRoomProfileOptions())
 	case "scenario":
 		return runScenarioProfileFreeze(arguments[1:], output)
 	case "meeting", "meeting-assistant":
@@ -177,14 +186,20 @@ func runLaunchProfile(arguments []string, output io.Writer) error {
 		fmt.Fprintln(output, launchProfileUsage)
 		return nil
 	default:
-		return fmt.Errorf("profile kind must be scenario, meeting, or realtime-cu, got %q\n%s", arguments[0], launchProfileUsage)
+		return fmt.Errorf("profile kind must be scenario, filtered-room, target-room, meeting, or realtime-cu, got %q\n%s", arguments[0], launchProfileUsage)
 	}
 }
 
 func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
-	options := defaultScenarioProfileOptions()
+	return runScenarioProfileFreezeWithOptions(arguments, output, defaultScenarioProfileOptions())
+}
+
+func runScenarioProfileFreezeWithOptions(arguments []string, output io.Writer, options scenarioProfileOptions) error {
+	requireNoiseFilter := options.noiseFilterURL != ""
 	flags := flag.NewFlagSet("openrealtime profile scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
+	flags.StringVar(&options.noiseFilterURL, "noise-filter-url", options.noiseFilterURL, "pre-ASR audio filter service base URL")
+	flags.IntVar(&options.noiseFilterTimeoutMS, "noise-filter-timeout-ms", options.noiseFilterTimeoutMS, "strict per-ingress-packet filtering deadline, 1..50ms")
 	flags.Func("case", "exact scenario name; repeat to freeze a diagnostic subset (default: all cases)", func(name string) error {
 		options.cases = append(options.cases, name)
 		return nil
@@ -274,6 +289,9 @@ func runScenarioProfileFreeze(arguments []string, output io.Writer) error {
 	flags.IntVar(&options.maxAudioFrameBytes, "max-audio-frame-bytes", options.maxAudioFrameBytes, "Realtime audio-frame bound")
 	if err := flags.Parse(arguments); err != nil {
 		return err
+	}
+	if requireNoiseFilter && strings.TrimSpace(options.noiseFilterURL) == "" {
+		return errors.New("filtered room profiles require a noise-filter-url")
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(options.out) == "" {
 		return errors.New("profile scenario requires -out and accepts flags only")
@@ -491,6 +509,9 @@ func freezeProductionScenarioProfile(
 		},
 		MaxOutputTokens:         options.maxOutputTokens,
 		ContinuationInstruction: options.continuationInstruction,
+	}
+	if options.noiseFilterURL != "" {
+		application.NoiseFilter = &noisefilter.Config{URL: options.noiseFilterURL, TimeoutMS: options.noiseFilterTimeoutMS, Model: options.noiseFilterModel}
 	}
 	delegatePayload, err := json.Marshal(application)
 	if err != nil {

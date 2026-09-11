@@ -21,6 +21,7 @@ import (
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/noisefilter"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/spoken"
 )
@@ -110,6 +111,7 @@ func (selection ApplicationGateSelection) gateConfig() perception.GateConfig {
 // ApplicationConfig is the complete plugin-owned, resource-free selection
 // carried by a generic graph launch profile.
 type ApplicationConfig struct {
+	NoiseFilter             *noisefilter.Config                  `json:"noise_filter,omitempty"`
 	FormatVersion           uint64                               `json:"format_version"`
 	Architecture            legacy.ArchitectureIdentity          `json:"architecture"`
 	ASR                     ApplicationASRSelection              `json:"asr"`
@@ -146,6 +148,11 @@ func DecodeApplicationConfig(source json.RawMessage) (ApplicationConfig, error) 
 }
 
 func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, error) {
+	if source.NoiseFilter != nil {
+		if err := source.NoiseFilter.Validate(); err != nil {
+			return ApplicationConfig{}, err
+		}
+	}
 	config := cloneApplicationConfig(source)
 	if config.FormatVersion != ApplicationFormatVersion {
 		return ApplicationConfig{}, fmt.Errorf(
@@ -609,6 +616,7 @@ func NewApplicationRegistration(
 			}
 			resolved, constructorErr := constructor(PluginConfig{
 				RuntimeArtifact: runtimeArtifact, DependencyArtifact: dependencyArtifact,
+				NoiseFilter:  config.NoiseFilter,
 				Architecture: architecture,
 				ASR: ASRPlugin{Reference: ASRReference, Artifact: asrRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
@@ -633,6 +641,24 @@ func NewApplicationRegistration(
 				return graphlaunch.Config{}, errors.Join(cause, constructorErr)
 			}
 			if constructorErr == nil {
+				if config.NoiseFilter != nil {
+					filterConfig := *config.NoiseFilter
+					resolved.Readiness = append(resolved.Readiness, graphlaunch.ReadinessCheck{
+						Name: "audio-noise-filter:" + filterConfig.ModelName(), Check: func(ctx context.Context) error {
+							client, err := noisefilter.New(filterConfig)
+							if err != nil {
+								return err
+							}
+							defer client.Close()
+							_, err = client.Process(ctx, make([]byte, 480), 24000)
+							if err == nil && client.Status().State != "healthy" {
+								return fmt.Errorf("audio filter readiness: %s", client.Status().Reason)
+							}
+							return err
+						},
+					})
+				}
+
 				if asrReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
 						graphlaunch.ReadinessCheck{Name: "asr:" + config.ASR.Reference, Check: asrReady})
@@ -1099,6 +1125,10 @@ func sameV1Descriptor(left, right v1.Descriptor) bool {
 }
 
 func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
+	if source.NoiseFilter != nil {
+		value := *source.NoiseFilter
+		source.NoiseFilter = &value
+	}
 	result := source
 	result.SemanticAdmission.TranscriptEvents = cloneSemanticTranscriptEvents(
 		source.SemanticAdmission.TranscriptEvents,

@@ -23,7 +23,7 @@ func TestStandardCatalogsConstruct(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot := discovery.Snapshot(); len(snapshot.Implementations) != 51 ||
+	if snapshot := discovery.Snapshot(); len(snapshot.Implementations) != 52 ||
 		len(snapshot.Dependencies) != 3 {
 		t.Fatalf("standard assembly discovery = %+v", snapshot)
 	}
@@ -39,7 +39,7 @@ func TestStandardFactoryRegistrationsCoverTheDescriptorCatalogExactly(t *testing
 		t.Fatal(err)
 	}
 	names := descriptors.Names()
-	if len(registrations) != 51 || len(registrations) != len(names) {
+	if len(registrations) != 52 || len(registrations) != len(names) {
 		t.Fatalf("standard inventory has %d registrations and %d descriptors", len(registrations), len(names))
 	}
 	for index, registration := range registrations {
@@ -123,7 +123,7 @@ func TestStandardAssemblyInventoryNamesEveryExternalPluginGap(t *testing.T) {
 	if !slices.Equal(inventory.ExternalRequiredDependencies, wantRequired) ||
 		!slices.Equal(inventory.ExternalOptionalDependencies, wantOptional) ||
 		!slices.Equal(inventory.RuntimeDependencies, wantRuntime) ||
-		len(inventory.Implementations) != 51 || len(inventory.ConfigSchemas) != 44 ||
+		len(inventory.Implementations) != 52 || len(inventory.ConfigSchemas) != 45 ||
 		len(inventory.UnresolvedConfigSchemas) != 0 {
 		t.Fatalf("standard assembly inventory = %+v", inventory)
 	}

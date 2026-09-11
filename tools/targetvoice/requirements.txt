@@ -1,0 +1,8 @@
+# Install CUDA-compatible torch==2.10.0 and torchaudio==2.10.0 first.
+# For example, the tested environment uses their +cu128 builds.
+silero-vad==6.2.1
+onnxruntime==1.23.2
+numpy==2.2.6
+scipy==1.15.3
+soundfile==0.13.1
+requests==2.33.1

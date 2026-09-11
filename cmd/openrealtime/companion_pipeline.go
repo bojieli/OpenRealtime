@@ -48,3 +48,25 @@ func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection.wordTimingsIntervalMS = 900
 	return selection
 }
+
+// defaultFilteredRoomProfileOptions is a separate opt-in pipeline. Noise is
+// removed before EnergyAdmission can emit speech activity or feed Deepgram.
+func defaultFilteredRoomProfileOptions() scenarioProfileOptions {
+	selection := defaultRoomProfileOptions()
+	selection.name = "openrealtime.launch.filtered-room"
+	selection.noiseFilterURL = "http://127.0.0.1:8125"
+	selection.noiseFilterTimeoutMS = 50
+	return selection
+}
+
+// defaultTargetRoomProfileOptions enrolls the initial voice once, then extracts
+// it from competing speech before Deepgram. No per-utterance identity service.
+func defaultTargetRoomProfileOptions() scenarioProfileOptions {
+	selection := defaultFilteredRoomProfileOptions()
+	selection.name = "openrealtime.launch.target-room"
+	selection.noiseFilterURL = "http://127.0.0.1:8126"
+	selection.noiseFilterModel = "real-tse"
+	selection.architecture = "cascade.composed-policy-direct-visual@1"
+	selection.speakerURL = ""
+	return selection
+}

@@ -27,6 +27,7 @@ import (
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	"github.com/bojieli/OpenRealtime/graph/inspect"
 	"github.com/bojieli/OpenRealtime/perception"
+	"github.com/bojieli/OpenRealtime/perception/noisefilter"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/spoken"
 )
@@ -238,6 +239,7 @@ func cloneSemanticTranscriptEvents(
 // PluginConfig is the immutable resource-free contribution retained by a
 // launch configuration. Every factory remains unopened until session Start.
 type PluginConfig struct {
+	NoiseFilter             *noisefilter.Config `json:"noise_filter,omitempty"`
 	RuntimeArtifact         inspect.ArtifactIdentity
 	DependencyArtifact      inspect.ArtifactIdentity
 	Architecture            projectarch.Definition
@@ -263,6 +265,11 @@ type PluginConfig struct {
 // before a session is allowed to start.
 func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
 	config := clonePluginConfig(source)
+	if config.NoiseFilter != nil {
+		if err := config.NoiseFilter.Validate(); err != nil {
+			return PluginConfig{}, err
+		}
+	}
 	architecture, err := resolveScenarioArchitecture(config.Architecture.Identity())
 	if err != nil {
 		return PluginConfig{}, err
@@ -289,6 +296,10 @@ func NormalizePluginConfig(source PluginConfig) (PluginConfig, error) {
 }
 
 func clonePluginConfig(source PluginConfig) PluginConfig {
+	if source.NoiseFilter != nil {
+		value := *source.NoiseFilter
+		source.NoiseFilter = &value
+	}
 	result := source
 	result.SemanticAdmission.TranscriptEvents = cloneSemanticTranscriptEvents(
 		source.SemanticAdmission.TranscriptEvents,
