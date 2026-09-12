@@ -96,9 +96,11 @@ var ElsewhereQuestion = StepQuestion{Name: QuestionElsewhere, Text: "These words
 	"through one microphone, so a line marked \"user\" can be one person talking to another. Words that " +
 	"answer a question another person just asked (\"No, I forgot again. Can you put it on the list?\" " +
 	"answers \"Did you get the milk?\"), that carry on a conversation between two people about their own " +
-	"affairs, or that a recording reads out, are for somebody else. If the evidence says the previous line was " +
-	"a question the agent chose not to answer and these words reply to it, they are for the person who asked. " +
-	"Answer yes if they are for somebody else."}
+	"affairs, or that a recording reads out, are for somebody else: \"Did you get the milk on the way in? I " +
+	"looked in the fridge and there wasn't any\" is one person in the room asking another, not the agent. A " +
+	"question the agent itself can answer - arithmetic, a fact, its own task - is for the agent. If the " +
+	"evidence says the previous line was a question the agent chose not to answer and these words reply to " +
+	"it, they are for the person who asked. Answer yes if they are for somebody else."}
 
 // ReplyQuestion replaces ElsewhereQuestion when the previous line was a
 // question the agent chose not to answer: asked whether the words are "for
