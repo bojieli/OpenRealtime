@@ -72,7 +72,8 @@ var RequestQuestion = StepQuestion{Name: QuestionRequest, Text: "This is the fin
 	"Is it a question or a request that no recent step already answered? If \"already answered in this " +
 	"utterance\" shows words, or a recent step spoke for these same words, the agent is already answering " +
 	"it: answer no unless the final adds a different request. A story, small talk, a rule being set up, or " +
-	"a recording reading out options is not a request."}
+	"a recording reading out options is not a request. A question put to the agent is a request wherever it " +
+	"comes: \"By the way, what is seven times eight?\" in the middle of a story or a running count is one."}
 
 // UrgentQuestion is asked on a partial when no standing instruction is in
 // force: nothing can come due, so the one thing a half-sentence can be is
