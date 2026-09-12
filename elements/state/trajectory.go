@@ -103,6 +103,24 @@ func (Append) InspectionCause() element.InspectionCauseKind {
 type CommittedContext struct {
 	Prefix      trajectory.PrefixIdentity `json:"prefix"`
 	StateItemID string                    `json:"state_item_id"`
+	// TailItemID is the last item of the prefix when that is not the
+	// committed observation itself. A decision held while the voice was
+	// speaking is taken against the newest context, and the generation it
+	// admits runs on that context; the tool candidate it authorises has to
+	// name the same tail as the model's result will, or the provenance join
+	// refuses the call - measured, a key press the voice made at a phone
+	// menu was refused for "different canonical context prefixes". Empty
+	// means the observation is the tail.
+	TailItemID string `json:"tail_item_id,omitempty"`
+}
+
+// TailItemID is the last item of the committed prefix: the committed
+// observation unless the context was rebased past it.
+func (commit ObservationCommitOutcome) TailItemID() string {
+	if commit.Context.TailItemID != "" {
+		return commit.Context.TailItemID
+	}
+	return commit.TrajectoryItemID
 }
 
 // Commit is the accepted terminal reply. Snapshot is included so the immediate

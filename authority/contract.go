@@ -32,4 +32,9 @@ type Candidate struct {
 	ContextVersion           uint64 `json:"context_version"`
 	ContextEnvelopeItemID    string `json:"context_envelope_item_id"`
 	ContextTailItem          string `json:"context_tail_item"`
+	// ContextExtended says the context was rebased past the observation
+	// onto newer items - a decision held while the voice was speaking is
+	// taken against everything the voice has said since - so the tail is
+	// not descended from the observation, only later than it.
+	ContextExtended bool `json:"context_extended,omitempty"`
 }

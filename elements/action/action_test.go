@@ -2345,35 +2345,66 @@ func TestProposalAdmissionRejectsCrossRunAndUnrelatedAuthorityJoins(t *testing.T
 	if fixture.dispatcher.calls.Load() != 0 {
 		t.Fatalf("invalid provenance executed %d actions", fixture.dispatcher.calls.Load())
 	}
+
+	// The same unrelated basis in an extended context: the observation is in
+	// the prefix before the tail, which is what a decision held while the
+	// voice was speaking produces, and the ancestry rule gives way to order.
+	proposal.Call.CallID = "extended-authority"
+	send(t, fixture.ingress(t, "proposal"), element.Envelope{
+		Type: ProposalType(), ItemID: "proposal-extended", RunID: "model-run-d",
+		CausalParents: []string{"activation-extended", "activation-cause-extended", "unrelated-user",
+			"unrelated-trigger", "context-extended", tail}, Payload: proposal,
+	})
+	send(t, fixture.ingress(t, "provenance"), element.Envelope{
+		Type: ProvenanceType(), ItemID: "provenance-extended", RunID: "model-run-d",
+		CausalParents: []string{"proposal-extended", "candidate-extended", "result-extended"},
+		Payload: Provenance{
+			CallID: "extended-authority", ProposalItemID: "proposal-extended", ModelRunID: "model-run-d",
+			SessionID: "action-test-session", CandidateItemID: "candidate-extended", ResultItemID: "result-extended",
+			ActivationItemID: "activation-extended", ActivationCauseItemID: "activation-cause-extended",
+			ObservationItemID: "unrelated-user", ObservationTriggerItemID: "unrelated-trigger", SourceRevision: 9,
+			ContextVersion: snapshot.Version, ContextEnvelopeItemID: "context-extended", ContextTailItem: tail,
+			ContextExtended:   true,
+			ProviderReference: "test", ModelResultDigest: testModelResultDigest, ModelProducer: testModelProducer(),
+		},
+	})
+	outcome = receive(t, fixture.egress(t, "admission_outcome")).Payload.(Outcome)
+	if outcome.Code == "authority_not_causal" {
+		t.Fatalf("an observation inside an extended context was refused as unrelated: %+v", outcome)
+	}
 }
 
-func TestProposalAdmissionRejectsSupersededObservationBasis(t *testing.T) {
+// A newer revision that only adds words after the ones the model acted on
+// keeps the proposal's basis: a recording going on to list more options does
+// not take back the option it already named.
+func TestProposalAdmissionKeepsBasisTheNewerRevisionOnlyExtended(t *testing.T) {
 	fixture := newFixture(t, legacyaction.ConfirmNever, true, &testDispatcher{name: "computer:browser"})
 	defer fixture.stop(t)
-
-	// Capture the exact prefix on which the model began, then commit a newer
-	// canonical revision before its delayed proposal reaches admission. This
-	// is the graph race from a partial menu label completing while cognition
-	// is still producing a tool call.
 	basis := fixture.store.Snapshot()
-	if basis.Version != 3 || basis.Items[len(basis.Items)-1].ID != "screen-observation" {
-		t.Fatalf("supersession test basis = %+v", basis)
-	}
 	if err := fixture.store.Append(trajectory.Item{
-		ID: "user-observation-final", Kind: trajectory.KindObservation, MonotonicNS: 4,
+		ID: "user-observation-longer", Kind: trajectory.KindObservation, MonotonicNS: 4,
 		CausalParentIDs: []string{"user-observation"}, SourceRevision: 10,
 		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
-		Content:  "click the named control after its complete label arrives",
+		Content:  "click the control, the blue one, and then wait",
 		Event: &trajectory.EventMetadata{
-			EventID: "user-trigger-final", Type: "input_text.endpoint", Source: "user",
+			EventID: "user-trigger-longer", Type: "input_text.endpoint", Source: "user",
 			Channel: "text", OccurredNS: 4, SupersedesRevision: 1,
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
+	const callID = "extended-observation-call"
+	const runID = "extended-observation-run"
+	outcome := fixture.proposeOnBasis(t, basis, callID, runID)
+	if outcome.Kind == OutcomeRejected {
+		t.Fatalf("a proposal whose observation was only extended was refused: %+v", outcome)
+	}
+}
 
-	const callID = "superseded-observation-call"
-	const runID = "superseded-observation-run"
+// proposeOnBasis sends a click proposal grounded on the fixture's user
+// observation at the given snapshot, and returns the admission outcome.
+func (fixture *fixture) proposeOnBasis(t *testing.T, basis trajectory.Snapshot, callID, runID string) Outcome {
+	t.Helper()
 	proposalItemID := "proposal-" + callID
 	activationItemID := "activation-" + callID
 	activationCauseItemID := "activation-cause-" + callID
@@ -2407,8 +2438,37 @@ func TestProposalAdmissionRejectsSupersededObservationBasis(t *testing.T) {
 			ModelResultDigest: testModelResultDigest, ModelProducer: testModelProducer(),
 		},
 	})
+	return receive(t, fixture.egress(t, "admission_outcome")).Payload.(Outcome)
+}
 
-	outcome := receive(t, fixture.egress(t, "admission_outcome")).Payload.(Outcome)
+func TestProposalAdmissionRejectsSupersededObservationBasis(t *testing.T) {
+	fixture := newFixture(t, legacyaction.ConfirmNever, true, &testDispatcher{name: "computer:browser"})
+	defer fixture.stop(t)
+
+	// Capture the exact prefix on which the model began, then commit a newer
+	// canonical revision before its delayed proposal reaches admission. This
+	// is the graph race from a partial menu label completing while cognition
+	// is still producing a tool call.
+	basis := fixture.store.Snapshot()
+	if basis.Version != 3 || basis.Items[len(basis.Items)-1].ID != "screen-observation" {
+		t.Fatalf("supersession test basis = %+v", basis)
+	}
+	if err := fixture.store.Append(trajectory.Item{
+		ID: "user-observation-final", Kind: trajectory.KindObservation, MonotonicNS: 4,
+		CausalParentIDs: []string{"user-observation"}, SourceRevision: 10,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseUser},
+		Content:  "click the named control after its complete label arrives",
+		Event: &trajectory.EventMetadata{
+			EventID: "user-trigger-final", Type: "input_text.endpoint", Source: "user",
+			Channel: "text", OccurredNS: 4, SupersedesRevision: 1,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const callID = "superseded-observation-call"
+	const runID = "superseded-observation-run"
+	outcome := fixture.proposeOnBasis(t, basis, callID, runID)
 	if outcome.Kind != OutcomeRejected || outcome.Code != "observation_superseded" ||
 		outcome.CallID != callID {
 		t.Fatalf("superseded observation outcome = %+v", outcome)

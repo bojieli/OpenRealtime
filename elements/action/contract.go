@@ -129,6 +129,7 @@ type Provenance struct {
 	ContextVersion           uint64              `json:"context_version"`
 	ContextEnvelopeItemID    string              `json:"context_envelope_item_id"`
 	ContextTailItem          string              `json:"context_tail_item"`
+	ContextExtended          bool                `json:"context_extended,omitempty"`
 	ProviderReference        string              `json:"provider_reference"`
 	ModelResultDigest        string              `json:"model_result_digest"`
 	ModelProducer            trajectory.Producer `json:"model_producer"`
@@ -160,6 +161,7 @@ type AdmittedProposal struct {
 	ContextVersion           uint64                         `json:"context_version"`
 	ContextEnvelopeItemID    string                         `json:"context_envelope_item_id"`
 	ContextTailItem          string                         `json:"context_tail_item"`
+	ContextExtended          bool                           `json:"context_extended,omitempty"`
 	ProviderReference        string                         `json:"provider_reference"`
 	ModelResultDigest        string                         `json:"model_result_digest"`
 	ModelProducer            trajectory.Producer            `json:"model_producer"`

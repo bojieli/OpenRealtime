@@ -525,6 +525,7 @@ func (runner *provenanceJoinRunner) tryJoin(ctx context.Context, runKey string) 
 			SourceRevision:           pending.candidate.SourceRevision, ContextVersion: pending.candidate.ContextVersion,
 			ContextEnvelopeItemID: pending.candidate.ContextEnvelopeItemID,
 			ContextTailItem:       pending.candidate.ContextTailItem,
+			ContextExtended:       pending.candidate.ContextExtended,
 			ProviderReference:     pending.result.value.ProviderReference,
 			ModelResultDigest:     pending.result.digest,
 			ModelProducer: trajectory.Producer{

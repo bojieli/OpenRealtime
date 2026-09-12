@@ -268,18 +268,25 @@ func (runner *modelResultCommitRunner) startResultCommit(
 		pending.items = cloneTrajectoryItems(items)
 	} else if runner.config.RetainRejectedSpeech &&
 		result.Descriptor.EffectiveSpeechAuthority() == continuation.SpeechAuthorityVoice &&
-		strings.TrimSpace(result.AssistantText) != "" && result.ContextPrefix.Digest != "" {
-		// Retain only the sanitized speech surface. Native provider state can
-		// contain tool calls or reasoning and cannot be relabeled as speech.
+		(strings.TrimSpace(result.AssistantText) != "" || len(result.ToolProposals) > 0) &&
+		result.ContextPrefix.Digest != "" {
+		// Retain the sanitized speech surface and the tool proposals - also
+		// for a result that is nothing but a tool call, which is what a key
+		// press looks like. Native provider state can contain reasoning and
+		// cannot be relabeled as speech. The proposals stay: whether a call made against context the
+		// recogniser has since extended is still good is admission's question
+		// - it keeps a proposal whose observation only grew and refuses one
+		// whose observation was rewritten - and dropping them here answered
+		// it wrongly for every key pressed while a recording read on.
 		speech := result
 		speech.Outputs = nil
 		for _, output := range result.Outputs {
-			if output.Kind == cognitionelements.PreparedAssistant {
+			if output.Kind == cognitionelements.PreparedAssistant || output.Kind == cognitionelements.PreparedTool {
 				speech.Outputs = append(speech.Outputs, output)
 			}
 		}
 		speech.ReasoningText, speech.ReasoningRetained = "", false
-		speech.ToolProposals, speech.Completion = nil, continuation.Completion{}
+		speech.Completion = continuation.Completion{}
 		pending.historyResult = &speech
 	}
 	runner.pending[requestID] = pending

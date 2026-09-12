@@ -64,3 +64,33 @@ func TestControlTokenMixedWithProseSpeaksNothing(t *testing.T) {
 
 	assertNoEnvelope(t, segments)
 }
+
+// A streaming provider hands the token over in pieces, and no piece is the
+// token. Measured, "<" then "wait" then ">" was segmented as prose and the
+// synthesiser said "wait" to a phone menu.
+func TestControlTokenSplitAcrossDeltasNeverReachesSpeech(t *testing.T) {
+	mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
+		map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":2}`)}, nil)
+	defer stopInteractionGraph(t, done, cancel)
+
+	const runID = "split-wait-run"
+	text := ingress(t, mounted, "text")
+	segments := egress(t, mounted, "segments")
+	send(t, text, preparedEnvelope("begin", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextBegin, Index: 0,
+	}))
+	for index, piece := range []string{"<", "wait", ">"} {
+		send(t, text, preparedEnvelope("delta", runID, cognitionelements.PreparedTextDelta{
+			Boundary: cognitionelements.TextChunk, Index: uint64(index + 1), Text: piece,
+		}))
+	}
+	send(t, text, preparedEnvelope("end", runID, cognitionelements.PreparedTextDelta{
+		Boundary: cognitionelements.TextEnd, Index: 4,
+	}))
+
+	assertNoEnvelope(t, segments)
+	outcome := receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted)
+	if outcome.Segments != 0 || outcome.Code != "control_token_silence" {
+		t.Fatalf("a run that spelled the token in pieces must still be silent: %+v", outcome)
+	}
+}

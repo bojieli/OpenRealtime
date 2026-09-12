@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -392,13 +393,20 @@ func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, identity st
 			Code: "invalid_supersession", Message: err.Error(),
 		})
 	}
-	if superseded {
+	if superseded && !extendsObservation(canonical, newer) {
 		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, *pending.provenance, Outcome{
 			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "admit", CallID: callID,
 			Code: "observation_superseded", Message: fmt.Sprintf(
 				"canonical observation %q at source revision %d was superseded by %q at source revision %d",
 				canonical.ID, canonical.SourceRevision, newer.ID, newer.SourceRevision,
 			),
+		})
+	}
+	if earlier, duplicate := duplicateCallInUtterance(snapshot.Items, canonical.ID, proposal.Call); duplicate {
+		return publishOutcome(ctx, runner.emit, runner.outcomeOutput, *pending.provenance, Outcome{
+			Kind: OutcomeRejected, Stage: "proposal_admission", Operation: "admit", CallID: callID,
+			Code: "duplicate_call", Message: fmt.Sprintf(
+				"the same call was already made in this utterance as %q", earlier.ID),
 		})
 	}
 	authority := trajectory.AuthorityOf(canonical)
@@ -433,6 +441,7 @@ func (runner *proposalAdmissionRunner) tryAdmit(ctx context.Context, identity st
 		ContextVersion:           pending.provenanceValue.ContextVersion,
 		ContextEnvelopeItemID:    pending.provenanceValue.ContextEnvelopeItemID,
 		ContextTailItem:          pending.provenanceValue.ContextTailItem,
+		ContextExtended:          pending.provenanceValue.ContextExtended,
 		ProviderReference:        pending.provenanceValue.ProviderReference,
 		ModelResultDigest:        pending.provenanceValue.ModelResultDigest,
 		ModelProducer:            pending.provenanceValue.ModelProducer,
@@ -452,6 +461,73 @@ func canonicalItem(items []trajectory.Item, id string) (trajectory.Item, bool) {
 		}
 	}
 	return trajectory.Item{}, false
+}
+
+// duplicateCallInUtterance reports a canonical tool call with the same name
+// and arguments already made since the person last finished speaking.
+//
+// A recording that goes on listing options after naming the one the user
+// wanted is decided on again at every revision, and the voice, shown the key
+// it already pressed, pressed it again in four runs of four. The second press
+// is not a decision anybody made: nothing new happened, the words that
+// triggered it were the ones already acted on. A new turn - an endpoint
+// between the earlier call and this proposal's observation - is a new
+// occasion, and the same call is allowed again.
+func duplicateCallInUtterance(items []trajectory.Item, observationItemID string, call trajectory.ToolCall) (trajectory.Item, bool) {
+	basis := slices.IndexFunc(items, func(item trajectory.Item) bool { return item.ID == observationItemID })
+	// Only a call proposed on a revision of an utterance still being spoken:
+	// that is where the same words are decided on again and again. A call
+	// made on settled evidence - a finished turn, a frame - is a decision
+	// of its own, and a durable intent retrying its effect on new evidence
+	// is meant to repeat itself.
+	if basis < 0 || items[basis].Event == nil || !strings.HasSuffix(items[basis].Event.Type, ".revision") {
+		return trajectory.Item{}, false
+	}
+	for index := len(items) - 1; index >= 0; index-- {
+		item := items[index]
+		// Any settled observation between - the person finishing a turn, a
+		// new frame from a camera or screen - is a new occasion.
+		if index < basis && item.Kind == trajectory.KindObservation && item.Event != nil &&
+			strings.HasSuffix(item.Event.Type, ".endpoint") {
+			return trajectory.Item{}, false
+		}
+		if item.Kind == trajectory.KindToolCall && item.ToolCall != nil && item.ToolCall.Name == call.Name &&
+			sameArguments(item.ToolCall.Arguments, call.Arguments) {
+			return item, true
+		}
+	}
+	return trajectory.Item{}, false
+}
+
+func sameArguments(left, right json.RawMessage) bool {
+	var a, b any
+	if json.Unmarshal(left, &a) != nil || json.Unmarshal(right, &b) != nil {
+		return strings.TrimSpace(string(left)) == strings.TrimSpace(string(right))
+	}
+	return reflect.DeepEqual(a, b)
+}
+
+// extendsObservation reports whether a newer revision of an observation only
+// added words after the ones the earlier revision carried.
+//
+// A recogniser reveals an utterance a few words at a time, and a proposal
+// made on one revision is refused when a later revision replaces it - which
+// is right when the later revision rewrote the words the model acted on, and
+// wrong when it merely went on. Measured at a phone menu: the voice pressed
+// the key for order status the moment the recording named it, and the press
+// was refused because the recording had by then gone on to name technical
+// support. The words the press answered were still there, unchanged, at the
+// front of the newer revision; the recording adding options after them does
+// not take them back. So an extension keeps the proposal's basis, and only a
+// rewrite - the earlier words no longer at the front of the later ones -
+// takes it away.
+func extendsObservation(earlier, later trajectory.Item) bool {
+	if earlier.Kind != trajectory.KindObservation || later.Kind != trajectory.KindObservation {
+		return false
+	}
+	before := strings.Join(strings.Fields(earlier.Content), " ")
+	after := strings.Join(strings.Fields(later.Content), " ")
+	return before != "" && strings.HasPrefix(after, before)
 }
 
 // canonicalSupersedingObservation reports whether a later item in an
@@ -538,7 +614,18 @@ func validateProvenanceBinding(
 			return "proposal_context_mismatch", fmt.Errorf("proposal is not bound to activation evidence %q", identity)
 		}
 	}
-	if !causalAncestor(prefix, provenance.ObservationItemID, provenance.ContextTailItem) {
+	// The observation that authorises the call has to be what the context
+	// tail came from - unless the context was extended past it: a decision
+	// held while the voice was speaking runs on everything the voice said
+	// since, and that tail is the voice's own earlier answer, later than the
+	// observation and not descended from it. Then the observation being in
+	// the prefix, before the tail, is the fact the rule protects.
+	if provenance.ContextExtended {
+		if !precedesInPrefix(prefix, provenance.ObservationItemID, provenance.ContextTailItem) {
+			return "authority_not_causal", fmt.Errorf("authority item %q does not precede context tail %q in the extended context",
+				provenance.ObservationItemID, provenance.ContextTailItem)
+		}
+	} else if !causalAncestor(prefix, provenance.ObservationItemID, provenance.ContextTailItem) {
 		return "authority_not_causal", fmt.Errorf("authority item %q is not an ancestor of context tail %q",
 			provenance.ObservationItemID, provenance.ContextTailItem)
 	}
@@ -555,6 +642,14 @@ func validateProvenanceBinding(
 			observation.Event.EventID, provenance.ObservationTriggerItemID)
 	}
 	return "", nil
+}
+
+// precedesInPrefix reports whether earlier sits before later in the prefix,
+// or is later itself.
+func precedesInPrefix(items []trajectory.Item, earlier, later string) bool {
+	earlierIndex := slices.IndexFunc(items, func(item trajectory.Item) bool { return item.ID == earlier })
+	laterIndex := slices.IndexFunc(items, func(item trajectory.Item) bool { return item.ID == later })
+	return earlierIndex >= 0 && laterIndex >= 0 && earlierIndex <= laterIndex
 }
 
 func causalAncestor(items []trajectory.Item, ancestor, tail string) bool {

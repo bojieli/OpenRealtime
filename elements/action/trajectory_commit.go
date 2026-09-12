@@ -677,9 +677,16 @@ func authorizedPromotionEvidence(
 		return promotionEvidence{}, "context_tail_mismatch", errors.New("authorized context tail is not canonical")
 	}
 	authority, found := canonicalItem(prefix, admitted.AuthorityItemID)
+	// In an extended context the tail is later than the authority rather
+	// than descended from it; admission already judged that by order, and
+	// promotion asks the same question the same way.
+	inContext := causalAncestor
+	if admitted.ContextExtended {
+		inContext = precedesInPrefix
+	}
 	if !found || authority.SourceRevision != admitted.SourceRevision ||
 		trajectory.AuthorityOf(authority) != admitted.Authority ||
-		!causalAncestor(prefix, authority.ID, admitted.ContextTailItem) {
+		!inContext(prefix, authority.ID, admitted.ContextTailItem) {
 		return promotionEvidence{}, "authority_mismatch", errors.New("authorized authority evidence is not in the causal context prefix")
 	}
 	if authority.Event == nil || authority.Event.EventID != admitted.ObservationTriggerItemID {

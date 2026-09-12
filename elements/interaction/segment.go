@@ -285,19 +285,26 @@ func (runner *segmentPreparedTextRunner) appendSafeText(
 	// run. <wait> asks for silence, and the safe reading of a token whose
 	// entire purpose is silence is silence: a run that carried one publishes
 	// no further speech, rather than speaking the prose around it.
-	text, silencing := extractControlTokens(text)
-	if silencing {
-		run.silenced = true
-	}
-	if text == "" {
-		return true, nil
-	}
+	//
+	// Extracted from the pending buffer together with this delta, not from
+	// the delta alone: a streaming provider hands the token over in pieces
+	// - "<", "wait", ">" - and no piece is the token. Measured, a menu turn
+	// that answered with the token alone was pronounced "wait" to the
+	// recording. The pieces gather at the end of the buffer, because nothing
+	// in them ends a sentence, so the buffer is where the token reassembles.
 	if len(text) > runner.config.MaxRunBytes-run.totalBytes {
 		return false, runner.failActive(ctx, cause, OutcomeFailed, "run_too_large",
 			fmt.Sprintf("prepared run exceeds %d bytes", runner.config.MaxRunBytes), true)
 	}
 	run.totalBytes += len(text)
-	run.buffer += text
+	combined, silencing := extractControlTokens(run.buffer + text)
+	if silencing {
+		run.silenced = true
+	}
+	run.buffer = combined
+	if combined == "" {
+		return true, nil
+	}
 	if err := runner.releaseSafeSegments(ctx, cause); err != nil {
 		return runner.active == run, err
 	}

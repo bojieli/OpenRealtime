@@ -66,16 +66,31 @@ func TestStaleResultRetainsOnlySpeechWithExactOriginalContext(t *testing.T) {
 				return
 			}
 			retained := receive(t, snapshots).Payload.(trajectory.Snapshot)
-			if retained.Version != advanced.Version+2 || outcome.StoreVersion != retained.Version || len(outcome.ItemIDs) != 2 {
+			// The proposal rides along unless the run was interrupted: whether
+			// a call made against context the recogniser has since extended
+			// is still good is admission's question, not this element's.
+			wantItems := 2
+			if test.proposal && !test.interrupted {
+				wantItems = 3
+			}
+			if retained.Version != advanced.Version+uint64(wantItems) || outcome.StoreVersion != retained.Version || len(outcome.ItemIDs) != wantItems {
 				t.Fatalf("unexpected history: %+v %+v", outcome, retained)
 			}
+			proposals := 0
 			for _, item := range retained.Items[len(advanced.Items):] {
+				if item.Kind == trajectory.KindToolProposal && item.ToolCall != nil {
+					proposals++
+					continue
+				}
 				if item.Kind != trajectory.KindInstruction && item.Kind != trajectory.KindAssistant || item.ToolCall != nil || item.ProviderStateType != "" || len(item.ProviderState) != 0 || strings.Contains(item.Content, "reasoning") {
 					t.Fatalf("stale non-speech acquired history: %+v", item)
 				}
 				if item.Kind == trajectory.KindAssistant && (item.Visibility != trajectory.VisibilityPrepared || item.Content != "One." || item.Interrupted != test.interrupted) {
 					t.Fatalf("history claims playback or loses speech: %+v", item)
 				}
+			}
+			if proposals != wantItems-2 {
+				t.Fatalf("history carried %d proposals, want %d", proposals, wantItems-2)
 			}
 			send(t, ingress(t, mounted, "result"), resultEnvelopeForTest("duplicate-count", stale))
 			_ = receiveModelCommitKind(t, outcomes, ModelIgnored)
