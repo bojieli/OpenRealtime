@@ -31,6 +31,7 @@ implementation.
 | WebSocket, WebRTC, and LiveKit clients | [Transports](transports.md) · [LiveKit integration](../integrations/livekit/README.md) |
 | Supported Realtime API features and limitations | [Compatibility](openai-realtime-compatibility.md) |
 | Video, observations, and computer-use events | [OpenRealtime Protocol v1](protocol/openrealtime-1.md) |
+| GPT-Live: integration architecture and how it differs from Realtime | [GPT-Live on OpenRealtime](gptlive-integration.md) |
 | Go provider interfaces | [Stable component API v1](api-v1.md) |
 | External model processes | [Sidecar guide](sidecars.md) · Protocols [v1](sidecar-protocol-1.md), [v2](sidecar-protocol-2.md), [v3](sidecar-protocol-3.md), [v4](sidecar-protocol-4.md) |
 | Existing voice adapters | [Bindings](bindings/README.md): [cascade](bindings/cascade.md), [upstream](bindings/upstream.md), [omni](bindings/omni.md), [duplex](bindings/duplex.md) |

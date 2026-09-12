@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- The upstream binding now uses what GPT-Live is for. A delegation from the
+  endpoint is treated as the escalation the rollout already understands, and
+  on this dialect the background reasoner runs when the voice asks rather than
+  on every turn; `-upstream-delegation-gating` switches it. Evidence that is not
+  the user - a client's system message, later a screen - reaches the voice as
+  silent context with no model call, coalesced and capped, and never the
+  voice's own mirrored words. Typed text is committed to the trajectory, which
+  it never was on any upstream endpoint - it was forwarded and assumed echoed -
+  and on GPT-Live the voice is told the user typed while the reasoner is handed
+  the text and any attached image. Cancel becomes an instruction to stop, which
+  is the one thing Live can do to speech in progress. The vendor's session id,
+  expiry, billed seconds, context-window ratio, and open delegation reach
+  `Status().Remote` and the debug stream; a stall watchdog names a session that
+  has gone quiet; and `-upstream-idle-timeout` closes one nobody is talking to,
+  because a full-duplex session is billed by the second and kept alive by this
+  binding's own silence.
+
+  Every one of these was run against the real endpoint. The delegation seam end
+  to end: a spoken request synthesised through the vendor's speech API, the
+  delegation it raised, an answer handed back against it, and the voice saying
+  it while it waited. The real-endpoint suite is `adapters/gptlive/live_e2e_test.go`,
+  opt-in with `OPENREALTIME_LIVE_E2E=1`, so the offline gate stays offline.
+
+- The upstream binding sees, remembers, and answers the phone. A video
+  observer configured here (`-observers video`) runs behind any realtime
+  endpoint: a frame never goes to the remote - no remote in the catalogue can
+  take one - and its narration reaches the voice as silent context, with the
+  `video.input` capability negotiated from what is actually configured.
+  `-upstream-greeting` lets the voice speak first; a standing instruction said
+  out loud is steered into the voice when the extraction pass is configured;
+  `-upstream-max-sessions` refuses the tier's n+1th session here with a
+  reason; and GPT-Live's session-timeline milliseconds become each
+  observation's source time, so latency evidence on that endpoint measures the
+  vendor's clock.
+
+  `adapters/gptlive` gained the rest of the vendor's surface. G.711 µ-law and
+  A-law at 8 kHz (`-upstream-audio-format`), resampled and companded both
+  ways with the codec's own silence as keepalive - verified against the real
+  endpoint. Storage (`-upstream-store`) with a transparent fork-on-drop, an
+  explicit fork of a stored session, recording download, a sideband onto a
+  running session, and named telephony transport events. This project does
+  not permit data persistence and the vendor offers the sideband only to
+  WebRTC and SIP sessions, so those are verified against a fake built from
+  the specification, the real-endpoint suite skips them with the vendor's
+  reason, and a project that refuses storage now gets an unstored session that
+  says so rather than no session at all. `pcm` gained the G.711 codec.
+
 - OpenAI's GPT-Live is supported as a realtime endpoint, as `openai-live`
   (aliases `gpt-live`, `live`). It shares a vendor with the Realtime API and
   almost nothing else, so `adapters/gptlive` is a translator rather than a

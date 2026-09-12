@@ -263,6 +263,7 @@ seam. Use those products directly, or build the same stack with `cascade`.
 | Endpoint | Protocol | Hand-off | Verified | Notes |
 | --- | --- | --- | --- | --- |
 | `openai` | Realtime | conversation item | reachable | The reference implementation |
+| `openai-live` | **Live (`v1/live/sessions`)** | conversation item | live-turn | Same vendor, different protocol; full duplex, no turn boundaries. Translated; the hand-off becomes a commentary append |
 | `xai` | Realtime | conversation item | reachable | Documented as Realtime-compatible; reports user transcripts as `.updated` |
 | `azure-openai` | Realtime | conversation item | documented | Same spec; credential in `api-key`, model is a deployment in the URL |
 | `qwen-omni` | Realtime (pre-GA names) | session instruction | reachable | Emits `response.audio.*`; conversation items are tool-results only |
@@ -325,6 +326,128 @@ channel, so the answer goes in it and is taken back out when the response
 completes. An endpoint that supported neither could not host this binding at
 all, and declaring the channel is what makes that checkable rather than
 discovered live.
+
+Two endpoints declare the portable channel and are given it by a translator
+rather than by the wire: Gemini Live turns the hand-off into a client turn, and
+GPT-Live turns it into a commentary append against the delegation the endpoint
+opened. In both the declared strategy is the portable one and the adapter is
+what makes it mean something, which is why the table's hand-off column is a
+property of the *binding* and the adapter notes say what it becomes.
+
+### GPT-Live
+
+GPT-Live shares a vendor with the Realtime API and almost nothing else, so
+[`adapters/gptlive`](../adapters/gptlive) is a translator rather than a profile.
+It is **full duplex** — it listens while it speaks — which removes the turn loop
+the Realtime protocol is built around: there is no input-buffer commit, no
+`response.create` that starts a spoken turn, and, the difference that shapes the
+whole adapter, no event that ends anything. The vendor states plainly that
+transcript fragments "do not define complete turns or include a transcript-done
+event".
+
+The upstream binding needs turns: the reasoner is handed one, and the trajectory
+records utterances. So the adapter synthesises boundaries from two signals, and
+the difference between them is the honest part.
+
+- **`session.delegation.created` is the reliable one.** GPT-Live does not reason
+  or call tools itself — it *delegates* and keeps talking while it waits. With
+  `delegation.type` set to `client` the endpoint asks this process for help,
+  which is exactly the seam this binding exists to fill. That event is the
+  endpoint's own judgement that the request is complete, and it arrives at the
+  moment the reasoner should start. Every delegated turn ends on it.
+- **Silence is the fallback.** A conversation contains turns the endpoint
+  answers by itself and never delegates. Without a second signal those never
+  reach the trajectory, and the reasoner would later be asked to continue a
+  conversation with holes in it. So a gap after the last fragment also closes a
+  turn. It is a guess and is treated as one: it is configurable, it never
+  preempts a delegation, and nothing in the adapter can tell a thinking pause
+  from a finished sentence.
+
+The hand-off inverts too. There are no conversation items and no writable
+session instruction, so the reasoner's answer goes back through
+`session.commentary.append` — the channel the vendor built for returning
+delegated results to the voice — correlated with the delegation that asked for
+it. An answer over the 500-token append cap is split across appends rather than
+sent whole and rejected, because a hand-off that arrives in two pieces is a
+hand-off and one rejected for length is the binding's entire contribution
+silently lost.
+
+Three smaller constraints shape the rest:
+
+- The **model, instruction, voice, and audio format are settable only in the
+  opening `session.start`**, so the handshake is deferred until the caller's
+  first `session.update` arrives. Later ones are accepted and dropped: an append
+  is capped at 500 tokens and would reject a full instruction.
+- **Nothing may be sent until `session.started` arrives.** Traffic before it is
+  held rather than dropped, which is what keeps the opening syllable.
+- A session is opened at the Realtime wire's **24 kHz**, so audio passes through
+  unresampled in both directions. Live also accepts 16 kHz, which the adapter
+  will resample for, and that is the only reason to choose it.
+
+Two things the specification does not imply are in the adapter because a real
+session taught them, and **both fail silently** — no error, no close, just a
+session that does nothing.
+
+**Live runs on an audio clock.** A session with no input frames arriving accepts
+a commentary append and then never injects it, never acknowledges it, and never
+speaks. A hand-off sent into a silent session produced nothing for seventy-five
+seconds; the identical hand-off sent while silence was streaming was spoken in
+about a second. A caller speaking the Realtime protocol stops sending audio
+whenever the user is quiet, so the adapter fills the gaps itself — a frame of
+silence whenever the caller supplied none for a whole interval. It fills gaps
+rather than padding, because padding a live stream would displace real speech on
+the endpoint's timeline.
+
+**Live's output is a carrier, not a burst.** It emits a 100 ms frame every 100 ms
+for the life of the session whether or not anyone is speaking: 427 of 438 frames
+in one 45-second session were digital silence. An utterance bounded by "audio
+stopped" would therefore never end, `response.done` would never be emitted, and
+the mirror would never commit an assistant turn. So only *audible* audio extends
+an utterance, and the carrier is forwarded only while one is open — inside an
+utterance a silent frame is the pause between two words and belongs to the
+speech around it; outside one it would report an assistant that never stops
+speaking.
+
+This entry is `live-turn`: a real session started, was handed an answer, spoke
+it, and its events arrived under the names this catalogue expects. The
+delegation seam has been run end to end as well - a synthesised spoken request
+the voice was told not to answer alone, the delegation it raised, an answer
+handed back against it, and the voice saying it while the reasoner worked:
+
+```text
+transcript   "Hi there. Could you check the status of my order number 4217"
+delegation   item_ENF83gCZI0WJMh5xH6iSo  target=client  offset_ms=7600
+hand-off     acknowledged as session.commentary.appended
+the voice    "Sure. Checking that right now. Alright, order 4217 shipped
+              yesterday, and it's due to arrive tomorrow before noon."
+```
+
+Both are in `adapters/gptlive/live_e2e_test.go`, which runs against the real
+endpoint when `OPENREALTIME_LIVE_E2E=1` is set and stays out of the offline
+gate otherwise. That suite also proves the four push channels are acknowledged,
+that a cancel cuts speech, that a close is finalised, and that a G.711 µ-law
+session speaks. Three of the vendor's features it records rather than proves:
+storage, forking and recording need a project that permits data persistence,
+which this one does not (`session_storage_not_allowed`), and the sideband is
+offered only to WebRTC and SIP sessions (a WebSocket primary gets 404). Each
+of those is verified against a fake built from the specification, and the
+suite says so when it skips. What the binding does with this endpoint - gating the reasoner
+on a delegation, the silent hand-off, typed input, cancel, the meter - is in
+[the upstream binding](bindings/upstream.md#behind-gpt-live).
+
+```console
+$ openrealtime providers -role upstream -probe openai-live
+openai-live  (gpt-live)
+  endpoint  wss://api.openai.com/v1/live/sessions
+  model     gpt-live-1
+  connected true
+  events received:
+    response.done                                        1
+    response.output_audio.delta                         27
+    response.output_audio_transcript.delta               2
+    response.output_audio_transcript.done                1
+  said      "probe ok."
+```
 
 ### Gemini Live
 

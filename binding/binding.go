@@ -358,6 +358,23 @@ type Status struct {
 	VisualNarrator          string `json:"visual_narrator,omitempty"`
 	Speech                  string `json:"speech,omitempty"`
 	SpeechRevision          string `json:"speech_revision,omitempty"`
+	// Remote describes the vendor session behind an upstream binding, for the
+	// endpoints that report one. Nil for every other binding.
+	Remote *RemoteStatus `json:"remote,omitempty"`
+}
+
+// RemoteStatus is what a remote realtime endpoint reports about itself: its
+// own identity for the session, when it expires, what it has billed so far,
+// and how much of its context window is spent. An operator reads it to find
+// the session at the vendor, and a policy reads the ratio to decide how much
+// more context is worth sending.
+type RemoteStatus struct {
+	SessionID          string  `json:"session_id,omitempty"`
+	ExpiresAt          int64   `json:"expires_at,omitempty"`
+	UsageSeconds       float64 `json:"usage_seconds,omitempty"`
+	ContextWindowRatio float64 `json:"context_window_ratio,omitempty"`
+	// OpenDelegation is the request the remote is waiting on, if any.
+	OpenDelegation string `json:"open_delegation,omitempty"`
 }
 
 // ArchitectureIdentity pins one resolved architecture definition. ID and

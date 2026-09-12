@@ -62,6 +62,10 @@ const (
 	// DialectGeminiLive is BidiGenerateContent, which is not a Realtime
 	// dialect and is translated into one.
 	DialectGeminiLive Dialect = "gemini-live"
+	// DialectGPTLive is OpenAI's v1/live/sessions protocol. It shares a vendor
+	// with the Realtime API and not its event contract - it is full duplex and
+	// reports no turn boundaries - so it is translated rather than aliased.
+	DialectGPTLive Dialect = "gpt-live"
 
 	// DialectOpenAITranscriptions is /v1/audio/transcriptions.
 	DialectOpenAITranscriptions Dialect = "openai-transcriptions"

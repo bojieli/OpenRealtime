@@ -51,9 +51,106 @@ or digit strings.
 
 ## What it cannot do
 
-Video input and computer use are reported as unsupported. The base protocol
-gives no way to ask a remote endpoint whether it accepts them, and reporting
-honestly is better than forwarding events the remote will reject.
+Computer use is reported as unsupported, and video is supported only when a
+video observer is configured here (`-observers video`): the base protocol
+gives no way to ask a remote endpoint whether it accepts a frame, so a frame
+never goes to the remote. It goes to this side's observer, and what the
+observer narrates reaches the remote as context. Without an observer, video
+is reported as unsupported at negotiation, as it always was.
+
+## Behind GPT-Live
+
+`-upstream-provider openai-live` puts this binding behind an endpoint that was
+built for it. GPT-Live does not reason or call tools; it *delegates* and keeps
+talking while it waits, and with client delegation the endpoint asks this
+process for help. The binding's reasoner is therefore the backend the vendor's
+design expects rather than a second model bolted to the side of one. Four
+things change, all verified against the real endpoint.
+
+**The reasoner runs when the voice asks.** A delegation is what the interaction
+layer already calls an escalation - the fast turn handing the work on - and on
+this dialect the reasoner runs on it and not on every turn. Every turn is still
+mirrored, so the reasoner has the whole conversation when it is asked. The
+switch is `-upstream-delegation-gating auto|on|off`; `auto` gates on GPT-Live
+and nowhere else, because nowhere else ever asks. Typed input runs the reasoner
+regardless: the voice never saw it, so it will never delegate it.
+
+**Evidence reaches the voice silently.** An observation that is not the user -
+a client's system message today, a screen change once a video observer runs
+here - goes to the voice as *thinking*: something to know, not something to
+say, with no model call in between. The remote's own mirrored words are never
+pushed back to it. On a Realtime endpoint the same evidence becomes a
+conversation item with no response requested, which is the portable
+equivalent. Pushes are coalesced, split at the vendor's 500-token cap, and
+suppressed once the endpoint reports its context window over 90% full; the
+trajectory keeps everything regardless.
+
+**Cancel is an instruction.** Live has no response to cancel. `Cancel` becomes
+`session.instructions.append` telling the voice to stop, which interrupts
+speech in progress - measured on the real endpoint at "Here is the full", cut
+off there.
+
+**The meter is visible and bounded.** `Status().Remote` carries the vendor's
+session id, its expiry, billed seconds, the context-window ratio, and the open
+delegation; each also reaches the debug stream. A full-duplex session is billed
+by the second and kept alive by this binding's own silence frames, so
+`-upstream-idle-timeout` (default 15 minutes on GPT-Live, none elsewhere)
+closes a session that has heard no user speech, and says so.
+
+Two things it still cannot do here, and says so: the floor cannot be given to
+the engine (`ManualTurns` is false - there is no commit to drive), and a
+session-instruction change after start is appended only when it fits the cap,
+otherwise refused with an error the client sees rather than dropped.
+
+### Eyes, memory, and the phone
+
+**Seeing is this side's.** `-observers video` runs the cascade's screen
+narrator behind this binding. A frame goes to the observer, never to the
+remote; the narration is committed as observer-authority evidence and pushed
+to the voice as thinking, with no reasoner call. The `video.input` and
+`observations` capabilities are negotiated from what is actually configured.
+
+**A voice that speaks first.** `-upstream-greeting` sends one instruction once
+the session has started - on GPT-Live down the instruction channel with input
+audio already running, which is the vendor's own recipe.
+
+**Standing instructions said out loud.** When the interaction extraction pass
+is configured, "keep it short from now on" pins a rule and steers the voice
+with it, and "never mind" lifts it and says so. The pass runs off the mirror,
+because it is a model call and the mirror is the remote's read side.
+
+**The vendor's clock.** GPT-Live reports every transcript on its own session
+timeline. Those milliseconds are translated onto this side's clock as the
+observation's source time, so latency evidence on this binding measures the
+vendor's timing rather than arrival.
+
+**Bounded sessions.** `-upstream-max-sessions` refuses the *n*+1th session
+here, with `ErrAtCapacity`, rather than letting the vendor refuse it
+mid-conversation at its tier limit.
+
+**A telephone leg.** `-upstream-audio-format pcmu|pcma` opens the session in
+G.711 at 8 kHz: the caller's 24 kHz is resampled and companded on the way in
+and expanded and resampled on the way out, and the keepalive is the codec's own
+silence byte. Verified against the real endpoint: a µ-law session spoke a
+hand-off and its audio expanded to audible PCM.
+
+**Storage, forking, and recording.** `-upstream-store` asks the vendor to keep
+a resumable recording. With one, a dropped connection is *forked* rather than
+started cold - the vendor's own recovery guidance - transparently to the
+caller, up to three times; and the recording is downloadable afterwards
+(`gptlive.Recording`). On a project that does not permit data persistence the
+vendor refuses the start over the store flag, and the session restarts
+unstored and reports `storage_refused` rather than failing. That is the
+project this was built on, so forking and recording are verified against a
+fake built from the specification and not against the vendor; the refusal path
+is verified against both.
+
+**A sideband.** `gptlive.Attach` opens a second socket onto a running session:
+it receives the session's events and reflected audio with timing, may steer
+and push context, and refuses audio. The vendor offers it for sessions whose
+primary connection is WebRTC or SIP - the topology in which this process is
+not on the audio path - and answers 404 for a WebSocket primary, which is what
+this environment has. It is verified against the fake.
 
 ## What the remote is told
 

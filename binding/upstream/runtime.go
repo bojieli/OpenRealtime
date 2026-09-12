@@ -52,6 +52,36 @@ type runtime struct {
 	settingsMu sync.RWMutex
 	settings   binding.Settings
 
+	media *session.MediaStore
+	// observers are this side's eyes; selected is the subset the client
+	// asked for, or nil for all of them.
+	observers  *perception.Set
+	observerMu sync.RWMutex
+	selected   map[string]struct{}
+	// pins are the standing instructions extracted from what the user said
+	// and steered into the remote.
+	pinMu sync.Mutex
+	pins  []interaction.StandingInstruction
+	// liveEpochNS is this side's clock when the remote's session timeline
+	// began, so the remote's milliseconds become this side's nanoseconds.
+	liveEpochNS uint64
+	released    sync.Once
+
+	// remoteMu guards what the remote has told us about itself and what it
+	// is waiting on.
+	remoteMu sync.Mutex
+	remote_  binding.RemoteStatus
+	// escalationPending is set when the remote asked for help and the batch
+	// carrying that request has not yet been planned; it survives the signal
+	// and the transcript landing in different batches.
+	escalationPending bool
+	// contextPending is observer evidence coalesced for the remote, and
+	// contextTimer is the debounce that sends it.
+	contextPending []string
+	contextTimer   clock.Timer
+	idleTimer      clock.Timer
+	lastSpeechNS   uint64
+
 	stateMu   sync.Mutex
 	utterance *action.Utterance
 	// restoreInstruction marks that the session instruction currently carries
@@ -92,6 +122,37 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.clientCalls = tracker
+	media, err := session.NewMediaStore(bind.config.MediaRetention)
+	if err != nil {
+		cancel(err)
+		return nil, err
+	}
+	result.media = media
+	if len(bind.config.Observers) > 0 {
+		observers := make([]perception.Observer, 0, len(bind.config.Observers))
+		for _, factory := range bind.config.Observers {
+			observer, err := factory.New(media)
+			if err != nil {
+				cancel(err)
+				return nil, fmt.Errorf("start observer %q: %w", factory.Name, err)
+			}
+			observers = append(observers, observer)
+		}
+		set, err := perception.NewSet(observers...)
+		if err != nil {
+			cancel(err)
+			return nil, err
+		}
+		result.observers = set
+		selection := result.settings.Observers
+		if len(selection) == 0 {
+			selection = bind.config.DefaultObservers
+		}
+		if err := result.selectObservers(selection); err != nil {
+			cancel(err)
+			return nil, err
+		}
+	}
 	prefix := strings.TrimSpace(options.SessionID)
 	if prefix == "" {
 		prefix = "upstream"
@@ -179,7 +240,205 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		_ = remote.Close()
 		return nil, err
 	}
+	result.armIdle()
+	if greeting := bind.config.Greeting; greeting != "" {
+		// Sent after the session declaration, and on GPT-Live held by the
+		// translator until the session has started - which is the vendor's
+		// recipe for a voice that speaks first: an instruction to greet, with
+		// input audio already running.
+		if err := result.Steer(ctx, greeting); err != nil {
+			cancel(err)
+			_ = remote.Close()
+			return nil, err
+		}
+	}
 	return result, nil
+}
+
+// selectObservers applies a client's observer choice.
+func (runtime *runtime) selectObservers(names []string) error {
+	if runtime.observers == nil {
+		if len(names) > 0 {
+			return fmt.Errorf("no observers are configured; cannot select %s", strings.Join(names, ", "))
+		}
+		return nil
+	}
+	if len(names) == 0 {
+		runtime.observerMu.Lock()
+		runtime.selected = nil
+		runtime.observerMu.Unlock()
+		return nil
+	}
+	available := runtime.observers.Names()
+	selected := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if !slices.Contains(available, name) {
+			return fmt.Errorf("unknown observer %q (available: %s)", name, strings.Join(available, ", "))
+		}
+		selected[name] = struct{}{}
+	}
+	runtime.observerMu.Lock()
+	runtime.selected = selected
+	runtime.observerMu.Unlock()
+	return nil
+}
+
+// observing reports whether a named observer is in the selected set.
+func (runtime *runtime) observing(name string) bool {
+	runtime.observerMu.RLock()
+	defer runtime.observerMu.RUnlock()
+	if runtime.selected == nil {
+		return true
+	}
+	_, chosen := runtime.selected[name]
+	return chosen
+}
+
+// observerNames reports the session's perception, for Status.
+func (runtime *runtime) observerNames() []string {
+	names := []string{"remote"}
+	if runtime.observers == nil {
+		return names
+	}
+	for _, name := range runtime.observers.Names() {
+		if runtime.observing(name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// commitObserved records what an observer of this side's saw. It is
+// observer-authority evidence: data the reasoner may read and the remote may
+// be told, never an instruction.
+func (runtime *runtime) commitObserved(ctx context.Context, observation perception.Observation) error {
+	if err := observation.Validate(); err != nil {
+		return err
+	}
+	if err := runtime.sink.Observation(ctx, observation); err != nil {
+		return err
+	}
+	_, err := runtime.coordinator.Submit(eventloop.Event{
+		Type: "observer." + observation.Observer, Source: observation.Observer, Channel: "observation",
+		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
+		SourceRevision: runtime.nextRevision(), Producer: observation.Producer(),
+		Content: observation.Text, Observation: observation.Meta(),
+		OccurredNS: observation.OccurredNS,
+	})
+	return err
+}
+
+// occurredAt translates a moment on the remote's session timeline into this
+// side's clock, or reports zero when the remote gave no moment or has not
+// started - which is every Realtime endpoint, whose events carry none.
+func (runtime *runtime) occurredAt(sessionMS int64) uint64 {
+	runtime.remoteMu.Lock()
+	epoch := runtime.liveEpochNS
+	runtime.remoteMu.Unlock()
+	if epoch == 0 || sessionMS <= 0 {
+		return 0
+	}
+	return epoch + uint64(sessionMS)*1_000_000
+}
+
+// extractStanding reads one finished user utterance for a policy set out
+// loud - "don't cut me off", "keep answers short" - and steers the remote
+// with what it finds. It runs off the mirror, because it is a model call and
+// the mirror is the read side of the remote.
+func (runtime *runtime) extractStanding(utterance string) {
+	extractor := runtime.policies.Extraction
+	if extractor == nil || len(strings.TrimSpace(utterance)) < 12 {
+		return
+	}
+	go func() {
+		recent := interaction.RecentLines(runtime.store.Snapshot().Items, 6)
+		runtime.pinMu.Lock()
+		existing := slices.Clone(runtime.pins)
+		runtime.pinMu.Unlock()
+		extraction, err := extractor.Extract(runtime.ctx, existing, recent, utterance)
+		if err != nil {
+			runtime.debug(binding.DebugEvent{
+				Category: "policy", Name: "upstream.extraction.failed", Message: err.Error(),
+			})
+			return
+		}
+		for _, pin := range extraction.Pins {
+			runtime.pinMu.Lock()
+			runtime.pins = append(runtime.pins, pin)
+			runtime.pinMu.Unlock()
+			_ = runtime.Steer(runtime.ctx, "The user set a standing instruction, which applies until they lift it: "+pin.Text)
+			runtime.debug(binding.DebugEvent{
+				Category: "policy", Name: "upstream.standing.pinned", Message: pin.Text,
+			})
+		}
+		for _, revoked := range extraction.Revokes {
+			runtime.pinMu.Lock()
+			runtime.pins = slices.DeleteFunc(runtime.pins, func(pin interaction.StandingInstruction) bool {
+				return pin.Text == revoked
+			})
+			runtime.pinMu.Unlock()
+			_ = runtime.Steer(runtime.ctx, "The user lifted a standing instruction; it no longer applies: "+revoked)
+			runtime.debug(binding.DebugEvent{
+				Category: "policy", Name: "upstream.standing.revoked", Message: revoked,
+			})
+		}
+	}()
+}
+
+// isLive reports whether the remote speaks GPT-Live, the one dialect with a
+// delegation seam and push channels of its own.
+func (runtime *runtime) isLive() bool { return runtime.config.Dialect == DialectGPTLive }
+
+// debug emits implementation evidence when the sink can take it.
+func (runtime *runtime) debug(event binding.DebugEvent) {
+	if sink, enabled := runtime.sink.(binding.DebugSink); enabled {
+		_ = sink.Debug(runtime.ctx, event)
+	}
+}
+
+// remoteStatus returns a copy of what the remote has reported.
+func (runtime *runtime) remoteStatus() binding.RemoteStatus {
+	runtime.remoteMu.Lock()
+	defer runtime.remoteMu.Unlock()
+	return runtime.remote_
+}
+
+// armIdle schedules the idle check, which closes a session nobody is talking
+// to. The clock is user speech, not client audio: a client streaming silence
+// is exactly the abandoned tab this exists for.
+func (runtime *runtime) armIdle() {
+	timeout := runtime.config.IdleTimeout
+	if timeout <= 0 {
+		return
+	}
+	runtime.remoteMu.Lock()
+	if runtime.idleTimer != nil {
+		runtime.idleTimer.Stop()
+	}
+	runtime.idleTimer = runtime.scheduler.AfterFunc(timeout, func() {
+		runtime.remoteMu.Lock()
+		last := runtime.lastSpeechNS
+		runtime.remoteMu.Unlock()
+		if runtime.scheduler.NowNS()-last < uint64(timeout.Nanoseconds()) {
+			runtime.armIdle()
+			return
+		}
+		runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+			Code: "upstream_idle",
+			Message: "no user speech for " + timeout.String() +
+				"; the session was closed so the remote's meter stops",
+		})
+		_ = runtime.Close(runtime.ctx, errors.New("idle: no user speech for "+timeout.String()))
+	})
+	runtime.remoteMu.Unlock()
+}
+
+// noteUserSpeech records that somebody is talking, for the idle clock.
+func (runtime *runtime) noteUserSpeech() {
+	runtime.remoteMu.Lock()
+	runtime.lastSpeechNS = runtime.scheduler.NowNS()
+	runtime.remoteMu.Unlock()
 }
 
 // configureRemote declares the session on the remote side.
@@ -191,13 +450,14 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 func (runtime *runtime) configureRemote() error {
 	settings := runtime.Settings()
 	return runtime.remote.Send(runtime.ctx, sessionUpdate(
-		remoteInstruction(settings.Instruction), settings.ManualTurns, settings.Modalities))
+		remoteInstruction(settings.Instruction), settings))
 }
 
 // sessionUpdate builds the session declaration. It is shared with the
 // session-instruction handoff, which is the same event carrying different
 // text.
-func sessionUpdate(instruction string, manualTurns bool, modalities []string) map[string]any {
+func sessionUpdate(instruction string, settings binding.Settings) map[string]any {
+	manualTurns, modalities := settings.ManualTurns, settings.Modalities
 	input := map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}}
 	if manualTurns {
 		// The client took the floor, and the remote is the side that holds it
@@ -208,12 +468,18 @@ func sessionUpdate(instruction string, manualTurns bool, modalities []string) ma
 		// silence while the client believed it had stopped that.
 		input["turn_detection"] = nil
 	}
+	output := map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}}
+	if voice := strings.TrimSpace(settings.Voice); voice != "" {
+		// The client chose a voice, and the remote owns the voice. Forwarding
+		// it is the whole of what this binding can do about it.
+		output["voice"] = voice
+	}
 	update := map[string]any{
 		"type":         "realtime",
 		"instructions": instruction,
 		"audio": map[string]any{
 			"input":  input,
-			"output": map[string]any{"format": map[string]any{"type": "audio/pcm", "rate": 24000}},
+			"output": output,
 		},
 	}
 	if len(modalities) > 0 {
@@ -246,6 +512,10 @@ func remoteInstruction(agent string) string {
 // Status reports what this session is running.
 func (runtime *runtime) Status() binding.Status {
 	_, slow := runtime.engine.Descriptors()
+	var remote *binding.RemoteStatus
+	if status := runtime.remoteStatus(); status != (binding.RemoteStatus{}) {
+		remote = &status
+	}
 	return binding.Status{
 		Binding: runtime.binding.Name(), Profile: "voice", Ownership: runtime.binding.Ownership(),
 		Stack:    runtime.binding.Capabilities().Stack,
@@ -261,8 +531,9 @@ func (runtime *runtime) Status() binding.Status {
 		}, Tools: binding.ToolStatus{
 			Fast: "propose", Slow: string(slow.EffectiveToolAuthority()),
 			Authorization: "engine", Execution: "engine-or-client",
-		}, Observers: []string{"remote"},
+		}, Observers: runtime.observerNames(),
 		Fast: "remote/" + runtime.config.Model, Slow: slow.Provider + "/" + slow.Model,
+		Remote: remote,
 	}
 }
 
@@ -283,6 +554,11 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 	runtime.settingsMu.Lock()
 	runtime.settings = settings
 	runtime.settingsMu.Unlock()
+	if len(settings.Observers) > 0 || runtime.observers != nil {
+		if err := runtime.selectObservers(settings.Observers); err != nil {
+			return err
+		}
+	}
 	return runtime.configureRemote()
 }
 
@@ -297,19 +573,118 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	})
 }
 
-// Video is not supported: the base protocol gives no way to ask a remote
-// endpoint whether it accepts video, so this reports honestly rather than
-// forwarding events the remote will reject.
-func (runtime *runtime) Video(context.Context, perception.Frame) error {
-	return fmt.Errorf("%w: video input over an upstream binding", binding.ErrUnsupported)
+// Video hands a frame to this side's observers.
+//
+// A frame never goes to the remote: the base protocol gives no way to ask an
+// endpoint whether it accepts one, and GPT-Live accepts none. It goes to an
+// observer configured here - the same screen narrator the cascade runs - and
+// what the observer says is committed as observer-authority evidence, which
+// the reasoner reads and the remote is told as context. Without an observer
+// this is unsupported, as it always was, and the protocol layer reports that
+// at negotiation rather than here.
+func (runtime *runtime) Video(ctx context.Context, frame perception.Frame) error {
+	if err := frame.Validate(); err != nil {
+		return err
+	}
+	if runtime.observers == nil {
+		return fmt.Errorf("%w: video input over an upstream binding without a video observer", binding.ErrUnsupported)
+	}
+	var active []perception.Observer
+	for _, observer := range runtime.observers.For(frame) {
+		if runtime.observing(observer.Name()) {
+			active = append(active, observer)
+		}
+	}
+	if len(active) == 0 {
+		return fmt.Errorf("%w: no selected observer accepts %s frames", binding.ErrUnsupported, frame.Source)
+	}
+	for _, observer := range active {
+		if !observer.Gate(frame) {
+			continue
+		}
+		observations, err := observer.Observe(ctx, []perception.Frame{frame})
+		if err != nil {
+			return err
+		}
+		for _, observation := range observations {
+			if err := runtime.commitObserved(ctx, observation); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
-// Text forwards something the client typed to the remote, which owns the
-// conversation the user is having.
+// Text commits something the client typed and tells the remote about it.
+//
+// It is committed here first, because it used to be forwarded and nothing else,
+// on the assumption that the remote would echo it back as a transcript. No
+// endpoint does, so the reasoner never saw a typed word. A typed message is the
+// user talking, and the trajectory is where what the user said goes.
+//
+// What the remote is then told depends on what it is. A Realtime endpoint gets
+// the item, as before, and answers it on the next response. GPT-Live gets a
+// note: the vendor's guidance is that a typed value is user data for the
+// backend, not an instruction to the voice, so the voice is told that the user
+// typed and the reasoner is handed the text. Attached images go the same way -
+// the voice cannot see, the reasoner can.
 func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error {
 	role := input.Role
 	if role == "" {
 		role = "user"
+	}
+	authority := trajectory.AuthorityUser
+	if role == "system" {
+		// A system message from a client is context, not the user talking,
+		// and it must not be able to act like a request.
+		authority = trajectory.AuthorityObserver
+	}
+	text := strings.TrimSpace(input.Text)
+	media, err := runtime.retain(input.Images)
+	if err != nil {
+		return err
+	}
+	if text == "" && len(media) > 0 {
+		text = "The user attached an image."
+	}
+	if text != "" {
+		observation := perception.Observation{
+			Text: text, Observer: "client", Source: "text",
+			Authority: authority, Media: media, Final: true,
+		}
+		if err := runtime.sink.Observation(ctx, observation); err != nil {
+			return err
+		}
+		if _, err := runtime.coordinator.Submit(eventloop.Event{
+			Type: "client.text", Source: "client", Channel: "text",
+			Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
+			SourceRevision: runtime.nextRevision(), Producer: observation.Producer(),
+			Content: text, Observation: observation.Meta(),
+		}); err != nil {
+			return err
+		}
+		if authority == trajectory.AuthorityUser {
+			runtime.noteUserSpeech()
+			if runtime.config.delegationGated {
+				// Typed input never passes through the voice, so the voice
+				// will never delegate it. The reasoner is the backend the
+				// typed value was meant for, and it runs.
+				runtime.remoteMu.Lock()
+				runtime.escalationPending = true
+				runtime.remoteMu.Unlock()
+			}
+		}
+	}
+	if runtime.isLive() {
+		if authority != trajectory.AuthorityUser || text == "" {
+			// Observer-authority context reaches the voice through the same
+			// path every other observation takes.
+			return nil
+		}
+		return runtime.remote.Send(ctx, map[string]any{
+			"type": "openrealtime.upstream.context",
+			"text": "The user typed rather than said: " + text,
+		})
 	}
 	return runtime.remote.Send(ctx, map[string]any{
 		"type": "conversation.item.create",
@@ -318,6 +693,26 @@ func (runtime *runtime) Text(ctx context.Context, input binding.TextInput) error
 			"content": []map[string]any{{"type": "input_text", "text": input.Text}},
 		},
 	})
+}
+
+// retain keeps attached images for the reasoner and returns their handles.
+func (runtime *runtime) retain(images []binding.Image) ([]trajectory.MediaRef, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	refs := make([]trajectory.MediaRef, 0, len(images))
+	for _, image := range images {
+		reference, err := runtime.media.Retain(trajectory.MediaRef{
+			MIMEType: image.MIMEType, Source: "message",
+			Width: image.Width, Height: image.Height,
+			CapturedNS: runtime.scheduler.NowNS(),
+		}, image.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("retain attached image: %w", err)
+		}
+		refs = append(refs, reference)
+	}
+	return refs, nil
 }
 
 // CreateResponse asks the remote to respond now.
@@ -336,9 +731,120 @@ func (runtime *runtime) CreateResponse(ctx context.Context) error {
 }
 
 // Cancel cancels generation on both sides.
+//
+// A Realtime endpoint has a response to cancel. GPT-Live has none; what it has
+// is an instruction channel that interrupts speech in progress, which is what
+// the caller meant by cancelling.
 func (runtime *runtime) Cancel(ctx context.Context, reason string) error {
 	runtime.coordinator.Interrupt(fmt.Errorf("%s: %w", reason, eventloop.ErrInterrupted))
+	if runtime.isLive() {
+		return runtime.remote.Send(ctx, map[string]any{
+			"type": "openrealtime.upstream.steer", "text": "Stop speaking now and wait for the user.",
+		})
+	}
 	return runtime.remote.Send(ctx, map[string]any{"type": "response.cancel"})
+}
+
+// Steer gives the remote an application instruction that applies now.
+//
+// It is exported for the pieces of this runtime that have something to say
+// which is neither an answer nor evidence: a guardrail, a standing instruction
+// somebody set out loud, a greeting. On GPT-Live it interrupts speech in
+// progress; on a Realtime endpoint it is context the next response reads.
+func (runtime *runtime) Steer(ctx context.Context, instruction string) error {
+	instruction = strings.TrimSpace(instruction)
+	if instruction == "" {
+		return nil
+	}
+	if runtime.isLive() {
+		return runtime.remote.Send(ctx, map[string]any{
+			"type": "openrealtime.upstream.steer", "text": instruction,
+		})
+	}
+	return runtime.remote.Send(ctx, map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "message", "role": "system",
+			"content": []map[string]any{{"type": "input_text", "text": instruction}},
+		},
+	})
+}
+
+// pushContext gives the remote evidence it should know without saying.
+//
+// This is the silent hand-off. Observer-authority evidence - a screen change,
+// a typed field, a camera frame - reaches the voice without a model call,
+// which is the vendor's own guidance: build the summary from state, not from a
+// model. On GPT-Live it is the thinking channel; on a Realtime endpoint it is a
+// conversation item with no response requested, which is the portable
+// equivalent - context added, nothing asked.
+func (runtime *runtime) pushContext(ctx context.Context, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
+	}
+	if runtime.isLive() {
+		return runtime.remote.Send(ctx, map[string]any{
+			"type": "openrealtime.upstream.context", "text": text,
+		})
+	}
+	return runtime.remote.Send(ctx, map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "message", "role": "system",
+			"content": []map[string]any{{"type": "input_text", "text": text}},
+		},
+	})
+}
+
+// queueContext coalesces evidence and schedules one push for the latest
+// state. A burst of screen changes is one summary; the vendor asks for
+// exactly that, and the endpoint's context window is what a summary per
+// change would spend.
+func (runtime *runtime) queueContext(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	runtime.remoteMu.Lock()
+	defer runtime.remoteMu.Unlock()
+	ratio := runtime.remote_.ContextWindowRatio
+	if ratio >= 0.9 {
+		// The endpoint is about to compact. Evidence pushed now is evidence
+		// summarised away in seconds; the trajectory keeps it regardless.
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.context.suppressed",
+			Message:    "context window at " + fmt.Sprintf("%.0f%%", ratio*100) + "; evidence kept locally only",
+			Attributes: map[string]any{"context_window_ratio": ratio},
+		})
+		return
+	}
+	runtime.contextPending = append(runtime.contextPending, text)
+	debounce := runtime.config.ContextPushDebounce
+	if ratio >= 0.75 {
+		debounce *= 2
+	}
+	if runtime.contextTimer != nil {
+		runtime.contextTimer.Stop()
+	}
+	runtime.contextTimer = runtime.scheduler.AfterFunc(debounce, runtime.flushContext)
+}
+
+// flushContext sends what has been queued as one push.
+func (runtime *runtime) flushContext() {
+	runtime.remoteMu.Lock()
+	pending := runtime.contextPending
+	runtime.contextPending = nil
+	runtime.contextTimer = nil
+	runtime.remoteMu.Unlock()
+	if len(pending) == 0 {
+		return
+	}
+	if err := runtime.pushContext(runtime.ctx, strings.Join(pending, "\n")); err != nil {
+		runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+			Code: "upstream_context_push", Message: err.Error(),
+		})
+	}
 }
 
 // Truncate forwards client playback truncation to the remote, which owns
@@ -356,6 +862,15 @@ func (runtime *runtime) Close(_ context.Context, cause error) error {
 		cause = errors.New("session closed")
 	}
 	runtime.cancel(cause)
+	runtime.released.Do(runtime.binding.release)
+	runtime.remoteMu.Lock()
+	if runtime.idleTimer != nil {
+		runtime.idleTimer.Stop()
+	}
+	if runtime.contextTimer != nil {
+		runtime.contextTimer.Stop()
+	}
+	runtime.remoteMu.Unlock()
 	err := runtime.remote.Close()
 	runtime.duplex.Close()
 	runtime.clientCalls.Close()

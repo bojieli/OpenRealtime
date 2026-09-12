@@ -8,6 +8,7 @@ import (
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/eventloop"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -44,6 +45,7 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		}
 		_ = json.Unmarshal(raw, &decoded)
 		runtime.duplex.UserSpeechStarted(runtime.scheduler.NowNS())
+		runtime.noteUserSpeech()
 		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{
 			Started: true, ItemID: decoded.ItemID, AudioStartMS: decoded.AudioStartMS,
 		})
@@ -61,6 +63,7 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		var decoded struct {
 			ItemID     string `json:"item_id"`
 			Transcript string `json:"transcript"`
+			EndMS      int64  `json:"end_ms"`
 		}
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return err
@@ -73,7 +76,11 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		}); err != nil {
 			return err
 		}
-		return runtime.commitUserSpeech(decoded.Transcript)
+		if err := runtime.commitUserSpeech(decoded.Transcript, runtime.occurredAt(decoded.EndMS)); err != nil {
+			return err
+		}
+		runtime.extractStanding(decoded.Transcript)
+		return nil
 	case "response.output_audio.delta":
 		return runtime.forwardAudio(raw)
 	case "response.output_audio_transcript.delta":
@@ -104,15 +111,16 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return err
 		}
-		return runtime.commitRemoteAssistant(decoded.Text)
+		return runtime.commitRemoteAssistant(decoded.Text, 0)
 	case "response.output_audio_transcript.done":
 		var decoded struct {
 			Transcript string `json:"transcript"`
+			EndMS      int64  `json:"end_ms"`
 		}
 		if err := json.Unmarshal(raw, &decoded); err != nil {
 			return err
 		}
-		return runtime.commitRemoteAssistant(decoded.Transcript)
+		return runtime.commitRemoteAssistant(decoded.Transcript, runtime.occurredAt(decoded.EndMS))
 	case "conversation.item.input_audio_transcription.failed":
 		// The remote could not make out what the user said. It still answers,
 		// because it heard the audio natively - but the transcript is the only
@@ -139,7 +147,128 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 			Message: message + ": the background reasoner did not see this turn",
 		})
 		return nil
+	case "conversation.item.input_audio_transcription.delta":
+		// A fragment of what the user is saying. The base protocol carries the
+		// committed transcript to a client; the fragment is runtime evidence,
+		// which the transcript policy and the debug stream read.
+		var decoded struct {
+			ItemID string `json:"item_id"`
+			Delta  string `json:"delta"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		if strings.TrimSpace(decoded.Delta) == "" {
+			return nil
+		}
+		runtime.noteUserSpeech()
+		return runtime.sink.Transcript(runtime.ctx, binding.TranscriptEvent{
+			ItemID: decoded.ItemID, Text: decoded.Delta, Final: false,
+		})
+	case "session.created":
+		var decoded struct {
+			Session struct {
+				ID        string `json:"id"`
+				ExpiresAt int64  `json:"expires_at"`
+			} `json:"session"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.remoteMu.Lock()
+		runtime.remote_.SessionID = decoded.Session.ID
+		runtime.remote_.ExpiresAt = decoded.Session.ExpiresAt
+		// The remote's timeline starts now. Its milliseconds are the honest
+		// clock for everything it reports; this is what they are measured
+		// from.
+		runtime.liveEpochNS = runtime.scheduler.NowNS()
+		runtime.remoteMu.Unlock()
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.session.created",
+			Attributes: map[string]any{"session_id": decoded.Session.ID, "expires_at": decoded.Session.ExpiresAt},
+		})
+		return nil
+	case "openrealtime.upstream.delegation":
+		// The remote asked for help. This is the escalation the rollout already
+		// understands - the fast turn handing the work on - and it is the one
+		// signal on this endpoint that comes from the model's own judgement
+		// rather than from a silence heuristic.
+		var decoded struct {
+			ID       string `json:"delegation_id"`
+			Target   string `json:"target"`
+			OffsetMS int64  `json:"offset_ms"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.remoteMu.Lock()
+		runtime.remote_.OpenDelegation = decoded.ID
+		runtime.escalationPending = true
+		runtime.remoteMu.Unlock()
+		runtime.debug(binding.DebugEvent{
+			Category: "cognition", Name: "upstream.delegation",
+			CorrelationID: decoded.ID,
+			Attributes:    map[string]any{"target": decoded.Target, "offset_ms": decoded.OffsetMS},
+		})
+		return runtime.signal(interaction.SignalEscalated)
+	case "openrealtime.upstream.usage":
+		var decoded struct {
+			Seconds float64 `json:"seconds"`
+			Ratio   float64 `json:"context_window_ratio"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.remoteMu.Lock()
+		runtime.remote_.UsageSeconds = decoded.Seconds
+		runtime.remote_.ContextWindowRatio = decoded.Ratio
+		runtime.remoteMu.Unlock()
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.usage",
+			Attributes: map[string]any{"seconds": decoded.Seconds, "context_window_ratio": decoded.Ratio},
+		})
+		return nil
+	case "openrealtime.upstream.ack":
+		var decoded struct {
+			Of            string `json:"of"`
+			ClientEventID string `json:"client_event_id"`
+			StartMS       int64  `json:"start_ms"`
+			EndMS         int64  `json:"end_ms"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.ack", CorrelationID: decoded.ClientEventID,
+			Attributes: map[string]any{"of": decoded.Of, "start_ms": decoded.StartMS, "end_ms": decoded.EndMS},
+		})
+		return nil
+	case "openrealtime.upstream.reconnected":
+		var decoded struct {
+			From    string `json:"from"`
+			Attempt int    `json:"attempt"`
+			Cause   string `json:"cause"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.reconnected", Message: decoded.Cause,
+			Attributes: map[string]any{"from": decoded.From, "attempt": decoded.Attempt},
+		})
+		return nil
+	case "openrealtime.upstream.transport":
+		var decoded struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.transport", Attributes: map[string]any{"kind": decoded.Kind},
+		})
+		return nil
+	case "openrealtime.upstream.info":
+		var decoded struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(raw, &decoded)
+		runtime.debug(binding.DebugEvent{
+			Category: "session", Name: "upstream.info", Message: decoded.Message,
+			Attributes: map[string]any{"code": decoded.Code},
+		})
+		return nil
 	case "response.done":
+		runtime.remoteMu.Lock()
+		runtime.remote_.OpenDelegation = ""
+		runtime.remoteMu.Unlock()
 		return runtime.finishRemoteResponse()
 	case "error":
 		var decoded struct {
@@ -161,10 +290,10 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 // commitUserSpeech records what the remote heard as a canonical observation.
 // The remote is the perception owner here, so the transcript is the evidence
 // rather than something this side re-derives.
-func (runtime *runtime) commitUserSpeech(text string) error {
+func (runtime *runtime) commitUserSpeech(text string, occurredNS uint64) error {
 	observation := perception.Observation{
 		Text: text, Observer: "remote", Source: "microphone",
-		Authority: trajectory.AuthorityUser, Final: true,
+		Authority: trajectory.AuthorityUser, Final: true, OccurredNS: occurredNS,
 	}
 	if err := runtime.sink.Observation(runtime.ctx, observation); err != nil {
 		return err
@@ -173,7 +302,7 @@ func (runtime *runtime) commitUserSpeech(text string) error {
 		Type: "remote.transcript", Source: "remote", Channel: "voice",
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
 		SourceRevision: runtime.nextRevision(), Producer: observation.Producer(),
-		Content: text,
+		Content: text, OccurredNS: occurredNS,
 	})
 	return err
 }
@@ -184,19 +313,19 @@ func (runtime *runtime) commitUserSpeech(text string) error {
 // assistant item, and the distinction matters: the engine's slow provider did
 // not produce this text and must not be able to mistake it for its own prior
 // reasoning. What the remote said is evidence about the conversation.
-func (runtime *runtime) commitRemoteAssistant(text string) error {
+func (runtime *runtime) commitRemoteAssistant(text string, occurredNS uint64) error {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
 	observation := perception.Observation{
 		Text: "The voice model said: " + text, Observer: "remote-voice", Source: "assistant",
-		Authority: trajectory.AuthorityObserver, Final: true,
+		Authority: trajectory.AuthorityObserver, Final: true, OccurredNS: occurredNS,
 	}
 	_, err := runtime.coordinator.Submit(eventloop.Event{
 		Type: "remote.assistant", Source: "remote-voice", Channel: "voice",
 		Priority: eventloop.PriorityRoutine, Kind: trajectory.KindObservation,
 		SourceRevision: runtime.nextRevision(), Producer: observation.Producer(),
-		Content: observation.Text, Observation: observation.Meta(),
+		Content: observation.Text, Observation: observation.Meta(), OccurredNS: occurredNS,
 	})
 	return err
 }
@@ -269,7 +398,7 @@ func (runtime *runtime) finishRemoteResponse() error {
 		settings := runtime.Settings()
 		base := remoteInstruction(settings.Instruction)
 		if err := runtime.remote.Send(runtime.ctx,
-			sessionUpdate(base, settings.ManualTurns, settings.Modalities)); err != nil {
+			sessionUpdate(base, settings)); err != nil {
 			return err
 		}
 	}

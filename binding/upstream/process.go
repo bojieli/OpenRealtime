@@ -28,13 +28,28 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		BackgroundResult: batch.Signalled(interaction.SignalBackgroundResult),
 		Parallel:         batch.Triage == eventloop.TriageParallel,
 	}
-	if !cause.Observation && !cause.ToolResult && !cause.BackgroundResult {
+	cause.Escalated = batch.Signalled(interaction.SignalEscalated) || runtime.takeEscalation()
+	if !cause.Observation && !cause.ToolResult && !cause.BackgroundResult && !cause.Escalated {
 		return nil
 	}
 	// Only the user's own speech opens a turn. The remote's voice is mirrored
 	// as evidence, and treating it as a new request would make the reasoner
 	// answer the voice model instead of the person.
-	if cause.Observation && !batchHasUserSpeech(batch) && !cause.ToolResult {
+	//
+	// Evidence that is not the user - a screen change, a typed field, a
+	// client's system message - does not open a turn either, but it is not
+	// dropped: it is what the voice should know without being asked, and it
+	// goes to the remote as context. This is the silent hand-off.
+	if cause.Observation && !batchHasUserSpeech(batch) && !cause.ToolResult && !cause.Escalated {
+		runtime.queueContext(observerEvidence(batch))
+		return nil
+	}
+	// A gated session mirrors every user turn and deliberates only on the
+	// ones the remote asked about. The remote is the fast turn; it answered
+	// "hello" by itself, and a reasoner answering it again is a second voice
+	// with a bill attached.
+	if runtime.config.delegationGated && cause.Observation && !cause.Escalated &&
+		!cause.ToolResult && !cause.BackgroundResult {
 		return nil
 	}
 	revision := runtime.latestRevision(batch)
@@ -46,6 +61,13 @@ func (runtime *runtime) Process(ctx context.Context, batch eventloop.Batch) erro
 		Cause: cause,
 	})
 	request := cognition.Request{SourceRevision: revision}
+	if len(plan) == 0 && cause.Escalated && !cause.Observation {
+		// The delegation landed in a batch of its own, after the transcript
+		// it refers to was already mirrored. The rollout plans nothing for a
+		// bare signal, and it is right to: nothing new arrived. But the
+		// request did, and the reasoner reads the trajectory, so it runs.
+		plan = []interaction.Step{{Kind: interaction.StepSlow, Reason: "the voice asked for help"}}
+	}
 	var failures []error
 	for _, step := range plan {
 		var err error
@@ -92,6 +114,37 @@ func (runtime *runtime) signal(eventType string) error {
 		Priority: eventloop.PriorityRoutine, Kind: eventloop.KindSignal,
 	})
 	return err
+}
+
+// takeEscalation consumes a delegation the mirror recorded, so a request that
+// arrived in a different batch from its transcript still starts the reasoner
+// exactly once.
+func (runtime *runtime) takeEscalation() bool {
+	runtime.remoteMu.Lock()
+	defer runtime.remoteMu.Unlock()
+	pending := runtime.escalationPending
+	runtime.escalationPending = false
+	return pending
+}
+
+// observerEvidence gathers what a batch of observations says, leaving out what
+// the mirror itself wrote. The remote's own words are evidence for the
+// reasoner, and pushing them back to the remote as something to know would be
+// telling the voice what it just said.
+func observerEvidence(batch eventloop.Batch) string {
+	var lines []string
+	for _, item := range batch.Items {
+		if item.Kind != trajectory.KindObservation || item.Observation == nil {
+			continue
+		}
+		if strings.HasPrefix(item.Observation.Observer, "remote") {
+			continue
+		}
+		if text := strings.TrimSpace(item.Content); text != "" {
+			lines = append(lines, text)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func batchHasUserSpeech(batch eventloop.Batch) bool {
@@ -163,7 +216,7 @@ func (runtime *runtime) handOffBySessionInstruction(ctx context.Context, answer 
 	// detector out would hand the floor back to the remote as a side effect of
 	// saying something.
 	if err := runtime.remote.Send(ctx, sessionUpdate(
-		base+"\n\n"+handoffDirective+answer, settings.ManualTurns, settings.Modalities)); err != nil {
+		base+"\n\n"+handoffDirective+answer, settings)); err != nil {
 		return err
 	}
 	runtime.stateMu.Lock()

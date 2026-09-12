@@ -36,6 +36,10 @@ type legacyRuntimeStatus struct {
 	VisualNarrator          string                       `json:"visual_narrator,omitempty"`
 	Speech                  string                       `json:"speech,omitempty"`
 	SpeechRevision          string                       `json:"speech_revision,omitempty"`
+	// Remote mirrors binding.Status so the pointer conversion above stays
+	// legal. The two archived records predate it and never carried one, and
+	// omitempty keeps their bytes byte-for-byte what they were.
+	Remote *binding.RemoteStatus `json:"remote,omitempty"`
 }
 
 type legacyRuntimeTranscript struct {

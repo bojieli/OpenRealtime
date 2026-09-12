@@ -26,6 +26,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
+	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/realtimeclient"
 	"github.com/bojieli/OpenRealtime/session"
 )
@@ -78,6 +79,89 @@ type Config struct {
 	// the tools it executes. Zero selects the default; negative disables the
 	// deadline, which only a harness driving results by hand should do.
 	ClientToolTimeout time.Duration
+
+	// Dialect names the wire contract the remote speaks, from the provider
+	// catalogue. Most of this binding is portable; the parts that are not are
+	// decided here rather than by probing what the connection happens to do.
+	Dialect string
+	// DelegationGating decides whether the reasoner runs on every user turn
+	// or only when the remote asks for help. Empty selects the dialect's
+	// default: gated on an endpoint that delegates, because there the voice
+	// answering by itself is the design and a reasoner answering "hello" is a
+	// cost; ungated everywhere else, because nothing there ever asks.
+	DelegationGating Gating
+	// IdleTimeout closes a session that has heard no user speech for this
+	// long. It exists because a full-duplex endpoint is billed by the second
+	// and kept alive by this binding's own silence frames: without a bound an
+	// abandoned tab is a running meter. Zero selects the dialect's default -
+	// fifteen minutes on GPT-Live, none elsewhere - and negative disables it.
+	IdleTimeout time.Duration
+	// ContextPushDebounce coalesces observer evidence bound for the remote,
+	// so a burst of screen changes becomes one summary of the latest state
+	// rather than a summary per change. Zero selects 400ms.
+	ContextPushDebounce time.Duration
+
+	// Observers are the video observers a session may run. The remote owns
+	// hearing; seeing is this side's, because no remote in the catalogue can
+	// be sent a frame, and what an observer narrates reaches the remote as
+	// context. Empty leaves video unsupported, as it always was.
+	Observers []perception.Factory
+	// DefaultObservers is the set a session runs when the client names none.
+	// Empty selects every configured observer.
+	DefaultObservers []string
+	// Greeting is an application instruction sent once the session has
+	// started, for a voice that should speak first. On GPT-Live it goes down
+	// the instruction channel with audio already running, which is the
+	// vendor's own recipe; on a Realtime endpoint it is context the first
+	// response reads.
+	Greeting string
+	// MaxSessions bounds concurrent sessions on this endpoint, so the
+	// vendor's own tier limit is met here with a reason rather than there
+	// with a refusal mid-conversation. Zero is unbounded.
+	MaxSessions int
+	// Extraction notices when the user sets a policy out loud and steers
+	// the remote with it. Nil leaves standing instructions to the remote.
+	Extraction interaction.Extractor
+	// Store asks the remote to keep a resumable recording of the session,
+	// on the endpoints that can. It is what makes a dropped connection
+	// recoverable by forking rather than starting cold.
+	Store bool
+	// AudioFormat is the wire format the remote is opened with, on the
+	// endpoints that offer more than one. Empty selects PCM.
+	AudioFormat string
+
+	delegationGated bool
+}
+
+// Gating is how the reasoner is triggered.
+type Gating string
+
+const (
+	// GatingAuto selects the dialect's default.
+	GatingAuto Gating = ""
+	// GatingOn runs the reasoner only when the remote delegates.
+	GatingOn Gating = "on"
+	// GatingOff runs the reasoner on every user turn.
+	GatingOff Gating = "off"
+)
+
+// DialectGPTLive names OpenAI's Live protocol, the one endpoint in the
+// catalogue that delegates. The string matches the provider catalogue's; it is
+// repeated here because the catalogue imports this package.
+const DialectGPTLive = "gpt-live"
+
+// ParseGating resolves a configured gating level.
+func ParseGating(value string) (Gating, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "auto":
+		return GatingAuto, nil
+	case "on", "delegation":
+		return GatingOn, nil
+	case "off", "always":
+		return GatingOff, nil
+	default:
+		return "", fmt.Errorf("delegation gating must be auto, on, or off, got %q", value)
+	}
 }
 
 // Handoff is how a completed answer reaches the remote's voice.
@@ -125,7 +209,13 @@ type RemoteConn interface {
 // Binding connects to a remote Realtime endpoint.
 type Binding struct {
 	config Config
+	// slots holds one token per allowed concurrent session.
+	slots chan struct{}
 }
+
+// ErrAtCapacity reports a session refused because the endpoint's concurrent
+// session bound has been reached.
+var ErrAtCapacity = errors.New("upstream endpoint is at its concurrent session bound")
 
 // New validates the configuration.
 func New(config Config) (*Binding, error) {
@@ -163,10 +253,73 @@ func New(config Config) (*Binding, error) {
 	default:
 		return nil, errors.New("upstream floor must be owned by the engine or the remote")
 	}
+	live := config.Dialect == DialectGPTLive
+	if live && config.FloorOwner == binding.OwnerEngine {
+		// Live has no input commit and no detector to switch off. An engine
+		// floor would be declared, forwarded as nothing, and honoured by
+		// nobody - refusing is the only honest answer.
+		return nil, errors.New("GPT-Live owns the floor: it has no turn commit for the engine to drive")
+	}
+	switch config.DelegationGating {
+	case GatingAuto:
+		config.delegationGated = live
+	case GatingOn:
+		config.delegationGated = true
+	case GatingOff:
+		config.delegationGated = false
+	default:
+		return nil, fmt.Errorf("unsupported delegation gating %q", config.DelegationGating)
+	}
+	switch {
+	case config.IdleTimeout < 0:
+		config.IdleTimeout = 0
+	case config.IdleTimeout == 0 && live:
+		config.IdleTimeout = 15 * time.Minute
+	}
+	if config.ContextPushDebounce <= 0 {
+		config.ContextPushDebounce = 400 * time.Millisecond
+	}
+	for _, factory := range config.Observers {
+		if err := factory.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	config.Greeting = strings.TrimSpace(config.Greeting)
 	if config.Policies.Validate() != nil {
 		config.Policies = defaultPolicies()
 	}
-	return &Binding{config: config}, nil
+	if config.Extraction != nil {
+		config.Policies.Extraction = config.Extraction
+	}
+	bind := &Binding{config: config}
+	if config.MaxSessions > 0 {
+		bind.slots = make(chan struct{}, config.MaxSessions)
+	}
+	return bind, nil
+}
+
+// acquire takes a session slot, or refuses.
+func (bind *Binding) acquire() error {
+	if bind.slots == nil {
+		return nil
+	}
+	select {
+	case bind.slots <- struct{}{}:
+		return nil
+	default:
+		return fmt.Errorf("%w (%d)", ErrAtCapacity, cap(bind.slots))
+	}
+}
+
+// release returns a session slot.
+func (bind *Binding) release() {
+	if bind.slots == nil {
+		return
+	}
+	select {
+	case <-bind.slots:
+	default:
+	}
 }
 
 func defaultPolicies() interaction.Policies {
@@ -202,11 +355,23 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	// The remote owns the voice stack, and this binding does not forward a
 	// voice to it. Neither field can be filled in honestly: the session cannot
 	// choose, and the default belongs to the provider rather than to us.
+	var observers []string
+	for _, factory := range bind.config.Observers {
+		observers = append(observers, factory.Name)
+	}
 	return binding.Capabilities{
 		Observations: true, FastSlow: true,
-		// The remote runs the floor, and it speaks this protocol: a client
-		// taking the floor is forwarded rather than interpreted.
-		ManualTurns: true,
+		// Seeing is this side's. A frame never goes to the remote; it goes to
+		// an observer configured here, and what the observer says reaches the
+		// remote as context. So video is supported exactly when an observer
+		// is, and the names are the ones a client may select from.
+		Video: len(bind.config.Observers) > 0, Observers: observers,
+		// The remote runs the floor, and a Realtime endpoint speaks this
+		// protocol: a client taking the floor is forwarded rather than
+		// interpreted. Live has nothing to forward it to - no commit, no
+		// detector - so there the answer is no, and a client told otherwise
+		// would be talking over an agent that never agreed to listen.
+		ManualTurns: bind.config.Dialect != DialectGPTLive,
 		Stack: binding.StackCapabilities{
 			AudioInput: true, AudioOutput: true, TurnGeneration: true,
 			TextInjection: true,
@@ -216,7 +381,15 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 
 // Start opens a session against the remote endpoint.
 func (bind *Binding) Start(ctx context.Context, options binding.Options) (binding.Runtime, error) {
-	return newRuntime(ctx, bind, options)
+	if err := bind.acquire(); err != nil {
+		return nil, err
+	}
+	runtime, err := newRuntime(ctx, bind, options)
+	if err != nil {
+		bind.release()
+		return nil, err
+	}
+	return runtime, nil
 }
 
 var _ binding.Binding = (*Binding)(nil)

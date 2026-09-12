@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bojieli/OpenRealtime/adapters/geminilive"
+	"github.com/bojieli/OpenRealtime/adapters/gptlive"
 	"github.com/bojieli/OpenRealtime/binding/upstream"
 )
 
@@ -102,6 +103,35 @@ var upstreamCatalog = []Upstream{
 		// The handshake succeeds and the credential is evaluated; the account
 		// this was checked from has no credit, so no turn has been run.
 		Verified: VerifiedReachable,
+	},
+	{
+		Common: Common{
+			Name: "openai-live", Aliases: []string{"gpt-live", "live"},
+			Label: "OpenAI GPT-Live", Dialect: DialectGPTLive,
+			BaseURL: gptlive.DefaultURL, Auth: AuthBearer,
+			KeyEnv: []string{"OPENAI_API_KEY"},
+			Notes: "Same vendor as Realtime, different protocol: full duplex, no turn " +
+				"boundaries, and a delegation seam this binding's reasoner fills. " +
+				"Translated into a Realtime dialect.",
+		},
+		Model: gptlive.DefaultModel,
+		// Live has no conversation items and no writable session instruction.
+		// The translator turns a hand-off into a commentary append against the
+		// delegation the endpoint opened, which is the native equivalent and
+		// the channel the vendor built for returning backend results - so the
+		// strategy declared here is the portable one, as it is for Gemini.
+		Handoff: upstream.HandoffConversationItem,
+		// A real session completed a turn: the endpoint started the session,
+		// accepted the hand-off as a commentary append, spoke it, and its
+		// events arrived under the names this catalogue expects.
+		//
+		// Two things only the real endpoint could teach are in the adapter
+		// because of that run, and both fail silently. Live runs on an audio
+		// clock, so a session with no input frames arriving never injects an
+		// append, never speaks and never reports an error; and its output is a
+		// continuous carrier rather than a per-response burst, so an utterance
+		// bounded by "audio stopped" never ends.
+		Verified: VerifiedLiveTurn,
 	},
 	{
 		Common: Common{
@@ -209,6 +239,14 @@ type UpstreamSettings struct {
 	Dial upstream.Dialer
 }
 
+// gptLiveDialer translates OpenAI's Live API into the Realtime protocol.
+func gptLiveDialer(ctx context.Context, config upstream.Config) (upstream.RemoteConn, error) {
+	return gptlive.Dial(ctx, gptlive.Config{
+		URL: config.URL, APIKey: config.Token, Model: config.Model, Header: config.Header,
+		Store: config.Store, SessionFormat: config.AudioFormat,
+	})
+}
+
 // geminiDialer translates Google's Live API into the Realtime protocol.
 func geminiDialer(ctx context.Context, config upstream.Config) (upstream.RemoteConn, error) {
 	return geminilive.Dial(ctx, geminilive.Config{
@@ -256,8 +294,11 @@ func ResolveUpstream(request UpstreamRequest) (UpstreamSettings, error) {
 		Dialect: entry.Dialect, URL: endpoint, Model: model, Token: key,
 		Header: header, EventAliases: maps.Clone(entry.EventAliases), Handoff: entry.Handoff,
 	}
-	if entry.Dialect == DialectGeminiLive {
+	switch entry.Dialect {
+	case DialectGeminiLive:
 		settings.Dial = geminiDialer
+	case DialectGPTLive:
+		settings.Dial = gptLiveDialer
 	}
 	// A vendor that reads the credential from somewhere other than the
 	// bearer header gets it put there instead, and the token is cleared so the

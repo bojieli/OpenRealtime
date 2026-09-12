@@ -171,3 +171,45 @@ func missingPiece(entry providers.Upstream) string {
 	}
 	return "model"
 }
+
+// GPT-Live shares a vendor and a credential with the Realtime API and not its
+// protocol, so the catalogue has to route it through a translator. Resolving it
+// to a bare Realtime client would dial the right host with the wrong dialect.
+func TestGPTLiveResolvesThroughItsTranslator(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai-secret")
+	for _, name := range []string{"openai-live", "gpt-live", "live"} {
+		settings, err := providers.ResolveUpstream(providers.UpstreamRequest{Provider: name})
+		if err != nil {
+			t.Fatalf("resolve %q: %v", name, err)
+		}
+		if settings.Dial == nil {
+			t.Errorf("upstream %q resolved without a translator, so it would be "+
+				"dialled as if it spoke the Realtime protocol", name)
+		}
+		if settings.Token != "openai-secret" {
+			t.Errorf("upstream %q carried token %q", name, settings.Token)
+		}
+		// The Live endpoint documents that it takes no query parameters: the
+		// model travels inside session.start. A model appended here would be
+		// the one difference from every other entry that is easy to miss.
+		if strings.Contains(settings.URL, "?") {
+			t.Errorf("upstream %q put query parameters on a Live URL: %q", name, settings.URL)
+		}
+		if settings.Model == "" {
+			t.Errorf("upstream %q resolved without a model to send in session.start", name)
+		}
+	}
+}
+
+// The Realtime entry must not pick up the translator, which would be the same
+// mistake in the other direction and is easy to make in a switch.
+func TestOpenAIRealtimeIsStillDialledDirectly(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "openai-secret")
+	settings, err := providers.ResolveUpstream(providers.UpstreamRequest{Provider: "openai"})
+	if err != nil {
+		t.Fatalf("resolve openai: %v", err)
+	}
+	if settings.Dial != nil {
+		t.Error("the Realtime endpoint resolved to a translator; it speaks the protocol itself")
+	}
+}

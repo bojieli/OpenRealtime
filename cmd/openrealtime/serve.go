@@ -114,10 +114,16 @@ type serveOptions struct {
 	ttsModel    string
 	ttsVoice    string
 
-	upstreamProvider string
-	upstreamURL      string
-	upstreamModel    string
-	upstreamTokenEnv string
+	upstreamProvider    string
+	upstreamURL         string
+	upstreamModel       string
+	upstreamTokenEnv    string
+	upstreamGating      string
+	upstreamIdleTimeout time.Duration
+	upstreamStore       bool
+	upstreamAudioFormat string
+	upstreamGreeting    string
+	upstreamMaxSessions int
 
 	observers      string
 	components     string
@@ -331,6 +337,18 @@ func runServe(arguments []string, output io.Writer) error {
 		"remote realtime endpoint URL; unset selects the provider's own")
 	flags.StringVar(&options.upstreamModel, "upstream-model", "",
 		"remote model identity; unset selects the provider's default")
+	flags.StringVar(&options.upstreamGating, "upstream-delegation-gating", "auto",
+		"when the background reasoner runs behind a realtime endpoint: auto (only when the endpoint delegates, on GPT-Live), on, or off (every user turn)")
+	flags.DurationVar(&options.upstreamIdleTimeout, "upstream-idle-timeout", 0,
+		"close an upstream session that has heard no user speech for this long; 0 selects the endpoint's default (15m on GPT-Live, none elsewhere), negative disables")
+	flags.BoolVar(&options.upstreamStore, "upstream-store", false,
+		"ask the realtime endpoint to keep a resumable recording of each session, so a dropped connection is forked rather than started cold (GPT-Live)")
+	flags.StringVar(&options.upstreamAudioFormat, "upstream-audio-format", "pcm",
+		"wire audio format for the realtime endpoint: pcm, pcmu (G.711 µ-law), or pcma (G.711 A-law); the G.711 laws are for a telephone leg (GPT-Live)")
+	flags.StringVar(&options.upstreamGreeting, "upstream-greeting", "",
+		"an instruction sent once the upstream session has started, for a voice that should speak first")
+	flags.IntVar(&options.upstreamMaxSessions, "upstream-max-sessions", 0,
+		"bound concurrent upstream sessions, so the vendor's tier limit is met here with a reason; 0 is unbounded")
 	flags.StringVar(&options.upstreamTokenEnv, "upstream-token-env", "",
 		"environment variable holding the remote credential; "+
 			"empty reads OPENREALTIME_UPSTREAM_API_KEY and then the provider's conventional variable")
@@ -706,7 +724,7 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 		recogniser = asrbuffer.NewAccumulator()
 		bind, err = buildCascade(options, policies, governor, recogniser)
 	case "upstream":
-		bind, err = buildUpstream(options)
+		bind, err = buildUpstream(options, policies, governor)
 	case "omni":
 		bind, err = buildSidecarBinding(options, "omni", interaction.Policies{}, nil)
 	case "omni+text-policy":
@@ -1356,10 +1374,19 @@ func buildCascade(
 	})
 }
 
-func buildUpstream(options serveOptions) (binding.Binding, error) {
+func buildUpstream(
+	options serveOptions, policies interaction.Policies, governor *admission.Governor,
+) (binding.Binding, error) {
 	slow, err := buildSlow(options)
 	if err != nil {
 		return nil, fmt.Errorf("configure the slow provider: %w", err)
+	}
+	// Seeing is this side's whichever endpoint owns hearing. The same video
+	// observers the cascade runs are offered here, and a session that never
+	// selects one costs nothing.
+	observers, _, err := buildObservers(options, governor)
+	if err != nil {
+		return nil, fmt.Errorf("configure the video observers: %w", err)
 	}
 	settings, err := providers.ResolveUpstream(providers.UpstreamRequest{
 		Provider: options.upstreamProvider,
@@ -1370,12 +1397,21 @@ func buildUpstream(options serveOptions) (binding.Binding, error) {
 	if err != nil {
 		return nil, err
 	}
+	gating, err := upstream.ParseGating(options.upstreamGating)
+	if err != nil {
+		return nil, err
+	}
 	return upstream.New(upstream.Config{
 		URL: settings.URL, Model: settings.Model, Token: settings.Token,
 		Header: settings.Header, EventAliases: settings.EventAliases,
 		Handoff: settings.Handoff, Dial: settings.Dial, Slow: slow,
 		SlowMaxTokens: options.slowTokens, AgentInstruction: options.instruction,
 		ClientToolTimeout: options.clientToolTimeout,
+		Dialect:           string(settings.Dialect), DelegationGating: gating,
+		IdleTimeout: options.upstreamIdleTimeout,
+		Observers:   observers, Greeting: options.upstreamGreeting,
+		MaxSessions: options.upstreamMaxSessions, Extraction: policies.Extraction,
+		Store: options.upstreamStore, AudioFormat: options.upstreamAudioFormat,
 	})
 }
 
