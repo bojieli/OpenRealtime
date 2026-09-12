@@ -1094,7 +1094,15 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 	}
 	seenVideos, textOrder, order := 0, 0, 0
 	var injectionFrame sidecar.Message
-	deadline := time.After(5 * time.Second)
+	// Thirty seconds bounds "these never arrive", not how quickly they do. What
+	// is under test is that three video frames and the retained background
+	// context reach the foreground at all, and in the right order; the graph's
+	// latency is what the measurement suites report, and asserting it here
+	// would be asserting it on whatever machine happened to run the gate. Five
+	// seconds was tight enough to lose that distinction on a loaded CI runner,
+	// where this arrived one frame short and failed as though the handoff were
+	// broken.
+	deadline := time.After(30 * time.Second)
 	for seenVideos < 3 || injectionFrame.Envelope == nil {
 		select {
 		case message := <-external.sent:

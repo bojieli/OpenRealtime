@@ -7,7 +7,16 @@ import { setTimeout as sleep } from "node:timers/promises";
 const PAGE_URL = process.argv[2];
 const PORT = Number(process.env.CDP_PORT ?? 19312);
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-client-replacement-"));
-const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
+const chromium = // A fresh profile makes every launch a first run, so Chromium spends real time
+// on GCM registration, component updates, and PKI metadata before it settles.
+// Every page these drivers open is served from a loopback listener in the test
+// process, so a browser reaching the network is doing work nothing asked for -
+// and on a CI runner that work is what the waits below end up queued behind.
+// bench/meeting and bench/realtimecu already launch Chromium this way.
+spawn(process.env.CHROMIUM ?? "chromium", [
+  "--disable-background-networking", "--disable-component-update",
+  "--disable-default-apps", "--no-first-run", "--disable-sync",
+  "--disable-client-side-phishing-detection",
   "--headless=new", `--remote-debugging-port=${PORT}`, "--no-sandbox", "--disable-gpu",
   `--user-data-dir=${profile}`, "about:blank",
 ], { stdio: ["ignore", "pipe", "pipe"] });
