@@ -327,6 +327,9 @@ const (
 	// semanticHoldGrace is how long a hold waits for the output lifecycle to
 	// acknowledge the generation before concluding it was refused downstream.
 	semanticHoldGrace = 2 * time.Second
+	// semanticHoldPoll is how often a held request is looked at again when
+	// only time can lift the hold.
+	semanticHoldPoll = 250 * time.Millisecond
 	// semanticHoldTimeout bounds a hold whose generation never reports back.
 	semanticHoldTimeout = 20 * time.Second
 	// semanticStepTextLimit bounds the words shown per step; the end of a
@@ -607,6 +610,29 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 		receivers.Wait()
 		runner.decisions.Wait()
 	}()
+	// A hold lifts by time as well as by evidence - the grace after a
+	// generation that left nothing in the trajectory, the timeout - and
+	// nothing else may arrive to occasion the look. A request held past
+	// its grace was found waiting for the next input, which in a quiet
+	// room is never: the recovery turn after a failed generation stalled
+	// until the client gave up.
+	var wake *time.Timer
+	var wakeC <-chan time.Time
+	armWake := func() {
+		if runner.hold != nil && runner.active == nil && len(runner.pending) > 0 {
+			if wake == nil {
+				wake = time.NewTimer(semanticHoldPoll)
+			} else {
+				wake.Reset(semanticHoldPoll)
+			}
+			wakeC = wake.C
+			return
+		}
+		if wake != nil {
+			wake.Stop()
+		}
+		wakeC = nil
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -633,7 +659,13 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 			if err := runner.acceptInput(ctx, input, results); err != nil {
 				return err
 			}
+		case <-wakeC:
+			wakeC = nil
+			if err := runner.startReadyDecision(ctx, results); err != nil {
+				return err
+			}
 		}
+		armWake()
 	}
 }
 

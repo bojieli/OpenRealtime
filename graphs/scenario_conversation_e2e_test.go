@@ -1140,6 +1140,12 @@ func (client *scenarioEndpointWireClient) assertBalancedResponseLifecycle(t test
 func (client *scenarioEndpointWireClient) eventTypes() string {
 	types := make([]string, 0, len(client.received))
 	for _, message := range client.received {
+		// An error the flow allowed through is the one event worth reading
+		// when the flow then stalls; the type alone says nothing.
+		if message["type"] == "error" {
+			types = append(types, fmt.Sprintf("error(%v)", message["error"]))
+			continue
+		}
 		types = append(types, fmt.Sprint(message["type"]))
 	}
 	return strings.Join(types, ",")

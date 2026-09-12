@@ -2186,13 +2186,22 @@ func mountSemanticAdmissionRegisteredWithMediaAndShutdown(
 	if err := policyelements.RegisterFactories(registry); err != nil {
 		return nil, err
 	}
-	var clock atomic.Uint64
+	now := semanticTestNow
+	if now == nil {
+		var clock atomic.Uint64
+		now = func() uint64 { return clock.Add(1) }
+	}
 	return graphruntime.Mount(context.Background(), graphruntime.Config{
 		Graph: compilePolicySource(t, "semantic-admission-test.ortg", []byte(semanticAdmissionGraph)), Registry: registry,
 		Services: services, Values: map[string]json.RawMessage{"admission": config},
-		Now: func() uint64 { return clock.Add(1) }, ShutdownTimeout: shutdownTimeout,
+		Now: now, ShutdownTimeout: shutdownTimeout,
 	})
 }
+
+// semanticTestNow, when set, is the clock a mounted policy reads instead of
+// the counting clock. A test about time - a hold that lifts when a grace
+// period passes - sets it to wall time and clears it afterwards.
+var semanticTestNow func() uint64
 
 func assertNoSemanticGeneration(t *testing.T, harness policyHarness) {
 	t.Helper()
