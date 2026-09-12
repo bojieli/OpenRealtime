@@ -327,12 +327,30 @@ handover is invisible to the caller. Once a conversation exists the exchange is
 refused instead, because the conversation would go with it. After the fix, four
 tau2 sessions reached the endpoint with no rejection.
 
-The rest of tau-voice does not run in this environment, and the reason is
-worth recording rather than leaving as a failed suite: the simulated caller
-needs a voice, and tau2's synthesis client is built for a local speech service
-(Fish Speech 1.5 on port 8081, a GPU model) and sends no bearer token, so a
-hosted endpoint answers 401. The agent side is proven; the caller side needs
-that service running.
+Two more defects followed from the same suite. **A Live voice was never told
+to delegate.** The instruction this binding gives a remote said a reasoner
+"will hand you completed answers to say" - true of a Realtime endpoint, which
+answers for itself while the reasoner runs on every turn, and useless to
+GPT-Live, which reasons about nothing and asks by delegating. A voice never
+told to delegate never asks, so the reasoner never runs and the agent is mute
+on any request needing a lookup. The instruction is now dialect-aware. And **a
+Live session could not choose its voice**: the binding declared the voice
+unselectable, so the gateway refused the field outright, and a client that
+names its voice in every `session.update` - the ordinary shape of a Realtime
+client - had its configuration answered with an error. GPT-Live names its voice
+in `session.start` and this binding forwards it, so it is selectable now.
+
+With those fixed the suite runs end to end: sessions open, the domain policy is
+accepted, sixteen tools are declared, tau2 records `mode: full_duplex` and a
+real sixty-eight-second conversation. What it does not do here is succeed, and
+the reason is environmental rather than integration. The simulated caller's
+voice comes from the local Fish synthesiser, which answers `/v1/audio/speech`
+with **44.1 kHz WAV** while the Realtime wire is **24 kHz raw PCM with no
+container**. The endpoint therefore receives a RIFF header as samples followed
+by speech at roughly 1.84x too slow, transcribes nothing, delegates nothing,
+and stays silent - with no error at any layer, which is what makes it worth
+writing down. Reconciling that rate is what the suite needs next; the agent
+half of it is proven.
 
 ## 4c. Steering, which neither benchmark covers
 

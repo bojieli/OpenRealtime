@@ -374,3 +374,75 @@ func TestBargeInHoldsTheAudioTheUserWouldHear(t *testing.T) {
 		return sink.audioFrames > heardDuring
 	}, "after the interrupted utterance ends the remote must be audible again")
 }
+
+// TestALiveVoiceIsToldToDelegate is the bug tau2-bench found, and the reason
+// the agent was mute.
+//
+// A Realtime endpoint answers for itself and this binding's reasoner runs on
+// every turn, so the voice only needs to know that answers will arrive.
+// GPT-Live reasons about nothing: it asks for help by delegating, and the
+// reasoner runs when it does. A voice never told to delegate never asks, so
+// nothing runs and nothing is said - measured on tau2-bench as sixty-eight
+// seconds of silence and no tool call, after a caller gave a complete request.
+func TestALiveVoiceIsToldToDelegate(t *testing.T) {
+	remote := newFakeRemote(t)
+	startLive(t, remote, &scriptedSlow{}, nil)
+	waitFor(t, func() bool { return len(sentOfType(remote, "session.update")) > 0 },
+		"the session declaration must reach the remote")
+	declared, _ := json.Marshal(sentOfType(remote, "session.update")[0])
+	instruction := strings.ToLower(string(declared))
+	if !strings.Contains(instruction, "delegate") {
+		t.Fatalf("a GPT-Live voice must be told to delegate, or it never asks and the "+
+			"agent is silent: %s", truncateInstruction(string(declared)))
+	}
+	if !strings.Contains(instruction, "cannot look anything up") {
+		t.Errorf("the voice must be told it cannot look things up itself: %s",
+			truncateInstruction(string(declared)))
+	}
+}
+
+// TestARealtimeVoiceIsNotToldToDelegate keeps the other arrangement intact: a
+// Realtime endpoint has nothing to delegate to and answers for itself.
+func TestARealtimeVoiceIsNotToldToDelegate(t *testing.T) {
+	remote := newFakeRemote(t)
+	start(t, remote, &scriptedSlow{}, nil)
+	waitFor(t, func() bool { return len(sentOfType(remote, "session.update")) > 0 },
+		"the session declaration must reach the remote")
+	declared, _ := json.Marshal(sentOfType(remote, "session.update")[0])
+	if strings.Contains(strings.ToLower(string(declared)), "delegate") {
+		t.Errorf("a Realtime endpoint has nothing to delegate to: %s",
+			truncateInstruction(string(declared)))
+	}
+}
+
+func truncateInstruction(s string) string {
+	if len(s) <= 300 {
+		return s
+	}
+	return s[:300] + "…"
+}
+
+// TestALiveSessionMayChooseItsVoice checks the capability the gateway reads
+// before it will pass a voice through. GPT-Live names its voice in
+// session.start and this binding forwards the client's choice; declaring the
+// voice unselectable made the gateway refuse the field with an error, which is
+// what a client that repeats its voice in every session.update receives.
+func TestALiveSessionMayChooseItsVoice(t *testing.T) {
+	remote := newFakeRemote(t)
+	live, err := upstream.New(upstream.Config{
+		URL: remote.url(), Slow: &scriptedSlow{}, Dialect: upstream.DialectGPTLive,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if !live.Capabilities().Voice.Selectable {
+		t.Error("GPT-Live names its voice at session start; a session must be able to choose it")
+	}
+	realtime, err := upstream.New(upstream.Config{URL: remote.url(), Slow: &scriptedSlow{}})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if realtime.Capabilities().Voice.Selectable {
+		t.Error("a Realtime endpoint's voice is not this binding's to promise")
+	}
+}

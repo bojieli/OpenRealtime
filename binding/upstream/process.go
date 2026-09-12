@@ -218,7 +218,7 @@ func (runtime *runtime) handOff(ctx context.Context) error {
 // this handoff asked for has completed.
 func (runtime *runtime) handOffBySessionInstruction(ctx context.Context, answer string) error {
 	settings := runtime.Settings()
-	base := remoteInstruction(settings.Instruction)
+	base := remoteInstruction(settings.Instruction, runtime.isLive())
 	// The declaration travels with every session.update, not just the first.
 	// This one is borrowing the instruction to carry an answer; leaving the
 	// detector out would hand the floor back to the remote as a side effect of

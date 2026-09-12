@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- A GPT-Live voice was never told to delegate, so behind this binding it was
+  mute on anything needing a lookup. The instruction given to a remote said a
+  background reasoner "will hand you completed answers to say" - true of a
+  Realtime endpoint, which answers for itself while the reasoner runs on every
+  turn, and useless to GPT-Live, which reasons about nothing and asks for help
+  by delegating. This binding runs the reasoner when it delegates; a voice that
+  never asks leaves it never running. Measured against tau2-bench: the caller
+  gave a complete request, the agent said "Hi! How can I help you today?" and
+  nothing else for sixty-eight seconds, and no tool was ever called. The
+  instruction is dialect-aware now, and says plainly that the voice cannot look
+  anything up itself.
+
+  A Live session can also choose its voice now. The binding declared the voice
+  unselectable, so the gateway refused `session.audio.output.voice` outright
+  and a client that names its voice in every session.update - the ordinary
+  shape of a Realtime client - had its configuration answered with an error.
+  GPT-Live names the voice in session.start and this binding forwards it.
+
 - A client that configured itself after connecting lost its instructions on
   GPT-Live. The binding declares the remote session as soon as it connects, so
   its own composed instruction opened it; the caller's real system prompt

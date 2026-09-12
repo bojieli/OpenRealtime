@@ -394,6 +394,13 @@ func (bind *Binding) Capabilities() binding.Capabilities {
 	}
 	return binding.Capabilities{
 		Observations: true, FastSlow: true,
+		// GPT-Live names its voice in session.start and this binding forwards
+		// what the client chose, so a session may select one. Declaring
+		// otherwise made the gateway refuse the field outright, which is how a
+		// client that names a voice in every session.update - the ordinary
+		// shape of a Realtime client, and what tau2-bench does - had its
+		// configuration answered with an error it did not expect.
+		Voice: binding.VoiceControl{Selectable: bind.config.Dialect == DialectGPTLive},
 		// Seeing is this side's. A frame never goes to the remote; it goes to
 		// an observer configured here, and what the observer says reaches the
 		// remote as context. So video is supported exactly when an observer

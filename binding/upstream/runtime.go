@@ -541,7 +541,7 @@ func (runtime *runtime) resumeAudio() {
 func (runtime *runtime) configureRemote() error {
 	settings := runtime.Settings()
 	return runtime.remote.Send(runtime.ctx, sessionUpdate(
-		remoteInstruction(settings.Instruction), settings))
+		remoteInstruction(settings.Instruction, runtime.isLive()), settings))
 }
 
 // sessionUpdate builds the session declaration. It is shared with the
@@ -593,10 +593,32 @@ func dialRealtime(ctx context.Context, config Config) (RemoteConn, error) {
 	})
 }
 
-func remoteInstruction(agent string) string {
+// remoteInstruction is what the remote voice is told about the arrangement it
+// is in. It differs by dialect because the arrangement differs.
+//
+// A Realtime endpoint answers for itself and the reasoner runs on every turn,
+// so the voice only needs to know that answers will arrive. GPT-Live does not
+// work that way: it reasons about nothing and asks for help by delegating, and
+// this binding runs the reasoner when it does. A voice never told to delegate
+// therefore never asks, the reasoner never runs, and the agent is silent on
+// any request needing a lookup - measured against tau2-bench, where the caller
+// gave a complete request, the agent said "Hi! How can I help you today?" and
+// nothing else for sixty-eight seconds, and no tool was ever called.
+//
+// The vendor says as much: a Live prompt is for conversation style and when to
+// delegate. Saying only the first half is what produced a mute agent.
+func remoteInstruction(agent string, live bool) string {
 	instruction := "You are the voice of this agent. Answer briefly and naturally. " +
 		"A background reasoner shares this conversation and will hand you completed answers to say; " +
 		"when one arrives, say it and add nothing to it."
+	if live {
+		instruction = "You are the voice of this agent. Answer briefly and naturally. " +
+			"You cannot look anything up, read any record, or carry out any action yourself: " +
+			"a backend does all of that. Whenever the caller asks for something that needs " +
+			"information you do not already have, or any action taken, delegate it to the " +
+			"backend straight away and tell the caller you are checking. An answer will come " +
+			"back; say it and add nothing to it. Never guess a fact you were not given."
+	}
 	return cognition.Compose(agent, instruction)
 }
 

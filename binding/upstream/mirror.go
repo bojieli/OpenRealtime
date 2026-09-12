@@ -407,7 +407,7 @@ func (runtime *runtime) finishRemoteResponse() error {
 	// remote would keep being told to repeat it.
 	if restore {
 		settings := runtime.Settings()
-		base := remoteInstruction(settings.Instruction)
+		base := remoteInstruction(settings.Instruction, runtime.isLive())
 		if err := runtime.remote.Send(runtime.ctx,
 			sessionUpdate(base, settings)); err != nil {
 			return err
