@@ -293,12 +293,23 @@ type semanticStep struct {
 type semanticHold struct {
 	sinceNS uint64
 	// startedAtGrant and finishedAtGrant are the output lifecycle's
-	// generation counters when the voice was admitted. The hold lifts once a
-	// generation started after the grant and every started generation has
-	// finished - counts that survive the state lane coalescing away the
-	// snapshots in between.
+	// generation counters when the voice was admitted. The generation is
+	// over once a generation started after the grant and every started
+	// generation has finished - counts that survive the state lane
+	// coalescing away the snapshots in between.
 	startedAtGrant  uint64
 	finishedAtGrant uint64
+	// assistantAtGrant is how many assistant items the trajectory held when
+	// the voice was admitted. The hold lifts only once the trajectory shows
+	// the answer - one more assistant item - or a newer state after the
+	// finish, because the lifecycle's "finished" reaches this element on a
+	// different lane from the trajectory's commit of the answer, and a step
+	// decided in between was compiled without the number the model had just
+	// said and said it again.
+	assistantAtGrant int
+	finished         bool
+	finishedNS       uint64
+	versionAtFinish  uint64
 }
 
 const (
@@ -327,24 +338,44 @@ func (runner *semanticAdmissionRunner) holding() bool {
 		runner.state.HoldTimeouts++
 		runner.hold = nil
 		return false
-	case runner.agentOutput.GenerationsStarted == runner.hold.startedAtGrant && elapsed > semanticHoldGrace:
+	case !runner.hold.finished && runner.agentOutput.GenerationsStarted == runner.hold.startedAtGrant &&
+		elapsed > semanticHoldGrace:
 		// Nothing ever reached the model: the grant was refused downstream.
+		runner.hold = nil
+		return false
+	case runner.hold.finished && (semanticAssistantItems(runner.latest.snapshot) > runner.hold.assistantAtGrant ||
+		runner.latest.snapshot.Version > runner.hold.versionAtFinish ||
+		time.Duration(now-runner.hold.finishedNS) > semanticHoldGrace):
+		// The answer is in the trajectory (or nothing will ever be).
 		runner.hold = nil
 		return false
 	}
 	return true
 }
 
-// releaseHoldIfAnswered lifts the hold once the lifecycle reports the
-// admitted generation over.
-func (runner *semanticAdmissionRunner) releaseHoldIfAnswered(output coreinteraction.AgentOutput) {
-	if runner.hold == nil {
+// noteHoldFinished records that the lifecycle reports the admitted generation
+// over; the hold itself lifts when the trajectory has the answer.
+func (runner *semanticAdmissionRunner) noteHoldFinished(output coreinteraction.AgentOutput) {
+	if runner.hold == nil || runner.hold.finished {
 		return
 	}
 	if output.GenerationsStarted > runner.hold.startedAtGrant &&
 		output.GenerationsFinished >= output.GenerationsStarted {
-		runner.hold = nil
+		runner.hold.finished = true
+		runner.hold.finishedNS = runner.clock.NowNS()
+		runner.hold.versionAtFinish = runner.latest.snapshot.Version
 	}
+}
+
+// semanticAssistantItems counts what the agent has said or prepared.
+func semanticAssistantItems(snapshot trajectory.Snapshot) int {
+	count := 0
+	for _, item := range snapshot.Items {
+		if item.Kind == trajectory.KindAssistant {
+			count++
+		}
+	}
+	return count
 }
 
 // recordStep appends one decided transcript event to the history.
@@ -670,7 +701,7 @@ func (runner *semanticAdmissionRunner) acceptAgentOutput(
 		return nil
 	}
 	runner.agentOutput = cloneSemanticAgentOutput(output)
-	runner.releaseHoldIfAnswered(output)
+	runner.noteHoldFinished(output)
 	runner.noteAgentSaying(output)
 	return nil
 }
@@ -1912,6 +1943,7 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	runner.hold = &semanticHold{
 		sinceNS:        runner.clock.NowNS(),
 		startedAtGrant: runner.agentOutput.GenerationsStarted, finishedAtGrant: runner.agentOutput.GenerationsFinished,
+		assistantAtGrant: semanticAssistantItems(runner.latest.snapshot),
 	}
 	if stepIndex >= 0 {
 		runner.steps[stepIndex].spoke = true

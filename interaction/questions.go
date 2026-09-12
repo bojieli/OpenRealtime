@@ -37,9 +37,11 @@ var StopQuestion = StepQuestion{Name: QuestionStop, Text: "Do the new words show
 // OccurrenceQuestion is asked on every step: has a standing instruction just
 // come due in the new words?
 var OccurrenceQuestion = StepQuestion{Name: QuestionOccurrence, Text: "Look at \"new words since the last " +
-	"step\". Do they contain a NEW occurrence of what a standing instruction watches for (for example a newly " +
-	"mentioned animal for a running count) that is not already covered by what was answered in this utterance " +
-	"or by a recent step that spoke?"}
+	"step\". Do they contain a NEW, specific occurrence of what a standing instruction listed above watches " +
+	"for - one named or clearly identified there (a newly mentioned animal for a running count; a phrase like " +
+	"\"the open models\" or \"those animals\" names no specific one) - that is not already covered by what " +
+	"was answered in this utterance or by a recent step that spoke? If no standing instruction is listed, " +
+	"answer no."}
 
 // RequestQuestion is asked when the person has stopped and nothing came due:
 // is there something to answer?

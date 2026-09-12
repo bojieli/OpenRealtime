@@ -300,6 +300,7 @@ type standingScriptGenerator struct {
 	counting     string
 	restricting  string
 	scope        string
+	lift         string
 	calls        []standingGeneratorCall
 }
 
@@ -325,6 +326,11 @@ func (generator *standingScriptGenerator) Generate(
 		return generator.restricting, nil
 	case interaction.ScopeInstruction:
 		return generator.scope, nil
+	case interaction.LiftInstruction:
+		if generator.lift == "" {
+			return "no", nil
+		}
+		return generator.lift, nil
 	default:
 		return "", errors.New("unexpected standing-policy prompt")
 	}
@@ -355,5 +361,54 @@ func (generator *standingScriptGenerator) assertCalls(
 			t.Fatalf("prompt %q calls = %d, want %d (all calls: %+v)",
 				prompt[:min(40, len(prompt))], got[prompt], want, generator.calls)
 		}
+	}
+}
+
+// "Stop counting" comes back from the extraction as a rule about not
+// counting, which grounds as nothing - so each policy in force is put to the
+// model as one question, and only its exact yes lifts the policy.
+func TestExtractorLiftsAPolicyTheExtractionRestatedAsANegativeRule(t *testing.T) {
+	counting := []interaction.StandingInstruction{{
+		Text: "count the cities out loud as they mention them", Scope: interaction.ScopeConversation, Counting: true,
+	}}
+	for _, testCase := range []struct {
+		name string
+		lift string
+		want int
+	}{
+		{"the question lifts it", "yes", 1},
+		{"an unsure answer leaves it", "not sure", 0},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			generator := &standingScriptGenerator{
+				extraction: "pin conversation do not count the cities out loud as they mention them anymore",
+				grounding:  "no", lift: testCase.lift,
+			}
+			extractor, err := interaction.NewExtractor(generator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := extractor.Extract(context.Background(), counting,
+				[]string{"user: and took the train to Berlin the week after.", "agent: Two."},
+				"Okay, you can stop counting now.")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.Pins) != 0 || len(got.Revokes) != testCase.want {
+				t.Fatalf("extraction = %+v, want no pins and %d revocation", got, testCase.want)
+			}
+			if testCase.want == 1 && got.Revokes[0] != counting[0].Text {
+				t.Fatalf("revoked %q, want the policy in force", got.Revokes[0])
+			}
+			lifts := 0
+			for _, call := range got.Calls {
+				if call.Question == "lift" {
+					lifts++
+				}
+			}
+			if lifts != 1 {
+				t.Fatalf("lift question asked %d times, want once per policy in force: %+v", lifts, got.Calls)
+			}
+		})
 	}
 }

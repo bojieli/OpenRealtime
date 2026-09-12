@@ -1041,9 +1041,10 @@ func (decider *semanticTestDecider) Decide(
 func (decider *semanticTestDecider) Generate(
 	ctx context.Context, prompt, evidence string, _ int,
 ) (string, error) {
-	if prompt == coreinteraction.AddressedElsewhereInstruction {
-		// Nobody in these fixtures talks to a third party; the question is
-		// answered by name so the scripted extraction answers keep their order.
+	if prompt == coreinteraction.AddressedElsewhereInstruction || prompt == coreinteraction.LiftInstruction {
+		// Nobody in these fixtures talks to a third party or lifts a rule;
+		// these questions are answered by name so the scripted extraction
+		// answers keep their order.
 		return "no", nil
 	}
 	decider.mu.Lock()
@@ -1847,6 +1848,9 @@ func TestSemanticAdmissionSealsAgentOutputForEachStartedDecision(t *testing.T) {
 	_ = receivePolicy(t, harness.egress(t, "outcome"))
 	_ = receivePolicy(t, harness.egress(t, "state"))
 	acknowledgeSemanticVoice(t, harness, laterOutput, 3, 1)
+	sendSemanticContext(t, harness, "state-3", trajectory.Snapshot{
+		Version: 3, Items: []trajectory.Item{first, second, semanticAssistantSaid("said-1", "the later lifecycle response")},
+	})
 	if call := awaitSemanticCall(t, entered); call != 1 {
 		t.Fatalf("second semantic call = %d, want 1", call)
 	}
@@ -2443,5 +2447,13 @@ func acknowledgeSemanticVoice(
 			SessionID: "semantic-session", Payload: output,
 		})
 		_ = receivePolicy(t, harness.egress(t, "state"))
+	}
+}
+
+// semanticAssistantSaid is the trajectory's record of an answer the voice gave.
+func semanticAssistantSaid(id, text string) trajectory.Item {
+	return trajectory.Item{
+		ID: id, Kind: trajectory.KindAssistant, Content: text,
+		Producer: trajectory.Producer{Phase: trajectory.PhaseFast, SpeechAuthority: string(continuation.SpeechAuthorityVoice)},
 	}
 }

@@ -347,6 +347,12 @@ func (state Situation) renderEvidence(block *strings.Builder) {
 			block.WriteString("- " + pin + "\n")
 		}
 		block.WriteString("\n")
+	} else if state.TranscriptEvent != "" {
+		// Said, not left out. A count that was lifted leaves "agent: One.
+		// Two." in the conversation, and a model shown that with no list at
+		// all kept counting: measured, two cities named after "stop
+		// counting" were both spoken for.
+		block.WriteString("Standing instructions: none in force (a rule that was lifted no longer applies).\n\n")
 	}
 	if len(state.Recent) > 0 {
 		block.WriteString("Recent conversation:\n")

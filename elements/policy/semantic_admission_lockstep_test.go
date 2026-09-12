@@ -97,6 +97,12 @@ func TestSemanticAdmissionRunsInLockstepWithTheVoice(t *testing.T) {
 	acknowledgeSemanticVoice(t, harness, coreinteraction.AgentOutput{
 		Audible: true, Saying: "One.", InFlight: "voice output active: model=1",
 	}, 2, 1)
+	// Finished is not answered: the runner still waits for the trajectory to
+	// carry what the model said, so the next step is compiled with it.
+	assertNoPolicyEnvelope(t, harness.egress(t, "decision"))
+	sendSemanticContext(t, harness, "state-4", trajectory.Snapshot{
+		Version: 4, Items: append(append([]trajectory.Item(nil), items...), semanticAssistantSaid("said-1", "One.")),
+	})
 	second := receivePolicy(t, harness.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
 	outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
 	if released := state(); !second.Choice.Idle() || second.SourceRevision != 2 ||

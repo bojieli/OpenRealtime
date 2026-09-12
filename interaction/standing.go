@@ -183,6 +183,13 @@ func extractionExamples() []extractionExample {
 		{nil, nil, "Right, so let me plan this out.", "none"},
 		{nil, nil, "Let me think about this for a second.", "none"},
 		{watching, nil, "Forget about the train, I can see it now.", "revoke shout if you see the train coming"},
+		// Stopping is lifting, not a new rule about not doing it. Measured, a
+		// counting policy asked to stop came back as "pin conversation do not
+		// count the cities anymore", which grounds as nothing and leaves the
+		// count in force.
+		{[]StandingInstruction{{Text: "count the cities out loud as they mention them", Scope: ScopeConversation}},
+			[]string{"user: and took the train to Berlin the week after.", "agent: Two."},
+			"Okay, you can stop counting now.", "revoke count the cities out loud as they mention them"},
 		{watching, nil, "Also let me know if it starts raining.", "pin conversation say something if it starts raining"},
 		{nil, nil, "Give me a nudge if I start talking too fast.", "pin conversation tell them if they start talking too fast"},
 		{nil, nil, "Never talk over me when I'm reading something out.", "pin conversation do not speak while they are reading something out"},
@@ -539,8 +546,60 @@ func (extractor *modelExtractor) Extract(
 		grounded = append(grounded, instruction)
 	}
 	extraction.Pins = grounded
+	// A rule being lifted is the one answer the pass gets wrong most
+	// consistently - "stop counting" comes back as a new rule about not
+	// counting, which grounds as nothing and leaves the count in force. So
+	// each policy still standing is put to the model as one narrow question.
+	for _, policy := range existing {
+		if extractionRevokes(extraction, policy.Text) {
+			continue
+		}
+		if extractor.lifts(ctx, &trace, recent, utterance, policy) {
+			extraction.Revokes = append(extraction.Revokes, policy.Text)
+		}
+	}
 	extraction.Calls = trace
 	return extraction, nil
+}
+
+func extractionRevokes(extraction Extraction, text string) bool {
+	wanted := strings.ToLower(strings.TrimSpace(text))
+	for _, revoked := range extraction.Revokes {
+		current := strings.ToLower(strings.TrimSpace(revoked))
+		if current == wanted || strings.Contains(current, wanted) || strings.Contains(wanted, current) {
+			return true
+		}
+	}
+	return false
+}
+
+// LiftInstruction asks whether one utterance lifts one policy in force. It
+// is asked after extraction, once per standing policy, and only the exact
+// token "yes" lifts: a rule that vanishes because a question was unsure is
+// the failure people cannot see coming.
+var LiftInstruction = "A voice assistant is following a standing policy the person set earlier. Read their latest " +
+	"words and decide whether those words lift that policy - tell the assistant to stop doing it, never mind " +
+	"it, that's enough, you can stop now - or whether they are still talking about something else, still " +
+	"setting it up, or triggering it. Answer yes only when the words plainly end the policy. Answer yes or no " +
+	"and nothing else.\n\n" +
+	"yes: policy \"count the cities out loud as they mention them\" / \"Okay, you can stop counting now.\"\n" +
+	"yes: policy \"shout if you see the train coming\" / \"Forget about the train, I can see it.\"\n" +
+	"no: policy \"count the cities out loud as they mention them\" / \"The next month I was in Lisbon.\"\n" +
+	"no: policy \"count the animals out loud as they mention them\" / \"A capybara wandered over.\"\n" +
+	"no: policy \"tell them when the build finishes\" / \"Let me plan this out.\"\n"
+
+func (extractor *modelExtractor) lifts(
+	ctx context.Context, trace *[]ModelCall, recent []string, utterance string, policy StandingInstruction,
+) bool {
+	evidence := "Policy in force:\n" + strings.TrimSpace(policy.Text) + "\n\nThey just said: \"" + strings.TrimSpace(utterance) + "\""
+	if len(recent) > 0 {
+		evidence = "Before it:\n" + strings.Join(recent, "\n") + "\n\n" + evidence
+	}
+	answer, err := extractor.ask(ctx, trace, "lift", LiftInstruction, evidence, 3)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(answer), "yes")
 }
 
 // ask puts one question to the generator and records it, so the answer that
