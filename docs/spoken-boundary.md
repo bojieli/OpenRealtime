@@ -114,7 +114,7 @@ and recorded as an estimate.
 
 ```bash
 ./scripts/prepare-wordtimings.sh --serve
-./openrealtime serve -word-timings-url http://127.0.0.1:8003/v1/audio/transcriptions
+./openrealtime serve -word-timings-url http://127.0.0.1:8127/v1/audio/transcriptions
 ```
 
 The endpoint is the published transcription shape — multipart WAV,

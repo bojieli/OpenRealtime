@@ -33,13 +33,17 @@
   is a hand-off, and one rejected for length is the binding's entire
   contribution silently lost.
 
-  The entry is `reachable`. The real endpoint answers on this URL and evaluates
-  a bearer credential sent this way - with a key it returns 401, with none 400,
-  and on a neighbouring `/v1/live/` path 404 - so the address and the
-  authentication are confirmed against the vendor. No turn has been run, because
-  the account behind the key available here is deactivated, which is what also
-  holds the `openai` entry at this level; the event names and the hand-off are
-  still only as good as the specification and the fake.
+  The entry is `live-turn`: a real session started, was handed an answer, spoke
+  it, and its events arrived under the names this catalogue expects. That run
+  taught two things the specification does not imply, and both fail silently.
+  Live runs on an audio clock - a session with no input frames arriving never
+  injects an append, never speaks and never reports an error - so the adapter
+  fills gaps in the caller's stream with silence, a caller speaking the Realtime
+  protocol having no reason to send any while the user is quiet. And Live's
+  output is a continuous carrier rather than a per-response burst, 427 of 438
+  frames in one 45-second session being digital silence, so an utterance bounded
+  by "audio stopped" never ends; only audible audio extends one, and the carrier
+  is forwarded only while an utterance is open.
 
 - Chromium's first-run errands are now disabled in every browser driver rather
   than two of them. bench/meeting and bench/realtimecu already launched it with
@@ -49,6 +53,20 @@
   component updates. Every page they open is served from a loopback listener in
   the test process, so a browser reaching the network there is doing work
   nothing asked for.
+
+- Two more checks read a tally before the thing producing it had finished, the
+  same shape as the mounted-graph trace read. The scenario endpoint fixture
+  counted its factories the instant session.created arrived, but the factories
+  run as the graph mounts, so a loaded runner reported one model factory where
+  two were due and failed as though the graph had been composed wrongly - three
+  release-matrix runs in a row. The twelve-scenario contract counted boundary
+  crossings the instant the last subtest returned, and reported that "picking up
+  where it was cut off" never crossed gateway.output.turn_end when the turn's
+  own boundary simply had not been recorded yet. Both now wait for the tally
+  before reading it, with every comparison unchanged after the wait, so a
+  factory that is never constructed and an operation that never crosses each
+  still fail - verified by making one of each impossible and watching the
+  assertion fire.
 
 - Two end-to-end checks were failing for reasons that looked like slowness and
   were not, and in both cases widening the bound was the wrong repair.

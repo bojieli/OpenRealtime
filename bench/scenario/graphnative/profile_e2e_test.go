@@ -348,6 +348,41 @@ func TestProfiledGraphNativeWebSocketExercisesExactTwelveScenarioContract(t *tes
 		})
 	}
 
+	// The probe records a crossing as the graph reports it, which is not
+	// finished when the client that provoked it has seen response.done and
+	// closed. Counting the instant the last subtest returns therefore reads a
+	// tally that may still be settling: on a loaded CI runner this reported
+	// that "picking up where it was cut off" never crossed
+	// gateway.output.turn_end, when what had actually happened is that the
+	// turn's own boundary had not been recorded yet.
+	//
+	// Waiting for the tally is not a weaker check. Every assertion below is
+	// unchanged and still runs, so an operation that genuinely never crosses
+	// still fails - after this bound rather than before the runtime had
+	// finished saying so.
+	crossingDeadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(crossingDeadline) {
+		missing := false
+		for _, requirement := range contract.Cases {
+			for _, operation := range requirement.Operations {
+				if operation == graphbinding.AdapterOutputFailed {
+					continue
+				}
+				if probe.count(requirement.Name, operation) == 0 {
+					missing = true
+				}
+			}
+		}
+		for _, operation := range contract.Operations {
+			if probe.total(operation) == 0 {
+				missing = true
+			}
+		}
+		if !missing {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	for _, requirement := range contract.Cases {
 		for _, operation := range requirement.Operations {
 			if operation == graphbinding.AdapterOutputFailed {

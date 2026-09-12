@@ -647,6 +647,25 @@ func (fixture *scenarioEndpointFixture) assertFactories(t testing.TB, wanted int
 		modelWanted = wanted * 2
 		policyWanted = wanted * 2
 	}
+	// session.created says the session exists, not that every endpoint the
+	// graph needs has been constructed: the factories run as the graph mounts,
+	// and the caller reads these counters the moment that event arrives. On an
+	// unloaded machine they are always finished first, which is why this read
+	// looked exact; on a loaded CI runner it reported one model factory where
+	// two were due and failed as though the graph had been composed wrongly.
+	//
+	// Waiting for the counts is not a weaker check. The comparison below is
+	// unchanged and still runs, so a factory that is never constructed - or one
+	// constructed twice - fails exactly as before. It just no longer depends on
+	// winning a race against the mount it is measuring.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if fixture.asrFactories.Load() == wanted && fixture.modelFactories.Load() == modelWanted &&
+			fixture.policyFactories.Load() == policyWanted && fixture.ttsFactories.Load() == wanted {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if fixture.asrFactories.Load() != wanted || fixture.modelFactories.Load() != modelWanted ||
 		fixture.policyFactories.Load() != policyWanted || fixture.ttsFactories.Load() != wanted {
 		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",

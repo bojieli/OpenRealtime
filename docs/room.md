@@ -30,7 +30,12 @@ environment. The local services must already be running:
 | Qwen policy, with vision | `http://127.0.0.1:8000/v1` |
 | Fish Speech | `http://127.0.0.1:8123/v1/tts` |
 | Speaker identification | `http://127.0.0.1:8124/embed` |
-| Word timing | `http://127.0.0.1:8003/v1/audio/transcriptions` |
+| Word timing | `http://127.0.0.1:8127/v1/audio/transcriptions` |
+
+Word timing is `deploy/wordtimings`, not the speech recogniser. It must return
+a `words` array; a server that answers this route with text alone leaves every
+interruption boundary proportional, which the runtime now reports as
+`speech.word_timing_failed` rather than absorbing.
 
 The room freezes the selected graph into a temporary launch profile, verifies
 it using the same registry as the evaluation, and removes it on shutdown.
