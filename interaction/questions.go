@@ -52,7 +52,8 @@ var OccurrenceQuestion = StepQuestion{Name: QuestionOccurrence, Text: "First che
 	"a phrase like \"the open models\" or \"those animals\" names no specific one) - that is not already " +
 	"covered by what was answered in this utterance or by a recent step that spoke? For a translation rule " +
 	"every new word in the other language not yet translated is an occurrence, the last words of a sentence " +
-	"included. Words that ask the agent to start, resume, pause, or stop the rule itself (\"carry on\", " +
+	"included: new words \"见面。\" after \"我们明天下午三点在办公室\" was already answered are an occurrence, " +
+	"even while the agent is still saying the earlier part. Words that ask the agent to start, resume, pause, or stop the rule itself (\"carry on\", " +
 	"\"hold on\", \"go ahead\") are not an occurrence; they are a request, answered when the person " +
 	"finishes. Once a recent step shows the agent did what the rule asks for this utterance (pressed the key " +
 	"for the option the user wanted), the rest of the same utterance - other options the menu goes on to " +

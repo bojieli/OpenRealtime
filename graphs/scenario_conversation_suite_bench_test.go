@@ -254,6 +254,12 @@ func playScenarioInProcess(
 	if item.Menu != nil {
 		run.menu = item.Menu()
 	}
+	// The room composes the same instruction and freezes it under this
+	// limit; a harness that let it grow past the limit would measure a
+	// voice the room could not launch.
+	if len(countingBenchmarkInstruction) > 4096 {
+		t.Fatalf("the voice instruction is %d bytes, over the room's 4096-byte limit", len(countingBenchmarkInstruction))
+	}
 	base := newScenarioProfileFixture(t)
 	config := base.pluginConfig()
 	// The room's architecture: the policy sees the frames it decides about.
