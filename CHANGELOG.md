@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- The strict launch profile is a Linux-only path, and nothing said so. A profile
+  file is read back through a hardened open - refusing symlinks, hard links,
+  special files, and any identity change between lookup and read - implemented
+  for Linux and stubbed everywhere else, so on macOS `serve` stops with "secure
+  launch-profile file opening is unsupported on this platform" before it
+  listens. That covers the default `companion` room, `-client macos`, and any
+  `-launch-profile` an operator authors, which is to say the README's first
+  command and the quickstart's native-client command both failed on the
+  platform whose client they were introducing. The bound is now stated in the
+  README, the quickstart, and the room guide, next to the commands it governs,
+  and the macOS commands name the explicit cascade composition that does work
+  there. The limitation itself is unchanged; it is only no longer silent.
+
+- Defaulting the companion room to the twelve-scenario pipeline made the strict
+  launch profile supersede provider selection, and nothing that depended on the
+  older flag form was updated with it. `serve` refuses to start rather than
+  ignore a flag the profile overrides, so `macos/verify-hosted-companion.sh`
+  died at startup with "-launch-profile supersedes flags -slow-model,
+  -slow-provider", and seven documented commands in the local-stack guide were
+  refused the same way. Both landed the same day as the macOS compile break, so
+  the compile failure had masked the script from its first run.
+
+  The script's two flags named a stand-in reasoner before the profile existed;
+  the profile encodes that now, so they are removed rather than translated, and
+  placeholder provider credentials let it reach readiness on a machine with no
+  provider account - it drives supervision and routing and never reaches one.
+
+  The guide's commands name `-binding cascade`, which is what says "compose the
+  cascade this page describes, from these flags" rather than the room pipeline.
+  That is a one-token addition that keeps the documented flag form working, and
+  the guide now explains the rule once instead of leaving each command to fail
+  at the reader.
+
 - Repository hygiene before publication: a vim swap file for a docs page had
   been committed and carried the author's home directory and hostname in the
   tree; `LICENSES.md` granted licenses to four paths that no longer exist
