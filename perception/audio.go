@@ -379,23 +379,41 @@ func (observer *AudioObserver) Flush(ctx context.Context) ([]Observation, error)
 	return []Observation{observation}, nil
 }
 
-// Reset drops the recogniser so the next utterance starts clean.
+// Reset drops the utterance so the next one starts clean.
 //
-// A recogniser that holds a connection is closed on the way out. One
-// instance exists per utterance by design, so an abandoned utterance - the
-// speaker stops, the session ends, a barge-in discards the turn - would
+// A recogniser that is one utterance is closed on the way out: an abandoned
+// utterance - the speaker stops, a barge-in discards the turn - would
 // otherwise strand a socket and the goroutine reading it for every utterance
-// the session ever had. A provider with nothing to release does not implement
-// the interface and is unaffected.
+// the session ever had. A recogniser that is one session's stream is told the
+// utterance ended and kept, so the next first frame goes down a socket that
+// is already open. A provider with nothing to release implements neither
+// interface and is unaffected.
 func (observer *AudioObserver) Reset() {
 	_ = observer.Close()
 }
 
-// Close resets the utterance and reports provider-release failures to a
+// Close ends the utterance and reports provider-release failures to a
 // lifecycle owner. Reset retains its historical best-effort signature for the
-// Observer interface; graph disposers use Close so cleanup evidence is not
-// silently discarded.
+// Observer interface; graph disposers use Dispose so a reusable provider is
+// released when the session ends and not before.
 func (observer *AudioObserver) Close() error {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	var closeErr error
+	if reusable, keeps := observer.provider.(v1.UtteranceReusable); keeps {
+		closeErr = reusable.EndUtterance()
+	} else {
+		if closer, releases := observer.provider.(io.Closer); releases {
+			closeErr = closer.Close()
+		}
+		observer.provider = nil
+	}
+	observer.resetUtterance()
+	return closeErr
+}
+
+// Dispose releases the provider for good. It is the session ending.
+func (observer *AudioObserver) Dispose() error {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	var closeErr error
@@ -403,10 +421,14 @@ func (observer *AudioObserver) Close() error {
 		closeErr = closer.Close()
 	}
 	observer.provider = nil
+	observer.resetUtterance()
+	return closeErr
+}
+
+func (observer *AudioObserver) resetUtterance() {
 	observer.frameIndex, observer.sampleOffset, observer.sampleRate = 0, 0, 0
 	observer.predecessor = 0
 	observer.lastText, observer.lastStable = "", ""
-	return closeErr
 }
 
 // DurationMS is how much audio the current utterance has consumed.

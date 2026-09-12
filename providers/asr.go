@@ -277,9 +277,14 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 		}, nil
 	case DialectDeepgramListen:
 		return func() (v1.PerceptionProvider, error) {
+			// One stream per session, not per utterance. The dial, the TLS
+			// handshake and Deepgram's warm-up then happen once, before the
+			// first word, instead of between every endpoint and the next
+			// hypothesis.
 			config := deepgram.ListenConfig{
 				URL: baseURL, Model: model, APIKey: key, Language: request.Language,
 				Keyterms: request.Keyterms, Header: request.Header, Endpointing: request.Endpointing,
+				Persistent: true,
 			}
 			if strings.Contains(request.Language, ",") {
 				languages := strings.Split(request.Language, ",")

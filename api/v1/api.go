@@ -133,6 +133,17 @@ type PerceptionProvider interface {
 	Finalize(context.Context, uint64) (PerceptionRevision, error)
 }
 
+// UtteranceReusable is a perception provider that keeps its connection
+// across utterances. A provider that is one utterance is dropped after
+// Finalize; a provider that is one session's stream is asked to end the
+// utterance instead and handed the next one, so a persistent recogniser is
+// not dialled again at every sentence. EndUtterance must leave the provider
+// ready for a fresh first frame whether or not Finalize ran. Close, where
+// implemented, remains the end of the session.
+type UtteranceReusable interface {
+	EndUtterance() error
+}
+
 type ResponseCandidate struct {
 	CandidateID     string `json:"candidate_id"`
 	SourceRevision  uint64 `json:"source_revision"`

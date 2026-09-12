@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +27,27 @@ type fakeDeepgram struct {
 	query  chan string
 	auth   chan string
 	audio  chan int
+
+	accepts    atomic.Int32
+	finalizes  atomic.Int32
+	keepAlives atomic.Int32
+	mu         sync.Mutex
+	live       []*websocket.Conn
+	// next is the script position, shared by every connection: the script is
+	// what the service says next, whichever socket carries it, so a stream
+	// repaired mid-conversation continues rather than replays.
+	next int
+}
+
+// dropConnections closes every live connection from the server side, the way
+// the service does after ten silent seconds.
+func (fake *fakeDeepgram) dropConnections() {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, connection := range fake.live {
+		_ = connection.Close(websocket.StatusGoingAway, "dropped")
+	}
+	fake.live = nil
 }
 
 func newFakeDeepgram(t *testing.T, script []string) *fakeDeepgram {
@@ -33,35 +56,79 @@ func newFakeDeepgram(t *testing.T, script []string) *fakeDeepgram {
 		query: make(chan string, 1), auth: make(chan string, 1), audio: make(chan int, 64),
 	}
 	fake.server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		fake.query <- request.URL.RawQuery
-		fake.auth <- request.Header.Get("Authorization")
+		// Tests that inspect the request read these once; a later connection
+		// on the same fake must not block behind an unread value, because
+		// httptest waits for every handler before it will close.
+		select {
+		case fake.query <- request.URL.RawQuery:
+		default:
+		}
+		select {
+		case fake.auth <- request.Header.Get("Authorization"):
+		default:
+		}
 		connection, err := websocket.Accept(writer, request, nil)
 		if err != nil {
 			t.Errorf("accept: %v", err)
 			return
 		}
 		defer connection.CloseNow()
-		index := 0
+		fake.accepts.Add(1)
+		fake.mu.Lock()
+		fake.live = append(fake.live, connection)
+		fake.mu.Unlock()
+		take := func() (string, bool) {
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if fake.next >= len(script) {
+				return "", false
+			}
+			fake.next++
+			return script[fake.next-1], true
+		}
 		for {
 			kind, payload, err := connection.Read(request.Context())
 			if err != nil {
 				return
 			}
 			if kind == websocket.MessageBinary {
-				fake.audio <- len(payload)
-				if index < len(script) {
-					_ = connection.Write(request.Context(), websocket.MessageText, []byte(script[index]))
-					index++
+				select {
+				case fake.audio <- len(payload):
+				default:
+				}
+				if entry, ok := take(); ok {
+					_ = connection.Write(request.Context(), websocket.MessageText, []byte(entry))
 				}
 				continue
 			}
-			// A CloseStream flushes whatever is left and ends the stream,
-			// which is exactly the behaviour Finalize depends on.
-			for ; index < len(script); index++ {
-				_ = connection.Write(request.Context(), websocket.MessageText, []byte(script[index]))
+			var control struct {
+				Type string `json:"type"`
 			}
-			_ = connection.Close(websocket.StatusNormalClosure, "stream closed")
-			return
+			_ = json.Unmarshal(payload, &control)
+			switch control.Type {
+			case "KeepAlive":
+				fake.keepAlives.Add(1)
+			case "Finalize":
+				// Finalize flushes what the service holds for the utterance
+				// and answers with results marked from_finalize; the stream
+				// stays open. The script is per connection, so a persistent
+				// stream reads its later entries at later frames: only the
+				// results already owed to this utterance's audio are flushed.
+				fake.finalizes.Add(1)
+				_ = connection.Write(request.Context(), websocket.MessageText, []byte(finalizeEvent("")))
+			default:
+				// A CloseStream flushes whatever is left and ends the stream,
+				// which is exactly the behaviour a closing Finalize depends on.
+				for {
+					entry, ok := take()
+					if !ok {
+						break
+					}
+					_ = connection.Write(request.Context(), websocket.MessageText, []byte(entry))
+				}
+				_ = connection.Close(websocket.StatusNormalClosure, "stream closed")
+				return
+			}
 		}
 	}))
 	t.Cleanup(fake.server.Close)
@@ -74,6 +141,15 @@ func (fake *fakeDeepgram) url() string {
 
 func results(transcript string, final bool) string {
 	return resultEvent(transcript, final, false)
+}
+
+// finalizeEvent is the result Deepgram sends in answer to Finalize.
+func finalizeEvent(transcript string) string {
+	payload, _ := json.Marshal(map[string]any{
+		"type": "Results", "is_final": true, "from_finalize": true,
+		"channel": map[string]any{"alternatives": []map[string]any{{"transcript": transcript}}},
+	})
+	return string(payload)
 }
 
 func resultEvent(transcript string, final, speechFinal bool) string {

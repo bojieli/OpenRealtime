@@ -43,6 +43,7 @@ type languageStream interface {
 	v1.PerceptionProvider
 	SpeechEndpointed() bool
 	Confidence() float64
+	EndUtterance() error
 	Close() error
 }
 
@@ -78,6 +79,9 @@ func NewLanguageMux(config ListenConfig, languages []string) (*LanguageMux, erro
 	}
 	descriptor := primary.Descriptor()
 	descriptor.Version = "deepgram-listen-language-mux-2"
+	if config.Persistent {
+		descriptor.Version = "deepgram-listen-language-mux-persistent-1"
+	}
 	return newLanguageMux(primary, chinese, descriptor), nil
 }
 
@@ -217,7 +221,28 @@ func (mux *LanguageMux) Finalize(
 		chosen = chinese
 	}
 	chosen.SourceSample = sourceSample
-	return mux.makeRevision(chosen, true), nil
+	revision := mux.makeRevision(chosen, true)
+	mux.resetUtterance()
+	return revision, nil
+}
+
+// EndUtterance implements api/v1.UtteranceReusable for both lanes. The lane
+// selection is per utterance - the next sentence may be in the other
+// language - so it is forgotten with everything else.
+func (mux *LanguageMux) EndUtterance() error {
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
+	primaryErr := mux.primary.EndUtterance()
+	chineseErr := mux.chinese.EndUtterance()
+	mux.resetUtterance()
+	return errors.Join(primaryErr, chineseErr)
+}
+
+func (mux *LanguageMux) resetUtterance() {
+	mux.selectedChinese, mux.selectedPrimary = false, false
+	mux.pendingPrimary = nil
+	mux.primaryLatest, mux.chineseLatest = v1.PerceptionRevision{}, v1.PerceptionRevision{}
+	mux.lastText = ""
 }
 
 func (mux *LanguageMux) SpeechEndpointed() bool {

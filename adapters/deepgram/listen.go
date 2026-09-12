@@ -36,10 +36,15 @@ const (
 	defaultDialTimeout  = 15 * time.Second
 	defaultWriteTimeout = 5 * time.Second
 	defaultDrain        = 5 * time.Second
-	readLimit           = 1 << 20
+	// defaultKeepAlive is how long a persistent stream may go without audio
+	// before the adapter says so. Deepgram closes a stream that has been
+	// silent for about ten seconds; a KeepAlive every three keeps a pause in
+	// the conversation from becoming a reconnect at the next word.
+	defaultKeepAlive = 3 * time.Second
+	readLimit        = 1 << 20
 )
 
-// ListenConfig configures one recognition utterance.
+// ListenConfig configures recognition.
 //
 // The audio sample rate is deliberately absent: it is taken from the first
 // frame and declared to Deepgram, so nothing is resampled on the way in. A
@@ -85,7 +90,7 @@ type ListenConfig struct {
 	// DialTimeout bounds connection setup.
 	DialTimeout time.Duration
 	// DrainTimeout bounds how long Finalize waits for Deepgram to flush the
-	// results it still owes after the stream is closed.
+	// results it still owes after the utterance is closed.
 	DrainTimeout time.Duration
 	// WriteTimeout bounds one send on an established stream. Zero selects the
 	// shipped default; a negative value removes the bound.
@@ -103,20 +108,45 @@ type ListenConfig struct {
 	// not accepted one in five seconds is not keeping up with a conversation
 	// whatever it does next.
 	WriteTimeout time.Duration
+	// Persistent keeps one WebSocket open across utterances. Finalize then
+	// asks Deepgram to flush the utterance rather than close the stream, the
+	// next utterance goes down the same socket, and a KeepAlive is sent while
+	// the person pauses. Off, every utterance dials its own stream and
+	// Finalize closes it, which is the one-utterance contract this adapter
+	// started with.
+	//
+	// The difference is at the start of every utterance: a dial, a TLS
+	// handshake and Deepgram's own warm-up sit between the first frame and
+	// the first hypothesis, and on a persistent stream they have already
+	// happened.
+	Persistent bool
+	// KeepAliveInterval is how often a silent persistent stream is kept
+	// alive. Zero selects the shipped default.
+	KeepAliveInterval time.Duration
 	// HTTPClient dials the WebSocket. Empty uses the default client, which is
 	// what a test server needs overridden.
 	HTTPClient *http.Client
 }
 
-// Listener is one recognition utterance. It is safe for concurrent use, and
-// like every perception provider here it represents exactly one stream.
+// Listener recognises speech over one Deepgram stream. It is safe for
+// concurrent use. Not persistent, it represents exactly one utterance, like
+// every perception provider here; persistent, it represents one session's
+// stream and each utterance in turn.
 type Listener struct {
 	config     ListenConfig
 	descriptor v1.Descriptor
 
-	mu               sync.Mutex
-	connection       *websocket.Conn
-	inputRate        uint32
+	mu     sync.Mutex
+	stream *stream
+	// closed says the session is over: nothing dials again.
+	closed bool
+	// finalized says the one utterance a non-persistent listener represents
+	// has ended.
+	finalized bool
+	inputRate uint32
+	lastWrite time.Time
+
+	// Everything below is one utterance's state.
 	haveFrame        bool
 	nextFrameIndex   uint64
 	nextSourceSample uint64
@@ -125,23 +155,29 @@ type Listener struct {
 	lastEmittedText  string
 	confidence       float64
 	revisionID       uint64
-	finalized        bool
 	speechEndpointed bool
+}
 
+// stream is one WebSocket and the goroutine reading it. A persistent
+// listener may own several over its life - one per reconnect - and each has
+// its own channels so a late message from a dead stream can never be read as
+// the live one's.
+type stream struct {
+	connection *websocket.Conn
 	// results carries revisions from the read goroutine. Nothing but reading
 	// happens on that goroutine: the connection answers protocol pings only
 	// from inside Read, so a handler that did work there would stall the
 	// keepalive and drop a live session.
 	results chan transcriptSegment
 	readErr chan error
-	// closed is closed by the read goroutine when it stops, which is what
-	// Finalize waits for.
-	closed chan struct{}
-	// stopped is closed when the utterance is abandoned. The reader can be
+	// closed is closed by the read goroutine when it stops, which is what a
+	// closing Finalize waits for.
+	closed   chan struct{}
+	readDone sync.Once
+	// stopped is closed when the stream is abandoned. The reader can be
 	// blocked handing over a segment nobody is draining, and closing the
 	// connection would not wake it, so it selects on this as well.
 	stopped  chan struct{}
-	readDone sync.Once
 	stopOnce sync.Once
 }
 
@@ -151,9 +187,14 @@ type transcriptSegment struct {
 	confidence  float64
 	final       bool
 	speechFinal bool
+	// fromFinalize marks the results Deepgram flushed in answer to a
+	// Finalize message. They end the utterance on a persistent stream the
+	// way a closed socket ends it on a one-utterance stream.
+	fromFinalize bool
 }
 
-// NewListener validates configuration and returns a fresh utterance.
+// NewListener validates configuration and returns a listener with no stream
+// yet; the first frame dials.
 func NewListener(config ListenConfig) (*Listener, error) {
 	if config.URL == "" {
 		config.URL = DefaultListenURL
@@ -182,22 +223,25 @@ func NewListener(config ListenConfig) (*Listener, error) {
 	if config.WriteTimeout == 0 {
 		config.WriteTimeout = defaultWriteTimeout
 	}
+	if config.KeepAliveInterval <= 0 {
+		config.KeepAliveInterval = defaultKeepAlive
+	}
 	config.Header = config.Header.Clone()
+	version := "deepgram-listen-1"
+	if config.Persistent {
+		version = "deepgram-listen-persistent-1"
+	}
 	return &Listener{
 		config: config,
 		descriptor: v1.Descriptor{
 			Name:    "deepgram-listen/" + config.Model,
-			Version: "deepgram-listen-1",
+			Version: version,
 			Capabilities: v1.Capabilities{
 				v1.CapabilityStreamingInput: true,
 				v1.CapabilityRevisions:      true,
 				v1.CapabilityCancellation:   true,
 			},
 		},
-		results: make(chan transcriptSegment, 64),
-		readErr: make(chan error, 1),
-		closed:  make(chan struct{}),
-		stopped: make(chan struct{}),
 	}, nil
 }
 
@@ -219,13 +263,22 @@ func (listener *Listener) PushFrame(
 ) ([]v1.PerceptionRevision, error) {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
-	if listener.finalized {
+	if listener.closed || listener.finalized {
 		return nil, errors.New("Deepgram session is finalized")
 	}
 	if err := listener.validateFrame(frame); err != nil {
 		return nil, err
 	}
-	if listener.connection == nil {
+	if listener.stream != nil && listener.config.Persistent && !listener.haveFrame {
+		// Between utterances a persistent stream may have died - the service
+		// timed it out, the network dropped - and the first frame of the next
+		// utterance is where that is discovered and repaired, silently. Mid-
+		// utterance a dead stream is an error, because words are missing.
+		if listener.stream.dead() {
+			listener.shutdown()
+		}
+	}
+	if listener.stream == nil {
 		if err := listener.dial(ctx, frame.SampleRateHz); err != nil {
 			return nil, err
 		}
@@ -253,61 +306,144 @@ func (listener *Listener) write(
 		ctx, cancel = context.WithTimeout(ctx, listener.config.WriteTimeout)
 		defer cancel()
 	}
-	return listener.connection.Write(ctx, kind, payload)
+	listener.lastWrite = time.Now()
+	return listener.stream.connection.Write(ctx, kind, payload)
 }
 
-// Finalize closes the stream, waits for the results Deepgram still owes, and
+// Finalize ends the utterance, waits for the results Deepgram still owes, and
 // emits one final revision.
+//
+// On a one-utterance stream that means closing it. On a persistent stream it
+// means asking Deepgram to flush what it has heard and reading until the
+// flushed results arrive; the socket stays open and the next utterance uses
+// it.
 func (listener *Listener) Finalize(
 	ctx context.Context, sourceSample uint64,
 ) (v1.PerceptionRevision, error) {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
-	if listener.finalized {
+	if listener.closed || listener.finalized {
 		return v1.PerceptionRevision{}, errors.New("Deepgram session is finalized")
 	}
-	if !listener.haveFrame || listener.connection == nil {
+	if !listener.haveFrame || listener.stream == nil {
 		return v1.PerceptionRevision{}, errors.New("Deepgram cannot finalize an empty utterance")
 	}
 	if sourceSample != listener.nextSourceSample {
 		return v1.PerceptionRevision{}, fmt.Errorf(
 			"Deepgram final source sample is %d; expected %d", sourceSample, listener.nextSourceSample)
 	}
-	if err := listener.write(ctx, websocket.MessageText, []byte(`{"type":"CloseStream"}`)); err != nil {
-		return v1.PerceptionRevision{}, fmt.Errorf("close Deepgram stream: %w", err)
+	if !listener.config.Persistent {
+		if err := listener.write(ctx, websocket.MessageText, []byte(`{"type":"CloseStream"}`)); err != nil {
+			return v1.PerceptionRevision{}, fmt.Errorf("close Deepgram stream: %w", err)
+		}
+		if err := listener.drainUntilClosed(ctx); err != nil {
+			return v1.PerceptionRevision{}, err
+		}
+		listener.finalized = true
+		text := strings.TrimSpace(listener.committed + listener.interim)
+		revision := listener.revision(text, sourceSample, true)
+		listener.shutdown()
+		return revision, nil
 	}
-	if err := listener.drainUntilClosed(ctx); err != nil {
-		return v1.PerceptionRevision{}, err
+	if err := listener.write(ctx, websocket.MessageText, []byte(`{"type":"Finalize"}`)); err != nil {
+		return v1.PerceptionRevision{}, fmt.Errorf("finalize Deepgram utterance: %w", err)
 	}
-	listener.finalized = true
+	if err := listener.drainUntilFinalized(ctx); err != nil {
+		// The stream failed under the utterance. What was heard before it
+		// failed is still what the person said; report it, and let the next
+		// utterance repair the stream. Only an utterance with no words at
+		// all is a failure worth surfacing.
+		listener.shutdown()
+		if strings.TrimSpace(listener.committed+listener.interim) == "" {
+			listener.resetUtterance()
+			return v1.PerceptionRevision{}, err
+		}
+	}
 	text := strings.TrimSpace(listener.committed + listener.interim)
 	revision := listener.revision(text, sourceSample, true)
-	listener.shutdown()
+	listener.resetUtterance()
 	return revision, nil
 }
 
-// Close releases the connection for a session that ends without an endpoint.
+// EndUtterance implements api/v1.UtteranceReusable. It retires an utterance
+// that will not be finalized - the speaker was cut off, the turn was
+// discarded - without giving up the stream. Whatever Deepgram still holds for
+// it is flushed and dropped, so it cannot surface as the opening words of the
+// next utterance.
+func (listener *Listener) EndUtterance() error {
+	listener.mu.Lock()
+	defer listener.mu.Unlock()
+	if !listener.config.Persistent {
+		listener.finalized = true
+		listener.shutdown()
+		return nil
+	}
+	if listener.stream != nil && listener.haveFrame && !listener.stream.dead() {
+		ctx, cancel := context.WithTimeout(context.Background(), listener.config.DrainTimeout)
+		defer cancel()
+		if err := listener.write(ctx, websocket.MessageText, []byte(`{"type":"Finalize"}`)); err == nil {
+			if err := listener.drainUntilFinalized(ctx); err != nil {
+				listener.shutdown()
+			}
+		} else {
+			listener.shutdown()
+		}
+	}
+	listener.resetUtterance()
+	return nil
+}
+
+// resetUtterance forgets one utterance and keeps the stream.
+func (listener *Listener) resetUtterance() {
+	listener.haveFrame = false
+	listener.nextFrameIndex, listener.nextSourceSample = 0, 0
+	listener.committed, listener.interim, listener.lastEmittedText = "", "", ""
+	listener.confidence = 0
+	listener.speechEndpointed = false
+}
+
+// Close releases the stream for a session that ends.
 //
-// It exists because an utterance can be abandoned rather than finished - the
-// speaker stops, the session ends, the caller hangs up - and a streaming
-// recogniser holds a socket and a goroutine that nothing else will reclaim.
-// The audio observer closes the provider it drops for exactly this reason.
+// It exists because a session can end without an endpoint - the caller hangs
+// up, the process stops - and a streaming recogniser holds a socket and a
+// goroutine that nothing else will reclaim. The audio observer closes the
+// provider it drops for exactly this reason.
 func (listener *Listener) Close() error {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
+	listener.closed = true
 	listener.finalized = true
+	if listener.stream != nil && listener.config.Persistent && !listener.stream.dead() {
+		ctx, cancel := context.WithTimeout(context.Background(), listener.config.WriteTimeout)
+		_ = listener.write(ctx, websocket.MessageText, []byte(`{"type":"CloseStream"}`))
+		cancel()
+	}
 	listener.shutdown()
 	return nil
 }
 
-// shutdown ends the connection and wakes a reader blocked handing over a
-// segment. Closing the connection alone would not: the reader is not inside
-// Read at that moment, it is waiting for a consumer that has gone away.
+// shutdown ends the stream and wakes a reader blocked handing over a segment.
+// Closing the connection alone would not: the reader is not inside Read at
+// that moment, it is waiting for a consumer that has gone away.
 func (listener *Listener) shutdown() {
-	listener.stopOnce.Do(func() { close(listener.stopped) })
-	if listener.connection != nil {
-		_ = listener.connection.Close(websocket.StatusNormalClosure, "utterance complete")
-		listener.connection = nil
+	current := listener.stream
+	if current == nil {
+		return
+	}
+	current.stopOnce.Do(func() { close(current.stopped) })
+	_ = current.connection.Close(websocket.StatusNormalClosure, "stream complete")
+	listener.stream = nil
+}
+
+// dead reports that the read goroutine has stopped, which is the only way a
+// stream fails: Deepgram closed it, the network dropped it, or it reported an
+// error.
+func (current *stream) dead() bool {
+	select {
+	case <-current.closed:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -356,20 +492,56 @@ func (listener *Listener) dial(ctx context.Context, sampleRateHz uint32) error {
 		return fmt.Errorf("dial Deepgram: %w", err)
 	}
 	connection.SetReadLimit(readLimit)
-	listener.connection = connection
-	go listener.read(connection)
+	current := &stream{
+		connection: connection,
+		results:    make(chan transcriptSegment, 64),
+		readErr:    make(chan error, 1),
+		closed:     make(chan struct{}),
+		stopped:    make(chan struct{}),
+	}
+	listener.stream = current
+	listener.lastWrite = time.Now()
+	go current.read()
+	if listener.config.Persistent {
+		go listener.keepAlive(current)
+	}
 	return nil
 }
 
-// read is the only goroutine that touches the connection's reader.
-func (listener *Listener) read(connection *websocket.Conn) {
-	defer listener.readDone.Do(func() { close(listener.closed) })
+// keepAlive tells Deepgram the stream is still wanted while nobody is
+// speaking. It runs for one stream and stops with it.
+func (listener *Listener) keepAlive(current *stream) {
+	ticker := time.NewTicker(listener.config.KeepAliveInterval)
+	defer ticker.Stop()
 	for {
-		kind, payload, err := connection.Read(context.Background())
+		select {
+		case <-current.stopped:
+			return
+		case <-current.closed:
+			return
+		case <-ticker.C:
+		}
+		listener.mu.Lock()
+		if listener.stream != current || time.Since(listener.lastWrite) < listener.config.KeepAliveInterval {
+			listener.mu.Unlock()
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), listener.config.WriteTimeout)
+		_ = listener.write(ctx, websocket.MessageText, []byte(`{"type":"KeepAlive"}`))
+		cancel()
+		listener.mu.Unlock()
+	}
+}
+
+// read is the only goroutine that touches the connection's reader.
+func (current *stream) read() {
+	defer current.readDone.Do(func() { close(current.closed) })
+	for {
+		kind, payload, err := current.connection.Read(context.Background())
 		if err != nil {
 			if !isCleanClose(err) {
 				select {
-				case listener.readErr <- fmt.Errorf("read Deepgram stream: %w", err):
+				case current.readErr <- fmt.Errorf("read Deepgram stream: %w", err):
 				default:
 				}
 			}
@@ -379,10 +551,11 @@ func (listener *Listener) read(connection *websocket.Conn) {
 			continue
 		}
 		var envelope struct {
-			Type        string `json:"type"`
-			IsFinal     bool   `json:"is_final"`
-			SpeechFinal bool   `json:"speech_final"`
-			Channel     struct {
+			Type         string `json:"type"`
+			IsFinal      bool   `json:"is_final"`
+			SpeechFinal  bool   `json:"speech_final"`
+			FromFinalize bool   `json:"from_finalize"`
+			Channel      struct {
 				Alternatives []struct {
 					Transcript string  `json:"transcript"`
 					Confidence float64 `json:"confidence"`
@@ -401,7 +574,7 @@ func (listener *Listener) read(connection *websocket.Conn) {
 				detail = envelope.Error
 			}
 			select {
-			case listener.readErr <- fmt.Errorf("Deepgram reported an error: %s", detail):
+			case current.readErr <- fmt.Errorf("Deepgram reported an error: %s", detail):
 			default:
 			}
 			return
@@ -413,6 +586,7 @@ func (listener *Listener) read(connection *websocket.Conn) {
 				text:       envelope.Channel.Alternatives[0].Transcript,
 				confidence: envelope.Channel.Alternatives[0].Confidence,
 				final:      envelope.IsFinal, speechFinal: envelope.SpeechFinal,
+				fromFinalize: envelope.FromFinalize,
 			}
 			// An interim result with nothing in it is Deepgram saying it has
 			// not decided yet, not that the speaker said nothing. Forwarding
@@ -421,8 +595,8 @@ func (listener *Listener) read(connection *websocket.Conn) {
 				continue
 			}
 			select {
-			case listener.results <- segment:
-			case <-listener.stopped:
+			case current.results <- segment:
+			case <-current.stopped:
 				return
 			}
 		}
@@ -434,7 +608,7 @@ func (listener *Listener) drainAvailable() []v1.PerceptionRevision {
 	changed := false
 	for {
 		select {
-		case segment := <-listener.results:
+		case segment := <-listener.stream.results:
 			listener.apply(segment)
 			changed = true
 			continue
@@ -454,20 +628,21 @@ func (listener *Listener) drainAvailable() []v1.PerceptionRevision {
 
 // drainUntilClosed consumes results until Deepgram closes the stream.
 func (listener *Listener) drainUntilClosed(ctx context.Context) error {
+	current := listener.stream
 	deadline := time.NewTimer(listener.config.DrainTimeout)
 	defer deadline.Stop()
 	for {
 		select {
-		case segment := <-listener.results:
+		case segment := <-current.results:
 			listener.apply(segment)
-		case err := <-listener.readErr:
+		case err := <-current.readErr:
 			return err
-		case <-listener.closed:
+		case <-current.closed:
 			// The reader has stopped, but buffered segments may still be
 			// queued ahead of it. Take them before deciding the transcript.
 			for {
 				select {
-				case segment := <-listener.results:
+				case segment := <-current.results:
 					listener.apply(segment)
 					continue
 				default:
@@ -475,13 +650,38 @@ func (listener *Listener) drainUntilClosed(ctx context.Context) error {
 				break
 			}
 			select {
-			case err := <-listener.readErr:
+			case err := <-current.readErr:
 				return err
 			default:
 			}
 			return nil
 		case <-deadline.C:
 			return errors.New("Deepgram did not finish the utterance within the drain timeout")
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// drainUntilFinalized consumes results until the ones Deepgram flushed for
+// the Finalize message have arrived. The stream stays open.
+func (listener *Listener) drainUntilFinalized(ctx context.Context) error {
+	current := listener.stream
+	deadline := time.NewTimer(listener.config.DrainTimeout)
+	defer deadline.Stop()
+	for {
+		select {
+		case segment := <-current.results:
+			listener.apply(segment)
+			if segment.fromFinalize {
+				return nil
+			}
+		case err := <-current.readErr:
+			return err
+		case <-current.closed:
+			return errors.New("Deepgram closed the stream before flushing the utterance")
+		case <-deadline.C:
+			return errors.New("Deepgram did not flush the utterance within the drain timeout")
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -563,17 +763,20 @@ func (listener *Listener) validateFrame(frame v1.AudioFrame) error {
 		return errors.New("Deepgram frame end sample overflows")
 	}
 	if !listener.haveFrame {
+		if listener.stream != nil && listener.inputRate != 0 && frame.SampleRateHz != listener.inputRate {
+			return fmt.Errorf("Deepgram stream was opened at %d Hz; a new utterance cannot switch to %d Hz",
+				listener.inputRate, frame.SampleRateHz)
+		}
 		return nil
 	}
 	if frame.Index != listener.nextFrameIndex {
 		return fmt.Errorf("Deepgram frame index is %d; expected %d", frame.Index, listener.nextFrameIndex)
 	}
 	if frame.SampleOffset != listener.nextSourceSample {
-		return fmt.Errorf("Deepgram frame starts at sample %d; expected %d",
-			frame.SampleOffset, listener.nextSourceSample)
+		return fmt.Errorf("Deepgram frame sample offset is %d; expected %d", frame.SampleOffset, listener.nextSourceSample)
 	}
 	if frame.SampleRateHz != listener.inputRate {
-		return fmt.Errorf("Deepgram sample rate changed from %d to %d", listener.inputRate, frame.SampleRateHz)
+		return fmt.Errorf("Deepgram frame sample rate is %d; the stream was opened at %d", frame.SampleRateHz, listener.inputRate)
 	}
 	return nil
 }

@@ -225,10 +225,10 @@ func (asrFactory) Mount(_ context.Context, mount element.MountContext) (element.
 	if err != nil {
 		return nil, err
 	}
-	if err := mount.Lifecycle.Defer("reset-audio-observer", func(context.Context) error {
-		return errors.Join(observer.Close(), providers.Close())
+	if err := mount.Lifecycle.Defer("dispose-audio-observer", func(context.Context) error {
+		return errors.Join(observer.Dispose(), providers.Close())
 	}); err != nil {
-		return nil, errors.Join(err, observer.Close(), providers.Close())
+		return nil, errors.Join(err, observer.Dispose(), providers.Close())
 	}
 	observeInput, err := mount.Ports.Input("observe")
 	if err != nil {

@@ -41,6 +41,8 @@ func (stream *scriptedLanguageStream) Finalize(
 
 func (stream *scriptedLanguageStream) SpeechEndpointed() bool { return stream.endpoint }
 func (stream *scriptedLanguageStream) Confidence() float64    { return stream.confidence }
+func (stream *scriptedLanguageStream) EndUtterance() error    { return nil }
+
 func (stream *scriptedLanguageStream) Close() error {
 	stream.closed = true
 	return nil
