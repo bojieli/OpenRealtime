@@ -115,6 +115,12 @@ try {
   process.stderr.write(`${error?.stack ?? error}\n${chromiumErrors}\n`);
 } finally {
   chromium.kill("SIGKILL");
-  rmSync(profile, { recursive: true, force: true });
+  // Chromium's children can still be writing into the profile when the parent
+  // is killed, so removing it straight away races them and throws ENOTEMPTY -
+  // which failed a CI run whose every check had already passed. Retry briefly,
+  // and never let temp-directory cleanup decide the outcome of a test.
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  } catch {}
   process.exit(status);
 }

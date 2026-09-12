@@ -54,6 +54,15 @@
   the test process, so a browser reaching the network there is doing work
   nothing asked for.
 
+- Removing a Chromium profile directory could fail a run whose every check had
+  passed. All ten browser drivers killed the browser and deleted its profile in
+  the next statement, and Chromium's children can still be writing there, so the
+  delete raced them and threw ENOTEMPTY - which is exactly how the macOS
+  hosted-companion gate failed after reporting no failed checks at all. The
+  sleep in room.mjs had been an acknowledgement of this in one driver. All ten
+  now retry the removal briefly and none of them lets temp-directory cleanup
+  decide the outcome of a test.
+
 - Two more checks read a tally before the thing producing it had finished, the
   same shape as the mounted-graph trace read. The scenario endpoint fixture
   counted its factories the instant session.created arrived, but the factories

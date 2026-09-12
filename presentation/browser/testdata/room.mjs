@@ -127,5 +127,13 @@ try {
   await evaluate(`window.__openrealtime.dispose()`);
   check("all room elements disposed", await evaluate(`document.getElementById('openrealtime-root').children.length===0`));
 } catch(error) { check(error.stack ?? error.message,false); }
-finally { chromium.kill('SIGKILL'); await sleep(300); rmSync(profile,{recursive:true,force:true}); }
+finally {
+  chromium.kill('SIGKILL');
+  await sleep(300);
+  // The sleep here was already an acknowledgement of this race; retries make
+  // it bounded rather than hopeful, and cleanup never decides the outcome.
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  } catch {}
+}
 process.exit(checks.every(x=>x.ok)?0:1);
