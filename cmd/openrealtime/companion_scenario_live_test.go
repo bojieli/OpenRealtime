@@ -7,6 +7,7 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,7 +29,18 @@ func TestLiveRoomTwelveScenarios(t *testing.T) {
 	scenario.CacheDir = cache
 	t.Cleanup(func() { scenario.CacheDir = previous })
 	root := filepath.Dir(filepath.Dir(cache))
+	// OPENREALTIME_LIVE_SCENARIOS names a comma-separated subset, for
+	// bisecting one behaviour without the whole nine-minute pass.
+	wanted := map[string]bool{}
+	for _, name := range strings.Split(os.Getenv("OPENREALTIME_LIVE_SCENARIOS"), ",") {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			wanted[trimmed] = true
+		}
+	}
 	for _, item := range scenario.Suite() {
+		if len(wanted) > 0 && !wanted[item.Name] {
+			continue
+		}
 		// A scenario names its pictures relative to the checkout, and this
 		// test runs from its package directory.
 		for index := range item.Sees {

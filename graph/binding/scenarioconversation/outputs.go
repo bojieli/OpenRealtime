@@ -1440,9 +1440,16 @@ func (session *session) acceptActionOutcome(
 	// Every stage a tool call passes through is part of the turn's story: a
 	// key press the voice proposed and admission refused is invisible
 	// otherwise - measured, a phone menu's key went unpressed for a reason
-	// that reached nothing but the error channel.
-	if err := session.publishDebug(ctx, boundary, envelope); err != nil {
-		return err
+	// that reached nothing but the error channel. Not the plumbing, though:
+	// every trajectory reply reaches every commit element, and each one
+	// that was not waiting for it says so. Published, that was a burst of
+	// debug events on every commit, mirrored to the log at debug level, and
+	// the live room's recogniser fell behind under it - transcripts came
+	// back as fragments with whole clauses missing.
+	if !(outcome.Kind == actionelements.OutcomeIgnored && strings.HasPrefix(outcome.Code, "unknown_")) {
+		if err := session.publishDebug(ctx, boundary, envelope); err != nil {
+			return err
+		}
 	}
 	switch outcome.Kind {
 	case actionelements.OutcomeSucceeded, actionelements.OutcomeIgnored,
