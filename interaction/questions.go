@@ -44,8 +44,8 @@ var OccurrenceQuestion = StepQuestion{Name: QuestionOccurrence, Text: "First che
 	"saying: nothing can be an occurrence of a rule that is not in force, the agent's purpose is not a rule, " +
 	"and the words that set a rule up (\"translate everything he says\", \"count the animals\") are not " +
 	"an occurrence of it. Otherwise look at \"new words since the last step\", and at anything earlier in " +
-	"\"heard from user so far\" that no recent step spoke for (a name a listening step passed over is " +
-	"still unanswered). Do they " +
+	"\"heard from user so far\" that no recent step answered (a name a listening step passed over, or one a " +
+	"step spoke for while the agent then said nothing, is still unanswered). Do they " +
 	"contain a NEW, specific occurrence of what a standing instruction listed above watches for - one named " +
 	"or clearly identified there (a newly mentioned animal for a running count; speech in the other language " +
 	"for a translation rule; a menu option, a dish, or a date that matches or contradicts what the rule names; " +
