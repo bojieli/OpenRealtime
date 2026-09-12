@@ -31,6 +31,20 @@ import (
 	"github.com/coder/websocket"
 )
 
+// videoAdmissionInterval is how long to wait so the next frame this test sends
+// is admitted rather than rate-dropped.
+//
+// A source is rate-limited independently at the negotiated three frames per
+// second, so the interval is about 333ms. These waits were 350ms, which is
+// seventeen milliseconds of margin - enough on an idle machine and nothing on
+// a loaded one, where two sends reach the gateway close enough together that
+// the second is dropped exactly as designed and the test waits for evidence
+// that was never coming. The same seventeen milliseconds cost the meeting
+// graph handoff test the third of its three frames on CI. Twice the interval
+// keeps the intent - one frame per admission window - with margin scheduling
+// jitter cannot erase.
+const videoAdmissionInterval = 700 * time.Millisecond
+
 func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) {
 	target := computeruse.Target{
 		Name: "benchmark-browser", Sources: []string{realtimecu.SourceScreen},
@@ -286,7 +300,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	}
 	// Both observer/source pairs present before the intent are frozen. Refresh
 	// each after the final transcript before cognition may activate.
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	freshIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
 	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
 		client.send(map[string]any{
@@ -325,7 +339,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	// first effect is still unsettled. The activation policy admits no overlap:
 	// changed visual evidence can reactivate only after the model returned no
 	// proposal or the exact proposed effect has a canonical visual consequence.
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	pendingEffectTimestampMS := freshIntentTimestampMS + 1
 	for _, source := range []string{realtimecu.SourceCamera, realtimecu.SourceScreen} {
 		client.send(map[string]any{
@@ -370,7 +384,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	}
 	// A source is rate-limited independently at the negotiated three FPS. Wait
 	// one interval so this is an admitted post-effect screen, not a dropped one.
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	postEffectTimestampMS := pendingEffectTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
@@ -429,7 +443,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	// disposition provider in flight. Cancellation must stop that provider and
 	// wait for its exact quiescence outcome before moving on to activation,
 	// model, model-commit, and all configured action stages.
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	settlementTimestampMS := postEffectTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
@@ -453,7 +467,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	// response.cancel handler receives the coordinator's terminal outcome. It
 	// must not reactivate the canceled intent.
 	client.send(map[string]any{"type": "response.cancel"})
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	afterCancelTimestampMS := settlementTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
@@ -493,7 +507,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		t.Fatalf("new-intent endpoint transcript = %+v", newTranscript)
 	}
 
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	newIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
 	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
 		client.send(map[string]any{
@@ -525,7 +539,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	// outcome, then settle every idle action stage. A later frame is again the
 	// serial gateway witness that the terminal coordinator outcome was received.
 	client.send(map[string]any{"type": "response.cancel"})
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	afterModelCancelTimestampMS := newIntentTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
@@ -555,7 +569,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	if thirdTranscript["transcript"] != "click the visible control" {
 		t.Fatalf("post-model-cancel endpoint transcript = %+v", thirdTranscript)
 	}
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	thirdIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
 	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
 		client.send(map[string]any{
@@ -615,7 +629,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 		t.Fatalf("canceled crossed-action consequence = %+v", canceledConsequence)
 	}
 
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	afterCrossedCancelTimestampMS := thirdIntentTimestampMS + 1
 	client.send(map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": realtimecu.SourceScreen,
@@ -646,7 +660,7 @@ func TestRealtimeComputerUseGraphRoundTripsStableRealtimeEndpoint(t *testing.T) 
 	if fourthTranscript["transcript"] != "click the visible control" {
 		t.Fatalf("post-crossed-cancel endpoint transcript = %+v", fourthTranscript)
 	}
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(videoAdmissionInterval)
 	fourthIntentTimestampMS := time.Now().Add(time.Millisecond).UnixMilli()
 	for index, source := range []string{realtimecu.SourceScreen, realtimecu.SourceCamera} {
 		client.send(map[string]any{
