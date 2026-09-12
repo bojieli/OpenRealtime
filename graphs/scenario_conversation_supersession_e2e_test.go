@@ -369,9 +369,13 @@ func sendScenarioSupersessionAudio(
 	}
 }
 
+// Thirty seconds bounds "this never arrived", not how quickly it did. The
+// same reasoning as realtimeCUReceiveTimeout: these wait on events the
+// runtime owes the test, none of them rate-gated, so a tighter bound only
+// asserts a latency on whichever machine happened to run the gate.
 func awaitScenarioSupersessionFinal(t *testing.T, sink *scenarioSupersessionSink) {
 	t.Helper()
-	timer := time.NewTimer(3 * time.Second)
+	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 	for {
 		select {

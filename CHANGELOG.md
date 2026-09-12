@@ -54,6 +54,12 @@
   the test process, so a browser reaching the network there is doing work
   nothing asked for.
 
+- The three remaining scenario-conversation waits in the same package got the
+  same treatment before they could fail too: each waits on an event the runtime
+  owes the test, none is rate-gated, and each carried a three- or five-second
+  bound. They are arrival bounds, so widening them removes a load sensitivity
+  without weakening anything - a test still fails when the event never comes.
+
 - The computer-use settlement waits bounded arrival at five seconds. Each one
   stands between stages of a graph settlement - a cancellation, an
   acknowledgement, a producer outcome - and waits for an event the runtime owes

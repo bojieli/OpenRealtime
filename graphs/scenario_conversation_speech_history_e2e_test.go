@@ -321,9 +321,13 @@ func (input *scenarioDelayedAgentOutputInput) Receive(ctx context.Context) (elem
 	}
 }
 
+// Thirty seconds bounds "this never arrived", not how quickly it did. The
+// same reasoning as realtimeCUReceiveTimeout: these wait on events the
+// runtime owes the test, none of them rate-gated, so a tighter bound only
+// asserts a latency on whichever machine happened to run the gate.
 func awaitSpeechHistoryObservation(t *testing.T, runtime legacy.Runtime, text string) {
 	t.Helper()
-	deadline := time.NewTimer(3 * time.Second)
+	deadline := time.NewTimer(30 * time.Second)
 	defer deadline.Stop()
 	poll := time.NewTicker(time.Millisecond)
 	defer poll.Stop()
