@@ -76,3 +76,16 @@ func TestStepHistoryRecordsTheToolCallTheVoiceMade(t *testing.T) {
 		t.Fatalf("the call was recorded %d times", len(runner.steps[1].said))
 	}
 }
+
+// A sentence with no spaces in it is diffed as text, not as one word.
+func TestWordsAddedDiffsUnspacedTextAsAPrefix(t *testing.T) {
+	if got := wordsAdded("我们明天下午三点在办公室", "我们明天下午三点在办公室见面。"); got != "见面。" {
+		t.Fatalf("wordsAdded = %q, want the characters added", got)
+	}
+	if got := wordsAdded("a bag of", "a bag of apples."); got != "apples." {
+		t.Fatalf("wordsAdded = %q for spaced text", got)
+	}
+	if got := wordsAdded("你好", "再见"); got != "再见" {
+		t.Fatalf("wordsAdded = %q for a rewrite", got)
+	}
+}

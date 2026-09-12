@@ -249,7 +249,7 @@ func (runner *segmentPreparedTextRunner) acceptText(
 			return runner.failActive(ctx, envelope, OutcomeFailed, "source_interrupted",
 				"prepared text source ended interrupted", false)
 		}
-		if run.silenced {
+		if run.silenced && len(run.segments) == 0 {
 			// Reported, not absorbed. A turn that chose to be silent and a
 			// turn that produced nothing are different facts, and only the
 			// second is worth investigating.
@@ -282,24 +282,41 @@ func (runner *segmentPreparedTextRunner) appendSafeText(
 	// Before anything measures, buffers, or splits this text. A control token
 	// is an instruction to the runtime, never a word to be spoken, so it is
 	// removed on the way in and the request it carried is remembered on the
-	// run. <wait> asks for silence, and the safe reading of a token whose
-	// entire purpose is silence is silence: a run that carried one publishes
-	// no further speech, rather than speaking the prose around it.
+	// run. <wait> asks for silence from the point it was written: the words
+	// before it are said, whole, and nothing after it is. Measured, a count
+	// came back as "Two.<wait>" - the number and the closing token in one
+	// breath - and silencing the run lost the count the person was waiting
+	// for; a model that writes the token after words has said the words.
 	//
-	// Extracted from the pending buffer together with this delta, not from
-	// the delta alone: a streaming provider hands the token over in pieces
-	// - "<", "wait", ">" - and no piece is the token. Measured, a menu turn
+	// Found in the pending buffer together with this delta, not in the
+	// delta alone: a streaming provider hands the token over in pieces -
+	// "<", "wait", ">" - and no piece is the token. Measured, a menu turn
 	// that answered with the token alone was pronounced "wait" to the
 	// recording. The pieces gather at the end of the buffer, because nothing
 	// in them ends a sentence, so the buffer is where the token reassembles.
+	if run.silenced {
+		return true, nil
+	}
 	if len(text) > runner.config.MaxRunBytes-run.totalBytes {
 		return false, runner.failActive(ctx, cause, OutcomeFailed, "run_too_large",
 			fmt.Sprintf("prepared run exceeds %d bytes", runner.config.MaxRunBytes), true)
 	}
 	run.totalBytes += len(text)
-	combined, silencing := extractControlTokens(run.buffer + text)
-	if silencing {
+	combined := run.buffer + text
+	if index := indexControlToken(combined); index >= 0 {
 		run.silenced = true
+		before, _ := extractControlTokens(combined[:index])
+		run.buffer = ""
+		if spoken := strings.TrimSpace(before); spoken != "" {
+			if len(spoken) > runner.config.MaxSegmentBytes {
+				return false, runner.failActive(ctx, cause, OutcomeFailed, "segment_too_large",
+					fmt.Sprintf("safe speech segment exceeds %d bytes", runner.config.MaxSegmentBytes), true)
+			}
+			if err := runner.publishSegment(ctx, cause, spoken); err != nil {
+				return runner.active == run, err
+			}
+		}
+		return runner.active == run, nil
 	}
 	run.buffer = combined
 	if combined == "" {
@@ -355,8 +372,7 @@ func (runner *segmentPreparedTextRunner) releaseSafeSegments(
 	ctx context.Context, cause element.Envelope,
 ) error {
 	if runner.active.silenced {
-		// The run asked for silence. Holding the buffer rather than splitting
-		// it keeps the prose around the token unspoken too.
+		// Everything after the token stays unspoken.
 		return nil
 	}
 	for {
@@ -824,6 +840,17 @@ func firstNonemptyString(values ...string) string {
 // than at each producer means one place decides, whichever model wrote the
 // text and whichever binding is running.
 var controlTokens = []string{coreinteraction.WaitToken}
+
+// indexControlToken is where the first control token begins in text, or -1.
+func indexControlToken(text string) int {
+	first := -1
+	for _, token := range controlTokens {
+		if index := strings.Index(text, token); index >= 0 && (first < 0 || index < first) {
+			first = index
+		}
+	}
+	return first
+}
 
 // extractControlTokens removes every control token from one delta and reports
 // whether any was present.

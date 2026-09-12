@@ -122,7 +122,9 @@ utterance.
 The policy model is asked about a step in narrow yes/no questions, and the
 runtime composes the choice from the answers: while the agent is speaking, is
 the person cutting in (`stop`)? Do the new words hold a new occurrence of a
-standing instruction (`speak`)? On a final with nothing due, is there a
+standing instruction (`speak`)? On a partial with no standing instruction
+in force, is what they are saying so far urgent enough to act on before
+they finish (`speak`)? On a final with nothing due, is there a
 request to answer (`speak`)? If so, was it put to the agent at all, rather
 than to somebody else in the room (everything arrives down one microphone,
 and the evidence says when the previous line was a question the agent chose
@@ -151,6 +153,12 @@ observation is refused as `duplicate_call` - the same words decided on
 again are not a new occasion, and the voice, shown the key it had pressed,
 pressed it again four runs out of four. A call proposed on settled evidence
 (a finished turn, a frame) is never refused this way.
+
+The voice says nothing by answering with exactly `<wait>`. The segmenter
+reassembles the token from the pieces a streaming provider hands over, never
+speaks it, and silences everything after it; words before it are still said,
+because "Two.<wait>" is a count with the closing token in the same breath and
+losing the count is worse than an extra sentence.
 
 Standing instructions come from two places. The person sets them out loud -
 "count the animals as I mention them", "if I go quiet for fifteen seconds,

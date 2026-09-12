@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	cognitionelements "github.com/bojieli/OpenRealtime/elements/cognition"
+	"github.com/bojieli/OpenRealtime/elements/speech"
 	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 )
 
@@ -40,10 +41,11 @@ func TestControlTokenNeverReachesSpeech(t *testing.T) {
 	}
 }
 
-// A turn that both speaks and asks for silence is a model in two minds. The
-// token must not be spoken, and the safe reading of a token whose whole purpose
-// is silence is silence - not the prose around it.
-func TestControlTokenMixedWithProseSpeaksNothing(t *testing.T) {
+// A turn that speaks and then asks for silence has said what came before the
+// token: "Two.<wait>" is a count with the closing token in the same breath,
+// and losing the count is worse than an extra sentence. The token is never
+// spoken, and nothing after it is.
+func TestControlTokenAfterProseKeepsTheProse(t *testing.T) {
 	mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
 		map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":2}`)}, nil)
 	defer stopInteractionGraph(t, done, cancel)
@@ -56,13 +58,21 @@ func TestControlTokenMixedWithProseSpeaksNothing(t *testing.T) {
 	}))
 	send(t, text, preparedEnvelope("delta", runID, cognitionelements.PreparedTextDelta{
 		Boundary: cognitionelements.TextChunk, Index: 1,
-		Text: "Pressing the key for order status. " + coreinteraction.WaitToken,
+		Text: "Two." + coreinteraction.WaitToken + " Three.",
 	}))
 	send(t, text, preparedEnvelope("end", runID, cognitionelements.PreparedTextDelta{
 		Boundary: cognitionelements.TextEnd, Index: 2,
 	}))
 
+	segment := receive(t, segments)
+	if spoken, _ := segment.Payload.(speech.TextSegment); spoken.Text != "Two." {
+		t.Fatalf("segment = %+v, want the words before the token and nothing after it", segment.Payload)
+	}
 	assertNoEnvelope(t, segments)
+	outcome := receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted)
+	if outcome.Segments != 1 || outcome.Code == "control_token_silence" {
+		t.Fatalf("a run that spoke before the token is not a silent run: %+v", outcome)
+	}
 }
 
 // A streaming provider hands the token over in pieces, and no piece is the

@@ -28,6 +28,7 @@ const (
 	QuestionRequest    = "request"
 	QuestionQuiet      = "quiet"
 	QuestionElsewhere  = "elsewhere"
+	QuestionUrgent     = "urgent"
 	AnswerYes          = "yes"
 	AnswerNo           = "no"
 )
@@ -67,14 +68,19 @@ var SightQuestion = StepQuestion{Name: QuestionOccurrence, Text: "The agent was 
 // RequestQuestion is asked when the person has stopped and nothing came due:
 // is there something to answer?
 var RequestQuestion = StepQuestion{Name: QuestionRequest, Text: "This is the final of what the person said. " +
-	"Is it a question or a request put to the agent that no recent step already answered? If \"already " +
-	"answered in this utterance\" shows words, or a recent step spoke for these same words, the agent is " +
-	"already answering it: answer no unless the final adds a different request. Answer no for a " +
-	"story, small talk, a rule being set up, or words meant for somebody else in the room: people talking to " +
-	"each other about their own errands, a reply to what somebody in the room just asked (\"No, I forgot " +
-	"again. Can you put it on the list?\" answers the person who asked about the milk), a recording reading " +
-	"out options. Everything arrives through one microphone, so a line marked \"user\" can be somebody " +
-	"else in the room talking to a third person."}
+	"Is it a question or a request that no recent step already answered? If \"already answered in this " +
+	"utterance\" shows words, or a recent step spoke for these same words, the agent is already answering " +
+	"it: answer no unless the final adds a different request. A story, small talk, a rule being set up, or " +
+	"a recording reading out options is not a request."}
+
+// UrgentQuestion is asked on a partial when no standing instruction is in
+// force: nothing can come due, so the one thing a half-sentence can be is
+// something that cannot wait for the person to finish.
+var UrgentQuestion = StepQuestion{Name: QuestionUrgent, Text: "No standing instruction is in force and the " +
+	"person is still mid-sentence. Do the words so far demand that the agent act before they finish - a " +
+	"warning, an emergency, \"stop!\" - rather than something the agent can answer or carry out once " +
+	"they have finished? A request, a question, a rule being set up, or a story is not urgent. Answer yes " +
+	"only if waiting for the end of the sentence would be wrong."}
 
 // ElsewhereQuestion is asked once a final reads as a request: was it put to
 // the agent at all? Everything reaches the agent through one microphone, so
@@ -119,7 +125,7 @@ func ComposeChoice(speaking bool, answers map[string]bool) Choice {
 	return Choice{
 		Speaking: speaking,
 		Stop:     speaking && answers[QuestionStop],
-		Speak: answers[QuestionOccurrence] || answers[QuestionQuiet] ||
+		Speak: answers[QuestionOccurrence] || answers[QuestionQuiet] || answers[QuestionUrgent] ||
 			(answers[QuestionRequest] && !answers[QuestionElsewhere]),
 	}
 }
@@ -133,7 +139,7 @@ func AnswerFor(question string, choice Choice) string {
 		if choice.Stop {
 			return AnswerYes
 		}
-	case QuestionOccurrence, QuestionRequest, QuestionQuiet:
+	case QuestionOccurrence, QuestionRequest, QuestionQuiet, QuestionUrgent:
 		if choice.Speak {
 			return AnswerYes
 		}

@@ -971,7 +971,8 @@ func (decider *semanticTestDecider) Decide(
 	// options is not a step question and is answered as scripted.
 	stepQuestion := decision.Question != ""
 	newStep := !stepQuestion || decision.Question == coreinteraction.QuestionStop ||
-		((decision.Question == coreinteraction.QuestionOccurrence || decision.Question == coreinteraction.QuestionQuiet) &&
+		((decision.Question == coreinteraction.QuestionOccurrence || decision.Question == coreinteraction.QuestionQuiet ||
+			decision.Question == coreinteraction.QuestionUrgent) &&
 			decider.lastQuestion != coreinteraction.QuestionStop)
 	decider.lastQuestion = decision.Question
 	if newStep {

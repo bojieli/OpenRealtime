@@ -503,6 +503,14 @@ func (runner *semanticAdmissionRunner) previousStepHeard(streamID string) (strin
 // and all of later when it does not.
 func wordsAdded(earlier, later string) string {
 	was, now := strings.Fields(earlier), strings.Fields(later)
+	// Text with no spaces in it - Mandarin - has one "word", and a diff by
+	// words shows the whole sentence as new at every step. Measured, the
+	// policy was told "new words: 我们明天下午三点在办公室见面。" with
+	// "already answered: 我们明天下午三点在办公室" and had to find 见面 itself.
+	if trimmedEarlier, trimmedLater := strings.TrimSpace(earlier), strings.TrimSpace(later); trimmedEarlier != "" &&
+		len(was) <= 1 && len(now) <= 1 && strings.HasPrefix(trimmedLater, trimmedEarlier) {
+		return strings.TrimSpace(strings.TrimPrefix(trimmedLater, trimmedEarlier))
+	}
 	if len(was) == 0 || len(now) < len(was) {
 		return strings.TrimSpace(later)
 	}
@@ -1409,6 +1417,15 @@ func (runner *semanticAdmissionRunner) decideChoice(
 		// occurrence in, and nothing was said that could be a request. The
 		// one question is whether a policy that waits on quiet has come due.
 		if _, err := ask(coreinteraction.QuietQuestion); err != nil {
+			return inertia, coreinteraction.Outcome{}, asked, err
+		}
+	case len(situation.Pins) == 0 && situation.TranscriptEvent == coreinteraction.TranscriptPartial &&
+		len(situation.Seeing) == 0 && strings.TrimSpace(situation.Seen) == "":
+		// Nothing standing can come due, so the one thing a half-sentence
+		// can be is urgent. Asked the occurrence question instead, the model
+		// found an occurrence of the rule being set up in a fifth of runs,
+		// however plainly the question said there was none to find.
+		if _, err := ask(coreinteraction.UrgentQuestion); err != nil {
 			return inertia, coreinteraction.Outcome{}, asked, err
 		}
 	default:

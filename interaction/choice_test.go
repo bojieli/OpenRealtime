@@ -119,7 +119,7 @@ func TestQuestionsComposeEveryChoice(t *testing.T) {
 				t.Fatal(err)
 			}
 			answers := map[string]bool{}
-			for _, question := range []string{QuestionStop, QuestionOccurrence, QuestionRequest, QuestionQuiet, QuestionElsewhere} {
+			for _, question := range []string{QuestionStop, QuestionOccurrence, QuestionRequest, QuestionQuiet, QuestionElsewhere, QuestionUrgent} {
 				answers[question] = AnswerFor(question, choice) == AnswerYes
 			}
 			if composed := ComposeChoice(speaking, answers); composed != choice {
