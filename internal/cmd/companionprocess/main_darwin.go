@@ -375,15 +375,16 @@ func expectedCompanionArguments(binary string) []string {
 		"-webrtc-listen", "127.0.0.1:18766", "-presentation-listen", "127.0.0.1:18767",
 		"-client", "none", "-token-env", "OPENREALTIME_HOSTED_COMPANION_TOKEN",
 		"-ready-timeout", "90s", "-shutdown-timeout", "10s", "--",
-		"-slow-provider", "vllm", "-slow-model", "hosted-companion-smoke"}
+		"-binding", "cascade", "-slow-provider", "vllm",
+		"-slow-model", "hosted-companion-smoke"}
 }
 
 func expectedServerArguments(binary string) []string {
 	return []string{binary, "serve", "-listen", "127.0.0.1:18765", "-webrtc-listen",
 		"127.0.0.1:18766", "-webrtc-allow-origin", "http://127.0.0.1:18767",
 		"-model", "openrealtime", "-token-env", "OPENREALTIME_HOSTED_COMPANION_TOKEN",
-		"-shutdown-timeout", "10s", "-slow-provider", "vllm", "-slow-model",
-		"hosted-companion-smoke"}
+		"-shutdown-timeout", "10s", "-binding", "cascade",
+		"-slow-provider", "vllm", "-slow-model", "hosted-companion-smoke"}
 }
 
 func expectedPresentationArguments(binary string) []string {
