@@ -3,8 +3,8 @@
 OpenRealtime separates software, documentation, and research fixtures so that
 reuse rights are explicit:
 
-- Source code, schemas, configuration, and scripts: Apache License 2.0. The
-  complete license text is in [`LICENSE`](LICENSE).
+- Source code, schemas, configuration, and scripts: MIT License. The complete
+  license text is in [`LICENSE`](LICENSE).
 - Project documentation, including `README.md`, `CHANGELOG.md`, and `docs/`
   (the historical v1 plan now lives at `docs/openrealtime-v1-plan.md`):
   [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
@@ -20,7 +20,7 @@ reuse rights are explicit:
   Research License Agreement described below permits research and
   non-commercial use and requires a separate written license for commercial use;
   its conditions reach the output and apply independently of this repository's
-  Apache-2.0 code license. Anyone reusing these twelve files should read that
+  MIT code license. Anyone reusing these twelve files should read that
   agreement for the revision they intend to rely on rather than treat the
   fixtures as unencumbered.
 - Generated OpenAI OpenAPI-derived schema and registry files: MIT, with source,
@@ -93,7 +93,7 @@ The locally retrieved Fish S2-Pro snapshot identifies the **Fish Audio Research
 License Agreement**, last updated March 7, 2026. It permits research and
 non-commercial uses under its terms and states that commercial use requires a
 separate written license. Its attribution, acceptable-use, redistribution, and
-other conditions apply independently of this repository's Apache-2.0 code
+other conditions apply independently of this repository's MIT code
 license. Before reproducing or deploying any live condition, operators must
 read the exact license shipped with each selected weight revision and verify
 service/API terms at the time of use. A model named in documentation is an

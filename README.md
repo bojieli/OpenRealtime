@@ -27,7 +27,7 @@
 
 <p align="center">
   <a href="https://github.com/bojieli/OpenRealtime/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/bojieli/OpenRealtime/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <a href="go.mod"><img alt="Go 1.25 or newer" src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white"></a>
   <a href="docs/protocol/openrealtime-1.md"><img alt="OpenRealtime Protocol v1" src="https://img.shields.io/badge/protocol-v1-7C3AED"></a>
 </p>
@@ -169,7 +169,7 @@ vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 
 ## License
 
-Software is licensed under [Apache 2.0](LICENSE); documentation is CC BY 4.0.
+Software is licensed under the [MIT License](LICENSE); documentation is CC BY 4.0.
 See [LICENSES.md](LICENSES.md) for original fixtures, third-party provenance,
 and license exceptions. Model weights and external services have their own
 licenses and terms.

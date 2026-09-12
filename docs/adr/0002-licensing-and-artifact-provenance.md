@@ -1,6 +1,9 @@
 # ADR-0002: Separate licenses and require artifact provenance
 
-- Status: accepted
+- Status: accepted; the code license is superseded by
+  [ADR-0017](0017-mit-license-for-code.md), which replaces Apache-2.0 with MIT.
+  The separation of code, documentation, and fixture licensing, and the
+  provenance requirement below, remain accepted as written.
 - Date: 2026-08-17
 
 ## Context

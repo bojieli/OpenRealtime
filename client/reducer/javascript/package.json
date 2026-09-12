@@ -2,7 +2,7 @@
   "name": "@openrealtime/client-reducer",
   "version": "0.1.0",
   "description": "Reference client-side reducer for the OpenRealtime Realtime protocol: applies a server event stream to client state, with the same conformance corpus the Go and Swift implementations run.",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bojieli/OpenRealtime.git",

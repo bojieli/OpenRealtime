@@ -450,8 +450,8 @@ func TestJavaScriptPackageDeclaresTheReleaseAndItsEntryPoints(t *testing.T) {
 	if manifest.Type != "module" {
 		t.Fatalf("package type = %q, want module: the sources are ES modules", manifest.Type)
 	}
-	if manifest.License != "Apache-2.0" {
-		t.Fatalf("package license = %q, want Apache-2.0", manifest.License)
+	if manifest.License != "MIT" {
+		t.Fatalf("package license = %q, want MIT", manifest.License)
 	}
 	if manifest.Exports["."] != "./reducer.mjs" {
 		t.Fatalf("package entry point = %q, want ./reducer.mjs", manifest.Exports["."])

@@ -16,6 +16,6 @@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSCameraUsageDescription</key><string>Share a physical camera with the OpenRealtime session.</string>
   <key>NSMicrophoneUsageDescription</key><string>Stream microphone audio to the OpenRealtime session.</string>
-  <key>NSHumanReadableCopyright</key><string>Apache-2.0</string>
+  <key>NSHumanReadableCopyright</key><string>MIT</string>
 </dict>
 </plist>

@@ -27,6 +27,7 @@ Each record's status and supersession notes define its scope.
 | [ADR-0014](0014-controller-composition-requires-arbitration.md) | Controller composition requires explicit arbitration |
 | [ADR-0015](0015-agent-topology-is-a-versioned-graph.md) | Agent topology is a versioned graph, not a binding invariant |
 | [ADR-0016](0016-retain-speech-history-after-freshness-rejection.md) | Preserve speech history when model freshness expires |
+| [ADR-0017](0017-mit-license-for-code.md) | License the code under MIT |
 
 For a substantial architecture or protocol proposal, add a record explaining
 the problem, alternatives, selected design, compatibility impact, and remaining

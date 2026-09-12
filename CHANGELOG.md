@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The code license is MIT, replacing Apache-2.0. Documentation stays CC BY 4.0,
+  golden traces and contract fixtures stay CC0-1.0, and the speech fixtures stay
+  outside any grant this project can make. [ADR-0017](docs/adr/0017-mit-license-for-code.md)
+  records the decision and what it costs: MIT carries no express patent grant and
+  no patent-retaliation clause, where Apache-2.0 did, and adopters no longer
+  inherit its file-marking or NOTICE-carrying obligations. Relicensing was
+  available because every commit here is one copyright holder's work, which will
+  stop being true with the first outside contribution.
+
+  The assertion is checked rather than only declared: the JavaScript reducer
+  package names its license and `TestJavaScriptPackageDeclaresTheReleaseAndItsEntryPoints`
+  fails if the manifest and the expectation disagree.
+
 - The speech fixtures are no longer offered under CC0, and the provenance the
   policy requires is now recorded for all twelve. They are Fish Audio output,
   synthesised locally on this project's own GPU, so they are that model's output
