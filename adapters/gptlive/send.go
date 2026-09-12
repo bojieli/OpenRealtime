@@ -141,14 +141,11 @@ func (client *Client) configure(ctx context.Context, event clientEvent) error {
 			return nil
 		}
 		if len([]rune(instruction)) > commentaryChunkRunes {
-			return client.emit(ctx, "error", map[string]any{
-				"type": "error",
-				"error": map[string]any{
-					"code": "instruction_update_rejected",
-					"message": "GPT-Live fixes the instruction at session start; a later change " +
-						"can only be appended, and this one exceeds the 500-token append cap",
-				},
-			})
+			// Too large to append. If nobody has spoken yet this is the
+			// caller configuring itself after connecting, which is ordinary -
+			// exchange the session for one that carries the real instruction
+			// rather than run the whole conversation without it.
+			return client.reopen(ctx, instruction)
 		}
 		client.writeMu.Lock()
 		client.startInstruction = instruction

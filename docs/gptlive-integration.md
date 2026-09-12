@@ -298,6 +298,51 @@ The lesson generalises past this endpoint. A one-shot test - speak once, check
 the transcript - cannot see any of this. Testing a live agent needs another
 live agent.
 
+## 4b. What a standard tool-calling benchmark found
+
+Full-Duplex-Bench covers overlap and nothing else. Tool calling has its own
+standard suite here - `bench/tauvoice`, which runs tau2-bench's audio-native
+path against an OpenRealtime endpoint - and pointing it at GPT-Live exposed a
+defect that matters far beyond that benchmark.
+
+**A client that configures itself after connecting lost its instructions.**
+OpenRealtime declares the remote session as soon as it connects, so the
+binding's own composed instruction is what opened the Live session. A client
+then sends its real system prompt in a `session.update`, which arrives second -
+past the point the endpoint fixes the instruction. Appending is capped at 500
+tokens, so tau2's retail domain policy, thousands of tokens long, could not be
+appended and was refused:
+
+```text
+upstream_instruction_update_rejected: GPT-Live fixes the instruction at session
+start; a later change can only be appended, and this one exceeds the cap
+```
+
+The agent then ran the whole conversation on this binding's default
+instruction and none of the caller's, which is worse than any error. The
+endpoint offers exactly one way to change an immutable field - start another
+session - so that is what now happens: before anyone has spoken there is
+nothing to lose by exchanging the session for one configured properly, and the
+handover is invisible to the caller. Once a conversation exists the exchange is
+refused instead, because the conversation would go with it. After the fix, four
+tau2 sessions reached the endpoint with no rejection.
+
+The rest of tau-voice does not run in this environment, and the reason is
+worth recording rather than leaving as a failed suite: the simulated caller
+needs a voice, and tau2's synthesis client is built for a local speech service
+(Fish Speech 1.5 on port 8081, a GPU model) and sends no bearer token, so a
+hosted endpoint answers 401. The agent side is proven; the caller side needs
+that service running.
+
+## 4c. Steering, which neither benchmark covers
+
+A Live session's instruction is fixed at startup, so the instruction channel is
+the only thing that changes a running agent's behaviour - every guardrail, every
+standing instruction a user sets out loud, and every disclosure rides on it. It
+is verified against the real endpoint directly: a mid-conversation instruction
+to prefix everything with a marker word, then a hand-off, and the voice said
+`"PINEAPPLE Your parcel arrives tomorrow."`
+
 ## 5. Turn boundaries, honestly
 
 The weakest part of any GPT-Live integration is deciding where a turn ends,
@@ -355,6 +400,8 @@ phase (35 mutations, 35 caught).
 | --- | --- |
 | Handshake, frame clock, carrier handling, turn synthesis | Fork-on-drop and explicit fork — the project refuses storage |
 | Interruption, through Full-Duplex-Bench (§4a) | — |
+| Mid-conversation steering (§4c) | — |
+| tau2 sessions accepted after the instruction fix (§4b) | tau-voice end to end — the simulated caller needs a local speech service |
 | Delegation round trip with synthesised speech | Recording download — same |
 | All four push channels acknowledged | Sideband attach — offered only to WebRTC/SIP sessions |
 | Cancel interrupts; close finalised; usage heartbeat | Telephony `transport.*` events — no SIP leg here |

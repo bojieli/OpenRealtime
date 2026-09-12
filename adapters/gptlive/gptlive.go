@@ -145,6 +145,10 @@ type Config struct {
 	// MaxReconnects bounds how many forks one Client will attempt. Zero
 	// selects three.
 	MaxReconnects int
+	// MaxRestarts bounds how many times a session may be abandoned and
+	// reopened to honour a configuration the endpoint fixes at start. Zero
+	// selects two; negative refuses to restart at all.
+	MaxRestarts int
 	// CallerSampleRateHz is the rate the caller sends and expects audio at.
 	// Empty selects the Realtime wire's 24 kHz.
 	CallerSampleRateHz uint32
@@ -249,6 +253,13 @@ type Client struct {
 	expand  func([]byte) []byte
 	// forking marks that the next session.start continues a stored session.
 	forking bool
+	// restarts counts sessions abandoned to honour a configuration change the
+	// endpoint fixes at start.
+	restarts int
+	// conversationBegun marks that somebody has spoken. Before that a session
+	// can be exchanged for a better-configured one and nothing is lost;
+	// afterwards it cannot, because the conversation would be.
+	conversationBegun bool
 	// sideband marks a client attached to a session it does not own: it
 	// carries no audio and starts nothing.
 	sideband   bool
@@ -336,6 +347,9 @@ func prepare(config Config) (*Client, error) {
 	}
 	if config.MaxReconnects <= 0 {
 		config.MaxReconnects = 3
+	}
+	if config.MaxRestarts == 0 {
+		config.MaxRestarts = 2
 	}
 	config.ResponsesModel = strings.TrimSpace(config.ResponsesModel)
 	config.ForkOf = strings.TrimSpace(config.ForkOf)

@@ -67,6 +67,16 @@ func (client *Client) read(ctx context.Context) {
 		client.writeMu.Unlock()
 		kind, payload, err := connection.Read(ctx)
 		if err != nil {
+			// A reopen or a fork replaces the socket under this loop, and the
+			// read in flight fails with the old one. That is a handover, not a
+			// disconnection: the session continues on the connection that took
+			// its place.
+			client.writeMu.Lock()
+			replaced := client.connection != connection
+			client.writeMu.Unlock()
+			if replaced {
+				continue
+			}
 			if client.fork(ctx, err) {
 				continue
 			}
@@ -136,9 +146,11 @@ func (client *Client) translate(ctx context.Context, event serverEvent) error {
 		return nil
 
 	case "session.input_transcript.delta":
+		client.noteConversation()
 		return client.noteUserTranscript(ctx, event.Delta, event.StartMS, event.EndMS)
 
 	case "session.output_transcript.delta":
+		client.noteConversation()
 		return client.noteAssistantTranscript(ctx, event.Delta)
 
 	case "session.output_audio.delta":
@@ -273,6 +285,75 @@ func (client *Client) translate(ctx context.Context, event serverEvent) error {
 		// conversation this binding mirrors.
 		return nil
 	}
+}
+
+// noteConversation records that this session now holds a conversation, after
+// which it can no longer be exchanged for a better-configured one.
+func (client *Client) noteConversation() {
+	client.writeMu.Lock()
+	client.conversationBegun = true
+	client.writeMu.Unlock()
+}
+
+// reopen abandons this session and opens another with a new instruction.
+//
+// It exists because the endpoint fixes the instruction at session start and a
+// caller does not always have it by then. OpenRealtime declares the session as
+// soon as it connects, and a client that configures itself afterwards - which
+// is ordinary, and what tau2-bench does with a domain policy thousands of
+// tokens long - arrives second. Appending is capped at 500 tokens, so the real
+// prompt could not be appended and was refused: the agent then ran with this
+// binding's default instruction and none of the caller's, which is worse than
+// any error. Before anyone has spoken there is nothing to lose by exchanging
+// the session for one configured properly, so that is what happens.
+func (client *Client) reopen(ctx context.Context, instruction string) error {
+	client.writeMu.Lock()
+	if client.conversationBegun || client.restarts >= client.config.MaxRestarts {
+		client.writeMu.Unlock()
+		return client.emit(ctx, "error", map[string]any{
+			"type": "error",
+			"error": map[string]any{
+				"code": "instruction_update_rejected",
+				"message": "GPT-Live fixes the instruction at session start; a later change can " +
+					"only be appended, and this one exceeds the 500-token append cap. The " +
+					"session is already in use, so it cannot be reopened with it",
+			},
+		})
+	}
+	client.restarts++
+	attempt := client.restarts
+	previous := client.connection
+	client.writeMu.Unlock()
+
+	connection, err := client.dial(ctx, client.dialURL)
+	if err != nil {
+		return client.emit(ctx, "error", map[string]any{
+			"type": "error",
+			"error": map[string]any{
+				"code":    "instruction_update_rejected",
+				"message": "reopening the session with the caller's instruction failed: " + err.Error(),
+			},
+		})
+	}
+	// Let the abandoned session go, so its meter stops.
+	go func() {
+		_ = previous.Close(websocket.StatusNormalClosure, "reopened with a new instruction")
+	}()
+	client.writeMu.Lock()
+	client.connection = connection
+	client.startSent, client.started = false, false
+	client.pending = nil
+	client.writeMu.Unlock()
+	client.stopStallWatch()
+	event := clientEvent{}
+	event.Session.Instructions = instruction
+	if err := client.configure(ctx, event); err != nil {
+		return err
+	}
+	return client.emit(ctx, "openrealtime.upstream.reopened", map[string]any{
+		"type": "openrealtime.upstream.reopened", "attempt": attempt,
+		"reason": "the caller's instruction could not be applied to a started session",
+	})
 }
 
 // storageRefused restarts a session whose store request the project refused,

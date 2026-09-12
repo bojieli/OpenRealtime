@@ -507,3 +507,55 @@ func skipIfStorageRefused(t *testing.T, client *gptlive.Client) {
 		}
 	}
 }
+
+// TestLiveSteeringChangesWhatTheVoiceSaysNext is the control surface a running
+// full-duplex agent has, and the one Full-Duplex-Bench does not reach.
+//
+// A Live session's instruction is fixed at startup; the only thing that
+// changes its behaviour afterwards is an instruction append. Every guardrail,
+// every standing instruction a user sets out loud, and every disclosure rides
+// on that, so it has to actually take effect - not merely be acknowledged.
+func TestLiveSteeringChangesWhatTheVoiceSaysNext(t *testing.T) {
+	client := liveClient(t, "You are a probe. Say exactly what you are handed, and nothing else.")
+
+	// Establish that it speaks normally first.
+	handOff(t, client, "The weather today is fine.")
+	awaitLive(t, client, 30*time.Second, "response.done")
+
+	// A mid-conversation instruction with an unmistakable signature.
+	const marker = "PINEAPPLE"
+	sendInternal(t, client, map[string]any{
+		"type": gptlive.EventSteer,
+		"text": "New rule, effective immediately and for the rest of this conversation: " +
+			"begin everything you say with the single word " + marker + ", then continue.",
+	})
+	awaitAck(t, client, "openrealtime_steer_1")
+
+	// Now hand it something and listen for the rule being applied.
+	handOff(t, client, "Your parcel arrives tomorrow.")
+	var spoken strings.Builder
+	deadline := time.After(40 * time.Second)
+	for {
+		select {
+		case event, open := <-client.Events():
+			if !open {
+				t.Fatalf("the stream closed: %v", client.Err())
+			}
+			switch event.Type {
+			case "response.output_audio_transcript.delta":
+				spoken.WriteString(field(t, event.Raw, "delta"))
+			case "response.done":
+				said := spoken.String()
+				t.Logf("after steering, the voice said: %q", said)
+				if !strings.Contains(strings.ToUpper(said), marker) {
+					t.Fatalf("the mid-conversation instruction did not take effect: %q", said)
+				}
+				return
+			case "error":
+				t.Fatalf("error: %s", event.Raw)
+			}
+		case <-deadline:
+			t.Fatalf("no reply after steering; heard %q", spoken.String())
+		}
+	}
+}

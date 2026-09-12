@@ -165,6 +165,14 @@ func (runtime *runtime) rememberAnswer(text string) {
 // handoffDirective is what the remote is told to do with a completed answer.
 // It is identical whichever channel carries it, so the wording lives in one
 // place and a vendor difference stays a transport difference.
+//
+// It deliberately says nothing about yielding to the user, because adding that
+// was tried and measured and did not work. Against the real GPT-Live endpoint
+// a voice interrupted mid-answer stops instantly on its own words - 0 ms - and
+// takes about 1.3 s when it is reading an answer handed to it here. Telling it
+// in this directive to stop at once for the user moved that to 1.27 s, which
+// is noise. The lever that does work is not wording: it is holding the audio
+// at the relay, which is what -upstream-barge-in does.
 const handoffDirective = "The background reasoner has completed the answer. Say this, briefly and " +
 	"naturally, preserving every fact and identifier exactly, and add nothing:\n\n"
 

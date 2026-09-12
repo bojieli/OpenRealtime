@@ -115,24 +115,6 @@ func TestALaterInstructionChangeIsAppended(t *testing.T) {
 	}
 }
 
-// TestAnOversizedInstructionChangeIsRefusedOutLoud checks that a change the
-// append cap cannot carry is reported, never silently dropped.
-func TestAnOversizedInstructionChangeIsRefusedOutLoud(t *testing.T) {
-	fake := newFakeLive(t)
-	client, _ := connect(t, fake, nil)
-	start(t, fake, client, "Be brief.")
-
-	sendInternal(t, client, map[string]any{
-		"type":    "session.update",
-		"session": map[string]any{"instructions": strings.Repeat("Be thorough. ", 200)},
-	})
-	failure := expect(t, client, "error")
-	if !strings.Contains(string(failure.Raw), "instruction_update_rejected") {
-		t.Errorf("the refusal did not name itself: %s", failure.Raw)
-	}
-	fake.refuteSent(t, "session.instructions.append")
-}
-
 // TestTheVoiceComesFromTheSessionUpdate checks that a client's voice choice,
 // forwarded by the binding, is what the session is opened with.
 func TestTheVoiceComesFromTheSessionUpdate(t *testing.T) {

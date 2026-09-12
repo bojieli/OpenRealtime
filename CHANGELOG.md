@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A client that configured itself after connecting lost its instructions on
+  GPT-Live. The binding declares the remote session as soon as it connects, so
+  its own composed instruction opened it; the caller's real system prompt
+  arrived in the next session.update, past the point the endpoint fixes that
+  field, and above the 500-token append cap it was refused outright - leaving
+  the agent running on the binding's default instruction and none of the
+  caller's. tau2-bench found it with a domain policy thousands of tokens long.
+  The endpoint offers one way to change an immutable field, which is to start
+  another session, so that is what now happens: before anybody has spoken the
+  session is exchanged for one carrying the caller's instruction, invisibly to
+  the caller; once a conversation exists the change is refused instead, because
+  the conversation would go with it. A reopen or a fork is now a handover to
+  the read loop rather than a disconnection.
+
 - GPT-Live's Responses delegation is supported, which completes the endpoint's
   event surface at 32 of 32. Naming a Responses model hands the backend job to
   the vendor's managed loop instead of this binding's reasoner - the two are

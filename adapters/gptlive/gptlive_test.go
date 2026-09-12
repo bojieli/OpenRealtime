@@ -32,6 +32,9 @@ type fakeLive struct {
 	// a second connection is not born already hung up.
 	hangup chan struct{}
 
+	// send is the channel of the most recent connection. A reopen or a fork
+	// leaves an older handler alive for a moment, and one shared channel lets
+	// the dying one swallow a message meant for its replacement.
 	send  chan map[string]any
 	ready chan struct{}
 	once  sync.Once
@@ -45,10 +48,13 @@ func newFakeLive(t *testing.T) *fakeLive {
 	fake.server = httptest.NewServer(http.HandlerFunc(
 		func(writer http.ResponseWriter, request *http.Request) {
 			hangup := make(chan struct{})
+			outbound := make(chan map[string]any, 32)
 			fake.mu.Lock()
 			fake.authHeader = request.Header.Get("Authorization")
 			fake.paths = append(fake.paths, request.URL.Path)
 			fake.hangup = hangup
+			// Emissions follow the newest connection.
+			fake.send = outbound
 			fake.mu.Unlock()
 			connection, err := websocket.Accept(writer, request, nil)
 			if err != nil {
@@ -79,7 +85,7 @@ func newFakeLive(t *testing.T) *fakeLive {
 					// Drop the connection without a close frame, the way a
 					// network failure does rather than a graceful shutdown.
 					return
-				case message := <-fake.send:
+				case message := <-outbound:
 					encoded, _ := json.Marshal(message)
 					if connection.Write(ctx, websocket.MessageText, encoded) != nil {
 						return
@@ -93,7 +99,12 @@ func newFakeLive(t *testing.T) *fakeLive {
 
 func (fake *fakeLive) url() string { return "ws" + strings.TrimPrefix(fake.server.URL, "http") }
 
-func (fake *fakeLive) emit(message map[string]any) { fake.send <- message }
+func (fake *fakeLive) emit(message map[string]any) {
+	fake.mu.Lock()
+	channel := fake.send
+	fake.mu.Unlock()
+	channel <- message
+}
 
 func (fake *fakeLive) sent() []map[string]json.RawMessage {
 	fake.mu.Lock()

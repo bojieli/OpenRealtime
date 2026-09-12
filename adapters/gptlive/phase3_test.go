@@ -214,10 +214,17 @@ func TestADroppedStoredSessionIsForkedAndContinues(t *testing.T) {
 		t.Errorf("the reconnect named %q as its source", got)
 	}
 	var starts []map[string]json.RawMessage
-	for _, message := range fake.sent() {
-		if decodeString(message["type"]) == "session.start" {
-			starts = append(starts, message)
+	for waited := time.Now().Add(3 * time.Second); time.Now().Before(waited); {
+		starts = nil
+		for _, message := range fake.sent() {
+			if decodeString(message["type"]) == "session.start" {
+				starts = append(starts, message)
+			}
 		}
+		if len(starts) >= 2 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	if len(starts) != 2 {
 		t.Fatalf("expected two session.start messages, got %d", len(starts))
@@ -551,4 +558,104 @@ func TestClientDelegationStillDropsToolResults(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 	fake.refuteSent(t, "response.item.create")
+}
+
+// TestALateInstructionReopensTheSession is the defect tau2-bench found.
+//
+// OpenRealtime declares the session as soon as it connects, so the binding's
+// own instruction is what opens it. A client that configures itself afterwards
+// - ordinary, and what a benchmark with a domain policy thousands of tokens
+// long does - arrives second, past the point the endpoint fixes the
+// instruction. Appending is capped at 500 tokens, so the caller's real prompt
+// could not be appended and was refused: the agent ran the whole conversation
+// on the binding's default instruction and none of the caller's.
+func TestALateInstructionReopensTheSession(t *testing.T) {
+	fake := newFakeLive(t)
+	client, _ := connect(t, fake, nil)
+	start(t, fake, client, "You are a voice.")
+	fake.awaitSent(t, "session.start")
+
+	// The caller's real prompt: far past the append cap.
+	policy := "You are a retail support agent. " + strings.Repeat(
+		"Follow the returns policy exactly and never promise a refund without an order id. ", 40)
+	if err := client.Send(t.Context(), map[string]any{
+		"type": "session.update", "session": map[string]any{"instructions": policy},
+	}); err != nil {
+		t.Fatalf("send the caller's instruction: %v", err)
+	}
+	reopened := expect(t, client, "openrealtime.upstream.reopened")
+	if !strings.Contains(string(reopened.Raw), "instruction") {
+		t.Errorf("the reopen did not say why: %s", reopened.Raw)
+	}
+
+	// A second connection, carrying the caller's instruction this time.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && len(fake.connectionPaths()) < 2 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(fake.connectionPaths()) != 2 {
+		t.Fatalf("expected the session to be reopened, connections: %v", fake.connectionPaths())
+	}
+	var starts []map[string]json.RawMessage
+	for settle := time.Now().Add(3 * time.Second); time.Now().Before(settle); {
+		starts = nil
+		for _, message := range fake.sent() {
+			if decodeString(message["type"]) == "session.start" {
+				starts = append(starts, message)
+			}
+		}
+		if len(starts) >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(starts) != 2 {
+		t.Fatalf("expected two session.start messages, got %d", len(starts))
+	}
+	if !strings.Contains(string(starts[1]["session"]), "retail support agent") {
+		t.Fatalf("the reopened session did not carry the caller's instruction: %s",
+			truncateForTest(string(starts[1]["session"])))
+	}
+	fake.emit(map[string]any{"type": "session.started", "session": map[string]any{"id": "live_reopened"}})
+	created := expect(t, client, "session.created")
+	if !strings.Contains(string(created.Raw), "live_reopened") {
+		t.Errorf("the reopened session's identity did not reach the caller: %s", created.Raw)
+	}
+}
+
+// TestALateInstructionIsRefusedOnceSomebodyHasSpoken keeps the exchange safe.
+// A session that already holds a conversation cannot be swapped for another:
+// the conversation would go with it.
+func TestALateInstructionIsRefusedOnceSomebodyHasSpoken(t *testing.T) {
+	fake := newFakeLive(t)
+	client, _ := connect(t, fake, nil)
+	start(t, fake, client, "You are a voice.")
+
+	fake.emit(map[string]any{
+		"type": "session.input_transcript.delta", "delta": "Hello there.",
+		"start_ms": 100, "end_ms": 900,
+	})
+	expect(t, client, "input_audio_buffer.speech_started")
+	fragment(t, client, "Hello there.")
+
+	if err := client.Send(t.Context(), map[string]any{
+		"type":    "session.update",
+		"session": map[string]any{"instructions": strings.Repeat("A long new policy. ", 200)},
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	failure := expect(t, client, "error")
+	if !strings.Contains(string(failure.Raw), "already in use") {
+		t.Errorf("the refusal did not explain itself: %s", failure.Raw)
+	}
+	if paths := fake.connectionPaths(); len(paths) != 1 {
+		t.Errorf("a session holding a conversation was reopened: %v", paths)
+	}
+}
+
+func truncateForTest(s string) string {
+	if len(s) <= 200 {
+		return s
+	}
+	return s[:200] + "…"
 }
