@@ -54,6 +54,15 @@
   the test process, so a browser reaching the network there is doing work
   nothing asked for.
 
+- The computer-use settlement waits bounded arrival at five seconds. Each one
+  stands between stages of a graph settlement - a cancellation, an
+  acknowledgement, a producer outcome - and waits for an event the runtime owes
+  the test rather than anything the test can hurry, so the bound can only ever
+  detect "this never arrived". On a loaded runner the first cancellation
+  settlement outcome arrived late and the failure read as though the settlement
+  had never happened. The shared helper now allows thirty seconds across all 125
+  call sites, which still fails when an outcome is genuinely never produced.
+
 - Removing a Chromium profile directory could fail a run whose every check had
   passed. All ten browser drivers killed the browser and deleted its profile in
   the next statement, and Chromium's children can still be writing there, so the

@@ -1511,12 +1511,26 @@ func testRealtimeCUToolSpecs(t *testing.T, target computeruse.Target) []legacyac
 	return specs
 }
 
+// realtimeCUReceiveTimeout bounds "this never arrived", not how quickly it did.
+//
+// These waits stand between stages of a graph settlement - a cancellation, an
+// acknowledgement, a producer outcome - and every one of them is an event the
+// runtime owes the test rather than something the test can hurry. Five seconds
+// was enough on an idle machine and not on a loaded CI runner, where the first
+// cancellation settlement outcome arrived late and the failure read as though
+// the settlement had never happened. Thirty still fails when an outcome is
+// genuinely never produced, which is the only thing these waits can detect,
+// and asserting anything tighter would be asserting a latency on whichever
+// machine happened to run the gate. The measurement suites report latency, on
+// hardware chosen for it.
+const realtimeCUReceiveTimeout = 30 * time.Second
+
 func receiveRealtimeCU[T any](t *testing.T, source <-chan T, name string) T {
 	t.Helper()
 	select {
 	case value := <-source:
 		return value
-	case <-time.After(5 * time.Second):
+	case <-time.After(realtimeCUReceiveTimeout):
 		var zero T
 		t.Fatalf("timed out waiting for %s", name)
 		return zero
