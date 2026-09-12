@@ -33,8 +33,13 @@
   is a hand-off, and one rejected for length is the binding's entire
   contribution silently lost.
 
-  The entry is `documented`: it is built from the vendor's specification and
-  run against a fake, and no turn has been run against the real endpoint.
+  The entry is `reachable`. The real endpoint answers on this URL and evaluates
+  a bearer credential sent this way - with a key it returns 401, with none 400,
+  and on a neighbouring `/v1/live/` path 404 - so the address and the
+  authentication are confirmed against the vendor. No turn has been run, because
+  the account behind the key available here is deactivated, which is what also
+  holds the `openai` entry at this level; the event names and the hand-off are
+  still only as good as the specification and the fake.
 
 - Chromium's first-run errands are now disabled in every browser driver rather
   than two of them. bench/meeting and bench/realtimecu already launched it with
