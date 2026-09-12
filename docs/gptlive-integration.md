@@ -390,6 +390,28 @@ carried, each was invisible at every layer, and each presented as silence
 somewhere far from its cause. On a pipeline where audio crosses four
 components, the rate is worth stating at every boundary that can state it.
 
+**One task in each domain.** Airline, retail and telecom, one task each, against
+the real endpoint. The integration behaves the same in all three - every session
+opened, heard the caller, delegated, and got tool results back:
+
+| domain  | transcripts | delegations | tool calls | outcome |
+|---------|------------:|------------:|-----------:|---------|
+| airline |          84 |           4 |          5 | passed, `db_match` true |
+| retail  |         195 |           3 |          8 | failed on the exchange |
+| telecom |         332 |          14 |         14 | cut off at the 10-minute cap |
+
+One of the three passes, and the two that do not fail for reasons above this
+layer rather than in it. Retail read the order and both products, then exchanged
+the keyboard for the wrong variant - `NL_ASSERTION` scored 1.0, so it said the
+right things about the wrong item, which is the reasoner choosing, not the audio
+path. The same task passed on an earlier run, so this is variance in the model's
+choice rather than a fixed defect. Telecom was still troubleshooting sensibly at
+ten minutes - it had sent a payment link, confirmed the balance cleared, and was
+working the next hypothesis when tau2's own `--task-timeout` ended it. Neither
+is the silence this section began with, and that is the distinction worth
+keeping: a benchmark score and a working pipeline are different measurements,
+and only the second one was ever in question here.
+
 ## 4c. Steering, which neither benchmark covers
 
 A Live session's instruction is fixed at startup, so the instruction channel is
