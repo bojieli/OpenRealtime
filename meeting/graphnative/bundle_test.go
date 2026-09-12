@@ -1049,10 +1049,16 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 		"frame":        base64.StdEncoding.EncodeToString(firstFrame),
 		"timestamp_ms": 1000,
 	})
-	// The public realm advertises three frames per second. Waiting across that
-	// exact admission interval keeps the second frame in the graph rather than
-	// accidentally testing the gateway's intentional rate-drop path.
-	time.Sleep(350 * time.Millisecond)
+	// The public realm advertises three frames per second, so the admission
+	// interval is about 333ms and a frame arriving inside one is dropped on
+	// purpose. This wait used to be 350ms, which is seventeen milliseconds of
+	// margin: enough on an idle machine and nothing at all on a loaded one,
+	// where two writes reach the gateway close enough together that the second
+	// is rate-dropped exactly as designed. The test then waits for a third
+	// frame that was never going to come and reports a broken handoff. Twice
+	// the interval leaves the intent unchanged - each frame in its own
+	// admission window - with margin that scheduling jitter cannot erase.
+	time.Sleep(700 * time.Millisecond)
 	writeMeetingWebSocketEvent(t, connection, map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": "screen",
 		"frame":        base64.StdEncoding.EncodeToString(secondFrame),
@@ -1060,8 +1066,9 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 	})
 	// Frame and cadence signals are explicit independent graph inputs. A third
 	// admitted source frame supplies the next clock edge if the second tick won
-	// fair input arbitration before its matching frame reached the policy.
-	time.Sleep(350 * time.Millisecond)
+	// fair input arbitration before its matching frame reached the policy. Same
+	// admission interval, same margin, as above.
+	time.Sleep(700 * time.Millisecond)
 	writeMeetingWebSocketEvent(t, connection, map[string]any{
 		"type": openrealtime.EventVideoFrameAppend, "source": "screen",
 		"frame":        base64.StdEncoding.EncodeToString(fixtureMeetingJPEG(t, 0x57)),
@@ -1098,10 +1105,12 @@ func TestMeetingGraphRunsThroughRealtimeWebSocketWithoutCredentials(t *testing.T
 	// is under test is that three video frames and the retained background
 	// context reach the foreground at all, and in the right order; the graph's
 	// latency is what the measurement suites report, and asserting it here
-	// would be asserting it on whatever machine happened to run the gate. Five
-	// seconds was tight enough to lose that distinction on a loaded CI runner,
-	// where this arrived one frame short and failed as though the handoff were
-	// broken.
+	// would be asserting it on whatever machine happened to run the gate.
+	//
+	// Widening this bound alone did not help, and that was the useful signal:
+	// the run failed at thirty seconds with exactly the same video=2 it failed
+	// at five with, because the third frame had been dropped at admission
+	// rather than delayed. The inter-frame waits above are what fixed it.
 	deadline := time.After(30 * time.Second)
 	for seenVideos < 3 || injectionFrame.Envelope == nil {
 		select {

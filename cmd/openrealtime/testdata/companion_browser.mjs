@@ -124,7 +124,16 @@ try {
   browser.on("Network.loadingFailed", (event, eventSessionID) => {
     if (eventSessionID !== sessionId) return;
     if (managementResponses.has(event.requestId)) {
-      managementFailures.push(event.errorText ?? "management response load failed");
+      // A cancelled read is not a failed one, which is what the branch below
+      // has always said for every other request. The inspection client cancels
+      // outstanding reads whenever the narrow management capability changes,
+      // and asking the view to read again cancels the previous read by the same
+      // mechanism, so cancellations are ordinary here rather than exceptional.
+      // What this driver has to establish is that one read was served and
+      // retained whole, and that is asserted on its own below.
+      if (!event.canceled && event.errorText !== "net::ERR_ABORTED") {
+        managementFailures.push(event.errorText ?? "management response load failed");
+      }
     } else if (!event.canceled) failures.push(event.errorText);
   });
   await call("Runtime.enable"); await call("Network.enable"); await call("Page.enable");
@@ -202,9 +211,32 @@ try {
     `document.querySelector('[data-view=inspection]')?.dataset.sessionId ?? ""`);
   check("browser exposes its negotiated session identity", browserSessionID.startsWith("sess_"));
   const expectedManagementPath = `/client/v1/management/sessions/${encodeURIComponent(browserSessionID)}/live`;
-  const captured = await waitFor("exact browser management response", async () =>
-    [...managementResponses.values()].some((value) =>
-      value.complete && new URL(value.url).pathname === expectedManagementPath));
+  // Ask the inspection view to read again until one read is captured whole,
+  // rather than waiting on whichever read the page happened to have in flight.
+  //
+  // The inspection client cancels every outstanding read when the narrow
+  // management capability changes - inspection-client.js does it deliberately,
+  // so a view never renders a snapshot taken under a superseded capability -
+  // and the management resources return 503 for a moment while a session is
+  // still settling. Passively waiting for one specific request to finish is
+  // therefore a race against the client's own correctness: locally this failed
+  // two runs in five, always with the observed `/live` read ending
+  // net::ERR_ABORTED and no completed body to show for it.
+  //
+  // Clicking the view's own Refresh button is how a person would ask for the
+  // same thing, and it exercises the identical authenticated path. The check
+  // below is unchanged: one completed response, on this session's exact path,
+  // with a body.
+  const captured = await waitFor("exact browser management response", async () => {
+    if ([...managementResponses.values()].some((value) =>
+      value.complete && new URL(value.url).pathname === expectedManagementPath)) return true;
+    await evaluate(`(() => {
+      const button = document.querySelector('[data-view=inspection] #refresh');
+      if (button && !button.disabled) button.click();
+      return true;
+    })()`);
+    return false;
+  }, 90000);
   const managementEvidence = [...managementResponses.values()].find((value) =>
     value.complete && new URL(value.url).pathname === expectedManagementPath);
   check("browser captured its exact authenticated management response",

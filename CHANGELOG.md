@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+- OpenAI's GPT-Live is supported as a realtime endpoint, as `openai-live`
+  (aliases `gpt-live`, `live`). It shares a vendor with the Realtime API and
+  almost nothing else, so `adapters/gptlive` is a translator rather than a
+  catalogue entry: Live is full duplex, has no input-buffer commit and no
+  `response.create` that starts a spoken turn, and - the difference that shapes
+  the adapter - emits no event that ends anything. The vendor states that
+  transcript fragments "do not define complete turns or include a
+  transcript-done event".
+
+  The binding needs turns, so they are synthesised from two signals and the
+  difference between them is recorded rather than smoothed over.
+  `session.delegation.created` is the reliable one: GPT-Live does not reason or
+  call tools itself, it delegates and keeps talking while it waits, so with
+  client delegation the endpoint asks this process for help at exactly the
+  moment the background reasoner should start. That makes the reasoner the
+  backend the vendor's own design expects rather than a second model bolted to
+  the side of one. Silence is the fallback, for the turns the endpoint answers
+  by itself and never delegates - without it those never reach the trajectory
+  and the reasoner is later asked to continue a conversation with holes in it.
+  The gap is a guess, is configurable, and never preempts a delegation.
+
+  The hand-off inverts with the protocol. Live has no conversation items and no
+  writable session instruction, so a completed answer goes back through
+  `session.commentary.append` against the delegation that asked for it. The
+  catalogue still declares the portable conversation-item strategy and the
+  translator is what makes it mean something, which is the arrangement Gemini
+  Live already has. An answer over the vendor's 500-token append cap is split
+  across appends rather than sent whole and rejected: a hand-off in two pieces
+  is a hand-off, and one rejected for length is the binding's entire
+  contribution silently lost.
+
+  The entry is `documented`: it is built from the vendor's specification and
+  run against a fake, and no turn has been run against the real endpoint.
+
 - Chromium's first-run errands are now disabled in every browser driver rather
   than two of them. bench/meeting and bench/realtimecu already launched it with
   background networking off; the seven `.mjs` drivers under
@@ -11,13 +45,31 @@
   the test process, so a browser reaching the network there is doing work
   nothing asked for.
 
-- One meeting graph assertion bounded arrival at five seconds and lost a frame
-  to it. The test requires three video frames and the retained background
-  context to reach the foreground in the right order; on a loaded runner two
-  arrived inside the bound and it failed as though the handoff were broken. The
-  bound is thirty seconds now, which still fails when they never arrive and no
-  longer asserts a latency this gate was never measuring - the suites report
-  that, on hardware chosen for it.
+- Two end-to-end checks were failing for reasons that looked like slowness and
+  were not, and in both cases widening the bound was the wrong repair.
+
+  The meeting graph handoff waited 350ms between video frames. The public realm
+  caps video at three frames per second, so the admission interval is about
+  333ms and a frame arriving inside one is dropped on purpose - leaving
+  seventeen milliseconds of margin, which is enough on an idle machine and
+  nothing on a loaded one. Two writes reached the gateway close enough together
+  that the second was rate-dropped exactly as designed, and the test then waited
+  for a third frame that was never coming. Raising its deadline from five
+  seconds to thirty changed nothing, failing with the identical video=2, which
+  is what identified the cause. The waits are now twice the admission interval.
+
+  The public companion gate waited for whichever management read the page
+  happened to have in flight to complete. The inspection client cancels every
+  outstanding read when the narrow management capability changes - deliberately,
+  so a view never renders a snapshot taken under a superseded capability - and
+  the management resources return 503 briefly while a session settles. The test
+  was racing the client's own correctness and lost two runs in five, always with
+  the observed read ending net::ERR_ABORTED. It now asks the view to read again,
+  through the same Refresh control a person would use, until one read is
+  captured whole; and a cancelled read no longer counts as a failed one, which
+  is what the same handler already said about every other request. Eight
+  consecutive runs pass, including under CPU pinning. What is asserted is
+  unchanged: one completed response, on that session's exact path, with a body.
 
 - The licensing policy asserted provenance for a fixture that no longer exists
   while saying nothing about the ones that do. "The M0 audio fixture is
