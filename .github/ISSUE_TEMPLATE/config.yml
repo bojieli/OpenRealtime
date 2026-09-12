@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/bojieli/OpenRealtime/security/advisories/new
+    about: >-
+      Security reports go through the private advisory process described in
+      SECURITY.md, never a public issue.
+  - name: Propose an architecture or protocol change
+    url: https://github.com/bojieli/OpenRealtime/blob/main/CONTRIBUTING.md
+    about: >-
+      Large changes start with a discussion or a draft ADR before the
+      implementation, as CONTRIBUTING.md describes.

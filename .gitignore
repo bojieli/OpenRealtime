@@ -5,6 +5,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.swp
+*.swo
+.DS_Store
 build/
 .build/
 bin/

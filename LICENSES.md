@@ -5,10 +5,13 @@ reuse rights are explicit:
 
 - Source code, schemas, configuration, and scripts: Apache License 2.0. The
   complete license text is in [`LICENSE`](LICENSE).
-- Project documentation, including `README.md`, `PLAN.md`, and `docs/`:
+- Project documentation, including `README.md`, `CHANGELOG.md`, and `docs/`
+  (the historical v1 plan now lives at `docs/openrealtime-v1-plan.md`):
   [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
-- Original audio fixtures and golden traces in `tests/fixtures/`,
-  `tests/golden/`, and `benchmarks/*/reference/`:
+- Original audio fixtures and golden traces, which live in the `testdata/`
+  directory of the package that uses them - the speech fixtures under
+  `bench/meeting/testdata/audio/` and `bench/realtimecu/testdata/audio/`, and
+  the recorded traces, images, and contracts beside them:
   [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
 - Generated OpenAI OpenAPI-derived schema and registry files: MIT, with source,
   revision, hash, and license text in `third_party/openai/NOTICE.md`.

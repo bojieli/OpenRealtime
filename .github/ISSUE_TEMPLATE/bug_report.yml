@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in the runtime, a client, or an adapter behaves incorrectly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report a vulnerability here. Use the private process in
+        [SECURITY.md](../blob/main/SECURITY.md) instead.
+
+        Never paste a credential, a raw session recording, or anyone's audio
+        into a public issue. A reproduction that needs real speech can be
+        described rather than attached.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `./openrealtime version`, or the commit you built.
+      placeholder: openrealtime 0.1.0, or commit d8d5af6c
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Launch command
+      description: The command you ran, with credentials removed.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: integration
+    attributes:
+      label: Provider and transport
+      description: >-
+        Which model services and which transport. Interaction bugs usually
+        depend on both.
+      placeholder: Deepgram ASR + Gemini reasoner, over WebRTC
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include the error text or log lines, if there are any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Smallest reproduction you have
+      description: >-
+        A failing test, a configuration file, or an ordered list of steps. For
+        an interaction bug - the assistant spoke when it should have waited,
+        interrupted badly, lost the thread after being cut off - say what was
+        said and when, since that is the reproduction.
+    validations:
+      required: true

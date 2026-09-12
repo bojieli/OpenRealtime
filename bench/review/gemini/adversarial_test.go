@@ -1788,7 +1788,7 @@ func TestProductionTransportIsPrivateAndIgnoresMutableHTTPDefault(t *testing.T) 
 }
 
 func TestProductionTransportUsesStandardHTTPSProxyWithoutRetainingCredentials(t *testing.T) {
-	t.Setenv("HTTPS_PROXY", "http://proxy-user:proxy-password@23.135.236.242:3128")
+	t.Setenv("HTTPS_PROXY", "http://proxy-user:proxy-password@192.0.2.10:3128")
 	t.Setenv("https_proxy", "")
 	client := snapshotHTTPClient(nil)
 	transport, ok := client.Transport.(*http.Transport)
@@ -1805,7 +1805,7 @@ func TestProductionTransportUsesStandardHTTPSProxyWithoutRetainingCredentials(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proxyURL == nil || proxyURL.Scheme != "http" || proxyURL.Host != "23.135.236.242:3128" ||
+	if proxyURL == nil || proxyURL.Scheme != "http" || proxyURL.Host != "192.0.2.10:3128" ||
 		proxyURL.User == nil {
 		t.Fatalf("resolved HTTPS proxy = %v", proxyURL)
 	}
@@ -1823,7 +1823,7 @@ func TestProductionTransportUsesStandardHTTPSProxyWithoutRetainingCredentials(t 
 	if decoded.Transport["policy"] != "private_https_proxy_transport_v1" ||
 		decoded.Transport["proxy"] != "enabled" ||
 		decoded.Transport["proxy_source"] != "HTTPS_PROXY" ||
-		decoded.Transport["proxy_endpoint"] != "http://23.135.236.242:3128" ||
+		decoded.Transport["proxy_endpoint"] != "http://192.0.2.10:3128" ||
 		decoded.Transport["proxy_authentication"] != true {
 		t.Fatalf("production HTTPS proxy configuration = %#v", decoded.Transport)
 	}

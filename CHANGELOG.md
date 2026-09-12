@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Repository hygiene before publication: a vim swap file for a docs page had
+  been committed and carried the author's home directory and hostname in the
+  tree; `LICENSES.md` granted licenses to four paths that no longer exist
+  (`PLAN.md`, `tests/fixtures/`, `tests/golden/`, `benchmarks/*/reference/`)
+  while the fixtures that do exist were named nowhere; and one test's example
+  HTTPS proxy used a real routable address instead of the documentation range
+  the rest of the repository already uses. Issue and pull request templates now
+  ask for what `CONTRIBUTING.md` says a report needs.
+
 - CI had been red on `main` for three weeks - thirty-eight of the last forty
   runs - and not one of the failures was a defect in the code the jobs were
   checking. `./scripts/check.sh` passed locally, complete and with nothing
