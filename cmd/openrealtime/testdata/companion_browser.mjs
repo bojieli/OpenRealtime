@@ -16,8 +16,17 @@ if (!isAbsolute(profileParent) || profileParent.includes("\0") ||
   throw new Error("browser profile parent is not canonical");
 }
 const profile = mkdtempSync(join(profileParent, "openrealtime-companion-command-"));
+// The profile is fresh on every run, so Chromium treats each launch as a first
+// run and spends real time on GCM registration, component updates, and PKI
+// metadata before it settles. On a CI runner that work competes with the
+// management response this driver is waiting for, and the wait timed out while
+// the browser was still busy with errands nothing here asked for: the page is
+// served from a loopback presentation host and talks to a loopback server.
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   "--headless=new", `--remote-debugging-port=${port}`, "--no-sandbox", "--disable-gpu",
+  "--disable-dev-shm-usage", "--no-first-run", "--disable-background-networking",
+  "--disable-component-update", "--disable-sync", "--disable-default-apps",
+  "--disable-client-side-phishing-detection",
   "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
   "--autoplay-policy=no-user-gesture-required", `--user-data-dir=${profile}`, "about:blank",
 ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -115,7 +124,16 @@ try {
   browser.on("Network.loadingFailed", (event, eventSessionID) => {
     if (eventSessionID !== sessionId) return;
     if (managementResponses.has(event.requestId)) {
-      managementFailures.push(event.errorText ?? "management response load failed");
+      // A cancelled read is not a failed one, which is what the branch below
+      // has always said for every other request. The inspection client cancels
+      // outstanding reads whenever the narrow management capability changes,
+      // and asking the view to read again cancels the previous read by the same
+      // mechanism, so cancellations are ordinary here rather than exceptional.
+      // What this driver has to establish is that one read was served and
+      // retained whole, and that is asserted on its own below.
+      if (!event.canceled && event.errorText !== "net::ERR_ABORTED") {
+        managementFailures.push(event.errorText ?? "management response load failed");
+      }
     } else if (!event.canceled) failures.push(event.errorText);
   });
   await call("Runtime.enable"); await call("Network.enable"); await call("Page.enable");
@@ -193,9 +211,32 @@ try {
     `document.querySelector('[data-view=inspection]')?.dataset.sessionId ?? ""`);
   check("browser exposes its negotiated session identity", browserSessionID.startsWith("sess_"));
   const expectedManagementPath = `/client/v1/management/sessions/${encodeURIComponent(browserSessionID)}/live`;
-  const captured = await waitFor("exact browser management response", async () =>
-    [...managementResponses.values()].some((value) =>
-      value.complete && new URL(value.url).pathname === expectedManagementPath));
+  // Ask the inspection view to read again until one read is captured whole,
+  // rather than waiting on whichever read the page happened to have in flight.
+  //
+  // The inspection client cancels every outstanding read when the narrow
+  // management capability changes - inspection-client.js does it deliberately,
+  // so a view never renders a snapshot taken under a superseded capability -
+  // and the management resources return 503 for a moment while a session is
+  // still settling. Passively waiting for one specific request to finish is
+  // therefore a race against the client's own correctness: locally this failed
+  // two runs in five, always with the observed `/live` read ending
+  // net::ERR_ABORTED and no completed body to show for it.
+  //
+  // Clicking the view's own Refresh button is how a person would ask for the
+  // same thing, and it exercises the identical authenticated path. The check
+  // below is unchanged: one completed response, on this session's exact path,
+  // with a body.
+  const captured = await waitFor("exact browser management response", async () => {
+    if ([...managementResponses.values()].some((value) =>
+      value.complete && new URL(value.url).pathname === expectedManagementPath)) return true;
+    await evaluate(`(() => {
+      const button = document.querySelector('[data-view=inspection] #refresh');
+      if (button && !button.disabled) button.click();
+      return true;
+    })()`);
+    return false;
+  }, 90000);
   const managementEvidence = [...managementResponses.values()].find((value) =>
     value.complete && new URL(value.url).pathname === expectedManagementPath);
   check("browser captured its exact authenticated management response",
@@ -232,7 +273,13 @@ try {
   check("command browser run completed", false, error.stack ?? error.message);
 } finally {
   chromium.kill("SIGKILL");
-  rmSync(profile, { recursive: true, force: true });
+  // Chromium's children can still be writing into the profile when the parent
+  // is killed, so removing it straight away races them and throws ENOTEMPTY -
+  // which failed a CI run whose every check had already passed. Retry briefly,
+  // and never let temp-directory cleanup decide the outcome of a test.
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  } catch {}
 }
 
 const failed = checks.filter((entry) => !entry.ok);

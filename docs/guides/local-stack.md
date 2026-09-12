@@ -49,6 +49,16 @@ export GEMINI_API_KEY="your-key"
 This keeps ASR, the foreground LLM, and speech synthesis local. Only the
 background reasoner is hosted in the default configuration.
 
+Every command below that changes a provider names `-binding cascade` first, and
+the reason is worth knowing once rather than rediscovering at each one. With no
+explicit server composition, `companion` assembles the twelve-scenario room
+pipeline, and that strict launch profile supersedes provider selection - `serve`
+refuses to start rather than accept a provider flag it would have to ignore.
+Naming the binding is what says "compose the cascade this page describes, from
+these flags". `-config` and `-launch-profile` say the same thing in their own
+way; `-binding upstream` is refused, because the room requires an OpenRealtime
+pipeline rather than a hosted endpoint.
+
 The repository includes a reproducible SenseVoice preparation path:
 
 ```bash
@@ -58,7 +68,8 @@ The repository includes a reproducible SenseVoice preparation path:
 This script requires a working system PyTorch installation, downloads the
 SenseVoice dependencies and weights, and serves on port 8002. In another
 terminal, select it explicitly with
-`./openrealtime companion -- -asr-provider sensevoice`. The foreground and TTS
+`./openrealtime companion -- -binding cascade -asr-provider sensevoice`. The
+foreground and TTS
 services must still be running. See
 [the deployment notes](../../deploy/sensevoice/README.md) for model-path setup.
 Other streaming and batch recognizers use the same runtime surface;
@@ -75,6 +86,7 @@ Completions:
 
 ```bash
 ./openrealtime companion -- \
+  -binding cascade \
   -slow-provider openai-compatible \
   -slow-url http://127.0.0.1:8010/v1 \
   -slow-model your-reasoner
@@ -88,6 +100,7 @@ value on the command line:
 export LOCAL_REASONER_API_KEY="your-key"
 
 ./openrealtime companion -- \
+  -binding cascade \
   -slow-provider openai-compatible \
   -slow-url http://127.0.0.1:8010/v1 \
   -slow-model your-reasoner \
@@ -106,6 +119,7 @@ for background reasoning:
 export ANTHROPIC_API_KEY="your-key"
 
 ./openrealtime companion -- \
+  -binding cascade \
   -slow-provider anthropic
 ```
 
@@ -113,6 +127,7 @@ Or replace only the recogniser while leaving the rest of the stack unchanged:
 
 ```bash
 ./openrealtime companion -- \
+  -binding cascade \
   -asr-provider whisper \
   -asr-url http://127.0.0.1:8003/v1 \
   -asr-model openai/whisper-large-v3-turbo
@@ -158,6 +173,7 @@ changing the voice path:
 
 ```bash
 ./openrealtime companion -- \
+  -binding cascade \
   -profile voice+vision \
   -computer-use \
   -visual-reflex-provider vllm \
@@ -186,6 +202,7 @@ narration and direct keyframes when the added model call is worthwhile:
 
 ```bash
 ./openrealtime companion -- \
+  -binding cascade \
   -profile voice+vision \
   -computer-use \
   -visual-reflex-provider vllm \

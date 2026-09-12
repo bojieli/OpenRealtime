@@ -375,15 +375,24 @@ func expectedCompanionArguments(binary string) []string {
 		"-webrtc-listen", "127.0.0.1:18766", "-presentation-listen", "127.0.0.1:18767",
 		"-client", "none", "-token-env", "OPENREALTIME_HOSTED_COMPANION_TOKEN",
 		"-ready-timeout", "90s", "-shutdown-timeout", "10s", "--",
-		"-slow-provider", "vllm", "-slow-model", "hosted-companion-smoke"}
+		"-binding", "cascade", "-slow-provider", "vllm",
+		"-slow-model", "hosted-companion-smoke"}
 }
 
+// expectedServerArguments mirrors the order companion.go composes, which is
+// listeners, then the shutdown bound, then the model and credential names for
+// an unprofiled composition, and finally whatever the operator forwarded after
+// `--`. The model and credential used to be written here ahead of the shutdown
+// bound, which no longer matched what companion.go emits; the mismatch was
+// invisible because this gate had not reached the child check since the macOS
+// compile break.
 func expectedServerArguments(binary string) []string {
 	return []string{binary, "serve", "-listen", "127.0.0.1:18765", "-webrtc-listen",
 		"127.0.0.1:18766", "-webrtc-allow-origin", "http://127.0.0.1:18767",
+		"-shutdown-timeout", "10s",
 		"-model", "openrealtime", "-token-env", "OPENREALTIME_HOSTED_COMPANION_TOKEN",
-		"-shutdown-timeout", "10s", "-slow-provider", "vllm", "-slow-model",
-		"hosted-companion-smoke"}
+		"-binding", "cascade", "-slow-provider", "vllm",
+		"-slow-model", "hosted-companion-smoke"}
 }
 
 func expectedPresentationArguments(binary string) []string {

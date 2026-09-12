@@ -13,6 +13,14 @@ Want every model on your own machine? Build the binary here, then switch to the
 - Git
 - A Chromium-based browser; this is the release-gated browser path
 - For the shortest verified path, a Gemini API key
+- Linux, for the room pipeline specifically. The room freezes its selection into
+  a launch profile, and a profile file is read back through a hardened open -
+  refusing symlinks, hard links, special files, and any identity change between
+  lookup and read - that is implemented for Linux only. Everywhere else `serve`
+  stops with `secure launch-profile file opening is unsupported on this
+  platform`, which applies to the default room, to `-client macos`, and to any
+  `-launch-profile` you author yourself. macOS composes the cascade instead, by
+  naming an explicit composition; see [Use local models](guides/local-stack.md).
 
 The hosted path makes provider calls that may incur usage charges. OpenRealtime
 does not send telemetry of its own.
@@ -195,8 +203,13 @@ and millisecond traces. Build it on macOS 14+ with Xcode 16+:
 cd macos
 ./build-app.sh
 cd ..
-./openrealtime companion -client macos
+./openrealtime companion -client macos -- -binding cascade
 ```
+
+`-binding cascade` is what makes this runnable on the Mac you just built the
+app on: without an explicit composition the companion freezes a launch profile,
+and reading one back is Linux-only, as **What you need** describes. Name the
+rest of the cascade the same way - see [Use local models](guides/local-stack.md).
 
 The shipped developer profile is observation-only. Filesystem, shell, desktop
 effects, and artifact authority require an explicitly composed host profile.

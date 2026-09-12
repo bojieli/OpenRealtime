@@ -82,6 +82,8 @@ commands:
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server
+  scenario      run the twelve interaction scenarios against a running server
+  eval          score one interaction boundary from recorded turns
   review        run secondary offline reviews from sealed benchmark evidence
   profile       freeze strict executable-bound graph launch profiles
   compare       read two saved cells and report the pairing

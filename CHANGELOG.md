@@ -2,6 +2,303 @@
 
 ## Unreleased
 
+- OpenAI's GPT-Live is supported as a realtime endpoint, as `openai-live`
+  (aliases `gpt-live`, `live`). It shares a vendor with the Realtime API and
+  almost nothing else, so `adapters/gptlive` is a translator rather than a
+  catalogue entry: Live is full duplex, has no input-buffer commit and no
+  `response.create` that starts a spoken turn, and - the difference that shapes
+  the adapter - emits no event that ends anything. The vendor states that
+  transcript fragments "do not define complete turns or include a
+  transcript-done event".
+
+  The binding needs turns, so they are synthesised from two signals and the
+  difference between them is recorded rather than smoothed over.
+  `session.delegation.created` is the reliable one: GPT-Live does not reason or
+  call tools itself, it delegates and keeps talking while it waits, so with
+  client delegation the endpoint asks this process for help at exactly the
+  moment the background reasoner should start. That makes the reasoner the
+  backend the vendor's own design expects rather than a second model bolted to
+  the side of one. Silence is the fallback, for the turns the endpoint answers
+  by itself and never delegates - without it those never reach the trajectory
+  and the reasoner is later asked to continue a conversation with holes in it.
+  The gap is a guess, is configurable, and never preempts a delegation.
+
+  The hand-off inverts with the protocol. Live has no conversation items and no
+  writable session instruction, so a completed answer goes back through
+  `session.commentary.append` against the delegation that asked for it. The
+  catalogue still declares the portable conversation-item strategy and the
+  translator is what makes it mean something, which is the arrangement Gemini
+  Live already has. An answer over the vendor's 500-token append cap is split
+  across appends rather than sent whole and rejected: a hand-off in two pieces
+  is a hand-off, and one rejected for length is the binding's entire
+  contribution silently lost.
+
+  The entry is `live-turn`: a real session started, was handed an answer, spoke
+  it, and its events arrived under the names this catalogue expects. That run
+  taught two things the specification does not imply, and both fail silently.
+  Live runs on an audio clock - a session with no input frames arriving never
+  injects an append, never speaks and never reports an error - so the adapter
+  fills gaps in the caller's stream with silence, a caller speaking the Realtime
+  protocol having no reason to send any while the user is quiet. And Live's
+  output is a continuous carrier rather than a per-response burst, 427 of 438
+  frames in one 45-second session being digital silence, so an utterance bounded
+  by "audio stopped" never ends; only audible audio extends one, and the carrier
+  is forwarded only while an utterance is open.
+
+- Chromium's first-run errands are now disabled in every browser driver rather
+  than two of them. bench/meeting and bench/realtimecu already launched it with
+  background networking off; the seven `.mjs` drivers under
+  presentation/browser/testdata and the companion driver did not, and on a CI
+  runner the waits in those drivers ended up queued behind GCM registration and
+  component updates. Every page they open is served from a loopback listener in
+  the test process, so a browser reaching the network there is doing work
+  nothing asked for.
+
+- The three remaining scenario-conversation waits in the same package got the
+  same treatment before they could fail too: each waits on an event the runtime
+  owes the test, none is rate-gated, and each carried a three- or five-second
+  bound. They are arrival bounds, so widening them removes a load sensitivity
+  without weakening anything - a test still fails when the event never comes.
+
+- The computer-use settlement waits bounded arrival at five seconds. Each one
+  stands between stages of a graph settlement - a cancellation, an
+  acknowledgement, a producer outcome - and waits for an event the runtime owes
+  the test rather than anything the test can hurry, so the bound can only ever
+  detect "this never arrived". On a loaded runner the first cancellation
+  settlement outcome arrived late and the failure read as though the settlement
+  had never happened. The shared helper now allows thirty seconds across all 125
+  call sites, which still fails when an outcome is genuinely never produced.
+
+- Removing a Chromium profile directory could fail a run whose every check had
+  passed. All ten browser drivers killed the browser and deleted its profile in
+  the next statement, and Chromium's children can still be writing there, so the
+  delete raced them and threw ENOTEMPTY - which is exactly how the macOS
+  hosted-companion gate failed after reporting no failed checks at all. The
+  sleep in room.mjs had been an acknowledgement of this in one driver. All ten
+  now retry the removal briefly and none of them lets temp-directory cleanup
+  decide the outcome of a test.
+
+- Two more checks read a tally before the thing producing it had finished, the
+  same shape as the mounted-graph trace read. The scenario endpoint fixture
+  counted its factories the instant session.created arrived, but the factories
+  run as the graph mounts, so a loaded runner reported one model factory where
+  two were due and failed as though the graph had been composed wrongly - three
+  release-matrix runs in a row. The twelve-scenario contract counted boundary
+  crossings the instant the last subtest returned, and reported that "picking up
+  where it was cut off" never crossed gateway.output.turn_end when the turn's
+  own boundary simply had not been recorded yet. Both now wait for the tally
+  before reading it, with every comparison unchanged after the wait, so a
+  factory that is never constructed and an operation that never crosses each
+  still fail - verified by making one of each impossible and watching the
+  assertion fire.
+
+- Two end-to-end checks were failing for reasons that looked like slowness and
+  were not, and in both cases widening the bound was the wrong repair.
+
+  The meeting graph handoff waited 350ms between video frames. The public realm
+  caps video at three frames per second, so the admission interval is about
+  333ms and a frame arriving inside one is dropped on purpose - leaving
+  seventeen milliseconds of margin, which is enough on an idle machine and
+  nothing on a loaded one. Two writes reached the gateway close enough together
+  that the second was rate-dropped exactly as designed, and the test then waited
+  for a third frame that was never coming. Raising its deadline from five
+  seconds to thirty changed nothing, failing with the identical video=2, which
+  is what identified the cause. The waits are now twice the admission interval.
+
+  The public companion gate waited for whichever management read the page
+  happened to have in flight to complete. The inspection client cancels every
+  outstanding read when the narrow management capability changes - deliberately,
+  so a view never renders a snapshot taken under a superseded capability - and
+  the management resources return 503 briefly while a session settles. The test
+  was racing the client's own correctness and lost two runs in five, always with
+  the observed read ending net::ERR_ABORTED. It now asks the view to read again,
+  through the same Refresh control a person would use, until one read is
+  captured whole; and a cancelled read no longer counts as a failed one, which
+  is what the same handler already said about every other request. Eight
+  consecutive runs pass, including under CPU pinning. What is asserted is
+  unchanged: one completed response, on that session's exact path, with a body.
+
+- The licensing policy asserted provenance for a fixture that no longer exists
+  while saying nothing about the ones that do. "The M0 audio fixture is
+  procedurally generated by this project" described
+  `tests/fixtures/m0-tone.wav`, a generated tone removed with the original
+  harness; it never covered the twelve speech fixtures under
+  `bench/meeting/testdata/audio/` and `bench/realtimecu/testdata/audio/`, whose
+  generation method is recorded nowhere in the repository. The policy itself,
+  and ADR-0002, require an inventory entry for exactly this. The gap is now
+  stated where the claim used to stand, because writing that entry needs
+  knowledge of how the files were produced and that is not recoverable from the
+  tree or its history.
+
+- Every command in the documentation now names a subcommand and flags the
+  binary actually has. Checking all 120 of them against the built binary found
+  three that did not.
+
+  `openrealtime scenario` and `openrealtime eval` are dispatched in main.go but
+  were missing from the usage text, so `openrealtime -h` listed fifteen
+  commands and the binary had seventeen. The spoken-boundary guide compounded
+  that by writing the first as `bench scenario`, which is not a suite and fails
+  with `unknown suite "scenario"` - the flags it passes are `scenario`'s own.
+
+  The Meeting benchmark section documented a `-foreground cascade|omni` switch
+  and a cascade/Omni pair treated as an end-to-end system comparison. The
+  commit that selected one graph-native Meeting candidate removed the switch,
+  and no Omni Meeting cell exists in the suite today, so that pairing cannot be
+  produced. The runnable command is corrected and the claim is marked
+  superseded rather than rewritten, because what the comparison contract should
+  require instead is a measurement decision.
+
+- Chromium was doing errands on the CI runner that the browser checks then
+  waited behind. A fresh profile is a first run, so the browser spent real time
+  on GCM registration retries, component-updater downloads, and PKI metadata
+  parsing before settling - visible only once a failing test printed the
+  browser's own stderr instead of a kill signal. Every page under test here is
+  served from a loopback listener in the test process, so a browser reaching
+  the network at all is doing something nothing asked for. The inspection
+  launch and the companion browser driver both disable it now; the companion
+  driver had been timing out waiting for a management response while the
+  browser was still busy elsewhere.
+
+- The Chromium inspection test never rendered on the CI runner, and the way it
+  failed hid that. It launched Chromium with `--dump-dom` and waited for the
+  process to exit, so when the browser did not render, all the test could
+  report was the kill signal at its own deadline - which reads as though the
+  view were wrong. Raising the deadline from thirty seconds to ninety only
+  moved the number: it died at 90.16s with "signal: killed". Reading the output
+  it did produce shows the actual cause: ninety seconds of GCM registration
+  retries, component-updater downloads, and PKI metadata parsing, on a fresh
+  profile Chromium treats as a first run, with nothing on stdout and no DOM at
+  any point.
+
+  The launch now disables that background work, which the test never wanted -
+  the page is served from the test's own loopback listener and imports one
+  local module, so a browser reaching the network is doing something this test
+  did not ask for. And the document is taken from stdout as soon as it is
+  complete, with the browser killed afterwards, so the test no longer depends
+  on Chromium choosing to exit and a browser that renders nothing fails saying
+  so, with its stderr, instead of reporting a kill. Every other Chromium launch
+  in this package already drives the browser and then kills it.
+
+- The public companion gate could not have passed on a clean machine, and the
+  reason was masked on the machine it was written on. With no explicit
+  composition the companion freezes the twelve-scenario room profile, and that
+  profile's speaker-identity plugin performs a real HTTP request before the
+  server will report ready - so /healthz stays 503 on any host that is not
+  already running the room's model services. A development box with those
+  services listening becomes ready for a reason the gate has nothing to do
+  with, which is why the first repair, supplying placeholder credentials,
+  looked like it worked locally and then failed in CI on a different plugin.
+  The gate now names `-binding cascade` and a local stand-in reasoner, the same
+  composition macos/verify-hosted-companion.sh uses, which reaches readiness
+  without dialling anything - verified by pointing every provider endpoint at a
+  closed port - and needs no provider account. What the test asserts is
+  unchanged: two real client sessions against one unchanged clean server,
+  supervision, routing, the generated native endpoint directory, session
+  accounting, and a bearer credential that never appears in output.
+
+- The strict launch profile is a Linux-only path, and nothing said so. A profile
+  file is read back through a hardened open - refusing symlinks, hard links,
+  special files, and any identity change between lookup and read - implemented
+  for Linux and stubbed everywhere else, so on macOS `serve` stops with "secure
+  launch-profile file opening is unsupported on this platform" before it
+  listens. That covers the default `companion` room, `-client macos`, and any
+  `-launch-profile` an operator authors, which is to say the README's first
+  command and the quickstart's native-client command both failed on the
+  platform whose client they were introducing. The bound is now stated in the
+  README, the quickstart, and the room guide, next to the commands it governs,
+  and the macOS commands name the explicit cascade composition that does work
+  there. The limitation itself is unchanged; it is only no longer silent.
+
+- Defaulting the companion room to the twelve-scenario pipeline made the strict
+  launch profile supersede provider selection, and nothing that depended on the
+  older flag form was updated with it. `serve` refuses to start rather than
+  ignore a flag the profile overrides, so `macos/verify-hosted-companion.sh`
+  died at startup with "-launch-profile supersedes flags -slow-model,
+  -slow-provider", and seven documented commands in the local-stack guide were
+  refused the same way. Both landed the same day as the macOS compile break, so
+  the compile failure had masked the script from its first run.
+
+  The script's two flags named a stand-in reasoner before the profile existed;
+  the profile encodes that now, so they are removed rather than translated, and
+  placeholder provider credentials let it reach readiness on a machine with no
+  provider account - it drives supervision and routing and never reaches one.
+
+  The guide's commands name `-binding cascade`, which is what says "compose the
+  cascade this page describes, from these flags" rather than the room pipeline.
+  That is a one-token addition that keeps the documented flag form working, and
+  the guide now explains the rule once instead of leaving each command to fail
+  at the reader.
+
+- Repository hygiene before publication: a vim swap file for a docs page had
+  been committed and carried the author's home directory and hostname in the
+  tree; `LICENSES.md` granted licenses to four paths that no longer exist
+  (`PLAN.md`, `tests/fixtures/`, `tests/golden/`, `benchmarks/*/reference/`)
+  while the fixtures that do exist were named nowhere; and one test's example
+  HTTPS proxy used a real routable address instead of the documentation range
+  the rest of the repository already uses. Issue and pull request templates now
+  ask for what `CONTRIBUTING.md` says a report needs.
+
+- CI had been red on `main` for three weeks - thirty-eight of the last forty
+  runs - and not one of the failures was a defect in the code the jobs were
+  checking. `./scripts/check.sh` passed locally, complete and with nothing
+  skipped, throughout.
+
+  Most of it was one mistake. `actions/setup-go` pins `GOTOOLCHAIN=local` so
+  that its `go-version` input is the only toolchain a job may use, and this
+  repository deliberately does the opposite: each module names the exact
+  `toolchain` it is built with, the root module `go1.25.14` and
+  `integrations/livekit` `go1.26.8`, and `check.sh` runs both with one `go`
+  binary. Under `GOTOOLCHAIN=local` the LiveKit module could not be loaded at
+  all - `go.mod requires go >= 1.26 (running go 1.25.14)` - so its vet, its
+  tests, and its race tests were reported as three failures without one of them
+  executing, in the same red as tests that genuinely fail. The gate,
+  compatibility, and release-matrix jobs now restore `auto` after setup-go,
+  which hands each module the toolchain its own `go.mod` pins and is what a
+  contributor running the gate locally already gets.
+
+  The same pin had silently disabled the vulnerability scan outright.
+  govulncheck now requires Go 1.26 to build, so `go install` inside the 1.25
+  half failed in a third of a second, before a single package was loaded, and
+  the job reported "could not look" in the same red as "found advisories" -
+  the one confusion it exists to prevent. The scanner is now built once with
+  the newer toolchain and used for both scans; each module is still scanned
+  under its own pinned toolchain, so the standard library each result describes
+  is still the one that module's build uses. Both modules currently report zero
+  reachable advisories.
+
+- The native macOS client did not compile on the runner that builds it. The
+  package's deployment target is macOS 14 and stays there - `RoomRecorder` is
+  marked `@available(macOS 15.0, *)` and every call site guards with `if
+  #available`, so a macOS 14 machine runs the app and simply has no recorder -
+  but `@available` is a runtime check, and the macOS 14 SDK has no
+  `SCRecordingOutput` symbol to compile against. Every run since the recorder
+  landed failed with twenty "cannot find type" errors against correct code. The
+  job now runs on `macos-15`, which is the SDK `macos/README.md` has asked of a
+  contributor all along: macOS 14+, Xcode 16+.
+
+- The public companion command's end-to-end gate had never passed since it was
+  written. It polled `/metrics` without the bearer token the companion runs
+  with, collected 401s until its deadline, and then reported that the browser
+  and native sessions had not completed - naming the wrong half of the system,
+  since by then both had run. It also required a Deepgram and a Gemini
+  credential to reach readiness, on a runner that holds neither. The poll now
+  carries the credential; the credentials are supplied as placeholders by the
+  test itself, which is honest because this test never reaches a provider - it
+  asserts on supervision, routing, and session accounting, recognises no audio
+  and requests no reasoning - and which also shadows a real key that happens to
+  be exported, so no developer's account is dialled by a test run. Its failure
+  message now reports the counts it saw rather than only the counts it wanted.
+
+- Two tests failed under CI's capacity rather than for anything they check. The
+  mounted-graph test read the trace the instant the egress envelope arrived,
+  racing the runtime goroutines still recording that crossing, and saw three
+  events where four were due; it now waits for the count, with the same
+  assertion after the wait, so a fourth record that never arrives still fails.
+  The Chromium inspection test held a 30-second bound where every other
+  Chromium launch in its package holds 90, and died at 30.14s with the deadline
+  killing the browser mid-render; it now matches its siblings. Neither change
+  alters what is asserted.
+
 - Two opt-in pre-ASR audio filters, `profile filtered-room` and `profile
   target-room`, place a waveform transform ahead of both energy admission and
   ASR. The ordering is the whole point, and a parallel evidence lane cannot

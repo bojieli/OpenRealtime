@@ -853,26 +853,25 @@ second case impossible by construction.
 ```sh
 openrealtime bench meeting -list
 openrealtime bench meeting \
-  -foreground cascade \
   -endpoint ws://127.0.0.1:18786/v1/realtime \
   -fps 5 -analysis-delay 8s \
-  -out results/meeting-cascade.json
+  -out results/meeting.json
 ```
 
-`-foreground omni` selects the registered Omni cell. Both full runs use the
-same recordings, frame cadence, deadlines, slow Gemini configuration, policy
-recognizer, action boundary, and scorer. The Omni cell changes the binding and
-foreground model/speech topology together, however, so the pair is an
-end-to-end **system treatment**, not a one-factor proof that Omni or cascade is
-intrinsically better. Report the task-level traces and latency distributions;
-do not turn a partial, filtered, dirty-tree, or unavailable-provider run into a
-ranking.
+The suite runs one graph-native candidate cell, named by `-cell` and defaulting
+to `meeting-assistant-graph-native-candidate`. Report the task-level traces and
+latency distributions; do not turn a partial, filtered, dirty-tree, or
+unavailable-provider run into a ranking.
 
-The cascade four-case cell is the required Meeting Assistant result in the
-optional eight-suite comparison contract. The Omni cell is independent,
-opt-in architecture/provider-quality validation; when selected it still must
-run all four cases, but it does not enter behavioral acceptance or
-`release_complete`.
+> **Superseded:** this section previously documented a `-foreground
+> cascade|omni` switch and a cascade/Omni pair treated as an end-to-end system
+> comparison, with the cascade cell required in the eight-suite comparison
+> contract and the Omni cell as opt-in architecture validation. The commit that
+> selected one graph-native Meeting candidate removed that switch, and no Omni
+> Meeting cell exists in the suite today, so no such pairing can be produced by
+> this command. What the comparison contract should require in its place has not
+> been rewritten here, because that is a measurement decision rather than a
+> documentation one.
 
 The checked-in launcher passes `-reference-levels` derived from its active
 `MEETING_ASR_*`, `MEETING_POLICY_*`, `MEETING_SLOW_*`, and foreground-model

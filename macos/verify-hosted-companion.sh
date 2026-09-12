@@ -73,6 +73,21 @@ if [[ ! "${server_executable_digest}" =~ ^[0-9a-f]{64}$ || \
   printf '%s\n' "temporary companion server lacks an exact signed executable identity" >&2
   exit 1
 fi
+# `-binding cascade` names an explicit server composition, and both halves of
+# what that avoids matter on this runner.
+#
+# Without it the companion assembles the twelve-scenario room pipeline into a
+# generated launch profile, and reading a profile file back securely is
+# implemented for Linux only - so on macOS serve exits with "secure
+# launch-profile file opening is unsupported on this platform" before it
+# listens. That strict profile would also supersede the two provider flags
+# below, which is the error this script hit first: "-launch-profile supersedes
+# flags -slow-model, -slow-provider".
+#
+# Naming the binding restores what this smoke test always meant: compose the
+# cascade from these flags, with a stand-in reasoner that needs no credential
+# and is never dialled, because what is under test is supervision, routing, the
+# native endpoint directory, and the gateway credential never becoming visible.
 OPENREALTIME_HOSTED_COMPANION_TOKEN="${gateway_token}" "${binary}" companion \
   -server-listen "${server_address}" \
   -webrtc-listen "${webrtc_address}" \
@@ -82,6 +97,7 @@ OPENREALTIME_HOSTED_COMPANION_TOKEN="${gateway_token}" "${binary}" companion \
   -ready-timeout 90s \
   -shutdown-timeout 10s \
   -- \
+  -binding cascade \
   -slow-provider vllm \
   -slow-model hosted-companion-smoke \
   >"${companion_log}" 2>&1 &

@@ -16,6 +16,24 @@ import (
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 )
 
+// waitForTraceEvents returns the trace once it holds at least want records, or
+// the last snapshot it saw when the deadline passes. The caller asserts on the
+// result, so a trace that never fills still fails - it just fails having given
+// the runtime a bounded chance to finish writing rather than none at all.
+func waitForTraceEvents(
+	t *testing.T, tracer *graphruntime.BufferTracer, want int,
+) []graphruntime.TraceEvent {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		events := tracer.Events()
+		if len(events) >= want || time.Now().After(deadline) {
+			return events
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestMountedGraphRunsThroughTypedBoundariesAndReportsLiveQueues(t *testing.T) {
 	descriptor := passDescriptor(nil)
 	registry := graphruntime.NewRegistry()
@@ -57,13 +75,23 @@ func TestMountedGraphRunsThroughTypedBoundariesAndReportsLiveQueues(t *testing.T
 	if got.ItemID != message.ItemID || got.Payload != "hello" {
 		t.Fatalf("egress message = %+v", got)
 	}
+	// Receiving the egress envelope proves the message crossed the graph; it
+	// does not prove the runtime has finished recording that crossing. The
+	// trace records are written by the runtime's own goroutines, so a test that
+	// reads them the instant Receive returns is racing the last one or two, and
+	// on a loaded machine it loses: the CI runner reported "trace has only 3
+	// events" while every assertion around it held. Waiting for the count is
+	// not a weaker check than reading it once - the bound below still fails if
+	// the fourth record never arrives, which is the only thing this assertion
+	// was ever able to catch.
+	events := waitForTraceEvents(t, tracer, 4)
 	live := mounted.Live()
 	if live.Fingerprint != graph.Fingerprint || live.Edges["boundary:input"].Enqueued != 1 ||
 		live.Edges["boundary:output"].Dequeued != 1 {
 		t.Fatalf("unexpected live snapshot: %+v", live)
 	}
-	if len(tracer.Events()) < 4 {
-		t.Fatalf("trace has only %d events: %+v", len(tracer.Events()), tracer.Events())
+	if len(events) < 4 {
+		t.Fatalf("trace has only %d events: %+v", len(events), events)
 	}
 	closeCtx, closeCancel := context.WithTimeout(context.Background(), time.Second)
 	defer closeCancel()

@@ -840,12 +840,16 @@ func scenarioAddressingStreamID(sessionID string, revision uint64) string {
 	return "audio:sha256:" + hex.EncodeToString(digest.Sum(nil))
 }
 
+// Thirty seconds bounds "this never arrived", not how quickly it did. The
+// same reasoning as realtimeCUReceiveTimeout: these wait on events the
+// runtime owes the test, none of them rate-gated, so a tighter bound only
+// asserts a latency on whichever machine happened to run the gate.
 func receiveScenarioAddressing[T any](t *testing.T, source <-chan T, label string) T {
 	t.Helper()
 	select {
 	case value := <-source:
 		return value
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		var zero T
 		t.Fatalf("timed out waiting for %s", label)
 		return zero

@@ -10,6 +10,15 @@ go build -o openrealtime ./cmd/openrealtime
 Open `http://127.0.0.1:8767`. Use `-client none` to start without opening a
 browser, or `-client both` on a Mac with the application installed.
 
+The room itself requires Linux. It freezes its selection into a launch profile,
+and reading a profile file back uses a hardened open implemented for Linux only,
+so on macOS `serve` stops with `secure launch-profile file opening is
+unsupported on this platform` before it listens. That bound covers every
+launch-profile path below, including an `-launch-profile` you author. The macOS
+application still connects to a room served from Linux, and on a Mac alone it
+runs against an explicitly composed cascade instead - see
+[Use local models](guides/local-stack.md).
+
 The default room uses OpenRealtime's graph-native twelve-scenario pipeline:
 Deepgram Nova-3 streaming recognition, local Qwen interaction decisions,
 Gemini 3.5 Flash cognition, local Fish Speech synthesis, speaker embeddings,
@@ -21,7 +30,12 @@ environment. The local services must already be running:
 | Qwen policy, with vision | `http://127.0.0.1:8000/v1` |
 | Fish Speech | `http://127.0.0.1:8123/v1/tts` |
 | Speaker identification | `http://127.0.0.1:8124/embed` |
-| Word timing | `http://127.0.0.1:8003/v1/audio/transcriptions` |
+| Word timing | `http://127.0.0.1:8127/v1/audio/transcriptions` |
+
+Word timing is `deploy/wordtimings`, not the speech recogniser. It must return
+a `words` array; a server that answers this route with text alone leaves every
+interruption boundary proportional, which the runtime now reports as
+`speech.word_timing_failed` rather than absorbing.
 
 The room freezes the selected graph into a temporary launch profile, verifies
 it using the same registry as the evaluation, and removes it on shutdown.

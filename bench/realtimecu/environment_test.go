@@ -13,7 +13,16 @@ func TestOwnedBrowserEnvironmentSupportsMarkedGroundingEndToEnd(t *testing.T) {
 	if _, err := exec.LookPath("chromium"); err != nil {
 		testgate.Missing(t, "chromium")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// This one context covers launching Chromium, waiting for its DevTools
+	// endpoint, and everything the episode then does. Thirty seconds was exactly
+	// the budget waitForDevTools allows the browser to come up in on its own, so
+	// a slow start consumed the whole allowance and the failure landed on
+	// NewEnvironment with nothing left for the work under test - which is how it
+	// read on CI: "context deadline exceeded" at 30.04s beside a Chromium that
+	// was plainly still starting. Two minutes is the same order as the other
+	// browser lifecycles here, and the test still fails if the browser never
+	// arrives.
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	environment, err := NewEnvironment(ctx, EnvironmentConfig{})
 	if err != nil {
@@ -76,7 +85,16 @@ func TestOwnedBrowserEnvironmentReportsStructuredBeforeCondition(t *testing.T) {
 	if _, err := exec.LookPath("chromium"); err != nil {
 		testgate.Missing(t, "chromium")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// This one context covers launching Chromium, waiting for its DevTools
+	// endpoint, and everything the episode then does. Thirty seconds was exactly
+	// the budget waitForDevTools allows the browser to come up in on its own, so
+	// a slow start consumed the whole allowance and the failure landed on
+	// NewEnvironment with nothing left for the work under test - which is how it
+	// read on CI: "context deadline exceeded" at 30.04s beside a Chromium that
+	// was plainly still starting. Two minutes is the same order as the other
+	// browser lifecycles here, and the test still fails if the browser never
+	// arrives.
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	environment, err := NewEnvironment(ctx, EnvironmentConfig{})
 	if err != nil {

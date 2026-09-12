@@ -56,8 +56,12 @@ copilots, or agents that respond to changing screens.
 ## Run your first conversation
 
 The conference room uses the project’s twelve-scenario pipeline. It needs
-**Go 1.25+, Git, a Chromium-based browser, Deepgram and Gemini credentials**,
-and the local services listed in [Conversation room](docs/room.md).
+**Linux, Go 1.25+, Git, a Chromium-based browser, Deepgram and Gemini
+credentials**, and the local services listed in
+[Conversation room](docs/room.md). The Linux bound is the room's, not the
+project's: the room freezes a launch profile and reads it back through a
+hardened open implemented for Linux only. macOS runs an explicitly composed
+cascade instead — see [Use local models](docs/guides/local-stack.md).
 
 ```bash
 git clone https://github.com/bojieli/OpenRealtime.git

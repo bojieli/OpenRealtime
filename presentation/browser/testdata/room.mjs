@@ -7,7 +7,16 @@ import { setTimeout as sleep } from "node:timers/promises";
 const PAGE_URL = process.argv[2];
 const PORT = Number(process.env.CDP_PORT ?? 19410);
 const profile = mkdtempSync(join(tmpdir(), "openrealtime-plugin-client-"));
-const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
+const chromium = // A fresh profile makes every launch a first run, so Chromium spends real time
+// on GCM registration, component updates, and PKI metadata before it settles.
+// Every page these drivers open is served from a loopback listener in the test
+// process, so a browser reaching the network is doing work nothing asked for -
+// and on a CI runner that work is what the waits below end up queued behind.
+// bench/meeting and bench/realtimecu already launch Chromium this way.
+spawn(process.env.CHROMIUM ?? "chromium", [
+  "--disable-background-networking", "--disable-component-update",
+  "--disable-default-apps", "--no-first-run", "--disable-sync",
+  "--disable-client-side-phishing-detection",
   "--headless=new", `--remote-debugging-port=${PORT}`, "--no-sandbox", "--disable-gpu",
   "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--autoplay-policy=no-user-gesture-required", `--user-data-dir=${profile}`, "about:blank",
 ], { stdio: ["ignore", "pipe", "pipe"] });
@@ -118,5 +127,13 @@ try {
   await evaluate(`window.__openrealtime.dispose()`);
   check("all room elements disposed", await evaluate(`document.getElementById('openrealtime-root').children.length===0`));
 } catch(error) { check(error.stack ?? error.message,false); }
-finally { chromium.kill('SIGKILL'); await sleep(300); rmSync(profile,{recursive:true,force:true}); }
+finally {
+  chromium.kill('SIGKILL');
+  await sleep(300);
+  // The sleep here was already an acknowledgement of this race; retries make
+  // it bounded rather than hopeful, and cleanup never decides the outcome.
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+  } catch {}
+}
 process.exit(checks.every(x=>x.ok)?0:1);

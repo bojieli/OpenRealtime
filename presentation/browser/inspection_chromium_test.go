@@ -2,10 +2,12 @@ package browser
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -76,7 +78,7 @@ func TestInspectionViewMatchesClosedInspectionVocabularies(t *testing.T) {
 }
 
 func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.T) {
-	chromium := requireInspectionChromium(t)
+	node, chromium := requireInspectionBrowser(t)
 	module, err := browserModule("inspection-view.js")
 	if err != nil {
 		t.Fatal(err)
@@ -98,17 +100,40 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	}))
 	defer server.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, chromium,
-		"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-		"--user-data-dir="+t.TempDir(), "--virtual-time-budget=2000", "--dump-dom", server.URL,
-	)
-	output, err := command.CombinedOutput()
+	// The fixture is rendered over the DevTools protocol by a node driver, the
+	// way every other browser check in this package renders one, rather than
+	// with `--dump-dom`.
+	//
+	// --dump-dom does not work on every Chromium this suite must run against.
+	// On the project's Linux CI runner it produced no output whatsoever - not a
+	// truncated document, zero bytes - while the browser stayed alive until the
+	// deadline killed it, so for weeks the only thing this test could report
+	// was its own kill signal, which reads as though the view had rendered
+	// wrongly. Raising the deadline from thirty seconds to ninety changed the
+	// number in that message and nothing else. The CDP path works on the same
+	// runner, which is the whole reason to prefer it.
+	//
+	// The assertions below are unchanged and still run on the serialised
+	// document; the driver's only job is to produce it.
+	driver, err := filepath.Abs(filepath.Join("testdata", "inspection_dom.mjs"))
 	if err != nil {
-		t.Fatalf("render inspection channel telemetry in Chromium: %v\n%s", err, output)
+		t.Fatal(err)
 	}
-	document := string(output)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, driver, server.URL)
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+inspectionFreePort(t))
+	diagnostics := &strings.Builder{}
+	command.Stderr = diagnostics
+	rendered, err := command.Output()
+	if err != nil {
+		t.Fatalf("render inspection channel telemetry in Chromium: %v\n%s", err, diagnostics.String())
+	}
+	document := string(rendered)
+	if !strings.Contains(document, "</html>") {
+		t.Fatalf("the browser did not serialise a document:\nstdout:\n%s\nstderr:\n%s",
+			document, diagnostics.String())
+	}
 	for _, expected := range []string{
 		`data-ready="true"`, `data-edge-id="channel"`, `data-delivery="lossy"`,
 		`id="delta-availability" data-state="loaded" data-after="0" data-next="2" data-events="1" data-baseline="1"`,
@@ -133,6 +158,38 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	if strings.Contains(document, "data-error=") {
 		t.Fatalf("Chromium channel view reported an error:\n%s", document)
 	}
+}
+
+// requireInspectionBrowser resolves the node and Chromium this package's
+// browser checks need. browser_e2e_test.go has an equivalent, but it lives in
+// the external browser_test package and is not reachable from here.
+func requireInspectionBrowser(t testing.TB) (string, string) {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		testgate.Missing(t, "node")
+	}
+	return node, requireInspectionChromium(t)
+}
+
+// inspectionFreePort reserves a loopback port and releases it, so the browser's
+// DevTools listener does not collide with a parallel package's.
+func inspectionFreePort(t testing.TB) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
 }
 
 func requireInspectionChromium(t testing.TB) string {

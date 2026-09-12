@@ -52,6 +52,30 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 	model := "companion-public-command-e2e"
 	secret := "companion-public-command-secret-must-stay-inside-host"
 	output := &companionLockedBuffer{}
+	// `-binding cascade` names an explicit server composition, and this test
+	// needs one.
+	//
+	// With no explicit composition the companion freezes the twelve-scenario
+	// room pipeline, and that profile holds plugins the server dials before it
+	// will report ready: the speaker-identity plugin performs a real HTTP
+	// request to a local model service, so /healthz stays 503 forever on any
+	// machine that is not already running the room's stack. That is every clean
+	// CI runner, and it is why this gate spent its life failing at readiness
+	// rather than at anything it checks. It is also invisible on a development
+	// box with those services listening, which is the trap: the profile becomes
+	// ready there for a reason the gate has nothing to do with.
+	//
+	// What this test asserts needs none of it. It establishes a WebRTC session
+	// from a real browser and a WebSocket session from the shipped native
+	// endpoint directory against one unchanged clean server, and checks
+	// supervision, routing, the generated native endpoint directory, session
+	// accounting, and that the bearer credential never appears in output. No
+	// audio is recognised and no reasoning is requested, so the cascade
+	// composition below reaches readiness without dialling anything - verified
+	// by pointing every provider endpoint at a closed port - and the stand-in
+	// local reasoner needs no credential, so the gate runs on a machine that
+	// holds no provider account. macos/verify-hosted-companion.sh composes
+	// itself the same way for the same reason.
 	process, err := startCompanionProcess(companionRuntime{
 		executable: binary,
 		environment: append(os.Environ(),
@@ -67,6 +91,10 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 		"-client", "none",
 		"-ready-timeout", "90s",
 		"-shutdown-timeout", "5s",
+		"--",
+		"-binding", "cascade",
+		"-slow-provider", "vllm",
+		"-slow-model", "companion-public-command-e2e-reasoner",
 	}, output)
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +221,7 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 	}
 
 	companionCommandRunNativeProbe(t, nativeBundle)
-	waitCompanionCommandSessions(t, client, serverURL+"/metrics", 2, 2)
+	waitCompanionCommandSessions(t, client, serverURL+"/metrics", credential, 2, 2)
 	if strings.Contains(output.String(), secret) {
 		t.Fatal("public companion child logs exposed its bearer credential")
 	}
@@ -275,15 +303,32 @@ func companionCommandRunNativeProbe(t *testing.T, bundle *macos.NativeBundle) {
 	}
 }
 
+// waitCompanionCommandSessions reads the one server's session accounting.
+//
+// The credential is a parameter rather than an omission: this companion runs
+// with a bearer token, and /metrics is served from the same authenticated
+// observability route as /healthz. Polling it unauthenticated collects 401s
+// until the deadline and then reports that the sessions did not complete -
+// naming the wrong half of the system, since by then both sessions have in
+// fact run.
 func waitCompanionCommandSessions(
-	t *testing.T, client *http.Client, endpoint string, started, completed int64,
+	t *testing.T, client *http.Client, endpoint, credential string, started, completed int64,
 ) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
+	// Naming only the expectation turns every shape of failure into the same
+	// sentence: a server that never answered, a session that never started, and
+	// one that started but has not been accounted as complete are three
+	// different faults, and the counts are what tell them apart.
+	observed := "no /metrics response at all"
 	for {
 		request, err := http.NewRequest(http.MethodGet, endpoint, nil)
 		if err != nil {
 			t.Fatal(err)
+		}
+		request.Header.Set("Accept", "application/json")
+		if credential != "" {
+			request.Header.Set("Authorization", "Bearer "+credential)
 		}
 		response, err := client.Do(request)
 		if err == nil {
@@ -293,13 +338,25 @@ func waitCompanionCommandSessions(
 			}
 			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&metrics)
 			closeErr := response.Body.Close()
-			if response.StatusCode == http.StatusOK && decodeErr == nil && closeErr == nil &&
-				metrics.SessionsStarted == started && metrics.SessionsCompleted == completed {
+			switch {
+			case response.StatusCode != http.StatusOK:
+				observed = fmt.Sprintf("HTTP %d from /metrics", response.StatusCode)
+			case decodeErr != nil || closeErr != nil:
+				observed = fmt.Sprintf("unreadable /metrics response: %v",
+					errors.Join(decodeErr, closeErr))
+			case metrics.SessionsStarted == started && metrics.SessionsCompleted == completed:
 				return
+			default:
+				observed = fmt.Sprintf("sessions_started=%d sessions_completed=%d",
+					metrics.SessionsStarted, metrics.SessionsCompleted)
 			}
+		} else {
+			observed = fmt.Sprintf("/metrics request failed: %v", err)
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("one server did not complete exactly %d browser/native sessions", completed)
+			t.Fatalf("one server did not run exactly %d browser/native sessions to completion: "+
+				"want sessions_started=%d sessions_completed=%d, last saw %s",
+				completed, started, completed, observed)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
