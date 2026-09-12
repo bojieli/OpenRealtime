@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- The public companion gate could not have passed on a clean machine, and the
+  reason was masked on the machine it was written on. With no explicit
+  composition the companion freezes the twelve-scenario room profile, and that
+  profile's speaker-identity plugin performs a real HTTP request before the
+  server will report ready - so /healthz stays 503 on any host that is not
+  already running the room's model services. A development box with those
+  services listening becomes ready for a reason the gate has nothing to do
+  with, which is why the first repair, supplying placeholder credentials,
+  looked like it worked locally and then failed in CI on a different plugin.
+  The gate now names `-binding cascade` and a local stand-in reasoner, the same
+  composition macos/verify-hosted-companion.sh uses, which reaches readiness
+  without dialling anything - verified by pointing every provider endpoint at a
+  closed port - and needs no provider account. What the test asserts is
+  unchanged: two real client sessions against one unchanged clean server,
+  supervision, routing, the generated native endpoint directory, session
+  accounting, and a bearer credential that never appears in output.
+
 - The strict launch profile is a Linux-only path, and nothing said so. A profile
   file is read back through a hardened open - refusing symlinks, hard links,
   special files, and any identity change between lookup and read - implemented

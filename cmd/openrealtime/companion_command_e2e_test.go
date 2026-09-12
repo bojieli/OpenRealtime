@@ -52,28 +52,34 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 	model := "companion-public-command-e2e"
 	secret := "companion-public-command-secret-must-stay-inside-host"
 	output := &companionLockedBuffer{}
-	// The launch profile this command selects holds a Deepgram recogniser and a
-	// Gemini reasoner, and the server refuses readiness - /healthz stays 503 -
-	// until every selected plugin has a credential. This test never reaches a
-	// provider: it establishes a WebRTC session from a real browser and a
-	// WebSocket session from the shipped native endpoint directory, and asserts
-	// on supervision, routing, and session accounting. No audio is recognised
-	// and no reasoning is requested.
+	// `-binding cascade` names an explicit server composition, and this test
+	// needs one.
 	//
-	// So the credentials are supplied here as placeholders rather than required
-	// of the operator. Naming them in the child environment does two things: it
-	// lets the release gate run on a machine and a CI runner that hold no
-	// provider account, which is where it had been failing for readiness rather
-	// than for anything it checks; and because these entries come after
-	// os.Environ(), they also shadow a real key that happens to be exported, so
-	// a developer's own account is never dialled by a test run.
-	const placeholderCredential = "companion-command-e2e-placeholder-credential-never-dialled"
+	// With no explicit composition the companion freezes the twelve-scenario
+	// room pipeline, and that profile holds plugins the server dials before it
+	// will report ready: the speaker-identity plugin performs a real HTTP
+	// request to a local model service, so /healthz stays 503 forever on any
+	// machine that is not already running the room's stack. That is every clean
+	// CI runner, and it is why this gate spent its life failing at readiness
+	// rather than at anything it checks. It is also invisible on a development
+	// box with those services listening, which is the trap: the profile becomes
+	// ready there for a reason the gate has nothing to do with.
+	//
+	// What this test asserts needs none of it. It establishes a WebRTC session
+	// from a real browser and a WebSocket session from the shipped native
+	// endpoint directory against one unchanged clean server, and checks
+	// supervision, routing, the generated native endpoint directory, session
+	// accounting, and that the bearer credential never appears in output. No
+	// audio is recognised and no reasoning is requested, so the cascade
+	// composition below reaches readiness without dialling anything - verified
+	// by pointing every provider endpoint at a closed port - and the stand-in
+	// local reasoner needs no credential, so the gate runs on a machine that
+	// holds no provider account. macos/verify-hosted-companion.sh composes
+	// itself the same way for the same reason.
 	process, err := startCompanionProcess(companionRuntime{
 		executable: binary,
 		environment: append(os.Environ(),
 			"OPENREALTIME_COMPANION_E2E_TOKEN="+secret,
-			"DEEPGRAM_API_KEY="+placeholderCredential,
-			"GEMINI_API_KEY="+placeholderCredential,
 		),
 	}, []string{
 		"companion",
@@ -85,6 +91,10 @@ func TestPublicCompanionCommandRunsRealBrowserAndNativeClients(t *testing.T) {
 		"-client", "none",
 		"-ready-timeout", "90s",
 		"-shutdown-timeout", "5s",
+		"--",
+		"-binding", "cascade",
+		"-slow-provider", "vllm",
+		"-slow-model", "companion-public-command-e2e-reasoner",
 	}, output)
 	if err != nil {
 		t.Fatal(err)
