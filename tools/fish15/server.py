@@ -16,7 +16,6 @@ import hashlib
 import json
 import os
 import queue
-import struct
 import sys
 import threading
 import time
@@ -31,6 +30,15 @@ import soundfile
 import torch
 import torchaudio
 
+from audio_contract import (  # noqa: E402
+    AMPLITUDE,
+    SAMPLE_RATE,
+    Resampler,
+    requested_audio,
+    wav_file,
+    wav_header,
+)
+
 # torchaudio dropped list_audio_backends after the 1.5 release pinned it.  The
 # reference loader only uses it to name a decoder, and soundfile is the one the
 # probe would settle on anyway.
@@ -42,9 +50,6 @@ from fish_speech.models.text2semantic.inference import (  # noqa: E402
     launch_thread_safe_queue,
 )
 from fish_speech.models.vqgan.inference import load_model as load_decoder  # noqa: E402
-
-SAMPLE_RATE = 44_100
-AMPLITUDE = 32768
 
 # RESERVE_LIMIT is how much CUDA memory this process may hold before it gives
 # some back.
@@ -145,39 +150,6 @@ def deployment_identity(arguments, speech):
             for name in ("fish_speech", "soundfile", "torch", "torchaudio")
         },
     }
-
-
-def wav_file(pcm, sample_rate=SAMPLE_RATE, channels=1, bits=16):
-    """A complete RIFF file, for a caller that wanted the whole utterance."""
-    block_align = channels * bits // 8
-    return (
-        b"RIFF"
-        + struct.pack("<I", 36 + len(pcm))
-        + b"WAVEfmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
-                      sample_rate * block_align, block_align, bits)
-        + b"data"
-        + struct.pack("<I", len(pcm))
-        + pcm
-    )
-
-
-def wav_header(sample_rate=SAMPLE_RATE, channels=1, bits=16):
-    """A RIFF header for a stream of unknown length.
-
-    Streaming servers cannot know the total size in advance, so the two length
-    fields carry the conventional placeholder.  The Go adapter ignores them.
-    """
-    block_align = channels * bits // 8
-    return (
-        b"RIFF"
-        + struct.pack("<I", 0xFFFFFFFF)
-        + b"WAVEfmt "
-        + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
-                      sample_rate * block_align, block_align, bits)
-        + b"data"
-        + struct.pack("<I", 0xFFFFFFFF)
-    )
 
 
 class Speech:
@@ -336,6 +308,12 @@ def handler_for(speech, deployment):
                 self.send_error(400, "no text")
                 return
 
+            try:
+                container, rate = requested_audio(body, self.headers)
+            except ValueError as error:
+                self.send_error(400, str(error))
+                return
+
             request = defaults(text)
             for field in ("chunk_length", "max_new_tokens", "top_p",
                           "repetition_penalty", "temperature"):
@@ -357,9 +335,16 @@ def handler_for(speech, deployment):
                     print(f"synthesis failed: {error}", file=sys.stderr, flush=True)
                     self.send_error(500, str(error))
                     return
-                payload = wav_file(pcm)
+                pcm = Resampler(SAMPLE_RATE, rate).push(pcm, final=True)
+                payload = pcm if container == "pcm" else wav_file(pcm, rate)
                 self.send_response(200)
-                self.send_header("Content-Type", "audio/wav")
+                self.send_header(
+                    "Content-Type", "audio/pcm" if container == "pcm" else "audio/wav")
+                # Say the rate on every answer, container or not. A raw stream
+                # carries no rate of its own, and a caller left to assume one
+                # is how 44.1kHz speech arrived somewhere expecting 24kHz and
+                # was heard as nothing at all.
+                self.send_header("X-Sample-Rate", str(rate))
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -369,17 +354,26 @@ def handler_for(speech, deployment):
                 return
 
             self.send_response(200)
-            self.send_header("Content-Type", "audio/wav")
+            self.send_header(
+                "Content-Type", "audio/pcm" if container == "pcm" else "audio/wav")
+            self.send_header("X-Sample-Rate", str(rate))
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
 
             first = None
+            resampler = Resampler(SAMPLE_RATE, rate)
             try:
-                self.write_chunk(wav_header())
+                if container == "wav":
+                    self.write_chunk(wav_header(rate))
                 for pcm in speech.synthesize(request, voice):
                     if first is None:
                         first = (time.perf_counter() - started) * 1000
-                    self.write_chunk(pcm)
+                    converted = resampler.push(pcm)
+                    if converted:
+                        self.write_chunk(converted)
+                tail = resampler.push(b"", final=True)
+                if tail:
+                    self.write_chunk(tail)
                 self.write_chunk(b"")
             except (BrokenPipeError, ConnectionResetError):
                 return

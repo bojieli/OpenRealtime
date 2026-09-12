@@ -196,13 +196,16 @@ check_portable_client_languages() {
 }
 
 # The Go sidecar fixture exercises one real subprocess, while these tests own
-# the complete Python protocol/parser and Qwen integration contract. Keep the
+# the complete Python protocol/parser and Qwen integration contract, and the
+# synthesiser's audio contract - the container and sample rate it hands back,
+# which no other gate can see and which nothing reports when it is wrong. Keep the
 # skip policy explicit for the same reason as the official and portable-client
 # gates above.
 check_python_sidecars() {
   if python3 -c 'import pytest' >/dev/null 2>&1; then
     PYTHONPATH="${repository_root}/sidecars" python3 -m pytest -q \
-      sidecars/test_protocol.py sidecars/test_qwen3_omni_sidecar.py
+      sidecars/test_protocol.py sidecars/test_qwen3_omni_sidecar.py \
+      tools/fish15/test_audio_contract.py
     return
   fi
   echo "NOT VERIFIED: Python sidecar conformance requires pytest" >&2

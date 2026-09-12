@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- The local Fish synthesiser answered every request with a 44.1 kHz RIFF file,
+  whatever was asked for. `response_format: "pcm"` was ignored, and no reply
+  ever said what rate it was at, so a caller asking for raw PCM received a RIFF
+  header as twenty-two samples of noise and had to guess the rate of what
+  followed. tau2's client guessed 24 kHz, which is the wire's rate and not the
+  model's, and delivered every caller utterance 1.84x too slow.
+
+  The server now honours `response_format` (`wav` or `pcm`, by body field or
+  Accept header), converts to a requested `sample_rate` through torchaudio's
+  band-limited resampler - carrying filter context across chunks so a streamed
+  conversion has no seams - and sends `X-Sample-Rate` on every audio response,
+  container or not. The Go adapter's contract is untouched: it asks for wav and
+  still gets wav at the model's own rate. `tools/fish15/audio_contract.py` holds
+  this half so it can be tested without a GPU, and the gate runs those tests.
+
+  Worth recording alongside the fix: this mismatch was blamed for a GPT-Live
+  agent sitting mute through a whole tau2 task, and that was wrong. The exact
+  pre-fix bytes, played into a recogniser at the wrong declared rate, still
+  transcribe correctly. The silence had a different cause, fixed separately.
+
 - A GPT-Live voice was never told to delegate, so behind this binding it was
   mute on anything needing a lookup. The instruction given to a remote said a
   background reasoner "will hand you completed answers to say" - true of a

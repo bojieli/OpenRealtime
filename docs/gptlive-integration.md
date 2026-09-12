@@ -342,15 +342,29 @@ in `session.start` and this binding forwards it, so it is selectable now.
 
 With those fixed the suite runs end to end: sessions open, the domain policy is
 accepted, sixteen tools are declared, tau2 records `mode: full_duplex` and a
-real sixty-eight-second conversation. What it does not do here is succeed, and
-the reason is environmental rather than integration. The simulated caller's
-voice comes from the local Fish synthesiser, which answers `/v1/audio/speech`
-with **44.1 kHz WAV** while the Realtime wire is **24 kHz raw PCM with no
-container**. The endpoint therefore receives a RIFF header as samples followed
-by speech at roughly 1.84x too slow, transcribes nothing, delegates nothing,
-and stays silent - with no error at any layer, which is what makes it worth
-writing down. Reconciling that rate is what the suite needs next; the agent
-half of it is proven.
+real sixty-eight-second conversation. It also found a defect one layer below the
+integration, in the synthesiser that gives the simulated caller its voice: the
+local Fish service answered every request with a 44.1 kHz RIFF file whatever
+was asked for, so a client asking for raw PCM got a header passed through as
+samples and, with no rate declared anywhere, called the whole thing 24 kHz -
+speech delivered 1.84x too slow. It now honours `response_format`, converts to
+a requested rate through a standard band-limited resampler, and states the
+rate it is handing back on every answer.
+
+That is worth separating from the diagnosis it was first given. The mismatch
+was real and is fixed, but it was **not** what made the agent silent: fed the
+exact pre-fix bytes at the wrong declared rate, a recogniser still transcribes
+them correctly. Slow speech was survivable; a voice that had never been told
+it could delegate was not. A plausible mechanism sitting near a silent failure
+is not a measurement of its cause, and this one collected the blame for a
+while on nothing but proximity.
+
+The suite cannot be re-run against GPT-Live from here: the OpenAI account
+behind this work was deactivated partway through, and every session now ends
+in `account_deactivated` before `session.created`. What is proven stands on
+its own - the session opens, the domain policy is accepted, sixteen tools are
+declared, and tau2 records `mode: full_duplex` over a real conversation - and
+the tool-calling score itself waits on an account that answers.
 
 ## 4c. Steering, which neither benchmark covers
 
