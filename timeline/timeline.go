@@ -147,6 +147,12 @@ func Project(entry binding.DebugEvent) []Event {
 		// One mark per stage a tool call passes; a refusal says why, and
 		// that is the whole reason these are here.
 		kind := text(value["kind"])
+		// Every trajectory reply reaches every commit element, and each one
+		// that was not waiting for it says so; that is plumbing, not the
+		// turn's story.
+		if kind == "ignored" && strings.HasPrefix(text(value["code"]), "unknown_") {
+			return nil
+		}
 		detail := strings.TrimSpace(text(value["stage"]) + "/" + text(value["operation"]) + " " + kind)
 		if code := text(value["code"]); code != "" {
 			detail += " " + code
@@ -163,6 +169,9 @@ func Project(entry binding.DebugEvent) []Event {
 		// tool proposal that never became canonical is a key never pressed,
 		// and it waits in silence otherwise.
 		kind := text(value["kind"])
+		if kind == "ignored" && strings.HasPrefix(text(value["code"]), "unknown_") {
+			return nil
+		}
 		detail := kind
 		if code := text(value["code"]); code != "" {
 			detail += " " + code
