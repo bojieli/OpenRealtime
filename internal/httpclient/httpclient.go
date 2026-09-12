@@ -74,7 +74,7 @@ func WithTimeout(timeout time.Duration) *http.Client {
 func Transport() *http.Transport {
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
+		DialContext: newRememberingDialer(&net.Dialer{
 			Timeout:   dialTimeout,
 			KeepAlive: dialKeepAlive,
 		}).DialContext,
