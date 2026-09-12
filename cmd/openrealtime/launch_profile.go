@@ -22,11 +22,11 @@ import (
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
 	legacy "github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/computeruse"
-	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	scenarioconversation "github.com/bojieli/OpenRealtime/graph/binding/scenarioconversation"
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	launchprofile "github.com/bojieli/OpenRealtime/graph/launch/profile"
 	graphvalues "github.com/bojieli/OpenRealtime/graph/values"
+	"github.com/bojieli/OpenRealtime/graphs"
 	"github.com/bojieli/OpenRealtime/internal/fileidentity"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/noisefilter"
@@ -39,18 +39,9 @@ Freeze one strict graph/server profile against the exact running executable
 and explicit provider configurations. Outputs are create-only and contain no
 credential. Use this same executable to serve the resulting file.`
 
-const productionScenarioContinuationInstruction = "Ground every response in canonical evidence already received. " +
-	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
-	"Be concise unless the user explicitly requested detail. " +
-	"Name the concrete matched item, for example \"the sea bass,\" instead of saying only \"that is the one.\" " +
-	"Put the decisive requested fact in the first clause; for a correction, start with the corrected fact, for example \"The deadline is the third, not the thirteenth.\" " +
-	"Translate into the requested target language, not the source language. " +
-	"When a deferred event or time condition is due, execute the requested action now; do not merely acknowledge, confirm, restate, or narrate its setup. " +
-	"Never emit punctuation-only output; always produce at least one complete lexical sentence when speech is authorized. " +
-	"For an event-driven running count, emit exactly one updated count for each new occurrence: one number, once, with no repeated sentence or extra words, continuing from counts that were already audible. " +
-	"Speak counts as number words in the requested language with sentence punctuation, for example \"One.\" then \"Two.\" in English, rather than bare digit strings. " +
-	"For a direct request to recite a finite numeric range, supply the complete remaining sequence in this response, one number per sentence, without waiting for another user turn. \"Slowly\" and \"one number at a time\" specify spoken pacing, not one number per response. The speech player paces and interrupts the stream; generate all remaining numbers through the requested endpoint now. This rule never authorizes counting events that have not occurred. For an event-driven count, a repeated occurrence or no new occurrence requires exactly <wait> and nothing else; never say zero, acknowledge the rule, or narrate waiting. " +
-	"When resuming that sequence, begin after the last number the user actually heard; do not skip numbers that were prepared but not audible."
+// productionScenarioContinuationInstruction is graphs.ProductionContinuationInstruction,
+// kept under its old name for the profile freezer and its tests.
+const productionScenarioContinuationInstruction = graphs.ProductionContinuationInstruction
 
 type scenarioProfileOptions struct {
 	noiseFilterURL       string
@@ -66,54 +57,49 @@ type scenarioProfileOptions struct {
 	architecture         string
 	cases                []string
 
-	asrProvider            string
-	asrModel               string
-	asrURL                 string
-	asrLanguage            string
-	asrKeyterms            []string
-	asrPartialMS           int64
-	asrEndpointingMS       int64
-	asrTimeoutMS           int64
-	asrCadenceMS           int64
-	speakerURL             string
-	speakerModel           string
-	speakerTimeoutMS       int64
-	modelProvider          string
-	modelName              string
-	modelURL               string
-	modelEffort            string
-	modelVision            bool
-	modelReason            string
-	modelRetainReason      bool
-	modelTemperature       float64
-	modelTimeoutMS         int64
-	policyProvider         string
-	policyModel            string
-	policyURL              string
-	policyTimeoutMS        int64
-	policyVision           bool
-	policyGuided           bool
-	policyReasoning        string
-	policyTokenEnv         string
-	transcriptPolicy       string
-	transcriptTimeoutMS    int64
-	transcriptPartialActs  string
-	transcriptPartialRules string
-	transcriptFinalActs    string
-	transcriptFinalRules   string
-	ttsProvider            string
-	ttsModel               string
-	ttsURL                 string
-	ttsVoice               string
-	ttsLanguage            string
-	ttsTimeoutMS           int64
-	ttsSentenceWrap        bool
-	ttsSentenceMinimum     int
-	wordTimingsURL         string
-	wordTimingsModel       string
-	wordTimingsLanguage    string
-	wordTimingsIntervalMS  int64
-	wordTimingsTimeoutMS   int64
+	asrProvider           string
+	asrModel              string
+	asrURL                string
+	asrLanguage           string
+	asrKeyterms           []string
+	asrPartialMS          int64
+	asrEndpointingMS      int64
+	asrTimeoutMS          int64
+	asrCadenceMS          int64
+	speakerURL            string
+	speakerModel          string
+	speakerTimeoutMS      int64
+	modelProvider         string
+	modelName             string
+	modelURL              string
+	modelEffort           string
+	modelVision           bool
+	modelReason           string
+	modelRetainReason     bool
+	modelTemperature      float64
+	modelTimeoutMS        int64
+	policyProvider        string
+	policyModel           string
+	policyURL             string
+	policyTimeoutMS       int64
+	policyVision          bool
+	policyGuided          bool
+	policyReasoning       string
+	policyTokenEnv        string
+	transcriptRules       string
+	ttsProvider           string
+	ttsModel              string
+	ttsURL                string
+	ttsVoice              string
+	ttsLanguage           string
+	ttsTimeoutMS          int64
+	ttsSentenceWrap       bool
+	ttsSentenceMinimum    int
+	wordTimingsURL        string
+	wordTimingsModel      string
+	wordTimingsLanguage   string
+	wordTimingsIntervalMS int64
+	wordTimingsTimeoutMS  int64
 
 	gateThreshold           float64
 	gatePrefixMS            int
@@ -144,10 +130,7 @@ func defaultScenarioProfileOptions() scenarioProfileOptions {
 		policyProvider: "vllm", policyModel: "qwen-fast",
 		policyURL: "http://127.0.0.1:8000/v1", policyTimeoutMS: 2_000,
 		policyVision: true, policyGuided: true, policyReasoning: "chat_template_kwargs",
-		transcriptPolicy: "none", transcriptTimeoutMS: 250,
-		transcriptPartialActs: "listen,speak-through,interrupt,act-silently",
-		transcriptFinalActs:   "listen,answer,act-silently",
-		ttsProvider:           "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
+		ttsProvider: "fish-audio", ttsModel: "fishaudio/fish-speech-1.5",
 		ttsURL: "http://127.0.0.1:8123/v1/tts", ttsVoice: "default",
 		ttsTimeoutMS: 30_000, ttsSentenceWrap: true, ttsSentenceMinimum: 12,
 		wordTimingsModel:      wordtimings.DefaultModel,
@@ -244,18 +227,8 @@ func runScenarioProfileFreezeWithOptions(arguments []string, output io.Writer, o
 	flags.BoolVar(&options.policyGuided, "policy-guided-choice", options.policyGuided, "request provider-side enumerated-choice decoding")
 	flags.StringVar(&options.policyReasoning, "policy-reasoning", options.policyReasoning, "semantic-policy reasoning control")
 	flags.StringVar(&options.policyTokenEnv, "policy-token-env", options.policyTokenEnv, "optional provider-owned semantic-policy credential environment name")
-	flags.StringVar(&options.transcriptPolicy, "transcript-policy", options.transcriptPolicy,
-		"streaming transcript interaction policy: event-aware or none")
-	flags.Int64Var(&options.transcriptTimeoutMS, "transcript-timeout-ms", options.transcriptTimeoutMS,
-		"per-revision transcript interaction decision timeout")
-	flags.StringVar(&options.transcriptPartialActs, "transcript-partial-acts", options.transcriptPartialActs,
-		"comma-separated executable acts for provisional transcript events")
-	flags.StringVar(&options.transcriptPartialRules, "transcript-partial-rules", options.transcriptPartialRules,
-		"interaction-model instruction for provisional transcript events")
-	flags.StringVar(&options.transcriptFinalActs, "transcript-final-acts", options.transcriptFinalActs,
-		"comma-separated executable acts for final transcript events")
-	flags.StringVar(&options.transcriptFinalRules, "transcript-final-rules", options.transcriptFinalRules,
-		"interaction-model instruction for final transcript events")
+	flags.StringVar(&options.transcriptRules, "transcript-rules", options.transcriptRules,
+		"interaction-policy instruction read at every transcript, visual, and quiet event; empty selects the built-in rules")
 	flags.StringVar(&options.ttsProvider, "tts-provider", options.ttsProvider, "installed TTS provider plugin")
 	flags.StringVar(&options.ttsModel, "tts-model", options.ttsModel, "exact TTS model")
 	flags.StringVar(&options.ttsURL, "tts-url", options.ttsURL, "exact TTS endpoint")
@@ -459,10 +432,6 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
 	}
-	silentModel, err := scenarioProfileModelSelection(inventory, options, "silent")
-	if err != nil {
-		return launchprofile.Document{}, graphlaunch.Result{}, err
-	}
 	tts, err := scenarioProfileTTSSelection(inventory, options)
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, err
@@ -479,20 +448,14 @@ func freezeProductionScenarioProfile(
 	if err != nil {
 		return launchprofile.Document{}, graphlaunch.Result{}, fmt.Errorf("resolve scenario architecture: %w", err)
 	}
-	transcriptEvents, err := scenarioProfileTranscriptEvents(options)
-	if err != nil {
-		return launchprofile.Document{}, graphlaunch.Result{}, err
-	}
 	application := scenarioconversation.ApplicationConfig{
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
 		ASR:           asr, SpeakerIdentity: speakerIdentity,
-		Policy: policy, Model: model, SilentModel: silentModel, TTS: tts,
+		Policy: policy, Model: model, TTS: tts,
 		WordTiming: wordTiming,
 		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
-			StandingExtraction: true, VerifyVoiceActivation: true, VerifySilentAction: true,
-			MinimumActivationConfidence: 0.7, StandingMemory: 64,
-			TranscriptEvents: transcriptEvents,
+			StandingExtraction: true, StandingMemory: 64, Rules: options.transcriptRules,
 		},
 		Tools: tools,
 		Target: computeruse.Target{
@@ -567,42 +530,6 @@ func freezeProductionScenarioProfile(
 		return launchprofile.Document{}, graphlaunch.Result{}, errors.New("frozen scenario profile and prepared graph plan disagree")
 	}
 	return profile, launched, nil
-}
-
-func scenarioProfileTranscriptEvents(
-	options scenarioProfileOptions,
-) (*policyelements.SemanticTranscriptEventConfig, error) {
-	enabled, err := parseTranscriptPolicy(options.transcriptPolicy)
-	if err != nil {
-		return nil, err
-	}
-	if !enabled {
-		return nil, nil
-	}
-	partialActs, err := parseTranscriptActs(options.transcriptPartialActs)
-	if err != nil {
-		return nil, fmt.Errorf("partial transcript acts: %w", err)
-	}
-	finalActs, err := parseTranscriptActs(options.transcriptFinalActs)
-	if err != nil {
-		return nil, fmt.Errorf("final transcript acts: %w", err)
-	}
-	config := &policyelements.SemanticTranscriptEventConfig{
-		Partial: policyelements.SemanticTranscriptEventRules{
-			Instruction: options.transcriptPartialRules,
-			Acts:        partialActs,
-			TimeoutMS:   options.transcriptTimeoutMS,
-		},
-		Final: policyelements.SemanticTranscriptEventRules{
-			Instruction: options.transcriptFinalRules,
-			Acts:        finalActs,
-			TimeoutMS:   options.transcriptTimeoutMS,
-		},
-	}
-	if err := policyelements.ValidateSemanticTranscriptEventConfig(*config); err != nil {
-		return nil, fmt.Errorf("scenario transcript policy: %w", err)
-	}
-	return config, nil
 }
 
 // productionScenarioToolDeclarations derives the profile-owned client action

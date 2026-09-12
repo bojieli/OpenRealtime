@@ -16,6 +16,7 @@ import (
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
 	"github.com/bojieli/OpenRealtime/elements/speech"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 )
 
 type segmentPreparedTextFactory struct{}
@@ -112,6 +113,10 @@ type preparedRun struct {
 	buffer     string
 	totalBytes int
 	segments   []string
+	// silenced records that a control token asked this run to say nothing.
+	// It is a property of the run, not of one delta: the token can arrive in
+	// the last chunk, after earlier prose has already been buffered.
+	silenced bool
 }
 
 type segmentPreparedTextRunner struct {
@@ -244,6 +249,13 @@ func (runner *segmentPreparedTextRunner) acceptText(
 			return runner.failActive(ctx, envelope, OutcomeFailed, "source_interrupted",
 				"prepared text source ended interrupted", false)
 		}
+		if run.silenced {
+			// Reported, not absorbed. A turn that chose to be silent and a
+			// turn that produced nothing are different facts, and only the
+			// second is worth investigating.
+			run.buffer = ""
+			return runner.completeSilenced(ctx, envelope)
+		}
 		if strings.TrimSpace(run.buffer) != "" {
 			if len(strings.TrimSpace(run.buffer)) > runner.config.MaxSegmentBytes {
 				return runner.failActive(ctx, envelope, OutcomeFailed, "segment_too_large",
@@ -267,6 +279,16 @@ func (runner *segmentPreparedTextRunner) acceptText(
 func (runner *segmentPreparedTextRunner) appendSafeText(
 	ctx context.Context, cause element.Envelope, run *preparedRun, text string,
 ) (bool, error) {
+	// Before anything measures, buffers, or splits this text. A control token
+	// is an instruction to the runtime, never a word to be spoken, so it is
+	// removed on the way in and the request it carried is remembered on the
+	// run. <wait> asks for silence, and the safe reading of a token whose
+	// entire purpose is silence is silence: a run that carried one publishes
+	// no further speech, rather than speaking the prose around it.
+	text, silencing := extractControlTokens(text)
+	if silencing {
+		run.silenced = true
+	}
 	if text == "" {
 		return true, nil
 	}
@@ -325,6 +347,11 @@ func validateSafePreparedDelta(
 func (runner *segmentPreparedTextRunner) releaseSafeSegments(
 	ctx context.Context, cause element.Envelope,
 ) error {
+	if runner.active.silenced {
+		// The run asked for silence. Holding the buffer rather than splitting
+		// it keeps the prose around the token unspoken too.
+		return nil
+	}
 	for {
 		pieces := bysentence.SplitWithClauseMinimum(runner.active.buffer,
 			runner.config.MinimumRunes, runner.config.MinimumClauseRunes)
@@ -389,6 +416,20 @@ func (runner *segmentPreparedTextRunner) completeActive(
 	return runner.publishSegmentationOutcome(ctx, cause, SegmentationOutcome{
 		Kind: OutcomeCompleted, RunID: run.id, Segments: len(run.segments),
 		BufferedBytes: run.totalBytes,
+	})
+}
+
+// completeSilenced ends a run that carried a control token asking for silence.
+func (runner *segmentPreparedTextRunner) completeSilenced(
+	ctx context.Context, cause element.Envelope,
+) error {
+	run := runner.active
+	runner.active = nil
+	runner.rememberTerminalSegments(run.id, run.segments)
+	return runner.publishSegmentationOutcome(ctx, cause, SegmentationOutcome{
+		Kind: OutcomeCompleted, RunID: run.id, Segments: len(run.segments),
+		BufferedBytes: run.totalBytes, Code: "control_token_silence",
+		Message: "a control token in the prepared text asked this run to say nothing",
 	})
 }
 
@@ -767,4 +808,26 @@ func firstNonemptyString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// controlTokens never reach a synthesiser. They are the model's channel for
+// telling the runtime what to do, and a synthesiser handed one reads it out:
+// measured at a phone menu, "Pressing the key for order status. <wait>" was
+// spoken to a recording that could not hear it. Extracting them here rather
+// than at each producer means one place decides, whichever model wrote the
+// text and whichever binding is running.
+var controlTokens = []string{coreinteraction.WaitToken}
+
+// extractControlTokens removes every control token from one delta and reports
+// whether any was present.
+func extractControlTokens(text string) (string, bool) {
+	found := false
+	for _, token := range controlTokens {
+		if !strings.Contains(text, token) {
+			continue
+		}
+		found = true
+		text = strings.ReplaceAll(text, token, "")
+	}
+	return text, found
 }

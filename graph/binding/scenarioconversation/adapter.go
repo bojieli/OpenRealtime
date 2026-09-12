@@ -349,20 +349,18 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		}
 	}
 	wanted := map[string]map[string]string{
-		"asr":                       {"provider": ASRReference},
-		"semantic_admission":        {"decider": PolicyReference},
-		"overlap_barge_in":          {"decider": PolicyReference},
-		"voice_model":               {"provider": ModelReference},
-		"silent_model":              {"provider": SilentModelReference},
-		"tool_lookup":               {"registry": ToolReference},
-		"confirmation":              {"provider": ConfirmationReference},
-		"target_fence":              {"target": TargetReference},
-		"ledger_commit":             {"ledger": LedgerReference},
-		"dispatch":                  {"registry": ToolReference, "ledger": LedgerReference},
-		"tts":                       {"provider": TTSReference},
-		"playback":                  {"sink": PlaybackReference},
-		"voice_session_invocation":  {"role": "foreground"},
-		"silent_session_invocation": {"role": "silent"},
+		"asr":                      {"provider": ASRReference},
+		"semantic_admission":       {"decider": PolicyReference},
+		"overlap_barge_in":         {"decider": PolicyReference},
+		"voice_model":              {"provider": ModelReference},
+		"tool_lookup":              {"registry": ToolReference},
+		"confirmation":             {"provider": ConfirmationReference},
+		"target_fence":             {"target": TargetReference},
+		"ledger_commit":            {"ledger": LedgerReference},
+		"dispatch":                 {"registry": ToolReference, "ledger": LedgerReference},
+		"tts":                      {"provider": TTSReference},
+		"playback":                 {"sink": PlaybackReference},
+		"voice_session_invocation": {"role": "foreground"},
 	}
 	values := plan.Values()
 	for node, fields := range wanted {
@@ -384,12 +382,10 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		return errors.New("scenario conversation endpoint policy must be exact automatic mode")
 	}
 	var semanticAdmission struct {
-		DirectVisualInput           bool    `json:"direct_visual_input"`
-		StandingExtraction          bool    `json:"standing_extraction"`
-		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
-		VerifySilentAction          bool    `json:"verify_silent_action"`
-		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
-		StandingMemory              int     `json:"standing_memory"`
+		DirectVisualInput  bool   `json:"direct_visual_input"`
+		StandingExtraction bool   `json:"standing_extraction"`
+		StandingMemory     int    `json:"standing_memory"`
+		Rules              string `json:"rules"`
 	}
 	if err := json.Unmarshal(values["semantic_admission"], &semanticAdmission); err != nil {
 		return fmt.Errorf("decode scenario conversation semantic admission values: %w", err)
@@ -402,10 +398,8 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		return errors.New("scenario conversation semantic direct-visual selection drifted from architecture")
 	}
 	if semanticAdmission.StandingExtraction != config.SemanticAdmission.StandingExtraction ||
-		semanticAdmission.VerifyVoiceActivation != config.SemanticAdmission.VerifyVoiceActivation ||
-		semanticAdmission.VerifySilentAction != config.SemanticAdmission.VerifySilentAction ||
-		semanticAdmission.MinimumActivationConfidence != config.SemanticAdmission.MinimumActivationConfidence ||
-		semanticAdmission.StandingMemory != config.SemanticAdmission.StandingMemory {
+		semanticAdmission.StandingMemory != config.SemanticAdmission.StandingMemory ||
+		semanticAdmission.Rules != config.SemanticAdmission.Rules {
 		return errors.New("scenario conversation semantic admission values drifted from the application selection")
 	}
 	var postCommitSilence struct {
@@ -756,8 +750,14 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			err = session.acceptAdmissionOutcome(envelope)
 		case transcriptBoundary:
 			err = session.publishTranscript(ctx, envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case observationBoundary:
 			err = session.publishObservation(ctx, envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case ingressHandlesBoundary:
 			err = session.acceptIngressHandle(envelope)
 		case ingressOutcomeBoundary:
@@ -775,14 +775,23 @@ func (session *session) runOutput(ctx context.Context, name string, port element
 			}
 		case invocationOutcomeBoundary:
 			err = session.acceptInvocationOutcome(envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case dispatchCommitBoundary:
 			err = session.publishCall(ctx, envelope)
 		case canonicalResultBoundary:
 			err = session.acceptCanonicalResult(envelope)
 		case modelResultBoundary:
 			err = session.acceptModelResult(envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case modelOutcomeBoundary:
 			err = session.acceptModelOutcome(ctx, envelope)
+			if err == nil {
+				err = session.publishDebug(ctx, name, envelope)
+			}
 		case segmentationOutcomeBoundary:
 			err = session.acceptSegmentationOutcome(envelope)
 			if err == nil {

@@ -185,6 +185,22 @@ type Situation struct {
 	// InFlight is work already running. It is what stops the same decision
 	// being taken twice.
 	InFlight string
+	// HeardSinceStep is what the current words add to the previous step's on
+	// the same utterance - the part that is actually new to decide about.
+	// SinceStepKnown says a previous step existed to compare with.
+	HeardSinceStep string
+	SinceStepKnown bool
+	// AnsweredSoFar is what the agent has already answered in this utterance:
+	// the words a step that spoke had heard. "Already covered" is a fact the
+	// runtime holds, and the occurrence question is asked against it.
+	AnsweredSoFar string
+	// Steps are the most recent decisions, oldest first: what was heard,
+	// what was chosen, and what the agent then said. The policy runs one
+	// step at a time - an event, a choice, the model's answer if the choice
+	// invoked it - and each step is shown the ones before it, so "this
+	// occurrence was already answered" is a fact on the page rather than
+	// something inferred from the agent's audible text.
+	Steps []string
 	// Seen is the newest thing an observer noticed that nobody said out loud.
 	Seen string
 	// Tools names what the agent could do without speaking. It is here as a
@@ -283,6 +299,45 @@ func (state Situation) AvailableActs() []Act {
 // is spending capacity on the translation.
 func (state Situation) Render() string {
 	var block strings.Builder
+	state.renderEvidence(&block)
+	acts := state.AvailableActs()
+	names := make([]string, len(acts))
+	for index, act := range acts {
+		names[index] = string(act)
+	}
+	block.WriteString("\nAvailable acts right now: " + strings.Join(names, ", "))
+	return block.String()
+}
+
+// RenderForChoice writes the same block for a policy that answers with a
+// Choice. The evidence is identical - it was measured, and a decision that
+// reads a different rendering of the same facts is a different decision - and
+// only the closing line differs: the exact options for this instant, derived
+// from whether the agent is speaking, rather than a legacy act list.
+func (state Situation) RenderForChoice() string {
+	var block strings.Builder
+	state.renderEvidence(&block)
+	block.WriteString("\nChoose exactly one: " + strings.Join(ChoiceOptionsFor(state), ", "))
+	return block.String()
+}
+
+// RenderEvidence is the evidence block alone, as a decision records it.
+func (state Situation) RenderEvidence() string {
+	var block strings.Builder
+	state.renderEvidence(&block)
+	return block.String()
+}
+
+// RenderForQuestion is the evidence followed by one step question, which is
+// what the model is asked: the question last, next to the answer.
+func (state Situation) RenderForQuestion(question StepQuestion) string {
+	var block strings.Builder
+	state.renderEvidence(&block)
+	block.WriteString("\n" + question.Text + "\nAnswer yes or no.")
+	return block.String()
+}
+
+func (state Situation) renderEvidence(block *strings.Builder) {
 	if trimmed := strings.TrimSpace(state.Contract); trimmed != "" {
 		block.WriteString("What this agent is for:\n" + trimmed + "\n\n")
 	}
@@ -297,6 +352,13 @@ func (state Situation) Render() string {
 		block.WriteString("Recent conversation:\n")
 		for _, line := range state.Recent {
 			block.WriteString(line + "\n")
+		}
+		block.WriteString("\n")
+	}
+	if len(state.Steps) > 0 {
+		block.WriteString("Recent steps (oldest first; what was heard -> what you chose; what the agent then said):\n")
+		for _, line := range state.Steps {
+			block.WriteString("- " + line + "\n")
 		}
 		block.WriteString("\n")
 	}
@@ -342,6 +404,18 @@ func (state Situation) Render() string {
 	}
 	if state.Heard != "" {
 		block.WriteString("heard from " + who + " so far: \"" + state.Heard + "\"\n")
+		if state.SinceStepKnown {
+			if trimmed := strings.TrimSpace(state.HeardSinceStep); trimmed == "" {
+				block.WriteString("no new words since the last step\n")
+			} else {
+				block.WriteString("new words since the last step: \"" + trimmed + "\"\n")
+			}
+			if answered := strings.TrimSpace(state.AnsweredSoFar); answered != "" {
+				block.WriteString("already answered in this utterance: \"" + answered + "\"\n")
+			} else {
+				block.WriteString("nothing in this utterance has been answered yet\n")
+			}
+		}
 	}
 	// Always said, and never by omission. Leaving the line out when there is
 	// nothing new and again when everything is new renders two opposite
@@ -369,13 +443,6 @@ func (state Situation) Render() string {
 	if len(state.Tools) > 0 {
 		block.WriteString("tools the agent can use without speaking: " + strings.Join(state.Tools, ", ") + "\n")
 	}
-	acts := state.AvailableActs()
-	names := make([]string, len(acts))
-	for index, act := range acts {
-		names[index] = string(act)
-	}
-	block.WriteString("\nAvailable acts right now: " + strings.Join(names, ", "))
-	return block.String()
 }
 
 func orElse(value, whenEmpty string) string {

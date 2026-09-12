@@ -88,6 +88,63 @@ These practice sessions are not scored benchmark runs. Use the existing
 behavioral measurements and retained evidence. A single diagnostic pass does
 not establish the suite's repeated-run acceptance criteria.
 
+## One step at a time
+
+The interaction policy runs in lockstep with the voice. Every transcript
+event - each Deepgram partial and each final - is a step: the policy is
+asked, with the full option set, what to do; if it invokes the voice, nothing
+else is decided until the model has answered; then the next step is decided
+against the latest transcript and everything the model just said. Revisions
+that arrive while a step is running collapse to the newest one, so the policy
+sees a sequence of events, never a backlog, and the model is never asked twice
+at once. Each step is shown the recent steps - what was heard, what was
+chosen, what the agent then said - the words new since the previous step, and
+what was already answered in this utterance.
+
+The policy model is asked about a step in narrow yes/no questions, and the
+runtime composes the choice from the answers: while the agent is speaking, is
+the person cutting in (`stop`)? Do the new words hold a new occurrence of a
+standing instruction (`speak`)? On a final with nothing due, is there a
+request to answer (`speak`)? A fast instruct model answers those reliably
+where it could not apply a page of rules to one constrained token: on the same
+recorded decisions, 13 of 37 right as a single choice against 33 to 34 asked
+this way, and 39 of 40 in the live benchmark. The answers are recorded on
+every decision (`questions`) and shown on the timeline's policy lane.
+
+The counting benchmark exercises exactly this against the real policy and
+voice models with a scripted transcript, no audio and nobody speaking:
+
+```sh
+OPENREALTIME_COUNTING_BENCH=1 go test ./graphs -run TestCountingBenchmark -v -count=1
+```
+
+It needs the vLLM policy (`OPENREALTIME_POLICY_URL`, default
+`http://127.0.0.1:8000/v1`) and `GEMINI_API_KEY`, prints a scorecard - each
+animal counted once, in order, on the partial that named it; no speech on
+sentences without one; no overlapping generations - and writes the run's
+timeline to `.runtime/counting-bench/`.
+
+## Reading a turn back
+
+Every developer profile draws a **Turn timeline** above the session details:
+five lanes across time - ASR (speech activity and each Deepgram revision),
+Policy (the interaction model's choice on every partial and final, with the
+evidence it was shown), LLM (request, text, outcome), TTS (synthesis,
+speaking, playback), and Background (every question the standing-instruction
+pass asked and what it answered). It moves with the conversation; **Paused**
+freezes it, the slider scrubs back through the session, and **Replay from
+here** plays it forward again at real speed. Hovering a mark shows the whole
+event; the list underneath is the same events as text, one line each.
+
+The page receives these as the `timeline` debug category with payloads (see
+`docs/protocol/openrealtime-1.md`). The same lines can be kept on disk: start
+the server with `-timeline-log <file>` (or pass it after `--` to `companion`)
+and it appends one line per event for every session - `time session LANE
+kind detail "words" [span]`. The file carries what people said and what the
+models answered; keep it private. `tools/tracelog/render.py` renders the
+older, complete JSON debug log the same way when the server ran with
+`-log-level debug -log-format json`.
+
 ## Verification and generated assets
 
 ```sh

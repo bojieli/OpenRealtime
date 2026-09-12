@@ -28,7 +28,7 @@ import (
 
 const (
 	ApplicationReference          = "application.openrealtime.scenario-conversation.v1"
-	ApplicationFormatVersion      = uint64(9)
+	ApplicationFormatVersion      = uint64(10)
 	maximumApplicationConfigBytes = 4 << 20
 	maximumApplicationProviders   = 65_536
 )
@@ -119,7 +119,6 @@ type ApplicationConfig struct {
 	Policy                  ApplicationPolicySelection           `json:"policy"`
 	SemanticAdmission       SemanticAdmissionSelection           `json:"semantic_admission"`
 	Model                   ApplicationModelSelection            `json:"model"`
-	SilentModel             ApplicationModelSelection            `json:"silent_model"`
 	TTS                     ApplicationTTSSelection              `json:"tts"`
 	WordTiming              *ApplicationWordTimingSelection      `json:"word_timing,omitempty"`
 	Tools                   []ToolDeclaration                    `json:"tools"`
@@ -194,9 +193,6 @@ func normalizeApplicationConfig(source ApplicationConfig) (ApplicationConfig, er
 	}
 	config.SemanticAdmission = semanticAdmission
 	if err := validateApplicationModel(config.Model, continuation.SpeechAuthorityVoice); err != nil {
-		return ApplicationConfig{}, err
-	}
-	if err := validateApplicationModel(config.SilentModel, continuation.SpeechAuthoritySilent); err != nil {
 		return ApplicationConfig{}, err
 	}
 	if err := validateApplicationTTS(config.TTS); err != nil {
@@ -546,23 +542,6 @@ func NewApplicationRegistration(
 			if err != nil {
 				return graphlaunch.Config{}, err
 			}
-			silentModelRegistration, found := models[config.SilentModel.Reference]
-			if !found {
-				return graphlaunch.Config{}, fmt.Errorf(
-					"scenario conversation silent model registry is missing %q", config.SilentModel.Reference,
-				)
-			}
-			if silentModelRegistration.Artifact != config.SilentModel.Artifact {
-				return graphlaunch.Config{}, fmt.Errorf(
-					"scenario conversation silent model %q artifact or descriptor drifted", config.SilentModel.Reference,
-				)
-			}
-			silentModelDescriptor, silentModelFactory, silentModelReady, err := resolveModelRegistration(
-				silentModelRegistration, config.SilentModel,
-			)
-			if err != nil {
-				return graphlaunch.Config{}, err
-			}
 			ttsRegistration, found := tts[config.TTS.Reference]
 			if !found {
 				return graphlaunch.Config{}, fmt.Errorf(
@@ -626,8 +605,6 @@ func NewApplicationRegistration(
 				SemanticAdmission: config.SemanticAdmission,
 				Model: ModelPlugin{Reference: ModelReference, Artifact: modelRegistration.Artifact,
 					Descriptor: modelDescriptor, Factory: modelFactory},
-				SilentModel: ModelPlugin{Reference: SilentModelReference, Artifact: silentModelRegistration.Artifact,
-					Descriptor: silentModelDescriptor, Factory: silentModelFactory},
 				TTS: TTSPlugin{Reference: TTSReference, Artifact: ttsRegistration.Artifact,
 					Descriptor: cloneV1Descriptor(ttsDescriptor), Voice: ttsVoice,
 					Factory: ttsFactory},
@@ -674,10 +651,6 @@ func NewApplicationRegistration(
 				if modelReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
 						graphlaunch.ReadinessCheck{Name: "model:voice:" + config.Model.Reference, Check: modelReady})
-				}
-				if silentModelReady != nil {
-					resolved.Readiness = append(resolved.Readiness,
-						graphlaunch.ReadinessCheck{Name: "model:silent:" + config.SilentModel.Reference, Check: silentModelReady})
 				}
 				if ttsReady != nil {
 					resolved.Readiness = append(resolved.Readiness,
@@ -1130,9 +1103,6 @@ func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
 		source.NoiseFilter = &value
 	}
 	result := source
-	result.SemanticAdmission.TranscriptEvents = cloneSemanticTranscriptEvents(
-		source.SemanticAdmission.TranscriptEvents,
-	)
 	result.ASR.Descriptor = cloneV1Descriptor(source.ASR.Descriptor)
 	result.ASR.Configuration = slices.Clone(source.ASR.Configuration)
 	if source.SpeakerIdentity != nil {
@@ -1148,7 +1118,6 @@ func cloneApplicationConfig(source ApplicationConfig) ApplicationConfig {
 	}
 	result.Policy.Configuration = slices.Clone(source.Policy.Configuration)
 	result.Model.Configuration = slices.Clone(source.Model.Configuration)
-	result.SilentModel.Configuration = slices.Clone(source.SilentModel.Configuration)
 	result.TTS.Descriptor = cloneV1Descriptor(source.TTS.Descriptor)
 	result.TTS.Configuration = slices.Clone(source.TTS.Configuration)
 	result.Tools = cloneToolDeclarations(source.Tools)

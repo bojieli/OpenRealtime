@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
-	"reflect"
-	"strings"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -21,13 +20,13 @@ import (
 )
 
 func TestValidateSemanticOutcomeRequiresExactConsistentBoundedChoice(t *testing.T) {
-	options := []string{"listen", "answer"}
+	options := interaction.ChoiceOptions(false)
 	for _, test := range []struct {
 		name    string
 		outcome interaction.Outcome
 	}{
-		{name: "unknown option", outcome: interaction.Outcome{Option: "speak", Index: 0}},
-		{name: "wrong index", outcome: interaction.Outcome{Option: "answer", Index: 0}},
+		{name: "unknown option", outcome: interaction.Outcome{Option: "answer", Index: 0}},
+		{name: "wrong index", outcome: interaction.Outcome{Option: "speak", Index: 0}},
 		{name: "NaN confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: math.NaN(), Measured: true}},
 		{name: "infinite confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: math.Inf(1), Measured: true}},
 		{name: "negative confidence", outcome: interaction.Outcome{Option: "listen", Index: 0, Confidence: -0.1, Measured: true}},
@@ -40,46 +39,9 @@ func TestValidateSemanticOutcomeRequiresExactConsistentBoundedChoice(t *testing.
 		})
 	}
 	if err := validateSemanticOutcome(interaction.Outcome{
-		Option: "answer", Index: 1, Confidence: 0.7, Measured: true,
+		Option: "speak", Index: 1, Confidence: 0.7, Measured: true,
 	}, options); err != nil {
 		t.Fatalf("valid exact outcome: %v", err)
-	}
-}
-
-func TestSemanticExplicitCreateDoesNotAskProviderToChooseSingletonAct(t *testing.T) {
-	runner := semanticAdmissionRunner{}
-	act, outcome, err := runner.decideAct(context.Background(), semanticRequest{operation: "create"}, interaction.Situation{
-		AllowedActs: []interaction.Act{interaction.ActStaySilent},
-	})
-	if err != nil || act != interaction.ActStaySilent || outcome.Index != 0 ||
-		outcome.Option != string(interaction.ActStaySilent) || outcome.Measured {
-		t.Fatalf("singleton explicit-create act = %q, %+v, %v", act, outcome, err)
-	}
-	_, _, err = runner.decideAct(context.Background(), semanticRequest{operation: "create"}, interaction.Situation{
-		AgentSpeaking: true,
-		AllowedActs:   []interaction.Act{interaction.ActAnswer},
-	})
-	if err == nil || !strings.Contains(err.Error(), "no executable act") {
-		t.Fatalf("empty explicit-create act set error = %v", err)
-	}
-}
-
-func TestSemanticControlDispositionSuppressesCommittedControlWithoutOpeningCreate(t *testing.T) {
-	for _, testCase := range []struct {
-		act      interaction.Act
-		wantCode string
-	}{
-		{act: interaction.ActKeepSpeaking, wantCode: "keep_speaking"},
-		{act: interaction.ActStopSpeaking, wantCode: "stop_speaking"},
-	} {
-		code, message, refused := semanticControlDisposition("committed", testCase.act)
-		if refused || code != testCase.wantCode || strings.TrimSpace(message) == "" {
-			t.Fatalf("committed %s disposition = %q, %q, %t", testCase.act, code, message, refused)
-		}
-		code, message, refused = semanticControlDisposition("create", testCase.act)
-		if !refused || code != "unsupported_act" || !strings.Contains(message, "cannot claim") {
-			t.Fatalf("create %s disposition = %q, %q, %t", testCase.act, code, message, refused)
-		}
 	}
 }
 
@@ -234,61 +196,6 @@ func TestSemanticStandingUtteranceUsesTheWholeUnansweredEndpointStretch(t *testi
 	}
 }
 
-func TestSemanticVoiceActivationReceivesExactVisualEvidenceWithoutMutableBytes(t *testing.T) {
-	imageBytes := []byte("sealed current frame")
-	wantImage := append([]byte(nil), imageBytes...)
-	decider := &semanticCaptureDecider{answer: semanticVoiceConditionMet, mutateImages: true}
-	runner := semanticAdmissionRunner{decider: decider}
-	situation := interaction.Situation{
-		Contract: "Tell the user when the build finishes.",
-		Pins:     []string{"until revoked: say only when the build has finished"},
-		Seeing:   []interaction.Image{{MIMEType: "image/png", Bytes: imageBytes}},
-		AllowedActs: []interaction.Act{
-			interaction.ActStaySilent, interaction.ActAnswer,
-		},
-	}
-	outcome, err := runner.verifyVoiceActivation(context.Background(), situation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if outcome.Option != semanticVoiceConditionMet || len(decider.decisions) != 1 {
-		t.Fatalf("visual activation = %+v decisions=%+v", outcome, decider.decisions)
-	}
-	decision := decider.decisions[0]
-	if !strings.Contains(decision.Evidence, "build has finished") || len(decision.Images) != 1 ||
-		decision.Images[0].MIMEType != "image/png" || !reflect.DeepEqual(decision.Images[0].Bytes, wantImage) {
-		t.Fatalf("visual activation evidence = %+v", decision)
-	}
-	if !reflect.DeepEqual(imageBytes, wantImage) {
-		t.Fatal("visual activation retained mutable Situation bytes")
-	}
-}
-
-func TestSemanticActivationEvidenceAdmitsOnlyTypedCurrentConditionInputs(t *testing.T) {
-	tests := []struct {
-		name      string
-		situation interaction.Situation
-		want      bool
-	}{
-		{name: "empty"},
-		{name: "partial transcript", situation: interaction.Situation{TranscriptEvent: interaction.TranscriptPartial}},
-		{name: "final transcript", situation: interaction.Situation{TranscriptEvent: interaction.TranscriptFinal}, want: true},
-		{name: "textual visual observation", situation: interaction.Situation{Seen: "build complete"}, want: true},
-		{name: "direct visual observation", situation: interaction.Situation{
-			Seeing: []interaction.Image{{MIMEType: "image/png", Bytes: []byte("pixels")}},
-		}, want: true},
-		{name: "due quiet policy", situation: interaction.Situation{Quiet: true}, want: true},
-		{name: "elapsed but unreserved silence", situation: interaction.Situation{Silence: "15s"}},
-	}
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := semanticActivationEvidence(testCase.situation); got != testCase.want {
-				t.Fatalf("activation evidence = %v, want %v", got, testCase.want)
-			}
-		})
-	}
-}
-
 func TestSemanticSituationSealsAgentOutputBeforeAConcurrentUpdate(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -375,6 +282,14 @@ func (decider *semanticCaptureDecider) Decide(
 	decider.decisions = append(decider.decisions, captured)
 	if decider.mutateImages && len(decision.Images) > 0 && len(decision.Images[0].Bytes) > 0 {
 		decision.Images[0].Bytes[0] ^= 0xff
+	}
+	if decision.Question != "" {
+		choice, err := interaction.ParseChoice(decider.answer, decision.Speaking)
+		if err != nil {
+			return interaction.Outcome{}, err
+		}
+		reply := interaction.AnswerFor(decision.Question, choice)
+		return interaction.Outcome{Index: slices.Index(interaction.YesNo(), reply), Option: reply}, nil
 	}
 	for index, option := range decision.Options {
 		if option == decider.answer {
@@ -573,19 +488,5 @@ func TestReceiveSemanticAdmissionUsesVariadicArbitrationForCommittedLanes(t *tes
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("variadic semantic receiver did not stop after cancellation")
-	}
-}
-
-func TestVoiceActivationRetainsReplyContextWithoutEarlierCallerConditions(t *testing.T) {
-	s := interaction.Situation{Heard: "I can try that, but it is a hassle.", Recent: []string{
-		"user: ship by the thirteenth", "agent: An earlier answer.",
-		"agent: Would you try restarting the router?", "user: I can try that, but it is a hassle.",
-	}}
-	evidence := semanticVoiceActivationEvidence(s)
-	if !strings.Contains(evidence, "Would you try restarting the router?") || !strings.Contains(evidence, s.Heard) {
-		t.Fatalf("missing current reply context: %s", evidence)
-	}
-	if strings.Contains(evidence, "thirteenth") || strings.Contains(evidence, "An earlier answer.") || strings.Contains(evidence, "Recent conversation:") {
-		t.Fatalf("activation reused historical observations: %s", evidence)
 	}
 }

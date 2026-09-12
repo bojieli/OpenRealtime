@@ -390,13 +390,17 @@ func overlapPortsFrom(ports element.Ports) (overlapPorts, error) {
 }
 
 type overlapRun struct {
-	streamID                 string
-	protectedStreamID        string
-	sourceRevision           uint64
-	observationRevision      uint64
-	act                      coreinteraction.Act
-	invocationSeen           bool
-	modelActive              bool
+	streamID            string
+	protectedStreamID   string
+	sourceRevision      uint64
+	observationRevision uint64
+	spokeOver           bool
+	invocationSeen      bool
+	modelActive         bool
+	// modelStartedCounted and modelFinishedCounted make the session-wide
+	// generation counters count each run once.
+	modelStartedCounted      bool
+	modelFinishedCounted     bool
 	modelTerminal            bool
 	modelCancelIssued        bool
 	segmentationActive       bool
@@ -515,6 +519,30 @@ type overlapBargeInRunner struct {
 	revisionSequence       uint64
 	state                  OverlapState
 	agentOutputRevision    uint64
+	generationsStarted     uint64
+	generationsFinished    uint64
+}
+
+// countModelStart records that a run's generation reached the model.
+func (runner *overlapBargeInRunner) countModelStart(run *overlapRun) {
+	if run == nil || run.modelStartedCounted {
+		return
+	}
+	run.modelStartedCounted = true
+	runner.generationsStarted++
+}
+
+// countModelFinish records that a run's generation is over, whatever ended
+// it. A run that ends without ever being counted as started is counted both
+// ways, so a lockstep consumer waiting for "one more generation finished" is
+// released by a refusal exactly as by an answer.
+func (runner *overlapBargeInRunner) countModelFinish(run *overlapRun) {
+	if run == nil || run.modelFinishedCounted {
+		return
+	}
+	runner.countModelStart(run)
+	run.modelFinishedCounted = true
+	runner.generationsFinished++
 }
 
 func (runner *overlapBargeInRunner) Run(parent context.Context) (runErr error) {
@@ -862,10 +890,9 @@ func (runner *overlapBargeInRunner) acceptSemantic(
 	}
 	if !boundedOverlapIdentity(decision.StreamID) || decision.SourceRevision == 0 ||
 		!boundedOverlapIdentity(decision.EvidenceItemID) ||
-		strings.TrimSpace(decision.Policy) == "" ||
-		!slices.Contains(coreinteraction.AllActs(), decision.Act) {
+		strings.TrimSpace(decision.Policy) == "" || decision.Choice.Validate() != nil {
 		return runner.refuse(ctx, envelope, "semantic_revision", "invalid_decision",
-			"committed semantic decision lacks a canonical stream, revision, evidence, policy, or act")
+			"committed semantic decision lacks a canonical stream, revision, evidence, policy, or choice")
 	}
 	previous, found := runner.semantic[decision.StreamID]
 	if found && previous.decision.SourceRevision >= decision.SourceRevision {
@@ -883,13 +910,15 @@ func (runner *overlapBargeInRunner) acceptSemantic(
 		runner.semanticOrder = runner.semanticOrder[1:]
 		delete(runner.semantic, oldest)
 	}
-	if decision.Act == coreinteraction.ActKeepSpeaking && runner.speech != nil &&
+	if decision.Choice.Speaking && !decision.Choice.Stop && runner.speech != nil &&
 		runner.speech.streamID == decision.StreamID {
+		// keep, with or without a new invocation: the active output was
+		// deliberately left running by the policy that could have stopped it.
 		runner.protectActiveContinuation(decision.StreamID)
 		return runner.keepActive(
 			ctx, envelope, "semantic_revision", decision.SourceRevision,
 			runner.speech.evidence,
-			"the transcript-event policy explicitly kept the active voice output",
+			"the interaction policy explicitly kept the active voice output",
 			false,
 		)
 	}
@@ -898,8 +927,8 @@ func (runner *overlapBargeInRunner) acceptSemantic(
 		return nil
 	}
 	reason := "newer transcript evidence selected listen and superseded stale agent output"
-	if decision.Act == coreinteraction.ActStopSpeaking {
-		reason = "the transcript-event policy explicitly selected stop-speaking"
+	if decision.Choice.Stop {
+		reason = "the interaction policy chose stop"
 	}
 	return runner.cancelSelectedRuns(ctx, envelope, "semantic_revision", decision.Policy, runIDs, reason)
 }
@@ -907,8 +936,14 @@ func (runner *overlapBargeInRunner) acceptSemantic(
 func (runner *overlapBargeInRunner) runsSupersededBy(
 	decision policyelements.SemanticDecision,
 ) []string {
-	if decision.Act != coreinteraction.ActStaySilent &&
-		decision.Act != coreinteraction.ActStopSpeaking {
+	// Two choices retire runs. stop retires every active run: the policy
+	// could see all of them and asked for the floor back. listen retires only
+	// stale work on the same stream - an earlier revision's run that the
+	// newer evidence no longer supports - and never a run that was a
+	// deliberate spoke-over, because that decision already knew the person
+	// was still talking.
+	listen := !decision.Choice.Speaking && decision.Choice.Idle()
+	if !listen && !decision.Choice.Stop {
 		return nil
 	}
 	var runIDs []string
@@ -916,9 +951,9 @@ func (runner *overlapBargeInRunner) runsSupersededBy(
 		if run == nil {
 			continue
 		}
-		if decision.Act == coreinteraction.ActStaySilent {
+		if listen {
 			if run.streamID != decision.StreamID || run.sourceRevision >= decision.SourceRevision ||
-				deliberateSpokeOver(run.act) {
+				run.spokeOver {
 				continue
 			}
 		}
@@ -930,10 +965,6 @@ func (runner *overlapBargeInRunner) runsSupersededBy(
 	return runIDs
 }
 
-func deliberateSpokeOver(act coreinteraction.Act) bool {
-	return act == coreinteraction.ActSpeakThrough || act == coreinteraction.ActInterrupt
-}
-
 // protectActiveContinuation records the semantic meaning of keep-speaking:
 // the current ASR stream is a continuation through which deliberate output
 // remains valid. Without this transition only the first partial sees the
@@ -941,7 +972,7 @@ func deliberateSpokeOver(act coreinteraction.Act) bool {
 // between keep and stop despite carrying the same growing utterance.
 func (runner *overlapBargeInRunner) protectActiveContinuation(streamID string) {
 	for runID, run := range runner.runs {
-		if run == nil || !deliberateSpokeOver(run.act) ||
+		if run == nil || !run.spokeOver ||
 			(!run.modelActive && !run.segmentationActive && !runner.runHasPendingSpeech(runID)) {
 			continue
 		}
@@ -1046,6 +1077,7 @@ func (runner *overlapBargeInRunner) acceptSafeResult(
 	// completion evidence than the independently drained model Outcome lane.
 	run.modelActive = false
 	run.modelTerminal = true
+	runner.countModelFinish(run)
 	if strings.TrimSpace(result.AssistantText) == "" {
 		run.segmentationActive = false
 		run.segmentationTerminal = true
@@ -1278,21 +1310,19 @@ func (runner *overlapBargeInRunner) acceptInvocation(
 	}
 	if outcome.Operation == "committed" {
 		if !boundedOverlapIdentity(outcome.StreamID) || outcome.SourceRevision == 0 ||
-			!slices.Contains([]coreinteraction.Act{
-				coreinteraction.ActAnswer, coreinteraction.ActSpeakThrough,
-				coreinteraction.ActInterrupt,
-			}, outcome.Act) {
+			outcome.Choice == nil || !outcome.Choice.Speak {
 			return runner.refuse(ctx, envelope, "invocation", "invalid_semantic_invocation",
-				"committed invocation lacks its exact stream, source revision, or voice act")
+				"committed invocation lacks its exact stream, source revision, or a choice to speak")
 		}
 		run.streamID = outcome.StreamID
 		run.sourceRevision = outcome.SourceRevision
 		run.observationRevision = outcome.ObservationRevision
-		run.act = outcome.Act
+		run.spokeOver = outcome.SpokeOver
 	}
 	run.invocationSeen = true
 	if !run.modelTerminal {
 		run.modelActive = true
+		runner.countModelStart(run)
 	}
 	if !run.segmentationTerminal {
 		run.segmentationActive = true
@@ -1309,8 +1339,8 @@ func (runner *overlapBargeInRunner) acceptInvocation(
 		record.decision.SourceRevision > run.sourceRevision &&
 		slices.Contains(runner.runsSupersededBy(record.decision), runID) {
 		reason := "newer transcript evidence selected listen and superseded stale agent output"
-		if record.decision.Act == coreinteraction.ActStopSpeaking {
-			reason = "the transcript-event policy explicitly selected stop-speaking"
+		if record.decision.Choice.Stop {
+			reason = "the interaction policy chose stop"
 		}
 		return runner.cancelSelectedRuns(
 			ctx, record.cause, "semantic_revision", record.decision.Policy,
@@ -1347,6 +1377,7 @@ func (runner *overlapBargeInRunner) acceptModel(
 	}
 	run.modelActive = false
 	run.modelTerminal = true
+	runner.countModelFinish(run)
 	runner.pruneRun(runID)
 	return nil
 }
@@ -2106,7 +2137,7 @@ func (runner *overlapBargeInRunner) agentOutputSnapshot() coreinteraction.AgentO
 	}
 	protected := make([]string, 0, len(runner.runs))
 	for runID, run := range runner.runs {
-		if run == nil || run.streamID == "" || !deliberateSpokeOver(run.act) ||
+		if run == nil || run.streamID == "" || !run.spokeOver ||
 			(!run.modelActive && !run.segmentationActive && !runner.runHasPendingSpeech(runID)) {
 			continue
 		}
@@ -2120,7 +2151,10 @@ func (runner *overlapBargeInRunner) agentOutputSnapshot() coreinteraction.AgentO
 	return coreinteraction.AgentOutput{
 		Active: active, Queued: active && !audible, Audible: audible,
 		Saying: runner.activeAgentText(), InFlight: inFlight,
-		ProtectedStreams: protected,
+		Generating:          runner.state.ActiveModels,
+		GenerationsStarted:  runner.generationsStarted,
+		GenerationsFinished: runner.generationsFinished,
+		ProtectedStreams:    protected,
 	}
 }
 
@@ -2212,7 +2246,7 @@ func (runner *overlapBargeInRunner) hasActionableOverlapWork() bool {
 }
 
 func (runner *overlapBargeInRunner) runProtectedFromCurrentSpeech(run *overlapRun) bool {
-	return run != nil && runner.speech != nil && run.streamID != "" && deliberateSpokeOver(run.act)
+	return run != nil && runner.speech != nil && run.streamID != "" && run.spokeOver
 }
 
 func (runner *overlapBargeInRunner) ensureRun(runID string) (*overlapRun, error) {

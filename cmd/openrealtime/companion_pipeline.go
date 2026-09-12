@@ -1,20 +1,9 @@
 package main
 
 import (
-	_ "embed"
-
 	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
+	"github.com/bojieli/OpenRealtime/interaction"
 )
-
-// These are the separate partial/final interaction policies used by the
-// twelve-case Deepgram/Qwen/Gemini/Fish scenario pipeline. Keeping them in the
-// executable makes room launches independent of a checkout or .runtime files.
-//
-//go:embed room/partial.txt
-var roomPartialRules string
-
-//go:embed room/final.txt
-var roomFinalRules string
 
 func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection := defaultScenarioProfileOptions()
@@ -40,12 +29,10 @@ func defaultRoomProfileOptions() scenarioProfileOptions {
 	// latency without the long-tail delays observed in the other Flash versions.
 	selection.modelEffort = "128"
 	selection.modelReason = "on"
-	selection.transcriptPolicy = "event-aware"
-	selection.transcriptTimeoutMS = 1000
-	selection.transcriptPartialActs = "listen,speak-through,interrupt,act-silently,keep-speaking,stop-speaking"
-	selection.transcriptFinalActs = "listen,answer,act-silently,keep-speaking,stop-speaking"
-	selection.transcriptPartialRules = roomPartialRules
-	selection.transcriptFinalRules = roomFinalRules
+	// The one instruction the interaction policy reads at every event. Passed
+	// explicitly, rather than left to the element default, so the frozen
+	// profile records the exact text the room ran with.
+	selection.transcriptRules = interaction.ChoiceInstruction
 	// The word-timing role, not the speech recogniser. These name the
 	// adapter's own constants rather than repeating an address, because the
 	// room previously named the recogniser on :8003: it answers this route

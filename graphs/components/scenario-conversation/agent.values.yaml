@@ -57,21 +57,16 @@ nodes:
     decider: deployment.scenario-conversation.semantic-policy
     direct_visual_input: false
     standing_extraction: false
-    verify_voice_activation: false
-    verify_silent_action: false
-    minimum_activation_confidence: 0
     recent_lines: 12
     max_pending: 64
     terminal_memory: 512
     cancel_memory: 256
     standing_memory: 64
-    transcript_events: null
+    # Empty selects the runtime's own interaction rules; a profile that
+    # supplies its own text records it here.
+    rules: ""
   voice_session_invocation:
     role: foreground
-    terminal_memory: 512
-    cancel_memory: 256
-  silent_session_invocation:
-    role: silent
     terminal_memory: 512
     cancel_memory: 256
   post_commit_silence:
@@ -90,17 +85,7 @@ nodes:
     max_output_bytes: 4194304
     max_events: 65536
     max_tool_proposals: 1024
-  silent_model:
-    provider: deployment.scenario-conversation.model-silent
-    retain_reasoning: false
-    max_output_bytes: 4194304
-    max_events: 65536
-    max_tool_proposals: 1024
   control_quarantine:
-    max_candidate_bytes: 4194304
-    max_blocks: 1024
-    max_active_streams: 32
-  silent_control_quarantine:
     max_candidate_bytes: 4194304
     max_blocks: 1024
     max_active_streams: 32

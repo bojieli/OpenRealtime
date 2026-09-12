@@ -128,6 +128,13 @@ type Decision struct {
 	// They are deliberately absent from the JSON: this type is logged, and a
 	// screenshot in a log line is neither readable nor small.
 	Images []Image `json:"-"`
+	// Question names the step question this decision asks, when it is one
+	// of them (QuestionStop, QuestionOccurrence, QuestionRequest), and
+	// Speaking says whether the agent had the floor. A model reads neither -
+	// the question is in the evidence - but a fixture that scripts a Choice
+	// answers by them.
+	Question string `json:"question,omitempty"`
+	Speaking bool   `json:"speaking,omitempty"`
 }
 
 // Validate rejects a malformed question before it reaches a model.

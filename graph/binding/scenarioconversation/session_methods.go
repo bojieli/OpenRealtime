@@ -70,7 +70,9 @@ func (session *session) Update(ctx context.Context, settings legacy.Settings) er
 		Type: session.ports.update.Type(), ItemID: itemID, SessionID: session.sessionID,
 		SourceID: "gateway", OpportunityID: itemID, Sequence: sequence,
 		TraceID: itemID, CancellationScope: session.sessionID,
-		Payload: policyelements.SessionInvocationUpdate{Revision: revision, Invocation: invocation},
+		Payload: policyelements.SessionInvocationUpdate{
+			Revision: revision, Invocation: invocation, Contract: contractForSettings(settings),
+		},
 	}, "send scenario conversation session update"); err != nil {
 		session.removeOperation(itemID, pending)
 		return err
@@ -85,6 +87,15 @@ func (session *session) Update(ctx context.Context, settings legacy.Settings) er
 	return nil
 }
 
+// contractForSettings is the session's own instruction to the agent, with
+// the room's default when the client gave none.
+func contractForSettings(settings legacy.Settings) string {
+	if strings.TrimSpace(settings.Instruction) == "" {
+		return "You are a realtime assistant in a conversation room. Follow the user's instructions about when to speak. You can hear audio and see images they explicitly share. Answer briefly."
+	}
+	return settings.Instruction
+}
+
 func (session *session) invocationForSettings(settings legacy.Settings) (continuation.Invocation, error) {
 	if err := validateInitialSettings(settings, session.config); err != nil {
 		return continuation.Invocation{}, err
@@ -96,10 +107,7 @@ func (session *session) invocationForSettings(settings legacy.Settings) (continu
 			maximumAdapterTextBytes,
 		)
 	}
-	instruction := settings.Instruction
-	if strings.TrimSpace(instruction) == "" {
-		instruction = "You are a realtime assistant in a conversation room. Follow the user's instructions about when to speak. You can hear audio and see images they explicitly share. Answer briefly."
-	}
+	instruction := contractForSettings(settings)
 	if policy := session.config.ContinuationInstruction; policy != "" {
 		const separator = "\n\n"
 		if len(instruction) > maximumAdapterTextBytes-len(separator)-len(policy) {
@@ -268,8 +276,8 @@ func (session *session) Video(ctx context.Context, frame perception.Frame) error
 	// owned by the graph's concurrent audio/interaction lane.
 	err := session.CreateResponse(ctx)
 	var refusal *semanticAdmissionError
-	if errors.As(err, &refusal) && refusal.outcome.Kind == policyelements.SemanticAdmissionRefused && refusal.outcome.Code == "unsupported_act" &&
-		(refusal.outcome.Act == "keep-speaking" || refusal.outcome.Act == "stop-speaking") {
+	if errors.As(err, &refusal) && refusal.outcome.Kind == policyelements.SemanticAdmissionRefused &&
+		refusal.outcome.Code == "speech_in_flight" {
 		return nil // The frame was retained; the graph owns in-flight speech control.
 	}
 	return err

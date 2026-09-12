@@ -23,24 +23,15 @@ import (
 func TestScenarioConversationSplitStandingInstructionIsNotRepeatedAsHistory(t *testing.T) {
 	base := newScenarioProfileFixture(t)
 	config := base.pluginConfig()
-	config.SemanticAdmission.TranscriptEvents = &policyelements.SemanticTranscriptEventConfig{
-		Partial: policyelements.SemanticTranscriptEventRules{
-			Instruction: "Wait for a grounded counting trigger.", TimeoutMS: 1000,
-			Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough},
-		},
-		Final: policyelements.SemanticTranscriptEventRules{
-			Instruction: "Follow the standing counting instruction.", TimeoutMS: 1000,
-			Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer},
-		},
-	}
+	config.SemanticAdmission.Rules = "Follow the standing counting instruction."
 	asr := &scenarioAddressingASRControl{turns: []string{
 		"Count the animals out loud as I mention them.", "And say nothing else.",
 		"A capybara wandered over.",
 	}}
 	policy := &scenarioSplitStandingPolicy{
 		scenarioCountAdmissionPolicy: scenarioCountAdmissionPolicy{
-			descriptor: config.Policy.Descriptor, primary: "answer", activation: "condition-met",
-			primaryConfidence: 0.99, activationConfidence: 0.99,
+			descriptor: config.Policy.Descriptor, primary: coreinteraction.ChoiceSpeak,
+			primaryConfidence: 0.99,
 		},
 		extraction: make(chan string, 4),
 	}
@@ -51,9 +42,6 @@ func TestScenarioConversationSplitStandingInstructionIsNotRepeatedAsHistory(t *t
 	}
 	config.Policy.Factory = func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) { return policy, nil }
 	config.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) { return model, nil }
-	config.SilentModel.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
-		return &scenarioCountAdmissionModel{descriptor: config.SilentModel.Descriptor}, nil
-	}
 	config.TTS.Factory = func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
 		return &scenarioAddressingTTS{control: tts, descriptor: config.TTS.Descriptor}, nil
 	}
@@ -91,10 +79,10 @@ func TestScenarioConversationSplitStandingInstructionIsNotRepeatedAsHistory(t *t
 		driveScenarioAddressingTurn(t, runtime, sink.scenarioAddressingSink, &clock, stream, asr.turns[index])
 		decisionEnvelope := recording.await(t, "semantic_admission.decision", func(envelope element.Envelope) bool {
 			decision, ok := envelope.Payload.(policyelements.SemanticDecision)
-			return ok && decision.StreamID == stream && decision.Activation != ""
+			return ok && decision.StreamID == stream && decision.Event == coreinteraction.TranscriptFinal
 		})
 		decision := decisionEnvelope.Payload.(policyelements.SemanticDecision)
-		if decision.Act != coreinteraction.ActStaySilent || decision.StandingAfter != index {
+		if !decision.Choice.Idle() || decision.StandingAfter != index {
 			t.Fatalf("split setup acquired speech or lost its completed rule: %+v", decision)
 		}
 	}

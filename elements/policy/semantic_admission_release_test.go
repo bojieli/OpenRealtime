@@ -41,15 +41,15 @@ func TestSemanticAdmissionPlaybackReleaseAppliesStateBeforeNextRequest(t *testin
 	for _, tc := range []struct {
 		name              string
 		current, released coreinteraction.AgentOutput
-		want              coreinteraction.Act
+		want              coreinteraction.Choice
 	}{
-		{"completed-output", active(1), coreinteraction.AgentOutput{Revision: 2}, coreinteraction.ActAnswer},
-		{"newer-active-output", active(3), coreinteraction.AgentOutput{Revision: 2}, coreinteraction.ActKeepSpeaking},
-		{"queued-output", coreinteraction.AgentOutput{Revision: 1}, active(2), coreinteraction.ActKeepSpeaking},
-		{"same-revision", active(2), active(2), coreinteraction.ActKeepSpeaking},
+		{"completed-output", active(1), coreinteraction.AgentOutput{Revision: 2}, coreinteraction.Choice{Speak: true}},
+		{"newer-active-output", active(3), coreinteraction.AgentOutput{Revision: 2}, coreinteraction.Choice{Speaking: true}},
+		{"queued-output", coreinteraction.AgentOutput{Revision: 1}, active(2), coreinteraction.Choice{Speaking: true}},
+		{"same-revision", active(2), active(2), coreinteraction.Choice{Speaking: true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			decider := &semanticTestDecider{descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{tc.want}}
+			decider := &semanticTestDecider{descriptor: semanticTestDescriptor, answers: []string{tc.want.Token()}}
 			h := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
 			defer h.stop(t)
 			consumeSemanticStartup(t, h)
@@ -85,10 +85,10 @@ func TestSemanticAdmissionPlaybackReleaseAppliesStateBeforeNextRequest(t *testin
 			_ = receivePolicy(t, h.egress(t, "state"))
 			decision := receivePolicy(t, h.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
 			outcome := receivePolicy(t, h.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
-			if decision.Act != tc.want || outcome.Kind == policyelements.SemanticAdmissionFailed {
+			if decision.Choice != tc.want || outcome.Kind == policyelements.SemanticAdmissionFailed {
 				t.Fatalf("next request sampled stale output: %+v / %+v", decision, outcome)
 			}
-			if tc.want == coreinteraction.ActAnswer {
+			if tc.want.Speak {
 				_ = receivePolicy(t, h.egress(t, "voice_create"))
 			} else {
 				assertNoPolicyEnvelope(t, h.egress(t, "voice_create"))

@@ -1,0 +1,12 @@
+You read one step of a voice conversation between a person and a voice agent,
+and answer one question about it with yes or no.
+
+- "transcript event: partial" means the person is still talking and the words
+  may still grow. "final" means they stopped.
+- "new words since the last step" is what this step adds to the previous one.
+- "Recent steps" is what the agent already chose and said.
+- A standing instruction is something the person asked the agent to keep doing
+  as things happen: count the animals as I mention them, translate as I speak,
+  tell me when the build finishes. Each occurrence is answered once.
+- Never read a guessed ending, a digit without its label, or words meant for
+  someone else as something to answer.

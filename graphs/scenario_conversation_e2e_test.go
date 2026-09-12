@@ -446,64 +446,15 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 	recoveryResponse, _ := recoveryAudio["response_id"].(string)
 	client.awaitResponseDone(10*time.Second, recoveryResponse, "completed")
 
-	// A second automatic audio turn deterministically selects act-silently.
-	// Silent cognition may still produce an authorized tool action, but its
-	// text port is graph-terminated before segmentation/TTS/playback.
-	policyDecisionsBeforeSilent := fixture.policy.decisions.Load()
-	if !fixture.policy.silentNext.CompareAndSwap(false, true) {
-		t.Fatal("scenario endpoint silent policy decision was already armed")
-	}
-	ttsPlansBeforeSilent := fixture.tts.plans.Load()
-	silentEventStart := len(client.received)
-	for index := 0; index < 3; index++ {
-		client.send(map[string]any{
-			"type": "input_audio_buffer.append", "audio": scenarioEndpointTone(2_400),
-		})
-	}
-	for index := 0; index < 5; index++ {
-		client.send(map[string]any{
-			"type": "input_audio_buffer.append", "audio": scenarioEndpointSilence(2_400),
-		})
-	}
-	client.awaitType(5*time.Second, "input_audio_buffer.speech_started")
-	client.awaitType(5*time.Second, "input_audio_buffer.speech_stopped")
-	client.awaitType(5*time.Second, "conversation.item.input_audio_transcription.completed")
-	silentCall := client.awaitType(10*time.Second, "response.function_call_arguments.done")
-	if silentCall["call_id"] != scenarioEndpointSilentCallID ||
-		silentCall["name"] != computeruse.Click ||
-		silentCall["arguments"] != `{"source":"screen","x":10,"y":20}` {
-		t.Fatalf("silent cognition tool call = %+v", silentCall)
-	}
-	silentResponseID, _ := silentCall["response_id"].(string)
-	client.awaitResponseDone(10*time.Second, silentResponseID, "completed")
-	if fixture.policy.silentNext.Load() || fixture.policy.silentDecisions.Load() != 1 ||
-		fixture.policy.decisions.Load() != policyDecisionsBeforeSilent+1 {
-		t.Fatalf("scenario endpoint silent policy decision: armed=%t silent=%d decisions=%d, want false/1/%d",
-			fixture.policy.silentNext.Load(), fixture.policy.silentDecisions.Load(),
-			fixture.policy.decisions.Load(), policyDecisionsBeforeSilent+1)
-	}
-	barrier := scenarioEndpointSessionUpdate(t, toolCase)
-	barrier["event_id"] = "evt_final_session_barrier"
-	client.send(barrier)
-	client.awaitType(5*time.Second, "session.updated")
-	client.assertNoResponseOutputAfterDone(t, cancelResponse)
-	if fixture.tts.plans.Load() != ttsPlansBeforeSilent {
-		t.Fatalf("silent cognition reached TTS: plans moved from %d to %d",
-			ttsPlansBeforeSilent, fixture.tts.plans.Load())
-	}
-	for _, event := range client.received[silentEventStart:] {
-		if event["type"] == "response.output_audio.delta" {
-			t.Fatalf("silent cognition emitted gateway audio: %+v", event)
-		}
-	}
-
-	if fixture.model.invocations.Load() != 7 {
-		t.Fatalf("scenario endpoint model invocations=%d, want 7",
+	if fixture.model.invocations.Load() != 6 {
+		t.Fatalf("scenario endpoint model invocations=%d, want 6",
 			fixture.model.invocations.Load())
 	}
-	if fixture.asrFactories.Load() != 2 || fixture.policyFactories.Load() != 2 ||
-		fixture.modelFactories.Load() != 2 || fixture.ttsFactories.Load() != 1 {
-		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 2/2/2/1",
+	// One recogniser per utterance and this test now speaks once; the policy
+	// is opened by admission and by the overlap controller.
+	if fixture.asrFactories.Load() != 1 || fixture.policyFactories.Load() != 2 ||
+		fixture.modelFactories.Load() != 1 || fixture.ttsFactories.Load() != 1 {
+		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 1/2/1/1",
 			fixture.asrFactories.Load(), fixture.policyFactories.Load(),
 			fixture.modelFactories.Load(), fixture.ttsFactories.Load())
 	}
@@ -542,9 +493,6 @@ func newScenarioEndpointFixture(
 		Reference: "plugin.test.scenario-endpoint.model.v1", Artifact: fixture.artifact("model", "1"),
 		Descriptor: scenarioEndpointModelDescriptor(),
 	}
-	silentModelSelection := modelSelection
-	silentModelSelection.Reference = "plugin.test.scenario-endpoint.model-silent.v1"
-	silentModelSelection.Descriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
 	policySelection := scenarioconversation.ApplicationPolicySelection{
 		Reference: "plugin.test.scenario-endpoint.policy.v1", Artifact: fixture.artifact("policy", "1"),
 		Descriptor: scenarioEndpointPolicyDescriptor(),
@@ -564,7 +512,7 @@ func newScenarioEndpointFixture(
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
 		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
-		SilentModel: silentModelSelection, TTS: ttsSelection,
+		TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: toolCase.tool, Description: toolCase.description,
 			Parameters:          json.RawMessage(toolCase.parameters),
@@ -614,14 +562,6 @@ func newScenarioEndpointFixture(
 				fixture.modelFactories.Add(1)
 				return fixture.model, nil
 			},
-		}, {
-			ApplicationModelSelection: silentModelSelection,
-			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
-				fixture.modelFactories.Add(1)
-				return scenarioSpeechAuthorityProvider{
-					Provider: fixture.model, descriptor: silentModelSelection.Descriptor,
-				}, nil
-			},
 		}},
 		TTS: []scenarioconversation.TTSFactoryRegistration{{
 			ApplicationTTSSelection: ttsSelection,
@@ -644,7 +584,9 @@ func (fixture *scenarioEndpointFixture) assertFactories(t testing.TB, wanted int
 	t.Helper()
 	modelWanted, policyWanted := wanted, wanted
 	if wanted > 0 {
-		modelWanted = wanted * 2
+		// One model per session now: the silent lane is gone. The policy is
+		// still opened twice, by admission and by the overlap controller.
+		modelWanted = wanted
 		policyWanted = wanted * 2
 	}
 	// session.created says the session exists, not that every endpoint the
@@ -675,19 +617,8 @@ func (fixture *scenarioEndpointFixture) assertFactories(t testing.TB, wanted int
 	}
 }
 
-type scenarioSpeechAuthorityProvider struct {
-	continuation.Provider
-	descriptor continuation.Descriptor
-}
-
-func (provider scenarioSpeechAuthorityProvider) Descriptor() continuation.Descriptor {
-	return provider.descriptor
-}
-
 type scenarioEndpointPolicy struct {
-	decisions       atomic.Int32
-	silentNext      atomic.Bool
-	silentDecisions atomic.Int32
+	decisions atomic.Int32
 }
 
 func (*scenarioEndpointPolicy) Name() string { return "scenario-endpoint-policy" }
@@ -698,18 +629,13 @@ func (policy *scenarioEndpointPolicy) Decide(
 	_ context.Context, decision coreinteraction.Decision,
 ) (coreinteraction.Outcome, error) {
 	policy.decisions.Add(1)
-	wanted := coreinteraction.ActAnswer
-	if slices.Contains(decision.Options, string(coreinteraction.ActActSilently)) &&
-		policy.silentNext.CompareAndSwap(true, false) {
-		wanted = coreinteraction.ActActSilently
-		policy.silentDecisions.Add(1)
+	// This fixture's model checks the settled observation is in its context,
+	// so a live hypothesis is listen (or keep) and the settled words speak.
+	wanted := coreinteraction.ChoiceSpeak
+	if strings.Contains(decision.Evidence, "transcript event: partial") {
+		wanted = coreinteraction.ChoiceListen
 	}
-	for index, option := range decision.Options {
-		if option == string(wanted) {
-			return coreinteraction.Outcome{Index: index, Option: option}, nil
-		}
-	}
-	return coreinteraction.Outcome{}, fmt.Errorf("%s act is unavailable", wanted)
+	return scenarioAnswer(decision, scenarioStepChoice(decision, wanted))
 }
 
 func scenarioEndpointPolicyDescriptor() policyelements.SemanticDeciderDescriptor {

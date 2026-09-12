@@ -800,19 +800,19 @@ func TestOverlapBargeInProtectsDeliberateSameStreamUntilExplicitStop(t *testing.
 		"activity-start", "stream-a", acousticelements.SpeechStarted,
 	))
 	state := harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
-		"invocation-a", "run-a", "stream-a", 1, coreinteraction.ActSpeakThrough,
+		"invocation-a", "run-a", "stream-a", 1, coreinteraction.Choice{Speak: true}, true,
 	))
 	if state.OverlapActive || state.ActiveModels != 1 || state.ActiveSegmentations != 1 {
 		t.Fatalf("deliberate same-stream invocation armed generic overlap: %+v", state)
 	}
 
 	harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
-		"semantic-listen", "stream-a", 2, coreinteraction.ActStaySilent,
+		"semantic-listen", "stream-a", 2, coreinteraction.Choice{},
 	))
 	assertNoOverlapCancels(t, harness)
 
 	harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
-		"semantic-stop", "stream-a", 3, coreinteraction.ActStopSpeaking,
+		"semantic-stop", "stream-a", 3, coreinteraction.Choice{Speaking: true, Stop: true},
 	))
 	decisionEnvelope, decision := receiveOverlapDecision(t, harness.output(t, "decision"))
 	if decision.Kind != OverlapCanceled || decision.Trigger != "semantic_revision" ||
@@ -829,7 +829,7 @@ func TestOverlapBargeInSemanticKeepSpeakingClosesTheAcousticDeadline(t *testing.
 	defer harness.stop(t)
 
 	harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
-		"invocation", "run", "source-stream", 1, coreinteraction.ActInterrupt,
+		"invocation", "run", "source-stream", 1, coreinteraction.Choice{Speak: true}, true,
 	))
 	state := harness.sendAndSync(t, "activity", overlapActivityEnvelope(
 		"activity-start", "continuation-stream", acousticelements.SpeechStarted,
@@ -842,7 +842,7 @@ func TestOverlapBargeInSemanticKeepSpeakingClosesTheAcousticDeadline(t *testing.
 	assertNoEnvelope(t, harness.output(t, "decision"))
 
 	state = harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
-		"semantic-keep", "continuation-stream", 1, coreinteraction.ActKeepSpeaking,
+		"semantic-keep", "continuation-stream", 1, coreinteraction.Choice{Speaking: true},
 	))
 	_, kept := receiveOverlapDecision(t, harness.output(t, "decision"))
 	if kept.Kind != OverlapKept || kept.Trigger != "semantic_revision" ||
@@ -862,7 +862,7 @@ func TestOverlapBargeInPublishesExactVoiceOutputLifecycle(t *testing.T) {
 	defer harness.stop(t)
 
 	state := harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
-		"invocation", "run", "stream", 1, coreinteraction.ActInterrupt,
+		"invocation", "run", "stream", 1, coreinteraction.Choice{Speak: true}, true,
 	))
 	if !state.AgentOutput.Active || !state.AgentOutput.Queued || state.AgentOutput.Audible ||
 		state.AgentOutput.Saying != "" ||
@@ -916,10 +916,10 @@ func TestOverlapBargeInAppliesDecisionBeforeReorderedInvocation(t *testing.T) {
 	defer harness.stop(t)
 
 	harness.sendAndSync(t, "semantic", overlapSemanticEnvelope(
-		"semantic-newer", "stream-a", 2, coreinteraction.ActStaySilent,
+		"semantic-newer", "stream-a", 2, coreinteraction.Choice{},
 	))
 	harness.sendAndSync(t, "invocation", overlapCommittedInvocationEnvelope(
-		"invocation-older", "run-older", "stream-a", 1, coreinteraction.ActAnswer,
+		"invocation-older", "run-older", "stream-a", 1, coreinteraction.Choice{Speak: true}, false,
 	))
 	decisionEnvelope, decision := receiveOverlapDecision(t, harness.output(t, "decision"))
 	if decision.Kind != OverlapCanceled || decision.Trigger != "semantic_revision" ||
@@ -1142,25 +1142,26 @@ func overlapInvocationEnvelope(itemID, runID string) element.Envelope {
 }
 
 func overlapCommittedInvocationEnvelope(
-	itemID, runID, streamID string, sourceRevision uint64, act coreinteraction.Act,
+	itemID, runID, streamID string, sourceRevision uint64, choice coreinteraction.Choice, spokeOver bool,
 ) element.Envelope {
 	envelope := overlapInvocationEnvelope(itemID, runID)
 	envelope.Payload = policyelements.SessionInvocationOutcome{
 		Kind: policyelements.SessionInvocationEmitted, Operation: "committed",
 		GenerationID: runID, Role: "foreground", StreamID: streamID,
-		SourceRevision: sourceRevision, ObservationRevision: sourceRevision, Act: act,
+		SourceRevision: sourceRevision, ObservationRevision: sourceRevision,
+		Choice: &choice, SpokeOver: spokeOver,
 	}
 	return envelope
 }
 
 func overlapSemanticEnvelope(
-	itemID, streamID string, sourceRevision uint64, act coreinteraction.Act,
+	itemID, streamID string, sourceRevision uint64, choice coreinteraction.Choice,
 ) element.Envelope {
 	return element.Envelope{
 		Type: policyelements.SemanticDecisionType(), ItemID: itemID,
 		SessionID: overlapBargeInSession, SourceID: streamID, CancellationScope: streamID,
 		Payload: policyelements.SemanticDecision{
-			Operation: "committed", Act: act, Policy: "transcript-policy",
+			Operation: "committed", Choice: choice, Policy: "transcript-policy",
 			EvidenceItemID: "evidence-" + itemID, StreamID: streamID,
 			SourceRevision: sourceRevision, ContextVersion: sourceRevision,
 		},

@@ -20,7 +20,6 @@ import (
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	speechelements "github.com/bojieli/OpenRealtime/elements/speech"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
-	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/spoken"
@@ -148,14 +147,13 @@ func (session *session) acceptModelResult(envelope element.Envelope) error {
 		envelope.RunID != result.RunID {
 		return errors.New("scenario conversation model result drifted from its exact session or run")
 	}
-	if result.ProviderReference != ModelReference && result.ProviderReference != SilentModelReference {
+	if result.ProviderReference != ModelReference {
 		return fmt.Errorf("scenario conversation model result has provider %q", result.ProviderReference)
 	}
 	session.activityMu.Lock()
 	defer session.activityMu.Unlock()
-	if result.ProviderReference == SilentModelReference || result.AssistantText == "" {
-		// Silent cognition is never connected to segmentation. An empty
-		// foreground result also proves there is no speech pipeline to revoke.
+	if result.AssistantText == "" {
+		// An empty result proves there is no speech pipeline to revoke.
 		session.rememberSpeechlessRunLocked(result.RunID)
 		delete(session.pendingSpeech, result.RunID)
 		return nil
@@ -1077,12 +1075,12 @@ func (session *session) acceptSemanticAdmissionOutcome(
 		return errors.New("scenario conversation semantic admission outcome has no exact gateway parent")
 	}
 	if outcome.Kind == policyelements.SemanticAdmissionAdmitted &&
-		((outcome.Act != coreinteraction.ActAnswer && outcome.Act != coreinteraction.ActActSilently) ||
+		(outcome.Choice == nil || !outcome.Choice.Speak ||
 			!exactSemanticDecisionIdentity(outcome.DecisionItemID)) {
 		return errors.New("scenario conversation semantic admission produced an invalid admitted branch")
 	}
 	if outcome.Kind == policyelements.SemanticAdmissionSuppressed &&
-		(outcome.Act != coreinteraction.ActStaySilent || !exactSemanticDecisionIdentity(outcome.DecisionItemID)) {
+		(outcome.Choice == nil || outcome.Choice.Speak || !exactSemanticDecisionIdentity(outcome.DecisionItemID)) {
 		return errors.New("scenario conversation semantic admission produced an invalid suppressed branch")
 	}
 	session.operationMu.Lock()
@@ -1625,10 +1623,17 @@ func (session *session) publishDebug(
 		return nil
 	}
 	// Keep media bytes and arbitrary provider data out of debug traffic.
-	// The gateway withholds these decision details unless payloads are opted in.
+	// The gateway withholds these decision details unless payloads are opted
+	// in, and mirrors them to the server log regardless. The set below is the
+	// turn's story: what the recogniser heard (partial or final), what the
+	// policy chose on it, what the model produced, and how the output went.
 	var payload map[string]any
 	switch name {
-	case "semantic_decision", "semantic_admission_state", "semantic_admission_outcome", "overlap_state", "segmentation_outcome", "model_commit_outcome":
+	case "semantic_decision", "semantic_admission_state", "semantic_admission_outcome", "overlap_state",
+		"segmentation_outcome", "model_commit_outcome",
+		"tts_status", "playback_status", "tts_outcome", "playback_outcome", "speech_cancel_request",
+		transcriptBoundary, observationBoundary, modelResultBoundary, modelOutcomeBoundary,
+		invocationOutcomeBoundary:
 		payload = map[string]any{"value": envelope.Payload}
 	}
 	return sink.Debug(ctx, legacy.DebugEvent{

@@ -94,7 +94,7 @@ func TestSessionInvocationSnapshotsExactInstructionsToolsAndCommittedBasis(t *te
 	commit := committedObservation(t, "microphone", "speech-final", "trajectory-user", "trajectory-state", 1, 9)
 	sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
 		Type: policyelements.SemanticGrantType(), ItemID: "commit-user",
-		SessionID: "session-policy", Payload: semanticGrant(commit, interaction.ActAnswer),
+		SessionID: "session-policy", Payload: semanticGrant(commit, interaction.Choice{Speak: true}),
 	})
 	trigger := receivePolicy(t, harness.egress(t, "trigger"))
 	authority := receivePolicy(t, harness.egress(t, "authority"))
@@ -219,7 +219,7 @@ func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testin
 		commit := committedObservation(t, "microphone", "speech", "trajectory-user", "state", 1, 1)
 		sendPolicy(t, harness.ingress(t, "committed"), element.Envelope{
 			Type: policyelements.SemanticGrantType(), ItemID: "commit",
-			SessionID: "session-policy", Payload: semanticGrant(commit, interaction.ActAnswer),
+			SessionID: "session-policy", Payload: semanticGrant(commit, interaction.Choice{Speak: true}),
 		})
 		outcome := receivePolicy(t, harness.egress(t, "outcome")).Payload.(policyelements.SessionInvocationOutcome)
 		_ = receivePolicy(t, harness.egress(t, "state"))
@@ -343,10 +343,10 @@ func TestSessionInvocationFailsClosedOnMissingStaleOrMalformedSettings(t *testin
 }
 
 func semanticGrant(
-	commit stateelements.ObservationCommitOutcome, act interaction.Act,
+	commit stateelements.ObservationCommitOutcome, choice interaction.Choice,
 ) policyelements.SemanticGrant {
 	return policyelements.SemanticGrant{
-		Commit: commit, Act: act, DecisionItemID: "semantic-decision-for-" + commit.TriggerItemID,
+		Commit: commit, Choice: choice, DecisionItemID: "semantic-decision-for-" + commit.TriggerItemID,
 	}
 }
 

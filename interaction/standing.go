@@ -422,6 +422,32 @@ type Extractor interface {
 type Extraction struct {
 	Pins    []StandingInstruction
 	Revokes []string
+	// Calls is every question the pass asked a model on the way to this
+	// answer, in order, with what came back. The pass runs off the critical
+	// path and its verdicts govern later turns, so when a rule is missed or
+	// misread the only evidence of why is here: measured, a counting rule
+	// expired after one sentence and nothing recorded which of five questions
+	// had scoped it that way.
+	Calls []ModelCall
+	// Dropped lists the policies the extraction proposed and a later question
+	// rejected, with the question that rejected them.
+	Dropped []DroppedPin
+}
+
+// ModelCall is one question asked of a model and its answer.
+type ModelCall struct {
+	// Question names the pass: extract, ground, addressee, counting,
+	// restricting, scope, or reading when a policy's readings were cached.
+	Question   string  `json:"question"`
+	Answer     string  `json:"answer"`
+	DurationMS float64 `json:"duration_ms"`
+	Error      string  `json:"error,omitempty"`
+}
+
+// DroppedPin is a proposed policy the pass declined to keep.
+type DroppedPin struct {
+	Text   string `json:"text"`
+	Reason string `json:"reason"`
 }
 
 // NewExtractor builds the pass over a generator.
@@ -471,10 +497,11 @@ func (extractor *modelExtractor) Extract(
 	if !v1.CarriesSpeech(utterance) {
 		return Extraction{}, nil
 	}
-	answer, err := extractor.generator.Generate(
-		ctx, ExtractionInstruction, RenderForExtraction(existing, recent, utterance), 160)
+	var trace []ModelCall
+	answer, err := extractor.ask(
+		ctx, &trace, "extract", ExtractionInstruction, RenderForExtraction(existing, recent, utterance), 160)
 	if err != nil {
-		return Extraction{}, err
+		return Extraction{Calls: trace}, err
 	}
 	extraction, err := ParseExtraction(answer)
 	if err != nil {
@@ -484,9 +511,9 @@ func (extractor *modelExtractor) Extract(
 		// no-op: accepting it as such avoids failing the live turn while still
 		// refusing every unknown or newly invented free-form answer.
 		if extractionEchoesExistingPolicy(answer, existing) {
-			return Extraction{}, nil
+			return Extraction{Calls: trace}, nil
 		}
-		return Extraction{}, err
+		return Extraction{Calls: trace}, err
 	}
 	grounded := extraction.Pins[:0]
 	for _, instruction := range extraction.Pins {
@@ -497,17 +524,43 @@ func (extractor *modelExtractor) Extract(
 		// into later turns and can outrank the deployment contract; a rejected
 		// real policy can be restated by the person, so uncertainty must fail
 		// closed here.
-		if !extractor.groundsStandingPolicy(ctx, utterance, instruction) {
+		if !extractor.groundsStandingPolicy(ctx, &trace, utterance, instruction) {
+			extraction.Dropped = append(extraction.Dropped, DroppedPin{Text: instruction.Text, Reason: "not grounded in the utterance"})
 			continue
 		}
-		reading := extractor.readingOf(ctx, instruction)
+		if extractor.addressedElsewhere(ctx, &trace, recent, utterance) {
+			extraction.Dropped = append(extraction.Dropped, DroppedPin{Text: instruction.Text, Reason: "addressed to someone else"})
+			continue
+		}
+		reading := extractor.readingOf(ctx, &trace, instruction)
 		instruction.Counting = reading.counting
 		instruction.Restricting = reading.restricting
 		instruction.Scope = reading.scope
 		grounded = append(grounded, instruction)
 	}
 	extraction.Pins = grounded
+	extraction.Calls = trace
 	return extraction, nil
+}
+
+// ask puts one question to the generator and records it, so the answer that
+// governed a later turn can be read back next to the words that produced it.
+func (extractor *modelExtractor) ask(
+	ctx context.Context, trace *[]ModelCall, question, prompt, evidence string, maxTokens int,
+) (string, error) {
+	started := time.Now()
+	answer, err := extractor.generator.Generate(ctx, prompt, evidence, maxTokens)
+	call := ModelCall{
+		Question: question, Answer: strings.TrimSpace(answer),
+		DurationMS: float64(time.Since(started).Microseconds()) / 1000,
+	}
+	if err != nil {
+		call.Error = err.Error()
+	}
+	if trace != nil {
+		*trace = append(*trace, call)
+	}
+	return answer, err
 }
 
 func extractionEchoesExistingPolicy(answer string, existing []StandingInstruction) bool {
@@ -568,7 +621,7 @@ var StandingPolicyGroundingInstruction = "An extractor proposed a standing inter
 // hedged prose, and malformed output all reject the proposal: inventing a
 // durable instruction is the dangerous side of this boundary.
 func (extractor *modelExtractor) groundsStandingPolicy(
-	ctx context.Context, utterance string, instruction StandingInstruction,
+	ctx context.Context, trace *[]ModelCall, utterance string, instruction StandingInstruction,
 ) bool {
 	utterance = strings.TrimSpace(utterance)
 	policy := strings.TrimSpace(instruction.Text)
@@ -585,7 +638,37 @@ func (extractor *modelExtractor) groundsStandingPolicy(
 		policy = "after " + strconv.FormatInt(seconds, 10) + "s " + policy
 	}
 	evidence := "Exact utterance:\n" + utterance + "\n\nProposed standing policy:\n" + policy
-	answer, err := extractor.generator.Generate(ctx, StandingPolicyGroundingInstruction, evidence, 3)
+	answer, err := extractor.ask(ctx, trace, "ground", StandingPolicyGroundingInstruction, evidence, 3)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(answer), "yes")
+}
+
+// AddressedElsewhereInstruction asks the one question grounding cannot: whom
+// the sentence was said to. A rule set for a colleague - "Tim, count the
+// chairs as I point" - grounds perfectly as a standing policy and is still not
+// the agent's to keep. It is asked only after a pin has grounded, so it costs
+// nothing on the ordinary turn, and only the exact token "yes" rejects: an
+// unsure answer must not erase a rule the person actually gave the agent.
+var AddressedElsewhereInstruction = "One utterance from a conversation with a voice assistant is " +
+	"below, with the lines before it. Was this utterance addressed to somebody other than the " +
+	"assistant - a named person, a role such as doctor or waiter, or the room? Answer yes only when " +
+	"the words themselves name or address someone else. Answer no when it is said to the assistant " +
+	"or when nobody is named. Answer yes or no and nothing else.\n\n" +
+	"yes: Tim, printer's jammed again, can you help?\n" +
+	"yes: Doctor Lee, could you count them for me?\n" +
+	"no: Count the animals out loud as I mention them.\n" +
+	"no: Tell me when the build finishes.\n"
+
+func (extractor *modelExtractor) addressedElsewhere(
+	ctx context.Context, trace *[]ModelCall, recent []string, utterance string,
+) bool {
+	evidence := "Utterance:\n" + strings.TrimSpace(utterance)
+	if len(recent) > 0 {
+		evidence = "Before it:\n" + strings.Join(recent, "\n") + "\n\n" + evidence
+	}
+	answer, err := extractor.ask(ctx, trace, "addressee", AddressedElsewhereInstruction, evidence, 3)
 	if err != nil {
 		return false
 	}
@@ -622,11 +705,11 @@ var CountingInstruction = "Somebody set a standing policy for a voice assistant.
 // and turns happen many times a second. An unreadable answer is "no": the
 // arithmetic is help for one kind of policy, and withholding it from a count
 // costs a scenario while attaching it to everything else costs several.
-func (extractor *modelExtractor) asksForACount(ctx context.Context, policy string) bool {
+func (extractor *modelExtractor) asksForACount(ctx context.Context, trace *[]ModelCall, policy string) bool {
 	if strings.TrimSpace(policy) == "" {
 		return false
 	}
-	answer, err := extractor.generator.Generate(ctx, CountingInstruction, policy, 4)
+	answer, err := extractor.ask(ctx, trace, "counting", CountingInstruction, policy, 4)
 	if err != nil {
 		return false
 	}
@@ -666,11 +749,11 @@ var RestrictingInstruction = "Somebody set a standing policy for a voice assista
 // An unreadable answer is "no". Withholding the restriction leaves an agent
 // too talkative, which is the failure the person can hear and correct; adding
 // one nobody asked for leaves it mute for a reason they cannot see.
-func (extractor *modelExtractor) restrictsEverythingElse(ctx context.Context, policy string) bool {
+func (extractor *modelExtractor) restrictsEverythingElse(ctx context.Context, trace *[]ModelCall, policy string) bool {
 	if strings.TrimSpace(policy) == "" {
 		return false
 	}
-	answer, err := extractor.generator.Generate(ctx, RestrictingInstruction, policy, 4)
+	answer, err := extractor.ask(ctx, trace, "restricting", RestrictingInstruction, policy, 4)
 	if err != nil {
 		return false
 	}
@@ -712,7 +795,7 @@ var ScopeInstruction = "A policy was set for a voice assistant. Does it stand fr
 // standing on its own: a passing policy wrongly left standing keeps an agent
 // quiet until somebody tells it to speak, which they can do, while a standing
 // one wrongly expired fails silently at the moment it was set for.
-func (extractor *modelExtractor) scopeOf(ctx context.Context, instruction StandingInstruction) Scope {
+func (extractor *modelExtractor) scopeOf(ctx context.Context, trace *[]ModelCall, instruction StandingInstruction) Scope {
 	if strings.TrimSpace(instruction.Text) == "" {
 		return instruction.Scope
 	}
@@ -727,7 +810,7 @@ func (extractor *modelExtractor) scopeOf(ctx context.Context, instruction Standi
 	if instruction.After > 0 {
 		return ScopeConversation
 	}
-	answer, err := extractor.generator.Generate(ctx, ScopeInstruction, instruction.Text, 4)
+	answer, err := extractor.ask(ctx, trace, "scope", ScopeInstruction, instruction.Text, 4)
 	if err != nil {
 		return instruction.Scope
 	}
@@ -741,15 +824,30 @@ func (extractor *modelExtractor) scopeOf(ctx context.Context, instruction Standi
 }
 
 // readingOf answers the three questions about a policy, once.
-func (extractor *modelExtractor) readingOf(ctx context.Context, instruction StandingInstruction) policyReading {
+func (extractor *modelExtractor) readingOf(
+	ctx context.Context, trace *[]ModelCall, instruction StandingInstruction,
+) policyReading {
 	key := strings.ToLower(strings.TrimSpace(instruction.Text))
 	if cached, ok := extractor.read.Load(key); ok {
-		return cached.(policyReading)
+		reading := cached.(policyReading)
+		if trace != nil {
+			*trace = append(*trace, ModelCall{Question: "reading", Answer: describeReading(reading)})
+		}
+		return reading
 	}
 	reading := policyReading{
-		counting:    extractor.asksForACount(ctx, instruction.Text),
-		restricting: extractor.restrictsEverythingElse(ctx, instruction.Text),
-		scope:       extractor.scopeOf(ctx, instruction),
+		counting:    extractor.asksForACount(ctx, trace, instruction.Text),
+		restricting: extractor.restrictsEverythingElse(ctx, trace, instruction.Text),
+		scope:       extractor.scopeOf(ctx, trace, instruction),
+	}
+	// A running count watches for the next occurrence, which has not
+	// happened yet, and the scope question's own rule makes that standing.
+	// The question is still asked - it is the one fact a fast model gets
+	// wrong most often, and it must not be able to expire a count with the
+	// sentence that set it up: measured, a counting rule read as passing was
+	// gone at the next sentence and the rest of the story went uncounted.
+	if reading.counting {
+		reading.scope = ScopeConversation
 	}
 	// Only a complete reading is kept. A model call that failed answers with
 	// the safe default, and caching that would make one bad moment permanent.
@@ -814,6 +912,13 @@ func (extractor *modelExtractor) HasArrived(
 		}
 	}
 	return false
+}
+
+// describeReading states a cached reading the way its questions would have.
+func describeReading(reading policyReading) string {
+	return "cached: counting=" + strconv.FormatBool(reading.counting) +
+		" restricting=" + strconv.FormatBool(reading.restricting) +
+		" scope=" + string(reading.scope)
 }
 
 func truncateAnswer(text string) string {

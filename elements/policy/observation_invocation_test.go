@@ -90,7 +90,7 @@ func TestObservationInvocationManualModeUsesUpdatedSettingsAndExactCommittedCont
 		t.Fatalf("manual model invocation = %+v", generate)
 	}
 	if outcome := observationInvocationOutcome(t, harness); outcome.Kind != policyelements.SessionInvocationEmitted ||
-		outcome.InvocationRevision != 2 || outcome.Act != "" {
+		outcome.InvocationRevision != 2 || (outcome.Choice == nil || !outcome.Choice.Speak) {
 		t.Fatalf("manual response outcome = %+v", outcome)
 	}
 	assertNoPolicyEnvelope(t, harness.egress(t, "authority"))
@@ -138,7 +138,7 @@ func TestObservationInvocationAutomaticModeHasObservationAuthorityAndDurableCanc
 		*generate.CommittedContext != commit.Context || generate.SpokeOver {
 		t.Fatalf("automatic model invocation = %+v", generate)
 	}
-	if outcome := observationInvocationOutcome(t, harness); outcome.Kind != policyelements.SessionInvocationEmitted || outcome.Act != "" {
+	if outcome := observationInvocationOutcome(t, harness); outcome.Kind != policyelements.SessionInvocationEmitted || (outcome.Choice == nil || !outcome.Choice.Speak) {
 		t.Fatalf("automatic outcome = %+v", outcome)
 	}
 	sendPolicy(t, harness.ingress(t, "cancel"), element.Envelope{

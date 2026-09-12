@@ -395,7 +395,7 @@ func TestSemanticAdmissionOutcomeTerminatesSuppressedGatewayCreate(t *testing.T)
 	envelope := base.Clone()
 	envelope.Payload = policyelements.SemanticAdmissionOutcome{
 		Kind: policyelements.SemanticAdmissionAdmitted, Operation: "create",
-		Act: coreinteraction.ActAnswer, DecisionItemID: "semantic_admission:decision:8",
+		Choice: &coreinteraction.Choice{Speak: true}, DecisionItemID: "semantic_admission:decision:8",
 	}
 	if err := admitted.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
 		t.Fatal(err)
@@ -408,7 +408,7 @@ func TestSemanticAdmissionOutcomeTerminatesSuppressedGatewayCreate(t *testing.T)
 	envelope = base.Clone()
 	envelope.Payload = policyelements.SemanticAdmissionOutcome{
 		Kind: policyelements.SemanticAdmissionSuppressed, Operation: "create",
-		Act: coreinteraction.ActStaySilent, DecisionItemID: "semantic_admission:decision:8",
+		Choice: &coreinteraction.Choice{}, DecisionItemID: "semantic_admission:decision:8",
 		Code: "listen", Message: "policy selected no generation",
 	}
 	if err := suppressed.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
@@ -428,7 +428,7 @@ func TestSemanticAdmissionOutcomeTerminatesSuppressedGatewayCreate(t *testing.T)
 	envelope = base.Clone()
 	envelope.Payload = policyelements.SemanticAdmissionOutcome{
 		Kind: policyelements.SemanticAdmissionRefused, Operation: "create",
-		Act: coreinteraction.ActAnswer, Code: "policy_refused", Message: "policy refused generation",
+		Choice: &coreinteraction.Choice{Speak: true}, Code: "policy_refused", Message: "policy refused generation",
 	}
 	if err := refused.acceptSemanticAdmissionOutcome(context.Background(), envelope); err != nil {
 		t.Fatal(err)
@@ -444,7 +444,7 @@ func TestSemanticAdmissionOutcomeTerminatesSuppressedGatewayCreate(t *testing.T)
 	envelope = base.Clone()
 	envelope.Payload = policyelements.SemanticAdmissionOutcome{
 		Kind: policyelements.SemanticAdmissionAdmitted, Operation: "create",
-		Act: coreinteraction.ActAnswer, DecisionItemID: "other:decision:8",
+		Choice: &coreinteraction.Choice{Speak: true}, DecisionItemID: "other:decision:8",
 	}
 	if err := invalid.acceptSemanticAdmissionOutcome(context.Background(), envelope); err == nil {
 		t.Fatal("admitted semantic outcome with forged decision identity was accepted")

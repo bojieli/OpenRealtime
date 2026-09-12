@@ -7,7 +7,6 @@ import (
 
 	"github.com/bojieli/OpenRealtime/element"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
-	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -38,7 +37,7 @@ func TestSemanticAdmissionHistoryDoesNotClaimUnplayedSpeechWasHeard(t *testing.T
 			}
 			snapshot := store.Snapshot()
 			before := store.Snapshot()
-			decider := &semanticTestDecider{descriptor: semanticTestDescriptor, acts: []coreinteraction.Act{coreinteraction.ActAnswer}}
+			decider := &semanticTestDecider{descriptor: semanticTestDescriptor, answers: []string{"speak"}}
 			h := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
 			defer h.stop(t)
 			consumeSemanticStartup(t, h)
@@ -51,7 +50,7 @@ func TestSemanticAdmissionHistoryDoesNotClaimUnplayedSpeechWasHeard(t *testing.T
 			_ = receivePolicy(t, h.egress(t, "voice_create"))
 			_ = receivePolicy(t, h.egress(t, "outcome"))
 			calls := decider.captured()
-			if decision.Act != coreinteraction.ActAnswer || len(calls) != 1 {
+			if !decision.Choice.Speak || len(calls) != 1 {
 				t.Fatalf("resume failed: %+v / %+v", decision, calls)
 			}
 			if !strings.Contains(calls[0].Evidence, tc.want) {

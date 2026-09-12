@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,10 +52,7 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 	t.Helper()
 	base := newScenarioProfileFixture(t)
 	config := base.pluginConfig()
-	config.SemanticAdmission.TranscriptEvents = &policyelements.SemanticTranscriptEventConfig{
-		Partial: policyelements.SemanticTranscriptEventRules{Instruction: "Count the current animal.", TimeoutMS: 1000, Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough, coreinteraction.ActKeepSpeaking}},
-		Final:   policyelements.SemanticTranscriptEventRules{Instruction: "Count the current animal.", TimeoutMS: 1000, Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer, coreinteraction.ActKeepSpeaking}},
-	}
+	config.SemanticAdmission.Rules = "Count the current animal."
 	asr := &scenarioAddressingASRControl{turns: []string{"Count the animals out loud as I mention them and say nothing else.", "A capybara wandered over and sat down next to me.", "The water was calm."}}
 	if !newerRoom {
 		asr.turns = asr.turns[:2]
@@ -64,7 +61,7 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 		asr.turns[0] = "Count the animals out loud as I mention them."
 	}
 	asr.turns = append(asr.turns, "A capybara joined the first one.")
-	policy := &scenarioSpeechHistoryPolicy{scenarioCountAdmissionPolicy: scenarioCountAdmissionPolicy{descriptor: config.Policy.Descriptor, primary: "answer", activation: "condition-met", primaryConfidence: 0.989, activationConfidence: 0.999}, finalOnly: finalOnly}
+	policy := &scenarioSpeechHistoryPolicy{scenarioCountAdmissionPolicy: scenarioCountAdmissionPolicy{descriptor: config.Policy.Descriptor, primary: coreinteraction.ChoiceSpeak, primaryConfidence: 0.989}, finalOnly: finalOnly}
 	model := &scenarioSpeechHistoryModel{descriptor: config.Model.Descriptor, started: make(chan continuation.Request, 1), release: make(chan struct{})}
 	tts := &scenarioAddressingTTSControl{}
 	config.ASR.Factory = func(context.Context, legacy.Options) (v1.PerceptionProvider, error) {
@@ -72,9 +69,6 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 	}
 	config.Policy.Factory = func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) { return policy, nil }
 	config.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) { return model, nil }
-	config.SilentModel.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
-		return &scenarioCountAdmissionModel{descriptor: config.SilentModel.Descriptor}, nil
-	}
 	config.TTS.Factory = func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
 		return &scenarioAddressingTTS{control: tts, descriptor: config.TTS.Descriptor}, nil
 	}
@@ -114,17 +108,17 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 	driveScenarioAddressingTurn(t, runtime, sink.scenarioAddressingSink, &clock, scenarioAddressingStreamID(sessionID, 1), asr.turns[0])
 	recording.await(t, "semantic_admission.decision", func(e element.Envelope) bool {
 		d, ok := e.Payload.(policyelements.SemanticDecision)
-		return ok && d.StandingAfter == 1 && d.DecisionStage == "standing_coverage"
+		return ok && d.StandingAfter == 1
 	})
 	for i := 0; i < 3; i++ {
-		sendScenarioSupersessionAudio(t, runtime, &clock, false)
+		sendScenarioCountAudio(t, runtime, &clock, false)
 	}
 	var request continuation.Request
 	if !finalOnly {
 		request = receiveScenarioAddressing(t, model.started, "partial-trigger model invocation")
 	}
 	for i := 0; i < 5; i++ {
-		sendScenarioSupersessionAudio(t, runtime, &clock, true)
+		sendScenarioCountAudio(t, runtime, &clock, true)
 	}
 	awaitSpeechHistoryObservation(t, runtime, asr.turns[1])
 	if finalOnly {
@@ -132,7 +126,7 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 	}
 	if newerRoom {
 		for i := 0; i < 8; i++ {
-			sendScenarioSupersessionAudio(t, runtime, &clock, i >= 3)
+			sendScenarioCountAudio(t, runtime, &clock, i >= 3)
 		}
 		awaitSpeechHistoryObservation(t, runtime, asr.turns[2])
 	}
@@ -202,14 +196,14 @@ func testScenarioSpeechHistoryContext(t *testing.T, newerRoom, explicit, finalOn
 		if !finalOnly {
 			// No new animal arrived. The standing say-nothing-else instruction
 			// still permits silence, but evaluating it must observe playback.
-			if decision.Act != coreinteraction.ActStaySilent {
+			if !decision.Choice.Idle() {
 				t.Fatal("explicit request bypassed standing silence")
 			}
 			return
 		}
 	} else {
 		for i := 0; i < 3; i++ {
-			sendScenarioSupersessionAudio(t, runtime, &clock, false)
+			sendScenarioCountAudio(t, runtime, &clock, false)
 		}
 	}
 	next := receiveScenarioAddressing(t, model.started, "next provider context")
@@ -358,16 +352,17 @@ func (p *scenarioSpeechHistoryPolicy) Generate(ctx context.Context, prompt, text
 }
 
 func (p *scenarioSpeechHistoryPolicy) Decide(ctx context.Context, d coreinteraction.Decision) (coreinteraction.Outcome, error) {
-	if p.finalOnly && d.Prompt == coreinteraction.Instruction {
-		if index := slices.Index(d.Options, "answer"); index >= 0 {
-			return coreinteraction.Outcome{Index: index, Option: "answer", Measured: true, Confidence: 0.999}, nil
+	if p.finalOnly {
+		switch {
+		case strings.Contains(d.Evidence, "transcript event: partial"):
+			// This variant only ever speaks on a settled utterance.
+			return scenarioAnswer(d, scenarioStepChoice(d, coreinteraction.ChoiceListen))
+		case !strings.Contains(d.Evidence, "transcript event:") && !d.Speaking:
+			// An explicit request with the floor free is answered.
+			return scenarioAnswer(d, coreinteraction.ChoiceSpeak)
 		}
 	}
-	result, err := p.scenarioCountAdmissionPolicy.Decide(ctx, d)
-	if !p.finalOnly && err == nil && result.Option == "speak-through" {
-		result.Confidence = 0.989
-	}
-	return result, err
+	return p.scenarioCountAdmissionPolicy.Decide(ctx, d)
 }
 
 type scenarioSpeechHistoryModel struct {

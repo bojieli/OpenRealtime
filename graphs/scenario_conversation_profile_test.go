@@ -171,18 +171,15 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		t.Fatalf("selected media bounds did not enter plan: %+v", retention)
 	}
 	var semanticAdmission struct {
-		StandingExtraction          bool    `json:"standing_extraction"`
-		VerifyVoiceActivation       bool    `json:"verify_voice_activation"`
-		VerifySilentAction          bool    `json:"verify_silent_action"`
-		MinimumActivationConfidence float64 `json:"minimum_activation_confidence"`
-		StandingMemory              int     `json:"standing_memory"`
+		StandingExtraction bool   `json:"standing_extraction"`
+		StandingMemory     int    `json:"standing_memory"`
+		Rules              string `json:"rules"`
 	}
 	if err := json.Unmarshal(values["semantic_admission"], &semanticAdmission); err != nil {
 		t.Fatal(err)
 	}
-	if !semanticAdmission.StandingExtraction || !semanticAdmission.VerifyVoiceActivation ||
-		!semanticAdmission.VerifySilentAction ||
-		semanticAdmission.MinimumActivationConfidence != 0.7 || semanticAdmission.StandingMemory != 17 {
+	if !semanticAdmission.StandingExtraction || semanticAdmission.StandingMemory != 17 ||
+		semanticAdmission.Rules != "Count only what the person asked for." {
 		t.Fatalf("selected semantic admission controls did not enter plan: %+v", semanticAdmission)
 	}
 
@@ -229,9 +226,6 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		{name: "undeclared standing extraction", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Policy.Descriptor.StandingExtraction = false
 		}), want: "does not declare it"},
-		{name: "semantic activation confidence invalid", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
-			config.SemanticAdmission.MinimumActivationConfidence = 1.1
-		}), want: "minimum_activation_confidence"},
 		{name: "semantic standing memory invalid", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.SemanticAdmission.StandingMemory = 4097
 		}), want: "standing_memory"},
@@ -241,14 +235,6 @@ func TestScenarioConversationApplicationProfileResolvesExactGraphWithoutResource
 		{name: "model authority escalation", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.Model.Descriptor.ToolAuthority = continuation.ToolAuthorityExecute
 		}), want: "proposal-only"},
-		{name: "silent model gains voice authority", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
-			config.SilentModel.Descriptor.SpeechAuthority = continuation.SpeechAuthorityVoice
-		}), want: "silent-authoritative"},
-		{name: "silent model uses another provider artifact", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
-			config.SilentModel.Artifact = inspect.ArtifactIdentity{
-				ID: "plugin://test/scenario/other-model", Revision: "build:1",
-			}
-		}), want: "artifact or descriptor drifted"},
 		{name: "TTS voice drift", payload: mutateScenarioApplication(t, fixture.application, func(config *scenarioconversation.ApplicationConfig) {
 			config.TTS.Voice = "different-voice"
 		}), want: "voice drifted"},
@@ -427,7 +413,6 @@ func TestScenarioConversationGraphOwnsPostCommitFifteenSecondSilenceWakeup(t *te
 		{"trajectory_snapshot_copy", "out", "post_commit_silence", "context"},
 		{"post_commit_silence", "create", "semantic_admission", "quiet"},
 		{"semantic_admission", "voice_create", "voice_session_invocation", "create"},
-		{"semantic_admission", "silent_create", "silent_session_invocation", "create"},
 	} {
 		if !scenarioGraphHasEdge(graph, edge[0], edge[1], edge[2], edge[3]) {
 			t.Fatalf("scenario graph omits timer edge %s.%s -> %s.%s", edge[0], edge[1], edge[2], edge[3])
@@ -519,7 +504,6 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		{"segment", "model_cancel", "segment_model_cancel_copy", "in"},
 		{"segment_model_cancel_copy", "out", "model_cancel_mux", "in"},
 		{"overlap_barge_in", "model_cancel", "model_cancel_mux", "in"},
-		{"semantic_admission", "silent_cancel", "model_cancel_mux", "in"},
 		{"model_cancel_mux", "out", "model_cancel_copy", "in"},
 		{"overlap_barge_in", "segmentation_cancel", "segmentation_cancel_mux", "in"},
 		{"segmentation_cancel_mux", "out", "segment", "cancel"},
@@ -536,8 +520,6 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 		{"asr", "observations", "overlap_barge_in", "transcript"},
 		{"segment", "segments", "tts", "text"},
 		{"segment", "segments", "overlap_barge_in", "speech"},
-		{"silent_session_invocation", "outcome", "overlap_barge_in", "invocation"},
-		{"silent_model", "outcome", "overlap_barge_in", "model"},
 		{"control_quarantine", "safe_result", "model_result_mux", "in"},
 		{"playback", "released", "", "gateway_turn_end"},
 		{"overlap_barge_in", "safe_release", "", "gateway_turn_end"},
@@ -615,7 +597,7 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 	assertScenarioFactoriesUnopened(t, fixture)
 }
 
-func TestScenarioConversationGraphQuarantinesControlAndTerminatesSilentTextBeforeSpeech(t *testing.T) {
+func TestScenarioConversationGraphQuarantinesControlBeforeSpeech(t *testing.T) {
 	fixture := newScenarioProfileFixture(t)
 	config, err := graphs.ScenarioConversationLaunchConfig(fixture.pluginConfig())
 	if err != nil {
@@ -627,18 +609,11 @@ func TestScenarioConversationGraphQuarantinesControlAndTerminatesSilentTextBefor
 	}
 	graph := preview.Plan.Graph()
 	for _, edge := range [][4]string{
-		{"semantic_admission", "silent_committed", "silent_session_invocation", "committed"},
-		{"semantic_admission", "silent_create", "silent_session_invocation", "create"},
-		{"silent_session_invocation", "trigger", "silent_model", "trigger"},
-		{"silent_model", "text", "silent_control_quarantine", "text"},
-		{"silent_control_quarantine", "safe_text", "silent_model_text_drop", "in"},
 		{"voice_model", "text", "control_quarantine", "text"},
 		{"control_quarantine", "safe_text", "model_text_copy", "in"},
 		{"voice_model", "result", "control_quarantine", "result"},
-		{"silent_model", "result", "silent_control_quarantine", "result"},
 		{"control_quarantine", "safe_result", "overlap_barge_in", "result"},
 		{"overlap_barge_in", "safe_result", "model_result_mux", "in"},
-		{"silent_control_quarantine", "safe_result", "model_result_mux", "in"},
 		{"model_result_mux", "out", "model_result_copy", "in"},
 		{"voice_model_outcome_copy", "out", "segment", "terminal"},
 	} {
@@ -652,33 +627,29 @@ func TestScenarioConversationGraphQuarantinesControlAndTerminatesSilentTextBefor
 		{"voice_model", "text", "segment", "text"},
 		{"model_result_mux", "out", "control_quarantine", "result"},
 		{"voice_model", "result", "model_result_mux", "in"},
-		{"silent_model", "result", "model_result_mux", "in"},
 		{"control_quarantine", "safe_result", "model_result_mux", "in"},
-		{"silent_model", "text", "silent_model_text_drop", "in"},
-		{"silent_model", "text", "model_text_copy", "in"},
-		{"silent_model", "text", "segment", "text"},
-		{"silent_model", "outcome", "segment", "terminal"},
 		{"message_commit_outcome_copy", "out", "semantic_admission", "committed"},
 	} {
 		if scenarioGraphHasEdge(graph, forbidden[0], forbidden[1], forbidden[2], forbidden[3]) {
-			t.Fatalf("silent/text authority escaped through %s.%s -> %s.%s",
+			t.Fatalf("text authority escaped through %s.%s -> %s.%s",
 				forbidden[0], forbidden[1], forbidden[2], forbidden[3])
 		}
 	}
-	var foundDrop bool
+	// One cognition lane, one quarantine. The silent lane and its terminal
+	// drop are gone: silence is the voice model's decision, and its control
+	// token is extracted before synthesis rather than routed to a sink.
 	quarantines := 0
 	for _, node := range graph.Nodes {
-		foundDrop = foundDrop || node.ID == "silent_model_text_drop" && node.Element.Name == "flow.Drop"
-		if (node.ID == "control_quarantine" || node.ID == "silent_control_quarantine") &&
-			node.Element.Name == "interaction.ControlSerializationQuarantine" {
+		if node.ID == "silent_model" || node.ID == "silent_session_invocation" ||
+			node.ID == "silent_control_quarantine" || node.ID == "silent_model_text_drop" {
+			t.Fatalf("scenario graph still mounts the silent lane node %q", node.ID)
+		}
+		if node.ID == "control_quarantine" && node.Element.Name == "interaction.ControlSerializationQuarantine" {
 			quarantines++
 		}
 	}
-	if !foundDrop {
-		t.Fatal("scenario graph has no descriptor-locked terminal drop for silent model text")
-	}
-	if quarantines != 2 {
-		t.Fatalf("scenario graph has %d model-lane control serialization quarantines, want 2", quarantines)
+	if quarantines != 1 {
+		t.Fatalf("scenario graph has %d model-lane control serialization quarantines, want 1", quarantines)
 	}
 	assertScenarioFactoriesUnopened(t, fixture)
 }
@@ -808,9 +779,6 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 			SpeechAuthority: continuation.SpeechAuthorityVoice,
 		},
 	}
-	silentModelSelection := modelSelection
-	silentModelSelection.Reference = "model://test/scenario/silent/v1"
-	silentModelSelection.Descriptor.SpeechAuthority = continuation.SpeechAuthoritySilent
 	policySelection := scenarioconversation.ApplicationPolicySelection{
 		Reference: "policy://test/scenario/v1", Artifact: artifact("policy"),
 		Descriptor: testScenarioSemanticDescriptor(),
@@ -826,10 +794,10 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 		Architecture:  architecture.Identity(),
 		ASR:           asrSelection, Policy: policySelection, Model: modelSelection,
 		SemanticAdmission: scenarioconversation.SemanticAdmissionSelection{
-			StandingExtraction: true, VerifyVoiceActivation: true, VerifySilentAction: true,
-			MinimumActivationConfidence: 0.7, StandingMemory: 17,
+			StandingExtraction: true, StandingMemory: 17,
+			Rules: "Count only what the person asked for.",
 		},
-		SilentModel: silentModelSelection, TTS: ttsSelection,
+		TTS: ttsSelection,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "lookup.weather", Description: "Look up weather.",
 			Parameters: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`),
@@ -868,12 +836,6 @@ func newScenarioProfileFixture(t testing.TB) scenarioProfileFixture {
 				modelOpened.Add(1)
 				return nil, nil
 			},
-		}, {
-			ApplicationModelSelection: silentModelSelection,
-			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
-				modelOpened.Add(1)
-				return nil, nil
-			},
 		}},
 		TTS: []scenarioconversation.TTSFactoryRegistration{{
 			ApplicationTTSSelection: ttsSelection,
@@ -908,10 +870,6 @@ func (fixture scenarioProfileFixture) pluginConfig() scenarioconversation.Plugin
 			Reference: scenarioconversation.ModelReference, Artifact: fixture.application.Model.Artifact,
 			Descriptor: fixture.application.Model.Descriptor, Factory: fixture.registration.Models[0].Factory,
 		},
-		SilentModel: scenarioconversation.ModelPlugin{
-			Reference: scenarioconversation.SilentModelReference, Artifact: fixture.application.SilentModel.Artifact,
-			Descriptor: fixture.application.SilentModel.Descriptor, Factory: fixture.registration.Models[1].Factory,
-		},
 		TTS: scenarioconversation.TTSPlugin{
 			Reference: scenarioconversation.TTSReference, Artifact: fixture.application.TTS.Artifact,
 			Descriptor: fixture.application.TTS.Descriptor, Voice: fixture.application.TTS.Voice,
@@ -938,12 +896,15 @@ func (testScenarioSemanticDecider) Descriptor() policyelements.SemanticDeciderDe
 func (testScenarioSemanticDecider) Decide(
 	_ context.Context, decision coreinteraction.Decision,
 ) (coreinteraction.Outcome, error) {
+	if decision.Question != "" {
+		return scenarioAnswer(decision, scenarioStepChoice(decision, coreinteraction.ChoiceSpeak))
+	}
 	for index, option := range decision.Options {
-		if option == string(coreinteraction.ActAnswer) {
+		if option == coreinteraction.ChoiceSpeak || option == coreinteraction.ChoiceKeepSpeak {
 			return coreinteraction.Outcome{Index: index, Option: option}, nil
 		}
 	}
-	return coreinteraction.Outcome{}, errors.New("answer act is unavailable")
+	return coreinteraction.Outcome{}, errors.New("no option invokes the voice")
 }
 
 func (testScenarioSemanticDecider) Generate(

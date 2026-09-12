@@ -186,12 +186,6 @@ func newSessionBundle(
 		mediaBridge.Close(err)
 		return nil, err
 	}
-	if err := providers.Register(SilentModelReference, config.SilentModel.Descriptor, func() (continuation.Provider, error) {
-		return config.SilentModel.Factory(ctx, options)
-	}); err != nil {
-		mediaBridge.Close(err)
-		return nil, err
-	}
 	semanticDeciders := policyelements.NewSemanticDeciderRegistry()
 	if err := semanticDeciders.Register(PolicyReference, config.Policy.Descriptor, func() (policyelements.SemanticDecider, error) {
 		return config.Policy.Factory(ctx, options)

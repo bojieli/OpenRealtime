@@ -80,7 +80,7 @@ func TestGenerationStreamCancellationSurvivesLaterRevisions(t *testing.T) {
 				envelope := commitEnvelope(id+"-commit", test.session, commit)
 				if dynamic {
 					envelope.Type = policyelements.SemanticGrantType()
-					envelope.Payload = semanticGrant(commit, interaction.ActAnswer)
+					envelope.Payload = semanticGrant(commit, interaction.Choice{Speak: true})
 				}
 				sendPolicy(t, harness.ingress(t, "committed"), envelope)
 				if kind, code := outcome(); kind != test.want {

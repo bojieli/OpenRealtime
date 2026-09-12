@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 
 	"github.com/bojieli/OpenRealtime/element"
 	"github.com/bojieli/OpenRealtime/elements/internal/liveidentity"
@@ -109,7 +110,9 @@ func (runner *observationInvocationRunner) acceptObservationCommit(ctx context.C
 		runner.state.ContextVersion = max(runner.state.ContextVersion, commit.StoreVersion)
 		return runner.ignoreCommit(ctx, envelope, commit, "explicit_response_required")
 	}
-	return runner.emitCommit(ctx, envelope, commit, "")
+	// An automatic observation invocation has no policy in front of it: every
+	// committed observation invokes the voice, which is a choice to speak.
+	return runner.emitCommit(ctx, envelope, commit, coreinteraction.Choice{Speak: true}, false)
 }
 
 func (runner *observationInvocationRunner) ignoreCommit(

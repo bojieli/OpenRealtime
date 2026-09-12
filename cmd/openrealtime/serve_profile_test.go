@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -71,8 +72,8 @@ func TestProductionServeLaunchProfileResolvesExactInstalledApplications(t *testi
 		composition.Graph.ServerBundle == nil {
 		t.Fatal("production launch-profile composition omitted the generic graph/server bundle")
 	}
-	if len(composition.Graph.Readiness) != 5 || composition.Readiness.Ready() {
-		t.Fatalf("production selected readiness checks = %d ready=%t, want 5 false",
+	if len(composition.Graph.Readiness) != 4 || composition.Readiness.Ready() {
+		t.Fatalf("production selected readiness checks = %d ready=%t, want 4 false",
 			len(composition.Graph.Readiness), composition.Readiness.Ready())
 	}
 	if composition.Graph.GraphPlan.Identity() != profile.Plan ||
@@ -1129,12 +1130,16 @@ func (provider serveProfilePolicy) Descriptor() policyelements.SemanticDeciderDe
 func (serveProfilePolicy) Decide(
 	_ context.Context, decision coreinteraction.Decision,
 ) (coreinteraction.Outcome, error) {
+	if decision.Question != "" {
+		reply := coreinteraction.AnswerFor(decision.Question, coreinteraction.Choice{Speaking: decision.Speaking, Speak: true})
+		return coreinteraction.Outcome{Index: slices.Index(coreinteraction.YesNo(), reply), Option: reply}, nil
+	}
 	for index, option := range decision.Options {
-		if option == string(coreinteraction.ActAnswer) {
+		if option == coreinteraction.ChoiceSpeak || option == coreinteraction.ChoiceKeepSpeak {
 			return coreinteraction.Outcome{Index: index, Option: option}, nil
 		}
 	}
-	return coreinteraction.Outcome{}, errors.New("answer act is unavailable")
+	return coreinteraction.Outcome{}, errors.New("no option invokes the voice")
 }
 
 func serveProfilePolicyDescriptor() policyelements.SemanticDeciderDescriptor {
@@ -1258,7 +1263,7 @@ func assertServeProfileFactories(
 	}
 	modelWant, policyWant := want, want
 	if want > 0 {
-		modelWant = 2 * want
+		modelWant = want
 		policyWant = 2 * want
 	}
 	t.Fatalf("profile provider factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
@@ -1280,7 +1285,7 @@ func awaitServeProfileFactories(
 func serveProfileFactoriesMatch(counters *serveProfileFactoryCounters, want int32) bool {
 	modelWant, policyWant := want, want
 	if want > 0 {
-		modelWant = 2 * want
+		modelWant = want
 		policyWant = 2 * want
 	}
 	return counters.asr.Load() == want && counters.policy.Load() == policyWant &&
@@ -1531,9 +1536,7 @@ func freezeServeProfileTestDocumentWithToken(
 		FormatVersion: scenarioconversation.ApplicationFormatVersion,
 		Architecture:  architecture.Identity(),
 		ASR:           asr, Policy: serveProfileTestPolicySelection(t, host.Providers), Model: model,
-		SilentModel: serveProfileTestModelSelectionWithAuthority(
-			t, host.Providers, continuation.SpeechAuthoritySilent,
-		), TTS: tts,
+		TTS: tts,
 		Tools: []scenarioconversation.ToolDeclaration{{
 			Name: "press_key", Description: "Press a reviewed menu key.",
 			Parameters: json.RawMessage(

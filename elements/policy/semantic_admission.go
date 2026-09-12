@@ -6,12 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
-	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -33,7 +30,7 @@ const (
 	SemanticDeciderRegistryService = "policy.semantic.deciders"
 
 	semanticAdmissionRuntimeID        = "builtin://openrealtime/elements/policy.SemanticAdmission"
-	semanticAdmissionRuntimeRevision  = "implementation:19"
+	semanticAdmissionRuntimeRevision  = "implementation:20"
 	defaultSemanticRecentLines        = 12
 	defaultSemanticPending            = 64
 	defaultSemanticTerminalMemory     = 512
@@ -239,7 +236,7 @@ func (registry *SemanticDeciderRegistry) Open(
 func SemanticAdmissionDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
-		Name:          "policy.SemanticAdmission", Revision: 9,
+		Name:          "policy.SemanticAdmission", Revision: 10,
 		Ports: []element.Port{
 			{Name: "context", Direction: element.Input, Type: semanticContextType,
 				Cardinality: element.One, Required: true, LossAllowed: true, DefaultDepth: 1},
@@ -261,13 +258,7 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "voice_committed", Direction: element.Output, Type: semanticGrantType,
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "silent_committed", Direction: element.Output, Type: semanticGrantType,
-				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "voice_create", Direction: element.Output, Type: semanticCreateType,
-				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "silent_create", Direction: element.Output, Type: semanticCreateType,
-				Cardinality: element.One, Required: true, DefaultDepth: 16},
-			{Name: "silent_cancel", Direction: element.Output, Type: cognitionelements.CancelType(),
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "decision", Direction: element.Output, Type: semanticDecisionType,
 				Cardinality: element.One, Required: true, DefaultDepth: 32},
@@ -281,11 +272,11 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 		Reaction: element.Reaction{
 			Triggers: []string{"committed", "create", "quiet", "release"}, SampledState: []string{"context", "update", "agent_output"},
 			Interrupts:     []string{"cancel"},
-			Outcomes:       []string{"voice_committed", "silent_committed", "voice_create", "silent_create", "silent_cancel", "decision", "state", "outcome", "resolved", "safe_release"},
+			Outcomes:       []string{"voice_committed", "voice_create", "decision", "state", "outcome", "resolved", "safe_release"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/policy/semantic-admission-state/v2",
-		ConfigSchema: "schema://openrealtime/policy/semantic-admission-config/v3",
+		ConfigSchema: "schema://openrealtime/policy/semantic-admission-config/v4",
 		Dependencies: []element.Dependency{
 			{Name: SemanticDeciderRegistryService},
 			{Name: graphruntime.ClockServiceName},
@@ -297,39 +288,21 @@ func SemanticAdmissionDescriptor() element.Descriptor {
 }
 
 type SemanticAdmissionConfig struct {
-	Decider                     string                         `json:"decider"`
-	DirectVisualInput           bool                           `json:"direct_visual_input,omitempty"`
-	StandingExtraction          bool                           `json:"standing_extraction,omitempty"`
-	VerifyVoiceActivation       bool                           `json:"verify_voice_activation,omitempty"`
-	VerifySilentAction          bool                           `json:"verify_silent_action,omitempty"`
-	MinimumActivationConfidence float64                        `json:"minimum_activation_confidence,omitempty"`
-	RecentLines                 int                            `json:"recent_lines,omitempty"`
-	MaxPending                  int                            `json:"max_pending,omitempty"`
-	TerminalMemory              int                            `json:"terminal_memory,omitempty"`
-	CancelMemory                int                            `json:"cancel_memory,omitempty"`
-	StandingMemory              int                            `json:"standing_memory,omitempty"`
-	TranscriptEvents            *SemanticTranscriptEventConfig `json:"transcript_events,omitempty"`
-}
-
-// SemanticTranscriptEventConfig is the values-plane hard boundary around the
-// interaction model for live and terminal ASR revisions. Instructions can be
-// replaced independently, while Acts remain an enumerated executable set.
-type SemanticTranscriptEventConfig struct {
-	Partial SemanticTranscriptEventRules `json:"partial"`
-	Final   SemanticTranscriptEventRules `json:"final"`
-}
-
-type SemanticTranscriptEventRules struct {
-	Instruction string                `json:"instruction"`
-	Acts        []coreinteraction.Act `json:"acts"`
-	TimeoutMS   int64                 `json:"timeout_ms"`
-}
-
-// ValidateSemanticTranscriptEventConfig validates the complete values-plane
-// selection without creating or retaining a policy provider.
-func ValidateSemanticTranscriptEventConfig(config SemanticTranscriptEventConfig) error {
-	_, err := semanticTranscriptOptions(config)
-	return err
+	Decider            string `json:"decider"`
+	DirectVisualInput  bool   `json:"direct_visual_input,omitempty"`
+	StandingExtraction bool   `json:"standing_extraction,omitempty"`
+	RecentLines        int    `json:"recent_lines,omitempty"`
+	MaxPending         int    `json:"max_pending,omitempty"`
+	TerminalMemory     int    `json:"terminal_memory,omitempty"`
+	CancelMemory       int    `json:"cancel_memory,omitempty"`
+	StandingMemory     int    `json:"standing_memory,omitempty"`
+	// Rules is the instruction the policy model reads with the situation. It
+	// is one text for every event kind - a provisional transcript, a settled
+	// one, a frame, a quiet clock - because the question is the same at each:
+	// speak now or not, and while speaking, stop or not. Empty selects
+	// interaction.ChoiceInstruction. The option set is never configured; it
+	// is derived from whether the agent is speaking.
+	Rules string `json:"rules,omitempty"`
 }
 
 // SemanticGrant couples the exact canonical observation receipt to the act
@@ -338,8 +311,12 @@ func ValidateSemanticTranscriptEventConfig(config SemanticTranscriptEventConfig)
 // erase whether generation deliberately began over an active speaker.
 type SemanticGrant struct {
 	Commit         stateelements.ObservationCommitOutcome `json:"commit"`
-	Act            coreinteraction.Act                    `json:"act"`
+	Choice         coreinteraction.Choice                 `json:"choice"`
 	DecisionItemID string                                 `json:"decision_item_id"`
+	// SpokeOver says the choice invoked the voice while the other party was
+	// still speaking. The overlap controller protects such a run from being
+	// cancelled as an accidental barge-in: it was the decision.
+	SpokeOver bool `json:"spoke_over,omitempty"`
 }
 
 func (SemanticGrant) InspectionCause() element.InspectionCauseKind {
@@ -347,31 +324,57 @@ func (SemanticGrant) InspectionCause() element.InspectionCauseKind {
 }
 
 type SemanticDecision struct {
-	Operation            string              `json:"operation"`
-	Act                  coreinteraction.Act `json:"act"`
-	Policy               string              `json:"policy"`
-	EvidenceItemID       string              `json:"evidence_item_id"`
-	StreamID             string              `json:"stream_id,omitempty"`
-	SourceRevision       uint64              `json:"source_revision,omitempty"`
-	ContextVersion       uint64              `json:"context_version"`
-	InvocationDigest     string              `json:"invocation_digest"`
-	Provider             string              `json:"provider"`
-	Model                string              `json:"model"`
-	Confidence           float64             `json:"confidence,omitempty"`
-	Measured             bool                `json:"measured,omitempty"`
-	DecisionStage        string              `json:"decision_stage,omitempty"`
-	Activation           string              `json:"activation,omitempty"`
-	ActivationConfidence float64             `json:"activation_confidence,omitempty"`
-	ActivationMeasured   bool                `json:"activation_measured,omitempty"`
-	StandingCoverage     string              `json:"standing_coverage,omitempty"`
-	CoverageConfidence   float64             `json:"coverage_confidence,omitempty"`
-	CoverageMeasured     bool                `json:"coverage_measured,omitempty"`
-	StandingBefore       int                 `json:"standing_before,omitempty"`
-	StandingAfter        int                 `json:"standing_after,omitempty"`
-	StandingPinned       int                 `json:"standing_pinned,omitempty"`
-	StandingRevoked      int                 `json:"standing_revoked,omitempty"`
-	StartedNS            uint64              `json:"started_ns"`
-	FinishedNS           uint64              `json:"finished_ns"`
+	Operation string                 `json:"operation"`
+	Choice    coreinteraction.Choice `json:"choice"`
+	SpokeOver bool                   `json:"spoke_over,omitempty"`
+	// Event names the transcript event the choice was taken on - "partial",
+	// "final", or empty for a frame, a clock, or an explicit request. A trace
+	// that cannot tell a decision on a live hypothesis from one on the settled
+	// words cannot say whether the policy acted early or late.
+	Event            coreinteraction.TranscriptEventKind `json:"event,omitempty"`
+	Policy           string                              `json:"policy"`
+	EvidenceItemID   string                              `json:"evidence_item_id"`
+	StreamID         string                              `json:"stream_id,omitempty"`
+	SourceRevision   uint64                              `json:"source_revision,omitempty"`
+	ContextVersion   uint64                              `json:"context_version"`
+	InvocationDigest string                              `json:"invocation_digest"`
+	Provider         string                              `json:"provider"`
+	Model            string                              `json:"model"`
+	Confidence       float64                             `json:"confidence,omitempty"`
+	Measured         bool                                `json:"measured,omitempty"`
+	// DecisionStage names what produced the choice: "policy" when the model
+	// chose it, "state" when the option set left nothing to decide, "clock"
+	// when an unowned quiet tick was answered without asking.
+	DecisionStage   string `json:"decision_stage,omitempty"`
+	StandingBefore  int    `json:"standing_before,omitempty"`
+	StandingAfter   int    `json:"standing_after,omitempty"`
+	StandingPinned  int    `json:"standing_pinned,omitempty"`
+	StandingRevoked int    `json:"standing_revoked,omitempty"`
+	StartedNS       uint64 `json:"started_ns"`
+	FinishedNS      uint64 `json:"finished_ns"`
+	// Evidence is exactly what the policy model was shown, when one was
+	// asked. It is conversation content and therefore a debug payload, but
+	// without it a wrong choice cannot be told from a wrong question.
+	Evidence string `json:"evidence,omitempty"`
+	// Standing reports what the standing-instruction pass concluded on this
+	// event, when it ran.
+	Standing *StandingReport `json:"standing,omitempty"`
+	// Questions are the step questions the policy was asked, in order, with
+	// their answers: the choice is composed from them.
+	Questions []coreinteraction.AskedQuestion `json:"questions,omitempty"`
+}
+
+// StandingReport is what one run of the standing-instruction pass did:
+// the words it read, every question it asked and the answer it got, and the
+// pinboard it left behind.
+type StandingReport struct {
+	Utterance string                      `json:"utterance"`
+	Pinned    []string                    `json:"pinned,omitempty"`
+	Revoked   []string                    `json:"revoked,omitempty"`
+	Dropped   []string                    `json:"dropped,omitempty"`
+	InForce   []string                    `json:"in_force,omitempty"`
+	Calls     []coreinteraction.ModelCall `json:"calls,omitempty"`
+	Failure   string                      `json:"failure,omitempty"`
 }
 
 func (SemanticDecision) InspectionCause() element.InspectionCauseKind {
@@ -390,16 +393,17 @@ const (
 )
 
 type SemanticAdmissionOutcome struct {
-	Kind           SemanticAdmissionOutcomeKind `json:"kind"`
-	Operation      string                       `json:"operation"`
-	Act            coreinteraction.Act          `json:"act,omitempty"`
-	StreamID       string                       `json:"stream_id,omitempty"`
-	SourceRevision uint64                       `json:"source_revision,omitempty"`
-	ContextVersion uint64                       `json:"context_version,omitempty"`
-	DecisionItemID string                       `json:"decision_item_id,omitempty"`
-	Code           string                       `json:"code,omitempty"`
-	Message        string                       `json:"message,omitempty"`
-	FinishedNS     uint64                       `json:"finished_ns,omitempty"`
+	Kind           SemanticAdmissionOutcomeKind        `json:"kind"`
+	Operation      string                              `json:"operation"`
+	Choice         *coreinteraction.Choice             `json:"choice,omitempty"`
+	Event          coreinteraction.TranscriptEventKind `json:"event,omitempty"`
+	StreamID       string                              `json:"stream_id,omitempty"`
+	SourceRevision uint64                              `json:"source_revision,omitempty"`
+	ContextVersion uint64                              `json:"context_version,omitempty"`
+	DecisionItemID string                              `json:"decision_item_id,omitempty"`
+	Code           string                              `json:"code,omitempty"`
+	Message        string                              `json:"message,omitempty"`
+	FinishedNS     uint64                              `json:"finished_ns,omitempty"`
 }
 
 func (SemanticAdmissionOutcome) InspectionCause() element.InspectionCauseKind {
@@ -413,7 +417,7 @@ type SemanticAdmissionState struct {
 	Pending            int    `json:"pending"`
 	Active             bool   `json:"active"`
 	AdmittedVoice      uint64 `json:"admitted_voice"`
-	AdmittedSilent     uint64 `json:"admitted_silent"`
+	Stopped            uint64 `json:"stopped"`
 	Suppressed         uint64 `json:"suppressed"`
 	Canceled           uint64 `json:"canceled"`
 	Refused            uint64 `json:"refused"`
@@ -423,6 +427,10 @@ type SemanticAdmissionState struct {
 	CancellationMemory int    `json:"cancellation_memory"`
 	StandingPolicies   int    `json:"standing_policies"`
 	StandingMemory     int    `json:"standing_memory"`
+	// Holding says the next decision waits for an admitted generation to
+	// answer; HoldTimeouts counts holds lifted because it never did.
+	Holding      bool   `json:"holding,omitempty"`
+	HoldTimeouts uint64 `json:"hold_timeouts,omitempty"`
 }
 
 func (SemanticAdmissionState) InspectionCause() element.InspectionCauseKind {
@@ -469,48 +477,11 @@ func decodeSemanticAdmissionConfig(source json.RawMessage) (SemanticAdmissionCon
 	if config.StandingMemory < 1 || config.StandingMemory > 4096 {
 		return SemanticAdmissionConfig{}, errors.New("semantic admission standing_memory must be between 1 and 4096")
 	}
-	if config.TranscriptEvents != nil {
-		if _, err := semanticTranscriptOptions(*config.TranscriptEvents); err != nil {
-			return SemanticAdmissionConfig{}, err
-		}
-	}
-	if math.IsNaN(config.MinimumActivationConfidence) || math.IsInf(config.MinimumActivationConfidence, 0) ||
-		config.MinimumActivationConfidence < 0 || config.MinimumActivationConfidence > 1 {
-		return SemanticAdmissionConfig{}, errors.New("semantic admission minimum_activation_confidence must be between 0 and 1")
+	config.Rules = strings.TrimSpace(config.Rules)
+	if len(config.Rules) > maximumSemanticTextBytes {
+		return SemanticAdmissionConfig{}, fmt.Errorf("semantic admission rules exceed %d bytes", maximumSemanticTextBytes)
 	}
 	return config, nil
-}
-
-func semanticTranscriptOptions(
-	config SemanticTranscriptEventConfig,
-) (coreinteraction.TranscriptEventOptions, error) {
-	for name, rules := range map[string]SemanticTranscriptEventRules{
-		"partial": config.Partial, "final": config.Final,
-	} {
-		if rules.TimeoutMS < 1 || rules.TimeoutMS > 300_000 {
-			return coreinteraction.TranscriptEventOptions{}, fmt.Errorf(
-				"semantic admission %s transcript timeout_ms must be between 1 and 300000", name,
-			)
-		}
-	}
-	options := coreinteraction.TranscriptEventOptions{
-		Partial: coreinteraction.TranscriptEventRules{
-			Instruction: config.Partial.Instruction,
-			Acts:        slices.Clone(config.Partial.Acts),
-			Timeout:     time.Duration(config.Partial.TimeoutMS) * time.Millisecond,
-		},
-		Final: coreinteraction.TranscriptEventRules{
-			Instruction: config.Final.Instruction,
-			Acts:        slices.Clone(config.Final.Acts),
-			Timeout:     time.Duration(config.Final.TimeoutMS) * time.Millisecond,
-		},
-	}
-	if err := coreinteraction.ValidateTranscriptEventOptions(options); err != nil {
-		return coreinteraction.TranscriptEventOptions{}, fmt.Errorf(
-			"semantic admission transcript events: %w", err,
-		)
-	}
-	return options, nil
 }
 
 func semanticDescriptorDigest(descriptor SemanticDeciderDescriptor) (string, error) {

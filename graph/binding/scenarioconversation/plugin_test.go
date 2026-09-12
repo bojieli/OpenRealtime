@@ -74,19 +74,6 @@ func TestPluginInventoryIsResourceFreeAndPinsProviderDependencies(t *testing.T) 
 				return nil, nil
 			},
 		},
-		SilentModel: ModelPlugin{
-			Reference: SilentModelReference, Artifact: artifact("model"),
-			Descriptor: continuation.Descriptor{
-				Provider: "test", Model: "test-model", Phase: trajectory.PhaseFast,
-				Effort: continuation.EffortLow, Streaming: true,
-				ToolAuthority:   continuation.ToolAuthorityPropose,
-				SpeechAuthority: continuation.SpeechAuthoritySilent,
-			},
-			Factory: func(context.Context, legacy.Options) (continuation.Provider, error) {
-				modelOpened.Add(1)
-				return nil, nil
-			},
-		},
 		TTS: TTSPlugin{
 			Reference: TTSReference, Artifact: artifact("tts"), Voice: "test-voice",
 			Descriptor: v1.Descriptor{Name: "test-tts", Version: "1", Capabilities: v1.Capabilities{v1.CapabilityPCM16Output: true}},

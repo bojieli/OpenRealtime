@@ -122,14 +122,6 @@
       }
     },
     {
-      "reference": "flow.Drop",
-      "identity": {
-        "name": "flow.Drop",
-        "revision": 1,
-        "digest": "sha256:03b27e94e4488594bce430b7deb5b27f0a42f6bebf69dd613ed98d742426aa7d"
-      }
-    },
-    {
       "reference": "flow.Mux",
       "identity": {
         "name": "flow.Mux",
@@ -229,8 +221,8 @@
       "reference": "policy.SemanticAdmission",
       "identity": {
         "name": "policy.SemanticAdmission",
-        "revision": 9,
-        "digest": "sha256:0680f3bf8cd29160eea793c47f16017fc55998bb8dc751a486be79f2a0e0e460"
+        "revision": 10,
+        "digest": "sha256:7e515f634a5ad8d72f2d2edd4f4f7181ca4c6663d74a49ac3e1ca067099d946f"
       }
     },
     {

@@ -106,19 +106,18 @@ func (semanticAdmissionFactory) Mount(
 		instance: mount.InstanceID, config: config, reference: config.Decider,
 		entry: entry, registryRevision: registryRevision, handle: handle,
 		clock: clock, sequences: sequences, resolution: mount.Resolution, ports: ports, media: media,
-		contexts: make(map[semanticContextAddress]semanticContextSample),
-		terminal: make(map[string]struct{}), silentRuns: make(map[cancellationAddress]semanticSilentRun),
+		contexts:        make(map[semanticContextAddress]semanticContextSample),
+		terminal:        make(map[string]struct{}),
 		canceledStreams: make(map[cancellationAddress]string),
 		pinboard:        &coreinteraction.Pinboard{},
 	}, nil
 }
 
 type semanticAdmissionPorts struct {
-	context, update, agentOutput, committed, create, quiet, cancel element.InputPort
-	release                                                        element.InputPort
-	safeRelease                                                    element.OutputPort
-	voiceCommitted, silentCommitted, voiceCreate, silentCreate     element.OutputPort
-	silentCancel, decision, state, outcome, resolved               element.OutputPort
+	context, update, agentOutput, committed, create, quiet, cancel  element.InputPort
+	release                                                         element.InputPort
+	safeRelease                                                     element.OutputPort
+	voiceCommitted, voiceCreate, decision, state, outcome, resolved element.OutputPort
 }
 
 func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, error) {
@@ -146,9 +145,7 @@ func semanticAdmissionPortsFrom(ports element.Ports) (semanticAdmissionPorts, er
 		name string
 		set  *element.OutputPort
 	}{
-		{"voice_committed", &result.voiceCommitted}, {"silent_committed", &result.silentCommitted},
-		{"voice_create", &result.voiceCreate}, {"silent_create", &result.silentCreate},
-		{"silent_cancel", &result.silentCancel},
+		{"voice_committed", &result.voiceCommitted}, {"voice_create", &result.voiceCreate},
 		{"safe_release", &result.safeRelease},
 		{"decision", &result.decision}, {"state", &result.state},
 		{"outcome", &result.outcome}, {"resolved", &result.resolved},
@@ -172,17 +169,15 @@ type semanticContextSample struct {
 }
 
 type semanticRequest struct {
-	// A finalized interruption is reconsidered once after the old output retires.
-	afterOutputRevision uint64
-	operation           string
-	envelope            element.Envelope
-	commit              stateelements.ObservationCommitOutcome
-	create              ResponseCreate
-	version             uint64
-	stateItem           string
-	streamID            string
-	sourceRev           uint64
-	context             *stateelements.CommittedContext
+	operation string
+	envelope  element.Envelope
+	commit    stateelements.ObservationCommitOutcome
+	create    ResponseCreate
+	version   uint64
+	stateItem string
+	streamID  string
+	sourceRev uint64
+	context   *stateelements.CommittedContext
 }
 
 func (request semanticRequest) key() string {
@@ -190,37 +185,30 @@ func (request semanticRequest) key() string {
 }
 
 type semanticDecisionResult struct {
-	finalTranscript   bool
-	outputRevision    uint64
-	request           semanticRequest
-	update            SessionInvocationUpdate
-	digest            string
-	sample            semanticContextSample
-	prefix            trajectory.Snapshot
-	act               coreinteraction.Act
-	policy            string
-	outcome           coreinteraction.Outcome
-	stage             string
-	activation        string
-	activationOutcome coreinteraction.Outcome
-	standingCoverage  string
-	coverageOutcome   coreinteraction.Outcome
-	standingBefore    []coreinteraction.StandingInstruction
-	standingAfter     []coreinteraction.StandingInstruction
-	standingPinned    int
-	standingRevoked   int
-	started           uint64
-	ended             uint64
-	err               error
-	failureCode       string
-	canceled          bool
-	timedOut          bool
-}
-
-type semanticSilentRun struct {
-	generationID   string
-	decisionItemID string
-	sourceRevision uint64
+	request         semanticRequest
+	update          SessionInvocationUpdate
+	digest          string
+	sample          semanticContextSample
+	prefix          trajectory.Snapshot
+	choice          coreinteraction.Choice
+	spokeOver       bool
+	event           coreinteraction.TranscriptEventKind
+	policy          string
+	outcome         coreinteraction.Outcome
+	stage           string
+	standingBefore  []coreinteraction.StandingInstruction
+	standingAfter   []coreinteraction.StandingInstruction
+	standingPinned  int
+	standingRevoked int
+	evidence        string
+	standing        *StandingReport
+	heard           string
+	questions       []coreinteraction.AskedQuestion
+	started, ended  uint64
+	err             error
+	failureCode     string
+	canceled        bool
+	timedOut        bool
 }
 
 type activeSemanticDecision struct {
@@ -256,8 +244,6 @@ type semanticAdmissionRunner struct {
 	registryRevision uint64
 	handle           *semanticDeciderHandle
 	decider          SemanticDecider
-	model            *coreinteraction.InteractionModel
-	transcriptPolicy *coreinteraction.TranscriptEventPolicy
 	extractor        coreinteraction.Extractor
 	media            continuation.MediaResolver
 	clock            graphruntime.Clock
@@ -276,14 +262,186 @@ type semanticAdmissionRunner struct {
 	active           *activeSemanticDecision
 	terminal         map[string]struct{}
 	terminalOrder    []string
-	silentRuns       map[cancellationAddress]semanticSilentRun
-	silentRunOrder   []cancellationAddress
 	canceledStreams  map[cancellationAddress]string
 	canceledOrder    []cancellationAddress
 	pinboard         *coreinteraction.Pinboard
 	agentOutput      coreinteraction.AgentOutput
 	state            SemanticAdmissionState
 	decisions        sync.WaitGroup
+	// steps is the lockstep history: one entry per transcript event decided,
+	// with what the agent then said when the choice invoked it.
+	steps []semanticStep
+	// hold is set while a voice generation admitted by the last step is
+	// still being answered. No decision starts until it lifts, so every
+	// step sees the model's answer to the one before, and no two
+	// generations ever run at once.
+	hold *semanticHold
+}
+
+// semanticStep is one turn of the lockstep loop.
+type semanticStep struct {
+	stream string
+	event  coreinteraction.TranscriptEventKind
+	heard  string
+	choice coreinteraction.Choice
+	// spoke says the voice was admitted on this step; said is what it then
+	// said, one segment per utterance, empty when it answered with silence.
+	spoke bool
+	said  []string
+}
+
+type semanticHold struct {
+	sinceNS uint64
+	// startedAtGrant and finishedAtGrant are the output lifecycle's
+	// generation counters when the voice was admitted. The hold lifts once a
+	// generation started after the grant and every started generation has
+	// finished - counts that survive the state lane coalescing away the
+	// snapshots in between.
+	startedAtGrant  uint64
+	finishedAtGrant uint64
+}
+
+const (
+	// maximumSemanticSteps bounds the history shown to the policy.
+	maximumSemanticSteps = 12
+	// semanticHoldGrace is how long a hold waits for the output lifecycle to
+	// acknowledge the generation before concluding it was refused downstream.
+	semanticHoldGrace = 2 * time.Second
+	// semanticHoldTimeout bounds a hold whose generation never reports back.
+	semanticHoldTimeout = 20 * time.Second
+	// semanticStepTextLimit bounds the words shown per step; the end of a
+	// partial is the part that changed, so the tail is kept.
+	semanticStepTextLimit = 160
+)
+
+// holding reports whether the next decision must wait for the model, lifting
+// a hold that the lifecycle never acknowledged or never resolved.
+func (runner *semanticAdmissionRunner) holding() bool {
+	if runner.hold == nil {
+		return false
+	}
+	now := runner.clock.NowNS()
+	elapsed := time.Duration(now - runner.hold.sinceNS)
+	switch {
+	case elapsed > semanticHoldTimeout:
+		runner.state.HoldTimeouts++
+		runner.hold = nil
+		return false
+	case runner.agentOutput.GenerationsStarted == runner.hold.startedAtGrant && elapsed > semanticHoldGrace:
+		// Nothing ever reached the model: the grant was refused downstream.
+		runner.hold = nil
+		return false
+	}
+	return true
+}
+
+// releaseHoldIfAnswered lifts the hold once the lifecycle reports the
+// admitted generation over.
+func (runner *semanticAdmissionRunner) releaseHoldIfAnswered(output coreinteraction.AgentOutput) {
+	if runner.hold == nil {
+		return
+	}
+	if output.GenerationsStarted > runner.hold.startedAtGrant &&
+		output.GenerationsFinished >= output.GenerationsStarted {
+		runner.hold = nil
+	}
+}
+
+// recordStep appends one decided transcript event to the history.
+func (runner *semanticAdmissionRunner) recordStep(result semanticDecisionResult) int {
+	runner.steps = append(runner.steps, semanticStep{
+		stream: result.request.streamID, event: result.event,
+		heard: strings.TrimSpace(result.heard), choice: result.choice,
+	})
+	if len(runner.steps) > maximumSemanticSteps {
+		runner.steps = runner.steps[len(runner.steps)-maximumSemanticSteps:]
+	}
+	return len(runner.steps) - 1
+}
+
+// noteAgentSaying attributes the agent's audible text to the step that
+// invoked it. In lockstep at most one generation is live at a time, so any
+// new utterance belongs to the most recent step that spoke.
+func (runner *semanticAdmissionRunner) noteAgentSaying(output coreinteraction.AgentOutput) {
+	saying := strings.TrimSpace(output.Saying)
+	if saying == "" || !output.Active {
+		return
+	}
+	for index := len(runner.steps) - 1; index >= 0; index-- {
+		step := &runner.steps[index]
+		if !step.spoke {
+			continue
+		}
+		if !slices.Contains(step.said, saying) {
+			step.said = append(step.said, saying)
+		}
+		return
+	}
+}
+
+// stepLines renders the history for the evidence.
+func (runner *semanticAdmissionRunner) stepLines() []string {
+	lines := make([]string, 0, len(runner.steps))
+	for _, step := range runner.steps {
+		event := string(step.event)
+		if event == "" {
+			event = "event"
+		}
+		line := event + " \"" + semanticStepText(step.heard) + "\" -> " + step.choice.Token()
+		if step.spoke {
+			if len(step.said) == 0 {
+				line += "; agent said nothing"
+			} else {
+				line += "; agent said \"" + strings.Join(step.said, " ") + "\""
+			}
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// previousStepHeard is what the last step on this utterance had heard, and
+// whether there was one.
+func (runner *semanticAdmissionRunner) previousStepHeard(streamID string) (string, bool) {
+	if streamID == "" {
+		return "", false
+	}
+	for index := len(runner.steps) - 1; index >= 0; index-- {
+		if runner.steps[index].stream == streamID {
+			return runner.steps[index].heard, true
+		}
+	}
+	return "", false
+}
+
+// wordsAdded is what later says beyond earlier when it carries on from it,
+// and all of later when it does not.
+func wordsAdded(earlier, later string) string {
+	was, now := strings.Fields(earlier), strings.Fields(later)
+	if len(was) == 0 || len(now) < len(was) {
+		return strings.TrimSpace(later)
+	}
+	for index := range was {
+		if normalizeStepWord(was[index]) != normalizeStepWord(now[index]) {
+			return strings.TrimSpace(later)
+		}
+	}
+	return strings.Join(now[len(was):], " ")
+}
+
+func normalizeStepWord(word string) string {
+	return strings.ToLower(strings.Trim(word, ".,!?;:\"'"))
+}
+
+func semanticStepText(text string) string {
+	if len(text) <= semanticStepTextLimit {
+		return text
+	}
+	cut := text[len(text)-semanticStepTextLimit:]
+	if index := strings.IndexByte(cut, ' '); index >= 0 && index < 40 {
+		cut = cut[index+1:]
+	}
+	return "…" + cut
 }
 
 func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
@@ -303,10 +461,6 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 	if err := runner.handle.set(decider); err != nil {
 		return errors.Join(err, closeSemanticDecider(decider))
 	}
-	model, err := coreinteraction.NewInteractionModel(decider)
-	if err != nil {
-		return err
-	}
 	if runner.config.StandingExtraction {
 		generator, ok := decider.(coreinteraction.Generator)
 		if !ok || semanticReflectedNil(generator) {
@@ -317,17 +471,7 @@ func (runner *semanticAdmissionRunner) Run(parent context.Context) error {
 			return fmt.Errorf("create semantic standing-policy extractor: %w", err)
 		}
 	}
-	if runner.config.TranscriptEvents != nil {
-		options, optionsErr := semanticTranscriptOptions(*runner.config.TranscriptEvents)
-		if optionsErr != nil {
-			return optionsErr
-		}
-		runner.transcriptPolicy, err = coreinteraction.NewTranscriptEventPolicy(decider, options)
-		if err != nil {
-			return fmt.Errorf("create semantic transcript-event policy: %w", err)
-		}
-	}
-	runner.decider, runner.model = decider, model
+	runner.decider = decider
 	if err := runner.reportResolution(); err != nil {
 		return err
 	}
@@ -526,6 +670,8 @@ func (runner *semanticAdmissionRunner) acceptAgentOutput(
 		return nil
 	}
 	runner.agentOutput = cloneSemanticAgentOutput(output)
+	runner.releaseHoldIfAnswered(output)
+	runner.noteAgentSaying(output)
 	return nil
 }
 
@@ -639,77 +785,7 @@ func (runner *semanticAdmissionRunner) enqueueCommit(ctx context.Context, envelo
 		version: commit.StoreVersion, stateItem: commit.Context.StateItemID,
 		streamID: commit.StreamID, sourceRev: commit.SourceRevision,
 	}
-	if err := runner.supersedeSilentRun(ctx, request); err != nil {
-		return err
-	}
 	return runner.enqueue(ctx, request)
-}
-
-// supersedeSilentRun prevents a provisional silent generation from occupying
-// the single-concurrency cognition lane after newer canonical evidence for the
-// same transcript stream has arrived. The cancellation is addressed to the
-// exact generation derived by SessionInvocation; unrelated streams and voice
-// generations are never touched. It is emitted before classifying the newer
-// revision so even a slow or mistaken earlier action cannot delay the evidence
-// that should replace it.
-func (runner *semanticAdmissionRunner) supersedeSilentRun(
-	ctx context.Context, request semanticRequest,
-) error {
-	if request.streamID == "" || request.sourceRev == 0 {
-		return nil
-	}
-	address := cancellationAddress{
-		streamID: request.streamID, sessionID: request.envelope.SessionID,
-	}
-	previous, found := runner.silentRuns[address]
-	if !found || previous.sourceRevision >= request.sourceRev {
-		return nil
-	}
-	delete(runner.silentRuns, address)
-	if index := slices.Index(runner.silentRunOrder, address); index >= 0 {
-		runner.silentRunOrder = slices.Delete(runner.silentRunOrder, index, index+1)
-	}
-	sequence, err := runner.sequences.Next(runner.instance + ".silent_supersession")
-	if err != nil {
-		return err
-	}
-	envelope := request.envelope.Clone()
-	envelope.Type = runner.ports.silentCancel.Type()
-	envelope.ItemID = fmt.Sprintf("%s:silent_cancel:%d", runner.instance, sequence)
-	envelope.Sequence = sequence
-	envelope.RunID = previous.generationID
-	envelope.CancellationScope = previous.generationID
-	envelope.CausalParents = appendUnique(envelope.CausalParents, request.envelope.ItemID)
-	envelope.CausalParents = appendUnique(envelope.CausalParents, previous.decisionItemID)
-	envelope.Payload = cognitionelements.Cancel{
-		RunID:  previous.generationID,
-		Reason: "newer transcript evidence superseded an earlier silent generation",
-	}
-	_, err = runner.ports.silentCancel.Broadcast(ctx, envelope)
-	return err
-}
-
-func (runner *semanticAdmissionRunner) rememberSilentRun(
-	request semanticRequest, decisionItemID string,
-) {
-	if request.streamID == "" || request.sourceRev == 0 {
-		return
-	}
-	address := cancellationAddress{
-		streamID: request.streamID, sessionID: request.envelope.SessionID,
-	}
-	if _, found := runner.silentRuns[address]; !found {
-		runner.silentRunOrder = append(runner.silentRunOrder, address)
-	}
-	runner.silentRuns[address] = semanticSilentRun{
-		generationID:   generationIdentifier("silent", request.envelope.SessionID, request.commit),
-		decisionItemID: decisionItemID, sourceRevision: request.sourceRev,
-	}
-	for len(runner.silentRunOrder) > runner.config.TerminalMemory {
-		oldest := runner.silentRunOrder[0]
-		runner.silentRunOrder = runner.silentRunOrder[1:]
-		delete(runner.silentRuns, oldest)
-	}
 }
 
 func (runner *semanticAdmissionRunner) enqueueCreate(
@@ -841,13 +917,10 @@ func (runner *semanticAdmissionRunner) acceptCancel(ctx context.Context, envelop
 func (runner *semanticAdmissionRunner) startReadyDecision(
 	parent context.Context, results chan<- semanticDecisionResult,
 ) error {
-	if runner.active != nil || len(runner.pending) == 0 {
+	if runner.active != nil || len(runner.pending) == 0 || runner.holding() {
 		return nil
 	}
 	for index, request := range runner.pending {
-		if request.afterOutputRevision != 0 && (runner.agentOutput.Active || runner.agentOutput.Revision <= request.afterOutputRevision) {
-			continue
-		}
 		update, digest, sample, prefix, ready, err := runner.inputsFor(request)
 		if err != nil {
 			runner.pending = append(runner.pending[:index], runner.pending[index+1:]...)
@@ -870,11 +943,13 @@ func (runner *semanticAdmissionRunner) startReadyDecision(
 		runner.state.Active = true
 		standing := runner.pinboard.InForce()
 		agentOutput := cloneSemanticAgentOutput(runner.agentOutput)
+		history := semanticStepHistory{lines: runner.stepLines(), answeredHeard: runner.answeredSoFar(request.streamID)}
+		history.previousHeard, history.previousKnown = runner.previousStepHeard(request.streamID)
 		runner.decisions.Add(1)
 		go func() {
 			defer runner.decisions.Done()
 			runner.decide(
-				decisionCtx, request, update, digest, sample, prefix, standing, agentOutput, results,
+				decisionCtx, request, update, digest, sample, prefix, standing, agentOutput, history, results,
 			)
 		}()
 		return nil
@@ -968,19 +1043,26 @@ func (runner *semanticAdmissionRunner) inputsFor(
 	address := semanticContextAddress{session: request.envelope.SessionID, item: request.stateItem}
 	sample, exact := runner.contexts[address]
 	if request.operation == "committed" {
+		// The newest context that contains this commit, not the context at
+		// the commit. A request decided after a hold - the person kept
+		// talking while the model answered - is decided against what the
+		// model said, and the generation it may admit is compiled from that
+		// same context: measured, a count answered from the context at the
+		// commit could not see the number it had just said and said it again.
 		candidate := sample
-		if !exact && runner.latest.envelope.SessionID == request.envelope.SessionID &&
-			runner.latest.snapshot.Version >= request.version {
+		if runner.latest.envelope.SessionID == request.envelope.SessionID &&
+			runner.latest.snapshot.Version >= request.version &&
+			(!exact || runner.latest.snapshot.Version > sample.snapshot.Version) {
 			candidate = runner.latest
 		}
 		if candidate.snapshot.Version < request.version {
 			return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false, nil
 		}
-		prefix, err := trajectory.Prefix(candidate.snapshot, request.commit.Context.Prefix)
-		if err != nil {
+		if _, err := trajectory.Prefix(candidate.snapshot, request.commit.Context.Prefix); err != nil {
 			return SessionInvocationUpdate{}, "", semanticContextSample{}, trajectory.Snapshot{}, false, err
 		}
-		return cloneSemanticUpdate(runner.invocation), runner.invocationDigest, candidate, prefix, true, nil
+		return cloneSemanticUpdate(runner.invocation), runner.invocationDigest, candidate,
+			cloneSemanticSnapshot(candidate.snapshot), true, nil
 	}
 	if !exact {
 		if request.context == nil || runner.latest.envelope.SessionID != request.envelope.SessionID ||
@@ -1015,80 +1097,33 @@ func (runner *semanticAdmissionRunner) decide(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, digest string,
 	sample semanticContextSample, prefix trajectory.Snapshot,
 	standing []coreinteraction.StandingInstruction, agentOutput coreinteraction.AgentOutput,
-	results chan<- semanticDecisionResult,
+	history semanticStepHistory, results chan<- semanticDecisionResult,
 ) {
 	started := runner.clock.NowNS()
 	timeout := time.Duration(runner.entry.descriptor.DecisionTimeoutMS) * time.Millisecond
 	decisionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	situation, err := runner.situationWithStanding(
-		decisionCtx, request, update, prefix, standing, agentOutput,
+		decisionCtx, request, update, prefix, standing, agentOutput, history,
 	)
 	failure := ""
 	if err != nil {
 		failure = "visual_evidence_failed"
 	}
-	var act coreinteraction.Act
-	var outcome coreinteraction.Outcome
-	policyName := runner.model.Name()
-	if runner.transcriptPolicy != nil &&
-		(situation.TranscriptEvent == coreinteraction.TranscriptPartial ||
-			situation.TranscriptEvent == coreinteraction.TranscriptFinal) {
-		policyName = runner.transcriptPolicy.Name()
-	}
-	stage := "primary"
-	activation := ""
-	var activationOutcome coreinteraction.Outcome
-	standingCoverage := ""
-	var coverageOutcome coreinteraction.Outcome
-	standingAfter := slices.Clone(standing)
-	standingPinned, standingRevoked := 0, 0
 	if err == nil {
-		err = validateSemanticSituation(situation)
-		if err != nil {
+		if err = validateSemanticSituation(situation); err != nil {
 			failure = "invalid_evidence"
 		}
 	}
-	// A completed utterance can arrive after every prior voice run is already
-	// terminal, so the overlap policy has no active work to classify or cancel.
-	// Screen addressing before the utterance can acquire either generation or
-	// tool authority, and before an extractor can mutate durable policy memory.
-	// A distinct result is required: ordinary wait also describes legitimate
-	// policy setup and cannot safely prove that the words belong to somebody
-	// else's conversation.
-	activationChecked := false
-	standingConditionMet := false
-	skipStandingMutation := false
-	if err == nil && request.operation == "committed" &&
-		runner.config.VerifyVoiceActivation && semanticActivationEvidence(situation) {
-		current := currentSemanticItem(request, prefix)
-		if semanticExtractableObservation(current) {
-			activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
-			if err != nil {
-				failure = "voice_activation_failed"
-			} else {
-				activationChecked = true
-				activation = strings.TrimSpace(activationOutcome.Option)
-				confident := semanticActivationConfident(
-					activationOutcome, runner.config.MinimumActivationConfidence,
-				)
-				standingConditionMet = activation == semanticVoiceConditionMet &&
-					confident && len(standing) > 0
-				if activation == semanticVoiceAddressedElsewhere {
-					// Even an uncertain other-addressee verdict cannot authorize a
-					// durable pin or revocation. Confidence only decides whether this
-					// guard may also veto an otherwise strong immediate answer.
-					skipStandingMutation = true
-					if confident {
-						act = coreinteraction.ActStaySilent
-						stage = "voice_addressing"
-					}
-				}
-			}
-		}
-	}
-	if err == nil && stage == "primary" && !skipStandingMutation &&
-		runner.extractor != nil && request.operation == "committed" {
+	// Standing instructions are durable memory, extracted from settled speech.
+	// This is not a second opinion on the choice: it records a policy the
+	// person set so that later instants see it in force. The choice below is
+	// taken against the instructions in force when the words arrived, which
+	// is why a request that sets a rule up is not also its first trigger.
+	standingAfter := slices.Clone(standing)
+	standingPinned, standingRevoked := 0, 0
+	var standingReport *StandingReport
+	if err == nil && runner.extractor != nil && request.operation == "committed" {
 		current := currentSemanticItem(request, prefix)
 		if semanticExtractableObservation(current) {
 			utterance := semanticStandingUtterance(situation, current)
@@ -1098,179 +1133,61 @@ func (runner *semanticAdmissionRunner) decide(
 				semanticRecentBefore(prefix.Items, current.ID, runner.config.RecentLines),
 				utterance,
 			)
+			standingReport = &StandingReport{Utterance: utterance, Calls: extraction.Calls}
 			if err != nil {
 				failure = "standing_extraction_failed"
+				standingReport.Failure = err.Error()
 			} else {
 				standingAfter, standingPinned, standingRevoked, err = applySemanticExtraction(
 					standing, extraction, request.sourceRev, runner.clock.NowNS(), runner.config.StandingMemory,
 				)
 				if err != nil {
 					failure = "standing_memory_exhausted"
-				} else if len(extraction.Pins) > 0 {
-					coverageOutcome, err = runner.verifyStandingCoverage(decisionCtx, utterance, extraction.Pins)
-					if err != nil {
-						failure = "standing_coverage_failed"
-					} else {
-						standingCoverage = strings.TrimSpace(coverageOutcome.Option)
-						if !standingConditionMet && (standingCoverage == semanticStandingCovered ||
-							standingCoverage == semanticStandingAdditional && coverageOutcome.Measured &&
-								coverageOutcome.Confidence < runner.config.MinimumActivationConfidence) {
-							// Extraction describes durable policy mutation. It may not erase an
-							// immediate trigger that the activation guard already grounded in
-							// the current evidence under a policy that was in force beforehand.
-							act = coreinteraction.ActStaySilent
-							stage = "standing_coverage"
-						}
-					}
+					standingReport.Failure = err.Error()
 				}
+				standingReport.Pinned = standingLines(extraction.Pins)
+				standingReport.Revoked = slices.Clone(extraction.Revokes)
+				for _, dropped := range extraction.Dropped {
+					standingReport.Dropped = append(standingReport.Dropped, dropped.Text+" ("+dropped.Reason+")")
+				}
+				standingReport.InForce = standingLines(standingAfter)
 			}
 		}
 	}
-	if err == nil && stage == "primary" {
-		if request.operation == "quiet" && !situation.Quiet {
-			// PostCommitSilence is an unowned graph clock unless an exact,
-			// due standing policy promoted it to evidence. In particular, an
-			// unrelated tick must not intersect listen-only admission with an
-			// active output's keep/stop controls: that set is empty, and the
-			// clock has no authority to disturb the voice run in either case.
-			act = coreinteraction.ActStaySilent
-			outcome = coreinteraction.Outcome{
-				Index: 0, Option: string(coreinteraction.ActStaySilent),
-			}
-		} else {
-			act, outcome, err = runner.decideAct(decisionCtx, request, situation)
-			if err == nil {
-				options := runner.semanticActOptions(request, situation)
-				err = validateSemanticOutcome(outcome, options)
-				if err != nil {
-					failure = "invalid_decider_outcome"
-				}
-			}
-		}
-	}
-	// Speak-through is the act for carrying out a standing arrangement while
-	// another person keeps the floor. Without an arrangement in force, a live
-	// transcript that merely describes one is not authority to speak: the model
-	// repeatedly selected this act halfway through "count the animals as I
-	// mention them" and made the setup sentence the first count. Interrupt is
-	// deliberately not constrained here; a deployment contract can itself
-	// authorize an immediate correction without a policy spoken in-session.
-	if err == nil && stage == "primary" && act == coreinteraction.ActSpeakThrough {
+	// One question set, one constrained answer, whatever kind of event this
+	// is. The one exception is not a decision the model could take: a clock
+	// nobody asked for.
+	choice := coreinteraction.Choice{Speaking: situation.AgentSpeaking}
+	var outcome coreinteraction.Outcome
+	stage := "policy"
+	evidence := ""
+	var questions []coreinteraction.AskedQuestion
+	if err == nil {
 		switch {
-		case len(standing) == 0:
-			act = coreinteraction.ActStaySilent
-			stage = "standing_authority"
-		case runner.extractor != nil && situation.TranscriptEvent == coreinteraction.TranscriptPartial &&
-			!runner.extractor.HasArrived(decisionCtx, slices.Clone(standing), situation.Heard):
-			// A standing policy grants authority to react to its future trigger,
-			// not to speak while the user is still refining that policy. Ask the
-			// extractor's deliberately narrow trigger question against only the
-			// current partial, rather than letting earlier setup words satisfy it.
-			act = coreinteraction.ActStaySilent
-			stage = "standing_trigger"
-		}
-	}
-	if err == nil && stage == "primary" && runner.config.VerifyVoiceActivation {
-		answerAvailable := slices.Contains(situation.AvailableActs(), coreinteraction.ActAnswer)
-		verify := act == coreinteraction.ActAnswer ||
-			act == coreinteraction.ActStaySilent && answerAvailable &&
-				(len(standing) > 0 || semanticHasUnansweredStretch(situation))
-		if verify && semanticActivationEvidence(situation) {
-			if !activationChecked {
-				activationOutcome, err = runner.verifyVoiceActivation(decisionCtx, situation)
-				if err != nil {
-					failure = "voice_activation_failed"
-				} else {
-					activationChecked = true
-					activation = strings.TrimSpace(activationOutcome.Option)
-				}
-			}
-			if err == nil {
-				activation = strings.TrimSpace(activationOutcome.Option)
-				confident := semanticActivationConfident(
-					activationOutcome, runner.config.MinimumActivationConfidence,
-				)
-				switch {
-				case activation == semanticVoiceAddressedElsewhere && confident &&
-					act == coreinteraction.ActAnswer:
-					act = coreinteraction.ActStaySilent
-					stage = "voice_addressing"
-				case activation == semanticVoiceWait && confident && answerAvailable &&
-					semanticHasUnansweredStretch(situation) &&
-					(act == coreinteraction.ActAnswer || act == coreinteraction.ActStaySilent):
-					// Deepgram can endpoint one immediate request at a breath. The
-					// current-only guard must not reuse an old condition, but it also
-					// cannot tell that a trailing constraint such as "slowly, one
-					// number at a time" completes the still-unanswered request in the
-					// preceding endpoint. Ask a second, narrower question over the
-					// exact same-speaker stretch reconstructed since the last audible
-					// assistant boundary. It may recover only a confident immediate
-					// request, even when the general transcript policy also chose to
-					// listen; past conditions and future-policy setup remain wait.
-					var unanswered coreinteraction.Outcome
-					unanswered, err = runner.verifyUnansweredRequest(decisionCtx, situation)
-					if err != nil {
-						failure = "unanswered_request_failed"
-						break
-					}
-					if strings.TrimSpace(unanswered.Option) == semanticVoiceDirectRequest &&
-						semanticActivationConfident(
-							unanswered, runner.config.MinimumActivationConfidence,
-						) {
-						act = coreinteraction.ActAnswer
-						activation = semanticVoiceDirectRequest
-						activationOutcome = unanswered
-						stage = "unanswered_request"
-						break
-					}
-					if act == coreinteraction.ActAnswer {
-						act = coreinteraction.ActStaySilent
-						stage = "voice_activation"
-					}
-				case activation == semanticVoiceWait && confident && act == coreinteraction.ActAnswer:
-					act = coreinteraction.ActStaySilent
-					stage = "voice_activation"
-				case activation == semanticVoiceConditionMet && confident &&
-					answerAvailable && (act == coreinteraction.ActStaySilent ||
-					act == coreinteraction.ActAnswer && standingConditionMet &&
-						outcome.Measured && outcome.Confidence < runner.config.MinimumActivationConfidence):
-					// A final transcript is the bounded recovery point for a standing
-					// condition the primary act missed. The guard can only select an
-					// already executable Answer; it cannot generate content or widen
-					// the graph's act set. An uncertain Answer would otherwise become
-					// Listen in the confidence guard below. Recover it under the same
-					// independently verified, pre-existing standing condition instead
-					// of making an uncertain Answer weaker than an explicit Listen.
-					act = coreinteraction.ActAnswer
-					stage = "voice_activation"
-				}
+		case request.operation == "quiet" && !situation.Quiet:
+			// PostCommitSilence is an unowned graph clock unless an exact, due
+			// standing policy promoted it to evidence. Without one the tick
+			// decides nothing, and it must not disturb active output either.
+			outcome = coreinteraction.Outcome{Index: 0, Option: choice.Token()}
+			stage = "clock"
+		case len(coreinteraction.ChoiceOptionsFor(situation)) == 1:
+			// Nothing to decide: the person is still talking and no standing
+			// instruction can come due, so the voice cannot be invoked and the
+			// one remaining option is taken from state. No model is asked,
+			// which is what keeps a partial every 100 ms from costing a policy
+			// round-trip every 100 ms.
+			outcome = coreinteraction.Outcome{Index: 0, Option: choice.Token()}
+			stage = "state"
+		default:
+			evidence = situation.RenderEvidence()
+			choice, outcome, questions, err = runner.decideChoice(decisionCtx, situation)
+			if errors.Is(err, errInvalidDeciderOutcome) {
+				// The provider answered and the answer was not one of the
+				// options. A provider that did not answer at all is reported as
+				// its own failure, because the two are fixed in different places.
+				failure = "invalid_decider_outcome"
 			}
 		}
-	}
-	if err == nil && stage == "primary" && runner.config.VerifySilentAction &&
-		act == coreinteraction.ActActSilently {
-		current := currentSemanticItem(request, prefix)
-		if semanticSpokenObservation(current) {
-			activationOutcome, err = runner.verifySilentAction(decisionCtx, situation)
-			if err != nil {
-				failure = "silent_action_activation_failed"
-			} else {
-				activation = strings.TrimSpace(activationOutcome.Option)
-				confident := semanticActivationConfident(
-					activationOutcome, runner.config.MinimumActivationConfidence,
-				)
-				if activation != semanticSilentActionReady || !confident {
-					act = coreinteraction.ActStaySilent
-					stage = "silent_action_activation"
-				}
-			}
-		}
-	}
-	if err == nil && stage == "primary" && act != coreinteraction.ActStaySilent &&
-		runner.config.MinimumActivationConfidence > 0 && outcome.Measured &&
-		outcome.Confidence < runner.config.MinimumActivationConfidence {
-		act = coreinteraction.ActStaySilent
-		stage = "confidence_guard"
 	}
 	canceled := errors.Is(decisionCtx.Err(), context.Canceled)
 	timedOut := errors.Is(decisionCtx.Err(), context.DeadlineExceeded)
@@ -1282,13 +1199,12 @@ func (runner *semanticAdmissionRunner) decide(
 		}
 	}
 	result := semanticDecisionResult{
-		finalTranscript: situation.TranscriptEvent == coreinteraction.TranscriptFinal,
-		outputRevision:  agentOutput.Revision,
-		request:         request, update: update, digest: digest, sample: sample, prefix: prefix,
-		act: act, policy: policyName, outcome: outcome, stage: stage, activation: activation,
-		activationOutcome: activationOutcome, standingCoverage: standingCoverage,
-		coverageOutcome: coverageOutcome, standingBefore: standing, standingAfter: standingAfter,
+		request: request, update: update, digest: digest, sample: sample, prefix: prefix,
+		choice: choice, spokeOver: choice.Speak && situation.Speaking, event: situation.TranscriptEvent,
+		policy: runner.decider.Descriptor().Model, outcome: outcome, stage: stage,
+		standingBefore: standing, standingAfter: standingAfter,
 		standingPinned: standingPinned, standingRevoked: standingRevoked,
+		evidence: evidence, standing: standingReport, heard: situation.Heard, questions: questions,
 		started: started, ended: runner.clock.NowNS(), err: err,
 		failureCode: failure, canceled: canceled, timedOut: timedOut,
 	}
@@ -1316,74 +1232,76 @@ func validateSemanticSituation(situation coreinteraction.Situation) error {
 	return nil
 }
 
-func (runner *semanticAdmissionRunner) decideAct(
-	ctx context.Context, request semanticRequest, situation coreinteraction.Situation,
-) (coreinteraction.Act, coreinteraction.Outcome, error) {
-	if request.operation == "committed" && runner.transcriptPolicy != nil &&
-		(situation.TranscriptEvent == coreinteraction.TranscriptPartial ||
-			situation.TranscriptEvent == coreinteraction.TranscriptFinal) {
-		return runner.transcriptPolicy.Decide(ctx, situation.TranscriptEvent, situation)
+// decideChoice asks the policy model the one question, constrained to the
+// exact options for this instant. The rendered situation is the measured one;
+// only its closing line - the options - depends on whether the agent is
+// speaking, and the answer is refused unless it is one of them.
+func (runner *semanticAdmissionRunner) decideChoice(
+	ctx context.Context, situation coreinteraction.Situation,
+) (coreinteraction.Choice, coreinteraction.Outcome, []coreinteraction.AskedQuestion, error) {
+	inertia := coreinteraction.Choice{Speaking: situation.AgentSpeaking}
+	rules := runner.config.Rules
+	if rules == "" {
+		rules = coreinteraction.ChoiceInstruction
 	}
-	if situation.Decidable() || request.operation == "committed" {
-		return runner.model.Decide(ctx, situation)
+	answers := map[string]bool{}
+	var asked []coreinteraction.AskedQuestion
+	composite := coreinteraction.Outcome{Measured: true, Confidence: 1}
+	ask := func(question coreinteraction.StepQuestion) (bool, error) {
+		started := runner.clock.NowNS()
+		outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
+			Prompt: rules, Options: coreinteraction.YesNo(), Evidence: situation.RenderForQuestion(question),
+			Images: situation.Seeing, Question: question.Name, Speaking: situation.AgentSpeaking,
+		})
+		if err != nil {
+			return false, err
+		}
+		if err := validateSemanticOutcome(outcome, coreinteraction.YesNo()); err != nil {
+			return false, fmt.Errorf("%w: %w", errInvalidDeciderOutcome, err)
+		}
+		asked = append(asked, coreinteraction.AskedQuestion{
+			Question: question.Name, Answer: outcome.Option, Confidence: outcome.Confidence,
+			Measured: outcome.Measured, DurationMS: float64(runner.clock.NowNS()-started) / 1e6,
+		})
+		if !outcome.Measured {
+			composite.Measured = false
+		} else if outcome.Confidence < composite.Confidence {
+			composite.Confidence = outcome.Confidence
+		}
+		answers[question.Name] = outcome.Option == coreinteraction.AnswerYes
+		return answers[question.Name], nil
 	}
-	// Explicit response.create and PostCommitSilence triggers are themselves
-	// new control evidence even when the latest durable item is plumbing, such
-	// as a tool result, rather than an observation that Situation.Decidable
-	// recognizes. The enumerated decider must inspect the bounded recent
-	// conversation and choose the branch; treating these triggers as inertia
-	// silently drops tool-result continuations and explicit client requests.
-	// Calling the narrow Decider directly bypasses only InteractionModel's
-	// cheap "no evidence" short-circuit. It preserves the same rendered
-	// situation, prompt, and executable act set, and still cannot generate text
-	// or tools.
-	acts := situation.AvailableActs()
-	switch len(acts) {
-	case 0:
-		return coreinteraction.ActStaySilent, coreinteraction.Outcome{},
-			errors.New("semantic admission situation has no executable act")
-	case 1:
-		return acts[0], coreinteraction.Outcome{Index: 0, Option: string(acts[0])}, nil
-	}
-	options := make([]string, len(acts))
-	for index, act := range acts {
-		options[index] = string(act)
-	}
-	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt: coreinteraction.Instruction, Options: options, Evidence: situation.Render(),
-	})
-	if err != nil {
-		return coreinteraction.ActStaySilent, coreinteraction.Outcome{}, err
-	}
-	chosen := coreinteraction.Act(strings.TrimSpace(outcome.Option))
-	for _, act := range acts {
-		if chosen == act {
-			return chosen, outcome, nil
+	// A decision that could not be taken is not a decision to do something
+	// drastic. Inertia keeps a failing policy model quiet rather than letting
+	// it interrupt people.
+	if situation.AgentSpeaking {
+		if _, err := ask(coreinteraction.StopQuestion); err != nil {
+			return inertia, coreinteraction.Outcome{}, asked, err
 		}
 	}
-	return coreinteraction.ActStaySilent, outcome,
-		fmt.Errorf("interaction model chose %q, which is not available here", outcome.Option)
+	due, err := ask(coreinteraction.OccurrenceQuestion)
+	if err != nil {
+		return inertia, coreinteraction.Outcome{}, asked, err
+	}
+	// A partial is answered only for an occurrence. Anything settled - a
+	// final, an explicit request, a frame - may also be a request to answer.
+	if !due && situation.TranscriptEvent != coreinteraction.TranscriptPartial {
+		if _, err := ask(coreinteraction.RequestQuestion); err != nil {
+			return inertia, coreinteraction.Outcome{}, asked, err
+		}
+	}
+	choice := coreinteraction.ComposeChoice(situation.AgentSpeaking, answers)
+	if !composite.Measured {
+		composite.Confidence = 0
+	}
+	composite.Option = choice.Token()
+	composite.Index = slices.Index(coreinteraction.ChoiceOptions(situation.AgentSpeaking), composite.Option)
+	return choice, composite, asked, nil
 }
 
-func (runner *semanticAdmissionRunner) semanticActOptions(
-	request semanticRequest, situation coreinteraction.Situation,
-) []string {
-	if request.operation == "committed" && runner.transcriptPolicy != nil &&
-		(situation.TranscriptEvent == coreinteraction.TranscriptPartial ||
-			situation.TranscriptEvent == coreinteraction.TranscriptFinal) {
-		situation.AllowedActs = runner.transcriptPolicy.AllowedActs(situation.TranscriptEvent)
-	}
-	return semanticActOptions(situation)
-}
-
-func semanticActOptions(situation coreinteraction.Situation) []string {
-	acts := situation.AvailableActs()
-	options := make([]string, len(acts))
-	for index, act := range acts {
-		options[index] = string(act)
-	}
-	return options
-}
+// errInvalidDeciderOutcome marks an answer the provider gave that was not one
+// of the options, as distinct from a provider that did not answer.
+var errInvalidDeciderOutcome = errors.New("invalid decider outcome")
 
 func validateSemanticOutcome(outcome coreinteraction.Outcome, options []string) error {
 	chosen := strings.TrimSpace(outcome.Option)
@@ -1401,189 +1319,6 @@ func validateSemanticOutcome(outcome coreinteraction.Outcome, options []string) 
 		return errors.New("semantic policy confidence must be finite and between 0 and 1")
 	}
 	return nil
-}
-
-func semanticActivationConfident(outcome coreinteraction.Outcome, minimum float64) bool {
-	return !outcome.Measured || minimum == 0 || outcome.Confidence >= minimum
-}
-
-const (
-	semanticStandingCovered         = "covered"
-	semanticStandingAdditional      = "additional-work"
-	semanticVoiceConditionMet       = "condition-met"
-	semanticVoiceDirectRequest      = "direct-request"
-	semanticVoiceAddressedElsewhere = "addressed-elsewhere"
-	semanticVoiceWait               = "wait"
-	semanticSilentActionReady       = "action-ready"
-	semanticSilentActionWait        = "wait"
-)
-
-const semanticStandingCoverageInstruction = "The policy extractor listed the standing policies established by one utterance. " +
-	"Decide whether the utterance contains any separate request due now OUTSIDE those listed policies. " +
-	"covered means every request in the utterance is one of the listed standing policies or merely setup, preference, or context for them; " +
-	"describing the trigger inside a listed policy does not make that trigger happen. " +
-	"additional-work means there is also a separate complete question, immediate command, or report of an already established trigger that is not part of a listed policy. " +
-	"Reply with one label only. Examples: 'I want fish tonight; order when the waiter names something that fits' is covered by the listed ordering policy. " +
-	"'From now on answer briefly; what is the capital of France?' has additional-work outside the brevity policy."
-
-const semanticUnansweredRequestInstruction = "You are an unanswered-request guard. " +
-	"The CURRENT ENDPOINT alone was classified wait. Decide whether the UNANSWERED SAME-SPEAKER STRETCH joins endpoint fragments into one explicit, complete question or imperative request addressed to the assistant whose work must start now. " +
-	"direct-request means it does. A trailing manner, clarification, or output constraint completes an earlier immediate request. " +
-	"An answer cut off before completion does not resolve that request. For example, a router question followed by its age and 'if that makes a difference' still needs an answer when the prior reply was cut off. Explicit requests to stop or wait silently remain wait. " +
-	"wait means the stretch is declarative planning or narration, an acknowledgement, a future policy or condition being established, or a past event or condition mentioned only in an earlier endpoint. " +
-	"Do not infer a request from the agent contract. An earlier condition is not current evidence and never counts here. " +
-	"A declarative statement such as 'ship it by Friday' followed by 'which gives us time to finish' is wait. " +
-	"'If I am quiet for fifteen seconds' followed by 'ask if I am here' is wait because it establishes a future trigger. " +
-	"'Count to forty' followed by 'slowly, one number at a time' is direct-request because it completes a current imperative. " +
-	"Reply with one label only."
-
-const semanticVoiceActivationInstruction = "You are an activation guard, not a conversational agent. " +
-	"Classify whether the CURRENT EVIDENCE creates a reason for a voice assistant to answer now under the AGENT CONTRACT and any STANDING POLICIES. " +
-	"Current evidence may be a completed utterance, an image or visual observation, or elapsed silence explicitly named by a standing policy. " +
-	"condition-met means the contract or a standing policy says to answer when some fact occurs, and the current evidence proves that fact now. " +
-	"direct-request means the current evidence directly asks a complete question or requests work that should start now, not later. " +
-	"It also includes a substantive reply to the latest assistant turn that advances the conversation: an answer, clarification, concern, or acceptance needing next-step guidance. " +
-	"The LAST ASSISTANT TURN is context only for interpreting that reply, never evidence that a standing condition happened now. " +
-	"For example, after the assistant asks whether the caller can restart the router, a reply agreeing but expressing concern about the hassle is direct-request. A pure listener acknowledgement such as mhm or right yeah is wait. " +
-	"addressed-elsewhere means the current speech is explicitly addressed to another person by name, title, or other vocative, whether it is a question, " +
-	"request, answer, or statement. A role or title used as a vocative, especially at the start of an utterance, identifies its recipient just as a personal name does; " +
-	"do not reinterpret that person's question as addressed to the assistant. Before choosing addressed-elsewhere, inspect the AGENT CONTRACT for the assistant's explicit identity. " +
-	"If it says 'You are X' or otherwise names the assistant as X, speech addressed to X is addressed to this assistant and a complete request is direct-request; " +
-	"this explicit identity rule takes precedence over the name or title vocative rule. Otherwise choose addressed-elsewhere unless recent conversation establishes that addressee as this assistant. " +
-	"A vocative directly calls to a recipient and is often a name, role, or title phrase set off by a comma at the beginning: 'Officer, ...' and 'Doctor Smith, ...' are addressed-elsewhere when the contract does not identify the assistant that way, even though a question follows. " +
-	"Merely mentioning a person is not a vocative. A name used as the object of a verb remains part of a request to the current assistant: 'Can you tell Tim the printer is jammed?' is direct-request. " +
-	"Never assume or adopt a named person's identity merely because " +
-	"the current utterance addresses them. wait means neither of the other labels: a future condition is merely being described or requested, an applicable " +
-	"condition has not occurred, the evidence is narration, or the current evidence only continues or refines the setup of a standing policy without satisfying it. " +
-	"A direct topic change with no other addressee remains direct-request. " +
-	"Reply with one label only. Examples: contract 'correct a date that contradicts the third'; current 'we do design review next week' is wait; " +
-	"the same contract with current 'ship by the thirteenth' is condition-met. Standing policy 'count animals as they are mentioned'; " +
-	"current 'say the count out loud' is wait, while current 'a heron landed' is condition-met. Standing policy 'tell me when the build finishes'; " +
-	"an image still showing the build in progress is wait, while an image proving it finished is condition-met. Contract 'answer briefly'; " +
-	"current 'what is the capital of France' is direct-request. Contract 'You are Alex, a support assistant'; current 'Alex, please help with the printer' is direct-request. " +
-	"Standing policy 'translate everything a Mandarin-speaking colleague says into English'; current colleague speech '你好，很高兴见到你' is condition-met, not a direct request and not wait. " +
-	"Current 'Tim, the printer is jammed again - help?', 'Officer, is this the right form?', and 'Doctor Smith, could you check this?' are addressed-elsewhere when those are other people; " +
-	"current 'Can we talk about something else?' is direct-request."
-
-const semanticSilentActionInstruction = "You are a silent-action activation guard, not an agent and not a tool chooser. " +
-	"Decide whether the CURRENT instant fully grounds some action using an AVAILABLE SILENT TOOL now. " +
-	"action-ready means the current evidence supplies the event, option, or parameters needed to use a listed tool now under the AGENT CONTRACT, " +
-	"standing policies, and recent conversation. wait means it does not: the person is still describing a goal, a recording has not offered a matching option, " +
-	"or an offered option conflicts with the requested goal. A provisional transcript may end halfway through an option label or parameter: require the words " +
-	"that complete the matching label or parameter, even when a shared head noun makes the unfinished fragment look relevant. Never autocomplete, infer, or invent " +
-	"a missing option word or parameter. Reply with one label only. " +
-	"Examples: tool 'press_key'; person says 'call support and find my order' is wait. The recording says 'press one for billing' while the goal is order status is wait. " +
-	"With that same goal, provisional 'press two for order' is wait because the option label is unfinished; 'press two for order status' is action-ready, " +
-	"even when that complete phrase is still provisional."
-
-func (runner *semanticAdmissionRunner) verifyStandingCoverage(
-	ctx context.Context, utterance string, policies []coreinteraction.StandingInstruction,
-) (coreinteraction.Outcome, error) {
-	var evidence strings.Builder
-	evidence.WriteString("UTTERANCE:\n")
-	evidence.WriteString(strings.TrimSpace(utterance))
-	evidence.WriteString("\n\nEXTRACTED STANDING POLICIES:\n")
-	for _, policy := range policies {
-		if text := strings.TrimSpace(policy.Text); text != "" {
-			evidence.WriteString("- ")
-			evidence.WriteString(text)
-			evidence.WriteByte('\n')
-		}
-	}
-	options := []string{semanticStandingCovered, semanticStandingAdditional}
-	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt:   semanticStandingCoverageInstruction,
-		Options:  options,
-		Evidence: evidence.String(),
-	})
-	if err == nil {
-		err = validateSemanticOutcome(outcome, options)
-	}
-	return outcome, err
-}
-
-func (runner *semanticAdmissionRunner) verifyVoiceActivation(
-	ctx context.Context, situation coreinteraction.Situation,
-) (coreinteraction.Outcome, error) {
-	options := []string{
-		semanticVoiceConditionMet, semanticVoiceDirectRequest,
-		semanticVoiceAddressedElsewhere, semanticVoiceWait,
-	}
-	activation := semanticVoiceActivationSituation(situation)
-	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt: semanticVoiceActivationInstruction, Options: options,
-		Evidence: semanticVoiceActivationEvidence(situation), Images: cloneSemanticImages(activation.Seeing),
-	})
-	if err == nil {
-		err = validateSemanticOutcome(outcome, options)
-	}
-	return outcome, err
-}
-
-// Only the most recent assistant turn is retained as reply context. Earlier
-// caller observations cannot satisfy a current standing-policy condition.
-func semanticVoiceActivationEvidence(situation coreinteraction.Situation) string {
-	evidence := semanticVoiceActivationSituation(situation).Render()
-	for i := len(situation.Recent) - 1; i >= 0; i-- {
-		if strings.HasPrefix(situation.Recent[i], "agent: ") {
-			evidence += "\n\nLAST ASSISTANT TURN (reply context only; not current evidence):\n" + situation.Recent[i]
-			break
-		}
-	}
-	return evidence
-}
-
-func (runner *semanticAdmissionRunner) verifyUnansweredRequest(
-	ctx context.Context, situation coreinteraction.Situation,
-) (coreinteraction.Outcome, error) {
-	options := []string{semanticVoiceDirectRequest, semanticVoiceWait}
-	activation := situation
-	activation.Recent = nil
-	activation.Seen = ""
-	activation.Seeing = nil
-	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt: semanticUnansweredRequestInstruction, Options: options,
-		Evidence: activation.Render(),
-	})
-	if err == nil {
-		err = validateSemanticOutcome(outcome, options)
-	}
-	return outcome, err
-}
-
-func semanticHasUnansweredStretch(situation coreinteraction.Situation) bool {
-	current := strings.TrimSpace(situation.Heard)
-	stretch := strings.TrimSpace(situation.HeardSince)
-	return situation.TranscriptEvent == coreinteraction.TranscriptFinal &&
-		current != "" && stretch != "" && stretch != current
-}
-
-// semanticVoiceActivationSituation makes the activation guard's evidence
-// boundary match its prompt. Recent conversation is useful to the primary
-// interaction decision, but an earlier occurrence must never satisfy a
-// condition for the current event. Standing instructions and the agent
-// contract already carry the durable context this guard is authorized to
-// enforce; the current heard/seen/quiet evidence is kept intact.
-func semanticVoiceActivationSituation(situation coreinteraction.Situation) coreinteraction.Situation {
-	activation := situation
-	activation.Recent = nil
-	if strings.TrimSpace(activation.Heard) != "" {
-		activation.HeardSince = activation.Heard
-	}
-	return activation
-}
-
-func (runner *semanticAdmissionRunner) verifySilentAction(
-	ctx context.Context, situation coreinteraction.Situation,
-) (coreinteraction.Outcome, error) {
-	options := []string{semanticSilentActionReady, semanticSilentActionWait}
-	outcome, err := runner.decider.Decide(ctx, coreinteraction.Decision{
-		Prompt: semanticSilentActionInstruction, Options: options, Evidence: situation.Render(),
-	})
-	if err == nil {
-		err = validateSemanticOutcome(outcome, options)
-	}
-	return outcome, err
 }
 
 func applySemanticExtraction(
@@ -1621,34 +1356,53 @@ func applySemanticExtraction(
 func (runner *semanticAdmissionRunner) situation(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
 ) (coreinteraction.Situation, error) {
+	history := semanticStepHistory{lines: runner.stepLines(), answeredHeard: runner.answeredSoFar(request.streamID)}
+	history.previousHeard, history.previousKnown = runner.previousStepHeard(request.streamID)
 	return runner.situationWithStanding(
-		ctx, request, update, prefix, nil, cloneSemanticAgentOutput(runner.agentOutput),
+		ctx, request, update, prefix, nil, cloneSemanticAgentOutput(runner.agentOutput), history,
 	)
+}
+
+// semanticStepHistory is the lockstep history as one decision sees it.
+type semanticStepHistory struct {
+	lines         []string
+	previousHeard string
+	previousKnown bool
+	answeredHeard string
+}
+
+// answeredSoFar is what the last step that spoke on this utterance had heard.
+func (runner *semanticAdmissionRunner) answeredSoFar(streamID string) string {
+	if streamID == "" {
+		return ""
+	}
+	for index := len(runner.steps) - 1; index >= 0; index-- {
+		if runner.steps[index].stream == streamID && runner.steps[index].spoke {
+			return runner.steps[index].heard
+		}
+	}
+	return ""
 }
 
 func (runner *semanticAdmissionRunner) situationWithStanding(
 	ctx context.Context, request semanticRequest, update SessionInvocationUpdate, prefix trajectory.Snapshot,
 	standing []coreinteraction.StandingInstruction, agentOutput coreinteraction.AgentOutput,
+	history semanticStepHistory,
 ) (coreinteraction.Situation, error) {
 	board := semanticPinboard(standing)
-	// Silence and answer are the legacy observation space, the acts a
-	// committed observation can take while the floor is free. While the agent
-	// is audibly speaking the executable acts are the two speech controls
-	// instead, and a decision must be able to choose one: with only the free-
-	// floor acts allowed, a final transcript landing mid-speech left no
-	// executable act at all, and the whole session failed on it. That is the
-	// FDB interruption case in every profile without a transcript-event
-	// policy, which is where the policy's own act lists would have supplied
-	// them.
-	allowed := []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer}
-	if agentOutput.Active {
-		allowed = append(allowed, coreinteraction.ActKeepSpeaking, coreinteraction.ActStopSpeaking)
+	currentID := ""
+	if len(prefix.Items) > 0 {
+		currentID = currentSemanticItem(request, prefix).ID
+	}
+	contract := update.Contract
+	if strings.TrimSpace(contract) == "" {
+		contract = update.Invocation.Instruction
 	}
 	state := coreinteraction.Situation{
-		Contract:      update.Invocation.Instruction,
-		Recent:        coreinteraction.RecentLines(prefix.Items, runner.config.RecentLines),
+		Contract:      contract,
+		Recent:        semanticPolicyRecent(prefix.Items, currentID, runner.config.RecentLines),
+		Steps:         history.lines,
 		Pins:          board.Lines(semanticNowNS(runner.clock)),
-		AllowedActs:   allowed,
 		AgentSpeaking: agentOutput.Active,
 		AgentSaying:   agentOutput.Saying,
 		AgentOutputProtected: slices.Contains(
@@ -1656,18 +1410,12 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 		),
 		InFlight: agentOutput.InFlight,
 	}
-	for _, policy := range standing {
-		state.Restricted = state.Restricted || policy.Restricting
-	}
 	for _, tool := range update.Invocation.Tools {
 		line := tool.Name
 		if strings.TrimSpace(tool.Description) != "" {
 			line += " - " + strings.TrimSpace(tool.Description)
 		}
 		state.Tools = append(state.Tools, line)
-	}
-	if len(state.Tools) > 0 {
-		state.AllowedActs = append(state.AllowedActs, coreinteraction.ActActSilently)
 	}
 	if request.operation == "quiet" {
 		state.Silence = "15s"
@@ -1677,13 +1425,6 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 				state.Quiet = true
 				break
 			}
-		}
-		if !state.Quiet {
-			// PostCommitSilence is a generic graph clock: it fires after every
-			// durable observation and carries no authority to invent a periodic
-			// turn. Only a pinned, due silence policy turns that tick into
-			// evidence. With none, silence is the sole executable outcome.
-			state.AllowedActs = []coreinteraction.Act{coreinteraction.ActStaySilent}
 		}
 		return state, nil
 	}
@@ -1744,9 +1485,46 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 			} else {
 				state.TranscriptEvent = coreinteraction.TranscriptFinal
 			}
+			state.SinceStepKnown = true
+			state.HeardSinceStep = wordsAdded(history.previousHeard, state.Heard)
+			state.AnsweredSoFar = history.answeredHeard
 		}
 	}
 	return state, nil
+}
+
+// semanticPolicyRecent is the conversation the policy is shown: settled
+// utterances and what the agent said, before the event being decided. Live
+// partials are left out - the step history shows each one with the choice
+// it got, and rendered as conversation they read as the person repeating
+// themselves, which measured as a fast model counting the same animal on
+// every revision - and a line two adjacent items repeat is shown once.
+func semanticPolicyRecent(items []trajectory.Item, currentID string, maximum int) []string {
+	end := len(items)
+	if currentID != "" {
+		for index, item := range items {
+			if item.ID == currentID {
+				end = index
+				break
+			}
+		}
+	}
+	kept := make([]trajectory.Item, 0, end)
+	for _, item := range items[:end] {
+		if semanticSpokenObservation(item) && strings.HasSuffix(item.Event.Type, ".revision") {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	lines := coreinteraction.RecentLines(kept, maximum)
+	deduped := lines[:0]
+	for _, line := range lines {
+		if len(deduped) > 0 && deduped[len(deduped)-1] == line {
+			continue
+		}
+		deduped = append(deduped, line)
+	}
+	return deduped
 }
 
 func currentSemanticItem(request semanticRequest, prefix trajectory.Snapshot) trajectory.Item {
@@ -1795,11 +1573,6 @@ func semanticStandingUtterance(situation coreinteraction.Situation, current traj
 		return heard
 	}
 	return strings.TrimSpace(current.Content)
-}
-
-func semanticActivationEvidence(situation coreinteraction.Situation) bool {
-	return situation.TranscriptEvent == coreinteraction.TranscriptFinal ||
-		situation.Seen != "" || len(situation.Seeing) > 0 || situation.Quiet
 }
 
 // semanticHeardSince reconstructs the bounded completed speech added after
@@ -1932,6 +1705,22 @@ func semanticRecentBefore(items []trajectory.Item, currentID string, maximum int
 	return coreinteraction.RecentLines(before, maximum)
 }
 
+// standingLines states policies the way the report shows them.
+func standingLines(instructions []coreinteraction.StandingInstruction) []string {
+	lines := make([]string, 0, len(instructions))
+	for _, instruction := range instructions {
+		line := instruction.Text + " (" + string(instruction.Scope)
+		if instruction.Counting {
+			line += ", counting"
+		}
+		if instruction.Restricting {
+			line += ", restricting"
+		}
+		lines = append(lines, line+")")
+	}
+	return lines
+}
+
 func semanticPinboard(instructions []coreinteraction.StandingInstruction) *coreinteraction.Pinboard {
 	board := &coreinteraction.Pinboard{}
 	for _, instruction := range instructions {
@@ -2036,27 +1825,22 @@ func (runner *semanticAdmissionRunner) finishDecision(
 		return err
 	}
 	decisionItemID := fmt.Sprintf("%s:decision:%d", runner.instance, sequence)
-	confidence := result.outcome
-	if result.stage == "standing_coverage" {
-		confidence = result.coverageOutcome
-	} else if result.stage == "voice_activation" || result.stage == "voice_addressing" ||
-		result.stage == "unanswered_request" || result.stage == "silent_action_activation" {
-		confidence = result.activationOutcome
+	choice := result.choice
+	stepIndex := -1
+	if request.operation == "committed" {
+		stepIndex = runner.recordStep(result)
 	}
 	decision := SemanticDecision{
-		Operation: request.operation, Act: result.act, Policy: result.policy,
-		EvidenceItemID: request.envelope.ItemID, StreamID: request.streamID,
+		Operation: request.operation, Choice: choice, SpokeOver: result.spokeOver, Event: result.event,
+		Policy: result.policy, EvidenceItemID: request.envelope.ItemID, StreamID: request.streamID,
 		SourceRevision: request.sourceRev, ContextVersion: request.version,
 		InvocationDigest: result.digest, Provider: runner.entry.descriptor.Provider,
-		Model: runner.entry.descriptor.Model, Confidence: confidence.Confidence,
-		Measured: confidence.Measured, DecisionStage: result.stage,
-		Activation: result.activation, ActivationConfidence: result.activationOutcome.Confidence,
-		ActivationMeasured: result.activationOutcome.Measured,
-		StandingCoverage:   result.standingCoverage, CoverageConfidence: result.coverageOutcome.Confidence,
-		CoverageMeasured: result.coverageOutcome.Measured,
-		StandingBefore:   len(result.standingBefore), StandingAfter: len(result.standingAfter),
+		Model: runner.entry.descriptor.Model, Confidence: result.outcome.Confidence,
+		Measured: result.outcome.Measured, DecisionStage: result.stage,
+		StandingBefore: len(result.standingBefore), StandingAfter: len(result.standingAfter),
 		StandingPinned: result.standingPinned, StandingRevoked: result.standingRevoked,
 		StartedNS: result.started, FinishedNS: result.ended,
+		Evidence: result.evidence, Standing: result.standing, Questions: result.questions,
 	}
 	decisionEnvelope := request.envelope.Clone()
 	decisionEnvelope.Type = runner.ports.decision.Type()
@@ -2065,86 +1849,53 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	decisionEnvelope.Payload = decision
 	decisionEnvelope.CausalParents = appendUnique(decisionEnvelope.CausalParents, request.envelope.ItemID)
 	decisionEnvelope.CausalParents = appendUnique(decisionEnvelope.CausalParents, result.sample.envelope.ItemID)
+	// The decision goes out first, whatever it was. stop reaches the overlap
+	// controller through it, so stop+speak cancels the old output and admits
+	// the new one in one event rather than a retry after the old one retires.
 	if _, err := runner.ports.decision.Broadcast(ctx, decisionEnvelope); err != nil {
 		return err
 	}
-	branch := request.envelope.Clone()
-	branch.CausalParents = appendUnique(branch.CausalParents, decisionItemID)
-	var output element.OutputPort
-	switch result.act {
-	case coreinteraction.ActStaySilent:
-		runner.state.Suppressed++
-		code := "listen"
-		message := "semantic policy selected no generation"
-		if result.stage == "voice_addressing" &&
-			result.activation == semanticVoiceAddressedElsewhere {
-			code = "addressed_elsewhere"
-			message = "current evidence is addressed to another person"
-		}
-		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
-			Kind: SemanticAdmissionSuppressed, Operation: request.operation, Act: result.act,
-			StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
-			DecisionItemID: decisionItemID, Code: code, Message: message,
-		})
-	case coreinteraction.ActActSilently:
-		if request.operation == "committed" {
-			output = runner.ports.silentCommitted
-		} else {
-			output = runner.ports.silentCreate
-		}
-		runner.state.AdmittedSilent++
-	case coreinteraction.ActAnswer, coreinteraction.ActSpeakThrough, coreinteraction.ActInterrupt:
-		if request.operation == "committed" {
-			output = runner.ports.voiceCommitted
-		} else {
-			output = runner.ports.voiceCreate
-		}
-		runner.state.AdmittedVoice++
-	case coreinteraction.ActKeepSpeaking, coreinteraction.ActStopSpeaking:
-		// Stopping the old answer does not consume the new final question.
-		// Wait for a newer idle output state, then let the normal semantic
-		// policy decide whether this exact utterance needs an answer or silence.
-		// Only one retry is permitted; partials wait for their real final event.
-		if result.act == coreinteraction.ActStopSpeaking && request.operation == "committed" &&
-			result.finalTranscript && request.afterOutputRevision == 0 && result.outputRevision != 0 {
-			retry := request
-			retry.afterOutputRevision = result.outputRevision
-			retry.envelope = request.envelope.Clone()
-			retry.envelope.ItemID += ":after-output"
-			retry.envelope.CausalParents = appendUnique(retry.envelope.CausalParents, request.envelope.ItemID)
-			retry.envelope.CausalParents = appendUnique(retry.envelope.CausalParents, decisionItemID)
-			if err := runner.enqueue(ctx, retry); err != nil {
-				return err
-			}
-		}
-		code, message, refused := semanticControlDisposition(request.operation, result.act)
-		if refused {
-			runner.state.Refused++
-			return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
-				Kind: SemanticAdmissionRefused, Operation: request.operation, Act: result.act,
-				StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
-				DecisionItemID: decisionItemID, Code: code, Message: message,
-			})
-		}
-		runner.state.Suppressed++
-		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
-			Kind: SemanticAdmissionSuppressed, Operation: request.operation, Act: result.act,
-			StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
-			DecisionItemID: decisionItemID, Code: code, Message: message,
-		})
-	default:
+	if request.operation != "committed" && choice.Speaking && choice.Speak && !choice.Stop {
+		// An explicit request cannot queue a second response behind output
+		// that is still running; the transcript lane owns that. It can stop
+		// the output and respond instead - stop+speak falls through below.
 		runner.state.Refused++
 		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
-			Kind: SemanticAdmissionRefused, Operation: request.operation, Act: result.act,
+			Kind: SemanticAdmissionRefused, Operation: request.operation, Choice: &choice, Event: result.event,
 			StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
-			DecisionItemID: decisionItemID, Code: "unsupported_act",
-			Message: "semantic admission final/quiet path accepts only listen, answer, or act-silently",
+			DecisionItemID: decisionItemID, Code: "speech_in_flight",
+			Message: "explicit response creation cannot queue behind active voice output; the transcript lane owns in-flight control",
 		})
+	}
+	if choice.Stop {
+		runner.state.Stopped++
+	}
+	if !choice.Speak {
+		code, message := "listen", "the interaction policy chose not to invoke the voice"
+		switch {
+		case choice.Stop:
+			code, message = "stop", "the interaction policy stopped the active voice output and invoked nothing"
+		case choice.Speaking:
+			code, message = "keep", "the interaction policy kept the active voice output"
+		}
+		runner.state.Suppressed++
+		return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
+			Kind: SemanticAdmissionSuppressed, Operation: request.operation, Choice: &choice, Event: result.event,
+			StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
+			DecisionItemID: decisionItemID, Code: code, Message: message,
+		})
+	}
+	branch := request.envelope.Clone()
+	branch.CausalParents = appendUnique(branch.CausalParents, decisionItemID)
+	output := runner.ports.voiceCreate
+	if request.operation == "committed" {
+		output = runner.ports.voiceCommitted
 	}
 	branch.Type = output.Type()
 	if request.operation == "committed" {
 		branch.Payload = SemanticGrant{
-			Commit: request.commit, Act: result.act, DecisionItemID: decisionItemID,
+			Commit: rebasedSemanticCommit(request, result.sample), Choice: choice, DecisionItemID: decisionItemID,
+			SpokeOver: result.spokeOver,
 		}
 	} else {
 		create := request.create
@@ -2156,28 +1907,37 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	if _, err := output.Broadcast(ctx, branch); err != nil {
 		return err
 	}
-	if request.operation == "committed" && result.act == coreinteraction.ActActSilently {
-		runner.rememberSilentRun(request, decisionItemID)
+	runner.state.AdmittedVoice++
+	// Lockstep: nothing is decided until this generation has answered.
+	runner.hold = &semanticHold{
+		sinceNS:        runner.clock.NowNS(),
+		startedAtGrant: runner.agentOutput.GenerationsStarted, finishedAtGrant: runner.agentOutput.GenerationsFinished,
+	}
+	if stepIndex >= 0 {
+		runner.steps[stepIndex].spoke = true
 	}
 	return runner.publishOutcome(ctx, request.envelope, SemanticAdmissionOutcome{
-		Kind: SemanticAdmissionAdmitted, Operation: request.operation, Act: result.act,
+		Kind: SemanticAdmissionAdmitted, Operation: request.operation, Choice: &choice, Event: result.event,
 		StreamID: request.streamID, SourceRevision: request.sourceRev, ContextVersion: request.version,
 		DecisionItemID: decisionItemID,
 	})
 }
 
-func semanticControlDisposition(
-	operation string, act coreinteraction.Act,
-) (code, message string, refused bool) {
-	if operation != "committed" {
-		return "unsupported_act",
-			"explicit response creation cannot claim an in-flight speech control act", true
+// rebasedSemanticCommit moves a grant's committed context to the context the
+// decision was actually taken against, when that is newer than the commit's
+// own: the generation it admits then sees everything the policy saw.
+func rebasedSemanticCommit(request semanticRequest, sample semanticContextSample) stateelements.ObservationCommitOutcome {
+	commit := request.commit
+	if sample.snapshot.Version <= request.version || sample.envelope.ItemID == "" {
+		return commit
 	}
-	if act == coreinteraction.ActStopSpeaking {
-		return "stop_speaking",
-			"semantic policy delegated cancellation of existing output to the overlap controller", false
+	identity, err := trajectory.IdentifyPrefix(sample.snapshot, sample.snapshot.Version)
+	if err != nil {
+		return commit
 	}
-	return "keep_speaking", "semantic policy kept the existing deliberate output active", false
+	commit.StoreVersion = sample.snapshot.Version
+	commit.Context = stateelements.CommittedContext{Prefix: identity, StateItemID: sample.envelope.ItemID}
+	return commit
 }
 
 func (runner *semanticAdmissionRunner) reportResolution() error {
@@ -2200,16 +1960,6 @@ func (runner *semanticAdmissionRunner) reportResolution() error {
 	if runner.config.StandingExtraction {
 		capabilities = append(capabilities, liveidentity.Capability(
 			"interaction.standing-extraction", "openrealtime.interaction/Extractor-v1", provider, adapter,
-		))
-	}
-	if runner.config.VerifyVoiceActivation {
-		capabilities = append(capabilities, liveidentity.Capability(
-			"interaction.voice-activation", "openrealtime.interaction/Decider-v1", provider, adapter,
-		))
-	}
-	if runner.config.VerifySilentAction {
-		capabilities = append(capabilities, liveidentity.Capability(
-			"interaction.silent-action-activation", "openrealtime.interaction/Decider-v1", provider, adapter,
 		))
 	}
 	return liveidentity.Report(runner.resolution, liveidentity.Artifact{
@@ -2266,6 +2016,7 @@ func (runner *semanticAdmissionRunner) publishOutcome(
 }
 
 func (runner *semanticAdmissionRunner) publishState(ctx context.Context, cause element.Envelope) error {
+	runner.state.Holding = runner.hold != nil
 	sequence, err := runner.sequences.Next(runner.instance + ".semantic_state")
 	if err != nil {
 		return err
@@ -2338,8 +2089,14 @@ func validateSemanticAgentOutput(output coreinteraction.AgentOutput) error {
 		return errors.New("semantic admission audible agent output must be active and not queued")
 	}
 	if !output.Active && (output.Queued || output.Audible || output.Saying != "" || output.InFlight != "" ||
-		len(output.ProtectedStreams) != 0) {
+		output.Generating != 0 || len(output.ProtectedStreams) != 0) {
 		return errors.New("semantic admission inactive agent output carries active lifecycle state")
+	}
+	if output.Generating < 0 {
+		return errors.New("semantic admission agent output generating count must not be negative")
+	}
+	if output.GenerationsFinished > output.GenerationsStarted {
+		return errors.New("semantic admission agent output finished more generations than it started")
 	}
 	for name, value := range map[string]string{"saying": output.Saying, "in_flight": output.InFlight} {
 		if value != strings.TrimSpace(value) || !utf8.ValidString(value) || len(value) > maximumSemanticTextBytes {

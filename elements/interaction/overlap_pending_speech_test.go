@@ -42,7 +42,7 @@ func TestOverlapBargeInCancelsCompletedStreamBeforeQueuedSpeechIsVisible(t *test
 			if order == "one release first" {
 				_ = receive(t, h.output(t, "safe_release"))
 			}
-			h.sendAndSync(t, "semantic", overlapSemanticEnvelope("stop", "user-stream", 2, coreinteraction.ActStopSpeaking))
+			h.sendAndSync(t, "semantic", overlapSemanticEnvelope("stop", "user-stream", 2, coreinteraction.Choice{Speaking: true, Stop: true}))
 			envelope, decision := receiveOverlapDecision(t, h.output(t, "decision"))
 			if decision.Kind != OverlapCanceled || decision.SegmentationCancels != 1 || decision.ModelCancels != 0 {
 				t.Fatalf("stop did not revoke the completed stream: %+v", decision)

@@ -7,6 +7,7 @@ import (
 	"github.com/bojieli/OpenRealtime/element"
 	policyelements "github.com/bojieli/OpenRealtime/elements/policy"
 	stateelements "github.com/bojieli/OpenRealtime/elements/state"
+	coreinteraction "github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
@@ -124,6 +125,7 @@ func TestSemanticAdmissionStreamCancellationSurvivesLaterRevisions(t *testing.T)
 					t.Fatalf("fresh request was suppressed: %+v, grant session %q", admitted, grant.SessionID)
 				}
 				_ = state()
+				acknowledgeSemanticVoice(t, harness, coreinteraction.AgentOutput{Queued: true}, uint64(10+2*index), uint64(1+index))
 			}
 			wantCalls := 2
 			if phase == "active-decision" {

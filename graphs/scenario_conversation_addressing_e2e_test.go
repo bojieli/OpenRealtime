@@ -61,9 +61,6 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 	config.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
 		return &scenarioAddressingModel{control: models, descriptor: config.Model.Descriptor}, nil
 	}
-	config.SilentModel.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
-		return &scenarioAddressingModel{control: models, descriptor: config.SilentModel.Descriptor}, nil
-	}
 	config.TTS.Factory = func(context.Context, legacy.Options) (v1.SpeechProvider, error) {
 		return &scenarioAddressingTTS{control: tts, descriptor: config.TTS.Descriptor}, nil
 	}
@@ -74,7 +71,7 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 	}
 	recording := newScenarioAddressingGraphRecorder()
 	instrumentScenarioAddressingFactory(t, &launchConfig, "policy.SemanticAdmission", recording,
-		"decision", "outcome", "voice_committed", "silent_committed")
+		"decision", "outcome", "voice_committed")
 	instrumentScenarioAddressingFactory(t, &launchConfig, "interaction.OverlapBargeIn", recording,
 		"model_cancel", "segmentation_cancel", "tts_cancel", "playback_cancel")
 	launched, err := graphlaunch.New(context.Background(), launchConfig)
@@ -108,13 +105,19 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 	firstStream := scenarioAddressingStreamID(scenarioAddressingSession, 1)
 	driveScenarioAddressingTurn(t, runtime, sink, &audioClock, firstStream, asr.turns[0])
 	receiveScenarioAddressing(t, sink.speechEnded, "completed initial response")
+	// No standing instruction is in force, so the partials of the request
+	// cannot invoke the voice; the settled words are answered.
 	firstOutcome := recording.await(t, "semantic_admission.outcome", func(envelope element.Envelope) bool {
 		outcome, ok := envelope.Payload.(policyelements.SemanticAdmissionOutcome)
-		return ok && outcome.StreamID == firstStream
+		return ok && outcome.StreamID == firstStream && outcome.Kind == policyelements.SemanticAdmissionAdmitted
 	})
-	assertScenarioAddressingAdmission(t, firstOutcome, firstStream, 1,
+	firstRevision := firstOutcome.Payload.(policyelements.SemanticAdmissionOutcome).SourceRevision
+	assertScenarioAddressingAdmission(t, firstOutcome, firstStream, firstRevision,
 		policyelements.SemanticAdmissionAdmitted, "")
-	assertScenarioAddressingCommitBranch(t, recording, "voice_committed", firstStream, 1, true)
+	if firstOutcome.Payload.(policyelements.SemanticAdmissionOutcome).Event != coreinteraction.TranscriptFinal {
+		t.Fatalf("the request was answered before the person finished: %+v", firstOutcome.Payload)
+	}
+	assertScenarioAddressingCommitBranch(t, recording, "voice_committed", firstStream, firstRevision, true)
 	first := scenarioAddressingSnapshot(t, runtime, sink, models, tts, recording)
 	if first.models != 1 || first.ttsPlans != 1 || first.speechEnds != 1 {
 		t.Fatalf("initial direct turn did not become one completed response: %+v", first)
@@ -125,25 +128,31 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 	// for the overlap policy to cancel.
 	secondStream := scenarioAddressingStreamID(scenarioAddressingSession, 2)
 	driveScenarioAddressingTurn(t, runtime, sink, &audioClock, secondStream, asr.turns[1])
+	// Every revision of the named request is listen. The settled one is the
+	// decision that matters, and no revision may have been granted.
 	secondOutcome := recording.await(t, "semantic_admission.outcome", func(envelope element.Envelope) bool {
 		outcome, ok := envelope.Payload.(policyelements.SemanticAdmissionOutcome)
-		return ok && outcome.StreamID == secondStream
+		return ok && outcome.StreamID == secondStream && outcome.Event == coreinteraction.TranscriptFinal
 	})
-	assertScenarioAddressingAdmission(t, secondOutcome, secondStream, 2,
-		policyelements.SemanticAdmissionSuppressed, "addressed_elsewhere")
+	secondRevision := secondOutcome.Payload.(policyelements.SemanticAdmissionOutcome).SourceRevision
+	assertScenarioAddressingAdmission(t, secondOutcome, secondStream, secondRevision,
+		policyelements.SemanticAdmissionSuppressed, "listen")
 	secondDecision := recording.await(t, "semantic_admission.decision", func(envelope element.Envelope) bool {
 		decision, ok := envelope.Payload.(policyelements.SemanticDecision)
-		return ok && decision.StreamID == secondStream
+		return ok && decision.StreamID == secondStream && decision.Event == coreinteraction.TranscriptFinal
 	}).Payload.(policyelements.SemanticDecision)
-	if secondDecision.SourceRevision != 2 || secondDecision.Act != coreinteraction.ActStaySilent ||
-		secondDecision.DecisionStage != "voice_addressing" ||
-		secondDecision.Activation != "addressed-elsewhere" || secondDecision.StandingBefore != 0 ||
+	if secondDecision.SourceRevision != secondRevision || !secondDecision.Choice.Idle() ||
+		secondDecision.DecisionStage != "policy" || secondDecision.StandingBefore != 0 ||
 		secondDecision.StandingAfter != 0 || secondDecision.StandingPinned != 0 ||
 		secondDecision.StandingRevoked != 0 {
 		t.Fatalf("named third-party semantic decision = %+v", secondDecision)
 	}
-	assertScenarioAddressingCommitBranch(t, recording, "voice_committed", secondStream, 2, false)
-	assertScenarioAddressingCommitBranch(t, recording, "silent_committed", secondStream, 2, false)
+	if recording.any("semantic_admission.voice_committed", func(envelope element.Envelope) bool {
+		grant, ok := envelope.Payload.(policyelements.SemanticGrant)
+		return ok && grant.Commit.StreamID == secondStream
+	}) {
+		t.Fatal("a revision of the named third-party request was granted the voice")
+	}
 	second := scenarioAddressingSnapshot(t, runtime, sink, models, tts, recording)
 	if second.models != first.models || second.ttsPlans != first.ttsPlans ||
 		second.speechBegins != first.speechBegins || second.speechEnds != first.speechEnds ||
@@ -152,26 +161,30 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 		t.Fatalf("named third-party turn acquired data-plane or cancellation authority: before=%+v after=%+v",
 			first, second)
 	}
-	if policy.extracted(asr.turns[1]) {
-		t.Fatal("named third-party speech reached standing-policy extraction")
+	// The extractor may look at the sentence; what it may not do is keep a
+	// rule from it. The screen is the addressee question it asked and
+	// answered, and the pinboard staying empty is the proof it held.
+	if !policy.screenedAddressee(asr.turns[1]) {
+		t.Fatal("named third-party speech was not screened for its addressee before policy mutation")
 	}
-	assertScenarioAddressingTrajectoryObservation(t, runtime.Trajectory(), asr.turns[1], 2)
+	assertScenarioAddressingTrajectoryObservation(t, runtime.Trajectory(), asr.turns[1], secondRevision)
 
 	thirdStream := scenarioAddressingStreamID(scenarioAddressingSession, 3)
 	driveScenarioAddressingTurn(t, runtime, sink, &audioClock, thirdStream, asr.turns[2])
 	thirdOutcome := recording.await(t, "semantic_admission.outcome", func(envelope element.Envelope) bool {
 		outcome, ok := envelope.Payload.(policyelements.SemanticAdmissionOutcome)
-		return ok && outcome.StreamID == thirdStream
+		return ok && outcome.StreamID == thirdStream && outcome.Kind == policyelements.SemanticAdmissionAdmitted
 	})
-	assertScenarioAddressingAdmission(t, thirdOutcome, thirdStream, 3,
+	thirdRevision := thirdOutcome.Payload.(policyelements.SemanticAdmissionOutcome).SourceRevision
+	assertScenarioAddressingAdmission(t, thirdOutcome, thirdStream, thirdRevision,
 		policyelements.SemanticAdmissionAdmitted, "")
-	assertScenarioAddressingCommitBranch(t, recording, "voice_committed", thirdStream, 3, true)
+	assertScenarioAddressingCommitBranch(t, recording, "voice_committed", thirdStream, thirdRevision, true)
 	receiveScenarioAddressing(t, sink.speechEnded, "response to later direct request")
 	thirdDecision := recording.await(t, "semantic_admission.decision", func(envelope element.Envelope) bool {
 		decision, ok := envelope.Payload.(policyelements.SemanticDecision)
-		return ok && decision.StreamID == thirdStream
+		return ok && decision.StreamID == thirdStream && decision.Event == coreinteraction.TranscriptFinal
 	}).Payload.(policyelements.SemanticDecision)
-	if thirdDecision.SourceRevision != 3 || thirdDecision.Act != coreinteraction.ActAnswer ||
+	if thirdDecision.SourceRevision != thirdRevision || !thirdDecision.Choice.Speak ||
 		thirdDecision.StandingBefore != 0 || thirdDecision.StandingAfter != 0 ||
 		thirdDecision.StandingPinned != 0 || thirdDecision.StandingRevoked != 0 {
 		t.Fatalf("later direct-request semantic decision = %+v", thirdDecision)
@@ -186,7 +199,7 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 	if evidence := policy.decisionEvidenceFor(asr.turns[2]); strings.Contains(evidence, scenarioAddressingPolicy) {
 		t.Fatalf("named third party mutated standing-policy memory visible to the next stream: %q", evidence)
 	}
-	assertScenarioAddressingTrajectoryObservation(t, runtime.Trajectory(), asr.turns[2], 3)
+	assertScenarioAddressingTrajectoryObservation(t, runtime.Trajectory(), asr.turns[2], thirdRevision)
 
 	for _, node := range []string{"voice_model", "segment", "tts", "playback"} {
 		if before, after := first.nodeCancellation[node], third.nodeCancellation[node]; before != after {
@@ -277,27 +290,27 @@ func (decider *scenarioAddressingPolicyDecider) Decide(
 	_ context.Context, decision coreinteraction.Decision,
 ) (coreinteraction.Outcome, error) {
 	currentEvidence := scenarioAddressingCurrentEvidence(decision.Evidence)
+	addressedElsewhere := strings.Contains(currentEvidence, "Tim, printer's jammed again-help?")
 	wanted := ""
 	switch {
-	case slices.Contains(decision.Options, "addressed-elsewhere"):
-		wanted = "direct-request"
-		if strings.Contains(currentEvidence, "Tim, printer's jammed again-help?") {
-			wanted = "addressed-elsewhere"
-		}
 	case slices.Contains(decision.Options, string(coreinteraction.OverlapDirected)):
 		wanted = string(coreinteraction.OverlapDirected)
-		if strings.Contains(currentEvidence, "Tim, printer's jammed again-help?") {
+		if addressedElsewhere {
 			wanted = string(coreinteraction.OverlapSide)
 		}
-	case slices.Contains(decision.Options, string(coreinteraction.ActAnswer)):
-		wanted = string(coreinteraction.ActAnswer)
-	case slices.Contains(decision.Options, "covered"):
-		wanted = "covered"
-	case slices.Contains(decision.Options, "action-ready"):
-		wanted = "wait"
+	case decision.Question != "" && !decision.Speaking:
+		// The addressee judgement is the policy's own now, not a second guard:
+		// a request aimed at somebody else is listen, anything else is speak.
+		// So is the timing: the policy is asked on every partial, and the
+		// rule it follows is to wait for the final.
+		wanted = coreinteraction.ChoiceSpeak
+		if addressedElsewhere || strings.Contains(decision.Evidence, "transcript event: partial") {
+			wanted = coreinteraction.ChoiceListen
+		}
+	case decision.Question != "":
+		wanted = coreinteraction.ChoiceKeep
 	}
-	index := slices.Index(decision.Options, wanted)
-	if index < 0 {
+	if wanted == "" {
 		return coreinteraction.Outcome{}, fmt.Errorf(
 			"scenario addressing policy has no deterministic answer for options %v", decision.Options,
 		)
@@ -307,7 +320,43 @@ func (decider *scenarioAddressingPolicyDecider) Decide(
 		options: slices.Clone(decision.Options), evidence: decision.Evidence, answer: wanted,
 	})
 	decider.control.mu.Unlock()
-	return coreinteraction.Outcome{Index: index, Option: wanted, Confidence: 0.99, Measured: true}, nil
+	return scenarioAnswer(decision, wanted)
+}
+
+// scenarioAnswer answers one decision the way a fixture's wanted choice
+// would: a step question by yes or no, any other decision by the option.
+func scenarioAnswer(decision coreinteraction.Decision, wanted string) (coreinteraction.Outcome, error) {
+	if decision.Question == "" {
+		index := slices.Index(decision.Options, wanted)
+		if index < 0 {
+			return coreinteraction.Outcome{}, fmt.Errorf("no option %q in %v", wanted, decision.Options)
+		}
+		return coreinteraction.Outcome{Index: index, Option: wanted, Confidence: 0.99, Measured: true}, nil
+	}
+	choice, err := coreinteraction.ParseChoice(wanted, decision.Speaking)
+	if err != nil {
+		return coreinteraction.Outcome{}, err
+	}
+	reply := coreinteraction.AnswerFor(decision.Question, choice)
+	return coreinteraction.Outcome{
+		Index: slices.Index(coreinteraction.YesNo(), reply), Option: reply, Confidence: 0.99, Measured: true,
+	}, nil
+}
+
+// scenarioStepChoice is the fixture's wanted choice for a step question: the
+// idle token while the floor is free, its speaking counterpart otherwise.
+func scenarioStepChoice(decision coreinteraction.Decision, idle string) string {
+	if !decision.Speaking {
+		return idle
+	}
+	switch idle {
+	case coreinteraction.ChoiceSpeak:
+		return coreinteraction.ChoiceKeepSpeak
+	case coreinteraction.ChoiceStop:
+		return coreinteraction.ChoiceStop
+	default:
+		return coreinteraction.ChoiceKeep
+	}
 }
 
 func scenarioAddressingCurrentEvidence(evidence string) string {
@@ -340,6 +389,11 @@ func (decider *scenarioAddressingPolicyDecider) Generate(
 		return "none", nil
 	case coreinteraction.StandingPolicyGroundingInstruction:
 		return "yes", nil
+	case coreinteraction.AddressedElsewhereInstruction:
+		if strings.Contains(evidence, "Tim, printer's jammed again-help?") {
+			return "yes", nil
+		}
+		return "no", nil
 	case coreinteraction.CountingInstruction, coreinteraction.RestrictingInstruction:
 		return "no", nil
 	case coreinteraction.ScopeInstruction:
@@ -354,6 +408,17 @@ func (control *scenarioAddressingPolicyControl) extracted(text string) bool {
 	defer control.mu.Unlock()
 	for _, record := range control.generations {
 		if record.prompt == coreinteraction.ExtractionInstruction && strings.Contains(record.evidence, text) {
+			return true
+		}
+	}
+	return false
+}
+
+func (control *scenarioAddressingPolicyControl) screenedAddressee(text string) bool {
+	control.mu.Lock()
+	defer control.mu.Unlock()
+	for _, record := range control.generations {
+		if record.prompt == coreinteraction.AddressedElsewhereInstruction && strings.Contains(record.evidence, text) {
 			return true
 		}
 	}
@@ -665,12 +730,14 @@ func assertScenarioAddressingTrajectoryObservation(
 ) {
 	t.Helper()
 	for _, item := range snapshot.Items {
-		if item.Kind != trajectory.KindObservation || item.Content != text {
+		// Provisional revisions of the same words precede the settled one in
+		// the trajectory now; the settled observation is the one asserted.
+		if item.Kind != trajectory.KindObservation || item.Content != text ||
+			item.Event == nil || !strings.HasSuffix(item.Event.Type, ".endpoint") {
 			continue
 		}
 		if item.SourceRevision != sourceRevision || item.Producer.Phase != trajectory.PhaseUser ||
-			item.Event == nil || item.Event.Channel != scenarioconversation.SourceMicrophone ||
-			item.Event.CorrelationID == "" || !strings.HasSuffix(item.Event.Type, ".endpoint") {
+			item.Event.Channel != scenarioconversation.SourceMicrophone || item.Event.CorrelationID == "" {
 			t.Fatalf("trajectory observation for %q = %+v event=%+v", text, item, item.Event)
 		}
 		return

@@ -257,22 +257,6 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		},
 		"expected_admission", "candidate_sources", "detector",
 	)
-	transcriptEventRules := objectSchema(schemaObject{
-		"instruction": stringSchema(1, maximumElementJSON),
-		"acts": func() schemaObject {
-			result := arraySchema(enumSchema(
-				"listen", "speak-through", "answer", "interrupt", "act-silently",
-				"keep-speaking", "stop-speaking",
-			), 2, 7)
-			result["uniqueItems"] = true
-			return result
-		}(),
-		"timeout_ms": integerSchema(1, 300_000),
-	}, "instruction", "acts", "timeout_ms")
-	transcriptEvents := objectSchema(schemaObject{
-		"partial": transcriptEventRules,
-		"final":   transcriptEventRules,
-	}, "partial", "final")
 	documents := map[string]schemaObject{
 		"schema://openrealtime/acoustic/noise-filter-config/v1": standardObject("schema://openrealtime/acoustic/noise-filter-config/v1", schemaObject{"url": schemaObject{"type": "string", "minLength": 1}, "timeout_ms": integerSchema(1, 50), "model": schemaObject{"type": "string", "enum": []string{"rnnoise", "real-tse"}}}, "url", "timeout_ms"),
 		"schema://openrealtime/acoustic/admission-config/v1": standardObject(
@@ -558,20 +542,18 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 				}(),
 			},
 		),
-		"schema://openrealtime/policy/semantic-admission-config/v3": standardObject(
-			"schema://openrealtime/policy/semantic-admission-config/v3",
+		// v4: one instruction for every event, no per-event act lists, no
+		// second-opinion guards, no silent lane. The option set is derived from
+		// whether the agent is speaking and is not a value.
+		"schema://openrealtime/policy/semantic-admission-config/v4": standardObject(
+			"schema://openrealtime/policy/semantic-admission-config/v4",
 			schemaObject{
 				"decider": identifier(1024), "direct_visual_input": schemaObject{"type": "boolean"},
-				"standing_extraction":           schemaObject{"type": "boolean"},
-				"verify_voice_activation":       schemaObject{"type": "boolean"},
-				"verify_silent_action":          schemaObject{"type": "boolean"},
-				"minimum_activation_confidence": numberSchema(0, 1),
-				"recent_lines":                  integerSchema(1, 4096),
-				"max_pending":                   largeBoundedState, "terminal_memory": largeBoundedState,
+				"standing_extraction": schemaObject{"type": "boolean"},
+				"recent_lines":        integerSchema(1, 4096),
+				"max_pending":         largeBoundedState, "terminal_memory": largeBoundedState,
 				"cancel_memory": largeBoundedState, "standing_memory": integerSchema(1, 4096),
-				"transcript_events": schemaObject{"anyOf": []any{
-					transcriptEvents, schemaObject{"type": "null"},
-				}},
+				"rules": schemaObject{"type": "string", "maxLength": 1 << 20},
 			}, "decider",
 		),
 		"schema://openrealtime/speech/tts-config/v1": standardObject(

@@ -241,12 +241,12 @@ func (runner *sessionInvocationRunner) acceptCommit(ctx context.Context, envelop
 	if err := validateSemanticGrant(grant, runner.config.Role); err != nil {
 		return runner.refuse(ctx, envelope, "committed", "", "invalid_commit", err.Error())
 	}
-	return runner.emitCommit(ctx, envelope, commit, grant.Act)
+	return runner.emitCommit(ctx, envelope, commit, grant.Choice, grant.SpokeOver)
 }
 
 func (runner *sessionInvocationRunner) emitCommit(
 	ctx context.Context, envelope element.Envelope,
-	commit stateelements.ObservationCommitOutcome, act coreinteraction.Act,
+	commit stateelements.ObservationCommitOutcome, choice coreinteraction.Choice, spokeOver bool,
 ) error {
 	if runner.invocation.Revision == 0 {
 		return runner.refuse(ctx, envelope, "committed", "", "invocation_unset",
@@ -277,7 +277,7 @@ func (runner *sessionInvocationRunner) emitCommit(
 		Invocation:             invocationForCommit(runner.invocation, commit),
 		ExpectedContextVersion: &version, ExpectedContextItemID: commit.Context.StateItemID,
 		CommittedContext: &committedContext,
-		SpokeOver:        act == coreinteraction.ActSpeakThrough || act == coreinteraction.ActInterrupt,
+		SpokeOver:        spokeOver,
 	}
 	trigger := runner.triggerEnvelope(envelope, generationID, payload)
 	for _, parent := range []string{commit.Context.StateItemID, commit.TrajectoryItemID, commit.TriggerItemID} {
@@ -296,7 +296,7 @@ func (runner *sessionInvocationRunner) emitCommit(
 	if _, err := runner.ports.authority.Broadcast(ctx, candidateEnvelope); err != nil {
 		return err
 	}
-	return runner.finishEmission(ctx, envelope, "committed", generationID, commit, act)
+	return runner.finishEmission(ctx, envelope, "committed", generationID, commit, choice, spokeOver)
 }
 
 func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelope element.Envelope) error {
@@ -356,7 +356,7 @@ func (runner *sessionInvocationRunner) acceptCreate(ctx context.Context, envelop
 	}
 	runner.state.ContextVersion = version
 	return runner.finishEmission(ctx, envelope, "create", generationID,
-		stateelements.ObservationCommitOutcome{StoreVersion: version}, "")
+		stateelements.ObservationCommitOutcome{StoreVersion: version}, coreinteraction.Choice{Speak: true}, false)
 }
 
 func (runner *sessionInvocationRunner) acceptCancel(ctx context.Context, envelope element.Envelope) error {
@@ -410,7 +410,7 @@ func (runner *sessionInvocationRunner) triggerEnvelope(
 
 func (runner *sessionInvocationRunner) finishEmission(
 	ctx context.Context, cause element.Envelope, operation, generationID string,
-	commit stateelements.ObservationCommitOutcome, act coreinteraction.Act,
+	commit stateelements.ObservationCommitOutcome, choice coreinteraction.Choice, spokeOver bool,
 ) error {
 	runner.rememberTerminal(generationID)
 	runner.state.Emitted++
@@ -419,7 +419,7 @@ func (runner *sessionInvocationRunner) finishEmission(
 		Role: runner.config.Role, InvocationRevision: runner.invocation.Revision,
 		InvocationDigest: runner.invocationDigest, StreamID: commit.StreamID,
 		SourceRevision: commit.SourceRevision, ObservationRevision: commit.ObservationRevision,
-		Act: act, ContextVersion: commit.StoreVersion,
+		Choice: &choice, SpokeOver: spokeOver, ContextVersion: commit.StoreVersion,
 		TriggerItemID: commit.TriggerItemID,
 	}); err != nil {
 		return err

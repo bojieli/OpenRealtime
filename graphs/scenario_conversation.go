@@ -104,26 +104,21 @@ func ScenarioConversationArtifacts(
 		directVisual = evidence.DirectVisualInput
 	}
 	if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
-		"direct_visual_input":           directVisual,
-		"standing_extraction":           config.SemanticAdmission.StandingExtraction,
-		"verify_voice_activation":       config.SemanticAdmission.VerifyVoiceActivation,
-		"verify_silent_action":          config.SemanticAdmission.VerifySilentAction,
-		"minimum_activation_confidence": config.SemanticAdmission.MinimumActivationConfidence,
-		"standing_memory":               config.SemanticAdmission.StandingMemory,
+		"direct_visual_input": directVisual,
+		"standing_extraction": config.SemanticAdmission.StandingExtraction,
+		"standing_memory":     config.SemanticAdmission.StandingMemory,
+		"rules":               config.SemanticAdmission.Rules,
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
+	// Every transcript revision reaches the policy. The question it answers is
+	// the same for a provisional hypothesis as for a settled utterance, and a
+	// policy that only sees finals cannot count while somebody is still
+	// talking.
 	if err := updateScenarioNode(document.Nodes, "audio_final_gate", map[string]any{
-		"admit_provisional": config.SemanticAdmission.TranscriptEvents != nil,
+		"admit_provisional": true,
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
-	}
-	if config.SemanticAdmission.TranscriptEvents != nil {
-		if err := updateScenarioNode(document.Nodes, "semantic_admission", map[string]any{
-			"transcript_events": config.SemanticAdmission.TranscriptEvents,
-		}); err != nil {
-			return graphconfig.Artifacts{}, err
-		}
 	}
 
 	if config.NoiseFilter != nil {
@@ -280,3 +275,19 @@ func ScenarioConversationLaunchConfig(
 		Evidence: evidence, Adapter: plugin.Selection(),
 	}, nil
 }
+
+// ProductionContinuationInstruction is the instruction the conversation
+// room's voice model reads, shared by the profile freezer and the live
+// benchmarks so a benchmark measures the deployed instruction and not a copy.
+const ProductionContinuationInstruction = "Ground every response in canonical evidence already received. " +
+	"Never invent, predict, quote, or role-play a future user or other-speaker turn, timing annotation, or stage direction. " +
+	"Be concise unless the user explicitly requested detail. " +
+	"Name the concrete matched item, for example \"the sea bass,\" instead of saying only \"that is the one.\" " +
+	"Put the decisive requested fact in the first clause; for a correction, start with the corrected fact, for example \"The deadline is the third, not the thirteenth.\" " +
+	"Translate into the requested target language, not the source language. " +
+	"When a deferred event or time condition is due, execute the requested action now; do not merely acknowledge, confirm, restate, or narrate its setup. " +
+	"Never emit punctuation-only output; always produce at least one complete lexical sentence when speech is authorized. " +
+	"For an event-driven running count, emit exactly one updated count for each new occurrence: one number, once, with no repeated sentence or extra words, continuing from counts that were already audible. " +
+	"Speak counts as number words in the requested language with sentence punctuation, for example \"One.\" then \"Two.\" in English, rather than bare digit strings. " +
+	"For a direct request to recite a finite numeric range, supply the complete remaining sequence in this response, one number per sentence, without waiting for another user turn. \"Slowly\" and \"one number at a time\" specify spoken pacing, not one number per response. The speech player paces and interrupts the stream; generate all remaining numbers through the requested endpoint now. This rule never authorizes counting events that have not occurred. For an event-driven count, a repeated occurrence or no new occurrence requires exactly <wait> and nothing else; never say zero, acknowledge the rule, or narrate waiting. " +
+	"When resuming that sequence, begin after the last number the user actually heard; do not skip numbers that were prepared but not audible."

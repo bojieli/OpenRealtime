@@ -31,16 +31,7 @@ import (
 func TestScenarioConversationStopRevokesCompletedQueuedSpeechAndAllowsNewTurn(t *testing.T) {
 	base := newScenarioProfileFixture(t)
 	config := base.pluginConfig()
-	config.SemanticAdmission.TranscriptEvents = &policyelements.SemanticTranscriptEventConfig{
-		Partial: policyelements.SemanticTranscriptEventRules{
-			Instruction: "Wait for the final request.", TimeoutMS: 1000,
-			Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActSpeakThrough},
-		},
-		Final: policyelements.SemanticTranscriptEventRules{
-			Instruction: "Answer or stop the current speech.", TimeoutMS: 1000,
-			Acts: []coreinteraction.Act{coreinteraction.ActStaySilent, coreinteraction.ActAnswer, coreinteraction.ActStopSpeaking},
-		},
-	}
+	config.SemanticAdmission.Rules = "Wait for the final request; a hold request stops the current speech."
 	asr := &scenarioAddressingASRControl{turns: []string{"Count to eight.", "Hold on a moment.", "Resume now."}}
 	policy := &scenarioQueuedCancelPolicy{scenarioAddressingPolicyDecider: scenarioAddressingPolicyDecider{
 		control: newScenarioAddressingPolicyControl(), descriptor: config.Policy.Descriptor,
@@ -56,9 +47,6 @@ func TestScenarioConversationStopRevokesCompletedQueuedSpeechAndAllowsNewTurn(t 
 	}
 	config.Policy.Factory = func(context.Context, legacy.Options) (policyelements.SemanticDecider, error) { return policy, nil }
 	config.Model.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) { return model, nil }
-	config.SilentModel.Factory = func(context.Context, legacy.Options) (continuation.Provider, error) {
-		return &scenarioQueuedCancelModel{descriptor: config.SilentModel.Descriptor}, nil
-	}
 	config.TTS.Factory = func(context.Context, legacy.Options) (v1.SpeechProvider, error) { return tts, nil }
 	launchConfig, err := graphs.ScenarioConversationLaunchConfig(config)
 	if err != nil {
@@ -176,8 +164,11 @@ type scenarioQueuedCancelPolicy struct {
 }
 
 func (policy *scenarioQueuedCancelPolicy) Decide(ctx context.Context, decision coreinteraction.Decision) (coreinteraction.Outcome, error) {
-	if strings.Contains(scenarioAddressingCurrentEvidence(decision.Evidence), "Resume now.") &&
-		slices.Contains(decision.Options, string(coreinteraction.ActAnswer)) {
+	current := scenarioAddressingCurrentEvidence(decision.Evidence)
+	partial := strings.Contains(decision.Evidence, "transcript event: partial")
+	final := strings.Contains(decision.Evidence, "transcript event: final")
+	if final && strings.Contains(current, "Resume now.") && !decision.Speaking &&
+		decision.Question != coreinteraction.QuestionRequest {
 		select {
 		case policy.resumeEvidence <- decision.Evidence:
 		case <-ctx.Done():
@@ -185,17 +176,19 @@ func (policy *scenarioQueuedCancelPolicy) Decide(ctx context.Context, decision c
 		}
 	}
 	wanted := ""
-	if slices.Contains(decision.Options, string(coreinteraction.ActStaySilent)) && strings.Contains(decision.Prompt, "Wait for the final request.") {
-		wanted = string(coreinteraction.ActStaySilent)
-	} else if slices.Contains(decision.Options, string(coreinteraction.ActStopSpeaking)) && strings.Contains(scenarioAddressingCurrentEvidence(decision.Evidence), "Hold on a moment.") {
-		wanted = string(coreinteraction.ActStopSpeaking)
-	} else if slices.Contains(decision.Options, string(coreinteraction.ActStaySilent)) && strings.Contains(scenarioAddressingCurrentEvidence(decision.Evidence), "Hold on a moment.") {
-		// The stopped utterance is re-evaluated after cancellation. This
-		// fixture's hold request still asks for silence, not a resumed count.
-		wanted = string(coreinteraction.ActStaySilent)
+	switch {
+	case partial && !decision.Speaking:
+		wanted = coreinteraction.ChoiceListen
+	case partial && decision.Speaking:
+		wanted = coreinteraction.ChoiceKeep
+	case strings.Contains(current, "Hold on a moment.") && decision.Speaking:
+		// One decision: stop the current speech and ask for nothing new.
+		wanted = coreinteraction.ChoiceStop
+	case strings.Contains(current, "Hold on a moment."):
+		wanted = coreinteraction.ChoiceListen
 	}
 	if wanted != "" {
-		return coreinteraction.Outcome{Index: slices.Index(decision.Options, wanted), Option: wanted, Confidence: 0.99, Measured: true}, nil
+		return scenarioAnswer(decision, wanted)
 	}
 	return policy.scenarioAddressingPolicyDecider.Decide(ctx, decision)
 }

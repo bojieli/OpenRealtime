@@ -5,6 +5,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
 	"github.com/bojieli/OpenRealtime/bench/scenario"
 	"github.com/bojieli/OpenRealtime/bench/scenario/graphnative"
+	"github.com/bojieli/OpenRealtime/interaction"
 	"strings"
 	"testing"
 )
@@ -20,11 +21,8 @@ func TestRoomDefaultUsesBenchmarkPipelineAndFullScenarioContract(t *testing.T) {
 	if selection.asrProvider != "deepgram" || selection.modelProvider != "google" || selection.policyProvider != "vllm" || selection.ttsProvider != "fish-audio" || selection.speakerURL == "" || selection.wordTimingsURL == "" {
 		t.Fatalf("room pipeline lost a benchmark component: %+v", selection)
 	}
-	if selection.transcriptPolicy != "event-aware" || selection.transcriptPartialRules == "" || selection.transcriptFinalRules == "" {
-		t.Fatal("room must select both streaming transcript policies")
-	}
-	if _, err := scenarioProfileTranscriptEvents(selection); err != nil {
-		t.Fatal(err)
+	if selection.transcriptRules != interaction.ChoiceInstruction {
+		t.Fatal("room must pass the interaction rules explicitly so the frozen profile records them")
 	}
 	contract, err := graphnative.BuildContract(selection.cases...)
 	if err != nil {

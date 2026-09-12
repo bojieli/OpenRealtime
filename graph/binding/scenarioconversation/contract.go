@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"math"
 	"mime"
 	"reflect"
 	"slices"
@@ -41,7 +40,6 @@ const (
 	SpeakerIdentityReference = "deployment.scenario-conversation.speaker-identity"
 	PolicyReference          = "deployment.scenario-conversation.semantic-policy"
 	ModelReference           = "deployment.scenario-conversation.model"
-	SilentModelReference     = "deployment.scenario-conversation.model-silent"
 	TTSReference             = "deployment.scenario-conversation.tts"
 	WordTimingReference      = "deployment.scenario-conversation.word-timing"
 	PlaybackReference        = "deployment.scenario-conversation.playback"
@@ -184,12 +182,12 @@ type ToolDeclaration struct {
 // use are separate: a plug-in may expose standing extraction while a profile
 // deliberately leaves it disabled.
 type SemanticAdmissionSelection struct {
-	StandingExtraction          bool                                          `json:"standing_extraction,omitempty"`
-	VerifyVoiceActivation       bool                                          `json:"verify_voice_activation,omitempty"`
-	VerifySilentAction          bool                                          `json:"verify_silent_action,omitempty"`
-	MinimumActivationConfidence float64                                       `json:"minimum_activation_confidence,omitempty"`
-	StandingMemory              int                                           `json:"standing_memory,omitempty"`
-	TranscriptEvents            *policyelements.SemanticTranscriptEventConfig `json:"transcript_events,omitempty"`
+	StandingExtraction bool `json:"standing_extraction,omitempty"`
+	StandingMemory     int  `json:"standing_memory,omitempty"`
+	// Rules is the one instruction the interaction policy reads at every
+	// event. Empty selects interaction.ChoiceInstruction; the room passes it
+	// explicitly so the frozen profile records the text it ran with.
+	Rules string `json:"rules,omitempty"`
 }
 
 func normalizeSemanticAdmissionSelection(
@@ -201,39 +199,13 @@ func normalizeSemanticAdmissionSelection(
 	if selection.StandingMemory < 1 || selection.StandingMemory > 4096 {
 		return SemanticAdmissionSelection{}, errors.New("scenario conversation standing_memory must be between 1 and 4096")
 	}
-	if math.IsNaN(selection.MinimumActivationConfidence) ||
-		math.IsInf(selection.MinimumActivationConfidence, 0) ||
-		selection.MinimumActivationConfidence < 0 || selection.MinimumActivationConfidence > 1 {
-		return SemanticAdmissionSelection{}, errors.New(
-			"scenario conversation minimum_activation_confidence must be between 0 and 1",
-		)
-	}
 	if selection.StandingExtraction && !descriptor.StandingExtraction {
 		return SemanticAdmissionSelection{}, errors.New(
 			"scenario conversation standing extraction was selected from a policy provider that does not declare it",
 		)
 	}
-	if selection.TranscriptEvents != nil {
-		selection.TranscriptEvents = cloneSemanticTranscriptEvents(selection.TranscriptEvents)
-		if err := policyelements.ValidateSemanticTranscriptEventConfig(*selection.TranscriptEvents); err != nil {
-			return SemanticAdmissionSelection{}, fmt.Errorf(
-				"scenario conversation transcript events: %w", err,
-			)
-		}
-	}
+	selection.Rules = strings.TrimSpace(selection.Rules)
 	return selection, nil
-}
-
-func cloneSemanticTranscriptEvents(
-	source *policyelements.SemanticTranscriptEventConfig,
-) *policyelements.SemanticTranscriptEventConfig {
-	if source == nil {
-		return nil
-	}
-	result := *source
-	result.Partial.Acts = slices.Clone(source.Partial.Acts)
-	result.Final.Acts = slices.Clone(source.Final.Acts)
-	return &result
 }
 
 // PluginConfig is the immutable resource-free contribution retained by a
@@ -248,7 +220,6 @@ type PluginConfig struct {
 	Policy                  PolicyPlugin
 	SemanticAdmission       SemanticAdmissionSelection
 	Model                   ModelPlugin
-	SilentModel             ModelPlugin
 	TTS                     TTSPlugin
 	WordTiming              *WordTimingPlugin
 	Tools                   []ToolDeclaration
@@ -301,9 +272,6 @@ func clonePluginConfig(source PluginConfig) PluginConfig {
 		source.NoiseFilter = &value
 	}
 	result := source
-	result.SemanticAdmission.TranscriptEvents = cloneSemanticTranscriptEvents(
-		source.SemanticAdmission.TranscriptEvents,
-	)
 	result.ASR.Descriptor.Capabilities = maps.Clone(source.ASR.Descriptor.Capabilities)
 	if source.SpeakerIdentity != nil {
 		speaker := *source.SpeakerIdentity
@@ -360,12 +328,6 @@ func validatePluginConfig(config PluginConfig) error {
 	}
 	if err := validateModelPlugin(config.Model, ModelReference, continuation.SpeechAuthorityVoice); err != nil {
 		return err
-	}
-	if err := validateModelPlugin(config.SilentModel, SilentModelReference, continuation.SpeechAuthoritySilent); err != nil {
-		return err
-	}
-	if config.Model.Artifact != config.SilentModel.Artifact {
-		return errors.New("scenario conversation voice and silent cognition must come from one exact provider plugin artifact")
 	}
 	if err := validateTTSPlugin(config.TTS); err != nil {
 		return err

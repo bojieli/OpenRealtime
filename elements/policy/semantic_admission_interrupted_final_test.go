@@ -11,10 +11,15 @@ import (
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
-func TestFinalInterruptionIsReconsideredAfterOutputRetires(t *testing.T) {
-	for _, next := range []coreinteraction.Act{coreinteraction.ActAnswer, coreinteraction.ActStaySilent} {
-		t.Run(string(next), func(t *testing.T) {
-			decider := &semanticTestDecider{descriptor: semanticTestDescriptor, answers: []string{string(coreinteraction.ActStopSpeaking), string(next)}}
+// A final transcript that lands while the agent is speaking is decided once.
+// stop+speak retires the old output and admits the new request in that same
+// decision; stop alone admits nothing and is not asked again when the output
+// retires. There used to be a second round-trip here - stop, wait for idle,
+// re-ask - and the two questions being one token is what removed it.
+func TestFinalInterruptionIsDecidedOnce(t *testing.T) {
+	for _, next := range []string{coreinteraction.ChoiceStopSpeak, coreinteraction.ChoiceStop} {
+		t.Run(next, func(t *testing.T) {
+			decider := &semanticTestDecider{descriptor: semanticTestDescriptor, answers: []string{next}}
 			h := mountSemanticAdmission(t, decider, semanticConfig(8, 8, 8))
 			defer h.stop(t)
 			consumeSemanticStartup(t, h)
@@ -41,36 +46,37 @@ func TestFinalInterruptionIsReconsideredAfterOutputRetires(t *testing.T) {
 			input := element.Envelope{Type: stateelements.ObservationCommitOutcomeType(), ItemID: "final-question", SessionID: "semantic-session", Payload: commit}
 			sendPolicy(t, h.ingress(t, "committed"), input)
 			_ = receivePolicy(t, h.egress(t, "state"))
-			stop := receivePolicy(t, h.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
-			if stop.Act != coreinteraction.ActStopSpeaking {
-				t.Fatalf("first decision: %+v", stop)
-			}
-			_ = receivePolicy(t, h.egress(t, "outcome"))
-			_ = receivePolicy(t, h.egress(t, "state"))
-			assertNoPolicyEnvelope(t, h.egress(t, "voice_committed"))
-			sendOutput(1, false) // A stale idle observation cannot release the new request.
-			if len(decider.captured()) != 1 {
-				t.Fatal("stale output state released interruption")
-			}
-			sendOutput(3, false)
 			decision := receivePolicy(t, h.egress(t, "decision")).Payload.(policyelements.SemanticDecision)
-			if decision.Act != next {
-				t.Fatalf("final utterance lost after cancellation: %+v", decision)
+			if decision.Choice.Token() != next || !decision.Choice.Stop || decision.Event != coreinteraction.TranscriptFinal {
+				t.Fatalf("decision: %+v", decision)
 			}
-			_ = receivePolicy(t, h.egress(t, "outcome"))
-			_ = receivePolicy(t, h.egress(t, "state"))
-			if next == coreinteraction.ActAnswer {
+			if next == coreinteraction.ChoiceStopSpeak {
 				grant := receivePolicy(t, h.egress(t, "voice_committed")).Payload.(policyelements.SemanticGrant)
-				if grant.Commit.ObservationRevision != commit.ObservationRevision {
-					t.Fatal("reconsideration changed the observation")
+				if grant.Commit.ObservationRevision != commit.ObservationRevision || !grant.Choice.Stop || !grant.Choice.Speak {
+					t.Fatalf("stop+speak grant: %+v", grant)
 				}
-			} else {
-				assertNoPolicyEnvelope(t, h.egress(t, "voice_committed"))
 			}
+			outcome := receivePolicy(t, h.egress(t, "outcome")).Payload.(policyelements.SemanticAdmissionOutcome)
+			_ = receivePolicy(t, h.egress(t, "state"))
+			if next == coreinteraction.ChoiceStop {
+				if outcome.Kind != policyelements.SemanticAdmissionSuppressed || outcome.Code != "stop" {
+					t.Fatalf("stop outcome: %+v", outcome)
+				}
+				assertNoPolicyEnvelope(t, h.egress(t, "voice_committed"))
+			} else if outcome.Kind != policyelements.SemanticAdmissionAdmitted {
+				t.Fatalf("stop+speak outcome: %+v", outcome)
+			}
+			// The output retiring is not a new question. Nothing is re-asked.
+			sendOutput(3, false)
+			assertNoPolicyEnvelope(t, h.egress(t, "decision"))
+			if len(decider.captured()) != 1 {
+				t.Fatal("retired output re-asked the interruption")
+			}
+			// Neither is a replay of the same commit.
 			sendPolicy(t, h.ingress(t, "committed"), input)
 			_ = receivePolicy(t, h.egress(t, "outcome"))
 			_ = receivePolicy(t, h.egress(t, "state"))
-			if len(decider.captured()) != 2 {
+			if len(decider.captured()) != 1 {
 				t.Fatal("terminal replay repeated the interruption")
 			}
 		})

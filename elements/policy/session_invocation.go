@@ -97,6 +97,12 @@ type SessionInvocationConfig struct {
 type SessionInvocationUpdate struct {
 	Revision   uint64                  `json:"revision"`
 	Invocation continuation.Invocation `json:"invocation"`
+	// Contract is what the session told the agent to be and do, on its own:
+	// the invocation's instruction is that plus the voice model's operating
+	// rules, and the interaction policy must not read the voice's rules as
+	// the person's wishes. Empty means the invocation instruction is all
+	// there is.
+	Contract string `json:"contract,omitempty"`
 }
 
 func (SessionInvocationUpdate) InspectionCause() element.InspectionCauseKind {
@@ -154,7 +160,8 @@ type SessionInvocationOutcome struct {
 	StreamID            string                       `json:"stream_id,omitempty"`
 	SourceRevision      uint64                       `json:"source_revision,omitempty"`
 	ObservationRevision uint64                       `json:"observation_revision,omitempty"`
-	Act                 coreinteraction.Act          `json:"act,omitempty"`
+	Choice              *coreinteraction.Choice      `json:"choice,omitempty"`
+	SpokeOver           bool                         `json:"spoke_over,omitempty"`
 	ContextVersion      uint64                       `json:"context_version,omitempty"`
 	TriggerItemID       string                       `json:"trigger_item_id,omitempty"`
 	Code                string                       `json:"code,omitempty"`
@@ -316,14 +323,19 @@ func validateSemanticGrant(grant SemanticGrant, role string) error {
 	); err != nil {
 		return err
 	}
-	voice := grant.Act == coreinteraction.ActAnswer ||
-		grant.Act == coreinteraction.ActSpeakThrough || grant.Act == coreinteraction.ActInterrupt
 	if role == "silent" {
-		if grant.Act != coreinteraction.ActActSilently {
-			return fmt.Errorf("silent session invocation cannot execute semantic act %q", grant.Act)
-		}
-	} else if !voice {
-		return fmt.Errorf("voice session invocation cannot execute semantic act %q", grant.Act)
+		// There is no silent cognition lane any more. Silence is the voice
+		// model's decision, made in content it can read, and its control
+		// token is extracted before synthesis; a second model wired to a
+		// port that cannot speak was a structural answer to a question the
+		// policy no longer asks.
+		return errors.New("silent session invocation is not part of the semantic contract")
+	}
+	if err := grant.Choice.Validate(); err != nil {
+		return err
+	}
+	if !grant.Choice.Speak {
+		return fmt.Errorf("voice session invocation cannot execute semantic choice %q", grant.Choice.Token())
 	}
 	return nil
 }
