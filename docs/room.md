@@ -119,10 +119,16 @@ OPENREALTIME_COUNTING_BENCH=1 go test ./graphs -run TestCountingBenchmark -v -co
 ```
 
 It needs the vLLM policy (`OPENREALTIME_POLICY_URL`, default
-`http://127.0.0.1:8000/v1`) and `GEMINI_API_KEY`, prints a scorecard - each
-animal counted once, in order, on the partial that named it; no speech on
-sentences without one; no overlapping generations - and writes the run's
-timeline to `.runtime/counting-bench/`.
+`http://127.0.0.1:8000/v1`) and `GEMINI_API_KEY`. Six stories run as
+subtests - animals at a zoo, language models tried in a week, fruit with a
+question in the middle, a twelve-sentence safari, programming languages with
+animals as distractors, and cities until the person says to stop counting -
+and `OPENREALTIME_COUNTING_BENCH` can name a comma-separated subset. Each
+prints a scorecard - every item counted once, in order, on the partial that
+named it; partials of sentences with nothing to count listened to; the
+question answered on its final; nothing counted after the rule is lifted;
+nothing but the numbers and the answers said; no overlapping generations -
+and writes its timeline under `.runtime/counting-bench/`.
 
 ## Reading a turn back
 
