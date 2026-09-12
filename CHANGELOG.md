@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- The speech fixtures are no longer offered under CC0, and the provenance the
+  policy requires is now recorded for all twelve. They are Fish Audio output,
+  synthesised locally on this project's own GPU, so they are that model's output
+  rather than material this repository can place in the public domain: the Fish
+  Audio Research License Agreement permits research and non-commercial use,
+  requires a separate written licence for commercial use, and its conditions
+  reach the output. CC0 still covers the golden traces, images, and contract
+  fixtures beside them.
+
+  `bench/meeting/testdata/fixtures.json` already carried a full manifest -
+  generator, endpoint, conversion, per-file SHA-256, duration, and the spoken
+  text - and was simply never referenced from LICENSES.md. The eight
+  Realtime-CU fixtures had no manifest at all; one is added, recording the same
+  fields plus the task each serves, with two gaps marked honestly rather than
+  omitted: the model revision was not recorded when either set was authored, and
+  the Realtime-CU utterance text was never written down.
+
+- The Meeting Assistant entry in the eight-suite comparison contract is the
+  graph-native candidate cell running all four cases. The cascade/Omni pairing
+  the section used to require cannot be produced - the switch was removed with
+  the commit that selected one candidate, and no Omni Meeting cell exists - so
+  the contract no longer asks for one.
+
 - The upstream binding now uses what GPT-Live is for. A delegation from the
   endpoint is treated as the escalation the rollout already understands, and
   on this dialect the background reasoner runs when the voice asks rather than

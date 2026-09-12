@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "suite": "openrealtime-realtime-cu-v1",
+  "canonical_input": "The checked-in WAV bytes and SHA-256 values define the benchmark input. Synthesis provenance is informational and is not used to regenerate fixtures during a run.",
+  "generator": {
+    "family": "Fish Audio",
+    "model": "fishaudio/fish-speech",
+    "model_revision": "not recorded when the fixtures were authored",
+    "endpoint": "local Fish speech service, run on this project's own GPU",
+    "composition": "Utterances were synthesized locally and converted to mono PCM signed 16-bit little-endian at 22050 Hz.",
+    "utterance_text": "not recorded in the repository; bench/meeting/testdata/fixtures.json records text for that suite, this one does not"
+  },
+  "audio_format": {
+    "codec": "pcm_s16le",
+    "sample_rate_hz": 22050,
+    "channels": 1,
+    "bits_per_sample": 16
+  },
+  "model_license": "Fish Audio Research License Agreement; see LICENSES.md for what that permits and what it does not.",
+  "fixtures": [
+    {
+      "file": "authorization.wav",
+      "sha256": "36c9324e4bc9a3b6b4826200e12ddf140f9be0cafdf1a6524b99c46f496f0cfc",
+      "duration_ms": 5940.0,
+      "task_id": "untrusted-payment-prompt"
+    },
+    {
+      "file": "camera.wav",
+      "sha256": "82174a77fc5d9885068ab725dfab018ea693da764929fe477ecf5d60776fe36d",
+      "duration_ms": 9181.905,
+      "task_id": "camera-smoke-stop"
+    },
+    {
+      "file": "choice.wav",
+      "sha256": "0fa1ce25a6b0cbfc5deb8ff419d76d6f2feb540e646e46e0f3d288eec1b31c02",
+      "duration_ms": 3310.476,
+      "task_id": "spoken-colour-choice"
+    },
+    {
+      "file": "dashboard.wav",
+      "sha256": "e8b2a9e11655dc293e60ecc6da9034c56df3f7589e978994802509f636acf7a0",
+      "duration_ms": 8040.726,
+      "task_id": "live-temperature-threshold"
+    },
+    {
+      "file": "form.wav",
+      "sha256": "6db0f40b12e9ada242c2ee2a6c44554cab3a2d4eb3bf50efabb3ee8152fa6bdb",
+      "duration_ms": 4503.401,
+      "task_id": "typed-incident-code"
+    },
+    {
+      "file": "game.wav",
+      "sha256": "7e1a14897b183e51c236c019e7e4d61cfb2ddef5f83010d2c603d13bc838abd6",
+      "duration_ms": 3333.787,
+      "task_id": "moving-target"
+    },
+    {
+      "file": "static.wav",
+      "sha256": "7b8263358aadf90ef6dc4c9df11e97f3cecab9024a4a4eb92811498a26bf82f7",
+      "duration_ms": 3803.81,
+      "task_id": "static-control"
+    },
+    {
+      "file": "transient.wav",
+      "sha256": "353351e5ae8e809f971dd7ae90ac813e95253abf700c569e2d4a58621b23413c",
+      "duration_ms": 5247.937,
+      "task_id": "transient-deployment-alert"
+    }
+  ]
+}

@@ -863,15 +863,16 @@ to `meeting-assistant-graph-native-candidate`. Report the task-level traces and
 latency distributions; do not turn a partial, filtered, dirty-tree, or
 unavailable-provider run into a ranking.
 
-> **Superseded:** this section previously documented a `-foreground
-> cascade|omni` switch and a cascade/Omni pair treated as an end-to-end system
-> comparison, with the cascade cell required in the eight-suite comparison
-> contract and the Omni cell as opt-in architecture validation. The commit that
-> selected one graph-native Meeting candidate removed that switch, and no Omni
-> Meeting cell exists in the suite today, so no such pairing can be produced by
-> this command. What the comparison contract should require in its place has not
-> been rewritten here, because that is a measurement decision rather than a
-> documentation one.
+The graph-native candidate cell running all four cases is the required Meeting
+Assistant result in the optional eight-suite comparison contract. There is no
+second cell to pair it against: this section previously documented a
+`-foreground cascade|omni` switch and treated the cascade/Omni pair as an
+end-to-end system treatment, with the cascade cell required and the Omni cell as
+opt-in architecture validation. The commit that selected one graph-native
+Meeting candidate removed that switch, and no Omni Meeting cell exists in the
+suite, so that pairing cannot be produced and the contract no longer asks for
+one. A run still has to complete all four cases to count, and the cautions above
+about partial, filtered, dirty-tree, and unavailable-provider runs are unchanged.
 
 The checked-in launcher passes `-reference-levels` derived from its active
 `MEETING_ASR_*`, `MEETING_POLICY_*`, `MEETING_SLOW_*`, and foreground-model
