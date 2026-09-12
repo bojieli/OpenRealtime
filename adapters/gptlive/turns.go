@@ -47,6 +47,12 @@ const (
 	// endpoint has genuinely stopped speaking rather than between two
 	// sentences of one answer.
 	defaultOutputTurnGap = 1200 * time.Millisecond
+	// defaultSilenceHangover is how much carrier follows real speech before
+	// the stream goes quiet. Two of the endpoint's 100 ms frames: long enough
+	// that an ordinary gap between words is carried through as the pause it
+	// is, short enough that a stop is audible as a stop within the second a
+	// yielding agent is given.
+	defaultSilenceHangover = 200 * time.Millisecond
 )
 
 // turnState is everything the boundary synthesis remembers. It is guarded by
@@ -62,6 +68,9 @@ type turnState struct {
 	assistantSpeaking bool
 	assistantText     strings.Builder
 	assistantTimer    clock.Timer
+	// silentFor is how much carrier has arrived since the last audible frame,
+	// which is what bounds how much of it is passed on.
+	silentFor time.Duration
 
 	// delegation is the open client delegation the endpoint is waiting on, so
 	// a completed answer can be returned against it.
@@ -132,15 +141,24 @@ func (client *Client) noteAssistantTranscript(ctx context.Context, delta string)
 // restarted ten times a second for the life of the session and no utterance
 // would ever close. It is still forwarded while an utterance is open, where it
 // is the pause between two words rather than the gap between two turns.
-func (client *Client) noteAssistantAudio(audible bool) bool {
+func (client *Client) noteAssistantAudio(audible bool, duration time.Duration) bool {
 	client.turnMu.Lock()
 	defer client.turnMu.Unlock()
-	if !audible {
-		return client.turn.assistantSpeaking
+	if audible {
+		client.turn.assistantSpeaking = true
+		client.turn.silentFor = 0
+		client.armAssistantTimer()
+		return true
 	}
-	client.turn.assistantSpeaking = true
-	client.armAssistantTimer()
-	return true
+	if !client.turn.assistantSpeaking {
+		return false
+	}
+	// Carrier inside an utterance is the pause between two words and belongs
+	// to the speech around it - but only for as long as a pause lasts. Past
+	// that the agent has stopped, and passing on more would report speech
+	// that is not happening.
+	client.turn.silentFor += duration
+	return client.turn.silentFor <= client.config.SilenceHangover
 }
 
 // noteDelegation records the endpoint's request for backend work and ends the
@@ -239,6 +257,7 @@ func (client *Client) flushAssistant(ctx context.Context) error {
 	said := strings.TrimSpace(client.turn.assistantText.String())
 	client.turn.assistantText.Reset()
 	client.turn.assistantSpeaking = false
+	client.turn.silentFor = 0
 	// The answer that was waiting has now been spoken, so the delegation it
 	// belonged to is finished. Keeping the ID would attach the next answer to a
 	// request the endpoint has already closed.

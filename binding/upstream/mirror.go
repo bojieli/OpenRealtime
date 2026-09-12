@@ -46,6 +46,9 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		_ = json.Unmarshal(raw, &decoded)
 		runtime.duplex.UserSpeechStarted(runtime.scheduler.NowNS())
 		runtime.noteUserSpeech()
+		// The user has taken the floor. Whether the remote should stop is this
+		// binding's policy to decide and the remote's to obey.
+		runtime.considerBargeIn()
 		return runtime.sink.Activity(runtime.ctx, binding.ActivityEvent{
 			Started: true, ItemID: decoded.ItemID, AudioStartMS: decoded.AudioStartMS,
 		})
@@ -269,6 +272,9 @@ func (runtime *runtime) mirrorEvent(eventType string, raw []byte) error {
 		runtime.remoteMu.Lock()
 		runtime.remote_.OpenDelegation = ""
 		runtime.remoteMu.Unlock()
+		// The interrupted utterance has ended, so the hold is over: whatever
+		// the remote says next is an answer to the person who interrupted.
+		runtime.resumeAudio()
 		return runtime.finishRemoteResponse()
 	case "error":
 		var decoded struct {
@@ -371,6 +377,11 @@ func (runtime *runtime) forwardAudio(raw []byte) error {
 	payload, err := base64.StdEncoding.DecodeString(decoded.Delta)
 	if err != nil || len(payload) == 0 {
 		return err
+	}
+	if runtime.audioSuppressed() {
+		// The user took the floor and the remote was asked to stop. Until it
+		// does, what it is still saying does not reach them.
+		return nil
 	}
 	utterance, err := runtime.currentUtterance(decoded.ItemID)
 	if err != nil {

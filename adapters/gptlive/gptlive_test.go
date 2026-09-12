@@ -560,19 +560,25 @@ func TestTheSilentCarrierNeverHoldsAnUtteranceOpen(t *testing.T) {
 	expect(t, client, "response.output_audio.delta")
 
 	// The carrier resumes at the endpoint's real cadence - a 100 ms frame every
-	// 100 ms. Each is forwarded, because the utterance is still open and a
-	// pause between words is part of the speech around it. Nine of them is
-	// 0.9s, just short of the gap.
-	for tick := 0; tick < 9; tick++ {
+	// 100 ms. Only the hangover's worth is passed on: a pause between words is
+	// part of the speech around it, and anything past that is the agent having
+	// stopped, which must reach the client as silence rather than as audio.
+	fake.emit(map[string]any{"type": "session.output_audio.delta", "delta": carrierFrame(2400)})
+	expect(t, client, "response.output_audio.delta")
+	fake.emit(map[string]any{"type": "session.output_audio.delta", "delta": carrierFrame(2400)})
+	expect(t, client, "response.output_audio.delta")
+	for tick := 0; tick < 7; tick++ {
 		fake.emit(map[string]any{"type": "session.output_audio.delta", "delta": carrierFrame(2400)})
-		expect(t, client, "response.output_audio.delta")
 		scheduler.AdvanceNS(uint64(100 * time.Millisecond))
 	}
+	// Past the hangover the stream is quiet, so a listener can tell the agent
+	// stopped. The utterance itself has not closed yet - the gap is longer.
 	select {
 	case event := <-client.Events():
-		t.Fatalf("the utterance closed before the gap elapsed: %s", event.Type)
+		t.Fatalf("carrier past the hangover was forwarded as speech: %s (%s)", event.Type, event.Raw)
 	case <-time.After(50 * time.Millisecond):
 	}
+	scheduler.AdvanceNS(uint64(200 * time.Millisecond))
 
 	// Crossing the gap on carrier alone must commit the utterance: silence had
 	// its chance to hold it open and must not have taken it.
@@ -1153,9 +1159,12 @@ func TestTheCallersAudioIsTheClockWhenItIsStreaming(t *testing.T) {
 			"filled; its audio is the clock", after-before)
 	}
 
-	// The next interval has no caller audio in it, so silence must resume -
-	// otherwise one frame from the caller would stop the clock for good.
-	scheduler.AdvanceNS(uint64(20 * time.Millisecond))
+	// Once the caller has been quiet for longer than the idle gap, silence
+	// resumes - otherwise one frame from the caller would stop the clock for
+	// good and the endpoint would stall.
+	for tick := 0; tick < 6; tick++ {
+		scheduler.AdvanceNS(uint64(20 * time.Millisecond))
+	}
 	resumed := time.Now().Add(3 * time.Second)
 	for time.Now().Before(resumed) {
 		if fake.countSent("session.input_audio.append") > before {
@@ -1246,4 +1255,56 @@ func TestCloseAfterTheVendorHangsUpIsClean(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close did not return")
 	}
+}
+
+// TestAStopIsAudibleAsAStop is the defect Full-Duplex-Bench found on the real
+// endpoint, reduced to a unit test.
+//
+// Live emits a 100 ms frame every 100 ms whether or not anyone is talking. This
+// adapter used to pass the whole carrier on for as long as an utterance was
+// open, so when the agent genuinely stopped, everything downstream still saw
+// audio arriving - and when a later answer began, there had been no silence
+// between the two. A barge-in policy, the duplex state, and the bench all read
+// that gap; inventing audio across it put the agent's apparent stop 16.4
+// seconds after the user took the floor, on a suite that allows one.
+func TestAStopIsAudibleAsAStop(t *testing.T) {
+	fake := newFakeLive(t)
+	client, scheduler := connect(t, fake, func(config *gptlive.Config) {
+		config.SilenceHangover = 200 * time.Millisecond
+		config.OutputTurnGap = 5 * time.Second
+		config.FrameInterval = -1
+	})
+	start(t, fake, client, "Be brief.")
+
+	// The agent speaks: 300ms of audible audio in three frames.
+	for tick := 0; tick < 3; tick++ {
+		fake.emit(map[string]any{"type": "session.output_audio.delta", "delta": speechFrame(2400)})
+		expect(t, client, "response.output_audio.delta")
+	}
+	// It stops. Two carrier frames are the hangover and reach the client.
+	forwarded := 0
+	for tick := 0; tick < 20; tick++ {
+		fake.emit(map[string]any{"type": "session.output_audio.delta", "delta": carrierFrame(2400)})
+		select {
+		case event := <-client.Events():
+			if event.Type == "response.output_audio.delta" {
+				forwarded++
+			}
+		case <-time.After(40 * time.Millisecond):
+		}
+		scheduler.AdvanceNS(uint64(100 * time.Millisecond))
+	}
+	// Two seconds of carrier must not become two seconds of agent audio.
+	if forwarded > 3 {
+		t.Fatalf("%d carrier frames were forwarded as speech; the agent stopped after the "+
+			"third audible frame and the silence must reach the client as silence", forwarded)
+	}
+	if forwarded == 0 {
+		t.Error("no hangover at all: a genuine pause between words would be clipped")
+	}
+
+	// And when it speaks again, that audio still flows - the stream was quiet,
+	// not closed.
+	fake.emit(map[string]any{"type": "session.output_audio.delta", "delta": speechFrame(2400)})
+	expect(t, client, "response.output_audio.delta")
 }

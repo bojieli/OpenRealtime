@@ -3,6 +3,7 @@ package upstream_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"image"
@@ -10,6 +11,7 @@ import (
 	"image/png"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/binding"
 	"github.com/bojieli/OpenRealtime/binding/upstream"
@@ -234,4 +236,141 @@ func TestTheVendorsTimelineBecomesTheTrajectorys(t *testing.T) {
 		}
 		return false
 	}, "the turn must carry the vendor's end_ms translated onto this side's clock")
+}
+
+// TestBargeInStopsASteerableRemote is the defect Full-Duplex-Bench found
+// against the real endpoint: the user takes the floor and the voice keeps
+// talking. The remote owns the floor and, being full duplex, often chooses to
+// continue - measured at sixteen seconds on one recording. This binding has a
+// measured policy for that decision and, until now, no way to act on it.
+func TestBargeInStopsASteerableRemote(t *testing.T) {
+	remote := newFakeRemote(t)
+	enabled := true
+	runtime, _ := startLive(t, remote, &scriptedSlow{}, func(config *upstream.Config) {
+		config.BargeIn = &enabled
+	})
+
+	// The remote is speaking - two seconds of it, so the barge-in below lands
+	// while audio is still playing out rather than after it.
+	remote.emit(map[string]any{
+		"type":  "response.output_audio.delta",
+		"delta": base64.StdEncoding.EncodeToString(make([]byte, 24000*2*2)),
+	})
+	waitFor(t, func() bool { return runtime.Status().Interaction.Transport != "" }, "the session to settle")
+	time.Sleep(50 * time.Millisecond)
+	// The user takes the floor over it.
+	remote.emit(map[string]any{
+		"type": "input_audio_buffer.speech_started", "item_id": "item_1", "audio_start_ms": 500,
+	})
+	waitFor(t, func() bool {
+		for _, message := range sentOfType(remote, "openrealtime.upstream.steer") {
+			if text, _ := message["text"].(string); strings.Contains(strings.ToLower(text), "stop speaking") {
+				return true
+			}
+		}
+		return false
+	}, "the policy must stop a steerable remote when the user talks over it")
+}
+
+// TestBargeInIsOffByDefaultAndRefusedWhereItCannotAct checks both halves of
+// the default. A full-duplex model handles interruption itself and keeps that
+// job unless a deployment takes it away; an endpoint with no way to be stopped
+// mid-sentence cannot be given the job at all.
+func TestBargeInIsOffByDefaultAndRefusedWhereItCannotAct(t *testing.T) {
+	remote := newFakeRemote(t)
+	enabled := true
+	if _, err := upstream.New(upstream.Config{
+		URL: remote.url(), Slow: &scriptedSlow{}, BargeIn: &enabled,
+	}); err == nil {
+		t.Error("a Realtime endpoint cannot be stopped mid-sentence and must refuse the job")
+	}
+	bind, err := upstream.New(upstream.Config{URL: remote.url(), Slow: &scriptedSlow{}, Model: "remote-model"})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	sink := &collectingSink{}
+	runtime, err := bind.Start(context.Background(), binding.Options{Sink: sink, SessionID: "rt"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = runtime.Close(context.Background(), nil) })
+	<-remote.ready
+	remote.emit(map[string]any{
+		"type":  "response.output_audio.delta",
+		"delta": base64.StdEncoding.EncodeToString(make([]byte, 24000*2*2)),
+	})
+	time.Sleep(50 * time.Millisecond)
+	remote.emit(map[string]any{
+		"type": "input_audio_buffer.speech_started", "item_id": "item_1", "audio_start_ms": 500,
+	})
+	time.Sleep(300 * time.Millisecond)
+	for _, message := range remote.sent() {
+		if kind, _ := message["type"].(string); kind == "openrealtime.upstream.steer" {
+			t.Fatalf("a Realtime endpoint was sent a stop it never needed: %v", message)
+		}
+	}
+}
+
+// TestBargeInHoldsTheAudioTheUserWouldHear is the other half of barge-in, and
+// the half the person who interrupted actually notices.
+//
+// Telling a full-duplex remote to stop is slow: measured against the real
+// endpoint the instruction took 4.6 s to take effect, and the vendor states
+// that its acknowledgement proves neither that the model stopped nor that
+// queued audio stopped playing. This binding sits between the remote and the
+// client, so it holds the audio back itself - which is where the vendor says
+// to block output - and releases it when the interrupted utterance ends.
+func TestBargeInHoldsTheAudioTheUserWouldHear(t *testing.T) {
+	remote := newFakeRemote(t)
+	enabled := true
+	_, sink := startLive(t, remote, &scriptedSlow{}, func(config *upstream.Config) {
+		config.BargeIn = &enabled
+	})
+
+	twoSeconds := base64.StdEncoding.EncodeToString(make([]byte, 24000*2*2))
+	remote.emit(map[string]any{"type": "response.output_audio.delta", "delta": twoSeconds})
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		return sink.audioFrames >= 1
+	}, "the remote's speech must reach the client before the interruption")
+
+	remote.emit(map[string]any{
+		"type": "input_audio_buffer.speech_started", "item_id": "item_1", "audio_start_ms": 500,
+	})
+	waitFor(t, func() bool {
+		for _, message := range sentOfType(remote, "openrealtime.upstream.steer") {
+			if text, _ := message["text"].(string); strings.Contains(strings.ToLower(text), "stop speaking") {
+				return true
+			}
+		}
+		return false
+	}, "the remote must be told to stop")
+
+	// The remote has not obeyed yet and keeps sending audio. None of it may
+	// reach the person who just took the floor.
+	sink.mu.Lock()
+	heardBefore := sink.audioFrames
+	sink.mu.Unlock()
+	for tick := 0; tick < 5; tick++ {
+		remote.emit(map[string]any{"type": "response.output_audio.delta", "delta": twoSeconds})
+	}
+	time.Sleep(300 * time.Millisecond)
+	sink.mu.Lock()
+	heardDuring := sink.audioFrames
+	sink.mu.Unlock()
+	if heardDuring != heardBefore {
+		t.Fatalf("%d further audio frames reached the user after they took the floor",
+			heardDuring-heardBefore)
+	}
+
+	// When the interrupted utterance ends, the remote is heard again.
+	remote.emit(map[string]any{"type": "response.done"})
+	time.Sleep(100 * time.Millisecond)
+	remote.emit(map[string]any{"type": "response.output_audio.delta", "delta": twoSeconds})
+	waitFor(t, func() bool {
+		sink.mu.Lock()
+		defer sink.mu.Unlock()
+		return sink.audioFrames > heardDuring
+	}, "after the interrupted utterance ends the remote must be audible again")
 }

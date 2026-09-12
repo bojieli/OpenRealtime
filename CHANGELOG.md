@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- GPT-Live's Responses delegation is supported, which completes the endpoint's
+  event surface at 32 of 32. Naming a Responses model hands the backend job to
+  the vendor's managed loop instead of this binding's reasoner - the two are
+  exclusive and fixed at session start - and it is the only mode in which
+  `response.item.create` and `response.event` mean anything: a function result
+  goes back as a Responses item, `response.create` continues the backend rather
+  than speaking, and the backend's own wrapped stream is unwrapped and carried
+  through under a name that says where it came from. Client delegation remains
+  the default and still refuses a tool result the remote never asked for.
+
+- A full-duplex endpoint was being fed chopped audio, and it cost it a
+  barge-in. The frame clock that keeps a GPT-Live session advancing through a
+  caller's pauses asked, every frame interval, whether anything had arrived
+  since its last tick; a caller streaming its own frames runs a clock that
+  drifts against that one, so the answer was sometimes no in the middle of a
+  sentence and silence was cut into the user's speech. Measured against the
+  real endpoint through Full-Duplex-Bench, a model that handles interruption
+  natively took 16.4 s to yield on audio in that state and 2.8 s once the
+  stream reaching it was the caller's own - a 5.8x improvement from removing
+  this side's corruption, with nothing else helping. The clock now fills only
+  gaps genuinely longer than a streaming caller's jitter.
+
+  `-upstream-barge-in on` is a new override for a deployment that must hold a
+  sub-second floor: this binding's own barge-in policy stops the remote through
+  the instruction channel and holds its audio at the relay until it does,
+  measured at 0.26 s on the same recording. It is off by default, because a
+  full-duplex model handles being interrupted itself and taking that decision
+  away from one that is good at it should be deliberate. It is refused on
+  endpoints that cannot be steered mid-sentence.
+
 - The code license is MIT, replacing Apache-2.0. Documentation stays CC BY 4.0,
   golden traces and contract fixtures stay CC0-1.0, and the speech fixtures stay
   outside any grant this project can make. [ADR-0017](docs/adr/0017-mit-license-for-code.md)

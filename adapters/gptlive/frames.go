@@ -84,14 +84,22 @@ func (client *Client) armFrameClock(ctx context.Context) {
 	client.writeMu.Unlock()
 }
 
-// fillFrameGap sends one frame of silence if the caller sent nothing this tick.
+// fillFrameGap sends one frame of silence if the caller has genuinely stopped.
 //
-// The test is a flag set by the caller's own appends rather than a comparison
-// against the clock, because a time window has a boundary and this does not: a
-// caller streaming at exactly the frame interval lands on that boundary every
-// tick, and whether its audio counted would come down to which of two events
-// the scheduler ran first. "Did anything arrive since the last tick" has one
-// answer.
+// The test is how long it has been since the caller's last frame, and it must
+// be, because "did anything arrive since the last tick" is wrong in the case
+// that matters most. A caller streaming at the frame interval runs its own
+// clock beside this one; the two drift, so in any given tick its frame may not
+// have landed yet. Answering "nothing arrived" there injects silence into the
+// middle of somebody's sentence - the stream reaching the endpoint is then the
+// user's speech chopped at twenty-millisecond boundaries and stretched past
+// real time, which is exactly what a full-duplex model must not be given. It
+// cost this integration a barge-in: measured against the real endpoint, a
+// model that handles interruption natively took sixteen seconds to yield
+// because what it was hearing had been cut to pieces on the way in.
+//
+// So the gap has to be longer than the jitter of a caller that is still
+// talking, and shorter than a pause worth filling.
 //
 // There is no check that the session has started. The clock is armed by the
 // session.started handler and nowhere else, so it cannot run before the
@@ -99,10 +107,9 @@ func (client *Client) armFrameClock(ctx context.Context) {
 func (client *Client) fillFrameGap(ctx context.Context) {
 	client.writeMu.Lock()
 	defer client.writeMu.Unlock()
-	if client.callerAppended {
+	if client.config.Scheduler.NowNS()-client.lastCallerNS < uint64(client.idleGap()) {
 		// The caller is streaming. Its audio is the clock, and padding a live
 		// stream would displace real speech on the endpoint's timeline.
-		client.callerAppended = false
 		return
 	}
 	if err := client.write(ctx, map[string]any{
@@ -113,6 +120,14 @@ func (client *Client) fillFrameGap(ctx context.Context) {
 		// read side reports a connection that has actually gone.
 		return
 	}
+}
+
+// idleGap is how long the caller must be quiet before this side speaks for it.
+// Three frame intervals, and never less than 60 ms: past any scheduling jitter
+// a caller that is still streaming can produce, and short enough that a real
+// pause is carried before the endpoint's clock notices.
+func (client *Client) idleGap() time.Duration {
+	return max(3*client.config.FrameInterval, 60*time.Millisecond)
 }
 
 // stopFrameClock halts the gap filler.

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/realtimeclient"
 	"github.com/coder/websocket"
@@ -45,7 +46,10 @@ type serverEvent struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Reason  string `json:"reason"`
-	Error   struct {
+	// DelegationID and Event carry a nested Responses stream.
+	DelegationID string          `json:"delegation_id"`
+	Event        json.RawMessage `json:"event"`
+	Error        struct {
 		Type    string `json:"type"`
 		Code    string `json:"code"`
 		Message string `json:"message"`
@@ -205,6 +209,17 @@ func (client *Client) translate(ctx context.Context, event serverEvent) error {
 			"type": "openrealtime.upstream.ack", "of": event.Type,
 			"client_event_id": event.ClientEventID,
 			"start_ms":        event.StartMS, "end_ms": event.EndMS,
+		})
+
+	case "response.event":
+		// A Responses backend's own stream, wrapped. The nested event is a
+		// Responses event, not a Live one, and the vendor warns against
+		// treating a top-level response.* name as an unwrapped one - so it is
+		// unwrapped here and passed on under a name that says where it came
+		// from, with the delegation it belongs to.
+		return client.emit(ctx, "openrealtime.upstream.responses", map[string]any{
+			"type":          "openrealtime.upstream.responses",
+			"delegation_id": event.DelegationID, "event": json.RawMessage(event.Event),
 		})
 
 	case "info":
@@ -379,7 +394,10 @@ func (client *Client) forwardAudio(ctx context.Context, encoded string, startMS,
 		payload = client.expand(payload)
 		encoded = ""
 	}
-	if !client.noteAssistantAudio(audible(payload)) {
+	// The frame's own duration, which is what bounds the carrier hangover.
+	samples := len(payload) / 2
+	duration := time.Duration(samples) * time.Second / time.Duration(client.config.SessionSampleRateHz)
+	if !client.noteAssistantAudio(audible(payload), duration) {
 		return nil
 	}
 	if client.fromLive != nil {

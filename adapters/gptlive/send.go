@@ -30,6 +30,8 @@ type clientEvent struct {
 	Item struct {
 		Type    string `json:"type"`
 		Role    string `json:"role"`
+		CallID  string `json:"call_id"`
+		Output  string `json:"output"`
 		Content []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -187,12 +189,7 @@ func (client *Client) start(ctx context.Context, event clientEvent, instruction 
 				"format": format,
 				"output": map[string]any{"voice": voice},
 			},
-			// Client delegation is the only mode this binding can use. The
-			// background reasoner *is* the backend: handing the work to a
-			// Responses model configured here instead would put two reasoners
-			// on one conversation, which is the arrangement the upstream
-			// binding exists to avoid.
-			"delegation": map[string]any{"type": "client"},
+			"delegation": client.delegation(),
 		}
 		if instruction != "" {
 			session["instructions"] = instruction
@@ -209,6 +206,28 @@ func (client *Client) start(ctx context.Context, event clientEvent, instruction 
 	client.startSent = true
 	client.startInstruction = instruction
 	return nil
+}
+
+// delegation declares where backend work goes.
+//
+// Client delegation is what this binding is for: the background reasoner is
+// the backend, and handing the work to a Responses model as well would put two
+// reasoners on one conversation. A deployment that wants the vendor's managed
+// loop instead says so by naming a Responses model, and then this side stops
+// reasoning and keeps mirroring, observing, and holding the floor.
+func (client *Client) delegation() map[string]any {
+	if client.config.ResponsesModel == "" {
+		return map[string]any{"type": "client"}
+	}
+	responses := map[string]any{"model": client.config.ResponsesModel}
+	if instructions := strings.TrimSpace(client.config.ResponsesInstructions); instructions != "" {
+		responses["instructions"] = instructions
+	}
+	if len(client.config.ResponsesTools) > 0 {
+		responses["tools"] = client.config.ResponsesTools
+		responses["tool_choice"] = "auto"
+	}
+	return map[string]any{"type": "responses", "responses": responses}
 }
 
 // appendAudio converts one frame to the session's rate and streams it.
@@ -236,7 +255,7 @@ func (client *Client) appendAudio(ctx context.Context, encoded string) error {
 	if client.compand != nil {
 		payload = client.compand(payload)
 	}
-	client.callerAppended = true
+	client.lastCallerNS = client.config.Scheduler.NowNS()
 	return client.write(ctx, map[string]any{
 		"type":  "session.input_audio.append",
 		"audio": base64.StdEncoding.EncodeToString(payload),
@@ -265,8 +284,13 @@ func (client *Client) mute(ctx context.Context, muted bool) error {
 // built for returning delegated results to the voice.
 func (client *Client) bufferHandoff(event clientEvent) error {
 	if event.Item.Type == "function_call_output" {
-		// The remote has no tool authority in this binding; a result meant for
-		// it would be a result the reasoner already owns.
+		// Under client delegation the remote has no tool authority, so a
+		// result meant for it is a result the reasoner already owns. Under
+		// Responses delegation the managed backend asked for it, and this is
+		// how it is returned.
+		if client.ResponsesDelegation() {
+			return client.returnToolResult(event)
+		}
 		return nil
 	}
 	var text strings.Builder
@@ -287,6 +311,19 @@ func (client *Client) bufferHandoff(event clientEvent) error {
 	return nil
 }
 
+// returnToolResult hands one function result to the managed backend.
+func (client *Client) returnToolResult(event clientEvent) error {
+	client.writeMu.Lock()
+	defer client.writeMu.Unlock()
+	return client.write(context.Background(), map[string]any{
+		"type": "response.item.create", "event_id": "openrealtime_tool_result",
+		"item": map[string]any{
+			"type": "function_call_output", "call_id": event.Item.CallID,
+			"output": event.Item.Output,
+		},
+	})
+}
+
 // speak gives the buffered answer to the Live voice as commentary.
 //
 // With nothing buffered there is nothing to say: response.create in Live starts
@@ -298,6 +335,17 @@ func (client *Client) speak(ctx context.Context) error {
 	answer := strings.TrimSpace(client.handoff.String())
 	client.handoff.Reset()
 	client.writeMu.Unlock()
+	if client.ResponsesDelegation() {
+		// response.create means "continue the backend" here, which is exactly
+		// what the caller asked for after returning a result. Nothing is
+		// spoken from this side: the managed backend's answer reaches the
+		// voice by itself.
+		client.writeMu.Lock()
+		defer client.writeMu.Unlock()
+		return client.write(ctx, map[string]any{
+			"type": "response.create", "event_id": "openrealtime_continue",
+		})
+	}
 	if answer == "" {
 		return nil
 	}

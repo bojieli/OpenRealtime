@@ -123,6 +123,7 @@ type serveOptions struct {
 	upstreamStore       bool
 	upstreamAudioFormat string
 	upstreamGreeting    string
+	upstreamBargeIn     string
 	upstreamMaxSessions int
 
 	observers      string
@@ -345,6 +346,8 @@ func runServe(arguments []string, output io.Writer) error {
 		"ask the realtime endpoint to keep a resumable recording of each session, so a dropped connection is forked rather than started cold (GPT-Live)")
 	flags.StringVar(&options.upstreamAudioFormat, "upstream-audio-format", "pcm",
 		"wire audio format for the realtime endpoint: pcm, pcmu (G.711 µ-law), or pcma (G.711 A-law); the G.711 laws are for a telephone leg (GPT-Live)")
+	flags.StringVar(&options.upstreamBargeIn, "upstream-barge-in", "off",
+		"override a full-duplex remote's own interruption handling with this binding's barge-in policy, holding its audio back until it stops: off (the remote decides, measured at 2.8s to yield) or on (sub-second, but this side's policy decides). GPT-Live only")
 	flags.StringVar(&options.upstreamGreeting, "upstream-greeting", "",
 		"an instruction sent once the upstream session has started, for a voice that should speak first")
 	flags.IntVar(&options.upstreamMaxSessions, "upstream-max-sessions", 0,
@@ -1401,6 +1404,18 @@ func buildUpstream(
 	if err != nil {
 		return nil, err
 	}
+	var bargeIn *bool
+	switch strings.ToLower(strings.TrimSpace(options.upstreamBargeIn)) {
+	case "", "auto":
+	case "on", "true":
+		enabled := true
+		bargeIn = &enabled
+	case "off", "false":
+		disabled := false
+		bargeIn = &disabled
+	default:
+		return nil, fmt.Errorf("upstream barge-in must be auto, on, or off, got %q", options.upstreamBargeIn)
+	}
 	return upstream.New(upstream.Config{
 		URL: settings.URL, Model: settings.Model, Token: settings.Token,
 		Header: settings.Header, EventAliases: settings.EventAliases,
@@ -1412,6 +1427,7 @@ func buildUpstream(
 		Observers:   observers, Greeting: options.upstreamGreeting,
 		MaxSessions: options.upstreamMaxSessions, Extraction: policies.Extraction,
 		Store: options.upstreamStore, AudioFormat: options.upstreamAudioFormat,
+		BargeIn: bargeIn,
 	})
 }
 

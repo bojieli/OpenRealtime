@@ -159,6 +159,22 @@ type Config struct {
 	InputTurnGap time.Duration
 	// OutputTurnGap is the equivalent for the assistant's own speech.
 	OutputTurnGap time.Duration
+	// SilenceHangover is how much of the endpoint's silent carrier is passed
+	// on after real speech before the stream is allowed to go quiet. Zero
+	// selects the default; negative forwards none at all.
+	//
+	// It exists because the carrier is not speech and must not be reported as
+	// it. Live emits a frame every 100 ms whether or not anyone is talking, so
+	// forwarding it for as long as an utterance is open tells everything
+	// downstream that the agent is still speaking when it has stopped - which
+	// erases the silence a barge-in policy, a duplex state, and any
+	// full-duplex measurement all read. Measured against the real endpoint on
+	// one Full-Duplex-Bench interruption, forwarding the whole carrier put the
+	// agent's apparent stop 16.4 s after the user took the floor; the audio
+	// had in fact stopped, and this side was inventing the rest. A short
+	// hangover keeps genuine pauses between words intact without inventing
+	// anything after the speech ends.
+	SilenceHangover time.Duration
 	// DialTimeout bounds connection establishment.
 	DialTimeout time.Duration
 	// WriteTimeout bounds one send on an established connection. Zero selects
@@ -167,6 +183,20 @@ type Config struct {
 	// CloseTimeout bounds the wait for session.closed during Close. Zero
 	// selects the default; a negative value does not wait.
 	CloseTimeout time.Duration
+	// ResponsesModel selects the vendor's own managed backend instead of this
+	// process. Empty keeps client delegation, where the upstream binding's
+	// reasoner is the backend.
+	//
+	// The two modes are exclusive and fixed at session start. Client
+	// delegation is what this binding is for; Responses delegation exists
+	// because it is half of the endpoint's surface, and a deployment may
+	// legitimately want the vendor's managed loop - with OpenRealtime still
+	// mirroring the conversation, running observers, and holding the floor.
+	ResponsesModel string
+	// ResponsesInstructions is the backend prompt for Responses delegation.
+	ResponsesInstructions string
+	// ResponsesTools are the tools the managed backend may call.
+	ResponsesTools []map[string]any
 	// Store asks the endpoint to keep a resumable recording, which is what
 	// makes a session forkable after a dropped connection and downloadable
 	// afterwards. Off by default, as it is at the vendor; under Zero Data
@@ -228,11 +258,11 @@ type Client struct {
 	// silence is one pre-encoded frame used to keep the endpoint's clock
 	// running through a caller's pauses.
 	silence string
-	// callerAppended records that the caller supplied audio since the last
-	// tick, which is what makes the filler fill gaps rather than pad speech.
-	callerAppended bool
-	frameTimer     clock.Timer
-	stallTimer     clock.Timer
+	// lastCallerNS is when the caller's audio last arrived, which is what
+	// makes the filler fill gaps rather than chop a live stream.
+	lastCallerNS uint64
+	frameTimer   clock.Timer
+	stallTimer   clock.Timer
 	// sessionID is the vendor's identity for this session, needed to attach
 	// a sideband, fork it, or fetch its recording.
 	sessionID string
@@ -307,6 +337,7 @@ func prepare(config Config) (*Client, error) {
 	if config.MaxReconnects <= 0 {
 		config.MaxReconnects = 3
 	}
+	config.ResponsesModel = strings.TrimSpace(config.ResponsesModel)
 	config.ForkOf = strings.TrimSpace(config.ForkOf)
 	if config.CallerSampleRateHz == 0 {
 		config.CallerSampleRateHz = WireSampleRateHz
@@ -319,6 +350,9 @@ func prepare(config Config) (*Client, error) {
 	}
 	if config.OutputTurnGap <= 0 {
 		config.OutputTurnGap = defaultOutputTurnGap
+	}
+	if config.SilenceHangover == 0 {
+		config.SilenceHangover = defaultSilenceHangover
 	}
 	if config.DialTimeout <= 0 {
 		config.DialTimeout = defaultDialTimeout
@@ -466,6 +500,10 @@ func (client *Client) requestClose() bool {
 	defer cancel()
 	return client.writeRaw(ctx, []byte(`{"type":"session.close"}`)) == nil
 }
+
+// ResponsesDelegation reports whether this session hands its backend work to
+// the vendor's managed Responses loop rather than to this process.
+func (client *Client) ResponsesDelegation() bool { return client.config.ResponsesModel != "" }
 
 // SessionID reports the vendor's identity for this session once it has
 // started, or empty before then.

@@ -75,6 +75,13 @@ type runtime struct {
 	// carrying that request has not yet been planned; it survives the signal
 	// and the transcript landing in different batches.
 	escalationPending bool
+	// suppressAudio holds back the remote's output while a barge-in it has
+	// not yet obeyed is outstanding.
+	suppressAudio bool
+	// bargeGate hears the user directly, so a barge-in does not wait for the
+	// remote to transcribe what it just heard.
+	bargeGate   *perception.EnergyGate
+	bargeGateMu sync.Mutex
 	// contextPending is observer evidence coalesced for the remote, and
 	// contextTimer is the debounce that sends it.
 	contextPending []string
@@ -128,6 +135,19 @@ func newRuntime(parent context.Context, bind *Binding, options binding.Options) 
 		return nil, err
 	}
 	result.media = media
+	if bind.config.BargeIn != nil && *bind.config.BargeIn {
+		// The remote reports the user's speech only once it has transcribed
+		// it, which is far too late to stop a voice mid-sentence: measured
+		// against the real endpoint that path alone left 1.08 s of speech
+		// after the user took the floor. The same audio arrives here first,
+		// so it is heard here.
+		gate, err := perception.NewEnergyGate(perception.DefaultGateConfig(), 24_000)
+		if err != nil {
+			cancel(err)
+			return nil, fmt.Errorf("configure the barge-in gate: %w", err)
+		}
+		result.bargeGate = gate
+	}
 	if len(bind.config.Observers) > 0 {
 		observers := make([]perception.Observer, 0, len(bind.config.Observers))
 		for _, factory := range bind.config.Observers {
@@ -441,6 +461,77 @@ func (runtime *runtime) noteUserSpeech() {
 	runtime.remoteMu.Unlock()
 }
 
+// considerBargeIn asks this binding's policy whether the remote should stop,
+// and steers it if so.
+//
+// The remote owns the floor, so this is an opinion offered rather than a
+// cancellation performed: what it sends is the one instruction Live honours
+// mid-sentence. The policy is the same one the cascade uses, so a deployment
+// that has tuned how its agent handles being talked over gets that behaviour
+// here too - including the half of it that says to keep going, for a
+// backchannel or for speech aimed at somebody else.
+func (runtime *runtime) considerBargeIn() {
+	if runtime.config.BargeIn == nil || !*runtime.config.BargeIn {
+		return
+	}
+	state := runtime.duplex.Snapshot()
+	if !state.Overlapping() {
+		return
+	}
+	now := runtime.scheduler.NowNS()
+	outcome := runtime.policies.BargeIn.Decide(interaction.BargeInInput{
+		Context: interaction.Context{NowNS: now, Duplex: state},
+	})
+	runtime.debug(binding.DebugEvent{
+		Category: "policy", Name: "upstream.bargein",
+		Attributes: map[string]any{"cancel": outcome.Cancel, "reason": outcome.Reason},
+	})
+	if !outcome.Cancel {
+		return
+	}
+	// The remote is speaking and the user has taken the floor. Two things
+	// follow, and the second is the one the user hears.
+	//
+	// Telling the remote to stop is the only thing the protocol offers, and it
+	// is not fast: the instruction has to be injected before the model acts on
+	// it, and the vendor says in as many words that the acknowledgement does
+	// not prove the assistant stopped speaking or that queued audio stopped
+	// playing. Measured against the real endpoint, it took 4.6 s - better than
+	// the 16.4 s of not asking, and far past the second a person waits before
+	// deciding they have not been heard.
+	//
+	// So the audio is held here as well. This binding is the media relay
+	// between the remote and the client, which is exactly where the vendor
+	// says to block output when an application needs speech to stop; holding
+	// it makes the silence immediate for the person who interrupted, while the
+	// instruction does the slower work of stopping the model itself.
+	runtime.remoteMu.Lock()
+	runtime.suppressAudio = true
+	runtime.remoteMu.Unlock()
+	runtime.duplex.AgentAudioStopped(now)
+	if err := runtime.Steer(runtime.ctx, "Stop speaking now and listen to the user."); err != nil {
+		runtime.sink.Failed(runtime.ctx, binding.ErrorEvent{
+			Code: "upstream_bargein", Message: err.Error(),
+		})
+	}
+}
+
+// audioSuppressed reports whether the remote's output is being held back
+// because it was asked to stop and has not yet done so.
+func (runtime *runtime) audioSuppressed() bool {
+	runtime.remoteMu.Lock()
+	defer runtime.remoteMu.Unlock()
+	return runtime.suppressAudio
+}
+
+// resumeAudio lets the remote be heard again. The interrupted utterance is
+// over, so whatever it says next is an answer to the person who interrupted.
+func (runtime *runtime) resumeAudio() {
+	runtime.remoteMu.Lock()
+	runtime.suppressAudio = false
+	runtime.remoteMu.Unlock()
+}
+
 // configureRemote declares the session on the remote side.
 //
 // The remote is told about the tools so its own fast turn can mention them,
@@ -563,14 +654,37 @@ func (runtime *runtime) Update(_ context.Context, settings binding.Settings) err
 }
 
 // Audio forwards input to the remote, which owns perception.
+//
+// It also listens, when a barge-in policy is in force. The remote owns
+// perception and reports the user only after transcribing them, which cannot
+// stop a voice mid-sentence; this side has the same audio first, so the
+// acoustic gate here decides when the user has taken the floor and the policy
+// acts on it at once.
 func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error {
 	if err := frame.Validate(); err != nil {
 		return err
 	}
+	runtime.hearUser(frame)
 	return runtime.remote.Send(ctx, map[string]any{
 		"type":  "input_audio_buffer.append",
 		"audio": base64.StdEncoding.EncodeToString(frame.PCM16LE),
 	})
+}
+
+// hearUser runs one input frame past the barge-in gate.
+func (runtime *runtime) hearUser(frame perception.Frame) {
+	if runtime.bargeGate == nil || len(frame.PCM16LE) == 0 {
+		return
+	}
+	runtime.bargeGateMu.Lock()
+	result, err := runtime.bargeGate.Push(frame.PCM16LE)
+	runtime.bargeGateMu.Unlock()
+	if err != nil || !result.Started {
+		return
+	}
+	runtime.duplex.UserSpeechStarted(runtime.scheduler.NowNS())
+	runtime.noteUserSpeech()
+	runtime.considerBargeIn()
 }
 
 // Video hands a frame to this side's observers.

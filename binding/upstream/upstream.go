@@ -129,6 +129,26 @@ type Config struct {
 	// AudioFormat is the wire format the remote is opened with, on the
 	// endpoints that offer more than one. Empty selects PCM.
 	AudioFormat string
+	// BargeIn lets this binding's own barge-in policy stop the remote when the
+	// user talks over it, and hold the remote's audio back until it does. Nil
+	// selects off, which is the right default and was not the first answer.
+	//
+	// A full-duplex model handles being interrupted itself; that is most of
+	// what full duplex is for, and GPT-Live is good at it. Measured against
+	// the real endpoint on one Full-Duplex-Bench interruption it yielded in
+	// 2.8 s with nothing helping it - after this side stopped cutting silence
+	// into the audio on the way in, which had been costing 16.4 s and was a
+	// defect here rather than a limit there.
+	//
+	// So this is an override, not a fix. It buys a sub-second yield - 0.26 s
+	// on the same recording - by acting where the model cannot: the
+	// instruction channel stops the model itself, slowly, and holding the
+	// audio at this relay stops what the person hears at once, which is where
+	// the vendor says to block output when an application needs speech to
+	// stop. A deployment that must guarantee the floor within a second turns
+	// it on and accepts that its own policy, not the model's judgement, is
+	// deciding; everything else should leave the model to it.
+	BargeIn *bool
 
 	delegationGated bool
 }
@@ -278,6 +298,19 @@ func New(config Config) (*Binding, error) {
 	}
 	if config.ContextPushDebounce <= 0 {
 		config.ContextPushDebounce = 400 * time.Millisecond
+	}
+	if config.BargeIn == nil {
+		// Off. Every endpoint here handles its own interruption, and taking
+		// that decision away from a model that is good at it is a choice a
+		// deployment makes deliberately rather than one it inherits.
+		disabled := false
+		config.BargeIn = &disabled
+	}
+	if *config.BargeIn && !live {
+		// Only a steerable dialect can be stopped. A Realtime endpoint has no
+		// instruction channel that interrupts speech, so there is nothing to
+		// turn on.
+		return nil, errors.New("upstream barge-in needs an endpoint that can be steered mid-sentence, which only GPT-Live is")
 	}
 	for _, factory := range config.Observers {
 		if err := factory.Validate(); err != nil {

@@ -39,7 +39,7 @@ decision below - **no event marks the end of anything**.
 | Session mutation | `session.update` for most fields | Model, instruction, voice, format, delegation fixed at start; appends only, never overwrite |
 | Audio | PCM16 24 kHz (or G.711); per-response bursts | PCM16 24/16 kHz or G.711 8 kHz; output is a **continuous carrier** |
 | Billing | Tokens | Voice by the second (`$0.05/min`), backend separately |
-| Event count | ~66 wire names | 11 client + 22 server |
+| Event count | ~66 wire names | 32: 11 client + 21 server, all handled here |
 
 The clearest single illustration is what each does when there is nothing to
 say. Realtime is silent. GPT-Live sends a 100 ms frame of digital silence
@@ -256,6 +256,48 @@ running the code against the vendor. Each is now a test.
 10. **Usage arrives roughly every ten seconds**, which is the only regular
     heartbeat the endpoint sends and is what the stall watchdog counts.
 
+## 4a. What a second live agent found
+
+Section 4 lists what a one-shot live test could reach. It could not reach
+interruption, because interruption needs somebody to interrupt: a recorded
+conversation that talks over the agent mid-sentence. The project already had
+that - `bench/fdb`, Full-Duplex-Bench v1.5, 498 recordings in four categories -
+and because the harness drives a *running server over the Realtime protocol*,
+it needed no new machinery to point at GPT-Live. It streams 20 ms frames paced
+to wall clock, which is what a full-duplex endpoint must be given.
+
+One recording (`user_interruption/1`: the caller asks how to save money, the
+agent begins answering, the caller cuts in with "Actually, what are some
+financial goals I should set?") found a defect no code review had:
+
+| configuration | yield latency | passes |
+| --- | --- | --- |
+| as first shipped | 16 430 ms | no |
+| stream corruption fixed, nothing else | **2 817 ms** | no |
+| plus relay-side barge-in override | **260 ms** | yes |
+
+**The 16 seconds was this side's fault.** The frame clock that keeps a Live
+session advancing through a caller's pauses asked, every 20 ms, "did anything
+arrive since my last tick?" A caller streaming its own 20 ms frames runs a
+clock that drifts against this one, so the answer was sometimes "no" in the
+middle of a sentence - and silence was cut into the user's speech. What
+reached the endpoint was chopped and stretched past real time. A model that
+handles interruption natively cannot hear an interruption in that. Filling
+only gaps genuinely longer than a streaming caller's jitter removed it, and the
+model's own yield improved 5.8× with nothing else helping.
+
+What remains is a real property, not a defect: GPT-Live takes about 2.8 s to
+stop, and Full-Duplex-Bench allows one. A deployment that must hold that bound
+can turn on `-upstream-barge-in on`, which acts where the model cannot - the
+instruction channel stops the model, slowly, while holding the audio at this
+relay stops what the person hears at once, which is where the vendor says to
+block output. It is off by default: taking the decision away from a model that
+is good at it is a choice to make deliberately, not one to inherit.
+
+The lesson generalises past this endpoint. A one-shot test - speak once, check
+the transcript - cannot see any of this. Testing a live agent needs another
+live agent.
+
 ## 5. Turn boundaries, honestly
 
 The weakest part of any GPT-Live integration is deciding where a turn ends,
@@ -312,6 +354,7 @@ phase (35 mutations, 35 caught).
 | Verified against the real endpoint | Verified against the fake only, and why |
 | --- | --- |
 | Handshake, frame clock, carrier handling, turn synthesis | Fork-on-drop and explicit fork — the project refuses storage |
+| Interruption, through Full-Duplex-Bench (§4a) | — |
 | Delegation round trip with synthesised speech | Recording download — same |
 | All four push channels acknowledged | Sideband attach — offered only to WebRTC/SIP sessions |
 | Cancel interrupts; close finalised; usage heartbeat | Telephony `transport.*` events — no SIP leg here |
@@ -325,6 +368,11 @@ offline.
 ```sh
 OPENREALTIME_LIVE_E2E=1 OPENAI_API_KEY=... go test ./adapters/gptlive/ -run Live -v
 openrealtime providers -role upstream -probe openai-live
+
+# A second live agent, talking over the first. Needs the dataset
+# (scripts/prepare-fdb15.sh) and a server running on this endpoint.
+openrealtime serve -binding upstream -upstream-provider openai-live -slow-provider google
+openrealtime bench fdb -endpoint ws://127.0.0.1:8765/v1/realtime -categories user_interruption
 ```
 
 ## 8. Operating it
@@ -355,10 +403,14 @@ safeguard the first half makes necessary.
 
 ## 9. Limits and non-goals
 
-- **Responses delegation is a non-goal.** The binding's reasoner is the
-  backend; configuring a second one at the vendor is the arrangement this
-  binding exists to avoid. A Responses delegation on the wire is reported as a
-  misconfiguration.
+- **Responses delegation is supported but not the point.** The binding's
+  reasoner is the backend, and that is what client delegation is for; naming a
+  Responses model (`ResponsesModel`) hands the backend job to the vendor's
+  managed loop instead, with OpenRealtime still mirroring the conversation,
+  running observers, and holding the floor. The two are exclusive and fixed at
+  session start. It exists because it is half the endpoint's surface: without
+  it `response.item.create` and `response.event` would be unreachable, and the
+  integration would cover 30 of 32 events rather than all of them.
 - **The engine cannot own the floor.** GPT-Live has no commit and no detector
   to switch off; `-floor engine` is refused with a message rather than accepted
   and ignored.

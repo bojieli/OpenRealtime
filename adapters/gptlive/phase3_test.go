@@ -65,10 +65,11 @@ func TestMuLawSessionCompandsBothWays(t *testing.T) {
 		t.Error("speech was companded as mostly silence")
 	}
 
-	// The keepalive is the codec's own silence, one byte per sample. The
-	// first tick after the caller's frame is the caller's; the next is quiet.
-	scheduler.AdvanceNS(uint64(20 * time.Millisecond))
-	scheduler.AdvanceNS(uint64(20 * time.Millisecond))
+	// The keepalive is the codec's own silence, one byte per sample. It
+	// arrives once the caller has been quiet for longer than the idle gap.
+	for tick := 0; tick < 6; tick++ {
+		scheduler.AdvanceNS(uint64(20 * time.Millisecond))
+	}
 	deadline := time.Now().Add(3 * time.Second)
 	var silent []byte
 	for silent == nil && time.Now().Before(deadline) {
@@ -372,4 +373,182 @@ func TestARefusedStoreDegradesToAnUnstoredSession(t *testing.T) {
 	if paths := fake.connectionPaths(); len(paths) != 1 {
 		t.Errorf("a session the project would not store was forked anyway: %v", paths)
 	}
+}
+
+// TestAStreamingCallerIsNeverChopped is the bug that cost a barge-in.
+//
+// The caller streams 20 ms frames on its own clock; this side ticks on its
+// own. They drift, so a filler that asks "did anything arrive since my last
+// tick" answers "no" in the middle of somebody's sentence and injects silence
+// there. What then reaches the endpoint is the user's speech cut at 20 ms
+// boundaries and stretched past real time - and a full-duplex model given that
+// cannot hear an interruption properly. Against the real endpoint it took a
+// model that handles interruption natively sixteen seconds to yield.
+func TestAStreamingCallerIsNeverChopped(t *testing.T) {
+	fake := newFakeLive(t)
+	client, scheduler := connect(t, fake, func(config *gptlive.Config) {
+		config.FrameInterval = 20 * time.Millisecond
+	})
+	start(t, fake, client, "Be brief.")
+	fake.awaitSent(t, "session.start")
+	quiesce(t, fake)
+
+	// A caller talking continuously, its frames landing slightly out of step
+	// with this side's tick - which is the ordinary case, not an unlucky one.
+	speech := speechFrame(480)
+	for tick := 0; tick < 25; tick++ {
+		if err := client.Send(t.Context(), map[string]any{
+			"type": "input_audio_buffer.append", "audio": speech,
+		}); err != nil {
+			t.Fatalf("send caller audio: %v", err)
+		}
+		scheduler.AdvanceNS(uint64(20 * time.Millisecond))
+	}
+	time.Sleep(150 * time.Millisecond)
+
+	// Every frame the endpoint received must be the caller's own. One frame of
+	// injected silence in the middle of that is one cut in a sentence.
+	var callerFrames, injected int
+	for _, message := range fake.sent() {
+		if decodeString(message["type"]) != "session.input_audio.append" {
+			continue
+		}
+		if decodeString(message["audio"]) == speech {
+			callerFrames++
+		} else {
+			injected++
+		}
+	}
+	if callerFrames < 25 {
+		t.Errorf("only %d of 25 caller frames reached the endpoint", callerFrames)
+	}
+	if injected != 0 {
+		t.Fatalf("%d frames of silence were cut into a continuous stream; a full-duplex "+
+			"model must receive the caller's audio unaltered", injected)
+	}
+
+	// And when the caller genuinely stops, the clock still runs - without it
+	// the endpoint does nothing at all.
+	before := fake.countSent("session.input_audio.append")
+	for tick := 0; tick < 6; tick++ {
+		scheduler.AdvanceNS(uint64(20 * time.Millisecond))
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && fake.countSent("session.input_audio.append") == before {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if fake.countSent("session.input_audio.append") == before {
+		t.Error("the caller stopped and the clock stopped with it; the session would stall")
+	}
+}
+
+// TestResponsesDelegationIsDeclaredAndServiced covers the half of the
+// endpoint's surface this binding does not itself use.
+//
+// Client delegation is what the upstream binding is for: its reasoner is the
+// backend. Responses delegation hands that job to the vendor's managed loop
+// instead, and a deployment may legitimately want it - with OpenRealtime still
+// mirroring the conversation, running observers, and holding the floor. It is
+// the only mode in which response.item.create and response.event mean
+// anything, and without it two of the endpoint's events would be unreachable.
+func TestResponsesDelegationIsDeclaredAndServiced(t *testing.T) {
+	fake := newFakeLive(t)
+	client, _ := connect(t, fake, func(config *gptlive.Config) {
+		config.ResponsesModel = "gpt-5.6-luna"
+		config.ResponsesInstructions = "Look up orders."
+		config.ResponsesTools = []map[string]any{{"type": "web_search"}}
+	})
+	if !client.ResponsesDelegation() {
+		t.Fatal("a session given a Responses model must report that mode")
+	}
+	start(t, fake, client, "Be brief.")
+
+	message := fake.awaitSent(t, "session.start")
+	var session struct {
+		Delegation struct {
+			Type      string `json:"type"`
+			Responses struct {
+				Model        string           `json:"model"`
+				Instructions string           `json:"instructions"`
+				Tools        []map[string]any `json:"tools"`
+				ToolChoice   string           `json:"tool_choice"`
+			} `json:"responses"`
+		} `json:"delegation"`
+	}
+	if err := json.Unmarshal(message["session"], &session); err != nil {
+		t.Fatalf("decode session: %v", err)
+	}
+	if session.Delegation.Type != "responses" {
+		t.Fatalf("session.start declared %q delegation", session.Delegation.Type)
+	}
+	if session.Delegation.Responses.Model != "gpt-5.6-luna" ||
+		session.Delegation.Responses.Instructions != "Look up orders." ||
+		len(session.Delegation.Responses.Tools) != 1 ||
+		session.Delegation.Responses.ToolChoice != "auto" {
+		t.Fatalf("the backend was configured as %+v", session.Delegation.Responses)
+	}
+
+	// The managed backend's own stream arrives wrapped. The vendor warns
+	// against reading a top-level response.* name as an unwrapped Responses
+	// event, so it is unwrapped here and named for where it came from.
+	fake.emit(map[string]any{
+		"type": "response.event", "event_id": "event_response_1",
+		"delegation_id": "item_abc",
+		"event": map[string]any{
+			"type": "response.output_item.done",
+			"item": map[string]any{
+				"type": "function_call", "call_id": "call_123", "name": "lookup_order",
+				"arguments": `{"id":"4217"}`,
+			},
+		},
+	})
+	nested := expect(t, client, "openrealtime.upstream.responses")
+	if got := field(t, nested.Raw, "delegation_id"); got != "item_abc" {
+		t.Errorf("the nested stream lost its delegation: %s", nested.Raw)
+	}
+	if !strings.Contains(string(nested.Raw), "lookup_order") {
+		t.Errorf("the nested Responses event was not carried through: %s", nested.Raw)
+	}
+
+	// A function result goes back as a Responses item, not a conversation
+	// item, and response.create continues the backend rather than speaking.
+	if err := client.Send(t.Context(), map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "function_call_output", "call_id": "call_123",
+			"output": `{"status":"shipped"}`,
+		},
+	}); err != nil {
+		t.Fatalf("return the tool result: %v", err)
+	}
+	result := fake.awaitSent(t, "response.item.create")
+	if !strings.Contains(string(result["item"]), "call_123") ||
+		!strings.Contains(string(result["item"]), "shipped") {
+		t.Errorf("the tool result did not reach the backend intact: %s", result["item"])
+	}
+	if err := client.Send(t.Context(), map[string]any{"type": "response.create"}); err != nil {
+		t.Fatalf("continue the backend: %v", err)
+	}
+	fake.awaitSent(t, "response.create")
+	// And nothing was spoken from this side: the managed backend's answer
+	// reaches the voice by itself.
+	fake.refuteSent(t, "session.commentary.append")
+}
+
+// TestClientDelegationStillDropsToolResults keeps the default honest: with the
+// reasoner as the backend, a result meant for the remote is one it never asked
+// for and must not receive.
+func TestClientDelegationStillDropsToolResults(t *testing.T) {
+	fake := newFakeLive(t)
+	client, _ := connect(t, fake, nil)
+	start(t, fake, client, "Be brief.")
+	if err := client.Send(t.Context(), map[string]any{
+		"type": "conversation.item.create",
+		"item": map[string]any{
+			"type": "function_call_output", "call_id": "call_1", "output": "{}",
+		},
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	fake.refuteSent(t, "response.item.create")
 }
