@@ -48,6 +48,12 @@ func websocketHandler(t *testing.T, remote *fakeRemote) http.HandlerFunc {
 			return
 		}
 		defer connection.CloseNow()
+		// The default limit is 32KiB, and a message over it fails the read
+		// rather than reporting anything: the handler returns, nothing is
+		// recorded, and a test waiting on that message times out looking like
+		// the binding never sent it. A second of resampled audio is over the
+		// limit, so the harness must not be the thing that decides.
+		connection.SetReadLimit(8 << 20)
 		ctx := request.Context()
 		remote.once.Do(func() { close(remote.ready) })
 		go func() {

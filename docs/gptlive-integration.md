@@ -359,12 +359,36 @@ it could delegate was not. A plausible mechanism sitting near a silent failure
 is not a measurement of its cause, and this one collected the blame for a
 while on nothing but proximity.
 
-The suite cannot be re-run against GPT-Live from here: the OpenAI account
-behind this work was deactivated partway through, and every session now ends
-in `account_deactivated` before `session.created`. What is proven stands on
-its own - the session opens, the domain policy is accepted, sixteen tools are
-declared, and tau2 records `mode: full_duplex` over a real conversation - and
-the tool-calling score itself waits on an account that answers.
+The agent was still mute after both of those, and the third defect is the one
+that had been doing the silencing all along - the same shape as the
+synthesiser's, one layer up. **A frame's sample rate was forwarded and
+dropped.** tau2 runs a telephony profile: the caller speaks G.711 at 8kHz,
+which the gateway expands to PCM16 and labels honestly on the frame. This
+binding passed the samples to the endpoint and ignored the label, so a model
+listening at 24kHz received the caller **three times too fast** - a third of
+the duration, every formant tripled. As with the synthesiser, nothing errors,
+because the audio is well formed; it simply is not speech. The conversion now
+happens here, where both rates are known, with converter state carried across
+frames.
+
+That last point is not a detail. A converter rebuilt for each frame lands
+within half a percent of the right duration and still clicks at every
+boundary, because it starts each frame with no history and guesses the samples
+before it - measured on a test tone as a jump of 1867 where the signal's own
+steepest step is 626. Duration checks cannot see it; a speech model hears a
+consonant nobody said.
+
+With all three fixed the suite passes end to end against the real endpoint.
+Two retail tasks, both of which had produced nothing but a greeting: the agent
+delegates, the reasoner reads the order and both products, and
+`exchange_delivered_order_items` lands in the environment database, `db_match`
+true on both. Conversations run 153 and 243 seconds where they used to die
+silent at fifty.
+
+Three defects, one shape. Each was a rate or a container assumed rather than
+carried, each was invisible at every layer, and each presented as silence
+somewhere far from its cause. On a pipeline where audio crosses four
+components, the rate is worth stating at every boundary that can state it.
 
 ## 4c. Steering, which neither benchmark covers
 

@@ -227,6 +227,12 @@ type RemoteConn interface {
 }
 
 // Binding connects to a remote Realtime endpoint.
+// wireSampleRateHz is the PCM rate a Realtime endpoint speaks and listens at,
+// in both dialects. It is not negotiable per session: a client that arrives at
+// another rate - a telephone leg at 8kHz, say - is converted to this one on
+// the way in and back again on the way out.
+const wireSampleRateHz = 24_000
+
 type Binding struct {
 	config Config
 	// slots holds one token per allowed concurrent session.

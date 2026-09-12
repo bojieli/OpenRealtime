@@ -18,6 +18,7 @@ import (
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
+	"github.com/bojieli/OpenRealtime/pcm"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/realtimeclient"
 	"github.com/bojieli/OpenRealtime/session"
@@ -62,6 +63,10 @@ type runtime struct {
 	// and steered into the remote.
 	pinMu sync.Mutex
 	pins  []interaction.StandingInstruction
+	// inputResampler converts the caller's audio to the rate the remote is
+	// listening at, when they differ. It holds stream state between frames.
+	inputRateMu    sync.Mutex
+	inputResampler *pcm.Resampler
 	// liveEpochNS is this side's clock when the remote's session timeline
 	// began, so the remote's milliseconds become this side's nanoseconds.
 	liveEpochNS uint64
@@ -687,10 +692,55 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 		return err
 	}
 	runtime.hearUser(frame)
+	payload, err := runtime.atWireRate(frame)
+	if err != nil {
+		return err
+	}
+	if len(payload) == 0 {
+		return nil
+	}
 	return runtime.remote.Send(ctx, map[string]any{
 		"type":  "input_audio_buffer.append",
-		"audio": base64.StdEncoding.EncodeToString(frame.PCM16LE),
+		"audio": base64.StdEncoding.EncodeToString(payload),
 	})
+}
+
+// atWireRate converts one input frame to the rate the remote is listening at.
+//
+// A frame carries its own rate because callers differ: a telephone leg arrives
+// as G.711 at 8kHz, which the gateway expands to PCM16 and labels honestly,
+// while a browser sends 24kHz. The remote is listening at one rate and has no
+// way to be told otherwise mid-session, so the conversion belongs here, on the
+// side that knows both numbers.
+//
+// Forwarding the samples and dropping the rate is what this replaces, and the
+// damage is not subtle: a telephone caller reached the endpoint three times
+// too fast, a third of the duration with every formant tripled. Nothing errors
+// on that - the audio is well formed, it simply is not speech any more - so it
+// surfaced as an agent that greeted the caller and then never spoke again.
+func (runtime *runtime) atWireRate(frame perception.Frame) ([]byte, error) {
+	if frame.SampleRateHz == wireSampleRateHz || frame.SampleRateHz == 0 {
+		return frame.PCM16LE, nil
+	}
+	runtime.inputRateMu.Lock()
+	defer runtime.inputRateMu.Unlock()
+	// A resampler carries the tail of the previous frame, so it is kept for
+	// the length of the stream and rebuilt only if the caller changes rate -
+	// which a client may do, by declaring a new format mid-session.
+	if runtime.inputResampler == nil || runtime.inputResampler.InputRate() != frame.SampleRateHz {
+		resampler, err := pcm.NewResampler(frame.SampleRateHz, wireSampleRateHz)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"convert caller audio from %dHz to the remote's %dHz: %w",
+				frame.SampleRateHz, wireSampleRateHz, err)
+		}
+		runtime.inputResampler = resampler
+	}
+	converted, err := runtime.inputResampler.Push(frame.PCM16LE)
+	if err != nil {
+		return nil, fmt.Errorf("convert caller audio for the remote: %w", err)
+	}
+	return converted, nil
 }
 
 // hearUser runs one input frame past the barge-in gate.

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- A telephone caller reached a realtime endpoint three times too fast, and the
+  agent behind it never spoke again after the greeting. A frame carries its own
+  sample rate because callers differ - a telephone leg arrives as G.711 at 8kHz,
+  which the gateway expands to PCM16 and labels honestly, while a browser sends
+  24kHz - and this binding forwarded the samples while dropping the rate. The
+  endpoint, listening at 24kHz, heard a third of the duration with every formant
+  tripled. Nothing errors on that: the audio is well formed, it simply is not
+  speech any more, so the whole failure surfaced as an agent that greeted the
+  caller and then said nothing for a minute.
+
+  The conversion now happens on the side that knows both numbers, carrying
+  converter state across frames so the stream has no seams. Duration alone
+  cannot see that: a converter rebuilt per frame lands within half a percent of
+  the right length and still clicks at every boundary, measured as a jump of
+  1867 against the signal's own 626, which a speech model reads as a consonant
+  nobody said. A caller that changes rate mid-session - a second session.update
+  with a new format - rebuilds the converter rather than going on dividing by
+  the old number.
+
+  Measured on tau2-bench against the real GPT-Live endpoint, retail domain: two
+  tasks, both previously silent, now both pass. The agent delegates, the
+  reasoner reads the order and the two products, and
+  `exchange_delivered_order_items` lands in the environment database - `db_match`
+  true on both.
+
 - The local Fish synthesiser answered every request with a 44.1 kHz RIFF file,
   whatever was asked for. `response_format: "pcm"` was ignored, and no reply
   ever said what rate it was at, so a caller asking for raw PCM received a RIFF

@@ -387,7 +387,7 @@ func (runtime *runtime) forwardAudio(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	frame := action.Frame{PCM16LE: payload, SampleRateHz: 24_000}
+	frame := action.Frame{PCM16LE: payload, SampleRateHz: wireSampleRateHz}
 	frame.Duration = pcmDuration(len(payload), frame.SampleRateHz)
 	if err := runtime.duplex.AgentAudioHandedOff(utterance.ID, frame.Duration); err != nil {
 		return err

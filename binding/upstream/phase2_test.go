@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -444,5 +447,219 @@ func TestALiveSessionMayChooseItsVoice(t *testing.T) {
 	}
 	if realtime.Capabilities().Voice.Selectable {
 		t.Error("a Realtime endpoint's voice is not this binding's to promise")
+	}
+}
+
+// TestATelephoneCallerIsResampledToTheWireRate is the defect tau2-bench found
+// after the delegation one, and the reason the agent was still mute.
+//
+// A telephony client sends G.711 at 8kHz. The gateway expands that to PCM16
+// and says so on the frame, but this binding forwarded the samples and dropped
+// the rate, so a Realtime endpoint expecting 24kHz received the caller three
+// times too fast: a third of the duration, every formant tripled, and nothing
+// a speech model transcribes. Nothing errors - the audio is well-formed, just
+// not speech any more - so the whole failure appears as an agent that greets
+// the caller and then says nothing at all.
+func TestATelephoneCallerIsResampledToTheWireRate(t *testing.T) {
+	remote := newFakeRemote(t)
+	runtime, _ := startLive(t, remote, &scriptedSlow{}, nil)
+
+	// A tenth of a second of telephone-rate speech, which is the order a real
+	// leg sends: 800 samples, two bytes each.
+	const callerRate, callerSamples = 8_000, 800
+	frame := perception.Frame{
+		Kind: perception.FrameAudio, Source: "microphone",
+		CapturedNS: uint64(time.Now().UnixNano()),
+		PCM16LE:    make([]byte, callerSamples*2), SampleRateHz: callerRate,
+	}
+	for i := range callerSamples {
+		sample := int16(8000 * math.Sin(2*math.Pi*300*float64(i)/callerRate))
+		binary.LittleEndian.PutUint16(frame.PCM16LE[i*2:], uint16(sample))
+	}
+	if err := runtime.Audio(context.Background(), frame); err != nil {
+		t.Fatalf("audio: %v", err)
+	}
+
+	waitFor(t, func() bool { return len(sentOfType(remote, "input_audio_buffer.append")) > 0 },
+		"the caller's audio must reach the remote")
+
+	forwarded := 0
+	for _, message := range sentOfType(remote, "input_audio_buffer.append") {
+		encoded, _ := message["audio"].(string)
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			t.Fatalf("decode forwarded audio: %v", err)
+		}
+		forwarded += len(decoded) / 2
+	}
+	// A tenth of a second of speech must still be a tenth of a second. At
+	// 24kHz that is 2400 samples; forwarding the caller's 800 verbatim is the
+	// bug, and lands as a third of the duration at three times the pitch.
+	const wireRate, want = 24_000, 2_400
+	if forwarded < want*9/10 || forwarded > want*11/10 {
+		t.Errorf("%.2fs of %dHz speech reached the remote as %d samples, "+
+			"which at the wire's %dHz is %.3fs: the caller's rate was dropped "+
+			"rather than converted",
+			float64(callerSamples)/callerRate, callerRate, forwarded, wireRate,
+			float64(forwarded)/wireRate)
+	}
+}
+
+// TestAWireRateCallerIsForwardedUntouched keeps the ordinary path exact: a
+// client already at the wire's rate must not be run through a converter that
+// can only lose to it.
+func TestAWireRateCallerIsForwardedUntouched(t *testing.T) {
+	remote := newFakeRemote(t)
+	runtime, _ := startLive(t, remote, &scriptedSlow{}, nil)
+
+	const samples = 2_400 // a tenth of a second at the wire's rate
+	payload := make([]byte, samples*2)
+	for i := range samples {
+		binary.LittleEndian.PutUint16(payload[i*2:], uint16(int16(i%2000-1000)))
+	}
+	if err := runtime.Audio(context.Background(), perception.Frame{
+		Kind: perception.FrameAudio, Source: "microphone",
+		CapturedNS: uint64(time.Now().UnixNano()),
+		PCM16LE:    payload, SampleRateHz: 24_000,
+	}); err != nil {
+		t.Fatalf("audio: %v", err)
+	}
+	waitFor(t, func() bool { return len(sentOfType(remote, "input_audio_buffer.append")) > 0 },
+		"the caller's audio must reach the remote")
+
+	var forwarded []byte
+	for _, message := range sentOfType(remote, "input_audio_buffer.append") {
+		encoded, _ := message["audio"].(string)
+		decoded, _ := base64.StdEncoding.DecodeString(encoded)
+		forwarded = append(forwarded, decoded...)
+	}
+	if !bytes.Equal(forwarded, payload) {
+		t.Errorf("audio already at the wire's rate was altered on the way through: "+
+			"sent %d bytes, remote saw %d", len(payload), len(forwarded))
+	}
+}
+
+// TestATelephoneStreamKeepsItsDurationAcrossFrames covers what one frame
+// cannot show. A converter holds the tail of each frame back until the next
+// one gives it the neighbours it needs; rebuilt per frame, it starts cold
+// every time and drops that tail, so a stream loses a slice of every frame and
+// the caller drifts steadily ahead of what the remote hears.
+func TestATelephoneStreamKeepsItsDurationAcrossFrames(t *testing.T) {
+	remote := newFakeRemote(t)
+	runtime, _ := startLive(t, remote, &scriptedSlow{}, nil)
+
+	const callerRate, perFrame, frames = 8_000, 160, 50 // 20ms frames, one second
+	for f := range frames {
+		payload := make([]byte, perFrame*2)
+		for i := range perFrame {
+			n := f*perFrame + i
+			sample := int16(8000 * math.Sin(2*math.Pi*300*float64(n)/callerRate))
+			binary.LittleEndian.PutUint16(payload[i*2:], uint16(sample))
+		}
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone",
+			CapturedNS: uint64(time.Now().UnixNano()),
+			PCM16LE:    payload, SampleRateHz: callerRate,
+		}); err != nil {
+			t.Fatalf("audio frame %d: %v", f, err)
+		}
+	}
+
+	samples := func() []int16 {
+		var all []int16
+		for _, message := range sentOfType(remote, "input_audio_buffer.append") {
+			encoded, _ := message["audio"].(string)
+			decoded, _ := base64.StdEncoding.DecodeString(encoded)
+			for i := 0; i+1 < len(decoded); i += 2 {
+				all = append(all, int16(binary.LittleEndian.Uint16(decoded[i:])))
+			}
+		}
+		return all
+	}
+	forwarded := func() int { return len(samples()) }
+	// One second in, one second out, within a percent. Waiting on the quantity
+	// under test rather than on a frame count is deliberate: a converter holds
+	// part of a frame back for the next one, so the number of messages is not
+	// the number of frames, and counting messages first and samples afterwards
+	// reads a total that is still growing.
+	const want = 24_000
+	waitFor(t, func() bool { return forwarded() >= want*99/100 },
+		fmt.Sprintf("one second of telephone speech must reach the remote as about "+
+			"%d samples; it arrived as %d, so the caller's rate is being dropped",
+			want, forwarded()))
+
+	// Duration alone cannot see a seam: a converter restarted every frame
+	// lands within half a percent of the right length and still clicks at
+	// every boundary, because it begins each frame with no history and guesses
+	// the samples before it. On this tone neighbouring samples move by at most
+	// 626; measured, a per-frame restart triples that to 1867. Anything that
+	// far above the signal's own slope is a discontinuity, which is heard as a
+	// click and read by a speech model as a consonant nobody said.
+	const smoothest = 626
+	got, worst, at := samples(), 0, 0
+	for i := 1; i < len(got); i++ {
+		delta := int(got[i]) - int(got[i-1])
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > worst {
+			worst, at = delta, i
+		}
+	}
+	if worst > smoothest*2 {
+		t.Errorf("the converted stream jumps by %d at sample %d, against %d for the "+
+			"tone itself: the converter is starting cold on each frame instead of "+
+			"carrying its state across them", worst, at, smoothest)
+	}
+}
+
+// TestACallerMayChangeRateMidSession covers a client that re-declares its
+// audio format while the session is open, which the protocol allows: every
+// session.update carries a format, and a client may send a second one. The
+// converter is keyed on the rate it was built for, so it has to be rebuilt
+// when that changes - held onto, it would go on dividing by the old number and
+// stretch the caller instead of shortening them.
+func TestACallerMayChangeRateMidSession(t *testing.T) {
+	remote := newFakeRemote(t)
+	runtime, _ := startLive(t, remote, &scriptedSlow{}, nil)
+
+	speak := func(rate, samples int) {
+		t.Helper()
+		payload := make([]byte, samples*2)
+		for i := range samples {
+			value := int16(8000 * math.Sin(2*math.Pi*300*float64(i)/float64(rate)))
+			binary.LittleEndian.PutUint16(payload[i*2:], uint16(value))
+		}
+		if err := runtime.Audio(context.Background(), perception.Frame{
+			Kind: perception.FrameAudio, Source: "microphone",
+			CapturedNS: uint64(time.Now().UnixNano()),
+			PCM16LE:    payload, SampleRateHz: uint32(rate),
+		}); err != nil {
+			t.Fatalf("audio at %dHz: %v", rate, err)
+		}
+	}
+	forwarded := func() int {
+		total := 0
+		for _, message := range sentOfType(remote, "input_audio_buffer.append") {
+			encoded, _ := message["audio"].(string)
+			decoded, _ := base64.StdEncoding.DecodeString(encoded)
+			total += len(decoded) / 2
+		}
+		return total
+	}
+
+	// Half a second at 8kHz, then half a second at 16kHz: one second in total,
+	// so 24000 samples out. A converter still set to 8kHz would read the 16kHz
+	// half as twice the duration and send half again too much.
+	speak(8_000, 4_000)
+	speak(16_000, 8_000)
+	const want = 24_000
+	waitFor(t, func() bool { return forwarded() >= want*98/100 },
+		fmt.Sprintf("a second of speech across two rates must reach the remote as "+
+			"about %d samples; it arrived as %d", want, forwarded()))
+	if got := forwarded(); got > want*102/100 {
+		t.Errorf("a second of speech across two rates reached the remote as %d "+
+			"samples instead of about %d: the converter kept the first rate after "+
+			"the caller changed it", got, want)
 	}
 }
