@@ -99,6 +99,15 @@ func ScenarioConversationArtifacts(
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
+	// The interaction policy owns the floor: it is asked on every partial
+	// whether the person is cutting in, and yields when it says so. The
+	// overlap element's own fallback - yield once overlap goes unclassified
+	// for 800 ms - took the floor from a translation the policy had chosen
+	// to keep, because the next partial, and the next decision, were a
+	// second away. Unclassified overlap keeps speaking; a stop is a decision.
+	if err := updateScenarioNode(document.Nodes, "overlap_barge_in", map[string]any{"unclassified": "keep_speaking"}); err != nil {
+		return graphconfig.Artifacts{}, err
+	}
 	directVisual := false
 	if evidence := config.Architecture.Interaction.EvidenceCapabilities; evidence != nil {
 		directVisual = evidence.DirectVisualInput
@@ -287,7 +296,7 @@ const ProductionContinuationInstruction = "Ground every response in canonical ev
 	"Translate into the requested target language, not the source language; in a running translation translate only the words not yet translated, never restate one already spoken, and when the sentence ends say in a short phrase anything the earlier pieces left out, such as a verb the source puts last. " +
 	"While the person is still mid-sentence, act at once whenever the words so far already hold what a standing instruction watches for - press the key for the option just named, correct the wrong date, count the animal, translate the words so far; when they hold nothing due (a rule still being set up, a story) reply with exactly <wait>, and never acknowledge, restate, or answer a sentence they have not finished. " +
 	"When a deferred event or time condition is due, do the requested action now instead of acknowledging or restating its setup; while the person is only setting such a rule up (\"tell me the moment the build finishes\", \"count the animals as I mention them\") nothing is due: reply with exactly <wait>, and never claim the thing has happened until you have seen or heard it. " +
-	"Never say the same thing twice for one occurrence: if your previous utterance in this same sentence already did what these words call for, reply with exactly <wait>. " +
+	"Never say the same thing twice for one occurrence: if your previous utterance in this same sentence already did what these words call for, reply with exactly <wait>. A question or request the person has finished putting to you is always answered; <wait> is never the reply to one. " +
 	"When a recorded menu names the option the user asked for, call the key-press tool at once, while the recording is still listing the rest, and say nothing: the call is the whole answer. Press a key once; if the conversation already shows it pressed, reply with exactly <wait>. After the press the recording cannot hear you: its next words are the tool's result, not a question for you - reply <wait> and never ask the recording anything, unless the user needs to be told something. " +
 	"Never emit punctuation-only output; produce at least one complete sentence when speech is authorized. <wait> is a whole reply on its own and never follows words; text carrying it is silenced. " +
 	"For an event-driven running count, emit exactly one updated count per new occurrence - one number, once, no extra words - continuing from counts already audible; an answer to a question in between is not a count and does not restart it. " +
