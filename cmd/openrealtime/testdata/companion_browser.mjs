@@ -16,8 +16,17 @@ if (!isAbsolute(profileParent) || profileParent.includes("\0") ||
   throw new Error("browser profile parent is not canonical");
 }
 const profile = mkdtempSync(join(profileParent, "openrealtime-companion-command-"));
+// The profile is fresh on every run, so Chromium treats each launch as a first
+// run and spends real time on GCM registration, component updates, and PKI
+// metadata before it settles. On a CI runner that work competes with the
+// management response this driver is waiting for, and the wait timed out while
+// the browser was still busy with errands nothing here asked for: the page is
+// served from a loopback presentation host and talks to a loopback server.
 const chromium = spawn(process.env.CHROMIUM ?? "chromium", [
   "--headless=new", `--remote-debugging-port=${port}`, "--no-sandbox", "--disable-gpu",
+  "--disable-dev-shm-usage", "--no-first-run", "--disable-background-networking",
+  "--disable-component-update", "--disable-sync", "--disable-default-apps",
+  "--disable-client-side-phishing-detection",
   "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream",
   "--autoplay-policy=no-user-gesture-required", `--user-data-dir=${profile}`, "about:blank",
 ], { stdio: ["ignore", "pipe", "pipe"] });

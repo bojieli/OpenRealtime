@@ -2,10 +2,12 @@ package browser
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -76,7 +78,7 @@ func TestInspectionViewMatchesClosedInspectionVocabularies(t *testing.T) {
 }
 
 func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.T) {
-	chromium := requireInspectionChromium(t)
+	node, chromium := requireInspectionBrowser(t)
 	module, err := browserModule("inspection-view.js")
 	if err != nil {
 		t.Fatal(err)
@@ -98,77 +100,38 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	}))
 	defer server.Close()
 
-	// The document is taken from Chromium's stdout as soon as it is complete,
-	// and the browser is then killed, rather than waiting for it to exit.
+	// The fixture is rendered over the DevTools protocol by a node driver, the
+	// way every other browser check in this package renders one, rather than
+	// with `--dump-dom`.
 	//
-	// Waiting for the exit was the whole failure. --dump-dom is supposed to
-	// print the serialised DOM and quit, and it does locally in about a second;
-	// on the CI runner's Chromium the process printed nothing this test could
-	// use and never exited, so the deadline killed it and the kill was reported
-	// as though the view had rendered wrongly. Raising the deadline from thirty
-	// seconds to ninety only moved the number in the failure - it died at
-	// 90.16s with "signal: killed". Every other Chromium launch in this package
-	// drives the browser and then kills it, and none of them depends on the
-	// browser deciding to leave.
+	// --dump-dom does not work on every Chromium this suite must run against.
+	// On the project's Linux CI runner it produced no output whatsoever - not a
+	// truncated document, zero bytes - while the browser stayed alive until the
+	// deadline killed it, so for weeks the only thing this test could report
+	// was its own kill signal, which reads as though the view had rendered
+	// wrongly. Raising the deadline from thirty seconds to ninety changed the
+	// number in that message and nothing else. The CDP path works on the same
+	// runner, which is the whole reason to prefer it.
 	//
-	// Nothing about what is asserted changes: the assertions below run on the
-	// serialised DOM exactly as before, and a browser that never produces one
-	// still fails - at the deadline, with whatever it did print.
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	command := exec.CommandContext(ctx, chromium,
-		"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-		// A fresh profile on a CI runner means Chromium treats every launch as
-		// a first run: on the runner this test timed out on, ninety seconds of
-		// its output was GCM registration retries, component-updater downloads,
-		// and PKI metadata parsing, and it never rendered the fixture at all -
-		// nothing on stdout, no DOM, killed at the deadline. None of that work
-		// is wanted here. The page under test is served from this process's own
-		// loopback listener and imports one local module, so a browser that
-		// reaches the network for anything is doing something this test did not
-		// ask for.
-		"--no-first-run", "--disable-background-networking", "--disable-component-update",
-		"--disable-sync", "--disable-default-apps", "--disable-client-side-phishing-detection",
-		"--user-data-dir="+t.TempDir(), "--virtual-time-budget=2000", "--dump-dom", server.URL,
-	)
-	stdout, err := command.StdoutPipe()
+	// The assertions below are unchanged and still run on the serialised
+	// document; the driver's only job is to produce it.
+	driver, err := filepath.Abs(filepath.Join("testdata", "inspection_dom.mjs"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, node, driver, server.URL)
+	command.Env = append(os.Environ(), "CHROMIUM="+chromium, "CDP_PORT="+inspectionFreePort(t))
 	diagnostics := &strings.Builder{}
 	command.Stderr = diagnostics
-	if err := command.Start(); err != nil {
-		t.Fatalf("start Chromium: %v", err)
+	rendered, err := command.Output()
+	if err != nil {
+		t.Fatalf("render inspection channel telemetry in Chromium: %v\n%s", err, diagnostics.String())
 	}
-	rendered := make(chan string, 1)
-	go func() {
-		document := &strings.Builder{}
-		buffer := make([]byte, 32<<10)
-		for {
-			n, readErr := stdout.Read(buffer)
-			if n > 0 {
-				document.Write(buffer[:n])
-				// </html> is the last thing --dump-dom writes, so the document
-				// is whole here and nothing is gained by waiting further.
-				if strings.Contains(document.String(), "</html>") {
-					break
-				}
-			}
-			if readErr != nil {
-				break
-			}
-		}
-		rendered <- document.String()
-	}()
-	var document string
-	select {
-	case document = <-rendered:
-	case <-ctx.Done():
-	}
-	_ = command.Process.Kill()
-	_ = command.Wait()
+	document := string(rendered)
 	if !strings.Contains(document, "</html>") {
-		t.Fatalf("Chromium did not serialise a document within the deadline:\nstdout:\n%s\nstderr:\n%s",
+		t.Fatalf("the browser did not serialise a document:\nstdout:\n%s\nstderr:\n%s",
 			document, diagnostics.String())
 	}
 	for _, expected := range []string{
@@ -195,6 +158,38 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	if strings.Contains(document, "data-error=") {
 		t.Fatalf("Chromium channel view reported an error:\n%s", document)
 	}
+}
+
+// requireInspectionBrowser resolves the node and Chromium this package's
+// browser checks need. browser_e2e_test.go has an equivalent, but it lives in
+// the external browser_test package and is not reachable from here.
+func requireInspectionBrowser(t testing.TB) (string, string) {
+	t.Helper()
+	node, err := exec.LookPath("node")
+	if err != nil {
+		testgate.Missing(t, "node")
+	}
+	return node, requireInspectionChromium(t)
+}
+
+// inspectionFreePort reserves a loopback port and releases it, so the browser's
+// DevTools listener does not collide with a parallel package's.
+func inspectionFreePort(t testing.TB) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := listener.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
 }
 
 func requireInspectionChromium(t testing.TB) string {

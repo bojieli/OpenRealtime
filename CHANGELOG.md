@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Chromium was doing errands on the CI runner that the browser checks then
+  waited behind. A fresh profile is a first run, so the browser spent real time
+  on GCM registration retries, component-updater downloads, and PKI metadata
+  parsing before settling - visible only once a failing test printed the
+  browser's own stderr instead of a kill signal. Every page under test here is
+  served from a loopback listener in the test process, so a browser reaching
+  the network at all is doing something nothing asked for. The inspection
+  launch and the companion browser driver both disable it now; the companion
+  driver had been timing out waiting for a management response while the
+  browser was still busy elsewhere.
+
 - The Chromium inspection test never rendered on the CI runner, and the way it
   failed hid that. It launched Chromium with `--dump-dom` and waited for the
   process to exit, so when the browser did not render, all the test could
