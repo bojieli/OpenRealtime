@@ -98,7 +98,15 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	}))
 	defer server.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Ninety seconds, the same bound every other Chromium launch in this package
+	// uses. Thirty was an outlier, and it is a bound on starting a browser far
+	// more than on rendering this fixture: the work here is one --dump-dom of a
+	// static module and finishes in about a second locally. On a shared CI
+	// runner already carrying another test package, a cold headless start alone
+	// can pass thirty seconds, and this test failed at 30.14s - the deadline
+	// killing Chromium mid-render, reported as though the view were wrong.
+	// Nothing about what is asserted below changes.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, chromium,
 		"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",

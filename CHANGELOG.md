@@ -2,6 +2,67 @@
 
 ## Unreleased
 
+- CI had been red on `main` for three weeks - thirty-eight of the last forty
+  runs - and not one of the failures was a defect in the code the jobs were
+  checking. `./scripts/check.sh` passed locally, complete and with nothing
+  skipped, throughout.
+
+  Most of it was one mistake. `actions/setup-go` pins `GOTOOLCHAIN=local` so
+  that its `go-version` input is the only toolchain a job may use, and this
+  repository deliberately does the opposite: each module names the exact
+  `toolchain` it is built with, the root module `go1.25.14` and
+  `integrations/livekit` `go1.26.8`, and `check.sh` runs both with one `go`
+  binary. Under `GOTOOLCHAIN=local` the LiveKit module could not be loaded at
+  all - `go.mod requires go >= 1.26 (running go 1.25.14)` - so its vet, its
+  tests, and its race tests were reported as three failures without one of them
+  executing, in the same red as tests that genuinely fail. The gate,
+  compatibility, and release-matrix jobs now restore `auto` after setup-go,
+  which hands each module the toolchain its own `go.mod` pins and is what a
+  contributor running the gate locally already gets.
+
+  The same pin had silently disabled the vulnerability scan outright.
+  govulncheck now requires Go 1.26 to build, so `go install` inside the 1.25
+  half failed in a third of a second, before a single package was loaded, and
+  the job reported "could not look" in the same red as "found advisories" -
+  the one confusion it exists to prevent. The scanner is now built once with
+  the newer toolchain and used for both scans; each module is still scanned
+  under its own pinned toolchain, so the standard library each result describes
+  is still the one that module's build uses. Both modules currently report zero
+  reachable advisories.
+
+- The native macOS client did not compile on the runner that builds it. The
+  package's deployment target is macOS 14 and stays there - `RoomRecorder` is
+  marked `@available(macOS 15.0, *)` and every call site guards with `if
+  #available`, so a macOS 14 machine runs the app and simply has no recorder -
+  but `@available` is a runtime check, and the macOS 14 SDK has no
+  `SCRecordingOutput` symbol to compile against. Every run since the recorder
+  landed failed with twenty "cannot find type" errors against correct code. The
+  job now runs on `macos-15`, which is the SDK `macos/README.md` has asked of a
+  contributor all along: macOS 14+, Xcode 16+.
+
+- The public companion command's end-to-end gate had never passed since it was
+  written. It polled `/metrics` without the bearer token the companion runs
+  with, collected 401s until its deadline, and then reported that the browser
+  and native sessions had not completed - naming the wrong half of the system,
+  since by then both had run. It also required a Deepgram and a Gemini
+  credential to reach readiness, on a runner that holds neither. The poll now
+  carries the credential; the credentials are supplied as placeholders by the
+  test itself, which is honest because this test never reaches a provider - it
+  asserts on supervision, routing, and session accounting, recognises no audio
+  and requests no reasoning - and which also shadows a real key that happens to
+  be exported, so no developer's account is dialled by a test run. Its failure
+  message now reports the counts it saw rather than only the counts it wanted.
+
+- Two tests failed under CI's capacity rather than for anything they check. The
+  mounted-graph test read the trace the instant the egress envelope arrived,
+  racing the runtime goroutines still recording that crossing, and saw three
+  events where four were due; it now waits for the count, with the same
+  assertion after the wait, so a fourth record that never arrives still fails.
+  The Chromium inspection test held a 30-second bound where every other
+  Chromium launch in its package holds 90, and died at 30.14s with the deadline
+  killing the browser mid-render; it now matches its siblings. Neither change
+  alters what is asserted.
+
 - Two opt-in pre-ASR audio filters, `profile filtered-room` and `profile
   target-room`, place a waveform transform ahead of both energy admission and
   ASR. The ordering is the whole point, and a parallel evidence lane cannot

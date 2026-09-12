@@ -14,8 +14,19 @@ permissions:
   contents: read
 
 jobs:
+  # macos-15, not macos-14, because the SDK is what this job compiles against.
+  #
+  # The package's deployment target is still macOS 14 and stays there: the room
+  # recorder is marked @available(macOS 15.0, *) and every call site guards with
+  # `if #available`, so a macOS 14 machine runs the app and simply has no
+  # recorder. But @available is a runtime check, not a compile-time one - the
+  # macOS 14 SDK has no SCRecordingOutput symbol at all, so the file could not
+  # be compiled on a runner carrying it, and every run of this job failed with
+  # twenty "cannot find type 'SCRecordingOutput'" errors while the package
+  # itself was correct. Building against the newer SDK is what the README has
+  # asked of a contributor all along: macOS 14+, Xcode 16+.
   macos-client:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -78,6 +89,27 @@ jobs:
         with:
           go-version: '1.25'
           check-latest: true
+
+      # setup-go pins GOTOOLCHAIN=local so that its go-version input is the only
+      # toolchain the job can use. That is the wrong rule for this repository.
+      # Both modules deliberately pin an exact `toolchain` directive - the root
+      # module to go1.25.14, integrations/livekit to go1.26.8 - and check.sh
+      # runs the two of them with one `go` binary. Under GOTOOLCHAIN=local the
+      # LiveKit half cannot run at all:
+      #
+      #   go: go.mod requires go >= 1.26 (running go 1.25.14; GOTOOLCHAIN=local)
+      #
+      # which is how that module's vet, normal tests, and race tests were all
+      # reported as failures for weeks without one of them executing - and a
+      # module that cannot be loaded fails in the same colour as a module whose
+      # tests fail. Restoring `auto` hands each module the toolchain its own
+      # go.mod names, which is what those pins are for and what a developer
+      # running check.sh locally already gets.
+      #
+      # It is written after setup-go rather than declared as job `env:` so that
+      # it plainly wins by order instead of by an env-precedence rule.
+      - name: Let each module use the toolchain its go.mod pins
+        run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
 
       - name: Review media sandbox
         run: |
@@ -188,6 +220,11 @@ jobs:
         with:
           node-version: '22'
 
+      # See the gate job: each module pins its own exact toolchain, and
+      # GOTOOLCHAIN=local leaves integrations/livekit unable to load.
+      - name: Let each module use the toolchain its go.mod pins
+        run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
+
       - name: Official Realtime SDK
         working-directory: examples/sdk-client
         run: npm install --no-audit --no-fund
@@ -263,6 +300,11 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+
+      # See the gate job: each module pins its own exact toolchain, and
+      # GOTOOLCHAIN=local leaves integrations/livekit unable to load.
+      - name: Let each module use the toolchain its go.mod pins
+        run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
 
       - name: Local gate prerequisites
         run: |
@@ -375,6 +417,36 @@ jobs:
       # the toolchain each scan resolves is part of its claim rather than
       # incidental to it: the root module's advisories are the ones the
       # released binaries actually reach.
+      # The scanner is built once, with the newer of the two toolchains, and
+      # then used for both scans.
+      #
+      # Installing it inside the 1.25 half is what made this job red without it
+      # reporting on a single advisory: govulncheck now requires Go 1.26 to
+      # build, so the install failed before any package was loaded -
+      #
+      #   golang.org/x/vuln@v1.8.0 requires go >= 1.26.0 (running go 1.25.14; GOTOOLCHAIN=local)
+      #
+      # - and "could not look" was being reported in the same red as "found
+      # advisories", which is the exact confusion this job exists to prevent.
+      #
+      # Building the scanner with 1.26 changes neither scan's claim. The
+      # standard library govulncheck reports is the one the scanned build uses,
+      # and that is fixed by each module's own pinned toolchain and by the
+      # setup-go step standing in front of that scan - not by whatever compiled
+      # the scanner. The direction that does matter is the one the two-scan
+      # split already documents: a scanner built with the newer language version
+      # can load both modules, and one built with the older version can load
+      # neither.
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          check-latest: true
+
+      - name: Build the scanner
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          echo "GOVULNCHECK=$(go env GOPATH)/bin/govulncheck" >> "$GITHUB_ENV"
+
       - uses: actions/setup-go@v7
         with:
           go-version: '1.25'
@@ -384,9 +456,7 @@ jobs:
         run: go version
 
       - name: Known advisories reachable from this code
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          "$(go env GOPATH)/bin/govulncheck" ./...
+        run: '"$GOVULNCHECK" ./...'
 
       - uses: actions/setup-go@v7
         with:
@@ -398,9 +468,7 @@ jobs:
 
       - name: Known advisories in the LiveKit integration
         working-directory: integrations/livekit
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          "$(go env GOPATH)/bin/govulncheck" ./...
+        run: '"$GOVULNCHECK" ./...'
 
   # The container is built on every change for the same reason the release
   # binaries are: a build that is only exercised at release time is a build
