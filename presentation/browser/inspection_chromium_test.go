@@ -98,25 +98,79 @@ func TestInspectionViewRendersExactChannelAndFlowTelemetryInChromium(t *testing.
 	}))
 	defer server.Close()
 
-	// Ninety seconds, the same bound every other Chromium launch in this package
-	// uses. Thirty was an outlier, and it is a bound on starting a browser far
-	// more than on rendering this fixture: the work here is one --dump-dom of a
-	// static module and finishes in about a second locally. On a shared CI
-	// runner already carrying another test package, a cold headless start alone
-	// can pass thirty seconds, and this test failed at 30.14s - the deadline
-	// killing Chromium mid-render, reported as though the view were wrong.
-	// Nothing about what is asserted below changes.
+	// The document is taken from Chromium's stdout as soon as it is complete,
+	// and the browser is then killed, rather than waiting for it to exit.
+	//
+	// Waiting for the exit was the whole failure. --dump-dom is supposed to
+	// print the serialised DOM and quit, and it does locally in about a second;
+	// on the CI runner's Chromium the process printed nothing this test could
+	// use and never exited, so the deadline killed it and the kill was reported
+	// as though the view had rendered wrongly. Raising the deadline from thirty
+	// seconds to ninety only moved the number in the failure - it died at
+	// 90.16s with "signal: killed". Every other Chromium launch in this package
+	// drives the browser and then kills it, and none of them depends on the
+	// browser deciding to leave.
+	//
+	// Nothing about what is asserted changes: the assertions below run on the
+	// serialised DOM exactly as before, and a browser that never produces one
+	// still fails - at the deadline, with whatever it did print.
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, chromium,
 		"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
+		// A fresh profile on a CI runner means Chromium treats every launch as
+		// a first run: on the runner this test timed out on, ninety seconds of
+		// its output was GCM registration retries, component-updater downloads,
+		// and PKI metadata parsing, and it never rendered the fixture at all -
+		// nothing on stdout, no DOM, killed at the deadline. None of that work
+		// is wanted here. The page under test is served from this process's own
+		// loopback listener and imports one local module, so a browser that
+		// reaches the network for anything is doing something this test did not
+		// ask for.
+		"--no-first-run", "--disable-background-networking", "--disable-component-update",
+		"--disable-sync", "--disable-default-apps", "--disable-client-side-phishing-detection",
 		"--user-data-dir="+t.TempDir(), "--virtual-time-budget=2000", "--dump-dom", server.URL,
 	)
-	output, err := command.CombinedOutput()
+	stdout, err := command.StdoutPipe()
 	if err != nil {
-		t.Fatalf("render inspection channel telemetry in Chromium: %v\n%s", err, output)
+		t.Fatal(err)
 	}
-	document := string(output)
+	diagnostics := &strings.Builder{}
+	command.Stderr = diagnostics
+	if err := command.Start(); err != nil {
+		t.Fatalf("start Chromium: %v", err)
+	}
+	rendered := make(chan string, 1)
+	go func() {
+		document := &strings.Builder{}
+		buffer := make([]byte, 32<<10)
+		for {
+			n, readErr := stdout.Read(buffer)
+			if n > 0 {
+				document.Write(buffer[:n])
+				// </html> is the last thing --dump-dom writes, so the document
+				// is whole here and nothing is gained by waiting further.
+				if strings.Contains(document.String(), "</html>") {
+					break
+				}
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		rendered <- document.String()
+	}()
+	var document string
+	select {
+	case document = <-rendered:
+	case <-ctx.Done():
+	}
+	_ = command.Process.Kill()
+	_ = command.Wait()
+	if !strings.Contains(document, "</html>") {
+		t.Fatalf("Chromium did not serialise a document within the deadline:\nstdout:\n%s\nstderr:\n%s",
+			document, diagnostics.String())
+	}
 	for _, expected := range []string{
 		`data-ready="true"`, `data-edge-id="channel"`, `data-delivery="lossy"`,
 		`id="delta-availability" data-state="loaded" data-after="0" data-next="2" data-events="1" data-baseline="1"`,

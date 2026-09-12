@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- The Chromium inspection test never rendered on the CI runner, and the way it
+  failed hid that. It launched Chromium with `--dump-dom` and waited for the
+  process to exit, so when the browser did not render, all the test could
+  report was the kill signal at its own deadline - which reads as though the
+  view were wrong. Raising the deadline from thirty seconds to ninety only
+  moved the number: it died at 90.16s with "signal: killed". Reading the output
+  it did produce shows the actual cause: ninety seconds of GCM registration
+  retries, component-updater downloads, and PKI metadata parsing, on a fresh
+  profile Chromium treats as a first run, with nothing on stdout and no DOM at
+  any point.
+
+  The launch now disables that background work, which the test never wanted -
+  the page is served from the test's own loopback listener and imports one
+  local module, so a browser reaching the network is doing something this test
+  did not ask for. And the document is taken from stdout as soon as it is
+  complete, with the browser killed afterwards, so the test no longer depends
+  on Chromium choosing to exit and a browser that renders nothing fails saying
+  so, with its stderr, instead of reporting a kill. Every other Chromium launch
+  in this package already drives the browser and then kills it.
+
 - The public companion gate could not have passed on a clean machine, and the
   reason was masked on the machine it was written on. With no explicit
   composition the companion freezes the twelve-scenario room profile, and that
