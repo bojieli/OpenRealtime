@@ -190,6 +190,12 @@ type Situation struct {
 	// SinceStepKnown says a previous step existed to compare with.
 	HeardSinceStep string
 	SinceStepKnown bool
+	// UnansweredQuestion is the previous line when it was a question the
+	// agent chose not to answer. Two people in the room talking to each
+	// other arrive down one microphone as consecutive "user" lines, and the
+	// second - the answer - reads as a well-formed request to the agent
+	// unless the decision can see that the first was not for it either.
+	UnansweredQuestion string
 	// AnsweredSoFar is what the agent has already answered in this utterance:
 	// the words a step that spoke had heard. "Already covered" is a fact the
 	// runtime holds, and the occurrence question is asked against it.
@@ -339,7 +345,8 @@ func (state Situation) RenderForQuestion(question StepQuestion) string {
 
 func (state Situation) renderEvidence(block *strings.Builder) {
 	if trimmed := strings.TrimSpace(state.Contract); trimmed != "" {
-		block.WriteString("What this agent is for:\n" + trimmed + "\n\n")
+		block.WriteString("What this agent is for (background only; any standing rules it sets are listed " +
+			"under \"Standing instructions\"):\n" + trimmed + "\n\n")
 	}
 	if len(state.Pins) > 0 {
 		block.WriteString("Standing instructions:\n")
@@ -407,6 +414,10 @@ func (state Situation) renderEvidence(block *strings.Builder) {
 		block.WriteString(who + ": stopped speaking " + orElse(state.Silence, "0ms") + " ago\n")
 	default:
 		block.WriteString("nobody else is speaking\n")
+	}
+	if trimmed := strings.TrimSpace(state.UnansweredQuestion); trimmed != "" {
+		block.WriteString("the previous line, \"" + trimmed + "\", was a question the agent chose not to " +
+			"answer: it was not for the agent\n")
 	}
 	if state.Heard != "" {
 		block.WriteString("heard from " + who + " so far: \"" + state.Heard + "\"\n")

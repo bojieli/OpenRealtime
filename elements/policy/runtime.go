@@ -328,13 +328,15 @@ func (runner *generateOnObservationRunner) emit(
 	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.Context.StateItemID)
 	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.TrajectoryItemID)
 	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.TriggerItemID)
+	candidateEnvelope.CausalParents = appendUnique(candidateEnvelope.CausalParents, commit.TailItemID())
 	candidateEnvelope.Payload = authority.Candidate{
 		RunID: generationID, SessionID: cause.SessionID,
 		ActivationItemID: triggerEnvelope.ItemID, ActivationCauseItemID: cause.ItemID,
 		ObservationItemID:        commit.TrajectoryItemID,
 		ObservationTriggerItemID: commit.TriggerItemID,
 		SourceRevision:           commit.SourceRevision, ContextVersion: commit.StoreVersion,
-		ContextEnvelopeItemID: commit.Context.StateItemID, ContextTailItem: commit.TrajectoryItemID,
+		ContextEnvelopeItemID: commit.Context.StateItemID, ContextTailItem: commit.TailItemID(),
+		ContextExtended: commit.Context.TailItemID != "",
 	}
 	if _, err := runner.ports.trigger.Broadcast(ctx, triggerEnvelope); err != nil {
 		return err

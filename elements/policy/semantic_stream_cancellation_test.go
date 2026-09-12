@@ -126,6 +126,9 @@ func TestSemanticAdmissionStreamCancellationSurvivesLaterRevisions(t *testing.T)
 				}
 				_ = state()
 				acknowledgeSemanticVoice(t, harness, coreinteraction.AgentOutput{Queued: true}, uint64(10+2*index), uint64(1+index))
+				// The voice's answer reaches the trajectory with the next
+				// context; the hold on the next stream lifts on it.
+				history.Items = append(history.Items, semanticAssistantSaid("said-"+stream, "answered"))
 			}
 			wantCalls := 2
 			if phase == "active-decision" {

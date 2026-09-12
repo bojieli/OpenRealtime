@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/bojieli/OpenRealtime/trajectory"
 )
 
 // Every token offered for a state parses back to a choice whose token is the
@@ -117,7 +119,7 @@ func TestQuestionsComposeEveryChoice(t *testing.T) {
 				t.Fatal(err)
 			}
 			answers := map[string]bool{}
-			for _, question := range []string{QuestionStop, QuestionOccurrence, QuestionRequest} {
+			for _, question := range []string{QuestionStop, QuestionOccurrence, QuestionRequest, QuestionQuiet, QuestionElsewhere} {
 				answers[question] = AnswerFor(question, choice) == AnswerYes
 			}
 			if composed := ComposeChoice(speaking, answers); composed != choice {
@@ -127,6 +129,12 @@ func TestQuestionsComposeEveryChoice(t *testing.T) {
 	}
 	if !ComposeChoice(false, map[string]bool{QuestionStop: true}).Idle() {
 		t.Fatal("a stop answer while nobody is speaking must not stop anything")
+	}
+	if !ComposeChoice(false, map[string]bool{QuestionQuiet: true}).Speak {
+		t.Fatal("a due silence policy must invoke the voice")
+	}
+	if ComposeChoice(false, map[string]bool{QuestionRequest: true, QuestionElsewhere: true}).Speak {
+		t.Fatal("a request meant for somebody else in the room must not invoke the voice")
 	}
 	if DescribeAnswers([]AskedQuestion{{Question: QuestionStop, Answer: AnswerNo}, {Question: QuestionOccurrence, Answer: AnswerYes}}) != "stop=no occurrence=yes" {
 		t.Fatal("answers do not describe themselves")
@@ -142,5 +150,38 @@ func TestRenderForChoiceEndsWithTheExactOptions(t *testing.T) {
 	speaking := Situation{AgentSpeaking: true, AgentSaying: "One.", Heard: "then a heron"}
 	if rendered := speaking.RenderForChoice(); !strings.HasSuffix(rendered, "Choose exactly one: keep, stop, keep+speak, stop+speak") {
 		t.Fatalf("speaking render:\n%s", rendered)
+	}
+}
+
+// Two people talking to each other arrive as consecutive "user" lines. The
+// evidence says when the previous one was a question the agent chose not to
+// answer, so the decision about the reply can see that neither was for it.
+func TestEvidenceNamesTheQuestionTheAgentChoseNotToAnswer(t *testing.T) {
+	situation := Situation{
+		Speaker: "user", Heard: "No, I forgot again. Can you put it on the list for tomorrow?",
+		TranscriptEvent: TranscriptFinal, SinceStepKnown: true,
+		UnansweredQuestion: "Did you get the milk on the way in?",
+	}
+	rendered := situation.RenderForQuestion(ElsewhereQuestion)
+	if !strings.Contains(rendered, `the previous line, "Did you get the milk on the way in?", was a question the agent chose not to answer`) {
+		t.Fatalf("evidence omits the unanswered question:\n%s", rendered)
+	}
+	if strings.Contains(Situation{Speaker: "user", Heard: "Hello", TranscriptEvent: TranscriptFinal}.RenderEvidence(), "chose not to answer") {
+		t.Fatal("a line with no unanswered question before it must not claim one")
+	}
+}
+
+// A tool call is something the agent did, and the conversation shows it the
+// way it shows a line the agent said.
+func TestRecentLinesShowWhatTheAgentDid(t *testing.T) {
+	call := trajectory.ToolCall{CallID: "c1", Name: "press_key", Arguments: json.RawMessage(`{"digit":"2"}`)}
+	lines := RecentLines([]trajectory.Item{
+		{ID: "u", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "Press two for order status."},
+		{ID: "c", Kind: trajectory.KindToolCall, ToolCall: &call},
+		{ID: "r", Kind: trajectory.KindToolResult, ToolResult: &trajectory.ToolResult{CallID: "c1", Name: "press_key", Output: json.RawMessage(`{"ok":true}`)}},
+	}, 6)
+	want := []string{"user: Press two for order status.", `agent did: press_key({"digit":"2"})`, `result of press_key: {"ok":true}`}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("recent lines = %q, want %q", lines, want)
 	}
 }

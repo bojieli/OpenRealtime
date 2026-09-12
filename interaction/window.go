@@ -152,6 +152,22 @@ func conversationWindow(items []trajectory.Item) []conversationWindowLine {
 // Playback state informs the projection without becoming a separate turn;
 // reasoning and tool plumbing remain outside the conversation.
 func windowLine(item trajectory.Item, visibility trajectory.Visibility, mark spoken.Mark, boundary bool) string {
+	// A tool call is something the agent did, and it belongs in the
+	// conversation the way a line it said does: a decision that cannot see
+	// the key was pressed asks for it to be pressed again. Measured, a menu
+	// got its key three times.
+	switch item.Kind {
+	case trajectory.KindToolCall:
+		if item.ToolCall != nil {
+			return "agent did: " + ToolCallLine(*item.ToolCall)
+		}
+		return ""
+	case trajectory.KindToolResult:
+		if item.ToolResult != nil {
+			return "result of " + item.ToolResult.Name + ": " + truncateWindowText(toolResultText(*item.ToolResult), 160)
+		}
+		return ""
+	}
 	text := strings.TrimSpace(item.Content)
 	if text == "" {
 		return ""
@@ -263,4 +279,28 @@ func SpeakerOf(item trajectory.Item) string {
 	default:
 		return source
 	}
+}
+
+// ToolCallLine renders a tool call the way the conversation shows it and the
+// step history records it: the name and its arguments.
+func ToolCallLine(call trajectory.ToolCall) string {
+	arguments := strings.TrimSpace(string(call.Arguments))
+	if arguments == "" || arguments == "{}" || arguments == "null" {
+		return call.Name + "()"
+	}
+	return call.Name + "(" + truncateWindowText(arguments, 120) + ")"
+}
+
+func toolResultText(result trajectory.ToolResult) string {
+	if result.Error != "" {
+		return "error: " + result.Error
+	}
+	return strings.TrimSpace(string(result.Output))
+}
+
+func truncateWindowText(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	return text[:limit] + "…"
 }

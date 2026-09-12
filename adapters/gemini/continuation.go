@@ -577,6 +577,20 @@ func (adapter *Adapter) buildRequest(request continuation.Request) (geminiReques
 			Role: "user", Parts: []json.RawMessage{part},
 		})
 	}
+	if last := len(result.Contents) - 1; last >= 0 && result.Contents[last].Role == "model" {
+		// This API refuses a conversation that ends on the model's own turn,
+		// and a turn the runtime opens with nothing new said - a silence
+		// timer coming due, a standing instruction falling due on the clock -
+		// ends exactly there. Measured, every such turn failed in 150 ms with
+		// a 400 and the person asking to be checked on after fifteen seconds
+		// was never checked on. The missing piece is the user turn the API
+		// requires, and what that turn can truthfully say is that nobody has
+		// spoken since.
+		part, _ := json.Marshal(map[string]string{"text": continuation.NothingSaidSincePrompt})
+		result.Contents = appendGeminiContent(result.Contents, geminiContent{
+			Role: "user", Parts: []json.RawMessage{part},
+		})
+	}
 	if len(result.Contents) == 0 {
 		// A turn can begin before anything has been committed. An interjection
 		// or a silent act fires on an utterance still in progress, so the log

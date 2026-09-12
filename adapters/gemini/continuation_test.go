@@ -794,3 +794,34 @@ func TestTokenExhaustionIsNotSuccessfulCompletion(t *testing.T) {
 		})
 	}
 }
+
+// A turn the runtime opens on its own - a silence timer coming due - ends on
+// the agent's last words, and this API refuses a conversation that ends on a
+// model turn. The request has to end on the user turn the API requires, and
+// that turn says nobody has spoken since.
+func TestBuildRequestNeverEndsOnTheModelsOwnTurn(t *testing.T) {
+	t.Parallel()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseFast, Effort: continuation.EffortLow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := adapter.buildRequest(continuation.Request{
+		Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{
+			{ID: "user", Kind: trajectory.KindObservation, Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "If I go quiet for fifteen seconds, ask whether I am still there."},
+			{ID: "fast", Kind: trajectory.KindAssistant, Producer: trajectory.Producer{Phase: trajectory.PhaseFast}, Content: "I will."},
+		}},
+		Invocation: continuation.Invocation{Instruction: "Follow the standing instruction."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Contents) == 0 || body.Contents[len(body.Contents)-1].Role != "user" {
+		encoded, _ := json.Marshal(body.Contents)
+		t.Fatalf("request ends on a model turn: %s", encoded)
+	}
+	encoded, _ := json.Marshal(body.Contents[len(body.Contents)-1])
+	if !strings.Contains(string(encoded), "nobody has said anything since your last words") {
+		t.Fatalf("closing user turn = %s", encoded)
+	}
+}

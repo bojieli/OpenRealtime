@@ -209,6 +209,9 @@ type semanticDecisionResult struct {
 	failureCode     string
 	canceled        bool
 	timedOut        bool
+	// contract is the session instruction this decision read standing
+	// policies from, when it did.
+	contract string
 }
 
 type activeSemanticDecision struct {
@@ -245,11 +248,14 @@ type semanticAdmissionRunner struct {
 	handle           *semanticDeciderHandle
 	decider          SemanticDecider
 	extractor        coreinteraction.Extractor
-	media            continuation.MediaResolver
-	clock            graphruntime.Clock
-	sequences        *graphruntime.SequenceAllocator
-	resolution       element.ResolutionReporter
-	ports            semanticAdmissionPorts
+	// contractExtracted is the session instruction whose standing rules
+	// have been read onto the board, so the reading happens once per text.
+	contractExtracted string
+	media             continuation.MediaResolver
+	clock             graphruntime.Clock
+	sequences         *graphruntime.SequenceAllocator
+	resolution        element.ResolutionReporter
+	ports             semanticAdmissionPorts
 
 	invocation       SessionInvocationUpdate
 	invocationDigest string
@@ -299,17 +305,20 @@ type semanticHold struct {
 	// coalescing away the snapshots in between.
 	startedAtGrant  uint64
 	finishedAtGrant uint64
-	// assistantAtGrant is how many assistant items the trajectory held when
-	// the voice was admitted. The hold lifts only once the trajectory shows
-	// the answer - one more assistant item - or a newer state after the
-	// finish, because the lifecycle's "finished" reaches this element on a
-	// different lane from the trajectory's commit of the answer, and a step
-	// decided in between was compiled without the number the model had just
-	// said and said it again.
-	assistantAtGrant int
-	finished         bool
-	finishedNS       uint64
-	versionAtFinish  uint64
+	// modelItemsAtGrant is how many model-produced items - words, tool
+	// proposals, tool calls - the trajectory held when the voice was
+	// admitted. The hold lifts only once the trajectory shows the answer -
+	// one more of them - or a grace period after the finish, because the
+	// lifecycle's "finished" reaches this element on a different lane from
+	// the trajectory's commit of the answer, and a step decided in between
+	// was compiled without the number the model had just said and said it
+	// again. A newer trajectory version is not enough: the recogniser adds
+	// a revision every second, and a step decided on one of those, twenty
+	// milliseconds after a key press that had not landed yet, asked for
+	// the key again.
+	modelItemsAtGrant int
+	finished          bool
+	finishedNS        uint64
 }
 
 const (
@@ -343,8 +352,7 @@ func (runner *semanticAdmissionRunner) holding() bool {
 		// Nothing ever reached the model: the grant was refused downstream.
 		runner.hold = nil
 		return false
-	case runner.hold.finished && (semanticAssistantItems(runner.latest.snapshot) > runner.hold.assistantAtGrant ||
-		runner.latest.snapshot.Version > runner.hold.versionAtFinish ||
+	case runner.hold.finished && (semanticModelItems(runner.latest.snapshot) > runner.hold.modelItemsAtGrant ||
 		time.Duration(now-runner.hold.finishedNS) > semanticHoldGrace):
 		// The answer is in the trajectory (or nothing will ever be).
 		runner.hold = nil
@@ -363,15 +371,16 @@ func (runner *semanticAdmissionRunner) noteHoldFinished(output coreinteraction.A
 		output.GenerationsFinished >= output.GenerationsStarted {
 		runner.hold.finished = true
 		runner.hold.finishedNS = runner.clock.NowNS()
-		runner.hold.versionAtFinish = runner.latest.snapshot.Version
 	}
 }
 
-// semanticAssistantItems counts what the agent has said or prepared.
-func semanticAssistantItems(snapshot trajectory.Snapshot) int {
+// semanticModelItems counts what the model has produced: words, prepared or
+// said, and the tools it proposed or called.
+func semanticModelItems(snapshot trajectory.Snapshot) int {
 	count := 0
 	for _, item := range snapshot.Items {
-		if item.Kind == trajectory.KindAssistant {
+		switch item.Kind {
+		case trajectory.KindAssistant, trajectory.KindToolProposal, trajectory.KindToolCall:
 			count++
 		}
 	}
@@ -410,6 +419,37 @@ func (runner *semanticAdmissionRunner) noteAgentSaying(output coreinteraction.Ag
 	}
 }
 
+// noteAgentActions attributes tool calls that reached the trajectory to the
+// step that invoked the voice, the way noteAgentSaying attributes its words.
+// A key press is not audible, and a step that shows "agent said nothing"
+// after pressing the key reads as an occurrence still unanswered - measured,
+// the policy asked for the key on every partial after it and the menu got it
+// three times.
+func (runner *semanticAdmissionRunner) noteAgentActions(previous, current semanticContextSample) {
+	start := 0
+	if previous.envelope.ItemID != "" {
+		start = min(len(previous.snapshot.Items), len(current.snapshot.Items))
+	}
+	for _, item := range current.snapshot.Items[start:] {
+		// The proposal lands with the model's commit and the call a moment
+		// later; either says the act was taken.
+		if (item.Kind != trajectory.KindToolCall && item.Kind != trajectory.KindToolProposal) || item.ToolCall == nil {
+			continue
+		}
+		line := "did " + coreinteraction.ToolCallLine(*item.ToolCall)
+		for index := len(runner.steps) - 1; index >= 0; index-- {
+			step := &runner.steps[index]
+			if !step.spoke {
+				continue
+			}
+			if !slices.Contains(step.said, line) {
+				step.said = append(step.said, line)
+			}
+			break
+		}
+	}
+}
+
 // stepLines renders the history for the evidence.
 func (runner *semanticAdmissionRunner) stepLines() []string {
 	lines := make([]string, 0, len(runner.steps))
@@ -420,10 +460,24 @@ func (runner *semanticAdmissionRunner) stepLines() []string {
 		}
 		line := event + " \"" + semanticStepText(step.heard) + "\" -> " + step.choice.Token()
 		if step.spoke {
-			if len(step.said) == 0 {
+			var said, did []string
+			for _, entry := range step.said {
+				if action, ok := strings.CutPrefix(entry, "did "); ok {
+					did = append(did, action)
+				} else {
+					said = append(said, entry)
+				}
+			}
+			switch {
+			case len(said) == 0 && len(did) == 0:
 				line += "; agent said nothing"
-			} else {
-				line += "; agent said \"" + strings.Join(step.said, " ") + "\""
+			case len(said) == 0:
+				line += "; agent did " + strings.Join(did, ", ") + " and said nothing"
+			default:
+				line += "; agent said \"" + strings.Join(said, " ") + "\""
+				if len(did) > 0 {
+					line += " and did " + strings.Join(did, ", ")
+				}
 			}
 		}
 		lines = append(lines, line)
@@ -751,6 +805,7 @@ func (runner *semanticAdmissionRunner) acceptContext(ctx context.Context, envelo
 	if envelope.SessionID != "" {
 		runner.contextSession = envelope.SessionID
 	}
+	runner.noteAgentActions(runner.latest, copy)
 	runner.latest = copy
 	runner.state.ContextVersion = max(runner.state.ContextVersion, snapshot.Version)
 	for len(runner.contextOrder) > runner.config.TerminalMemory {
@@ -976,6 +1031,8 @@ func (runner *semanticAdmissionRunner) startReadyDecision(
 		agentOutput := cloneSemanticAgentOutput(runner.agentOutput)
 		history := semanticStepHistory{lines: runner.stepLines(), answeredHeard: runner.answeredSoFar(request.streamID)}
 		history.previousHeard, history.previousKnown = runner.previousStepHeard(request.streamID)
+		history.contractExtracted = runner.contractExtracted
+		history.unanswered = runner.unansweredQuestion(request.streamID)
 		runner.decisions.Add(1)
 		go func() {
 			defer runner.decisions.Done()
@@ -1134,6 +1191,31 @@ func (runner *semanticAdmissionRunner) decide(
 	timeout := time.Duration(runner.entry.descriptor.DecisionTimeoutMS) * time.Millisecond
 	decisionCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// The deployment's own instruction sets standing policies too, and they
+	// have to be on the board before the first decision that could trigger
+	// one. Read once per instruction text, on the decision that first sees
+	// it; the pins outlive every turn and nobody in the room can lift them.
+	contract, contractReport := "", (*StandingReport)(nil)
+	if text := strings.TrimSpace(update.Contract); text != "" && text != history.contractExtracted {
+		if extractor, ok := runner.extractor.(coreinteraction.ContractExtractor); ok {
+			extraction, err := extractor.ExtractContract(decisionCtx, text)
+			contract = text
+			contractReport = &StandingReport{Utterance: "operator instruction: " + text, Calls: extraction.Calls}
+			if err != nil {
+				contractReport.Failure = err.Error()
+			} else {
+				now := runner.clock.NowNS()
+				board := semanticPinboard(standing)
+				for _, pin := range extraction.Pins {
+					pin.SetNS = now
+					board.Pin(pin)
+				}
+				standing = board.InForce()
+				contractReport.Pinned = standingLines(extraction.Pins)
+				contractReport.InForce = standingLines(standing)
+			}
+		}
+	}
 	situation, err := runner.situationWithStanding(
 		decisionCtx, request, update, prefix, standing, agentOutput, history,
 	)
@@ -1182,6 +1264,17 @@ func (runner *semanticAdmissionRunner) decide(
 					standingReport.Dropped = append(standingReport.Dropped, dropped.Text+" ("+dropped.Reason+")")
 				}
 				standingReport.InForce = standingLines(standingAfter)
+			}
+		}
+	}
+	if contractReport != nil {
+		if standingReport == nil {
+			standingReport = contractReport
+		} else {
+			standingReport.Calls = append(slices.Clone(contractReport.Calls), standingReport.Calls...)
+			standingReport.Pinned = append(slices.Clone(contractReport.Pinned), standingReport.Pinned...)
+			if standingReport.Failure == "" {
+				standingReport.Failure = contractReport.Failure
 			}
 		}
 	}
@@ -1237,7 +1330,7 @@ func (runner *semanticAdmissionRunner) decide(
 		standingPinned: standingPinned, standingRevoked: standingRevoked,
 		evidence: evidence, standing: standingReport, heard: situation.Heard, questions: questions,
 		started: started, ended: runner.clock.NowNS(), err: err,
-		failureCode: failure, canceled: canceled, timedOut: timedOut,
+		failureCode: failure, canceled: canceled, timedOut: timedOut, contract: contract,
 	}
 	select {
 	case results <- result:
@@ -1310,15 +1403,42 @@ func (runner *semanticAdmissionRunner) decideChoice(
 			return inertia, coreinteraction.Outcome{}, asked, err
 		}
 	}
-	due, err := ask(coreinteraction.OccurrenceQuestion)
-	if err != nil {
-		return inertia, coreinteraction.Outcome{}, asked, err
-	}
-	// A partial is answered only for an occurrence. Anything settled - a
-	// final, an explicit request, a frame - may also be a request to answer.
-	if !due && situation.TranscriptEvent != coreinteraction.TranscriptPartial {
-		if _, err := ask(coreinteraction.RequestQuestion); err != nil {
+	switch {
+	case situation.Quiet:
+		// The event is the clock: there are no new words to find an
+		// occurrence in, and nothing was said that could be a request. The
+		// one question is whether a policy that waits on quiet has come due.
+		if _, err := ask(coreinteraction.QuietQuestion); err != nil {
 			return inertia, coreinteraction.Outcome{}, asked, err
+		}
+	default:
+		occurrence := coreinteraction.OccurrenceQuestion
+		if len(situation.Seeing) > 0 || strings.TrimSpace(situation.Seen) != "" {
+			occurrence = coreinteraction.SightQuestion
+		}
+		due, err := ask(occurrence)
+		if err != nil {
+			return inertia, coreinteraction.Outcome{}, asked, err
+		}
+		// A partial is answered only for an occurrence. Anything settled - a
+		// final, an explicit request, a frame - may also be a request to answer.
+		if !due && situation.TranscriptEvent != coreinteraction.TranscriptPartial {
+			request, err := ask(coreinteraction.RequestQuestion)
+			if err != nil {
+				return inertia, coreinteraction.Outcome{}, asked, err
+			}
+			// A request is answered only if it was put to the agent: two
+			// people in the room talking to each other arrive down the same
+			// microphone as the person talking to it.
+			if request && situation.TranscriptEvent == coreinteraction.TranscriptFinal {
+				addressee := coreinteraction.ElsewhereQuestion
+				if strings.TrimSpace(situation.UnansweredQuestion) != "" {
+					addressee = coreinteraction.ReplyQuestion
+				}
+				if _, err := ask(addressee); err != nil {
+					return inertia, coreinteraction.Outcome{}, asked, err
+				}
+			}
 		}
 	}
 	choice := coreinteraction.ComposeChoice(situation.AgentSpeaking, answers)
@@ -1367,6 +1487,10 @@ func applySemanticExtraction(
 	board.EndTurn()
 	beforeRevocation := len(board.InForce())
 	for _, revoked := range extraction.Revokes {
+		// The operator's rules are not the room's to lift.
+		if operatorPolicy(existing, revoked) {
+			continue
+		}
 		board.Revoke(revoked)
 	}
 	revoked := beforeRevocation - len(board.InForce())
@@ -1382,6 +1506,15 @@ func applySemanticExtraction(
 		)
 	}
 	return result, pinned, revoked, nil
+}
+
+func operatorPolicy(existing []coreinteraction.StandingInstruction, text string) bool {
+	for _, instruction := range existing {
+		if instruction.Operator && strings.EqualFold(strings.TrimSpace(instruction.Text), strings.TrimSpace(text)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (runner *semanticAdmissionRunner) situation(
@@ -1400,6 +1533,32 @@ type semanticStepHistory struct {
 	previousHeard string
 	previousKnown bool
 	answeredHeard string
+	// contractExtracted is the session instruction already read for its
+	// standing rules when this decision was dispatched.
+	contractExtracted string
+	// unanswered is the previous utterance's final when it was a question
+	// the policy chose not to answer.
+	unanswered string
+}
+
+// unansweredQuestion is the last settled utterance on another stream when it
+// was a question the policy listened to rather than answered.
+func (runner *semanticAdmissionRunner) unansweredQuestion(streamID string) string {
+	for index := len(runner.steps) - 1; index >= 0; index-- {
+		step := &runner.steps[index]
+		if step.stream == streamID || step.event != coreinteraction.TranscriptFinal {
+			continue
+		}
+		// Anywhere in the line, not only at its end: "Did you get the milk?
+		// I looked in the fridge and there wasn't any." is a question with
+		// a remark after it.
+		heard := strings.TrimSpace(step.heard)
+		if strings.Contains(heard, "?") && !step.choice.Speak {
+			return heard
+		}
+		return ""
+	}
+	return ""
 }
 
 // answeredSoFar is what the last step that spoke on this utterance had heard.
@@ -1519,6 +1678,7 @@ func (runner *semanticAdmissionRunner) situationWithStanding(
 			state.SinceStepKnown = true
 			state.HeardSinceStep = wordsAdded(history.previousHeard, state.Heard)
 			state.AnsweredSoFar = history.answeredHeard
+			state.UnansweredQuestion = history.unanswered
 		}
 	}
 	return state, nil
@@ -1851,6 +2011,9 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	}
 	runner.pinboard = semanticPinboard(result.standingAfter)
 	runner.state.StandingPolicies = len(result.standingAfter)
+	if result.contract != "" {
+		runner.contractExtracted = result.contract
+	}
 	sequence, err := runner.sequences.Next(runner.instance + ".semantic_decision")
 	if err != nil {
 		return err
@@ -1943,7 +2106,7 @@ func (runner *semanticAdmissionRunner) finishDecision(
 	runner.hold = &semanticHold{
 		sinceNS:        runner.clock.NowNS(),
 		startedAtGrant: runner.agentOutput.GenerationsStarted, finishedAtGrant: runner.agentOutput.GenerationsFinished,
-		assistantAtGrant: semanticAssistantItems(runner.latest.snapshot),
+		modelItemsAtGrant: semanticModelItems(runner.latest.snapshot),
 	}
 	if stepIndex >= 0 {
 		runner.steps[stepIndex].spoke = true
@@ -1969,6 +2132,9 @@ func rebasedSemanticCommit(request semanticRequest, sample semanticContextSample
 	}
 	commit.StoreVersion = sample.snapshot.Version
 	commit.Context = stateelements.CommittedContext{Prefix: identity, StateItemID: sample.envelope.ItemID}
+	if tail := sample.snapshot.Items[len(sample.snapshot.Items)-1].ID; tail != commit.TrajectoryItemID {
+		commit.Context.TailItemID = tail
+	}
 	return commit
 }
 

@@ -295,12 +295,14 @@ func TestExtractorGroundingFailsClosed(t *testing.T) {
 
 type standingScriptGenerator struct {
 	extraction   string
+	contract     string
 	grounding    string
 	groundingErr error
 	counting     string
 	restricting  string
 	scope        string
 	lift         string
+	liftConfirm  string
 	calls        []standingGeneratorCall
 }
 
@@ -318,6 +320,8 @@ func (generator *standingScriptGenerator) Generate(
 	switch prompt {
 	case interaction.ExtractionInstruction:
 		return generator.extraction, nil
+	case interaction.ContractExtractionInstruction:
+		return generator.contract, nil
 	case interaction.StandingPolicyGroundingInstruction:
 		return generator.grounding, generator.groundingErr
 	case interaction.CountingInstruction:
@@ -331,6 +335,11 @@ func (generator *standingScriptGenerator) Generate(
 			return "no", nil
 		}
 		return generator.lift, nil
+	case interaction.LiftConfirmInstruction:
+		if generator.liftConfirm == "" {
+			return "yes", nil
+		}
+		return generator.liftConfirm, nil
 	default:
 		return "", errors.New("unexpected standing-policy prompt")
 	}
@@ -378,11 +387,15 @@ func TestExtractorLiftsAPolicyTheExtractionRestatedAsANegativeRule(t *testing.T)
 	}{
 		{"the question lifts it", "yes", 1},
 		{"an unsure answer leaves it", "not sure", 0},
+		{"a lift the words do not confirm leaves it", "yes", 0},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			generator := &standingScriptGenerator{
 				extraction: "pin conversation do not count the cities out loud as they mention them anymore",
 				grounding:  "no", lift: testCase.lift,
+			}
+			if testCase.want == 0 && testCase.lift == "yes" {
+				generator.liftConfirm = "no"
 			}
 			extractor, err := interaction.NewExtractor(generator)
 			if err != nil {
@@ -410,5 +423,56 @@ func TestExtractorLiftsAPolicyTheExtractionRestatedAsANegativeRule(t *testing.T)
 				t.Fatalf("lift question asked %d times, want once per policy in force: %+v", lifts, got.Calls)
 			}
 		})
+	}
+}
+
+// The deployment's instruction sets standing policies of its own - "press
+// the key when the menu offers what the user wants" - and they come back as
+// the operator's: in force for the conversation, never lifted, read for
+// counting and restriction like a spoken policy, and never grounded against
+// a person's words because there is no person in them.
+func TestExtractorReadsTheOperatorsRulesFromTheContract(t *testing.T) {
+	generator := &standingScriptGenerator{
+		contract: "pin conversation when a recorded menu offers the option the user wants, press that key\n" +
+			"pin turn correct them the moment they say a date that contradicts the third",
+		counting: "no", restricting: "no", scope: "turn",
+	}
+	extractor, err := interaction.NewExtractor(generator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, ok := extractor.(interaction.ContractExtractor)
+	if !ok {
+		t.Fatal("the model extractor does not read contracts")
+	}
+	got, err := contract.ExtractContract(context.Background(),
+		"You are calling a company's support line on behalf of the user. When a recorded menu offers an option "+
+			"that matches what the user wants, press that key.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Pins) != 2 || len(got.Revokes) != 0 {
+		t.Fatalf("contract extraction = %+v, want two pins and no revocation", got)
+	}
+	for _, pin := range got.Pins {
+		if !pin.Operator || pin.Scope != interaction.ScopeConversation || pin.Counting || pin.Restricting {
+			t.Fatalf("operator pin = %+v, want an unliftable conversation policy", pin)
+		}
+	}
+	if got.Pins[0].Text != "when a recorded menu offers the option the user wants, press that key" {
+		t.Fatalf("pin text = %q", got.Pins[0].Text)
+	}
+	for _, call := range generator.calls {
+		if call.prompt == interaction.StandingPolicyGroundingInstruction ||
+			call.prompt == interaction.AddressedElsewhereInstruction {
+			t.Fatalf("the contract pass asked %q, which is a question about a person's words", call.prompt[:40])
+		}
+	}
+	if len(got.Calls) == 0 || got.Calls[0].Question != "contract" {
+		t.Fatalf("calls = %+v, want the contract question first", got.Calls)
+	}
+	empty, err := contract.ExtractContract(context.Background(), "   ")
+	if err != nil || len(empty.Pins) != 0 || len(empty.Calls) != 0 {
+		t.Fatalf("an empty contract was read: %+v, %v", empty, err)
 	}
 }

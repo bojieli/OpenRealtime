@@ -74,6 +74,12 @@ type StandingInstruction struct {
 	// what the extraction pass is already for, and it does it once, off the
 	// critical path, with the whole utterance in front of it.
 	After time.Duration
+	// Operator says the policy came from the deployment's own instruction
+	// rather than from somebody in the conversation: "press the key when the
+	// menu offers what the user wants" written by whoever set the agent up.
+	// It is in force for the whole session and nobody in the room can lift
+	// it, because nobody in the room set it.
+	Operator bool
 }
 
 // Due reports whether a policy that waits on a stretch of quiet has had it.
@@ -580,13 +586,27 @@ func extractionRevokes(extraction Extraction, text string) bool {
 var LiftInstruction = "A voice assistant is following a standing policy the person set earlier. Read their latest " +
 	"words and decide whether those words lift that policy - tell the assistant to stop doing it, never mind " +
 	"it, that's enough, you can stop now - or whether they are still talking about something else, still " +
-	"setting it up, or triggering it. Answer yes only when the words plainly end the policy. Answer yes or no " +
+	"setting it up, or triggering it. Answer yes only when the words plainly end the policy. Words in another " +
+	"language, or words the policy is about, are what triggers it, never what lifts it. Answer yes or no " +
 	"and nothing else.\n\n" +
 	"yes: policy \"count the cities out loud as they mention them\" / \"Okay, you can stop counting now.\"\n" +
 	"yes: policy \"shout if you see the train coming\" / \"Forget about the train, I can see it.\"\n" +
 	"no: policy \"count the cities out loud as they mention them\" / \"The next month I was in Lisbon.\"\n" +
 	"no: policy \"count the animals out loud as they mention them\" / \"A capybara wandered over.\"\n" +
-	"no: policy \"tell them when the build finishes\" / \"Let me plan this out.\"\n"
+	"no: policy \"tell them when the build finishes\" / \"Let me plan this out.\"\n" +
+	"no: policy \"translate everything he says into English as he goes\" / \"你好，很高兴见到你。\"\n"
+
+// LiftConfirmInstruction is the second reading a lift gets before a policy
+// goes. The first question is answered yes now and then for words the policy
+// is about - measured, a sentence of Mandarin under "translate everything he
+// says" lifted the translation twice in three runs - and a policy lifted by
+// mistake fails in the direction nobody asked for. So a yes is confirmed by
+// a question that can only be answered from the words themselves.
+var LiftConfirmInstruction = "Somebody is following a standing policy. Do their latest words explicitly tell " +
+	"them to stop, end, forget, or no longer do it - in so many words, such as \"stop\", \"that's enough\", " +
+	"\"never mind\", \"you can stop now\", \"forget about it\"? Words in another language, and words about " +
+	"the thing the policy watches for, do not say so. Answer yes only if the words themselves say to stop. " +
+	"Answer yes or no and nothing else."
 
 func (extractor *modelExtractor) lifts(
 	ctx context.Context, trace *[]ModelCall, recent []string, utterance string, policy StandingInstruction,
@@ -596,10 +616,15 @@ func (extractor *modelExtractor) lifts(
 		evidence = "Before it:\n" + strings.Join(recent, "\n") + "\n\n" + evidence
 	}
 	answer, err := extractor.ask(ctx, trace, "lift", LiftInstruction, evidence, 3)
+	if err != nil || !strings.EqualFold(strings.TrimSpace(answer), "yes") {
+		return false
+	}
+	confirmed, err := extractor.ask(ctx, trace, "lift-confirm", LiftConfirmInstruction,
+		"Policy in force:\n"+strings.TrimSpace(policy.Text)+"\n\nTheir latest words: \""+strings.TrimSpace(utterance)+"\"", 3)
 	if err != nil {
 		return false
 	}
-	return strings.EqualFold(strings.TrimSpace(answer), "yes")
+	return strings.EqualFold(strings.TrimSpace(confirmed), "yes")
 }
 
 // ask puts one question to the generator and records it, so the answer that
@@ -1009,4 +1034,74 @@ func withDelay(instruction StandingInstruction) StandingInstruction {
 	instruction.After = time.Duration(seconds) * time.Second
 	instruction.Text = strings.TrimSpace(instruction.Text[len("after ")+end:])
 	return instruction
+}
+
+// ContractExtractionInstruction reads the deployment's own instruction for
+// the rules it sets about when to act.
+//
+// An operator writes "when a recorded menu offers the option the user wants,
+// press that key" or "if they say a date that contradicts the third, correct
+// them immediately" into the session instruction, and those are standing
+// policies in every way that matters: a condition to watch for, an act to
+// produce the moment it happens, once per occurrence. Measured without this
+// pass, the policy listened through every partial of a menu reading the right
+// option, because its question asks about the standing instructions listed
+// and none was - the rule lived in the paragraph above the list, addressed
+// to the voice, which is never asked while the person is still talking.
+//
+// It is narrower than the conversational pass on purpose. Most of an
+// instruction says what the agent is, how it should answer, and what it
+// knows, and none of that names a moment; pinning "answer briefly" as a
+// policy would make every partial an occurrence of it.
+const ContractExtractionInstruction = "An operator wrote the instruction below for a voice agent. List every rule in " +
+	"it that tells the agent to react to a specific thing at the moment it happens - a condition to watch for and " +
+	"the speech or action to produce when it happens: press a key when a menu offers the option the user wants, " +
+	"correct the person the moment they say a wrong date, tell them when the build finishes. Reply with one line " +
+	"per rule, as \"pin conversation <rule>\", written as a short instruction to the agent that keeps the " +
+	"condition and the action. Reply \"none\" when the instruction only says what the agent is, how it should " +
+	"answer, or what it knows - answering questions, being brief, describing the agent's job, giving facts to " +
+	"use in answers - because none of those name a moment to act on. Nothing else."
+
+// ContractExtractor is an Extractor that can also read the deployment's
+// instruction for standing policies. It is optional so that fixtures built
+// around the conversational pass keep working unchanged.
+type ContractExtractor interface {
+	ExtractContract(ctx context.Context, contract string) (Extraction, error)
+}
+
+// ExtractContract reads the session instruction once for the rules it sets.
+//
+// The pins come back marked as the operator's, scoped to the conversation,
+// and read for counting and restriction the same way a spoken policy is,
+// because the voice is told how to carry a policy out from those readings.
+// They are not grounded against the text the way a spoken policy is: the
+// instruction is the operator's own words, written rather than recognised,
+// and there is nobody else in it for a rule to have been addressed to.
+func (extractor *modelExtractor) ExtractContract(ctx context.Context, contract string) (Extraction, error) {
+	contract = strings.TrimSpace(contract)
+	if contract == "" {
+		return Extraction{}, nil
+	}
+	var trace []ModelCall
+	answer, err := extractor.ask(ctx, &trace, "contract", ContractExtractionInstruction, "Instruction:\n"+contract, 200)
+	if err != nil {
+		return Extraction{Calls: trace}, err
+	}
+	extraction, err := ParseExtraction(answer)
+	if err != nil {
+		return Extraction{Calls: trace}, err
+	}
+	pins := extraction.Pins[:0]
+	for _, instruction := range extraction.Pins {
+		reading := extractor.readingOf(ctx, &trace, instruction)
+		instruction.Counting = reading.counting
+		instruction.Restricting = reading.restricting
+		instruction.Scope = ScopeConversation
+		instruction.Operator = true
+		pins = append(pins, instruction)
+	}
+	extraction.Pins = pins
+	extraction.Revokes = nil
+	extraction.Calls = trace
+	return extraction, nil
 }

@@ -26,6 +26,12 @@ const PendingRepairInstruction = "Runtime repair obligation: assistant audio fro
 
 const PendingRepairPrompt = "Apply the pending audible-repair obligation now."
 
+// NothingSaidSincePrompt stands in for the user turn a provider's API requires
+// when the runtime opens a turn on its own - a clock coming due - and the
+// conversation ends on the agent's last words. It says only what is true.
+const NothingSaidSincePrompt = "[Runtime note: nobody has said anything since your last words. Do what your " +
+	"instructions require at this point, or reply with exactly <wait> if nothing is due.]"
+
 // InternalStatePreamble fences reasoning retained from an earlier
 // continuation, so a provider reading it cannot mistake deliberation for
 // something the agent said.

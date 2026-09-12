@@ -280,7 +280,7 @@ func (runner *sessionInvocationRunner) emitCommit(
 		SpokeOver:        spokeOver,
 	}
 	trigger := runner.triggerEnvelope(envelope, generationID, payload)
-	for _, parent := range []string{commit.Context.StateItemID, commit.TrajectoryItemID, commit.TriggerItemID} {
+	for _, parent := range []string{commit.Context.StateItemID, commit.TrajectoryItemID, commit.TriggerItemID, commit.TailItemID()} {
 		trigger.CausalParents = appendUnique(trigger.CausalParents, parent)
 	}
 	if _, err := runner.ports.trigger.Broadcast(ctx, trigger); err != nil {

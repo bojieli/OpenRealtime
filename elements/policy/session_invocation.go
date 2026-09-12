@@ -450,7 +450,8 @@ func authorityForSessionCommit(
 		ObservationTriggerItemID: commit.TriggerItemID,
 		SourceRevision:           commit.SourceRevision, ContextVersion: commit.StoreVersion,
 		ContextEnvelopeItemID: commit.Context.StateItemID,
-		ContextTailItem:       commit.TrajectoryItemID,
+		ContextTailItem:       commit.TailItemID(),
+		ContextExtended:       commit.Context.TailItemID != "",
 	}
 }
 

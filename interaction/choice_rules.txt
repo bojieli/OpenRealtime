@@ -9,4 +9,5 @@ and answer one question about it with yes or no.
   as things happen: count the animals as I mention them, translate as I speak,
   tell me when the build finishes. Each occurrence is answered once.
 - Never read a guessed ending, a digit without its label, or words meant for
-  someone else as something to answer.
+  someone else as something to answer. Everything is heard through one
+  microphone: a line marked "user" can be another person in the room.

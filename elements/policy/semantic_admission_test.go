@@ -931,6 +931,10 @@ type semanticTestDecider struct {
 	// new step from the next question of the same one.
 	step         int
 	lastQuestion string
+	// contractAnswer is what the contract pass reads out of the session
+	// instruction; empty means none. contractReads counts the pass.
+	contractAnswer string
+	contractReads  int
 }
 
 type semanticDecisionOnlyDecider struct {
@@ -967,7 +971,8 @@ func (decider *semanticTestDecider) Decide(
 	// options is not a step question and is answered as scripted.
 	stepQuestion := decision.Question != ""
 	newStep := !stepQuestion || decision.Question == coreinteraction.QuestionStop ||
-		(decision.Question == coreinteraction.QuestionOccurrence && decider.lastQuestion != coreinteraction.QuestionStop)
+		((decision.Question == coreinteraction.QuestionOccurrence || decision.Question == coreinteraction.QuestionQuiet) &&
+			decider.lastQuestion != coreinteraction.QuestionStop)
 	decider.lastQuestion = decision.Question
 	if newStep {
 		decider.step = len(decider.decisions)
@@ -1041,11 +1046,22 @@ func (decider *semanticTestDecider) Decide(
 func (decider *semanticTestDecider) Generate(
 	ctx context.Context, prompt, evidence string, _ int,
 ) (string, error) {
-	if prompt == coreinteraction.AddressedElsewhereInstruction || prompt == coreinteraction.LiftInstruction {
+	if prompt == coreinteraction.AddressedElsewhereInstruction || prompt == coreinteraction.LiftInstruction ||
+		prompt == coreinteraction.LiftConfirmInstruction {
 		// Nobody in these fixtures talks to a third party or lifts a rule;
 		// these questions are answered by name so the scripted extraction
 		// answers keep their order.
 		return "no", nil
+	}
+	if prompt == coreinteraction.ContractExtractionInstruction {
+		decider.mu.Lock()
+		decider.contractReads++
+		answer := decider.contractAnswer
+		decider.mu.Unlock()
+		if answer == "" {
+			answer = "none"
+		}
+		return answer, nil
 	}
 	decider.mu.Lock()
 	call := len(decider.generations)
@@ -1691,11 +1707,16 @@ func TestSemanticAdmissionUsesVoiceLifecycleAcrossTranscriptRevisions(t *testing
 	}
 	streams := []string{"correction-stream", "correction-stream", "continued-stream"}
 
+	// The voice's answer to the first commit is in every later snapshot; the
+	// hold lifts on it rather than on the recogniser's next revision.
+	said := semanticAssistantSaid("said-1", "The deadline is the third, not the thirteenth.")
 	appendAndCommit := func(index int) policyelements.SemanticDecision {
-		snapshot := trajectory.Snapshot{
-			Version: uint64(index + 1), Items: append([]trajectory.Item(nil), items[:index+1]...),
+		list := append([]trajectory.Item(nil), items[:index+1]...)
+		if index >= 1 {
+			list = append([]trajectory.Item{items[0], said}, items[1:index+1]...)
 		}
-		stateID := fmt.Sprintf("state-%d", index+1)
+		snapshot := trajectory.Snapshot{Version: uint64(len(list)), Items: list}
+		stateID := fmt.Sprintf("state-%d", snapshot.Version)
 		sendSemanticContext(t, harness, stateID, snapshot)
 		prefix, identifyErr := trajectory.IdentifyPrefix(snapshot, snapshot.Version)
 		if identifyErr != nil {
