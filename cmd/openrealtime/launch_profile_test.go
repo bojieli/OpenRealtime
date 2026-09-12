@@ -233,8 +233,8 @@ func TestScenarioProfileFreezePinsExactWordTimingSelection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "scenario-profile.yaml")
 	if err := runLaunchProfile([]string{
 		"scenario", "-out", path,
-		"-word-timings-url", "http://127.0.0.1:8003/v1/audio/transcriptions",
-		"-word-timings-model", "whisper-turbo",
+		"-word-timings-url", "http://127.0.0.1:8127/v1/audio/transcriptions",
+		"-word-timings-model", "Systran/faster-whisper-base.en",
 		"-word-timings-language", "en",
 		"-word-timings-interval-ms", "900",
 		"-word-timings-timeout-ms", "12000",
@@ -253,8 +253,8 @@ func TestScenarioProfileFreezePinsExactWordTimingSelection(t *testing.T) {
 		`"word_timing":{"artifact":{`,
 		`"reference":"provider.openrealtime.word-timing.openai-compatible.v1"`,
 		`"interval_ms":900`,
-		`"endpoint":"http://127.0.0.1:8003/v1/audio/transcriptions"`,
-		`"model":"whisper-turbo"`,
+		`"endpoint":"http://127.0.0.1:8127/v1/audio/transcriptions"`,
+		`"model":"Systran/faster-whisper-base.en"`,
 		`"language":"en"`,
 		`"request_timeout_ms":12000`,
 	} {

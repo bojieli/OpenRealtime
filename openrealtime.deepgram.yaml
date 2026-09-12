@@ -205,7 +205,7 @@ slow:
 # Unset is a supported deployment: the boundary is then modelled proportionally
 # from the same audio and recorded as an estimate rather than as a measurement.
 word-timings:
-  url: http://127.0.0.1:8003/v1/audio/transcriptions
+  url: http://127.0.0.1:8127/v1/audio/transcriptions
   model: Systran/faster-whisper-base.en
   language: en
   # How much new audio is worth another listen while an utterance is still

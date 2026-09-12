@@ -28,6 +28,7 @@ import (
 	graphlaunch "github.com/bojieli/OpenRealtime/graph/launch"
 	graphruntime "github.com/bojieli/OpenRealtime/graph/runtime"
 	"github.com/bojieli/OpenRealtime/perception/voices"
+	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
 	"github.com/bojieli/OpenRealtime/spoken"
 	"github.com/bojieli/OpenRealtime/trajectory"
 )
@@ -257,9 +258,8 @@ func newSessionBundle(
 	playback := speechelements.NewPlaybackSinkRegistry()
 	playbackDescriptor := scenarioPlaybackDescriptor()
 	playbackSink := newSessionPlaybackSink(
-		ctx, options.Sink, playbackDescriptor, presentation, spoken.TrackerConfig{
-			Aligner: wordAligner, Interval: wordTimingInterval,
-		},
+		ctx, options.Sink, playbackDescriptor, presentation,
+		wordTimingTrackerConfig(ctx, options.Sink, wordAligner, wordTimingInterval),
 	)
 	if err := playback.Register(PlaybackReference, playbackDescriptor, func() (speechelements.PlaybackSink, error) {
 		return playbackSink, nil
@@ -436,3 +436,38 @@ func cloneV1Descriptor(descriptor v1.Descriptor) v1.Descriptor {
 
 var _ legacyaction.Confirmer = denyUnrequestedConfirmation{}
 var _ graphbinding.SessionAdapter = (*session)(nil)
+
+// wordTimingTrackerConfig builds one session's alignment configuration.
+//
+// Report is the reason this is a function. spoken.TrackerConfig says a
+// swallowed alignment failure "is how a deployment discovers months later that
+// nothing has ever been measured", and this binding was constructing the
+// tracker without it while the legacy cascade set it. So an endpoint that
+// answered without word timestamps degraded every interruption boundary to the
+// proportional estimate and reported nothing at any level - the failure that
+// adapters/wordtimings names ErrNoWordTimes precisely so it would be said out
+// loud once. The event name matches the legacy cascade's, so one condition
+// reads as one name whichever binding produced it.
+func wordTimingTrackerConfig(
+	ctx context.Context, sink legacy.Sink, aligner spoken.Aligner, interval time.Duration,
+) spoken.TrackerConfig {
+	config := spoken.TrackerConfig{Aligner: aligner, Interval: interval}
+	debug, ok := sink.(legacy.DebugSink)
+	if !ok {
+		return config
+	}
+	config.Report = func(err error) {
+		if err == nil {
+			return
+		}
+		// A failed listen is not a session failure - the proportional layout
+		// still answers - so the error is published and not returned.
+		_ = debug.Debug(ctx, legacy.DebugEvent{
+			Category:   string(openrealtime.DebugTTS),
+			Name:       "speech.word_timing_failed",
+			Phase:      "error",
+			Attributes: map[string]any{"error": err.Error()},
+		})
+	}
+	return config
+}

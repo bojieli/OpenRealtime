@@ -21,7 +21,10 @@ cd "${repository_root}"
 
 venv="${WORD_TIMINGS_VENV:-${repository_root}/.runtime/wordtimings}"
 host="${WORD_TIMINGS_HOST:-127.0.0.1}"
-port="${WORD_TIMINGS_PORT:-8003}"
+# Not 8003: that is the speech recogniser's port (tools/whisper, the ASR
+# provider catalog, and tools/services/up.sh all name it). The two roles used
+# to collide there, and the recogniser answered this route with no word array.
+port="${WORD_TIMINGS_PORT:-8127}"
 model="${WORD_TIMINGS_MODEL:-Systran/faster-whisper-base.en}"
 device="${WORD_TIMINGS_DEVICE:-cuda}"
 

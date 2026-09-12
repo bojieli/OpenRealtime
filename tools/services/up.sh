@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Bring up every local model this system needs, and wait until each answers.
 #
-# There are four, they live in three different virtual environments, and the
+# There are five, they live in four different virtual environments, and the
 # order matters only in that the largest should claim its memory first. Written
-# down because a GPU fault took all four out at once and bringing them back was
-# four commands nobody had recorded in one place - and because a service that
+# down because a GPU fault took all of them out at once and bringing them back
+# was five commands nobody had recorded in one place - and because a service that
 # is up but not yet answering looks exactly like a service that is down.
 set -euo pipefail
 
@@ -34,7 +34,11 @@ wait_for() {
   echo "${name} answering after ${waited}s"
 }
 
-running() { ss -ltnH "sport = :$1" 2>/dev/null | grep -q .; }
+# Loopback specifically. "sport = :8000" also matches a listener bound to some
+# other address - a docker-bridge socat on 172.17.0.1:8000 satisfied it here -
+# and the script would then report every service up while never starting the
+# one nothing was listening for.
+running() { ss -ltnH "src 127.0.0.1:$1" 2>/dev/null | grep -q .; }
 
 # The decider and the voice. Vision matters: -fast-sees hands it frames, and a
 # text-only checkpoint here makes the visual scenarios unwinnable.
@@ -168,6 +172,22 @@ if ! running 8123; then
       > "${logs}/fish.log" 2>&1 & )
 fi
 
+# Where each word of the agent's own speech fell, so an interruption resumes
+# from the word the person heard rather than from a proportional guess. This is
+# a different question from the recogniser's, and a different service: :8003
+# answers this route with text and no word array, which the runtime reports as
+# ErrNoWordTimes and then falls back to the estimate. Nothing used to start
+# this, so the default room never measured a boundary.
+if ! running 8127; then
+  ( cd "${shared}/deploy/wordtimings" && setsid nohup \
+      env WORD_TIMINGS_MODEL="${WORD_TIMINGS_MODEL:-Systran/faster-whisper-base.en}" \
+          WORD_TIMINGS_DEVICE="${WORD_TIMINGS_DEVICE:-cuda}" \
+          WORD_TIMINGS_LANGUAGE="${WORD_TIMINGS_LANGUAGE:-en}" \
+      "${runtime}/.runtime/wordtimings/bin/python" -m uvicorn server:app \
+        --host 127.0.0.1 --port 8127 --log-level info \
+      > "${logs}/wordtimings.log" 2>&1 & )
+fi
+
 # Who is speaking.
 if ! running 8124; then
   ( cd "${repository}" && setsid nohup \
@@ -179,5 +199,6 @@ wait_for speaker-id http://127.0.0.1:8124/health 120
 wait_for synthesiser http://127.0.0.1:8123/health 300
 wait_for recogniser http://127.0.0.1:8003/health 300
 wait_for sensevoice http://127.0.0.1:8002/health 300
+wait_for word-timing http://127.0.0.1:8127/health 300
 wait_for decider http://127.0.0.1:8000/health 900
-echo "all four answering"
+echo "all five answering"

@@ -1,6 +1,10 @@
 package main
 
-import _ "embed"
+import (
+	_ "embed"
+
+	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
+)
 
 // These are the separate partial/final interaction policies used by the
 // twelve-case Deepgram/Qwen/Gemini/Fish scenario pipeline. Keeping them in the
@@ -42,8 +46,13 @@ func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection.transcriptFinalActs = "listen,answer,act-silently,keep-speaking,stop-speaking"
 	selection.transcriptPartialRules = roomPartialRules
 	selection.transcriptFinalRules = roomFinalRules
-	selection.wordTimingsURL = "http://127.0.0.1:8003/v1/audio/transcriptions"
-	selection.wordTimingsModel = "whisper-turbo"
+	// The word-timing role, not the speech recogniser. These name the
+	// adapter's own constants rather than repeating an address, because the
+	// room previously named the recogniser on :8003: it answers this route
+	// with text and no word array, so every boundary fell back to the
+	// proportional estimate and nothing said so.
+	selection.wordTimingsURL = wordtimings.DefaultEndpoint
+	selection.wordTimingsModel = wordtimings.DefaultModel
 	selection.wordTimingsLanguage = "en"
 	selection.wordTimingsIntervalMS = 900
 	return selection

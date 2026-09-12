@@ -35,7 +35,14 @@ import (
 )
 
 // DefaultEndpoint is where deploy/wordtimings serves the route.
-const DefaultEndpoint = "http://127.0.0.1:8003/v1/audio/transcriptions"
+//
+// Not :8003. That port is the local speech recogniser's - tools/whisper and
+// the ASR provider catalog both name it, and tools/services/up.sh starts a
+// recogniser there. Both roles claimed :8003, the recogniser won because it is
+// the one anything actually starts, and a word-timing client pointed at it got
+// {"text", "language"} with no word array for every utterance. Two roles, two
+// ports, so neither silently answers for the other.
+const DefaultEndpoint = "http://127.0.0.1:8127/v1/audio/transcriptions"
 
 // DefaultModel is what that deployment loads. Model selection belongs to the
 // server process; this records the condition in descriptors and evidence.

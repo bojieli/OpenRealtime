@@ -108,7 +108,7 @@ go build -o .runtime/openrealtime-filtered ./cmd/openrealtime
 
 Profile output files are create-only: choose new paths for a subsequent build.
 The normal room dependencies must be running: Qwen at port 8000, Fish at 8123,
-speaker embeddings at 8124, and word timing at 8003. The profile reads
+speaker embeddings at 8124, and word timing at 8127. The profile reads
 `DEEPGRAM_API_KEY` and `GEMINI_API_KEY` from the environment. As with other frozen
 profiles, use provider flags when these addresses differ. For example:
 
