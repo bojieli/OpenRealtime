@@ -80,6 +80,12 @@ var names = map[string]struct{}{
 	"invocation_outcome": {}, "model_result": {}, "model_outcome": {},
 	"tts.utterance_started": {}, "tts.first_audio": {}, "tts.utterance_completed": {},
 	"tts_status": {}, "playback_status": {}, "speech_cancel_request": {},
+	// The stages a tool call passes through on its way to being executed.
+	"provenance_outcome": {}, "admission_action_outcome": {}, "lookup_outcome": {},
+	"argument_normalization_outcome": {}, "confirmation_outcome": {}, "target_fence_outcome": {},
+	"canonical_call_outcome": {}, "ledger_outcome": {}, "dispatch_outcome": {},
+	"result_commit_outcome": {}, "client_tool_result_join_outcome": {},
+	"model_commit_outcome": {},
 }
 
 // Projects reports whether a debug event of this name has a place on the
@@ -135,6 +141,39 @@ func Project(entry binding.DebugEvent) []Event {
 			Lane: LanePolicy, Kind: kind, Phase: "point",
 			Detail: strings.TrimSpace(text(value["code"]) + " " + text(value["message"])),
 		}}
+	case "provenance_outcome", "admission_action_outcome", "lookup_outcome", "argument_normalization_outcome",
+		"confirmation_outcome", "target_fence_outcome", "canonical_call_outcome", "ledger_outcome",
+		"dispatch_outcome", "result_commit_outcome", "client_tool_result_join_outcome":
+		// One mark per stage a tool call passes; a refusal says why, and
+		// that is the whole reason these are here.
+		kind := text(value["kind"])
+		detail := strings.TrimSpace(text(value["stage"]) + "/" + text(value["operation"]) + " " + kind)
+		if code := text(value["code"]); code != "" {
+			detail += " " + code
+		}
+		if message := strings.TrimSpace(text(value["message"])); message != "" {
+			detail += " " + truncate(message, 160)
+		}
+		return []Event{{
+			Lane: LaneModel, Kind: "action", Phase: "point", Span: text(value["call_id"]),
+			Detail: detail,
+		}}
+	case "model_commit_outcome":
+		// What the model produced reaching the trajectory, or failing to: a
+		// tool proposal that never became canonical is a key never pressed,
+		// and it waits in silence otherwise.
+		kind := text(value["kind"])
+		detail := kind
+		if code := text(value["code"]); code != "" {
+			detail += " " + code
+		}
+		if message := strings.TrimSpace(text(value["message"])); message != "" {
+			detail += " " + truncate(message, 160)
+		}
+		if items := stringList(value["item_ids"]); len(items) > 0 {
+			detail += " " + strconv.Itoa(len(items)) + " items"
+		}
+		return []Event{{Lane: LaneModel, Kind: "commit", Phase: "point", Span: text(value["run_id"]), Detail: detail}}
 	case "invocation_outcome":
 		kind := text(value["kind"])
 		if kind == "updated" {
@@ -171,9 +210,13 @@ func Project(entry binding.DebugEvent) []Event {
 		if nanoseconds, ok := number(value["duration_ns"]); ok {
 			duration = nanoseconds / 1e6
 		}
+		detail := strings.TrimSpace(text(value["code"]) + " " + formatMS(duration))
+		if message := strings.TrimSpace(text(value["message"])); message != "" {
+			detail += " " + truncate(message, 160)
+		}
 		return []Event{{
 			Lane: LaneModel, Kind: text(value["kind"]), Phase: "end", Span: text(value["run_id"]),
-			Detail: strings.TrimSpace(text(value["code"]) + " " + formatMS(duration)), DurationMS: duration,
+			Detail: detail, DurationMS: duration,
 		}}
 	case "tts.utterance_started":
 		return []Event{{

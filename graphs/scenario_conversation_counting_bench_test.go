@@ -530,11 +530,17 @@ func (provider *countingBenchmarkTTS) Stream(
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
-	milliseconds := 300 + 250*len(strings.Fields(plan.Text))
+	milliseconds := countingBenchmarkAudioMS(plan.Text)
 	return emit(v1.SpeechChunk{
 		ChunkID: plan.CandidateID + ":bench-audio", CandidateID: plan.CandidateID,
 		SampleRateHz: 24_000, PCM16LE: scenarioEndpointPCM(24 * milliseconds), Final: true,
 	})
+}
+
+// countingBenchmarkAudioMS is how long the fake synthesiser's audio for a
+// text lasts: a fixed lead plus a quarter of a second a word.
+func countingBenchmarkAudioMS(text string) int {
+	return 300 + 250*len(strings.Fields(text))
 }
 
 type countingTimelineEvent struct {
@@ -720,13 +726,15 @@ func scoreCountingStory(
 			// should not have been.
 			continue
 		}
-		// A partial of a sentence with nothing to count is nothing to speak
-		// for; on a sentence with items, a speak that credits no item is a
-		// generation the voice will answer with silence - reported, not
-		// failed, unless it was for something the rule does not cover.
+		// A speak that credits no item is a generation the voice answers
+		// with silence - reported, not failed, whether the sentence had
+		// items or not: the spoken sequence below fails the story if the
+		// voice said anything it should not have. What is failed here is a
+		// speak for something the rule does not cover.
 		if len(sentence.items) == 0 {
-			fail("sentence %d has nothing to count but the policy chose %s on the partial %q", entry.sentence,
-				entry.decision.Choice.Token(), entry.heard)
+			extra++
+			add("  extra speak on s%d (%q), which has nothing to count; the voice answers it with silence",
+				entry.sentence, entry.added)
 			continue
 		}
 		flagged := false

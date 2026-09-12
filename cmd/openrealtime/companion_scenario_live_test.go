@@ -27,7 +27,15 @@ func TestLiveRoomTwelveScenarios(t *testing.T) {
 	previous := scenario.CacheDir
 	scenario.CacheDir = cache
 	t.Cleanup(func() { scenario.CacheDir = previous })
+	root := filepath.Dir(filepath.Dir(cache))
 	for _, item := range scenario.Suite() {
+		// A scenario names its pictures relative to the checkout, and this
+		// test runs from its package directory.
+		for index := range item.Sees {
+			if !filepath.IsAbs(item.Sees[index].Path) {
+				item.Sees[index].Path = filepath.Join(root, item.Sees[index].Path)
+			}
+		}
 		t.Run(item.Name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()

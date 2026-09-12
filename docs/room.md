@@ -88,6 +88,22 @@ These practice sessions are not scored benchmark runs. Use the existing
 behavioral measurements and retained evidence. A single diagnostic pass does
 not establish the suite's repeated-run acceptance criteria.
 
+The same twelve scenarios also run in-process against the real policy and
+voice models, with the script delivered as a scripted transcript at a
+person's pace, pictures shown at their moment, a phone menu that answers
+the keys the agent presses, and the graph's own real-time playback:
+
+```sh
+OPENREALTIME_SCENARIO_BENCH=1 go test ./graphs -run TestTwelveScenariosAgainstLiveModels -v -count=1 -timeout 40m
+```
+
+Each run is scored by the scenario package's own checks and then reviewed
+by Gemini as a judge, which reads the whole exchange and says whether the
+agent acted at the right moment, once, with no erroneous or duplicate
+action; both verdicts and the run's timeline are written under
+`.runtime/scenario-bench/`. `OPENREALTIME_SCENARIO_BENCH` can name a
+comma-separated subset and `OPENREALTIME_SCENARIO_JUDGE=0` skips the judge.
+
 ## One step at a time
 
 The interaction policy runs in lockstep with the voice. Every transcript
@@ -98,18 +114,55 @@ against the latest transcript and everything the model just said. Revisions
 that arrive while a step is running collapse to the newest one, so the policy
 sees a sequence of events, never a backlog, and the model is never asked twice
 at once. Each step is shown the recent steps - what was heard, what was
-chosen, what the agent then said - the words new since the previous step, and
-what was already answered in this utterance.
+chosen, what the agent then said or did (a key it pressed counts as an
+answer, and appears in the conversation as something the agent did) - the
+words new since the previous step, and what was already answered in this
+utterance.
 
 The policy model is asked about a step in narrow yes/no questions, and the
 runtime composes the choice from the answers: while the agent is speaking, is
 the person cutting in (`stop`)? Do the new words hold a new occurrence of a
 standing instruction (`speak`)? On a final with nothing due, is there a
-request to answer (`speak`)? A fast instruct model answers those reliably
+request to answer (`speak`)? If so, was it put to the agent at all, rather
+than to somebody else in the room (everything arrives down one microphone,
+and the evidence says when the previous line was a question the agent chose
+not to answer)? When the event is the clock - fifteen seconds of quiet after
+the last commit - has a standing instruction that waits on silence come due
+(`speak`)? A fast instruct model answers those reliably
 where it could not apply a page of rules to one constrained token: on the same
 recorded decisions, 13 of 37 right as a single choice against 33 to 34 asked
 this way, and 39 of 40 in the live benchmark. The answers are recorded on
 every decision (`questions`) and shown on the timeline's policy lane.
+
+A decision that waited for the voice to finish is taken against everything
+the voice said meanwhile, and the generation it admits runs on that context.
+A tool call from such a generation - a key pressed at a menu while the
+recording read on - keeps its authority: the commit names the context's
+tail (`tail_item_id`), the candidate is marked as an extended context, and
+admission asks that the observation precede the tail rather than have
+produced it. A newer revision that only adds words after the ones the call
+answered does not take its basis away either; only a rewrite does. When
+that newer revision lands while the voice is still generating, the model's
+commit is retried onto the newer trajectory with its proposals kept, so a
+key press made while the recording read on still reaches admission. One
+guard sits after the decision: a call proposed on a partial revision that
+repeats, name and arguments, a call already made since the last settled
+observation is refused as `duplicate_call` - the same words decided on
+again are not a new occasion, and the voice, shown the key it had pressed,
+pressed it again four runs out of four. A call proposed on settled evidence
+(a finished turn, a frame) is never refused this way.
+
+Standing instructions come from two places. The person sets them out loud -
+"count the animals as I mention them", "if I go quiet for fifteen seconds,
+ask whether I'm still there" - and the extraction pass pins them from each
+final. The session instruction sets them too: "when a recorded menu offers
+the option the user wants, press that key", "if they say a date that
+contradicts the third, correct them immediately". Those are read once, from
+the instruction text, on the first decision that sees it, and pinned as the
+operator's: in force for the whole conversation and not the room's to lift.
+Without them the policy listened through every partial of a menu reading out
+the right option, because its question is about the instructions in force
+and the rule lived in a paragraph addressed to the voice.
 
 The counting benchmark exercises exactly this against the real policy and
 voice models with a scripted transcript, no audio and nobody speaking:
@@ -135,7 +188,9 @@ and writes its timeline under `.runtime/counting-bench/`.
 Every developer profile draws a **Turn timeline** above the session details:
 five lanes across time - ASR (speech activity and each Deepgram revision),
 Policy (the interaction model's choice on every partial and final, with the
-evidence it was shown), LLM (request, text, outcome), TTS (synthesis,
+evidence it was shown), LLM (request, text, outcome, and every stage a tool
+call passes through - a key press the voice proposed and admission refused
+shows there with the reason), TTS (synthesis,
 speaking, playback), and Background (every question the standing-instruction
 pass asked and what it answered). It moves with the conversation; **Paused**
 freezes it, the slider scrubs back through the session, and **Replay from
