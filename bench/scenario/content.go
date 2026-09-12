@@ -177,7 +177,31 @@ func phraseWord(r rune) bool {
 // containsPhrase keeps punctuation checks such as "?" literal, but a word or
 // number cannot be found inside a different word or number. In particular,
 // "none", "undone", and "30" are not evidence for "one", "done", or "3".
+//
+// A phrase of words is also looked for across the punctuation a voice puts
+// between the pieces of a running translation: "pleased. to meet you" said
+// the phrase "pleased to meet", one piece ending where the recogniser's
+// partial did. A phrase that carries punctuation of its own stays literal.
 func containsPhrase(text, phrase string) bool {
+	if containsPhraseLiteral(text, phrase) {
+		return true
+	}
+	if !strings.ContainsAny(phrase, " ") || strings.ContainsAny(phrase, ".,!?;:") {
+		return false
+	}
+	return containsPhraseLiteral(withoutClausePunctuation(text), phrase)
+}
+
+func withoutClausePunctuation(text string) string {
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(".,!?;:", r) {
+			return -1
+		}
+		return r
+	}, text)
+}
+
+func containsPhraseLiteral(text, phrase string) bool {
 	phrase = normalizePhrase(phrase)
 	if phrase == "" {
 		return false
