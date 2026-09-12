@@ -14,7 +14,7 @@ toolchain go1.25.14
 
 require (
 	github.com/coder/websocket v1.8.15
-	github.com/pion/interceptor v0.1.47
+	github.com/pion/interceptor v0.1.48
 	github.com/pion/webrtc/v4 v4.2.19
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/sys v0.47.0
