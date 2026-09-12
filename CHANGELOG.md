@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Every command in the documentation now names a subcommand and flags the
+  binary actually has. Checking all 120 of them against the built binary found
+  three that did not.
+
+  `openrealtime scenario` and `openrealtime eval` are dispatched in main.go but
+  were missing from the usage text, so `openrealtime -h` listed fifteen
+  commands and the binary had seventeen. The spoken-boundary guide compounded
+  that by writing the first as `bench scenario`, which is not a suite and fails
+  with `unknown suite "scenario"` - the flags it passes are `scenario`'s own.
+
+  The Meeting benchmark section documented a `-foreground cascade|omni` switch
+  and a cascade/Omni pair treated as an end-to-end system comparison. The
+  commit that selected one graph-native Meeting candidate removed the switch,
+  and no Omni Meeting cell exists in the suite today, so that pairing cannot be
+  produced. The runnable command is corrected and the claim is marked
+  superseded rather than rewritten, because what the comparison contract should
+  require instead is a measurement decision.
+
 - Chromium was doing errands on the CI runner that the browser checks then
   waited behind. A fresh profile is a first run, so the browser spent real time
   on GCM registration retries, component-updater downloads, and PKI metadata

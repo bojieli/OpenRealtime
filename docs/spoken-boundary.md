@@ -147,7 +147,7 @@ correct for carrying on from wherever it believed it had, which is the belief
 under test.
 
 ```bash
-openrealtime bench scenario \
+openrealtime scenario \
   -architecture-manifest .runtime/architecture/f52-cascade-local.json \
   -review-dir .runtime/scenario-review \
   -transcribe-url http://127.0.0.1:8003/v1/audio/transcriptions
