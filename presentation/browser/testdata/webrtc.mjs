@@ -158,11 +158,11 @@ try {
   const bootMS = performance.now() - navigationStarted;
   check("locked WebRTC developer client booted", await evaluate(
     `document.getElementById("openrealtime-root").dataset.state`) === "ready");
-  check("twenty-eight replaceable plugins mounted", JSON.stringify(await evaluate(
+  check("twenty-nine replaceable plugins mounted", JSON.stringify(await evaluate(
     `window.__openrealtime?.mounted`)) === JSON.stringify([
       "slots", "media", "transport", "reducer", "session-configuration", "video", "debug-session",
       "effects", "artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
-      "video-controls", "transport-diagnostics", "inspection-view", "trace-view",
+      "video-controls", "transport-diagnostics", "inspection-view", "trace-view", "timeline-view",
       "management-operator", "management-transport", "management-static", "management-authoring",
       "management-source-reading", "management-source-publication",
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
@@ -294,7 +294,18 @@ try {
     !JSON.stringify(clientReplacement.receipt).includes("mgmt_") &&
     !JSON.stringify(clientReplacement.receipt).includes("authority") &&
     replacementEntries.every((entry) => clientReplacement.after.entries[entry].state === "active") &&
-    clientReplacement.mounted.length === 28);
+    clientReplacement.mounted.length === 29,
+    JSON.stringify({
+      sequence: [clientReplacement.before.sequence, clientReplacement.after.sequence],
+      fingerprints: [clientReplacement.after.fingerprint === clientReplacement.before.fingerprint,
+        clientReplacement.after.manifest_fingerprint === clientReplacement.candidateFingerprint,
+        clientReplacement.manifestFingerprint === clientReplacement.candidateFingerprint],
+      receipt: [clientReplacement.receipt.format_version, clientReplacement.receipt.plan_fingerprint === clientReplacement.before.fingerprint],
+      changed: clientReplacement.changed.sort(), expected: replacementEntries,
+      transitions: transitions.map((row) => [row.entry, row.before_implementation.implementation, row.after_implementation.implementation]),
+      transfers: (clientReplacement.receipt.state_transfers ?? []).map((row) => [row.entry, row.schema?.digest,
+        row.before_state_digest === row.after_state_digest, row.migrator_implementation]),
+    }));
   check("replacement slots reconstruct every WebRTC client surface", await evaluate(`(() => [
     "#connect", '[data-view="effect-confirmations"]', '[data-view="artifacts"]',
     '[data-view="inspection"]', '[data-view="trace"]', '[data-view="management-operator"]',
@@ -413,7 +424,7 @@ try {
   const afterMediaRestore = await evaluate(`window.__openrealtime.activate("media")`);
   const restoreMS = performance.now() - restoreStarted;
   check("media recovery remounts the full desired composition", Object.values(afterMediaRestore.entries).every(
-    (entry) => entry.state === "active") && (await evaluate(`window.__openrealtime.mounted.length`)) === 28);
+    (entry) => entry.state === "active") && (await evaluate(`window.__openrealtime.mounted.length`)) === 29);
   await evaluate(`document.getElementById("connect").click()`);
   await waitFor("WebRTC reconnection after provider recovery", () => evaluate(
     `document.getElementById("state")?.textContent === "connected"`));

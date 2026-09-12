@@ -303,3 +303,57 @@ func TestDebugEventsNeverAppearWithoutNegotiation(t *testing.T) {
 		t.Fatal("ordinary extension negotiation enabled debugging")
 	}
 }
+
+// The timeline category is the turn reduced to its lanes, and it carries the
+// words only when payloads were asked for.
+func TestTimelineCategoryProjectsTheTurnInLanes(t *testing.T) {
+	for _, payloads := range []bool{true, false} {
+		t.Run(map[bool]string{true: "with payloads", false: "redacted"}[payloads], func(t *testing.T) {
+			server := startServer(t,
+				fast([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "Checking."}}),
+				slow([]continuation.Event{{Kind: continuation.EventAssistantDelta, Text: "The balance is $40.00."}}),
+				"what is my balance")
+			client := dial(t, server)
+			client.await("session.created", 5*time.Second)
+			client.configurePCM16(map[string]any{
+				"version": openrealtime.Version,
+				"debug": map[string]any{
+					"enabled": true, "categories": []string{"timeline"}, "include_payloads": payloads,
+				},
+			})
+			client.await("session.updated", 5*time.Second)
+			client.speak()
+			client.await("response.done", 10*time.Second)
+
+			lanes := map[string][]map[string]any{}
+			for _, entry := range client.messages(openrealtime.EventDebug) {
+				if entry["category"] != "timeline" || entry["name"] != "timeline" {
+					t.Fatalf("a timeline-only session received %v", entry)
+				}
+				attributes := entry["attributes"].(map[string]any)
+				lane, _ := attributes["lane"].(string)
+				lanes[lane] = append(lanes[lane], entry)
+			}
+			if len(lanes["asr"]) == 0 || len(lanes["tts"]) == 0 {
+				t.Fatalf("the timeline lacks speech lanes: %v", lanes)
+			}
+			var spoken map[string]any
+			for _, entry := range lanes["tts"] {
+				if entry["attributes"].(map[string]any)["kind"] == "speaking" && entry["phase"] == "start" {
+					spoken = entry
+				}
+			}
+			if spoken == nil {
+				t.Fatalf("no utterance start on the tts lane: %v", lanes["tts"])
+			}
+			if payloads {
+				payload, _ := spoken["payload"].(map[string]any)
+				if text, _ := payload["text"].(string); text == "" {
+					t.Fatalf("the utterance carries no words: %v", spoken)
+				}
+			} else if spoken["payload"] != nil || spoken["attributes"].(map[string]any)["payloads_redacted"] != true {
+				t.Fatalf("the words leaked without the payload opt-in: %v", spoken)
+			}
+		})
+	}
+}

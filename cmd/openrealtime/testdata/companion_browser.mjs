@@ -185,7 +185,7 @@ try {
     `window.__openrealtime?.mounted`)) === JSON.stringify([
       "slots", "media", "transport", "reducer", "session-configuration", "video", "debug-session",
       "inspection", "view", "video-controls", "transport-diagnostics", "inspection-view", "trace-view",
-      "management-operator", "management-transport", "management-static", "management-authoring",
+      "timeline-view", "management-operator", "management-transport", "management-static", "management-authoring",
       "authoring-workspace", "management-operator-view", "authoring-editor-view",
       "authoring-configuration-view", "authoring-canvas-view",
     ]));

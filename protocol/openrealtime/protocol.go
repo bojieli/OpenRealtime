@@ -81,13 +81,20 @@ const (
 	// filter on the way out. A category a client cannot ask for is an emitter
 	// that does not exist.
 	DebugGraph DebugCategory = "graph"
+	// DebugTimeline is the turn's story in five lanes - recogniser, policy,
+	// model, speech, background passes - projected by the server from the
+	// events above. A client that wants to draw a turn subscribes to this
+	// alone: the graph category carries every element's bookkeeping, tens of
+	// events per second, and a client-side reducer that logs each inbound
+	// event has a bounded log.
+	DebugTimeline DebugCategory = "timeline"
 )
 
 // DebugCategories is every category this implementation may emit.
 func DebugCategories() []DebugCategory {
 	return []DebugCategory{
 		DebugVAD, DebugASR, DebugVideo, DebugCognition, DebugPolicy,
-		DebugTTS, DebugTool, DebugSession, DebugError, DebugGraph,
+		DebugTTS, DebugTool, DebugSession, DebugError, DebugGraph, DebugTimeline,
 	}
 }
 

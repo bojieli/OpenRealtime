@@ -32,6 +32,7 @@ import (
 	"github.com/bojieli/OpenRealtime/plugin"
 	pluginruntime "github.com/bojieli/OpenRealtime/plugin/runtime"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
+	"github.com/bojieli/OpenRealtime/timeline"
 	"github.com/coder/websocket"
 )
 
@@ -97,6 +98,13 @@ type Config struct {
 	// conversation content: a log that leaked what was said would be a worse
 	// problem than having no log.
 	Logger *slog.Logger
+	// Timeline receives one line per turn event - each transcript revision,
+	// each policy choice, each model request and answer, each utterance
+	// synthesised and played, each background question - for every session.
+	// Unlike Logger it carries conversation content, because a turn cannot be
+	// read back without the words; it is written only where an operator asked
+	// for it. Nil disables it.
+	Timeline *timeline.Writer
 	// WriteTimeout bounds one outbound WebSocket write. Zero selects the
 	// shipped default; a negative value removes the bound.
 	//

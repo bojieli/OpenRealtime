@@ -151,6 +151,16 @@ A developer client requests it inside the negotiation object:
 }
 ```
 
+Two further categories are implementation-specific: `graph` carries the
+element graph's own execution trace, and `timeline` carries the turn's story
+projected from everything else - one event per transcript revision, policy
+choice, model request and answer, utterance synthesised and played, and
+background question - each with `attributes.lane` (`asr`, `policy`, `model`,
+`tts`, `background`), `attributes.kind`, `attributes.phase` (`start`, `end`,
+or `point`; a start and an end sharing `attributes.span` are one bar), and
+`attributes.detail`; the words are in `payload.text` and follow the payload
+rule below. A client drawing a turn asks for `timeline` alone.
+
 The server answers with the configuration actually in force:
 
 ```jsonc

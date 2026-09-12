@@ -55,6 +55,7 @@ import (
 	serverprofile "github.com/bojieli/OpenRealtime/server"
 	"github.com/bojieli/OpenRealtime/sidecar"
 	"github.com/bojieli/OpenRealtime/spoken"
+	"github.com/bojieli/OpenRealtime/timeline"
 	"github.com/bojieli/OpenRealtime/trajectory"
 	webrtcadapter "github.com/bojieli/OpenRealtime/transport/webrtc"
 	"github.com/pion/webrtc/v4"
@@ -144,8 +145,9 @@ type serveOptions struct {
 	instruction     string
 	validateWire    bool
 
-	logFormat string
-	logLevel  string
+	logFormat   string
+	logLevel    string
+	timelineLog string
 
 	webrtcListen   string
 	webrtcSTUN     string
@@ -378,6 +380,9 @@ func runServe(arguments []string, output io.Writer) error {
 	flags.BoolVar(&options.validateWire, "validate-wire", true, "validate every protocol event against the pinned schema")
 	flags.StringVar(&options.logFormat, "log-format", "text", "structured log format: text or json")
 	flags.StringVar(&options.logLevel, "log-level", "info", "log level: debug, info, warn, or error")
+	flags.StringVar(&options.timelineLog, "timeline-log", "",
+		"append one line per turn event - transcript revisions, policy choices, model requests and answers, "+
+			"speech, background questions - to this file; it carries conversation content")
 	flags.StringVar(&options.webrtcListen, "webrtc-listen", "", "additional WebRTC listen address; empty disables the adapter")
 	flags.StringVar(&options.webrtcSTUN, "webrtc-stun", "", "comma-separated STUN servers for the WebRTC adapter")
 	flags.StringVar(&options.webrtcICE, "webrtc-ice-server", "",
@@ -500,6 +505,11 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 	if err != nil {
 		return err
 	}
+	timelineWriter, closeTimeline, err := openTimelineLog(options.timelineLog)
+	if err != nil {
+		return err
+	}
+	defer closeTimeline()
 	// Install production cancellation before any strict-profile file read,
 	// executable hashing, catalog validation, or graph preflight so a shutdown
 	// signal can cancel the entire preparation path.
@@ -541,7 +551,7 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 	}
 	if profiled {
 		composition, err := newProductionProfiledServeComposition(
-			ctx, options, logger,
+			ctx, options, logger, timelineWriter,
 		)
 		if err != nil {
 			return err
@@ -571,6 +581,7 @@ func serve(options serveOptions, output io.Writer) (returnErr error) {
 				Token: gatewayToken, Model: options.model,
 				TranscriptionModel: options.asrModel, ValidateWire: options.validateWire,
 				Logger:      logger,
+				Timeline:    timelineWriter,
 				Recogniser:  recogniserReport(recogniser),
 				Warm:        warmed.Load,
 				MaxSessions: options.maxSessions,
@@ -2248,6 +2259,22 @@ func buildComputerUse(options serveOptions) (computerUseTools, error) {
 // JSON when something is going to collect it. Neither ever carries
 // conversation content: a log that leaked what was said would be a worse
 // problem than having no log.
+// openTimelineLog opens the turn timeline for appending. An empty path is
+// no timeline, which is the default: the file carries what people said.
+func openTimelineLog(path string) (*timeline.Writer, func(), error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, func() {}, nil
+	}
+	if path == "-" {
+		return timeline.NewWriter(os.Stderr), func() {}, nil
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open timeline log: %w", err)
+	}
+	return timeline.NewWriter(file), func() { _ = file.Close() }, nil
+}
+
 func buildLogger(options serveOptions) (*slog.Logger, error) {
 	var level slog.Level
 	switch strings.ToLower(strings.TrimSpace(options.logLevel)) {

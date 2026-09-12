@@ -39,6 +39,7 @@ import (
 	"github.com/bojieli/OpenRealtime/providers"
 	serverprofile "github.com/bojieli/OpenRealtime/server"
 	"github.com/bojieli/OpenRealtime/spoken"
+	"github.com/bojieli/OpenRealtime/timeline"
 )
 
 const (
@@ -529,6 +530,9 @@ type serveProfileHost struct {
 	Meeting       *serveMeetingRegistration
 	RealtimeCU    *serveRealtimeCURegistration
 	Applications  *launchprofile.Registry
+	// Timeline receives the turn story of every session, when the operator
+	// asked for one.
+	Timeline *timeline.Writer
 }
 
 func newServeProfileHost(
@@ -678,7 +682,7 @@ func newProfiledServeComposition(
 	graph, err := serverprofile.NewProfileGraphBundle(ctx, serverprofile.ProfileGraphBundleConfig{
 		Profile: profile, Applications: host.Applications,
 		GatewayArtifact: host.Artifacts.Gateway,
-		Gateway:         gatewayObservabilityConfig(logger, host.Providers.Recogniser, readiness.Ready),
+		Gateway:         gatewayObservabilityConfig(logger, host.Timeline, host.Providers.Recogniser, readiness.Ready),
 		ResolveToken: func(resolveCtx context.Context, name string) (string, error) {
 			value, resolveErr := resolveProfileTokenEnvironment(resolveCtx, name)
 			if resolveErr == nil {
@@ -722,7 +726,7 @@ func newProfiledServeComposition(
 }
 
 func newProductionProfiledServeComposition(
-	ctx context.Context, options serveOptions, logger *slog.Logger,
+	ctx context.Context, options serveOptions, logger *slog.Logger, timelineWriter *timeline.Writer,
 ) (profiledServeComposition, error) {
 	if ctx == nil {
 		return profiledServeComposition{}, errors.New("compose production launch-profile server: nil context")
@@ -749,6 +753,7 @@ func newProductionProfiledServeComposition(
 	if err != nil {
 		return profiledServeComposition{}, err
 	}
+	host.Timeline = timelineWriter
 	return newProfiledServeComposition(ctx, profile, host, logger)
 }
 
@@ -775,7 +780,7 @@ func validateServeProfileFlags(options serveOptions) error {
 
 func serveProfileFlagAllowed(name string) bool {
 	switch name {
-	case "config", "launch-profile", "listen", "shutdown-timeout", "log-format", "log-level",
+	case "config", "launch-profile", "listen", "shutdown-timeout", "log-format", "log-level", "timeline-log",
 		"webrtc-listen", "webrtc-stun", "webrtc-allow-origin":
 		return true
 	default:
@@ -784,10 +789,10 @@ func serveProfileFlagAllowed(name string) bool {
 }
 
 func gatewayObservabilityConfig(
-	logger *slog.Logger, recogniser *asrbuffer.Accumulator, warm func() bool,
+	logger *slog.Logger, timelineWriter *timeline.Writer, recogniser *asrbuffer.Accumulator, warm func() bool,
 ) gateway.Config {
 	return gateway.Config{
-		Logger: logger, Recogniser: recogniserReport(recogniser), Warm: warm,
+		Logger: logger, Timeline: timelineWriter, Recogniser: recogniserReport(recogniser), Warm: warm,
 	}
 }
 

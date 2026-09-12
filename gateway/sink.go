@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
+	"github.com/bojieli/OpenRealtime/timeline"
 )
 
 // The session implements binding.Sink: it renders what the runtime produced
@@ -99,26 +101,76 @@ func (session *session) Observation(_ context.Context, observation perception.Ob
 // stream. No negotiation means no event and no observable change for ordinary
 // clients.
 func (session *session) Debug(_ context.Context, entry binding.DebugEvent) error {
+	// Every debug event also goes to the server log at debug level, payload
+	// included, whether or not any client opted in. The client channel is a
+	// product surface with redaction; the operator's own log is where a turn
+	// gets reconstructed after the fact - which transcript revision arrived,
+	// what the policy chose on it, and what the model then said - and a
+	// decision that exists only in a channel nobody opened is one that cannot
+	// be debugged.
+	if logger := session.config.Logger; logger != nil && logger.Enabled(context.Background(), slog.LevelDebug) {
+		logger.Debug("debug event",
+			"session", session.id, "category", entry.Category, "name", entry.Name,
+			"phase", entry.Phase, "correlation_id", entry.CorrelationID,
+			"message", entry.Message, "attributes", entry.Attributes, "payload", entry.Payload)
+	}
+	// The same event, reduced to the turn's story, goes to the timeline log
+	// and - as its own category - to a client drawing the turn.
+	events := timeline.Project(entry)
+	if writer := session.config.Timeline; writer != nil && len(events) > 0 {
+		if err := writer.Write(time.Now(), session.id, events); err != nil && session.config.Logger != nil {
+			session.config.Logger.Warn("timeline log write failed", "session", session.id, "error", err)
+		}
+	}
 	session.settingsMu.RLock()
 	config := session.settings.extension.Debug
 	session.settingsMu.RUnlock()
 	if config == nil || !config.Enabled {
 		return nil
 	}
+	if slices.Contains(config.Categories, openrealtime.DebugTimeline) {
+		for _, event := range events {
+			attributes := map[string]any{"lane": string(event.Lane), "kind": event.Kind, "phase": event.Phase}
+			if event.Span != "" {
+				attributes["span"] = event.Span
+			}
+			if event.Detail != "" {
+				attributes["detail"] = event.Detail
+			}
+			var payload map[string]any
+			if event.Text != "" {
+				payload = map[string]any{"text": event.Text}
+			}
+			err := session.sendDebug(config, openrealtime.DebugEvent{
+				Category: openrealtime.DebugTimeline, Name: "timeline", Phase: event.Phase,
+				DurationMS: event.DurationMS, CorrelationID: entry.CorrelationID, Attributes: attributes,
+			}, payload)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	category := openrealtime.DebugCategory(entry.Category)
 	if !slices.Contains(config.Categories, category) {
 		return nil
 	}
-	debug := openrealtime.DebugEvent{
-		Type: openrealtime.EventDebug, EventID: session.nextID("event"),
-		TimestampMS: time.Now().UnixMilli(), Category: category,
-		Name: entry.Name, Phase: entry.Phase, DurationMS: entry.DurationMS,
-		CorrelationID: entry.CorrelationID, Message: entry.Message,
-		Attributes: entry.Attributes,
-	}
+	return session.sendDebug(config, openrealtime.DebugEvent{
+		Category: category, Name: entry.Name, Phase: entry.Phase, DurationMS: entry.DurationMS,
+		CorrelationID: entry.CorrelationID, Message: entry.Message, Attributes: entry.Attributes,
+	}, entry.Payload)
+}
+
+// sendDebug stamps and sends one debug event, withholding the payload unless
+// the session asked for payloads.
+func (session *session) sendDebug(
+	config *openrealtime.DebugResponse, debug openrealtime.DebugEvent, payload map[string]any,
+) error {
+	debug.Type = openrealtime.EventDebug
+	debug.EventID = session.nextID("event")
+	debug.TimestampMS = time.Now().UnixMilli()
 	if config.IncludePayloads {
-		debug.Payload = entry.Payload
-	} else if len(entry.Payload) > 0 {
+		debug.Payload = payload
+	} else if len(payload) > 0 {
 		if debug.Attributes == nil {
 			debug.Attributes = map[string]any{}
 		}

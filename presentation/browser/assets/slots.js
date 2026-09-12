@@ -16,7 +16,8 @@ export default {
     const slots = new Map();
     const render = () => {
       for (const [name, rows] of slots) {
-        const target = name === "root" ? conversation : name === "session.media" ? stage : name === "inspection.transport" ? diagnostics : tools;
+        const target = name === "root" ? conversation : name === "session.media" ? stage :
+          name === "inspection.transport" || name === "session.timeline" ? diagnostics : tools;
         for (const row of rows) target.append(row.node);
       }
       stage.hidden = !slots.has("session.media");

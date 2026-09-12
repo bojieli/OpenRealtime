@@ -437,7 +437,7 @@ func TestEmbeddedBrowserModulesParseAsJavaScript(t *testing.T) {
 	for _, name := range []string{
 		"bootstrap.js", "slots.js", "transport-websocket.js", "reducer.js", "text-view.js",
 		"session-configuration.js", "debug-session.js", "inspection-client.js", "inspection-view.js",
-		"trace-view.js", "media-webrtc.js", "transport-webrtc.js", "video-protocol.js", "video-controls.js",
+		"trace-view.js", "timeline-view.js", "media-webrtc.js", "transport-webrtc.js", "video-protocol.js", "video-controls.js",
 		"transport-diagnostics-view.js", "effects-client.js", "artifact-references.js",
 		"confirmation-view.js", "artifact-view.js", "management-operator-capability.js",
 		"management-transport.js", "management-static.js", "management-authoring.js",
@@ -714,7 +714,7 @@ func TestDeveloperWebRTCBundleReplacesTransportAndOwnsMediaPermission(t *testing
 	want := []string{
 		"slots", "media", "transport", "reducer", "session-configuration", "video", "debug-session",
 		"effects", "artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
-		"video-controls", "transport-diagnostics", "inspection-view", "trace-view",
+		"video-controls", "transport-diagnostics", "inspection-view", "trace-view", "timeline-view",
 		"management-operator", "management-transport", "management-static", "management-authoring",
 		"management-source-reading", "management-source-publication", "authoring-workspace",
 		"management-operator-view", "authoring-editor-view",
@@ -790,7 +790,7 @@ func TestDeveloperBundleAddsInspectionAsReplaceableCapability(t *testing.T) {
 	want := []string{
 		"slots", "transport", "reducer", "session-configuration", "debug-session", "effects",
 		"artifact-references", "inspection", "view", "confirmation-view", "artifact-view",
-		"inspection-view", "trace-view",
+		"inspection-view", "trace-view", "timeline-view",
 		"management-operator", "management-transport", "management-static", "management-authoring",
 		"management-source-reading", "management-source-publication", "authoring-workspace",
 		"management-operator-view", "authoring-editor-view",

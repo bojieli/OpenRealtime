@@ -329,6 +329,16 @@ export default {
           throw new Error(`inbound event exceeds ${DEFAULT_LIMITS.max_event_bytes} bytes`);
         }
         const event = parseStrictJSON(source);
+        // A debug event changes no session state - the reducer ignores its
+        // type - but the reducer logs every inbound event into a protocol log
+        // with a fixed capacity, after which it rejects everything. A
+        // timeline is a debug event per transcript revision, per choice, per
+        // utterance, all conversation long, so it goes straight to its
+        // consumers and leaves the log to the protocol.
+        if (event?.type === "openrealtime.debug.event") {
+          publishProtocol(event);
+          return;
+        }
         // Validate the capability-bearing projection before mutating either
         // reducer or service state, then publish only after the canonical
         // reducer accepted the complete event. Consumers therefore never see

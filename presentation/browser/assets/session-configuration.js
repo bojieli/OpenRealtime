@@ -34,8 +34,9 @@ function validate(fragment) {
   }
   const debug = fragment.debug ?? null;
   if (debug !== null && (!debug || typeof debug !== "object" || Array.isArray(debug) ||
-      Object.keys(debug).some((key) => !["enabled", "categories"].includes(key)) ||
-      (debug.enabled !== undefined && typeof debug.enabled !== "boolean"))) {
+      Object.keys(debug).some((key) => !["enabled", "categories", "include_payloads"].includes(key)) ||
+      (debug.enabled !== undefined && typeof debug.enabled !== "boolean") ||
+      (debug.include_payloads !== undefined && typeof debug.include_payloads !== "boolean"))) {
     throw new Error("session configuration debug contribution is invalid");
   }
   const normalized = {
@@ -45,6 +46,7 @@ function validate(fragment) {
     debug: debug === null ? null : {
       enabled: debug.enabled === true,
       categories: strings(debug.categories, "debug categories"),
+      include_payloads: debug.include_payloads === true,
     },
   };
   for (const tool of normalized.tools) {
@@ -81,11 +83,13 @@ export default {
       const categories = new Set();
       const tools = new Map();
       let debugEnabled = false;
+      let includePayloads = false;
       for (const fragment of contributions.values()) {
         fragment.supports.forEach((value) => supports.add(value));
         fragment.observers.forEach((value) => observers.add(value));
         if (fragment.debug) {
           debugEnabled ||= fragment.debug.enabled;
+          includePayloads ||= fragment.debug.include_payloads;
           fragment.debug.categories.forEach((value) => categories.add(value));
         }
         for (const tool of fragment.tools) {
@@ -104,6 +108,7 @@ export default {
       };
       if (debugEnabled || categories.size) {
         openrealtime.debug = { enabled: debugEnabled, categories: [...categories].sort() };
+        if (includePayloads) openrealtime.debug.include_payloads = true;
       }
       return {
         type: "realtime",

@@ -305,6 +305,14 @@ func buildObserverDeveloperBundle() (*Bundle, error) {
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientInspectionContract},
 			},
 		},
+		{
+			entry: "timeline-view", file: "timeline-view.js",
+			pluginName: "openrealtime.presentation.client.timeline-view",
+			requires: []plugin.Requirement{
+				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientProtocolEventsContract},
+				{Contract: presentation.ClientStateContract},
+			},
+		},
 	}
 	definitions = append(definitions, developerManagementDefinitions(false)...)
 	return buildBundle("openrealtime.browser.developer-observer", definitions, developerManagementEndpoints())
@@ -652,6 +660,14 @@ func developerBundleDefinitions() []moduleDefinition {
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientInspectionContract},
 			},
 		},
+		{
+			entry: "timeline-view", file: "timeline-view.js",
+			pluginName: "openrealtime.presentation.client.timeline-view",
+			requires: []plugin.Requirement{
+				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientProtocolEventsContract},
+				{Contract: presentation.ClientStateContract},
+			},
+		},
 	}
 	definitions = append(definitions, developerManagementDefinitions(true)...)
 	return definitions
@@ -793,6 +809,14 @@ func buildObserverDeveloperWebRTCBundle() (*Bundle, error) {
 			pluginName: "openrealtime.presentation.client.trace-view",
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientInspectionContract},
+			},
+		},
+		{
+			entry: "timeline-view", file: "timeline-view.js",
+			pluginName: "openrealtime.presentation.client.timeline-view",
+			requires: []plugin.Requirement{
+				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientProtocolEventsContract},
+				{Contract: presentation.ClientStateContract},
 			},
 		},
 	}
@@ -999,6 +1023,14 @@ func developerWebRTCBundleDefinitions() []moduleDefinition {
 			pluginName: "openrealtime.presentation.client.trace-view",
 			requires: []plugin.Requirement{
 				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientInspectionContract},
+			},
+		},
+		{
+			entry: "timeline-view", file: "timeline-view.js",
+			pluginName: "openrealtime.presentation.client.timeline-view",
+			requires: []plugin.Requirement{
+				{Contract: presentation.ClientSlotsContract}, {Contract: presentation.ClientProtocolEventsContract},
+				{Contract: presentation.ClientStateContract},
 			},
 		},
 	}

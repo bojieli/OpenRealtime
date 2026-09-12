@@ -39,6 +39,7 @@ const SHIPPED_REPLACEMENT_IMPLEMENTATIONS = Object.freeze({
   "artifact-view": "browser-esm:artifact-view-v2.js",
   "inspection-view": "browser-esm:inspection-view-v2.js",
   "trace-view": "browser-esm:trace-view-v2.js",
+  "timeline-view": "browser-esm:timeline-view-v2.js",
   "management-operator-view": "browser-esm:management-operator-view-v2.js",
   "authoring-editor-view": "browser-esm:authoring-editor-view-v2.js",
   "authoring-configuration-view": "browser-esm:authoring-configuration-view-v2.js",
@@ -64,6 +65,7 @@ const SHIPPED_PREDECESSOR_IMPLEMENTATIONS = Object.freeze({
   "artifact-view": "browser-esm:artifact-view.js",
   "inspection-view": "browser-esm:inspection-view.js",
   "trace-view": "browser-esm:trace-view.js",
+  "timeline-view": "browser-esm:timeline-view.js",
   "management-operator-view": "browser-esm:management-operator-view.js",
   "authoring-editor-view": "browser-esm:authoring-editor-view.js",
   "authoring-configuration-view": "browser-esm:authoring-configuration-view.js",
@@ -220,12 +222,12 @@ try {
       "slots", "media", "transport", "reducer", "session-configuration", "video", "debug-session",
       ...(EFFECTS_ENABLED ? ["effects", "artifact-references"] : []), "inspection", "view",
       ...(EFFECTS_ENABLED ? ["confirmation-view", "artifact-view"] : []),
-      "video-controls", "transport-diagnostics", "inspection-view", "trace-view",
+      "video-controls", "transport-diagnostics", "inspection-view", "trace-view", "timeline-view",
     ] : [
       "slots", "transport", "reducer", "session-configuration", "debug-session",
       ...(EFFECTS_ENABLED ? ["effects", "artifact-references"] : []), "inspection", "view",
       ...(EFFECTS_ENABLED ? ["confirmation-view", "artifact-view"] : []),
-      "inspection-view", "trace-view",
+      "inspection-view", "trace-view", "timeline-view",
     ];
   expectedMounted.push(
       "management-operator", "management-transport", "management-static", "management-authoring",

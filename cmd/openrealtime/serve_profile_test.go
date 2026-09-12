@@ -62,7 +62,7 @@ func TestProductionServeLaunchProfileResolvesExactInstalledApplications(t *testi
 	options.launchProfile = path
 
 	composition, err := newProductionProfiledServeComposition(
-		context.Background(), options, nil,
+		context.Background(), options, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1088,7 +1088,7 @@ func TestProductionServeLaunchProfileHonorsCancellationBeforeFileOrHostWork(t *t
 	cancel(want)
 	options := serveProfileTestOptions()
 	options.launchProfile = filepath.Join(t.TempDir(), "must-not-be-read.yaml")
-	if _, err := newProductionProfiledServeComposition(ctx, options, nil); !errors.Is(err, want) {
+	if _, err := newProductionProfiledServeComposition(ctx, options, nil, nil); !errors.Is(err, want) {
 		t.Fatalf("canceled production profile error = %v, want %v", err, want)
 	}
 }

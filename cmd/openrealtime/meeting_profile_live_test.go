@@ -54,7 +54,7 @@ func TestMeetingProductionProfileUsesAuthenticatedLiveDeploymentsAndInspection(t
 	serveOptions.launchProfile = profilePath
 	composition, err := newProductionProfiledServeComposition(
 		context.Background(), serveOptions,
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		slog.New(slog.NewTextHandler(io.Discard, nil)), nil,
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -101,7 +101,9 @@ unrelated users.
 The opt-in `graph` debug stream now includes typed semantic decisions, admission
 outcomes, overlap state, and segmentation outcomes when `include_payloads` is
 explicitly requested. Without that option the gateway redacts the payload.
-Audio bytes are not copied into these debug records.
+Audio bytes are not copied into these debug records. The `timeline` category
+is the same story reduced to five lanes, which is what the room's Turn timeline
+draws and what `-timeline-log` writes to disk.
 
 PCM measurements describe serialized received audio and injected input, not
 physical speaker or microphone latency. Test the user's actual WebRTC network
