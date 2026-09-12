@@ -373,7 +373,10 @@ func playScenarioInProcess(
 		time.Sleep(time.Until(started.Add(time.Duration(atMS) * time.Millisecond)))
 		for _, sight := range sights {
 			if sight.atMS >= atMS && sight.atMS < atMS+scenarioBenchFrameMS {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				// Showing a frame returns once the policy has decided about
+				// it, and that decision waits for a generation in flight; a
+				// slow voice made this take longer than five seconds.
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				err := runtime.Video(ctx, perception.Frame{
 					Kind: perception.FrameImage, Source: "screen", CapturedNS: uint64(time.Since(started)),
 					Image: sight.image, MIMEType: "image/png", Width: sight.width, Height: sight.height,
