@@ -246,11 +246,22 @@ func writeCached(key string, samples []int16) {
 	}
 	// Written beside and renamed, so a run interrupted mid-write does not
 	// leave a truncated line that every later run then treats as the audio.
-	temporary := filepath.Join(CacheDir, key+".part")
-	if err := os.WriteFile(temporary, payload, 0o644); err != nil {
+	// The temporary is this writer's own: scenarios play in parallel, and
+	// two of them synthesising the same line must not share one.
+	temporary, err := os.CreateTemp(CacheDir, key+".*.part")
+	if err != nil {
 		return
 	}
-	_ = os.Rename(temporary, filepath.Join(CacheDir, key+".pcm"))
+	if _, err := temporary.Write(payload); err != nil {
+		_ = temporary.Close()
+		_ = os.Remove(temporary.Name())
+		return
+	}
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(temporary.Name())
+		return
+	}
+	_ = os.Rename(temporary.Name(), filepath.Join(CacheDir, key+".pcm"))
 }
 
 // Transcribe is where the harness sends the agent's own audio when a check has

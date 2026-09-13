@@ -84,49 +84,65 @@ func TestTwelveScenariosAgainstLiveModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	stamp := time.Now().UTC().Format("20060102T150405Z")
-	var summary []string
-	for _, item := range scenario.Suite() {
-		if len(wanted) > 0 && !wanted[item.Name] {
-			continue
-		}
-		passed := t.Run(item.Name, func(t *testing.T) {
-			run := playScenarioInProcess(t, newCountingBenchmarkProviders(t, geminiKey), item, root)
-			result := scenario.ScorePlayed(item, run.timeline, run.transcript, run.menu, run.capture, run.listen)
-			var lines []string
-			lines = append(lines, "Scenario: "+item.Name, "Note: "+item.Note, "", "Events:", run.eventLog(), "", "Decisions:", run.decisionLog())
-			if len(result.Failures) > 0 {
-				lines = append(lines, "", "Checks: FAIL", "- "+strings.Join(result.Failures, "\n- "))
-			} else {
-				lines = append(lines, "", "Checks: PASS")
+	// The scenarios are independent sessions, so they play at the same
+	// time; the pass takes as long as the longest scenario, not their sum.
+	var summaryMu sync.Mutex
+	summary := map[string]bool{}
+	t.Run("scenarios", func(t *testing.T) {
+		for _, item := range scenario.Suite() {
+			if len(wanted) > 0 && !wanted[item.Name] {
+				continue
 			}
-			failures := append([]string(nil), result.Failures...)
-			if judge {
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-				verdict, err := judgeScenarioRun(ctx, geminiKey, item, run, result)
-				cancel()
-				switch {
-				case err != nil:
-					lines = append(lines, "", "Judge: NOT VERIFIED: "+err.Error())
-					failures = append(failures, "the judge could not review the run: "+err.Error())
-				case verdict.Pass:
-					lines = append(lines, "", "Judge: PASS", verdict.describe())
-				default:
-					lines = append(lines, "", "Judge: FAIL", verdict.describe())
-					failures = append(failures, "the judge failed the run: "+strings.Join(verdict.Reasons, "; "))
+			t.Run(item.Name, func(t *testing.T) {
+				t.Parallel()
+				t.Cleanup(func() {
+					summaryMu.Lock()
+					summary[item.Name] = !t.Failed()
+					summaryMu.Unlock()
+				})
+				run := playScenarioInProcess(t, newCountingBenchmarkProviders(t, geminiKey), item, root)
+				result := scenario.ScorePlayed(item, run.timeline, run.transcript, run.menu, run.capture, run.listen)
+				var lines []string
+				lines = append(lines, "Scenario: "+item.Name, "Note: "+item.Note, "", "Events:", run.eventLog(), "", "Decisions:", run.decisionLog())
+				if len(result.Failures) > 0 {
+					lines = append(lines, "", "Checks: FAIL", "- "+strings.Join(result.Failures, "\n- "))
+				} else {
+					lines = append(lines, "", "Checks: PASS")
 				}
-			}
-			out := filepath.Join(outDir, stamp+"-"+scenarioFileStem(item.Name)+".txt")
-			if err := os.MkdirAll(filepath.Dir(out), 0o755); err == nil {
-				_ = os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n\nTimeline:\n"+run.timelineText+"\n"), 0o644)
-			}
-			t.Logf("%s (also %s):\n%s", item.Name, out, strings.Join(lines, "\n"))
-			if len(failures) > 0 {
-				t.Fatalf("%s failed:\n- %s", item.Name, strings.Join(failures, "\n- "))
-			}
-		})
-		summary = append(summary, fmt.Sprintf("%-40s %s", item.Name, map[bool]string{true: "PASS", false: "FAIL"}[passed]))
+				failures := append([]string(nil), result.Failures...)
+				if judge {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					verdict, err := judgeScenarioRun(ctx, geminiKey, item, run, result)
+					cancel()
+					switch {
+					case err != nil:
+						lines = append(lines, "", "Judge: NOT VERIFIED: "+err.Error())
+						failures = append(failures, "the judge could not review the run: "+err.Error())
+					case verdict.Pass:
+						lines = append(lines, "", "Judge: PASS", verdict.describe())
+					default:
+						lines = append(lines, "", "Judge: FAIL", verdict.describe())
+						failures = append(failures, "the judge failed the run: "+strings.Join(verdict.Reasons, "; "))
+					}
+				}
+				out := filepath.Join(outDir, stamp+"-"+scenarioFileStem(item.Name)+".txt")
+				if err := os.MkdirAll(filepath.Dir(out), 0o755); err == nil {
+					_ = os.WriteFile(out, []byte(strings.Join(lines, "\n")+"\n\nTimeline:\n"+run.timelineText+"\n"), 0o644)
+				}
+				t.Logf("%s (also %s):\n%s", item.Name, out, strings.Join(lines, "\n"))
+				if len(failures) > 0 {
+					t.Fatalf("%s failed:\n- %s", item.Name, strings.Join(failures, "\n- "))
+				}
+			})
+		}
+	})
+	var lines []string
+	for _, item := range scenario.Suite() {
+		if passed, ran := summary[item.Name]; ran {
+			lines = append(lines, fmt.Sprintf("%-40s %s", item.Name, map[bool]string{true: "PASS", false: "FAIL"}[passed]))
+		}
 	}
-	t.Logf("twelve-scenario benchmark:\n%s", strings.Join(summary, "\n"))
+	t.Logf("twelve-scenario benchmark:\n%s", strings.Join(lines, "\n"))
 }
 
 func scenarioFileStem(name string) string {

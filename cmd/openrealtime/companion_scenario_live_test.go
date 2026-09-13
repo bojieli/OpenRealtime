@@ -49,6 +49,9 @@ func TestLiveRoomTwelveScenarios(t *testing.T) {
 			}
 		}
 		t.Run(item.Name, func(t *testing.T) {
+			// Independent sessions against one room: they play at the same
+			// time, as several people in several rooms would.
+			t.Parallel()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			defer cancel()
 			result, err := scenario.Play(ctx, voice, bench.SessionConfig{Endpoint: endpoint, Token: os.Getenv("OPENREALTIME_TOKEN"), CaptureRuntimeEvidence: true}, item)

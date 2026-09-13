@@ -72,28 +72,43 @@ func TestCountingBenchmarkAgainstLiveModels(t *testing.T) {
 	}
 	outDir := envOr("OPENREALTIME_COUNTING_BENCH_DIR", filepath.Join("..", ".runtime", "counting-bench"))
 	stamp := time.Now().UTC().Format("20060102T150405Z")
-	var summary []string
-	for _, story := range countingBenchmarkStories() {
-		if len(wanted) > 0 && !wanted[story.name] {
-			continue
+	// The stories are independent sessions, so they play at the same time.
+	var summaryMu sync.Mutex
+	summary := map[string]bool{}
+	t.Run("stories", func(t *testing.T) {
+		for _, story := range countingBenchmarkStories() {
+			if len(wanted) > 0 && !wanted[story.name] {
+				continue
+			}
+			t.Run(story.name, func(t *testing.T) {
+				t.Parallel()
+				t.Cleanup(func() {
+					summaryMu.Lock()
+					summary[story.name] = !t.Failed()
+					summaryMu.Unlock()
+				})
+				// Fresh providers per story: the policy element closes its
+				// decider when the session ends, and a client shared across
+				// stories would be closed after the first.
+				report := runCountingStory(t, newCountingBenchmarkProviders(t, geminiKey), story)
+				out := filepath.Join(outDir, stamp+"-"+story.name+".txt")
+				if err := os.MkdirAll(filepath.Dir(out), 0o755); err == nil {
+					_ = os.WriteFile(out, []byte(report.text+"\n\nTimeline:\n"+report.timeline), 0o644)
+				}
+				t.Logf("%s (also %s):\n%s", story.name, out, report.text)
+				if len(report.failures) > 0 {
+					t.Fatalf("%s failed:\n- %s", story.name, strings.Join(report.failures, "\n- "))
+				}
+			})
 		}
-		passed := t.Run(story.name, func(t *testing.T) {
-			// Fresh providers per story: the policy element closes its
-			// decider when the session ends, and a client shared across
-			// stories would be closed after the first.
-			report := runCountingStory(t, newCountingBenchmarkProviders(t, geminiKey), story)
-			out := filepath.Join(outDir, stamp+"-"+story.name+".txt")
-			if err := os.MkdirAll(filepath.Dir(out), 0o755); err == nil {
-				_ = os.WriteFile(out, []byte(report.text+"\n\nTimeline:\n"+report.timeline), 0o644)
-			}
-			t.Logf("%s (also %s):\n%s", story.name, out, report.text)
-			if len(report.failures) > 0 {
-				t.Fatalf("%s failed:\n- %s", story.name, strings.Join(report.failures, "\n- "))
-			}
-		})
-		summary = append(summary, fmt.Sprintf("%-32s %s", story.name, map[bool]string{true: "PASS", false: "FAIL"}[passed]))
+	})
+	var lines []string
+	for _, story := range countingBenchmarkStories() {
+		if passed, ran := summary[story.name]; ran {
+			lines = append(lines, fmt.Sprintf("%-32s %s", story.name, map[bool]string{true: "PASS", false: "FAIL"}[passed]))
+		}
 	}
-	t.Logf("counting benchmark:\n%s", strings.Join(summary, "\n"))
+	t.Logf("counting benchmark:\n%s", strings.Join(lines, "\n"))
 }
 
 const (
@@ -343,7 +358,7 @@ func newCountingBenchmarkProviders(t *testing.T, geminiKey string) countingBench
 	voice, err := gemini.New(gemini.Config{
 		APIKey: geminiKey, Model: envOr("OPENREALTIME_MODEL", "gemini-3.7-flash"),
 		Endpoint: "https://generativelanguage.googleapis.com/v1beta",
-		Phase:    trajectory.PhaseFast, Effort: continuation.Effort("128"),
+		Phase:    trajectory.PhaseFast, Effort: continuation.Effort(envOr("OPENREALTIME_VOICE_EFFORT", "128")),
 		ToolAuthority: continuation.ToolAuthorityPropose, SpeechAuthority: continuation.SpeechAuthorityVoice,
 		Temperature: &temperature, RequestTimeout: 30 * time.Second,
 	})
