@@ -23,14 +23,20 @@ func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection.asrCadenceMS = 100
 	selection.speakerURL = "http://127.0.0.1:8124/embed"
 	selection.modelProvider = "google"
-	selection.modelName = "gemini-3.7-flash"
+	selection.modelName = "gemini-3.8-flash"
 	selection.modelURL = "https://generativelanguage.googleapis.com/v1beta"
 	// Gemini shares its output ceiling with thinking; 128 can exhaust the
 	// entire response before any audible answer is generated.
 	selection.maxOutputTokens = 1024
 	selection.continuationInstruction = "Every word you generate is spoken aloud. Answer the latest user request directly in the language they are using unless they requested translation. Runtime notes, observation labels, and playback annotations are context, never words to read aloud. " + selection.continuationInstruction
-	// Repeated captured-context profiling favored 3.7/128 for low first-text
-	// latency without the long-tail delays observed in the other Flash versions.
+	// Measured on 2026-09-13 on the room's own prompt, side by side in the
+	// same minutes: 3.8 Flash answered in 0.7-0.9 s where 3.7 took 1.5-3.4 s,
+	// and over three twelve-scenario passes its generations ran p50 1.0 s,
+	// p90 2.2 s, max 3.9 s against 3.7's p50 2.0 s, p90 3.8 s that evening,
+	// with the same behaviour (11/12 each pass, a different latency miss
+	// each time). The lite models answer in 0.4 s and press the wrong key.
+	// Earlier profiling had favoured 3.7/128 over the Flash versions of its
+	// day for the same reason: first-text latency without the long tail.
 	selection.modelEffort = "128"
 	selection.modelReason = "on"
 	// The one instruction the interaction policy reads at every event. Passed

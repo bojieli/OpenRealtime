@@ -368,7 +368,7 @@ func newCountingBenchmarkProviders(t *testing.T, geminiKey string) countingBench
 	t.Cleanup(func() { _ = policyClient.Close() })
 	temperature := 0.0
 	voice, err := gemini.New(gemini.Config{
-		APIKey: geminiKey, Model: envOr("OPENREALTIME_MODEL", "gemini-3.7-flash"),
+		APIKey: geminiKey, Model: envOr("OPENREALTIME_MODEL", "gemini-3.8-flash"),
 		Endpoint: "https://generativelanguage.googleapis.com/v1beta",
 		Phase:    trajectory.PhaseFast, Effort: continuation.Effort(envOr("OPENREALTIME_VOICE_EFFORT", "128")),
 		ToolAuthority: continuation.ToolAuthorityPropose, SpeechAuthority: continuation.SpeechAuthorityVoice,

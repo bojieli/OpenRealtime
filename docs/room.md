@@ -24,7 +24,7 @@ runs against an explicitly composed cascade instead - see
 The room's pipeline is the project's default, and the twelve scenarios are
 its acceptance test. It is a cascade - Deepgram Nova-3 streaming recognition,
 a local Qwen model asked one yes/no question per transcript event, Gemini
-3.7 Flash as the voice, local Fish Speech synthesis, speaker embeddings, and
+3.8 Flash as the voice, local Fish Speech synthesis, speaker embeddings, and
 word timing - arranged so that it behaves the way a single duplex model
 would: it decides on every partial, speaks mid-sentence when the moment
 comes, stops when cut in on, resumes from what was heard, presses a key
@@ -58,9 +58,10 @@ silence, neither of which a person does. Every counting story opens the
 way a person does: the rule, then "Are you ready?", answered before the
 story starts. What still fails a scenario on a given evening is the voice
 provider's first-token latency against the scenarios' two-to-three-second
-limits - Gemini 3.7 Flash spends about 95 thought tokens on every turn
-whatever the budget, and a room-sized prompt takes 1.5 to 3 s to its first
-token depending on the hour - and, less often, which of the recogniser's
+limits - the voice is Gemini 3.8 Flash because, measured side by side on
+the room's prompt, it reaches its first token in about 1 s where 3.7 took
+1.5 to 3.4 s, and the lite models that answer in 0.4 s press the wrong
+key; a slow hour still stretches a turn past 3 s - and, less often, which of the recogniser's
 two language lanes wins a short utterance. Both are measured in the
 reports rather than absorbed by the pipeline.
 

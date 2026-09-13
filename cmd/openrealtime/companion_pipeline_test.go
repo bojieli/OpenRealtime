@@ -15,7 +15,7 @@ func TestRoomDefaultUsesBenchmarkPipelineAndFullScenarioContract(t *testing.T) {
 	if selection.maxOutputTokens < 1024 {
 		t.Fatal("room must leave ample output capacity beyond the thinking budget")
 	}
-	if selection.modelName != "gemini-3.7-flash" || selection.modelEffort != "128" {
+	if selection.modelName != "gemini-3.8-flash" || selection.modelEffort != "128" {
 		t.Fatal("room must use the profiled low-latency model and thinking budget")
 	}
 	if selection.asrProvider != "deepgram" || selection.modelProvider != "google" || selection.policyProvider != "vllm" || selection.ttsProvider != "fish-audio" || selection.speakerURL == "" || selection.wordTimingsURL == "" {
