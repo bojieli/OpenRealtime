@@ -36,6 +36,9 @@ func (stream *scriptedLanguageStream) PushFrame(
 func (stream *scriptedLanguageStream) Finalize(
 	context.Context, uint64,
 ) (v1.PerceptionRevision, error) {
+	// The real listener forgets its utterance, confidence included, when
+	// it finalises.
+	stream.confidence = 0
 	return stream.final, nil
 }
 

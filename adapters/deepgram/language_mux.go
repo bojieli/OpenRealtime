@@ -189,6 +189,11 @@ func (mux *LanguageMux) Finalize(
 ) (v1.PerceptionRevision, error) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
+	// Read the confidences first: finalising a lane clears its confidence
+	// along with the rest of its utterance, and a comparison made afterwards
+	// is 0 against 0. Measured, "你好" said on its own at 0.99 lost to
+	// "Neha." at 0.44 every time.
+	primaryConfidence, chineseConfidence := mux.primary.Confidence(), mux.chinese.Confidence()
 	type outcome struct {
 		chinese  bool
 		revision v1.PerceptionRevision
@@ -217,7 +222,7 @@ func (mux *LanguageMux) Finalize(
 	}
 	chosen := primary
 	if mux.selectedChinese || (!mux.selectedPrimary && carriesHan(revisionText(chinese)) &&
-		mux.chinese.Confidence() > mux.primary.Confidence()) {
+		chineseConfidence > primaryConfidence) {
 		chosen = chinese
 	}
 	chosen.SourceSample = sourceSample
