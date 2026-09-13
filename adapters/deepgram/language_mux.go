@@ -124,10 +124,14 @@ func (mux *LanguageMux) PushFrame(
 	}
 	// Short greetings and loanwords (for example 哈喽 for "hello") are
 	// not enough evidence to lock out the rest of an English utterance.
-	if !mux.selectedPrimary && hanCount(revisionText(mux.chineseLatest)) >= 4 &&
+	// An English selection is not final either: the English lane crossed
+	// the bar once on "Nihal." and the whole Mandarin greeting that
+	// followed, read by the Chinese lane at 0.99, was never let through.
+	if !mux.selectedChinese && hanCount(revisionText(mux.chineseLatest)) >= 4 &&
 		mux.chinese.Confidence() >= languageSelectionConfidence &&
 		(revisionText(mux.primaryLatest) == "" || mux.chinese.Confidence() > mux.primary.Confidence()) {
 		mux.selectedChinese = true
+		mux.selectedPrimary = false
 		mux.pendingPrimary = nil
 	}
 	if mux.selectedChinese {
@@ -225,7 +229,7 @@ func (mux *LanguageMux) Finalize(
 	// mid-utterance rule demands: a one-second fragment of accented English
 	// came back from it as "圣骑士", beating an English lane that was surer
 	// of nothing.
-	if mux.selectedChinese || (!mux.selectedPrimary && carriesHan(revisionText(chinese)) &&
+	if mux.selectedChinese || (carriesHan(revisionText(chinese)) &&
 		chineseConfidence >= languageSelectionConfidence && chineseConfidence > primaryConfidence) {
 		chosen = chinese
 	}

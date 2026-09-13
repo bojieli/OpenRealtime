@@ -177,3 +177,27 @@ func TestLanguageMuxDoesNotHandTheEndpointToAnUnsureChineseLane(t *testing.T) {
 		t.Fatalf("unsure Chinese lane took the endpoint: %+v %v", final, err)
 	}
 }
+
+// The English lane crossing the bar on a phonetic reading of the first
+// syllables does not shut the Chinese lane out of the rest of the sentence.
+func TestLanguageMuxLetsChineseDisplaceAnEnglishSelection(t *testing.T) {
+	primary := &scriptedLanguageStream{confidence: 0.9,
+		pushes: [][]v1.PerceptionRevision{{{UnstableText: "Nihal."}}, {{UnstableText: "Nihal, endorsing"}}},
+		final:  v1.PerceptionRevision{StableText: "Nihal, endorsing Zhenle."}}
+	chinese := &scriptedLanguageStream{confidence: 0.99,
+		pushes: [][]v1.PerceptionRevision{{{UnstableText: "你好"}}, {{UnstableText: "你好很高兴见到你"}}},
+		final:  v1.PerceptionRevision{StableText: "你好很高兴见到你"}}
+	mux := newLanguageMux(primary, chinese, primary.Descriptor())
+	first, err := mux.PushFrame(context.Background(), v1.AudioFrame{Index: 1, SampleRateHz: 24_000, PCM16LE: make([]byte, 480)})
+	if err != nil || len(first) != 1 || revisionText(first[0]) != "Nihal." {
+		t.Fatalf("first push = %+v %v", first, err)
+	}
+	second, err := mux.PushFrame(context.Background(), v1.AudioFrame{Index: 2, SampleRateHz: 24_000, PCM16LE: make([]byte, 480)})
+	if err != nil || len(second) != 1 || revisionText(second[0]) != "你好很高兴见到你" {
+		t.Fatalf("second push = %+v %v", second, err)
+	}
+	final, err := mux.Finalize(context.Background(), 1000)
+	if err != nil || final.StableText != "你好很高兴见到你" {
+		t.Fatalf("final = %+v %v", final, err)
+	}
+}
