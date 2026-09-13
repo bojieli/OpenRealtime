@@ -154,6 +154,15 @@ again are not a new occasion, and the voice, shown the key it had pressed,
 pressed it again four runs out of four. A call proposed on settled evidence
 (a finished turn, a frame) is never refused this way.
 
+A voice request that the provider accepts and then leaves silent is sent
+again after six seconds (`gemini.Config.FirstEventTimeout`, the fast phase's
+default; the reasoner has none). Every measured generation in the harness had
+its first clause playing within 4.6 s; the one that stalled had delivered
+nothing after 6 s and, bounded only by the 30 s request timeout, it cost the
+turn it answered. A stream that has sent no event has said nothing the
+conversation could hear twice, so the second attempt is safe; one that has
+sent anything is never replayed.
+
 The voice says nothing by answering with exactly `<wait>`. The segmenter
 reassembles the token from the pieces a streaming provider hands over, never
 speaks it, and silences everything after it; words before it are still said,

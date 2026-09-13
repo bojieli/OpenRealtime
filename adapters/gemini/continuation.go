@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
@@ -33,8 +34,16 @@ const (
 	maxErrorBody      = 64 << 10
 	maxSSEEvent       = 16 << 20
 	maxHTTPAttempts   = 4
-	initialRetryDelay = 250 * time.Millisecond
-	maximumRetryDelay = 2 * time.Second
+	// maxSilentAttempts is how many times one request is sent when the
+	// stream before it delivered nothing within FirstEventTimeout.
+	maxSilentAttempts = 2
+	// defaultFastFirstEventTimeout is the fast phase's silence budget. Over
+	// the twelve-scenario harness the voice's first audible clause arrived
+	// within 4.6 s of the request in every measured generation; the one
+	// stall that lost a turn had delivered nothing after 6 s.
+	defaultFastFirstEventTimeout = 6 * time.Second
+	initialRetryDelay            = 250 * time.Millisecond
+	maximumRetryDelay            = 2 * time.Second
 	// portableToolCallThoughtSignature is Gemini's documented sentinel for a
 	// manually constructed function call. Native Gemini content retains its
 	// provider-authenticated signature instead; only portable calls authored
@@ -62,6 +71,15 @@ type Config struct {
 	Temperature    *float64
 	HTTPClient     *http.Client
 	RequestTimeout time.Duration
+	// FirstEventTimeout bounds how long an accepted request may deliver
+	// nothing at all before it is abandoned and sent again. A stream that has
+	// produced no event has said nothing the conversation could hear twice,
+	// so a second attempt is safe; RequestTimeout alone let one silent
+	// request cost the whole 30 s while the turn it answered went by. Zero
+	// takes the fast phase's default and disables the watchdog elsewhere: a
+	// reasoner thinks for longer than any silence budget a voice would
+	// tolerate, and restarting its thought is the cost, not the cure.
+	FirstEventTimeout time.Duration
 }
 
 // Adapter streams Gemini output and preserves provider-authenticated thought
@@ -117,6 +135,12 @@ func New(config Config) (*Adapter, error) {
 	}
 	if config.RequestTimeout < 0 {
 		return nil, errors.New("Gemini request timeout cannot be negative")
+	}
+	if config.FirstEventTimeout < 0 {
+		return nil, errors.New("Gemini first event timeout cannot be negative")
+	}
+	if config.FirstEventTimeout == 0 && config.Phase == trajectory.PhaseFast {
+		config.FirstEventTimeout = defaultFastFirstEventTimeout
 	}
 	if config.Temperature != nil && (*config.Temperature < 0 || *config.Temperature > 2) {
 		return nil, errors.New("Gemini temperature must be between 0 and 2")
@@ -246,9 +270,41 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	}
 	continuation.TraceRequest(adapter.Descriptor(), request.InvocationID, encoded)
 	endpoint := adapter.config.Endpoint + "/models/" + url.PathEscape(adapter.config.Model) + ":streamGenerateContent?alt=sse"
+	for attempt := 1; ; attempt++ {
+		completion, stalled, err := adapter.stream(ctx, endpoint, encoded, request, emit)
+		if stalled && attempt < maxSilentAttempts && ctx.Err() == nil {
+			continue
+		}
+		if stalled {
+			err = fmt.Errorf("Gemini delivered nothing within %s on %d attempts: %w",
+				adapter.config.FirstEventTimeout, attempt, err)
+		}
+		return completion, err
+	}
+}
+
+// stream sends one request and reads its stream to the end. It reports
+// stalled when the watchdog abandoned the attempt before any event arrived,
+// which is the one condition under which the request may be sent again.
+func (adapter *Adapter) stream(
+	ctx context.Context, endpoint string, encoded []byte,
+	request continuation.Request, emit continuation.Emit,
+) (continuation.Completion, bool, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var received, stalled atomic.Bool
+	if adapter.config.FirstEventTimeout > 0 {
+		watchdog := time.AfterFunc(adapter.config.FirstEventTimeout, func() {
+			if !received.Load() {
+				stalled.Store(true)
+				cancel()
+			}
+		})
+		defer watchdog.Stop()
+	}
 	response, err := adapter.openStream(ctx, endpoint, encoded)
 	if err != nil {
-		return continuation.Completion{}, err
+		return continuation.Completion{}, stalled.Load(), err
 	}
 	defer response.Body.Close()
 
@@ -257,6 +313,7 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	callIndex := 0
 	sawToolCall := false
 	err = sse.Read(response.Body, maxSSEEvent, func(data []byte) error {
+		received.Store(true)
 		if bytes.Equal(data, []byte("[DONE]")) {
 			return nil
 		}
@@ -323,18 +380,20 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 		completion.ProviderStateType = ""
 	}
 	if err != nil {
-		return completion, err
+		return completion, stalled.Load() && !received.Load(), err
 	}
 	if completion.StopReason == "MAX_TOKENS" {
-		return completion, fmt.Errorf("Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)")
+		return completion, false, fmt.Errorf("Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)")
 	}
-	return completion, nil
+	return completion, false, nil
 }
 
 // openStream retries only a retryable HTTP rejection received before a Gemini
-// stream begins. Once the provider accepts a request, Continue owns that one
-// stream and never replays it: retrying after SSE output could duplicate text,
-// tool calls, or billing while hiding an ambiguous provider outcome.
+// stream begins. Once the provider has sent one event of a stream, Continue
+// owns that stream and never replays it: retrying after SSE output could
+// duplicate text, tool calls, or billing while hiding an ambiguous provider
+// outcome. (A stream that delivered nothing within FirstEventTimeout is the
+// exception, handled by Continue.)
 func (adapter *Adapter) openStream(ctx context.Context, endpoint string, encoded []byte) (*http.Response, error) {
 	var lastErr error
 	for attempt := 1; attempt <= maxHTTPAttempts; attempt++ {

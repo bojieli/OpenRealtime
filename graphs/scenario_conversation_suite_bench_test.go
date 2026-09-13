@@ -561,6 +561,7 @@ type scenarioBenchSink struct {
 	started    time.Time
 	playoutMS  float64
 	lastEvent  time.Time
+	inFlight   int
 	moments    []bench.Moment
 	agent      []bench.TimedAudioChunk
 	utterances map[string]*scenarioBenchUtterance
@@ -581,9 +582,12 @@ func (sink *scenarioBenchSink) awaitQuiet(idle, limit time.Duration) {
 				open++
 			}
 		}
-		last := sink.lastEvent
+		last, inFlight := sink.lastEvent, sink.inFlight
 		sink.mu.Unlock()
-		if open == 0 && time.Since(last) >= idle {
+		// A generation still running is the agent about to say something;
+		// a slow voice at the end of the script was cut off by the idle
+		// rule and scored as never having answered.
+		if open == 0 && inFlight == 0 && time.Since(last) >= idle {
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
@@ -797,6 +801,12 @@ func (sink *scenarioBenchSink) recordLocked(event legacy.DebugEvent) {
 	sink.lastEvent = time.Now()
 	for _, projected := range timeline.Project(event) {
 		sink.timeline = append(sink.timeline, countingTimelineEvent{at: time.Now(), event: projected})
+		if projected.Lane == timeline.LaneModel && projected.Kind == "request" && projected.Phase == "start" {
+			sink.inFlight++
+		}
+		if projected.Lane == timeline.LaneModel && projected.Phase == "end" && sink.inFlight > 0 {
+			sink.inFlight--
+		}
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/spoken"
@@ -190,6 +191,134 @@ func TestAdapterDoesNotReplayAcceptedStream(t *testing.T) {
 	}
 	if got := spoken.String(); got != "once" {
 		t.Fatalf("spoken text = %q", got)
+	}
+}
+
+func TestAdapterResendsARequestThatDeliveredNothing(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		if calls.Add(1) == 1 {
+			writer.WriteHeader(http.StatusOK)
+			writer.(http.Flusher).Flush()
+			<-request.Context().Done()
+			return
+		}
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"once\"}]},\"finishReason\":\"STOP\"}]}\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Endpoint: server.URL,
+		Phase: trajectory.PhaseFast, FirstEventTimeout: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spoken strings.Builder
+	_, err = adapter.Continue(t.Context(), silentStreamRequest(adapter), func(event continuation.Event) error {
+		spoken.WriteString(event.Text)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("requests = %d, want 2", got)
+	}
+	if got := spoken.String(); got != "once" {
+		t.Fatalf("spoken text = %q", got)
+	}
+}
+
+func TestAdapterGivesUpOnARequestThatStaysSilent(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		writer.WriteHeader(http.StatusOK)
+		writer.(http.Flusher).Flush()
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Endpoint: server.URL,
+		Phase: trajectory.PhaseFast, FirstEventTimeout: 30 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = adapter.Continue(t.Context(), silentStreamRequest(adapter), func(continuation.Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "delivered nothing within 30ms on 2 attempts") {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != maxSilentAttempts {
+		t.Fatalf("requests = %d, want %d", got, maxSilentAttempts)
+	}
+}
+
+func TestAdapterDoesNotResendAfterTheFirstEvent(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"once\"}]}}]}\n\n"))
+		writer.(http.Flusher).Flush()
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	adapter, err := New(Config{
+		APIKey: "secret", Model: "gemini-test", Endpoint: server.URL,
+		Phase: trajectory.PhaseFast, FirstEventTimeout: 20 * time.Millisecond,
+		RequestTimeout: 150 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spoken strings.Builder
+	_, err = adapter.Continue(t.Context(), silentStreamRequest(adapter), func(event continuation.Event) error {
+		spoken.WriteString(event.Text)
+		return nil
+	})
+	if err == nil || strings.Contains(err.Error(), "delivered nothing") {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+	if got := spoken.String(); got != "once" {
+		t.Fatalf("spoken text = %q", got)
+	}
+}
+
+func TestReasonerHasNoSilenceBudgetByDefault(t *testing.T) {
+	t.Parallel()
+	fast, err := New(Config{APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseFast})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fast.config.FirstEventTimeout != defaultFastFirstEventTimeout {
+		t.Fatalf("fast FirstEventTimeout = %s", fast.config.FirstEventTimeout)
+	}
+	slow, err := New(Config{APIKey: "secret", Model: "gemini-test", Phase: trajectory.PhaseSlow})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slow.config.FirstEventTimeout != 0 {
+		t.Fatalf("slow FirstEventTimeout = %s", slow.config.FirstEventTimeout)
+	}
+}
+
+func silentStreamRequest(adapter *Adapter) continuation.Request {
+	return continuation.Request{
+		InvocationID: "inv-silent", Descriptor: adapter.Descriptor(),
+		Trajectory: trajectory.Snapshot{Items: []trajectory.Item{{
+			ID: "user", Kind: trajectory.KindObservation,
+			Producer: trajectory.Producer{Phase: trajectory.PhaseUser}, Content: "hi",
+		}}},
+		Invocation: continuation.Invocation{Instruction: "Respond."},
 	}
 }
 
