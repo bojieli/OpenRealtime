@@ -1771,3 +1771,53 @@ func serveProfileTTSDescriptor() v1.Descriptor {
 		},
 	}
 }
+
+func TestServeASRConfigurationCarriesFluxTurnDetection(t *testing.T) {
+	raw := mustJSON(t, serveASRConfiguration{
+		FormatVersion: 1, Model: "flux-general-en", BaseURL: "wss://api.deepgram.com/v2/listen",
+		Language: "en-US", RequestTimeoutMS: 30_000, CadenceMS: 100,
+		EOTThreshold: 0.8, EagerEOTThreshold: 0.5, EOTTimeoutMS: 4_000,
+	})
+	_, request, err := decodeServeASRConfiguration("deepgram", raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.EOTThreshold != 0.8 || request.EagerEOTThreshold != 0.5 || request.EOTTimeout != 4*time.Second {
+		t.Fatalf("Flux turn detection drifted across profile decode: %+v", request)
+	}
+	if descriptor, err := providers.DescribeASR(request); err != nil ||
+		descriptor.Name != "deepgram-flux/flux-general-en" {
+		t.Fatalf("describe Flux = %+v, %v", descriptor, err)
+	}
+
+	// A profile without the fields is byte-identical to one written before
+	// they existed, so no pinned digest moves.
+	legacy := string(mustJSON(t, serveASRConfiguration{
+		FormatVersion: 1, Model: "nova-3", BaseURL: "wss://api.deepgram.com/v1/listen",
+		RequestTimeoutMS: 30_000, CadenceMS: 100,
+	}))
+	if strings.Contains(legacy, "eot") {
+		t.Fatalf("unset Flux fields were serialised: %s", legacy)
+	}
+
+	for _, testCase := range []struct {
+		name     string
+		provider string
+		config   serveASRConfiguration
+		want     string
+	}{
+		{"wrong provider", "qwen-asr", serveASRConfiguration{EOTThreshold: 0.8}, "require the deepgram provider"},
+		{"negative", "deepgram", serveASRConfiguration{EagerEOTThreshold: -0.4}, "positive"},
+		{"negative timeout", "deepgram", serveASRConfiguration{EOTTimeoutMS: -1}, "eot_timeout_ms"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			config := testCase.config
+			config.FormatVersion, config.Model, config.BaseURL = 1, "flux-general-en", "wss://api.deepgram.com/v2/listen"
+			config.RequestTimeoutMS, config.CadenceMS = 30_000, 100
+			_, _, err := decodeServeASRConfiguration(testCase.provider, mustJSON(t, config))
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("error = %v, want %q", err, testCase.want)
+			}
+		})
+	}
+}

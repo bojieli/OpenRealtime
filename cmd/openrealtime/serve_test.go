@@ -991,3 +991,54 @@ func TestServeRefusesARoutableListenerWithoutAToken(t *testing.T) {
 		t.Fatalf("serve error = %v, want the routable-listener refusal", err)
 	}
 }
+
+// A Flux model has no Nova-3 endpointing and no locale, so the serve defaults
+// that exist for Nova-3 must not reach it, while its own turn settings must.
+func TestFluxTakesItsTurnSettingsAndNotNovaDefaults(t *testing.T) {
+	options := defaultOptions()
+	options.asrProvider = "deepgram"
+	options.asrModel = "flux-general-en"
+	options.asrEndpointing = 300 * time.Millisecond
+	options.explicit = map[string]bool{"asr-model": true}
+	if got := recogniserEndpointing(options); got != 0 {
+		t.Fatalf("Nova-3's default endpointing reached Flux: %v", got)
+	}
+	options.asrEOTThreshold, options.asrEagerEOTThreshold = 0.8, 0.5
+	options.asrEOTTimeout = 3 * time.Second
+	t.Setenv("OPENREALTIME_ASR_API_KEY", "key")
+	factory, err := buildRecogniser(options)
+	if err != nil {
+		t.Fatalf("Flux with its defaults must build: %v", err)
+	}
+	provider, err := factory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := provider.Descriptor().Name; got != "deepgram-flux/flux-general-en" {
+		t.Fatalf("Flux model built %q", got)
+	}
+
+	options.asrModel = "flux-general-multi"
+	if got := recogniserLanguage(options); got != "" {
+		t.Fatalf("a locale default became a Flux Multilingual hint: %q", got)
+	}
+
+	options.asrModel = "flux-general-en"
+	options.explicit = map[string]bool{"asr-model": true, "asr-endpointing": true}
+	if _, err := buildRecogniser(options); err == nil || !strings.Contains(err.Error(), "endpointing") {
+		t.Fatalf("an explicit endpointing for Flux was accepted: %v", err)
+	}
+
+	options.explicit = map[string]bool{"asr-model": true, "asr-language": true}
+	options.asrLanguage = "en-US,zh-CN"
+	if _, err := buildRecogniser(options); err == nil || !strings.Contains(err.Error(), "Mandarin") {
+		t.Fatalf("a Mandarin lane was accepted for Flux: %v", err)
+	}
+
+	options.asrModel = "nova-3"
+	options.asrLanguage = ""
+	options.explicit = map[string]bool{"asr-model": true}
+	if _, err := buildRecogniser(options); err == nil || !strings.Contains(err.Error(), "Flux settings") {
+		t.Fatalf("Flux thresholds were accepted for Nova-3: %v", err)
+	}
+}

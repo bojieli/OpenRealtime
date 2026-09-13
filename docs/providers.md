@@ -178,6 +178,54 @@ own acoustic gate decides. The refusal is deliberate: a recogniser that
 accepted an option and ran without it would report a configuration it was
 not running.
 
+### Deepgram Flux
+
+A `deepgram` recogniser whose model starts with `flux-` speaks Deepgram's
+conversational protocol on `wss://api.deepgram.com/v2/listen` instead of
+Nova-3's. Flux reports turns rather than segments - `StartOfTurn`, `Update`,
+`EagerEndOfTurn`, `TurnResumed`, `EndOfTurn` - and its turn detection
+replaces `-asr-endpointing`, which a Flux model refuses:
+
+```bash
+openrealtime serve -asr-provider deepgram -asr-model flux-general-en \
+  -asr-url wss://api.deepgram.com/v2/listen \
+  -asr-eot-threshold 0.8 -asr-eager-eot-threshold 0.5 -asr-eot-timeout 5s
+```
+
+| Flag | Profile field | Range | Unset |
+| --- | --- | --- | --- |
+| `-asr-eot-threshold` | `eot_threshold` | 0.5 to 1.0 | 0.7 |
+| `-asr-eager-eot-threshold` | `eager_eot_threshold` | 0.3 to 0.9, at most the EndOfTurn threshold | no eager events |
+| `-asr-eot-timeout` | `eot_timeout_ms` | 500 ms to 60 s | 5 s |
+
+`openrealtime profile scenario` takes the same settings as
+`-asr-eot-threshold`, `-asr-eager-eot-threshold` and `-asr-eot-timeout-ms`.
+Unset values are not sent, so the service's own defaults apply.
+
+What the pipeline sees:
+
+- A turn in progress is the unstable tail of a revision. A turn Flux has ended
+  is stable text, and a pause Flux ends but the acoustic gate does not
+  leaves the next turn appended to the same utterance.
+- `EndOfTurn` is reported as the recogniser's endpoint, the same signal as
+  Nova-3's `speech_final`; the cascade's transcript-event path closes the
+  utterance on it.
+- `EagerEndOfTurn` is reported while it stands: until `TurnResumed` or
+  `EndOfTurn` follows, Flux guarantees the `EndOfTurn` transcript is the one
+  in hand. No consumer acts on it yet.
+- When the acoustic gate ends an utterance first, the open turn is ended with
+  `ForceEndTurn`, which returns the transcript decoded so far without another
+  decode pass.
+- The stream is kept for the session, like Nova-3's. Flux has no KeepAlive
+  message; the service keeps an idle stream open with WebSocket pings.
+
+`flux-general-en` recognises English. `flux-general-multi` recognises ten
+languages - English, Spanish, French, German, Hindi, Russian, Portuguese,
+Japanese, Italian and Dutch - and `-asr-language` becomes its comma-separated
+language hints. Neither recognises Mandarin, so the room's English and
+Mandarin pair of Nova-3 lanes has no Flux equivalent, and a Flux model with a
+Chinese locale is refused.
+
 A batch endpoint cannot produce a partial hypothesis: it can only be asked what
 a recording said. So by default it recognises **once**, at the endpoint of the
 utterance, and emits one final revision. `-asr-partial-interval` will buy

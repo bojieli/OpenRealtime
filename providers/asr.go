@@ -178,9 +178,17 @@ type ASRRequest struct {
 	// Endpointing configures a streaming service's own VAD. Batch providers
 	// ignore it; Deepgram honours it; the local Qwen3-ASR service, whose
 	// endpoint the engine's own gate decides, refuses it.
-	Endpointing    time.Duration
-	RequestTimeout time.Duration
-	Header         http.Header
+	Endpointing time.Duration
+	// EOTThreshold, EagerEOTThreshold and EOTTimeout configure Deepgram Flux's
+	// model-integrated turn detection: the confidence for EndOfTurn, the
+	// confidence for EagerEndOfTurn (which also enables TurnResumed), and the
+	// silence after which a turn ends regardless. Zero leaves the service
+	// default. Every recogniser other than a Flux model refuses them.
+	EOTThreshold      float64
+	EagerEOTThreshold float64
+	EOTTimeout        time.Duration
+	RequestTimeout    time.Duration
+	Header            http.Header
 }
 
 // ASRAcceptsLanguage reports whether a recogniser forwards a language hint to
@@ -248,6 +256,12 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 			entry.Name, entry.credentialHint(request.KeyEnv))
 	}
 
+	flux := entry.Dialect == DialectDeepgramListen && deepgram.IsFluxModel(model)
+	if !flux && (request.EOTThreshold != 0 || request.EagerEOTThreshold != 0 || request.EOTTimeout != 0) {
+		return nil, fmt.Errorf("recogniser %q model %q has no model-integrated turn detection; "+
+			"end-of-turn thresholds and timeout are Deepgram Flux settings", entry.Name, model)
+	}
+
 	switch entry.Dialect {
 	case DialectQwenASR:
 		// The local Qwen3-ASR service detects the language itself, has no
@@ -276,6 +290,15 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 			})
 		}, nil
 	case DialectDeepgramListen:
+		if flux {
+			config, err := deepgramFluxConfig(request, model, strings.TrimSpace(request.BaseURL), key)
+			if err != nil {
+				return nil, err
+			}
+			return func() (v1.PerceptionProvider, error) {
+				return deepgram.NewFluxListener(config)
+			}, nil
+		}
 		return func() (v1.PerceptionProvider, error) {
 			// One stream per session, not per utterance. The dial, the TLS
 			// handshake and Deepgram's warm-up then happen once, before the
@@ -305,4 +328,50 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 	default:
 		return nil, fmt.Errorf("recogniser %q has no adapter for dialect %q", entry.Name, entry.Dialect)
 	}
+}
+
+// deepgramFluxConfig maps a recogniser request onto Flux, refusing what Flux
+// cannot honour rather than running without it.
+//
+// Flux has no Nova-3 endpointing: its turn detection is the thresholds. It has
+// no locale parameter either: flux-general-en is English, and
+// flux-general-multi takes language hints for its ten languages, none of which
+// is Mandarin - so the English/Mandarin pair the room recognises with two
+// Nova-3 lanes has no Flux equivalent.
+func deepgramFluxConfig(request ASRRequest, model, baseURL, key string) (deepgram.FluxConfig, error) {
+	if baseURL == "" || baseURL == deepgram.DefaultListenURL {
+		if baseURL != "" {
+			return deepgram.FluxConfig{}, fmt.Errorf("Deepgram Flux model %q is served on %s, not %s",
+				model, deepgram.DefaultFluxURL, deepgram.DefaultListenURL)
+		}
+		baseURL = deepgram.DefaultFluxURL
+	}
+	if request.Endpointing != 0 {
+		return deepgram.FluxConfig{}, fmt.Errorf("Deepgram Flux has no endpointing setting (got %s); "+
+			"set its end-of-turn thresholds and timeout instead", request.Endpointing)
+	}
+	language := strings.TrimSpace(request.Language)
+	var hints []string
+	switch {
+	case model == deepgram.FluxMultilingualModel:
+		if language != "" && language != "multi" {
+			for _, hint := range strings.Split(language, ",") {
+				hints = append(hints, strings.TrimSpace(hint))
+			}
+		}
+	case language != "" && language != "en" && language != "en-US":
+		return deepgram.FluxConfig{}, fmt.Errorf("Deepgram Flux model %q transcribes English only, not %q; "+
+			"%s takes language hints, and no Flux model recognises Mandarin",
+			model, language, deepgram.FluxMultilingualModel)
+	}
+	config := deepgram.FluxConfig{
+		URL: baseURL, Model: model, APIKey: key,
+		EOTThreshold: request.EOTThreshold, EagerEOTThreshold: request.EagerEOTThreshold,
+		EOTTimeout: request.EOTTimeout, Keyterms: slices.Clone(request.Keyterms),
+		LanguageHints: hints, Header: request.Header,
+	}
+	if _, err := deepgram.NewFluxListener(config); err != nil {
+		return deepgram.FluxConfig{}, err
+	}
+	return config, nil
 }

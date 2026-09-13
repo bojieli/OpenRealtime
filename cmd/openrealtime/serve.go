@@ -20,6 +20,7 @@ import (
 
 	"github.com/bojieli/OpenRealtime/action"
 	"github.com/bojieli/OpenRealtime/adapters/bysentence"
+	"github.com/bojieli/OpenRealtime/adapters/deepgram"
 	"github.com/bojieli/OpenRealtime/adapters/gemini"
 	"github.com/bojieli/OpenRealtime/adapters/openaicompat"
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
@@ -86,6 +87,10 @@ type serveOptions struct {
 	asrCadence     time.Duration
 	asrPartial     time.Duration
 	asrEndpointing time.Duration
+	// Deepgram Flux turn detection; zero leaves the service default.
+	asrEOTThreshold      float64
+	asrEagerEOTThreshold float64
+	asrEOTTimeout        time.Duration
 
 	fastProvider string
 	fastEffort   string
@@ -271,6 +276,12 @@ func runServe(arguments []string, output io.Writer) error {
 			"0 recognises only at the endpoint, and a streaming recogniser ignores it")
 	flags.DurationVar(&options.asrEndpointing, "asr-endpointing", 300*time.Millisecond,
 		"silence used by Deepgram's own VAD; batch recognisers ignore it and qwen-asr, whose endpoint the engine decides, refuses it")
+	flags.Float64Var(&options.asrEOTThreshold, "asr-eot-threshold", 0,
+		"Deepgram Flux EndOfTurn confidence, 0.5 to 1.0; 0 keeps the service default of 0.7")
+	flags.Float64Var(&options.asrEagerEOTThreshold, "asr-eager-eot-threshold", 0,
+		"Deepgram Flux EagerEndOfTurn confidence, 0.3 to 0.9, enabling EagerEndOfTurn and TurnResumed; 0 disables them")
+	flags.DurationVar(&options.asrEOTTimeout, "asr-eot-timeout", 0,
+		"Deepgram Flux silence after which a turn ends regardless, 500ms to 60s; 0 keeps the service default of 5s")
 
 	// vLLM rather than the generic entry, because the default endpoint below
 	// is vLLM's own port and the quickstart's local stack is vLLM. The
@@ -1615,7 +1626,9 @@ func buildRecogniser(options serveOptions) (func() (v1.PerceptionProvider, error
 		BaseURL:  options.override("asr-url", options.asrURL),
 		APIKey:   os.Getenv("OPENREALTIME_ASR_API_KEY"),
 		Language: recogniserLanguage(options), PartialInterval: options.asrPartial,
-		Endpointing:    recogniserEndpointing(options),
+		Endpointing:  recogniserEndpointing(options),
+		EOTThreshold: options.asrEOTThreshold, EagerEOTThreshold: options.asrEagerEOTThreshold,
+		EOTTimeout:     options.asrEOTTimeout,
 		RequestTimeout: recogniserTimeout(options.asrCadence, options.requestTimeout),
 	})
 }
@@ -1641,6 +1654,11 @@ func recogniserLanguage(options serveOptions) string {
 	}
 	if recogniser, err := providers.LookupASR(options.asrProvider); err == nil &&
 		recogniser.Dialect == providers.DialectDeepgramListen {
+		// Flux Multilingual detects among its languages unless hinted; a
+		// locale default would become a hint nobody chose.
+		if options.override("asr-model", options.asrModel) == deepgram.FluxMultilingualModel {
+			return ""
+		}
 		return "en-US"
 	}
 	return ""
@@ -1659,7 +1677,9 @@ func recogniserEndpointing(options serveOptions) time.Duration {
 		return options.asrEndpointing
 	}
 	if recogniser, err := providers.LookupASR(options.asrProvider); err == nil &&
-		recogniser.Dialect == providers.DialectDeepgramListen {
+		recogniser.Dialect == providers.DialectDeepgramListen &&
+		!deepgram.IsFluxModel(options.override("asr-model", options.asrModel)) {
+		// Flux has no endpointing: its turn detection is the thresholds.
 		return options.asrEndpointing
 	}
 	return 0

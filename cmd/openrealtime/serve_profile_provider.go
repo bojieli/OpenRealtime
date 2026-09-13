@@ -33,6 +33,12 @@ type serveASRConfiguration struct {
 	EndpointingMS     int64    `json:"endpointing_ms"`
 	RequestTimeoutMS  int64    `json:"request_timeout_ms"`
 	CadenceMS         int64    `json:"cadence_ms"`
+	// Deepgram Flux turn detection. Omitted is the service default, and an
+	// omitted field leaves every existing profile's bytes and digest as they
+	// were.
+	EOTThreshold      float64 `json:"eot_threshold,omitempty"`
+	EagerEOTThreshold float64 `json:"eager_eot_threshold,omitempty"`
+	EOTTimeoutMS      int64   `json:"eot_timeout_ms,omitempty"`
 }
 
 type serveSpeakerIdentityConfiguration struct {
@@ -136,12 +142,25 @@ func decodeServeASRConfiguration(
 	if err := boundedMilliseconds("ASR cadence_ms", config.CadenceMS, false); err != nil {
 		return config, providers.ASRRequest{}, err
 	}
+	if config.EOTThreshold != 0 || config.EagerEOTThreshold != 0 || config.EOTTimeoutMS != 0 {
+		if provider != "deepgram" {
+			return config, providers.ASRRequest{}, errors.New("ASR end-of-turn settings require the deepgram provider with a Flux model")
+		}
+		if config.EOTThreshold < 0 || config.EagerEOTThreshold < 0 {
+			return config, providers.ASRRequest{}, errors.New("ASR end-of-turn thresholds must be positive when set")
+		}
+		if err := boundedMilliseconds("ASR eot_timeout_ms", config.EOTTimeoutMS, true); err != nil {
+			return config, providers.ASRRequest{}, err
+		}
+	}
 	return config, providers.ASRRequest{
 		Provider: provider, Model: config.Model, BaseURL: config.BaseURL,
 		Language: config.Language, Keyterms: slices.Clone(config.Keyterms),
 		PartialInterval: time.Duration(config.PartialIntervalMS) * time.Millisecond,
 		Endpointing:     time.Duration(config.EndpointingMS) * time.Millisecond,
-		RequestTimeout:  time.Duration(config.RequestTimeoutMS) * time.Millisecond,
+		EOTThreshold:    config.EOTThreshold, EagerEOTThreshold: config.EagerEOTThreshold,
+		EOTTimeout:     time.Duration(config.EOTTimeoutMS) * time.Millisecond,
+		RequestTimeout: time.Duration(config.RequestTimeoutMS) * time.Millisecond,
 	}, nil
 }
 

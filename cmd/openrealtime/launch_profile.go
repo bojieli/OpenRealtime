@@ -64,6 +64,9 @@ type scenarioProfileOptions struct {
 	asrKeyterms           []string
 	asrPartialMS          int64
 	asrEndpointingMS      int64
+	asrEOTThreshold       float64
+	asrEagerEOTThreshold  float64
+	asrEOTTimeoutMS       int64
 	asrTimeoutMS          int64
 	asrCadenceMS          int64
 	speakerURL            string
@@ -205,6 +208,12 @@ func runScenarioProfileFreezeWithOptions(arguments []string, output io.Writer, o
 	})
 	flags.Int64Var(&options.asrPartialMS, "asr-partial-ms", options.asrPartialMS, "batch partial-transcription interval")
 	flags.Int64Var(&options.asrEndpointingMS, "asr-endpointing-ms", options.asrEndpointingMS, "streaming-provider endpointing")
+	flags.Float64Var(&options.asrEOTThreshold, "asr-eot-threshold", options.asrEOTThreshold,
+		"Deepgram Flux EndOfTurn confidence, 0.5 to 1.0; 0 keeps the service default")
+	flags.Float64Var(&options.asrEagerEOTThreshold, "asr-eager-eot-threshold", options.asrEagerEOTThreshold,
+		"Deepgram Flux EagerEndOfTurn confidence, 0.3 to 0.9; 0 disables EagerEndOfTurn and TurnResumed")
+	flags.Int64Var(&options.asrEOTTimeoutMS, "asr-eot-timeout-ms", options.asrEOTTimeoutMS,
+		"Deepgram Flux silence that ends a turn regardless, 500 to 60000; 0 keeps the service default")
 	flags.Int64Var(&options.asrTimeoutMS, "asr-timeout-ms", options.asrTimeoutMS, "ASR request timeout")
 	flags.Int64Var(&options.asrCadenceMS, "asr-cadence-ms", options.asrCadenceMS, "ASR graph cadence")
 	flags.StringVar(&options.speakerURL, "speaker-url", options.speakerURL, "speaker-embedding endpoint ending in /embed")
@@ -649,7 +658,9 @@ func scenarioProfileASRSelection(
 			Language: options.asrLanguage, Keyterms: slices.Clone(options.asrKeyterms),
 			PartialIntervalMS: options.asrPartialMS,
 			EndpointingMS:     options.asrEndpointingMS, RequestTimeoutMS: options.asrTimeoutMS,
-			CadenceMS: options.asrCadenceMS,
+			CadenceMS:    options.asrCadenceMS,
+			EOTThreshold: options.asrEOTThreshold, EagerEOTThreshold: options.asrEagerEOTThreshold,
+			EOTTimeoutMS: options.asrEOTTimeoutMS,
 		})
 		if err != nil {
 			return scenarioconversation.ApplicationASRSelection{}, err
