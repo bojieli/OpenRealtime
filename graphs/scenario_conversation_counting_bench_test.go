@@ -154,6 +154,12 @@ func countingBenchmarkStories() []countingStory {
 		return countingSentence{text: text, answer: regexp.MustCompile(pattern), pause: 3 * time.Second}
 	}
 	rule := func(text string) countingSentence { return countingSentence{text: text, pause: 3 * time.Second} }
+	// ready is how a person opens: the rule, then "Are you ready?", and the
+	// agent answers that it is before the story starts. A room session went
+	// unanswered here - the policy read the question as more of the set-up.
+	ready := func() countingSentence {
+		return countingSentence{text: "Are you ready?", answer: regexp.MustCompile(`(?i)\bready\b|\byes\b|go ahead|of course|sure`), pause: 3 * time.Second}
+	}
 	return []countingStory{
 		{
 			// Sentence 5 names two animals: one sentence counted twice, on two
@@ -161,6 +167,7 @@ func countingBenchmarkStories() []countingStory {
 			name: "animals-zoo",
 			sentences: []countingSentence{
 				rule("Count the animals out loud as I mention them and say nothing else."),
+				ready(),
 				say("Yesterday I went to the zoo with my little brother."),
 				say("First we saw a capybara sleeping in the sun.", "capybara"),
 				say("Then a zebra was running around the big field.", "zebra"),
@@ -175,6 +182,7 @@ func countingBenchmarkStories() []countingStory {
 			name: "language-models",
 			sentences: []countingSentence{
 				rule("Count the language models I mention out loud, and say nothing else."),
+				ready(),
 				say("I have been comparing a few assistants this week for work."),
 				say("First I tried GPT-4 for drafting emails to clients.", "gpt-4"),
 				say("Then I switched to Claude for code review, which I liked a lot.", "claude"),
@@ -190,6 +198,7 @@ func countingBenchmarkStories() []countingStory {
 			name: "fruits-with-a-question",
 			sentences: []countingSentence{
 				rule("Count the fruits out loud as I name them."),
+				ready(),
 				say("At the market this morning I bought a bag of apples.", "apples"),
 				say("and a couple of ripe oranges for the kids.", "oranges"),
 				ask("By the way, what is seven times eight?", `(?i)fifty[- ]?six|\b56\b`),
@@ -204,6 +213,7 @@ func countingBenchmarkStories() []countingStory {
 			name: "long-safari",
 			sentences: []countingSentence{
 				rule("Count the animals out loud as I mention them and say nothing else."),
+				ready(),
 				say("We drove out before sunrise and the guide was already waiting."),
 				say("Just past the gate an elephant crossed the road in front of us.", "elephant"),
 				say("The guide stopped so we could take photos for a while."),
@@ -223,6 +233,7 @@ func countingBenchmarkStories() []countingStory {
 			name: "languages-with-distractors",
 			sentences: []countingSentence{
 				rule("Count the programming languages I mention out loud, and say nothing else."),
+				ready(),
 				say("My dog sleeps under the desk while I write Python all day.", "python"),
 				say("The cat knocked my Rust book off the shelf again.", "rust"),
 				say("On the way to the Go meetup we saw a horse in a field.", "go"),
@@ -236,6 +247,7 @@ func countingBenchmarkStories() []countingStory {
 			name: "cities-then-stop",
 			sentences: []countingSentence{
 				rule("Count the cities I mention out loud as I say them."),
+				ready(),
 				say("Last year I flew to Paris for my cousin's wedding.", "paris"),
 				say("and took the train to Berlin the week after.", "berlin"),
 				{text: "Okay, you can stop counting now.", pause: 3 * time.Second, optional: true,
