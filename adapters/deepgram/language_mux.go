@@ -221,8 +221,12 @@ func (mux *LanguageMux) Finalize(
 		}
 	}
 	chosen := primary
+	// The Chinese lane wins the endpoint only when it is as sure as the
+	// mid-utterance rule demands: a one-second fragment of accented English
+	// came back from it as "圣骑士", beating an English lane that was surer
+	// of nothing.
 	if mux.selectedChinese || (!mux.selectedPrimary && carriesHan(revisionText(chinese)) &&
-		chineseConfidence > primaryConfidence) {
+		chineseConfidence >= languageSelectionConfidence && chineseConfidence > primaryConfidence) {
 		chosen = chinese
 	}
 	chosen.SourceSample = sourceSample

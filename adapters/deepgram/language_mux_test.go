@@ -167,3 +167,13 @@ func TestLanguageMuxPrefersStrongerEnglishOverCompetingHanReading(t *testing.T) 
 		t.Fatalf("weaker competing language won: %+v %v", revisions, err)
 	}
 }
+
+func TestLanguageMuxDoesNotHandTheEndpointToAnUnsureChineseLane(t *testing.T) {
+	primary := &scriptedLanguageStream{confidence: 0.3, final: v1.PerceptionRevision{StableText: "once you"}}
+	chinese := &scriptedLanguageStream{confidence: 0.6, final: v1.PerceptionRevision{StableText: "圣骑士"}}
+	mux := newLanguageMux(primary, chinese, primary.Descriptor())
+	final, err := mux.Finalize(context.Background(), 1000)
+	if err != nil || final.StableText != "once you" {
+		t.Fatalf("unsure Chinese lane took the endpoint: %+v %v", final, err)
+	}
+}
