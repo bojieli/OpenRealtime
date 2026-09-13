@@ -41,6 +41,18 @@ func roomPipelines() []roomPipeline {
 			options: defaultFluxRoomProfileOptions,
 		},
 		{
+			Name: "room-flux-eot",
+			Summary: "room-flux with Flux's EndOfTurn ending the utterance instead of 500 ms of silence; " +
+				"partials still reach the policy",
+			options: defaultFluxEndOfTurnRoomProfileOptions,
+		},
+		{
+			Name: "room-flux-eager",
+			Summary: "room-flux with EagerEndOfTurn (threshold 0.5) ending the utterance as soon as Flux " +
+				"is moderately confident; partials still reach the policy",
+			options: defaultFluxEagerRoomProfileOptions,
+		},
+		{
 			Name:    "room-filtered",
 			Summary: "the room with the pre-recognition noise filter at 127.0.0.1:8125",
 			options: defaultFilteredRoomProfileOptions,
@@ -147,6 +159,7 @@ func describeRoomPipeline(output io.Writer, pipeline roomPipeline) {
 		number("asr-eot-timeout-ms", selection.asrEOTTimeoutMS)
 	}
 	number("asr-cadence-ms", selection.asrCadenceMS)
+	text("asr-end-of-turn", selection.asrEndOfTurn)
 	for _, keyterm := range selection.asrKeyterms {
 		// A config file's asr-keyterm adds to the pipeline's own, so repeating
 		// these would name them twice.
@@ -233,6 +246,29 @@ func defaultFluxRoomProfileOptions() scenarioProfileOptions {
 	selection.asrURL = deepgram.DefaultFluxURL
 	selection.asrLanguage = "en-US"
 	selection.asrEndpointingMS = 0
+	return selection
+}
+
+// defaultFluxEndOfTurnRoomProfileOptions lets Flux own the endpoint: its
+// EndOfTurn closes the utterance, and the acoustic gate's silence is only the
+// backstop.
+func defaultFluxEndOfTurnRoomProfileOptions() scenarioProfileOptions {
+	selection := defaultFluxRoomProfileOptions()
+	selection.name = "openrealtime.launch.flux-eot-room"
+	selection.asrEndOfTurn = "end_of_turn"
+	return selection
+}
+
+// defaultFluxEagerRoomProfileOptions closes the utterance on EagerEndOfTurn.
+// 0.5 is inside the range Deepgram documents as 150-250 ms ahead of EndOfTurn
+// at the cost of more turns ended that the person was not finished with; a
+// continuation is a new utterance, and while the agent is speaking the policy
+// is asked on its partials whether the person is cutting in.
+func defaultFluxEagerRoomProfileOptions() scenarioProfileOptions {
+	selection := defaultFluxRoomProfileOptions()
+	selection.name = "openrealtime.launch.flux-eager-room"
+	selection.asrEagerEOTThreshold = 0.5
+	selection.asrEndOfTurn = "eager"
 	return selection
 }
 

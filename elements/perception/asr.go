@@ -34,11 +34,32 @@ var (
 		element.Named("perception.Observation"), element.Named("perception.RevisionID"),
 	)
 	perceptionOutcomeType  = element.Event(element.Named("perception.Outcome"))
+	turnEndType            = element.Event(element.Named("perception.TurnEnd"))
 	providerResolutionType = element.State(element.Named("perception.ProviderResolution"))
 )
 
 func ObservationType() element.Type { return observationType.Clone() }
 func OutcomeType() element.Type     { return perceptionOutcomeType.Clone() }
+func TurnEndType() element.Type     { return turnEndType.Clone() }
+
+// Turn-end signals a recogniser with turn detection can give.
+const (
+	// TurnEndSignalEndOfTurn is the recogniser ending the turn: Nova-3's
+	// speech_final, Flux's EndOfTurn.
+	TurnEndSignalEndOfTurn = "end_of_turn"
+	// TurnEndSignalEager is Flux's EagerEndOfTurn: moderately confident the
+	// turn is over, before it is sure. Selecting it also accepts end_of_turn.
+	TurnEndSignalEager = "eager"
+)
+
+// TurnEnd says the recogniser has ended the utterance on stream StreamID. It
+// is emitted at most once per stream, and only by an ASR node configured with
+// end_of_turn, so an endpoint policy can close the utterance on the
+// recogniser's word instead of waiting for the acoustic gate's silence.
+type TurnEnd struct {
+	StreamID string `json:"stream_id"`
+	Signal   string `json:"signal"`
+}
 
 // ASRDescriptor separates batching/cadence and acoustic endpointing from
 // recognition. Each admitted batch is an explicit trigger; Flush is the
@@ -47,7 +68,7 @@ func ASRDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "perception.ASR",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "observe", Direction: element.Input, Type: audioBatchType,
 				Cardinality: element.One, Required: true, DefaultDepth: 8},
@@ -61,10 +82,12 @@ func ASRDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 			{Name: "resolved", Direction: element.Output, Type: providerResolutionType,
 				Cardinality: element.One, Required: true, DefaultDepth: 1},
+			{Name: "turn_end", Direction: element.Output, Type: turnEndType,
+				Cardinality: element.One, DefaultDepth: 4},
 		},
 		Reaction: element.Reaction{
 			Triggers: []string{"observe", "flush"}, Interrupts: []string{"cancel"},
-			Outcomes:       []string{"observations", "outcome", "resolved"},
+			Outcomes:       []string{"observations", "outcome", "resolved", "turn_end"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},
 		StateSchema:  "schema://openrealtime/perception/asr-state/v1",
@@ -78,6 +101,10 @@ type ASRConfig struct {
 	Provider string `json:"provider"`
 	Name     string `json:"name,omitempty"`
 	Source   string `json:"source,omitempty"`
+	// EndOfTurn selects which recogniser signal is reported on turn_end:
+	// end_of_turn, or eager (which also accepts end_of_turn). Empty reports
+	// nothing, and the acoustic gate alone ends utterances.
+	EndOfTurn string `json:"end_of_turn,omitempty"`
 }
 
 type AudioBatch struct {
@@ -254,7 +281,16 @@ func (asrFactory) Mount(_ context.Context, mount element.MountContext) (element.
 	if err != nil {
 		return nil, err
 	}
+	var turnEndOutput element.OutputPort
+	if config.EndOfTurn != "" {
+		turnEndOutput, err = mount.Ports.Output("turn_end")
+		if err != nil {
+			return nil, fmt.Errorf("perception.ASR %s end_of_turn %q needs its turn_end output connected: %w",
+				mount.InstanceID, config.EndOfTurn, err)
+		}
+	}
 	return &asrRunner{
+		endOfTurn: config.EndOfTurn, turnEndOutput: turnEndOutput,
 		instance: mount.InstanceID, observer: observer, providerReference: config.Provider,
 		providerDescriptor: entry.descriptor, primeProvider: providers.Prime,
 		observeInput: observeInput, flushInput: flushInput,
@@ -271,6 +307,12 @@ func decodeASRConfig(source json.RawMessage) (ASRConfig, error) {
 	}
 	if strings.TrimSpace(config.Provider) == "" {
 		return ASRConfig{}, errors.New("ASR config requires a provider reference")
+	}
+	switch config.EndOfTurn {
+	case "", TurnEndSignalEndOfTurn, TurnEndSignalEager:
+	default:
+		return ASRConfig{}, fmt.Errorf("ASR end_of_turn must be %s or %s, not %q",
+			TurnEndSignalEndOfTurn, TurnEndSignalEager, config.EndOfTurn)
 	}
 	return config, nil
 }
@@ -400,6 +442,11 @@ type asrRunner struct {
 	canceledStreams    canceledAudioStreams
 	lastObservedItemID string
 	deferredFlush      *asrCommand
+	// endOfTurn is the configured turn-end signal; turnEnded records that it
+	// was already reported for the current stream.
+	endOfTurn     string
+	turnEndOutput element.OutputPort
+	turnEnded     bool
 }
 
 func (runner *asrRunner) Run(parent context.Context) error {
@@ -557,6 +604,7 @@ func (runner *asrRunner) prepare(command asrCommand) (asrCommand, *Outcome) {
 	if runner.currentStream == "" && streamID != "" {
 		runner.currentStream = streamID
 		runner.currentSession = command.envelope.SessionID
+		runner.turnEnded = false
 	}
 	if command.kind == commandFlush && streamID == "" {
 		command.flush.StreamID = runner.currentStream
@@ -651,6 +699,13 @@ func (runner *asrRunner) completeOperation(
 	streamID := commandStreamID(result.command)
 	if streamID == "" {
 		streamID = runner.currentStream
+	}
+	if result.command.kind == commandObserve && !canceled && result.err == nil {
+		// After the revisions it produced, so the words the recogniser ended
+		// the turn on are already on their way when the endpoint acts.
+		if err := runner.reportTurnEnd(ctx, result.command.envelope, streamID); err != nil {
+			return err
+		}
 	}
 	outcome := Outcome{
 		Kind: OutcomeSucceeded, Operation: string(result.command.kind), StreamID: streamID,
@@ -760,6 +815,32 @@ func (runner *asrRunner) publishObservation(
 	observation.Media = slices.Clone(observation.Media)
 	envelope.Payload = observation
 	_, err := runner.observationsOutput.Broadcast(ctx, envelope)
+	return err
+}
+
+// reportTurnEnd emits the configured recogniser turn end once per stream.
+func (runner *asrRunner) reportTurnEnd(ctx context.Context, cause element.Envelope, streamID string) error {
+	if runner.endOfTurn == "" || runner.turnEnded || streamID == "" || streamID != runner.currentStream {
+		return nil
+	}
+	signal := ""
+	switch {
+	case runner.observer.SpeechEndpointed():
+		signal = TurnEndSignalEndOfTurn
+	case runner.endOfTurn == TurnEndSignalEager && runner.observer.EagerEndOfTurn():
+		signal = TurnEndSignalEager
+	default:
+		return nil
+	}
+	runner.turnEnded = true
+	envelope := cause.Clone()
+	envelope.Type = turnEndType
+	envelope.ItemID = cause.ItemID + ":turn-end"
+	envelope.OpportunityID = cause.ItemID
+	envelope.SourceID = firstNonempty(streamID, envelope.SourceID)
+	envelope.CausalParents = appendUnique(envelope.CausalParents, cause.ItemID)
+	envelope.Payload = TurnEnd{StreamID: streamID, Signal: signal}
+	_, err := runner.turnEndOutput.Broadcast(ctx, envelope)
 	return err
 }
 

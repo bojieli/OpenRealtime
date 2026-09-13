@@ -213,7 +213,9 @@ What the pipeline sees:
   utterance on it.
 - `EagerEndOfTurn` is reported while it stands: until `TurnResumed` or
   `EndOfTurn` follows, Flux guarantees the `EndOfTurn` transcript is the one
-  in hand. No consumer acts on it yet.
+  in hand. The room acts on it when its profile sets
+  `asr-end-of-turn: eager` - see
+  [When the recogniser ends the utterance](room.md#when-the-recogniser-ends-the-utterance).
 - When the acoustic gate ends an utterance first, the open turn is ended with
   `ForceEndTurn`, which returns the transcript decoded so far without another
   decode pass.

@@ -8,7 +8,6 @@ graph acoustic_endpoint {
     flow.Tee :: candidate_copy;
     flow.Tee :: command_copy;
     flow.Tee :: cancellation_copy;
-
     endpoint_policy.state -> policy_state_copy.in;
     policy_state_copy.out -> admission.policy;
     admission.candidate -> candidate_copy.in;
@@ -17,13 +16,12 @@ graph acoustic_endpoint {
     command_copy.out -> admission.command;
     cancellation_copy.out -> admission.cancel;
     cancellation_copy.out -> endpoint_policy.cancel;
-
     input audio = admission.audio;
     input tick = endpoint_policy.tick;
     input commit = endpoint_policy.commit;
     input verdict = endpoint_policy.verdict;
+    input turn_end = endpoint_policy.turn_end;
     input cancel = cancellation_copy.in;
-
     output admitted = admission.admitted;
     output flush = admission.endpoint;
     output activity = admission.activity;

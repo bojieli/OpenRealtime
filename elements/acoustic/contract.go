@@ -11,6 +11,7 @@ import (
 	"math"
 
 	"github.com/bojieli/OpenRealtime/element"
+	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
 	"github.com/bojieli/OpenRealtime/internal/elementconfig"
 	coreperception "github.com/bojieli/OpenRealtime/perception"
 )
@@ -326,7 +327,7 @@ func EndpointPolicyDescriptor() element.Descriptor {
 	return element.Descriptor{
 		FormatVersion: element.DescriptorFormatVersion,
 		Name:          "acoustic.EndpointPolicy",
-		Revision:      1,
+		Revision:      2,
 		Ports: []element.Port{
 			{Name: "candidate", Direction: element.Input, Type: candidateType,
 				Cardinality: element.One, Required: true, DefaultDepth: 4},
@@ -336,6 +337,8 @@ func EndpointPolicyDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 4},
 			{Name: "verdict", Direction: element.Input, Type: verdictType,
 				Cardinality: element.One, Required: true, DefaultDepth: 4},
+			{Name: "turn_end", Direction: element.Input, Type: perceptionelements.TurnEndType(),
+				Cardinality: element.One, DefaultDepth: 4},
 			{Name: "cancel", Direction: element.Input, Type: audioCancelType,
 				Cardinality: element.One, Required: true, DefaultDepth: 8},
 			{Name: "command", Direction: element.Output, Type: gateCommandType,
@@ -346,7 +349,7 @@ func EndpointPolicyDescriptor() element.Descriptor {
 				Cardinality: element.One, Required: true, DefaultDepth: 16},
 		},
 		Reaction: element.Reaction{
-			Triggers:   []string{"candidate", "tick", "commit", "verdict"},
+			Triggers:   []string{"candidate", "tick", "commit", "verdict", "turn_end"},
 			Interrupts: []string{"cancel"}, Outcomes: []string{"command", "state", "outcome"},
 			MaxConcurrency: 1, BreaksCycles: true,
 		},

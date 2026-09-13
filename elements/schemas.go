@@ -448,7 +448,8 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 			"schema://openrealtime/perception/asr-config/v1",
 			schemaObject{
 				"provider": identifier(0), "name": schemaObject{"type": "string"},
-				"source": schemaObject{"type": "string"},
+				"source":      schemaObject{"type": "string"},
+				"end_of_turn": enumSchema("end_of_turn", "eager"),
 			}, "provider",
 		),
 		"schema://openrealtime/perception/final-observation-gate-config/v1": standardObject(

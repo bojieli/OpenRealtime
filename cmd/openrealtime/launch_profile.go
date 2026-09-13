@@ -67,6 +67,7 @@ type scenarioProfileOptions struct {
 	asrEOTThreshold       float64
 	asrEagerEOTThreshold  float64
 	asrEOTTimeoutMS       int64
+	asrEndOfTurn          string
 	asrTimeoutMS          int64
 	asrCadenceMS          int64
 	speakerURL            string
@@ -592,7 +593,7 @@ func scenarioProfileASRSelection(
 		}
 		return scenarioconversation.ApplicationASRSelection{
 			Reference: reference, Artifact: registration.Artifact,
-			Descriptor: descriptor, Configuration: raw,
+			Descriptor: descriptor, Configuration: raw, EndOfTurn: options.asrEndOfTurn,
 		}, nil
 	}
 	return scenarioconversation.ApplicationASRSelection{}, fmt.Errorf("scenario ASR inventory is missing %q", reference)
@@ -859,6 +860,8 @@ func bindScenarioProfileSettings(flags *flag.FlagSet, options *scenarioProfileOp
 		"Deepgram Flux EndOfTurn confidence, 0.5 to 1.0; 0 keeps the service default")
 	flags.Float64Var(&options.asrEagerEOTThreshold, "asr-eager-eot-threshold", options.asrEagerEOTThreshold,
 		"Deepgram Flux EagerEndOfTurn confidence, 0.3 to 0.9; 0 disables EagerEndOfTurn and TurnResumed")
+	flags.StringVar(&options.asrEndOfTurn, "asr-end-of-turn", options.asrEndOfTurn,
+		"recogniser signal that ends an utterance before the acoustic gate's silence: end_of_turn, eager, or empty")
 	flags.Int64Var(&options.asrEOTTimeoutMS, "asr-eot-timeout-ms", options.asrEOTTimeoutMS,
 		"Deepgram Flux silence that ends a turn regardless, 500 to 60000; 0 keeps the service default")
 	flags.Int64Var(&options.asrTimeoutMS, "asr-timeout-ms", options.asrTimeoutMS, "ASR request timeout")

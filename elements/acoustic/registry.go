@@ -144,7 +144,9 @@ func admissionPortsFrom(ports element.Ports) (admissionPorts, error) {
 
 type endpointPorts struct {
 	candidate, tick, commit, verdict, cancel element.InputPort
-	command, state, outcome                  element.OutputPort
+	// turnEnd is nil when no recogniser is connected to it.
+	turnEnd                 element.InputPort
+	command, state, outcome element.OutputPort
 }
 
 func endpointPortsFrom(ports element.Ports) (endpointPorts, error) {
@@ -165,6 +167,11 @@ func endpointPortsFrom(ports element.Ports) (endpointPorts, error) {
 			return endpointPorts{}, err
 		}
 		*input.set = port
+	}
+	// Optional: a graph without a recogniser on turn_end leaves the port with
+	// no lanes, and receiving from it would report a closed channel.
+	if port, err := ports.Input("turn_end"); err == nil && len(port.Lanes()) > 0 {
+		result.turnEnd = port
 	}
 	outputs := []struct {
 		name string

@@ -82,6 +82,9 @@ for entry in "${pipelines[@]}"; do
   if [[ -n "${config}" ]]; then
     arguments+=(-pipeline-config "${config}")
   fi
+  # The turn timeline is how a failure is read back: which utterance ended
+  # when, what the policy chose on each partial, when the voice spoke.
+  arguments+=(-- -timeline-log "${out}/${label}.timeline.log")
 
   echo "=== ${label}: starting a companion on 127.0.0.1:${base}"
   "${out}/openrealtime" "${arguments[@]}" >"${log}" 2>&1 &

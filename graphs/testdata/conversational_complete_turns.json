@@ -3,7 +3,7 @@
   "cases": [
     {
       "profile": "conversational-fast-only",
-      "graph_fingerprint": "sha256:7819ca98379907698825269ef23247f8b3942ff32951ce6a990e30828eb489f8",
+      "graph_fingerprint": "sha256:14ad2eed1a348cad5d8c6c3024b0d9581323353e13ed3de1a9d033bf04d61eaa",
       "played_speech": ["fast response."],
       "committed_results": 1,
       "rejected_results": 1,
@@ -15,7 +15,7 @@
     },
     {
       "profile": "conversational-slow-only",
-      "graph_fingerprint": "sha256:ecd5d080e6f0347e7183481de62db43a3d540074febf2798410e731285e18d0c",
+      "graph_fingerprint": "sha256:10d5e3d2ef4c134cfed8d59b83db9783735877cd485c1b08df5168d794a947bf",
       "played_speech": ["slow response."],
       "committed_results": 1,
       "rejected_results": 1,
@@ -27,7 +27,7 @@
     },
     {
       "profile": "conversational-both",
-      "graph_fingerprint": "sha256:2efd32a667312eafae79902c2b4572b7554831cb8c9ef3c0d64ce2a357f97c16",
+      "graph_fingerprint": "sha256:4cafa634f17eb5c14b034b3f8f1772111e5337c3636599c7ed75f5c9a1bd2258",
       "played_speech": ["fast response.", "slow response."],
       "committed_results": 1,
       "rejected_results": 1,

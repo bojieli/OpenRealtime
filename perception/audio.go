@@ -451,6 +451,17 @@ func (observer *AudioObserver) SpeechEndpointed() bool {
 	return ok && provider.SpeechEndpointed()
 }
 
+// EagerEndOfTurn reports that a recogniser with turn detection is moderately
+// confident the utterance is over (Deepgram Flux's EagerEndOfTurn), before it
+// is sure. Like SpeechEndpointed it is optional and false for every other
+// recogniser.
+func (observer *AudioObserver) EagerEndOfTurn() bool {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	provider, ok := observer.provider.(interface{ EagerEndOfTurn() bool })
+	return ok && provider.EagerEndOfTurn()
+}
+
 // carriesSpeech reports whether a transcript contains anything a person said.
 //
 // A recogniser asked about audio with no words in it has to answer somehow,

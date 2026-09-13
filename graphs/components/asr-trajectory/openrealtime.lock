@@ -5,8 +5,8 @@
       "reference": "perception.ASR",
       "identity": {
         "name": "perception.ASR",
-        "revision": 1,
-        "digest": "sha256:06533de1f39380ce51b23857021d1d44754da2fb14747c202c69a0c8a08653e5"
+        "revision": 2,
+        "digest": "sha256:eb5702c5fdc955f766e04ea767dde51c3d740580c6b1e368a99f335a963054a6"
       }
     },
     {

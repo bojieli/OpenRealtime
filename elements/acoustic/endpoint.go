@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/bojieli/OpenRealtime/element"
+	perceptionelements "github.com/bojieli/OpenRealtime/elements/perception"
 )
 
 type endpointRunner struct {
@@ -50,9 +51,13 @@ func (runner *endpointRunner) Run(parent context.Context) error {
 	}
 	events := make(chan receivedInput)
 	interrupts := make(chan element.Envelope)
-	failures := make(chan error, 5)
+	failures := make(chan error, 6)
 	var receivers sync.WaitGroup
 	receivers.Add(5)
+	if runner.ports.turnEnd != nil {
+		receivers.Add(1)
+		go receiveInputs(ctx, "turn_end", runner.ports.turnEnd, events, failures, &receivers)
+	}
 	go receiveInputs(ctx, "candidate", runner.ports.candidate, events, failures, &receivers)
 	go receiveInputs(ctx, "tick", runner.ports.tick, events, failures, &receivers)
 	go receiveInputs(ctx, "commit", runner.ports.commit, events, failures, &receivers)
@@ -89,6 +94,8 @@ func (runner *endpointRunner) Run(parent context.Context) error {
 				err = runner.handleCommit(ctx, input.envelope)
 			case "verdict":
 				err = runner.handleVerdict(ctx, input.envelope)
+			case "turn_end":
+				err = runner.handleTurnEnd(ctx, input.envelope)
 			default:
 				err = fmt.Errorf("unknown EndpointPolicy input %q", input.kind)
 			}
@@ -376,6 +383,86 @@ func (runner *endpointRunner) handleCommit(ctx context.Context, envelope element
 		Kind: OutcomeSucceeded, Operation: "commit", StreamID: command.StreamID,
 		CandidateID: command.CandidateID, Action: GateForceClose, Code: "force_close_emitted",
 	})
+}
+
+// handleTurnEnd closes an utterance the recogniser has ended.
+//
+// A recogniser with turn detection hears the end of a sentence before the
+// acoustic gate has counted its silence, and an utterance that waits for the
+// later of the two waits for nothing. The gate remains the backstop: when the
+// recogniser says nothing, its silence candidate closes the stream as before.
+// A pending candidate is closed through the ordinary path; otherwise the
+// stream is force-closed, which is the same close with the gate stopped where
+// it stands. Manual mode ignores it, because there the client owns turns.
+func (runner *endpointRunner) handleTurnEnd(ctx context.Context, envelope element.Envelope) error {
+	turnEnd, valid := turnEndPayload(envelope.Payload)
+	if !valid {
+		return runner.publishOutcome(ctx, envelope, EndpointOutcome{
+			Kind: OutcomeRefused, Operation: "turn_end", Code: "invalid_payload",
+			Message: fmt.Sprintf("turn end payload has type %T", envelope.Payload),
+		})
+	}
+	if err := validateIdentifier("turn end stream ID", turnEnd.StreamID, true); err != nil || turnEnd.StreamID == "" {
+		message := "turn end requires a stream ID"
+		if err != nil {
+			message = err.Error()
+		}
+		return runner.publishOutcome(ctx, envelope, EndpointOutcome{
+			Kind: OutcomeRefused, Operation: "turn_end", StreamID: turnEnd.StreamID,
+			Code: "invalid_stream_id", Message: message,
+		})
+	}
+	code := "recognizer_" + turnEnd.Signal
+	if runner.config.mode == EndpointManual {
+		return runner.publishOutcome(ctx, envelope, EndpointOutcome{
+			Kind: OutcomeIgnored, Operation: "turn_end", StreamID: turnEnd.StreamID,
+			Code: "client_owns_turns",
+		})
+	}
+	if runner.canceled.Has(turnEnd.StreamID) {
+		return runner.publishOutcome(ctx, envelope, EndpointOutcome{
+			Kind: OutcomeCanceled, Operation: "turn_end", StreamID: turnEnd.StreamID,
+			Code: "canceled_before_turn_end",
+		})
+	}
+	if runner.pending != nil && runner.pending.StreamID == turnEnd.StreamID {
+		return runner.resolveCandidate(ctx, envelope, *runner.pending, GateClose, "turn_end", code)
+	}
+	terminal := "turn-end:" + turnEnd.StreamID
+	if runner.terminal.Has(terminal) {
+		return runner.publishOutcome(ctx, envelope, EndpointOutcome{
+			Kind: OutcomeIgnored, Operation: "turn_end", StreamID: turnEnd.StreamID,
+			Code: "duplicate_turn_end",
+		})
+	}
+	runner.terminal.Add(terminal)
+	command := GateCommand{Action: GateForceClose, StreamID: turnEnd.StreamID, Reason: code}
+	if _, err := runner.ports.command.Broadcast(ctx,
+		derivedEnvelope(envelope, gateCommandType, ":turn-end", command)); err != nil {
+		return err
+	}
+	if err := runner.publishState(ctx, envelope); err != nil {
+		return err
+	}
+	return runner.publishOutcome(ctx, envelope, EndpointOutcome{
+		Kind: OutcomeSucceeded, Operation: "turn_end", StreamID: turnEnd.StreamID,
+		Action: GateForceClose, Code: code,
+	})
+}
+
+func turnEndPayload(payload any) (perceptionelements.TurnEnd, bool) {
+	switch typed := payload.(type) {
+	case perceptionelements.TurnEnd:
+		return typed, typed.Signal == perceptionelements.TurnEndSignalEndOfTurn ||
+			typed.Signal == perceptionelements.TurnEndSignalEager
+	case *perceptionelements.TurnEnd:
+		if typed == nil {
+			return perceptionelements.TurnEnd{}, false
+		}
+		return turnEndPayload(*typed)
+	default:
+		return perceptionelements.TurnEnd{}, false
+	}
 }
 
 func (runner *endpointRunner) resolveCandidate(

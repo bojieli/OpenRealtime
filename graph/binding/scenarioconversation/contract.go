@@ -113,6 +113,9 @@ type ASRPlugin struct {
 	Artifact   inspect.ArtifactIdentity
 	Descriptor v1.Descriptor
 	Factory    func(context.Context, legacy.Options) (v1.PerceptionProvider, error)
+	// EndOfTurn is the recogniser signal that ends an utterance: end_of_turn,
+	// eager, or empty for the acoustic gate alone.
+	EndOfTurn string
 }
 
 type ModelPlugin struct {
@@ -417,7 +420,16 @@ func validateASRPlugin(plugin ASRPlugin) error {
 	if err := plugin.Descriptor.Validate(); err != nil {
 		return fmt.Errorf("scenario conversation ASR descriptor: %w", err)
 	}
-	return nil
+	return validateASREndOfTurn(plugin.EndOfTurn)
+}
+
+func validateASREndOfTurn(value string) error {
+	switch value {
+	case "", "end_of_turn", "eager":
+		return nil
+	default:
+		return fmt.Errorf("end_of_turn must be end_of_turn or eager, not %q", value)
+	}
 }
 
 func validatePolicyPlugin(plugin PolicyPlugin) error {

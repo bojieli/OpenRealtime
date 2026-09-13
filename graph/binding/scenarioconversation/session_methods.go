@@ -164,6 +164,10 @@ func (session *session) invocationForSettings(settings legacy.Settings) (continu
 	}, nil
 }
 
+// errAudioStreamAdvanced marks a frame refused because its stream closed while
+// it was in flight; Audio sends it again on the stream that replaced it.
+var errAudioStreamAdvanced = errors.New("scenario conversation audio stream advanced while the frame was in flight")
+
 func (session *session) Audio(ctx context.Context, frame perception.Frame) error {
 	if err := usableContext(ctx, "send scenario conversation audio"); err != nil {
 		return err
@@ -193,6 +197,18 @@ func (session *session) Audio(ctx context.Context, frame perception.Frame) error
 		session.audioMu.Unlock()
 		return errors.New("scenario conversation microphone capture timestamps must strictly increase")
 	}
+	session.audioMu.Unlock()
+	// A stream advances at most once under one frame, so one resend is the
+	// whole bound: the resent frame opens the new stream.
+	err := session.sendAudio(ctx, frame)
+	if errors.Is(err, errAudioStreamAdvanced) {
+		err = session.sendAudio(ctx, frame)
+	}
+	return err
+}
+
+func (session *session) sendAudio(ctx context.Context, frame perception.Frame) error {
+	session.audioMu.Lock()
 	streamID := session.audioStreamID(session.audioStream)
 	session.audioMu.Unlock()
 	itemID, sequence := session.nextEnvelopeIdentity("audio")

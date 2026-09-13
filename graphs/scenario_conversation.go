@@ -81,6 +81,14 @@ func ScenarioConversationArtifacts(
 	}); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
+	if config.ASR.EndOfTurn != "" {
+		// The recogniser may end an utterance before the gate's silence; the
+		// asr -> endpoint_policy turn_end edge carries it, and the gate stays
+		// the backstop.
+		if err := addScenarioNodeField(document.Nodes, "asr", "end_of_turn", config.ASR.EndOfTurn); err != nil {
+			return graphconfig.Artifacts{}, err
+		}
+	}
 	if err := updateScenarioNode(document.Nodes, "content", map[string]any{
 		"max_input_bytes": config.Media.MaxItemBytes,
 		"max_pending":     config.Media.MaxPending, "max_pending_bytes": config.Media.MaxBytes,
@@ -186,6 +194,29 @@ func ScenarioConversationArtifacts(
 // scenarioOverlapValues leaves the overlap element with no classifier and a
 // fallback that keeps speaking: the floor is the interaction policy's alone.
 var scenarioOverlapValues = map[string]any{"decider": "", "unclassified": "keep_speaking"}
+
+// addScenarioNodeField sets a field the template deliberately omits, so a
+// profile that does not select it keeps the template's exact values. It
+// refuses a field the template already has, which updateScenarioNode owns.
+func addScenarioNodeField(nodes map[string]json.RawMessage, name, field string, value any) error {
+	var values map[string]any
+	if err := json.Unmarshal(nodes[name], &values); err != nil || values == nil {
+		if err == nil {
+			err = fmt.Errorf("node values are not an object")
+		}
+		return fmt.Errorf("decode scenario conversation %s values: %w", name, err)
+	}
+	if _, found := values[field]; found {
+		return fmt.Errorf("scenario conversation %s values already define %q", name, field)
+	}
+	values[field] = value
+	payload, err := json.Marshal(values)
+	if err != nil {
+		return fmt.Errorf("encode scenario conversation %s values: %w", name, err)
+	}
+	nodes[name] = payload
+	return nil
+}
 
 func updateScenarioNode(
 	nodes map[string]json.RawMessage, name string, selected map[string]any,

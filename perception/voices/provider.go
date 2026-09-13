@@ -95,6 +95,12 @@ func (provider *Provider) SpeechEndpointed() bool {
 	return ok && endpointed.SpeechEndpointed()
 }
 
+// EagerEndOfTurn preserves the optional eager end-of-turn contract.
+func (provider *Provider) EagerEndOfTurn() bool {
+	eager, ok := provider.inner.(interface{ EagerEndOfTurn() bool })
+	return ok && eager.EagerEndOfTurn()
+}
+
 // Close releases the wrapped ASR provider when it owns resources.
 func (provider *Provider) Close() error {
 	if closer, ok := provider.inner.(io.Closer); ok {

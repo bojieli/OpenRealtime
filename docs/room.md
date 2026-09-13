@@ -161,6 +161,8 @@ print one's settings:
 | --- | --- |
 | `room` | nothing: Deepgram Nova-3 in English and Mandarin lanes, the default |
 | `room-flux` | Deepgram Flux recognises instead of Nova-3; English only |
+| `room-flux-eot` | `room-flux`, with Flux's EndOfTurn ending the utterance |
+| `room-flux-eager` | `room-flux`, with EagerEndOfTurn (threshold 0.5) ending the utterance |
 | `room-filtered` | a pre-recognition noise filter at `127.0.0.1:8125` |
 | `room-target` | enrolled-speaker extraction at `127.0.0.1:8126`, no per-utterance speaker comparison |
 
@@ -185,6 +187,25 @@ every setting. `pipelines NAME` prints settings in this same form, so its
 output is a starting config. A pipeline cannot be combined with serve's own
 `-launch-profile`, `-config` or `-binding` after `--`; the companion refuses
 rather than ignore one of them.
+
+### When the recogniser ends the utterance
+
+By default an utterance ends when the acoustic gate has heard 500 ms of
+silence. `asr-end-of-turn` lets a recogniser with turn detection end it
+sooner: `end_of_turn` closes the utterance when the recogniser ends the turn
+(Flux's EndOfTurn, Nova-3's `speech_final`), and `eager` when Flux is
+moderately confident (EagerEndOfTurn, which needs
+`asr-eager-eot-threshold`). The ASR node reports the signal once per
+utterance on `asr.turn_end`, and the endpoint policy closes the stream - the
+pending silence candidate if the gate already raised one, otherwise a forced
+close - so the flush, the final and the policy's decision on it follow
+exactly as they do after silence. The gate stays the backstop when the
+recogniser says nothing.
+
+Nothing else changes. Partials still reach the policy at every revision, so a
+standing count still fires on the word as it is heard, and an utterance ended
+early that the person continues is followed by a new utterance, whose
+partials the policy is asked about while the agent speaks.
 
 To compare pipelines, play the live scenarios against each in turn:
 

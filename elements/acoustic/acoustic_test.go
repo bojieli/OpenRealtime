@@ -65,6 +65,7 @@ func TestComponentGraphCompilesWithTypedVisibleControlCycle(t *testing.T) {
 		"admission_outcome": "Event<acoustic.AdmissionOutcome>",
 		"endpoint_outcome":  "Event<acoustic.EndpointOutcome>",
 		"cancel_downstream": "Interrupt<audio.StreamID>",
+		"turn_end":          "Event<perception.TurnEnd>",
 	}
 	if len(bound.Graph.Boundaries) != len(wantBoundaries) {
 		t.Fatalf("boundary count = %d, want %d", len(bound.Graph.Boundaries), len(wantBoundaries))
@@ -474,7 +475,7 @@ func mountAcousticWithConfig(
 		t: t, mounted: mounted, inputs: make(map[string]element.OutputPort),
 		outputs: make(map[string]element.InputPort), done: make(chan error, 1),
 	}
-	for _, name := range []string{"audio", "tick", "commit", "verdict", "cancel"} {
+	for _, name := range []string{"audio", "tick", "commit", "verdict", "turn_end", "cancel"} {
 		harness.inputs[name], err = mounted.Ingress(name)
 		if err != nil {
 			t.Fatal(err)

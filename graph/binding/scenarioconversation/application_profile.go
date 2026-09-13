@@ -41,6 +41,11 @@ type ApplicationASRSelection struct {
 	Artifact      inspect.ArtifactIdentity `json:"artifact"`
 	Descriptor    v1.Descriptor            `json:"descriptor"`
 	Configuration json.RawMessage          `json:"configuration,omitempty"`
+	// EndOfTurn lets the recogniser end utterances: end_of_turn closes one
+	// when the recogniser ends the turn, eager when it is moderately
+	// confident. Empty leaves utterances to the acoustic gate, and an omitted
+	// field keeps every existing profile's bytes.
+	EndOfTurn string `json:"end_of_turn,omitempty"`
 }
 
 // ApplicationSpeakerIdentitySelection pins the optional session-local
@@ -237,6 +242,9 @@ func validateApplicationASR(selection ApplicationASRSelection) error {
 	}
 	if err := selection.Descriptor.Validate(); err != nil {
 		return fmt.Errorf("scenario conversation application ASR descriptor: %w", err)
+	}
+	if err := validateASREndOfTurn(selection.EndOfTurn); err != nil {
+		return fmt.Errorf("scenario conversation application ASR: %w", err)
 	}
 	return nil
 }
@@ -598,7 +606,8 @@ func NewApplicationRegistration(
 				NoiseFilter:  config.NoiseFilter,
 				Architecture: architecture,
 				ASR: ASRPlugin{Reference: ASRReference, Artifact: asrRegistration.Artifact,
-					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory},
+					Descriptor: cloneV1Descriptor(asrDescriptor), Factory: asrFactory,
+					EndOfTurn: config.ASR.EndOfTurn},
 				SpeakerIdentity: speakerPlugin,
 				Policy: PolicyPlugin{Reference: PolicyReference, Artifact: policyRegistration.Artifact,
 					Descriptor: policyDescriptor, Factory: policyFactory},

@@ -5,8 +5,8 @@
       "reference": "acoustic.EndpointPolicy",
       "identity": {
         "name": "acoustic.EndpointPolicy",
-        "revision": 1,
-        "digest": "sha256:530e2aa2b12f46b44d2c3a116d014612f49e774a41e4fcc16933e57b52614656"
+        "revision": 2,
+        "digest": "sha256:f6a5e79f5fd0d6c45c516f756c6a2052d90c2b0fdb1f4f4bf5ff2d7b52ecf6e9"
       }
     },
     {
@@ -205,8 +205,8 @@
       "reference": "perception.ASR",
       "identity": {
         "name": "perception.ASR",
-        "revision": 1,
-        "digest": "sha256:06533de1f39380ce51b23857021d1d44754da2fb14747c202c69a0c8a08653e5"
+        "revision": 2,
+        "digest": "sha256:eb5702c5fdc955f766e04ea767dde51c3d740580c6b1e368a99f335a963054a6"
       }
     },
     {

@@ -93,6 +93,7 @@ graph scenario_conversation {
     acoustic_activity_copy.out -> overlap_barge_in.activity;
     admission.admitted -> asr.observe;
     admission.endpoint -> asr.flush;
+    asr.turn_end -> endpoint_policy.turn_end;
     asr.observations -> asr_observation_copy.in;
     asr_observation_copy.out -> audio_final_gate.observations;
     asr_observation_copy.out -> observation_output_mux.in;

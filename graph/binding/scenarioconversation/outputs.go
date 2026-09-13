@@ -591,6 +591,23 @@ func (session *session) acceptAdmissionOutcome(envelope element.Envelope) error 
 		}
 	}
 	if pending == nil {
+		// A recogniser that ends the turn closes the stream through the
+		// endpoint policy, not through a frame's silence candidate, so its
+		// close names no audio caller still waiting. It is still the end of
+		// the current utterance: the next frame belongs to a new stream,
+		// exactly as after a silence close.
+		if outcome.Operation == "command" && outcome.Kind == acousticelements.OutcomeSucceeded &&
+			outcome.Code == "force_closed" && outcome.StreamID == session.audioStreamID(session.audioStream) {
+			if _, found := session.closedAudio[outcome.StreamID]; !found &&
+				len(session.closedAudio) >= maximumAdapterMemory {
+				session.audioMu.Unlock()
+				return errors.New("scenario conversation pending closed audio-stream bound reached")
+			}
+			session.closedAudio[outcome.StreamID] = struct{}{}
+			session.audioStream++
+			session.audioMu.Unlock()
+			return nil
+		}
 		session.audioMu.Unlock()
 		// Command outcomes can legitimately arrive after the exact audio caller
 		// was released by a prior terminal state. They remain visible through
@@ -618,6 +635,17 @@ func (session *session) acceptAdmissionOutcome(envelope element.Envelope) error 
 			} else {
 				pending.awaitClose = true
 			}
+		case acousticelements.OutcomeIgnored:
+			if outcome.Code == "stream_terminal" &&
+				pending.streamID != session.audioStreamID(session.audioStream) {
+				// The frame was sent while a recogniser closed its stream. It is
+				// the first audio of the next utterance, not late audio.
+				terminal = errAudioStreamAdvanced
+			} else {
+				terminal = fmt.Errorf("scenario conversation audio reached %s/%s: %s",
+					outcome.Kind, outcome.Code, outcome.Message)
+			}
+			pending.completed = true
 		default:
 			terminal = fmt.Errorf("scenario conversation audio reached %s/%s: %s",
 				outcome.Kind, outcome.Code, outcome.Message)
@@ -628,7 +656,12 @@ func (session *session) acceptAdmissionOutcome(envelope element.Envelope) error 
 			session.audioMu.Unlock()
 			return errors.New("scenario conversation admission close arrived for a frame without an endpoint candidate")
 		}
-		if outcome.Kind != acousticelements.OutcomeSucceeded || outcome.Code != "closed" {
+		// A recogniser's turn end and the gate's silence candidate can close
+		// the same stream in the same instant, and whichever reaches admission
+		// first answers the frame: a force close ends the stream exactly as a
+		// candidate close does.
+		if outcome.Kind != acousticelements.OutcomeSucceeded ||
+			(outcome.Code != "closed" && outcome.Code != "force_closed") {
 			terminal = fmt.Errorf("scenario conversation automatic close reached %s/%s: %s",
 				outcome.Kind, outcome.Code, outcome.Message)
 		} else if session.audioStreamID(session.audioStream) != pending.streamID {
