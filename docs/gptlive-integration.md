@@ -399,6 +399,7 @@ opened, heard the caller, delegated, and got tool results back:
 | airline |          84 |           4 |          5 | passed, `db_match` true |
 | retail  |         195 |           3 |          8 | failed on the exchange |
 | telecom |         332 |          14 |         14 | cut off at the 10-minute cap |
+| telecom (30-minute cap) | 251 |   8 |          9 | concluded in 415s, wrong diagnosis |
 
 One of the three passes, and the two that do not fail for reasons above this
 layer rather than in it. Retail read the order and both products, then exchanged
@@ -407,10 +408,24 @@ right things about the wrong item, which is the reasoner choosing, not the audio
 path. The same task passed on an earlier run, so this is variance in the model's
 choice rather than a fixed defect. Telecom was still troubleshooting sensibly at
 ten minutes - it had sent a payment link, confirmed the balance cleared, and was
-working the next hypothesis when tau2's own `--task-timeout` ended it. Neither
-is the silence this section began with, and that is the distinction worth
-keeping: a benchmark score and a working pipeline are different measurements,
-and only the second one was ever in question here.
+working the next hypothesis when tau2's own `--task-timeout` ended it.
+
+Raised to thirty minutes, telecom no longer needs the extra time: it ends itself
+at 415 seconds with `agent_stop`. What the longer cap bought was not a pass but
+a diagnosable failure, which is the more useful result. The scenario carries two
+faults - `airplane_mode_on` and `user_abroad_roaming_enabled_off` - and the
+agent found one. It read the status bar, identified airplane mode, called
+`toggle_airplane_mode`, then worked through network mode, a modem refresh and a
+full reboot, never checked roaming, and escalated. `toggle_roaming` is the
+action it missed, and both environment assertions - mobile data restored,
+speed excellent - fail on that alone.
+
+So the first telecom run's timeout was not slowness. It was the agent following
+a wrong hypothesis (an unpaid balance) until the clock ran out; given more
+clock, it follows a different wrong hypothesis and stops sooner. Neither is the
+silence this section began with, and that is the distinction worth keeping: a
+benchmark score and a working pipeline are different measurements, and only the
+second one was ever in question here.
 
 ## 4c. Steering, which neither benchmark covers
 
