@@ -106,10 +106,11 @@ try {
   const deadline = Date.now() + 60000;
   let ready = false;
   while (Date.now() < deadline) {
-    const flag = await evaluate(`document.documentElement.dataset.ready ?? ""`);
+    // The root element does not exist yet while the page is loading.
+    const flag = await evaluate(`document.documentElement?.dataset?.ready ?? ""`);
     if (flag === "true") { ready = true; break; }
     if (flag === "false") {
-      throw new Error(`the fixture reported the view did not settle: ${await evaluate(`document.documentElement.outerHTML`)}`);
+      throw new Error(`the fixture reported the view did not settle: ${await evaluate(`document.documentElement?.outerHTML ?? ""`)}`);
     }
     await sleep(100);
   }
