@@ -47,11 +47,22 @@ OPENREALTIME_ROOM_TEST_ENDPOINT=ws://127.0.0.1:8775/v1/realtime go test ./cmd/op
 ```
 
 The scenarios play in parallel; a pass takes about a minute. Reports land
-under `.runtime/scenario-bench/` and `.runtime/counting-bench/`. What still
-fails a scenario on a given evening is the voice provider's first-token
-latency against the scenarios' two-to-three-second limits, and the
-recogniser's hearing of a short first sentence in a second language; both
-are measured in the reports rather than absorbed by the pipeline.
+under `.runtime/scenario-bench/` and `.runtime/counting-bench/`. The live
+pass scores what a listener heard: with `GEMINI_API_KEY` set, Gemini
+listens to each window of the agent's audio and says what was said (the
+local Whisper is the fallback, and it heard "One." as "One eight"). The
+synthesised speakers are levelled to one loudness and paced so a pause
+inside a line is at most 400 ms, because the synthesiser's Mandarin came
+out four times quieter than its English and rendered a comma as 1.15 s of
+silence, neither of which a person does. Every counting story opens the
+way a person does: the rule, then "Are you ready?", answered before the
+story starts. What still fails a scenario on a given evening is the voice
+provider's first-token latency against the scenarios' two-to-three-second
+limits - Gemini 3.7 Flash spends about 95 thought tokens on every turn
+whatever the budget, and a room-sized prompt takes 1.5 to 3 s to its first
+token depending on the hour - and, less often, which of the recogniser's
+two language lanes wins a short utterance. Both are measured in the
+reports rather than absorbed by the pipeline.
 
 Set `DEEPGRAM_API_KEY` and `GEMINI_API_KEY` in the launching environment.
 The local services must already be running:
