@@ -85,22 +85,18 @@ var UrgentQuestion = StepQuestion{Name: QuestionUrgent, Text: "No standing instr
 	"only if waiting for the end of the sentence would be wrong."}
 
 // ElsewhereQuestion is asked once a final reads as a request: was it put to
-// the agent at all? Everything reaches the agent through one microphone, so
-// two people in the room talking to each other arrive as "user" lines, and
-// the second of them - "No, I forgot again. Can you put it on the list?" -
-// is a perfectly formed request that is not for the agent. Asked as its own
-// narrow question because folded into the request question the model kept
-// answering the request and not the addressee.
+// the agent at all? Worded around what the agent is - a voice program with
+// no body - rather than around examples of exchanges: replayed against
+// every recorded addressee decision, the example-led wording answered "no"
+// to "Did you get the milk on the way in?" asked on its own (P(yes) 0.27)
+// while this one answers yes at 0.97 and keeps every real request at no.
 var ElsewhereQuestion = StepQuestion{Name: QuestionElsewhere, Text: "These words read as a question or a " +
-	"request. Are they meant for somebody else in the room rather than for the agent? Everything arrives " +
-	"through one microphone, so a line marked \"user\" can be one person talking to another. Words that " +
-	"answer a question another person just asked (\"No, I forgot again. Can you put it on the list?\" " +
-	"answers \"Did you get the milk?\"), that carry on a conversation between two people about their own " +
-	"affairs, or that a recording reads out, are for somebody else: \"Did you get the milk on the way in? I " +
-	"looked in the fridge and there wasn't any\" is one person in the room asking another, not the agent. A " +
-	"question the agent itself can answer - arithmetic, a fact, its own task - is for the agent. If the " +
-	"evidence says the previous line was a question the agent chose not to answer and these words reply to " +
-	"it, they are for the person who asked. Answer yes if they are for somebody else."}
+	"request. Who are they for? The agent is a voice program: it has no body, was not out, did not come in, " +
+	"and carries nothing. A question about what somebody did, brought, or saw (\"Did you get the milk on the " +
+	"way in?\") is for a person in the room, as are words that answer another person, carry on their own " +
+	"exchange, or that a recording reads out. A question the agent can answer or a thing it can do - a fact, " +
+	"arithmetic, its own task, something it should count, translate, watch for, call, or go on with - is for " +
+	"the agent. Answer yes if the words are for somebody else, not the agent."}
 
 // ReplyQuestion replaces ElsewhereQuestion when the previous line was a
 // question the agent chose not to answer: asked whether the words are "for
