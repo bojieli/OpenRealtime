@@ -136,6 +136,17 @@ recorded decisions, 13 of 37 right as a single choice against 33 to 34 asked
 this way, and 39 of 40 in the live benchmark. The answers are recorded on
 every decision (`questions`) and shown on the timeline's policy lane.
 
+The stop answer is the only thing that takes the floor from the voice. The
+overlap element still tracks who is speaking over whom, but it has no
+classifier of its own (`overlap_barge_in.decider` is empty) and its fallback
+keeps speaking: with a classifier it asked the same decider an older
+question - "is this directed speech?" - beside the policy's, and acted on
+that answer alone. In the live room it cancelled a key press the policy had
+just chosen because the recorded menu read on, cancelled the acknowledgement
+of a translation rule because the person kept talking, and cut a count the
+policy had decided to keep, fifteen milliseconds before the policy said
+keep. One question, one decider.
+
 A decision that waited for the voice to finish is taken against everything
 the voice said meanwhile, and the generation it admits runs on that context.
 A tool call from such a generation - a key pressed at a menu while the

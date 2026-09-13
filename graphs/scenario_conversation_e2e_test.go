@@ -451,10 +451,10 @@ func testScenarioConversationGraphRoundTrip(t *testing.T, toolCase scenarioEndpo
 			fixture.model.invocations.Load())
 	}
 	// One recogniser per utterance and this test now speaks once; the policy
-	// is opened by admission and by the overlap controller.
-	if fixture.asrFactories.Load() != 1 || fixture.policyFactories.Load() != 2 ||
+	// is opened by admission alone, the overlap element having no classifier.
+	if fixture.asrFactories.Load() != 1 || fixture.policyFactories.Load() != 1 ||
 		fixture.modelFactories.Load() != 1 || fixture.ttsFactories.Load() != 1 {
-		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 1/2/1/1",
+		t.Fatalf("scenario endpoint factories ASR=%d policy=%d model=%d TTS=%d, want 1/1/1/1",
 			fixture.asrFactories.Load(), fixture.policyFactories.Load(),
 			fixture.modelFactories.Load(), fixture.ttsFactories.Load())
 	}
@@ -582,13 +582,10 @@ func (fixture *scenarioEndpointFixture) artifact(name, revision string) inspect.
 
 func (fixture *scenarioEndpointFixture) assertFactories(t testing.TB, wanted int32) {
 	t.Helper()
+	// One model per session: the silent lane is gone. One policy per
+	// session: admission opens it, and the overlap element, which has no
+	// classifier of its own, does not.
 	modelWanted, policyWanted := wanted, wanted
-	if wanted > 0 {
-		// One model per session now: the silent lane is gone. The policy is
-		// still opened twice, by admission and by the overlap controller.
-		modelWanted = wanted
-		policyWanted = wanted * 2
-	}
 	// session.created says the session exists, not that every endpoint the
 	// graph needs has been constructed: the factories run as the graph mounts,
 	// and the caller reads these counters the moment that event arrives. On an

@@ -588,10 +588,11 @@ func TestScenarioConversationGraphOwnsTypedForegroundOverlapPolicy(t *testing.T)
 	if err := json.Unmarshal(values.Nodes["overlap_barge_in"], &overlapConfig); err != nil {
 		t.Fatal(err)
 	}
-	// Unclassified overlap keeps speaking: the interaction policy is asked on
-	// every partial whether the person is cutting in, and a yield is its
-	// decision, not the hold window's.
-	if overlapConfig.Decider == "" || overlapConfig.Decider != semanticConfig.Decider ||
+	// Unclassified overlap keeps speaking and nothing classifies it: the
+	// interaction policy is asked on every partial whether the person is
+	// cutting in, and a yield is its decision, not the hold window's and not
+	// a second classifier's.
+	if overlapConfig.Decider != "" || semanticConfig.Decider == "" ||
 		overlapConfig.HoldMS != 1800 || overlapConfig.Unclassified != "keep_speaking" ||
 		overlapConfig.MaxActiveRuns != 256 || overlapConfig.MaxUtterances != 512 {
 		t.Fatalf("scenario overlap policy values = %+v; semantic decider = %q",

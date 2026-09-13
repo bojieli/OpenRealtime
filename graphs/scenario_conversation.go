@@ -105,7 +105,15 @@ func ScenarioConversationArtifacts(
 	// for 800 ms - took the floor from a translation the policy had chosen
 	// to keep, because the next partial, and the next decision, were a
 	// second away. Unclassified overlap keeps speaking; a stop is a decision.
-	if err := updateScenarioNode(document.Nodes, "overlap_barge_in", map[string]any{"unclassified": "keep_speaking"}); err != nil {
+	//
+	// The element's own classifier is switched off for the same reason. It
+	// asked the decider a second, older question ("is this directed speech?")
+	// beside the policy's and acted on the answer alone: in the live room it
+	// cancelled a key press the policy had just chosen because the recorded
+	// menu read on, cancelled a translation rule's acknowledgement because
+	// the person kept talking, and cut a count the policy had decided to
+	// keep, 15 ms before the policy said keep. One question, one decider.
+	if err := updateScenarioNode(document.Nodes, "overlap_barge_in", scenarioOverlapValues); err != nil {
 		return graphconfig.Artifacts{}, err
 	}
 	directVisual := false
@@ -142,7 +150,7 @@ func ScenarioConversationArtifacts(
 		if err != nil {
 			return graphconfig.Artifacts{}, err
 		}
-		if err := updateScenarioNode(document.Nodes, "overlap_barge_in", map[string]any{"unclassified": "keep_speaking"}); err != nil {
+		if err := updateScenarioNode(document.Nodes, "overlap_barge_in", scenarioOverlapValues); err != nil {
 			return graphconfig.Artifacts{}, err
 		}
 		baseLock, err := resolve.ParseLock(lock)
@@ -174,6 +182,10 @@ func ScenarioConversationArtifacts(
 		Deployment: graphconfig.Artifact{Path: "scenario-conversation/agent.deployment.yaml", Encoding: graphconfig.YAML, Data: deployment},
 	}, nil
 }
+
+// scenarioOverlapValues leaves the overlap element with no classifier and a
+// fallback that keeps speaking: the floor is the interaction policy's alone.
+var scenarioOverlapValues = map[string]any{"decider": "", "unclassified": "keep_speaking"}
 
 func updateScenarioNode(
 	nodes map[string]json.RawMessage, name string, selected map[string]any,

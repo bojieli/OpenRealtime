@@ -349,9 +349,11 @@ func validatePlanReferences(plan *graphconfig.Plan, config PluginConfig) error {
 		}
 	}
 	wanted := map[string]map[string]string{
-		"asr":                      {"provider": ASRReference},
-		"semantic_admission":       {"decider": PolicyReference},
-		"overlap_barge_in":         {"decider": PolicyReference},
+		"asr":                {"provider": ASRReference},
+		"semantic_admission": {"decider": PolicyReference},
+		// The overlap element has no classifier of its own: the interaction
+		// policy is the one decider of the floor.
+		"overlap_barge_in":         {"decider": ""},
 		"voice_model":              {"provider": ModelReference},
 		"tool_lookup":              {"registry": ToolReference},
 		"confirmation":             {"provider": ConfirmationReference},

@@ -1261,14 +1261,9 @@ func assertServeProfileFactories(
 	if serveProfileFactoriesMatch(counters, want) {
 		return
 	}
-	modelWant, policyWant := want, want
-	if want > 0 {
-		modelWant = want
-		policyWant = 2 * want
-	}
 	t.Fatalf("profile provider factories ASR=%d policy=%d model=%d TTS=%d, want %d/%d/%d/%d",
 		counters.asr.Load(), counters.policy.Load(), counters.model.Load(), counters.tts.Load(),
-		want, policyWant, modelWant, want)
+		want, want, want, want)
 }
 
 func awaitServeProfileFactories(
@@ -1283,13 +1278,10 @@ func awaitServeProfileFactories(
 }
 
 func serveProfileFactoriesMatch(counters *serveProfileFactoryCounters, want int32) bool {
-	modelWant, policyWant := want, want
-	if want > 0 {
-		modelWant = want
-		policyWant = 2 * want
-	}
-	return counters.asr.Load() == want && counters.policy.Load() == policyWant &&
-		counters.model.Load() == modelWant && counters.tts.Load() == want
+	// One policy per session: admission opens it, and the overlap element,
+	// which has no classifier of its own, does not.
+	return counters.asr.Load() == want && counters.policy.Load() == want &&
+		counters.model.Load() == want && counters.tts.Load() == want
 }
 
 func assertServeProviderRegistrationIdentities(

@@ -72,11 +72,11 @@ nodes:
   post_commit_silence:
     delay_ms: 15000
   overlap_barge_in:
-    decider: deployment.scenario-conversation.semantic-policy
-    # Allow a short acknowledgement to reach ASR and semantic classification.
-    # Directed speech still cancels immediately when classified.
+    # No classifier of its own: the interaction policy is asked on every
+    # partial whether the person is cutting in, and the floor is its call.
+    decider: ""
     hold_ms: 1800
-    unclassified: cancel
+    unclassified: keep_speaking
     max_active_runs: 256
     max_utterances: 512
   voice_model:
