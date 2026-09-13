@@ -217,11 +217,13 @@ pressed it again four runs out of four. A call proposed on settled evidence
 (a finished turn, a frame) is never refused this way.
 
 A voice request that the provider accepts and then leaves silent is sent
-again after six seconds (`gemini.Config.FirstEventTimeout`, the fast phase's
-default; the reasoner has none). Every measured generation in the harness had
-its first clause playing within 4.6 s; the one that stalled had delivered
-nothing after 6 s and, bounded only by the 30 s request timeout, it cost the
-turn it answered. A stream that has sent no event has said nothing the
+again after four seconds (`gemini.Config.FirstEventTimeout`, the fast phase's
+default; the reasoner has none). The budget sits just above the slowest
+generation the harness sees from the voice in use: 3.9 s over three passes
+with Gemini 3.8 Flash, where a request that had delivered nothing after
+5.2 s answered a question two seconds late, and before that 4.6 s with 3.7,
+where one stall bounded only by the 30 s request timeout cost the turn it
+answered. A stream that has sent no event has said nothing the
 conversation could hear twice, so the second attempt is safe; one that has
 sent anything is never replayed.
 

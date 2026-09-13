@@ -466,8 +466,9 @@ type Hearing struct {
 // as words; nothing invented for silence, because a window with nothing in
 // it is a finding the checks rely on.
 const geminiHearingPrompt = "Transcribe exactly the words spoken in this recording, in the language they are " +
-	"spoken in, with numbers written as words. Reply with the transcript only. If nothing is spoken, reply " +
-	"with an empty line."
+	"spoken in, with numbers written as words. The recording may hold a single word, such as one number; " +
+	"write that word alone and add nothing to it. Reply with the transcript only. If nothing is spoken, " +
+	"reply with an empty line."
 
 // Hear transcribes one stretch of the agent's audio.
 func (voice SpeechVoice) Hear(ctx context.Context, samples []int16, rateHz int) (string, error) {

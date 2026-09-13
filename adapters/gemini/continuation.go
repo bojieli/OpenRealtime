@@ -49,11 +49,14 @@ const (
 	// go on. It travels inside the provider request only.
 	recitationContinueNote = "Continue from exactly where you stopped. Do not repeat anything already said, " +
 		"and do not remark on the interruption."
-	// defaultFastFirstEventTimeout is the fast phase's silence budget. Over
-	// the twelve-scenario harness the voice's first audible clause arrived
-	// within 4.6 s of the request in every measured generation; the one
-	// stall that lost a turn had delivered nothing after 6 s.
-	defaultFastFirstEventTimeout = 6 * time.Second
+	// defaultFastFirstEventTimeout is the fast phase's silence budget, set
+	// just above the slowest generation the twelve-scenario harness sees
+	// from the voice in use. With Gemini 3.7 Flash that was 4.6 s and the
+	// budget 6 s; with 3.8 Flash three passes topped out at 3.9 s (p90
+	// 2.2 s), and a request that had delivered nothing after 5.2 s answered
+	// a question two seconds late. A retry costs one more first token,
+	// about a second, so re-sending at 4 s is cheaper than any stall.
+	defaultFastFirstEventTimeout = 4 * time.Second
 	initialRetryDelay            = 250 * time.Millisecond
 	maximumRetryDelay            = 2 * time.Second
 	// portableToolCallThoughtSignature is Gemini's documented sentinel for a
