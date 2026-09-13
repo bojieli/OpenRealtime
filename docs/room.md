@@ -19,11 +19,42 @@ application still connects to a room served from Linux, and on a Mac alone it
 runs against an explicitly composed cascade instead - see
 [Use local models](guides/local-stack.md).
 
-The default room uses OpenRealtime's graph-native twelve-scenario pipeline:
-Deepgram Nova-3 streaming recognition, local Qwen interaction decisions,
-Gemini 3.5 Flash cognition, local Fish Speech synthesis, speaker embeddings,
-and word timing. Set `DEEPGRAM_API_KEY` and `GEMINI_API_KEY` in the launching
-environment. The local services must already be running:
+## The default pipeline
+
+The room's pipeline is the project's default, and the twelve scenarios are
+its acceptance test. It is a cascade - Deepgram Nova-3 streaming recognition,
+a local Qwen model asked one yes/no question per transcript event, Gemini
+3.7 Flash as the voice, local Fish Speech synthesis, speaker embeddings, and
+word timing - arranged so that it behaves the way a single duplex model
+would: it decides on every partial, speaks mid-sentence when the moment
+comes, stops when cut in on, resumes from what was heard, presses a key
+while a recording still reads, and holds its silence when the words are for
+somebody else. The room's architecture is
+`cascade.composed-policy-direct-visual-speaker@1` (`defaultRoomProfileOptions`
+in `cmd/openrealtime/companion_pipeline.go`); the harness plays
+`cascade.composed-policy-direct-visual@1`, the same pipeline without speaker
+identity. The graph is `graphs/components/scenario-conversation`, and the
+rules are the ones below.
+
+A change to any part of it is judged by playing the twelve scenarios (and
+the six counting stories) against the real policy and voice models, scored
+on what a listener would have heard and reviewed by Gemini as a judge:
+
+```sh
+OPENREALTIME_SCENARIO_BENCH=1 go test ./graphs -run TestTwelveScenariosAgainstLiveModels -v -count=1
+OPENREALTIME_COUNTING_BENCH=1 go test ./graphs -run TestCountingBenchmarkAgainstLiveModels -v -count=1
+OPENREALTIME_ROOM_TEST_ENDPOINT=ws://127.0.0.1:8775/v1/realtime go test ./cmd/openrealtime -run TestLiveRoomTwelveScenarios -v -count=1
+```
+
+The scenarios play in parallel; a pass takes about a minute. Reports land
+under `.runtime/scenario-bench/` and `.runtime/counting-bench/`. What still
+fails a scenario on a given evening is the voice provider's first-token
+latency against the scenarios' two-to-three-second limits, and the
+recogniser's hearing of a short first sentence in a second language; both
+are measured in the reports rather than absorbed by the pipeline.
+
+Set `DEEPGRAM_API_KEY` and `GEMINI_API_KEY` in the launching environment.
+The local services must already be running:
 
 | Component | Default endpoint |
 | --- | --- |

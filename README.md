@@ -101,6 +101,12 @@ Interaction policies decide when work should run and when output can reach the
 user. In the default voice arrangement, the foreground speaks and the
 background reasoner returns information and tool results for it to present.
 
+The project's default pipeline is the [conversation room](docs/room.md): a
+cascade of a recogniser, a small policy model asked one question per
+transcript event, a voice model, and a synthesiser, arranged to behave the
+way a single duplex model would, and accepted by playing twelve scripted
+scenarios against the real models.
+
 ```mermaid
 flowchart LR
     Client[Browser or API client] <--> Runtime[OpenRealtime runtime]

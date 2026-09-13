@@ -5,6 +5,10 @@ import (
 	"github.com/bojieli/OpenRealtime/interaction"
 )
 
+// defaultRoomProfileOptions is the project's default pipeline: the cascade
+// the conversation room runs, accepted by the twelve scripted scenarios
+// played against the real policy and voice models (docs/room.md, "The
+// default pipeline"). A change to it is judged there.
 func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection := defaultScenarioProfileOptions()
 	selection.name = "openrealtime.launch.conversation-room"
