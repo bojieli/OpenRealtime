@@ -277,7 +277,7 @@ func newServeScenarioProviders(artifacts serveProfileArtifacts) (serveScenarioPr
 				if err != nil {
 					return nil, err
 				}
-				return recogniserMetrics.New(asrbuffer.Config{
+				return recogniserMetrics.Wrap(asrbuffer.Config{
 					Provider: provider, MinimumChunk: time.Duration(config.CadenceMS) * time.Millisecond,
 				})
 			},

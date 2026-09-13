@@ -612,9 +612,15 @@ func (current *fluxStream) dead() bool {
 	}
 }
 
+// stop ends the stream without a close handshake. Every Flux stream is
+// stopped when it is finished - CloseStream already sent, a turn already
+// ended, or the stream dead - so the handshake protects nothing, and it waits
+// up to five seconds for the service's close frame while the recogniser that
+// called it holds up the next utterance. Measured in the served room, that
+// wait swallowed the second sentence of a conversation.
 func (current *fluxStream) stop() {
 	current.stopOnce.Do(func() { close(current.stopped) })
-	_ = current.connection.Close(websocket.StatusNormalClosure, "")
+	_ = current.connection.CloseNow()
 }
 
 // read is the only goroutine that touches the connection's reader. It decodes

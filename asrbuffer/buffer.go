@@ -165,6 +165,30 @@ func (buffer *Buffer) Close() error {
 	return closer.Close()
 }
 
+// SpeechEndpointed forwards the wrapped recogniser's own end of speech
+// (Nova-3's speech_final, Flux's EndOfTurn).
+//
+// The buffer is deployment policy, not a recogniser, and the runtime reads
+// these optional signals from whatever it holds. A signal the buffer does not
+// pass on reaches nothing and fails nothing: the served room wrapped every
+// recogniser here, so a recogniser-owned end of turn was configured, wired,
+// tested with an unwrapped fake, and never once reached the graph.
+func (buffer *Buffer) SpeechEndpointed() bool {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	endpointed, ok := buffer.provider.(interface{ SpeechEndpointed() bool })
+	return ok && endpointed.SpeechEndpointed()
+}
+
+// EagerEndOfTurn forwards the wrapped recogniser's eager end of turn (Flux's
+// EagerEndOfTurn), for the same reason as SpeechEndpointed.
+func (buffer *Buffer) EagerEndOfTurn() bool {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	eager, ok := buffer.provider.(interface{ EagerEndOfTurn() bool })
+	return ok && eager.EagerEndOfTurn()
+}
+
 // Descriptor implements api/v1.PerceptionProvider. Buffering is deployment
 // policy, not provider identity, so the wrapped descriptor is returned with a
 // defensive copy of its capability map.
