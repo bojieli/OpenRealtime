@@ -66,14 +66,22 @@ var SightQuestion = StepQuestion{Name: QuestionOccurrence, Text: "The agent was 
 	"for has now happened - a build finished, an error appeared - rather than still under way, and has the " +
 	"agent not already reported it? If no standing instruction is listed, answer no."}
 
-// RequestQuestion is asked when the person has stopped and nothing came due:
-// is there something to answer?
+// RequestQuestion is asked on a final when nothing standing came due: is
+// there something to answer? The short-question clause is there because a
+// person in the room set up a rule and asked "Are you ready?" twice, and
+// the policy refused it both times (P(yes) 0.41); replayed against every
+// recorded request decision, this clause answers it at 0.88 and changes
+// nothing else - a wording that also acknowledged "Call them and find out
+// where my order has got to" put that acknowledgement under the recording
+// that follows it.
 var RequestQuestion = StepQuestion{Name: QuestionRequest, Text: "This is the final of what the person said. " +
 	"Is it a question or a request that no recent step already answered? If \"already answered in this " +
 	"utterance\" shows words, or a recent step spoke for these same words, the agent is already answering " +
 	"it: answer no unless the final adds a different request. A story, small talk, a rule being set up, or " +
 	"a recording reading out options is not a request. A question put to the agent is a request wherever it " +
-	"comes: \"By the way, what is seven times eight?\" in the middle of a story or a running count is one."}
+	"comes: \"By the way, what is seven times eight?\" in the middle of a story or a running count is one. " +
+	"So is a short question that expects the agent to answer - \"Are you ready?\", \"Did you get that?\", " +
+	"\"Can you hear me?\" - even right after a rule was set up."}
 
 // UrgentQuestion is asked on a partial when no standing instruction is in
 // force: nothing can come due, so the one thing a half-sentence can be is
