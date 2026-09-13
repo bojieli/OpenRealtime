@@ -361,7 +361,12 @@ func (listener *Listener) Finalize(
 	}
 	text := strings.TrimSpace(listener.committed + listener.interim)
 	revision := listener.revision(text, sourceSample, true)
+	// The final is the transcript this stream now exposes, so its
+	// confidence stays readable until the next utterance's first result
+	// replaces it: the language mux compares the lanes' finals by it.
+	confidence := listener.confidence
 	listener.resetUtterance()
+	listener.confidence = confidence
 	return revision, nil
 }
 

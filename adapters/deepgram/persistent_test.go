@@ -2,6 +2,7 @@ package deepgram
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -153,4 +154,29 @@ func (listener *Listener) streamDead() bool {
 	listener.mu.Lock()
 	defer listener.mu.Unlock()
 	return listener.stream == nil || listener.stream.dead()
+}
+
+// The final's confidence stays readable after Finalize: the language mux
+// compares the lanes' finals by it, and a listener that cleared it with the
+// rest of the utterance made every comparison 0 against 0.
+func TestFinalizeKeepsTheFinalsConfidence(t *testing.T) {
+	t.Parallel()
+	withConfidence := func(transcript string, confidence float64) string {
+		payload, _ := json.Marshal(map[string]any{
+			"type": "Results", "is_final": true, "speech_final": true,
+			"channel": map[string]any{"alternatives": []map[string]any{{"transcript": transcript, "confidence": confidence}}},
+		})
+		return string(payload)
+	}
+	fake := newFakeDeepgram(t, []string{results("你好", false), withConfidence("你好 很高兴见到你", 0.99)})
+	listener := persistentListener(t, fake, time.Hour)
+	push(t, listener, 0, 0, 160)
+	push(t, listener, 1, 160, 160)
+	final, err := listener.Finalize(context.Background(), 320)
+	if err != nil || final.StableText != "你好 很高兴见到你" {
+		t.Fatalf("final = %+v %v", final, err)
+	}
+	if got := listener.Confidence(); got != 0.99 {
+		t.Fatalf("confidence after Finalize = %.2f, want the final's 0.99", got)
+	}
 }

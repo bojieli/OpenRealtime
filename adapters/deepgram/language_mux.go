@@ -193,11 +193,6 @@ func (mux *LanguageMux) Finalize(
 ) (v1.PerceptionRevision, error) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
-	// Read the confidences first: finalising a lane clears its confidence
-	// along with the rest of its utterance, and a comparison made afterwards
-	// is 0 against 0. Measured, "你好" said on its own at 0.99 lost to
-	// "Neha." at 0.44 every time.
-	primaryConfidence, chineseConfidence := mux.primary.Confidence(), mux.chinese.Confidence()
 	type outcome struct {
 		chinese  bool
 		revision v1.PerceptionRevision
@@ -229,8 +224,13 @@ func (mux *LanguageMux) Finalize(
 	// mid-utterance rule demands: a one-second fragment of accented English
 	// came back from it as "圣骑士", beating an English lane that was surer
 	// of nothing.
+	// Compared after both lanes have finalised: a lane's final carries the
+	// reading it settled on, and its confidence with it. Read before, the
+	// Chinese lane's 0.83 mid-sentence lost to English although its final
+	// read the whole greeting at 0.99.
 	if mux.selectedChinese || (carriesHan(revisionText(chinese)) &&
-		chineseConfidence >= languageSelectionConfidence && chineseConfidence > primaryConfidence) {
+		mux.chinese.Confidence() >= languageSelectionConfidence &&
+		mux.chinese.Confidence() > mux.primary.Confidence()) {
 		chosen = chinese
 	}
 	chosen.SourceSample = sourceSample
