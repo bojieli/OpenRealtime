@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -62,7 +64,7 @@ func (voice SpeechVoice) Speak(ctx context.Context, speaker, text string) ([]int
 	}
 	key := cacheKey(voice.Model, name, text)
 	if samples, ok := readCached(key); ok {
-		return samples, nil
+		return levelled(samples), nil
 	}
 	body, err := json.Marshal(map[string]any{
 		"model": voice.Model, "input": text, "voice": name,
@@ -99,7 +101,128 @@ func (voice SpeechVoice) Speak(ctx context.Context, speaker, text string) ([]int
 		return nil, err
 	}
 	writeCached(key, samples)
-	return samples, nil
+	return levelled(samples), nil
+}
+
+// levelled brings a synthesised line to the loudness people speak at in the
+// same room. Synthesis voices differ by a lot - measured, the "other"
+// speaker's Mandarin came out four times quieter than the user's English
+// (peak 0.28 against 0.93 of full scale) - and the room's energy gate, set
+// for a person at a normal level, opened on a fraction of the quiet line and
+// gave the recogniser a 600 ms fragment of "你好，很高兴见到你". The scenario
+// is about translating what was said, not about a voice that mumbles.
+//
+// The measure is the RMS of the voiced part (10 ms frames above one percent
+// of full scale), scaled to a fixed target with the peak kept clear of
+// clipping; silence and pauses are untouched.
+func levelled(samples []int16) []int16 {
+	const (
+		frame     = 240 // 10 ms at 24 kHz
+		voiced    = 0.01 * 32768
+		targetRMS = 0.25 * 32768
+		peakLimit = 0.95 * 32768
+	)
+	sum, count := 0.0, 0
+	peak := 0.0
+	for start := 0; start+frame <= len(samples); start += frame {
+		energy := 0.0
+		for _, sample := range samples[start : start+frame] {
+			value := float64(sample)
+			energy += value * value
+			peak = max(peak, math.Abs(value))
+		}
+		if rms := math.Sqrt(energy / frame); rms > voiced {
+			sum += energy
+			count += frame
+		}
+	}
+	if count == 0 || peak == 0 {
+		return samples
+	}
+	gain := targetRMS / math.Sqrt(sum/float64(count))
+	gain = min(gain, peakLimit/peak)
+	if math.Abs(gain-1) < 0.05 {
+		return samples
+	}
+	out := make([]int16, len(samples))
+	for index, sample := range samples {
+		out[index] = int16(max(-32768, min(32767, math.Round(float64(sample)*gain))))
+	}
+	return out
+}
+
+// hearWithGemini sends the window's WAV to Gemini and returns what it heard.
+func (listen Hearing) hearWithGemini(ctx context.Context, container []byte) (string, error) {
+	model := listen.GeminiModel
+	if model == "" {
+		model = "gemini-3.7-flash"
+	}
+	endpoint := listen.GeminiEndpoint
+	if endpoint == "" {
+		endpoint = "https://generativelanguage.googleapis.com/v1beta"
+	}
+	body, err := json.Marshal(map[string]any{
+		"contents": []map[string]any{{"role": "user", "parts": []map[string]any{
+			{"inlineData": map[string]any{"mimeType": "audio/wav", "data": base64.StdEncoding.EncodeToString(container)}},
+			{"text": geminiHearingPrompt},
+		}}},
+		"generationConfig": map[string]any{"temperature": 0, "thinkingConfig": map[string]any{"thinkingBudget": 0}},
+	})
+	if err != nil {
+		return "", err
+	}
+	client := listen.Client
+	if client == nil {
+		client = &http.Client{Timeout: 120 * time.Second}
+	}
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/models/"+model+":generateContent", bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("x-goog-api-key", listen.GeminiAPIKey)
+		response, err := client.Do(request)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		payload, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		_ = response.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if response.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("gemini hearing returned %s: %s", response.Status, truncate(payload))
+			if response.StatusCode < 500 && response.StatusCode != http.StatusTooManyRequests {
+				return "", lastErr
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		var reply struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(payload, &reply); err != nil {
+			return "", fmt.Errorf("decode gemini hearing: %w", err)
+		}
+		var text strings.Builder
+		for _, candidate := range reply.Candidates {
+			for _, part := range candidate.Content.Parts {
+				text.WriteString(part.Text)
+			}
+		}
+		return strings.TrimSpace(text.String()), nil
+	}
+	return "", lastErr
 }
 
 // decodeWAV pulls 16-bit mono samples out of a RIFF file and resamples them to
@@ -276,7 +399,23 @@ type Hearing struct {
 	Model    string
 	Language string
 	Client   *http.Client
+	// GeminiAPIKey, when set, has Gemini listen to the recording instead of
+	// the transcription endpoint. A speech recogniser built for dictation
+	// hears a lone "One." as "One eight" and "Eighteen." as "eight teen";
+	// a model asked what was said in a short clip does not. GeminiModel
+	// defaults to gemini-3.7-flash; GeminiEndpoint to the public API.
+	GeminiAPIKey   string
+	GeminiModel    string
+	GeminiEndpoint string
 }
+
+// geminiHearingPrompt asks for the words alone. Numbers as words, because
+// the counting checks read them either way and the room's voice says them
+// as words; nothing invented for silence, because a window with nothing in
+// it is a finding the checks rely on.
+const geminiHearingPrompt = "Transcribe exactly the words spoken in this recording, in the language they are " +
+	"spoken in, with numbers written as words. Reply with the transcript only. If nothing is spoken, reply " +
+	"with an empty line."
 
 // Hear transcribes one stretch of the agent's audio.
 func (voice SpeechVoice) Hear(ctx context.Context, samples []int16, rateHz int) (string, error) {
@@ -297,6 +436,9 @@ func (listen Hearing) hear(ctx context.Context, samples []int16, rateHz int) (st
 	container, err := audio.EncodeWAVMono16(pcm, uint32(rateHz))
 	if err != nil {
 		return "", err
+	}
+	if listen.GeminiAPIKey != "" {
+		return listen.hearWithGemini(ctx, container)
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

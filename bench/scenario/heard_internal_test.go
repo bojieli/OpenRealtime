@@ -156,6 +156,7 @@ func TestBothSpellingsOfANumberAreRead(t *testing.T) {
 		"Twenty-three. Twenty-four.":   {23, 24},
 		"nineteen, 20, twenty one":     {19, 20, 21},
 		"Sure, where were we? Eleven.": {11},
+		"One. To. Three. For. Five.":   {1, 2, 3, 4, 5},
 	} {
 		got := numbersIn(text)
 		if len(got) != len(want) {

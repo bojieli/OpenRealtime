@@ -137,8 +137,12 @@ func numbersIn(text string) []int {
 	return numbers
 }
 
+// The homophones are there because the listener is a recogniser: Whisper
+// wrote "to" for a spoken "Two." and a count of one to forty was scored as
+// carrying an extra word. Inside a count nothing else sounds like them.
 var smallNumbers = map[string]int{
-	"zero": 0, "oh": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+	"zero": 0, "oh": 0, "one": 1, "won": 1, "two": 2, "to": 2, "too": 2, "three": 3,
+	"four": 4, "for": 4, "fore": 4, "five": 5, "ate": 8,
 	"six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
 	"twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
 	"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20, "thirty": 30,

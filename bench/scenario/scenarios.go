@@ -273,9 +273,12 @@ func Suite() []Scenario {
 					Note: "include the purchase confirmation needed alongside the order number"},
 				{Kind: CheckSaid, Line: -1, Any: []string{"return label"}, Note: "explain the supplied return procedure"},
 				{Kind: CheckSaid, Line: -1, Any: []string{"original payment method"}, Note: "explain where the approved refund goes"},
-				{Kind: CheckHeldAcross, Line: 1, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,
+				// 800 rather than 500: a synthesised explanation pauses for up to
+				// half a second between its own sentences (measured 520 ms inside
+				// one segment while playback ran on), and a stop is seconds long.
+				{Kind: CheckHeldAcross, Line: 1, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 800,
 					Note: "mhm acknowledges the explanation; the agent must keep speaking through it"},
-				{Kind: CheckHeldAcross, Line: 2, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 500,
+				{Kind: CheckHeldAcross, Line: 2, BeforeMS: 1000, AfterMS: 1000, MaxGapMS: 800,
 					Note: "right, yeah is another backchannel; the explanation must continue through it too"},
 				{Kind: CheckNotSaid, Line: 2, AfterMS: 4000,
 					Any:  []string{"what would you like", "how can I help", "anything else", "sorry"},
@@ -361,7 +364,11 @@ func SubturnSuite() []Scenario {
 			"If they stop you and then ask you to carry on, carry on from where you " +
 			"had actually got to.",
 		Script: []Line{
-			{Speaker: "user", AtMS: 0, Text: "Count out loud from one to forty for me, slowly, one number at a time, and don't say anything else."},
+			// Two sentences, because that is how it arrives: the recogniser ends
+			// the utterance at the pause after "for me", the agent has begun,
+			// and the rest of the instruction reaches it mid-count. The harness
+			// says a line one sentence at a time and now meets the same split.
+			{Speaker: "user", AtMS: 0, Text: "Count out loud from one to forty for me. Slowly, one number at a time, and don't say anything else."},
 			{Speaker: "user", AtMS: 15000, Text: "Okay, hold on a moment."},
 			{Speaker: "user", AtMS: 25000, Text: "Right, carry on from where you got to."},
 		},

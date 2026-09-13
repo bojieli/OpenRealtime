@@ -19,7 +19,12 @@ func TestLiveRoomTwelveScenarios(t *testing.T) {
 	if endpoint == "" {
 		t.Skip("set OPENREALTIME_ROOM_TEST_ENDPOINT for the live twelve-case room diagnostic")
 	}
-	voice := scenario.SpeechVoice{Endpoint: "http://127.0.0.1:8123/v1/audio/speech", Model: "fishaudio/fish-speech-1.5", Default: "default", Voices: map[string]string{"other": "alloy"}, Listen: scenario.Hearing{Endpoint: "http://127.0.0.1:8003/v1/audio/transcriptions", Model: "whisper-turbo", Language: "en"}}
+	// Gemini listens to the agent's audio when a key is present; the local
+	// Whisper is the fallback without one.
+	voice := scenario.SpeechVoice{Endpoint: "http://127.0.0.1:8123/v1/audio/speech", Model: "fishaudio/fish-speech-1.5", Default: "default", Voices: map[string]string{"other": "alloy"}, Listen: scenario.Hearing{
+		Endpoint: "http://127.0.0.1:8003/v1/audio/transcriptions", Model: "whisper-turbo", Language: "en",
+		GeminiAPIKey: strings.TrimSpace(os.Getenv("GEMINI_API_KEY")),
+	}}
 	// The shared speech cache is rooted at the checkout, not the Go package.
 	cache, err := filepath.Abs("../../.runtime/speech-cache")
 	if err != nil {
