@@ -387,7 +387,12 @@ func (decider *scenarioAddressingPolicyDecider) Generate(
 	decider.control.mu.Unlock()
 	switch prompt {
 	case coreinteraction.ExtractionInstruction:
-		if strings.Contains(evidence, `They just said: "Tim, printer's jammed again-help?"`) {
+		// The utterance is the whole unanswered stretch, so it opens with the
+		// first request whenever that request's answer has not yet reached the
+		// context this commit reads. The hostile answer must not depend on
+		// that timing: it follows the third-party line wherever it sits.
+		if _, heard, found := strings.Cut(evidence, "They just said: "); found &&
+			strings.Contains(heard, "Tim, printer's jammed again-help?") {
 			// This intentionally hostile extractor answer proves that addressing is
 			// screened before policy mutation, not merely before model invocation.
 			return "pin conversation " + scenarioAddressingPolicy, nil

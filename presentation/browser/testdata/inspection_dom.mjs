@@ -99,10 +99,18 @@ try {
   // rather than for load alone is what makes the serialised document worth
   // asserting on: a document read before the module ran would be missing every
   // value the Go test checks, and would fail as though the view were wrong.
+  //
+  // Only the root element's flag counts. A view may mark its own section
+  // ready when it mounts, and a selector matching any element read the
+  // timeline before its events were rendered.
   const deadline = Date.now() + 60000;
   let ready = false;
   while (Date.now() < deadline) {
-    if (await evaluate(`document.querySelector('[data-ready="true"]') !== null`)) { ready = true; break; }
+    const flag = await evaluate(`document.documentElement.dataset.ready ?? ""`);
+    if (flag === "true") { ready = true; break; }
+    if (flag === "false") {
+      throw new Error(`the fixture reported the view did not settle: ${await evaluate(`document.documentElement.outerHTML`)}`);
+    }
     await sleep(100);
   }
   if (!ready) {
