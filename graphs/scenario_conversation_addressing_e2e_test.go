@@ -164,8 +164,14 @@ func TestScenarioConversationFinalNamedThirdPartyRequestNeverAcquiresAgentAuthor
 	// The extractor may look at the sentence; what it may not do is keep a
 	// rule from it. The screen is the addressee question it asked and
 	// answered, and the pinboard staying empty is the proof it held.
-	if !policy.screenedAddressee(asr.turns[1]) {
-		t.Fatal("named third-party speech was not screened for its addressee before policy mutation")
+	// The screen runs in the commit step that follows the final's decision,
+	// so the outcome awaited above can be published before it has asked.
+	screened := time.Now().Add(5 * time.Second)
+	for !policy.screenedAddressee(asr.turns[1]) {
+		if time.Now().After(screened) {
+			t.Fatal("named third-party speech was not screened for its addressee before policy mutation")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	assertScenarioAddressingTrajectoryObservation(t, runtime.Trajectory(), asr.turns[1], secondRevision)
 

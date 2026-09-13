@@ -1,0 +1,11 @@
+# CPU-only dependencies for the synthesiser's audio contract suite
+# (test_audio_contract.py), which the verification gate runs. The resampler
+# under test is torchaudio's, so the suite cannot load without torch; install
+# with the CPU wheel index so a gate runner does not pull CUDA:
+#
+#   pip install -r tools/fish15/requirements-test.txt \
+#     --extra-index-url https://download.pytorch.org/whl/cpu
+numpy==2.2.6
+pytest==9.0.3
+torch==2.10.0
+torchaudio==2.10.0

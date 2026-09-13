@@ -3,6 +3,7 @@ package deepgram
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,8 +50,15 @@ func TestAPersistentStreamCarriesConsecutiveUtterancesOverOneConnection(t *testi
 
 	// The next utterance starts its own frame and sample numbering, as every
 	// utterance does; the stream underneath does not restart.
-	push(t, listener, 0, 0, 160)
-	push(t, listener, 1, 160, 160)
+	// A final's delta is measured from the last revision this utterance
+	// emitted, and a push may already have drained a partial - whether it has
+	// depends on when the fake's reply lands. So the claim is made over every
+	// delta the utterance produced: together they spell this utterance and
+	// nothing of the one before it.
+	var deltas strings.Builder
+	for _, revision := range append(push(t, listener, 0, 0, 160), push(t, listener, 1, 160, 160)...) {
+		deltas.WriteString(revision.Delta)
+	}
 	second, err := listener.Finalize(context.Background(), 320)
 	if err != nil {
 		t.Fatal(err)
@@ -58,8 +66,9 @@ func TestAPersistentStreamCarriesConsecutiveUtterancesOverOneConnection(t *testi
 	if !second.Final || second.StableText != "and again please" {
 		t.Fatalf("second utterance = %+v", second)
 	}
-	if second.Delta != "and again please" {
-		t.Fatalf("second utterance delta carried the first utterance's text: %q", second.Delta)
+	deltas.WriteString(second.Delta)
+	if deltas.String() != "and again please" {
+		t.Fatalf("second utterance deltas carried the first utterance's text: %q", deltas.String())
 	}
 	if got := fake.accepts.Load(); got != 1 {
 		t.Fatalf("connections dialled = %d, want 1", got)

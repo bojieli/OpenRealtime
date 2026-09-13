@@ -64,83 +64,6 @@ jobs:
           bash -n macos/prepare-browser-use.sh
           bash -n macos/verify-hosted-companion.sh
 
-  # OPENREALTIME_TEST_PARALLEL is set here for the reason check.sh documents at
-  # length: this suite's end-to-end tests each start real servers, real ffmpeg,
-  # and real Chromium and hold real deadlines, so running one package per CPU
-  # starves them and a rotating handful fail while every one of them passes
-  # alone. A four-vCPU runner is a small machine by that measure, and this job
-  # had never once been green on it - five consecutive runs on main failed, each
-  # on a different set of tests, with signatures that name the cause: a Chromium
-  # killed by the OS, a trace that saw three events instead of the rest, a
-  # played count that had not been published yet. Every one of them passes
-  # locally, including under `taskset -c 0-3`.
-  #
-  # This does not make the gate weaker. It changes how many packages run at
-  # once and nothing about what is checked.
-  gate:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      OPENREALTIME_TEST_PARALLEL: '2'
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.25'
-          check-latest: true
-
-      # setup-go pins GOTOOLCHAIN=local so that its go-version input is the only
-      # toolchain the job can use. That is the wrong rule for this repository.
-      # Both modules deliberately pin an exact `toolchain` directive - the root
-      # module to go1.25.14, integrations/livekit to go1.26.8 - and check.sh
-      # runs the two of them with one `go` binary. Under GOTOOLCHAIN=local the
-      # LiveKit half cannot run at all:
-      #
-      #   go: go.mod requires go >= 1.26 (running go 1.25.14; GOTOOLCHAIN=local)
-      #
-      # which is how that module's vet, normal tests, and race tests were all
-      # reported as failures for weeks without one of them executing - and a
-      # module that cannot be loaded fails in the same colour as a module whose
-      # tests fail. Restoring `auto` hands each module the toolchain its own
-      # go.mod names, which is what those pins are for and what a developer
-      # running check.sh locally already gets.
-      #
-      # It is written after setup-go rather than declared as job `env:` so that
-      # it plainly wins by order instead of by an env-precedence rule.
-      - name: Let each module use the toolchain its go.mod pins
-        run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
-
-      - name: Review media sandbox
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap libopus-dev libopusfile-dev pkg-config
-          # The media review runs ffmpeg under bubblewrap with --unshare-all,
-          # and bubblewrap then brings up loopback inside the new network
-          # namespace. Ubuntu 24.04 restricts unprivileged user namespaces by
-          # default, so that call is denied and every ffmpeg test fails with
-          # "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" -
-          # which reads like a broken sandbox and is a runner policy. Relaxing
-          # it here keeps the sandbox flags themselves unchanged, which is the
-          # half that is a security property rather than a CI detail.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-
-      # The reference sidecars run in mock mode under the Go conformance
-      # suite; they need only numpy and Pillow, which is what the sidecar
-      # unit suite pins too.
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - name: Reference sidecar runtime
-        run: python -m pip install --quiet -r sidecars/requirements-test.txt
-
-      - name: Verification gate
-        env:
-          OPENREALTIME_GO_BIN: ${{ github.workspace }}/go-bin/go
-        run: |
-          mkdir -p go-bin && ln -sf "$(command -v go)" go-bin/go
-          ./scripts/check.sh
-
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -183,26 +106,19 @@ jobs:
             dist/openrealtime-*
             dist/SHA256SUMS-*.txt
 
-  # The gate job above runs check.sh without OPENREALTIME_RELEASE_GATE, which is
-  # correct for it: on a runner with no browser the official-client claim skips,
-  # check_official_client says so, and an ordinary run is not failed for a
-  # missing dependency.
+  # The verification gate. It runs check.sh with OPENREALTIME_RELEASE_GATE set,
+  # so a claim whose dependencies are missing fails instead of skipping. There
+  # used to be a second job running the same script without the flag, which
+  # tolerated those skips: it never checked the official SDK, reported the same
+  # load failures twice, and could only ever be green where this job was too.
   #
-  # But that means the release flag - the mechanism whose whole purpose is to
-  # refuse a claim that was not checked - was set nowhere in this repository.
-  # A protection that never runs is not a protection, and the claim it guards is
-  # the compatibility claim: an official OpenAI Realtime client completing a
-  # tool-using session unmodified, over WebSocket and over WebRTC. That is
-  # section 8's most externally visible promise and the easiest to ship broken,
-  # because a skipped test and a passing test both print ok.
+  # The job installs what every claim needs - the official SDK, a browser, the
+  # sidecar runtimes - because a skipped test and a passing test both print ok.
   #
-  # So this job installs what the claim needs - the official SDK and a browser -
-  # and runs the gate with the flag set, where a skip is a failure. If the SDK
-  # publishes a breaking change, this job fails while the gate job stays green,
-  # which is the distinction worth having in CI.
-  # Same bound as the gate, and a deadline that fits it: this job runs the whole
-  # of check.sh with a browser and the official SDK on top, and it was being
-  # killed at exactly twenty minutes rather than finishing and reporting.
+  # OPENREALTIME_TEST_PARALLEL: the end-to-end tests each start real servers,
+  # ffmpeg and Chromium and hold real deadlines, so one package per CPU on a
+  # four-vCPU runner starves them. It changes how many packages run at once and
+  # nothing about what is checked.
   compatibility:
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -220,8 +136,10 @@ jobs:
         with:
           node-version: '22'
 
-      # See the gate job: each module pins its own exact toolchain, and
-      # GOTOOLCHAIN=local leaves integrations/livekit unable to load.
+      # setup-go pins GOTOOLCHAIN=local, but each module pins its own exact
+      # toolchain (the root go1.25.x, integrations/livekit go1.26.x), and under
+      # GOTOOLCHAIN=local the LiveKit module cannot load at all. `auto` hands each
+      # module the toolchain its go.mod names.
       - name: Let each module use the toolchain its go.mod pins
         run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
 
@@ -235,7 +153,12 @@ jobs:
         with:
           python-version: '3.11'
       - name: Reference sidecar runtime
-        run: python -m pip install --quiet -r sidecars/requirements-test.txt
+        run: |
+          python -m pip install --quiet -r sidecars/requirements-test.txt
+          # check.sh runs the synthesiser's audio contract, whose resampler is
+          # torchaudio's; CPU wheels keep the runner from pulling CUDA.
+          python -m pip install --quiet -r tools/fish15/requirements-test.txt \
+            --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Browser for the WebRTC transport
         run: |
@@ -274,11 +197,10 @@ jobs:
           ./scripts/check.sh
 
   # The release matrix is the machine-readable claim inventory, and until now
-  # nothing ran it: the gate above runs check.sh, which tolerates skips by
-  # design, and the matrix's dedicated gates - efficiency, the Opus encoder,
-  # sidecar conformance, the extension conformance suites, every fuzz target,
-  # the browser presentation profiles, the portable clients - could rot with
-  # every check green. This job runs the complete local scope with skips
+  # nothing ran it: check.sh does not reach the matrix's dedicated gates -
+  # efficiency, the Opus encoder, sidecar conformance, the extension
+  # conformance suites, every fuzz target, the browser presentation profiles,
+  # the portable clients - so they could rot with every check green. This job runs the complete local scope with skips
   # forbidden and keeps the create-only report as an artifact. It provisions
   # exactly what the plan says the local gates need; a provisioned gate stays
   # blocked here, which the report records rather than hides.
@@ -301,8 +223,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      # See the gate job: each module pins its own exact toolchain, and
-      # GOTOOLCHAIN=local leaves integrations/livekit unable to load.
+      # setup-go pins GOTOOLCHAIN=local, but each module pins its own exact
+      # toolchain (the root go1.25.x, integrations/livekit go1.26.x), and under
+      # GOTOOLCHAIN=local the LiveKit module cannot load at all. `auto` hands each
+      # module the toolchain its go.mod names.
       - name: Let each module use the toolchain its go.mod pins
         run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
 
