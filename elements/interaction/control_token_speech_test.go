@@ -104,34 +104,3 @@ func TestControlTokenSplitAcrossDeltasNeverReachesSpeech(t *testing.T) {
 		t.Fatalf("a run that spelled the token in pieces must still be silent: %+v", outcome)
 	}
 }
-
-// A stream that ends on a lone unfinished word after complete sentences did
-// not finish that word; it is not spoken. A run of one word is still said.
-func TestDanglingWordAfterSentencesIsNotSpoken(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		text string
-		want []string
-	}{
-		{"cut recitation", "Twelve. Thirteen. Eight", []string{"Twelve.", "Thirteen."}},
-		{"one word answer", "Yes", []string{"Yes"}},
-		{"finished tail", "Twelve. Thirteen.", []string{"Twelve.", "Thirteen."}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mounted, done, cancel := mountInteractionGraph(t, segmentGraph,
-				map[string]json.RawMessage{"segment": json.RawMessage(`{"minimum_runes":2}`)}, nil)
-			defer stopInteractionGraph(t, done, cancel)
-			text := ingress(t, mounted, "text")
-			segments := egress(t, mounted, "segments")
-			send(t, text, preparedEnvelope("begin", "dangling", cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextBegin, Index: 0}))
-			send(t, text, preparedEnvelope("delta", "dangling", cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextChunk, Index: 1, Text: test.text}))
-			send(t, text, preparedEnvelope("end", "dangling", cognitionelements.PreparedTextDelta{Boundary: cognitionelements.TextEnd, Index: 2}))
-			for _, want := range test.want {
-				if got := receive(t, segments).Payload.(speech.TextSegment).Text; got != want {
-					t.Fatalf("segment = %q, want %q", got, want)
-				}
-			}
-			assertNoEnvelope(t, segments)
-		})
-	}
-}

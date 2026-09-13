@@ -267,7 +267,7 @@ func TestSegmentPreparedTextKeepsShortIntroductionsWithTheirPhrase(t *testing.T)
 	}))
 	assertNoEnvelope(t, segments)
 	send(t, text, preparedEnvelope("phrase", runID, cognitionelements.PreparedTextDelta{
-		Boundary: cognitionelements.TextChunk, Index: 2, Text: " number. Yes. Then we",
+		Boundary: cognitionelements.TextChunk, Index: 2, Text: " number. Yes. Then",
 	}))
 	for _, want := range []string{"First, find the order number.", "Yes."} {
 		got := receive(t, segments)
@@ -276,13 +276,11 @@ func TestSegmentPreparedTextKeepsShortIntroductionsWithTheirPhrase(t *testing.T)
 		}
 	}
 	// Source completion releases a short remainder without a new punctuation
-	// boundary, extra model tokens, or a timer. (A remainder of one lone
-	// word after complete sentences is a stream that stopped mid-word and
-	// is not released; this one is a phrase.)
+	// boundary, extra model tokens, or a timer.
 	send(t, text, preparedEnvelope("end", runID, cognitionelements.PreparedTextDelta{
 		Boundary: cognitionelements.TextEnd, Index: 3,
 	}))
-	if segment := receive(t, segments).Payload.(speech.TextSegment); segment.Text != "Then we" {
+	if segment := receive(t, segments).Payload.(speech.TextSegment); segment.Text != "Then" {
 		t.Fatalf("terminal remainder = %+v", segment)
 	}
 	if outcome := receiveSegmentationOutcome(t, egress(t, mounted, "outcome"), OutcomeCompleted); outcome.Segments != 3 {

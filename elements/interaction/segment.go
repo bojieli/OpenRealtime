@@ -256,20 +256,12 @@ func (runner *segmentPreparedTextRunner) acceptText(
 			run.buffer = ""
 			return runner.completeSilenced(ctx, envelope)
 		}
-		if trailing := strings.TrimSpace(run.buffer); trailing != "" {
-			// A stream that ended on a lone unfinished word after complete
-			// sentences did not finish that word: measured, a recitation
-			// came back as "... Seventeen. Eight" and the loudspeaker said
-			// "eight". A run that produced nothing else keeps its one word.
-			if len(run.segments) > 0 && danglingWord(trailing) {
-				run.buffer = ""
-				return runner.completeActive(ctx, envelope)
-			}
-			if len(trailing) > runner.config.MaxSegmentBytes {
+		if strings.TrimSpace(run.buffer) != "" {
+			if len(strings.TrimSpace(run.buffer)) > runner.config.MaxSegmentBytes {
 				return runner.failActive(ctx, envelope, OutcomeFailed, "segment_too_large",
 					fmt.Sprintf("safe speech segment exceeds %d bytes", runner.config.MaxSegmentBytes), false)
 			}
-			if err := runner.publishSegment(ctx, envelope, trailing); err != nil {
+			if err := runner.publishSegment(ctx, envelope, strings.TrimSpace(run.buffer)); err != nil {
 				return err
 			}
 			run.buffer = ""
@@ -848,15 +840,6 @@ func firstNonemptyString(values ...string) string {
 // than at each producer means one place decides, whichever model wrote the
 // text and whichever binding is running.
 var controlTokens = []string{coreinteraction.WaitToken}
-
-// danglingWord reports a single word with no sentence-ending punctuation:
-// what a stream that stopped mid-word leaves behind.
-func danglingWord(text string) bool {
-	if strings.ContainsAny(text, " \t\n") {
-		return false
-	}
-	return !strings.ContainsAny(text[len(text)-1:], ".!?。！？…")
-}
 
 // indexControlToken is where the first control token begins in text, or -1.
 func indexControlToken(text string) int {
