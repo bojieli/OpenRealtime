@@ -617,6 +617,14 @@ func (session *session) acceptAdmissionOutcome(envelope element.Envelope) error 
 		}
 		return errors.New("scenario conversation admission outcome has no exact pending audio request")
 	}
+	if pending.completed && outcome.Operation == "command" && outcome.StreamID == pending.streamID {
+		// The gate's candidate close and a recogniser's turn end can both
+		// answer the same frame. Whichever reached admission first closed the
+		// stream and completed the frame; the other is the losing half of that
+		// race - refused or ignored - not a second delivery.
+		session.audioMu.Unlock()
+		return nil
+	}
 	if outcome.StreamID != pending.streamID || pending.completed {
 		session.audioMu.Unlock()
 		return errors.New("scenario conversation admission outcome drifted or was delivered twice")

@@ -125,3 +125,45 @@ func TestCandidateFrameAcceptsARecognizerForceClose(t *testing.T) {
 		t.Fatalf("audio stream = %d, want 2", session.audioStream)
 	}
 }
+
+// The loser of the close race arrives after the winner completed the frame.
+// It is dropped; a duplicate audio outcome is still a fault.
+func TestLosingCloseAfterACompletedFrameIsDropped(t *testing.T) {
+	session := recognizerCloseSession()
+	pending := &pendingAudio{itemID: "frame-1", streamID: session.audioStreamID(1), result: make(chan error, 1)}
+	session.audioOps[pending.itemID] = pending
+	send := func(itemID string, outcome acousticelements.AdmissionOutcome) error {
+		return session.acceptAdmissionOutcome(element.Envelope{
+			ItemID: itemID, SessionID: session.sessionID, CausalParents: []string{"frame-1"}, Payload: outcome,
+		})
+	}
+	if err := send("frame-1:outcome", acousticelements.AdmissionOutcome{
+		Kind: acousticelements.OutcomePending, Operation: "audio", StreamID: pending.streamID,
+		Code: "endpoint_candidate", CandidateID: "candidate-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := send("turn-end:outcome", acousticelements.AdmissionOutcome{
+		Kind: acousticelements.OutcomeSucceeded, Operation: "command", StreamID: pending.streamID, Code: "force_closed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := send("candidate:outcome", acousticelements.AdmissionOutcome{
+		Kind: acousticelements.OutcomeIgnored, Operation: "command", StreamID: pending.streamID, Code: "no_pending_candidate",
+	}); err != nil {
+		t.Fatalf("the losing close of the race failed the session: %v", err)
+	}
+	if result := <-pending.result; result != nil {
+		t.Fatalf("frame result = %v", result)
+	}
+	select {
+	case extra := <-pending.result:
+		t.Fatalf("the frame was answered twice: %v", extra)
+	default:
+	}
+	if err := send("frame-1:duplicate", acousticelements.AdmissionOutcome{
+		Kind: acousticelements.OutcomeSucceeded, Operation: "audio", StreamID: pending.streamID, Code: "admitted",
+	}); err == nil {
+		t.Fatal("a duplicate audio outcome for a completed frame was accepted")
+	}
+}
