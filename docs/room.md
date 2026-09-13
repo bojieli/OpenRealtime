@@ -147,6 +147,14 @@ of a translation rule because the person kept talking, and cut a count the
 policy had decided to keep, fifteen milliseconds before the policy said
 keep. One question, one decider.
 
+Speech is cancelled by run. A stop names the run, and the synthesiser and
+the player drop every utterance of it: the one playing, the ones queued, and
+any that arrive afterwards (`speech.Cancel.RunID`). Measured before this,
+the policy stopped a count and seven more numbers played: cancels named only
+the utterances the overlap element had already seen, and the segmenter,
+waiting to hand the next sentence to a busy synthesiser, could not read its
+own cancel until the queue had drained.
+
 A decision that waited for the voice to finish is taken against everything
 the voice said meanwhile, and the generation it admits runs on that context.
 A tool call from such a generation - a key pressed at a menu while the

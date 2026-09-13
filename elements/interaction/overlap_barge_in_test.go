@@ -463,10 +463,12 @@ func TestOverlapBargeInDirectedSpeechCancelsOnlyExactIndependentAddresses(t *tes
 		decisionEnvelope.ItemID, "run-model")
 	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"),
 		decisionEnvelope.ItemID, "run-segment")
-	assertExactOverlapSpeechCancel(t, harness.output(t, "tts_cancel"),
-		decisionEnvelope.ItemID, "utterance-tts")
-	assertExactOverlapSpeechCancel(t, harness.output(t, "playback_cancel"),
-		decisionEnvelope.ItemID, "utterance-playback")
+	// Speech is cancelled by run, so the playing, queued, and not-yet-arrived
+	// utterances of both runs go together.
+	for _, runID := range []string{"run-model", "run-segment"} {
+		assertExactOverlapSpeechRunCancel(t, harness.output(t, "tts_cancel"), decisionEnvelope.ItemID, runID)
+		assertExactOverlapSpeechRunCancel(t, harness.output(t, "playback_cancel"), decisionEnvelope.ItemID, runID)
+	}
 
 	for _, name := range []string{
 		"model_cancel", "segmentation_cancel", "tts_cancel", "playback_cancel",
@@ -623,8 +625,8 @@ func TestOverlapBargeInAppliesExplicitDeadlineFallback(t *testing.T) {
 				decisionEnvelope.ItemID, "run")
 			assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"),
 				decisionEnvelope.ItemID, "run")
-			assertNoEnvelope(t, harness.output(t, "tts_cancel"))
-			assertNoEnvelope(t, harness.output(t, "playback_cancel"))
+			assertExactOverlapSpeechRunCancel(t, harness.output(t, "tts_cancel"), decisionEnvelope.ItemID, "run")
+			assertExactOverlapSpeechRunCancel(t, harness.output(t, "playback_cancel"), decisionEnvelope.ItemID, "run")
 		})
 	}
 }
@@ -741,6 +743,8 @@ func TestOverlapBargeInCancelsLateWorkForTheSameActiveSpeech(t *testing.T) {
 	}
 	assertExactOverlapRunCancel(t, harness.output(t, "model_cancel"), firstEnvelope.ItemID, "run-first")
 	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"), firstEnvelope.ItemID, "run-first")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "tts_cancel"), firstEnvelope.ItemID, "run-first")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "playback_cancel"), firstEnvelope.ItemID, "run-first")
 	stateEnvelope := receive(t, harness.output(t, "state"))
 	if state := stateEnvelope.Payload.(OverlapState); !state.CancelIssued {
 		t.Fatalf("post-cancel state = %+v", state)
@@ -763,6 +767,8 @@ func TestOverlapBargeInCancelsLateWorkForTheSameActiveSpeech(t *testing.T) {
 	}
 	assertExactOverlapRunCancel(t, harness.output(t, "model_cancel"), lateRunEnvelope.ItemID, "run-late")
 	assertExactOverlapRunCancel(t, harness.output(t, "segmentation_cancel"), lateRunEnvelope.ItemID, "run-late")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "tts_cancel"), lateRunEnvelope.ItemID, "run-late")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "playback_cancel"), lateRunEnvelope.ItemID, "run-late")
 
 	harness.sendAndSync(t, "tts", overlapTransitionEnvelope(
 		"tts-late", "run-late", "utterance-late", speechelements.StageSynthesis,
@@ -774,8 +780,8 @@ func TestOverlapBargeInCancelsLateWorkForTheSameActiveSpeech(t *testing.T) {
 		!reflect.DeepEqual(lateTTS.ActiveUtteranceIDs, []string{"utterance-late"}) {
 		t.Fatalf("late TTS cancellation = %+v", lateTTS)
 	}
-	assertExactOverlapSpeechCancel(t, harness.output(t, "tts_cancel"),
-		lateTTSEnvelope.ItemID, "utterance-late")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "tts_cancel"), lateTTSEnvelope.ItemID, "run-late")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "playback_cancel"), lateTTSEnvelope.ItemID, "run-late")
 
 	harness.sendAndSync(t, "playback", overlapTransitionEnvelope(
 		"playback-late", "run-late", "utterance-late", speechelements.StagePlayback,
@@ -787,8 +793,8 @@ func TestOverlapBargeInCancelsLateWorkForTheSameActiveSpeech(t *testing.T) {
 		!reflect.DeepEqual(latePlayback.ActiveUtteranceIDs, []string{"utterance-late"}) {
 		t.Fatalf("late playback cancellation = %+v", latePlayback)
 	}
-	assertExactOverlapSpeechCancel(t, harness.output(t, "playback_cancel"),
-		latePlaybackEnvelope.ItemID, "utterance-late")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "tts_cancel"), latePlaybackEnvelope.ItemID, "run-late")
+	assertExactOverlapSpeechRunCancel(t, harness.output(t, "playback_cancel"), latePlaybackEnvelope.ItemID, "run-late")
 	assertNoOverlapCancels(t, harness)
 }
 
@@ -1270,6 +1276,22 @@ func assertExactOverlapRunCancel(
 		!envelope.Type.Equal(cognitionelements.CancelType()) ||
 		!slices.Contains(envelope.CausalParents, decisionID) {
 		t.Fatalf("run cancellation for %q = %+v / %#v", runID, envelope, envelope.Payload)
+	}
+}
+
+// assertExactOverlapSpeechRunCancel reads one speech cancel addressed to a
+// whole run: no utterance named, the run in every address field.
+func assertExactOverlapSpeechRunCancel(
+	t *testing.T, input element.InputPort, decisionID, runID string,
+) {
+	t.Helper()
+	envelope := receive(t, input)
+	request, ok := envelope.Payload.(speechelements.Cancel)
+	if !ok || request.UtteranceID != "" || request.RunID != runID || strings.TrimSpace(request.Reason) == "" ||
+		envelope.SourceID != runID || envelope.RunID != runID || envelope.CancellationScope != runID ||
+		!envelope.Type.Equal(speechelements.CancelType()) ||
+		!slices.Contains(envelope.CausalParents, decisionID) {
+		t.Fatalf("speech run cancellation for %q = %+v / %#v", runID, envelope, envelope.Payload)
 	}
 }
 

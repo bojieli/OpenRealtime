@@ -140,6 +140,7 @@ func (ttsFactory) Mount(_ context.Context, mount element.MountContext) (element.
 		statusOutput: statusOutput, outcomeOutput: outcomeOutput, resolvedOutput: resolvedOutput,
 		resolution:     mount.Resolution,
 		pendingCancels: newCancellationMemory(config.CancelMemory),
+		cancelledRuns:  newCancellationMemory(config.CancelMemory),
 	}, nil
 }
 
@@ -170,6 +171,9 @@ type ttsRunner struct {
 	resolvedOutput     element.OutputPort
 	resolution         element.ResolutionReporter
 	pendingCancels     *cancellationMemory
+	// cancelledRuns remembers runs a cancel named; every later segment of
+	// such a run is dropped on arrival.
+	cancelledRuns *cancellationMemory
 }
 
 func (runner *ttsRunner) Run(parent context.Context) error {
@@ -240,13 +244,17 @@ func (runner *ttsRunner) handle(
 			Code: "invalid_segment", Message: err.Error(),
 		}, false)
 	}
-	if reason, cancelled := runner.pendingCancels.take(command.segment.ID); cancelled {
+	pendingReason, pending := runner.cancelledRuns.peek(command.envelope.RunID)
+	if !pending {
+		pendingReason, pending = runner.pendingCancels.take(command.segment.ID)
+	}
+	if pending {
 		return runner.publishSynthesisTerminal(ctx, command.envelope, Transition{
 			UtteranceID: command.segment.ID, Stage: StageSynthesis,
-			State: StateCancelled, Reason: reason,
+			State: StateCancelled, Reason: pendingReason,
 		}, SynthesisOutcome{
 			UtteranceID: command.segment.ID, Kind: OutcomeCancelled,
-			Code: "cancelled_before_synthesis", Message: reason,
+			Code: "cancelled_before_synthesis", Message: pendingReason,
 		}, false)
 	}
 	if err := runner.publishTransition(ctx, command.envelope, Transition{
@@ -288,7 +296,10 @@ func (runner *ttsRunner) handle(
 				continue
 			}
 			target := cancelTarget(interrupt, request)
-			if target != command.segment.ID {
+			if runID := strings.TrimSpace(request.RunID); runID != "" {
+				runner.cancelledRuns.remember(runID, request.Reason)
+			}
+			if target != command.segment.ID && !cancelsRun(request, command.envelope.RunID) {
 				if target != "" {
 					runner.pendingCancels.remember(target, request.Reason)
 				}
@@ -412,6 +423,11 @@ func (runner *ttsRunner) rememberIdleCancel(ctx context.Context, envelope elemen
 	if target == "" {
 		return runner.publishCancelReply(ctx, envelope, "", OutcomeRefused,
 			"missing_utterance_id", "cancel requires an utterance ID or cancellation scope")
+	}
+	if runID := strings.TrimSpace(request.RunID); runID != "" {
+		runner.cancelledRuns.remember(runID, request.Reason)
+		return runner.publishCancelReply(ctx, envelope, runID, OutcomeIgnored,
+			"pending_cancel", "run cancellation retained for every utterance of the run")
 	}
 	runner.pendingCancels.remember(target, request.Reason)
 	return runner.publishCancelReply(ctx, envelope, target, OutcomeIgnored,

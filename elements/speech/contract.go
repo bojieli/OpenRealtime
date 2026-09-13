@@ -110,8 +110,14 @@ func (segment TextSegment) utterance() action.Utterance {
 
 // Cancel is an addressed interruption. An empty ID uses the envelope's
 // cancellation scope; it never means "cancel every utterance" implicitly.
+// Cancel stops speech. Addressed to an utterance it stops that one; addressed
+// to a run it stops every utterance of the run - the one playing, the ones
+// queued, and any that arrive later - because a run that was cancelled has
+// nothing left worth hearing. A count the policy stopped kept playing for six
+// seconds when only the utterances already seen were named.
 type Cancel struct {
 	UtteranceID string `json:"utterance_id,omitempty"`
+	RunID       string `json:"run_id,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 }
 

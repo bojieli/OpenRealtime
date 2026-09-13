@@ -198,6 +198,50 @@ func TestCancellationBeforeFirstAudioIsReversible(t *testing.T) {
 	}
 }
 
+// A cancel addressed to a run stops the utterance playing, drops the ones
+// queued behind it, and drops any that arrive later; another run is untouched.
+// Measured before this: the policy stopped a count and seven more numbers
+// played, because only the utterances already seen had been named.
+func TestRunCancellationStopsPlayingQueuedAndLaterUtterancesOfTheRun(t *testing.T) {
+	provider := newBlockingProvider(true)
+	sink := newRecordingSink()
+	fixture := mountSpeech(t, providerDescriptor, func() v1.SpeechProvider { return provider },
+		sinkDescriptor, func() speechelements.PlaybackSink { return sink }, nil)
+	defer fixture.stop(t)
+	fixture.receiveResolutions(t)
+	fixture.sendTextInRun(t, "run-a", speechelements.TextSegment{ID: "a1", Text: "One.", Producer: "fast"})
+	waitSignal(t, sink.audioDelivered, "first audio was not handed to sink")
+	fixture.sendTextInRun(t, "run-a", speechelements.TextSegment{ID: "a2", Text: "Two.", Producer: "fast"})
+
+	fixture.sendRunCancel(t, "playback_cancel", "run-a", "the interaction policy chose stop")
+	fixture.sendRunCancel(t, "tts_cancel", "run-a", "the interaction policy chose stop")
+
+	if outcome := receiveMatchingPlayback(t, fixture.egress(t, "playback_outcome"), "a1"); outcome.Kind != speechelements.OutcomeCancelled {
+		t.Fatalf("playing utterance of the cancelled run = %+v", outcome)
+	}
+	if outcome := receiveMatchingSynthesis(t, fixture.egress(t, "tts_outcome"), "a1"); outcome.Kind != speechelements.OutcomeCancelled {
+		t.Fatalf("synthesising utterance of the cancelled run = %+v", outcome)
+	}
+	if outcome := receiveMatchingSynthesis(t, fixture.egress(t, "tts_outcome"), "a2"); outcome.Code != "cancelled_before_synthesis" {
+		t.Fatalf("queued utterance of the cancelled run = %+v", outcome)
+	}
+	fixture.sendTextInRun(t, "run-a", speechelements.TextSegment{ID: "a3", Text: "Three.", Producer: "fast"})
+	if outcome := receiveMatchingSynthesis(t, fixture.egress(t, "tts_outcome"), "a3"); outcome.Code != "cancelled_before_synthesis" {
+		t.Fatalf("later utterance of the cancelled run = %+v", outcome)
+	}
+
+	// Another run still speaks: its synthesis begins.
+	fixture.sendTextInRun(t, "run-b", speechelements.TextSegment{ID: "b1", Text: "Hello.", Producer: "fast"})
+	status := fixture.egress(t, "tts_status")
+	for range 12 {
+		transition := receive(t, status).Payload.(speechelements.Transition)
+		if transition.UtteranceID == "b1" && transition.State == speechelements.StateGenerating {
+			return
+		}
+	}
+	t.Fatal("the other run never began synthesis")
+}
+
 func TestCancellationAfterFirstAudioRecordsIrreversiblePartialPlayback(t *testing.T) {
 	provider := newBlockingProvider(true)
 	sink := newRecordingSink()
@@ -523,6 +567,29 @@ func (fixture *speechFixture) sendText(t *testing.T, segment speechelements.Text
 	_, err := fixture.ingress(t, "text").Broadcast(context.Background(), element.Envelope{
 		Type: speechelements.TextSegmentType(), ItemID: "text-" + segment.ID,
 		RunID: segment.ID, CancellationScope: segment.ID, Payload: segment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (fixture *speechFixture) sendTextInRun(t *testing.T, runID string, segment speechelements.TextSegment) {
+	t.Helper()
+	_, err := fixture.ingress(t, "text").Broadcast(context.Background(), element.Envelope{
+		Type: speechelements.TextSegmentType(), ItemID: "text-" + segment.ID,
+		RunID: runID, CancellationScope: segment.ID, Payload: segment,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (fixture *speechFixture) sendRunCancel(t *testing.T, boundary, runID, reason string) {
+	t.Helper()
+	_, err := fixture.ingress(t, boundary).Broadcast(context.Background(), element.Envelope{
+		Type: speechelements.CancelType(), ItemID: fmt.Sprintf("%s-%s", boundary, runID),
+		RunID: runID, CancellationScope: runID,
+		Payload: speechelements.Cancel{RunID: runID, Reason: reason},
 	})
 	if err != nil {
 		t.Fatal(err)

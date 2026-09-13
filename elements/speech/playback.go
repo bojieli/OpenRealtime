@@ -175,6 +175,7 @@ func (playbackFactory) Mount(_ context.Context, mount element.MountContext) (ele
 		audioOutput: audioOutput, endedOutput: endedOutput, releasedOutput: releasedOutput,
 		resolution:     mount.Resolution,
 		pendingCancels: newCancellationMemory(config.CancelMemory),
+		cancelledRuns:  newCancellationMemory(config.CancelMemory),
 	}, nil
 }
 
@@ -224,8 +225,11 @@ type playbackRunner struct {
 	releasedOutput element.OutputPort
 	resolution     element.ResolutionReporter
 	pendingCancels *cancellationMemory
-	active         *activePlayback
-	discardID      string
+	// cancelledRuns remembers runs a cancel named; every later utterance of
+	// such a run is dropped before it is committed.
+	cancelledRuns *cancellationMemory
+	active        *activePlayback
+	discardID     string
 }
 
 func (runner *playbackRunner) Run(parent context.Context) (runErr error) {
@@ -380,7 +384,12 @@ func (runner *playbackRunner) begin(
 			Code: "ledger_prepare_failed", Message: err.Error(),
 		})
 	}
-	if reason, cancelled := runner.pendingCancels.take(frame.UtteranceID); cancelled {
+	pendingReason, pending := runner.cancelledRuns.peek(cause.RunID)
+	if !pending {
+		pendingReason, pending = runner.pendingCancels.take(frame.UtteranceID)
+	}
+	if pending {
+		reason := pendingReason
 		_, _ = runner.ledger.Cancel(frame.UtteranceID, reason)
 		commitment, _ := runner.ledger.Lookup(frame.UtteranceID)
 		runner.discardID = frame.UtteranceID
@@ -492,7 +501,10 @@ func (runner *playbackRunner) play(
 				continue
 			}
 			target := cancelTarget(interrupt, request)
-			if target != active.utterance.ID {
+			if runID := strings.TrimSpace(request.RunID); runID != "" {
+				runner.cancelledRuns.remember(runID, request.Reason)
+			}
+			if target != active.utterance.ID && !cancelsRun(request, active.cause.RunID) {
 				if target != "" {
 					runner.pendingCancels.remember(target, request.Reason)
 				}
@@ -735,11 +747,18 @@ func (runner *playbackRunner) handleIdleCancel(ctx context.Context, envelope ele
 		return runner.publishCancelReply(ctx, envelope, "", OutcomeRefused,
 			false, 0, "missing_utterance_id", "cancel requires an utterance ID or cancellation scope")
 	}
-	if runner.active != nil && target == runner.active.utterance.ID {
+	if runID := strings.TrimSpace(request.RunID); runID != "" {
+		runner.cancelledRuns.remember(runID, request.Reason)
+	}
+	if runner.active != nil && (target == runner.active.utterance.ID || cancelsRun(request, runner.active.cause.RunID)) {
 		active := runner.active
 		runner.active = nil
-		runner.discardID = target
+		runner.discardID = active.utterance.ID
 		return runner.finishCancelled(ctx, active, request.Reason)
+	}
+	if runID := strings.TrimSpace(request.RunID); runID != "" {
+		return runner.publishCancelReply(ctx, envelope, runID, OutcomeIgnored,
+			false, 0, "pending_cancel", "run cancellation retained for every utterance of the run")
 	}
 	runner.pendingCancels.remember(target, request.Reason)
 	return runner.publishCancelReply(ctx, envelope, target, OutcomeIgnored,

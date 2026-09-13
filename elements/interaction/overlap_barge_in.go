@@ -1781,13 +1781,14 @@ func (runner *overlapBargeInRunner) cancelSelectedRuns(
 			return err
 		}
 	}
-	for _, utteranceID := range ttsIDs {
-		if err := runner.publishSpeechCancel(ctx, runner.ports.ttsCancel, decision, utteranceID, reason); err != nil {
+	// Speech is cancelled by run: the elements drop the utterance playing,
+	// the ones queued, and any that arrive later. Naming only the utterances
+	// already seen let a stopped count play on for six seconds.
+	for _, runID := range speechRunIDs(runIDs, utteranceIDs, runner.utterances) {
+		if err := runner.publishSpeechRunCancel(ctx, runner.ports.ttsCancel, decision, runID, reason); err != nil {
 			return err
 		}
-	}
-	for _, utteranceID := range playbackIDs {
-		if err := runner.publishSpeechCancel(ctx, runner.ports.playbackCancel, decision, utteranceID, reason); err != nil {
+		if err := runner.publishSpeechRunCancel(ctx, runner.ports.playbackCancel, decision, runID, reason); err != nil {
 			return err
 		}
 	}
@@ -1904,13 +1905,14 @@ func (runner *overlapBargeInRunner) cancelActive(
 			return err
 		}
 	}
-	for _, utteranceID := range ttsIDs {
-		if err := runner.publishSpeechCancel(ctx, runner.ports.ttsCancel, decision, utteranceID, reason); err != nil {
+	// Speech is cancelled by run: the elements drop the utterance playing,
+	// the ones queued, and any that arrive later. Naming only the utterances
+	// already seen let a stopped count play on for six seconds.
+	for _, runID := range speechRunIDs(runIDs, utteranceIDs, runner.utterances) {
+		if err := runner.publishSpeechRunCancel(ctx, runner.ports.ttsCancel, decision, runID, reason); err != nil {
 			return err
 		}
-	}
-	for _, utteranceID := range playbackIDs {
-		if err := runner.publishSpeechCancel(ctx, runner.ports.playbackCancel, decision, utteranceID, reason); err != nil {
+		if err := runner.publishSpeechRunCancel(ctx, runner.ports.playbackCancel, decision, runID, reason); err != nil {
 			return err
 		}
 	}
@@ -1935,6 +1937,45 @@ func (runner *overlapBargeInRunner) publishRunCancel(
 	envelope.Sequence = sequence
 	envelope.CausalParents = appendUniqueString(envelope.CausalParents, decision.ItemID)
 	envelope.Payload = cognitionelements.Cancel{RunID: runID, Reason: reason}
+	return broadcastInteraction(ctx, output, envelope)
+}
+
+// speechRunIDs is every run a cancellation touches: the runs it names and the
+// runs its utterances belong to, sorted, each once.
+func speechRunIDs(runIDs, utteranceIDs []string, utterances map[string]*overlapUtterance) []string {
+	set := make(map[string]struct{}, len(runIDs))
+	for _, runID := range runIDs {
+		set[runID] = struct{}{}
+	}
+	for _, utteranceID := range utteranceIDs {
+		if utterance := utterances[utteranceID]; utterance != nil && utterance.runID != "" {
+			set[utterance.runID] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(set))
+	for runID := range set {
+		result = append(result, runID)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (runner *overlapBargeInRunner) publishSpeechRunCancel(
+	ctx context.Context, output element.OutputPort, decision element.Envelope, runID, reason string,
+) error {
+	sequence, err := runner.sequences.Next(runner.instance + ".overlap-speech-cancel")
+	if err != nil {
+		return err
+	}
+	envelope := decision.Clone()
+	envelope.Type = output.Type()
+	envelope.ItemID = fmt.Sprintf("%s:speech_cancel:%d", decision.ItemID, sequence)
+	envelope.SourceID = runID
+	envelope.RunID = runID
+	envelope.CancellationScope = runID
+	envelope.Sequence = sequence
+	envelope.CausalParents = appendUniqueString(envelope.CausalParents, decision.ItemID)
+	envelope.Payload = speechelements.Cancel{RunID: runID, Reason: reason}
 	return broadcastInteraction(ctx, output, envelope)
 }
 

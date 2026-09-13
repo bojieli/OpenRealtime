@@ -41,6 +41,13 @@ func (memory *cancellationMemory) remember(id, reason string) {
 	memory.reasons[id] = reason
 }
 
+// peek reports a remembered cancellation without consuming it: a run stays
+// cancelled for every utterance that follows.
+func (memory *cancellationMemory) peek(id string) (string, bool) {
+	reason, found := memory.reasons[strings.TrimSpace(id)]
+	return reason, found
+}
+
 func (memory *cancellationMemory) take(id string) (string, bool) {
 	reason, found := memory.reasons[id]
 	if !found {
@@ -85,6 +92,11 @@ func sendFailure(ctx context.Context, output chan<- error, err error) {
 
 func terminal(ctx context.Context, err error) bool {
 	return err != nil && (ctx.Err() != nil || errors.Is(err, graphruntime.ErrChannelClosed))
+}
+
+// cancelsRun reports whether a cancel addressed to a run names this one.
+func cancelsRun(request Cancel, runID string) bool {
+	return strings.TrimSpace(request.RunID) != "" && strings.TrimSpace(request.RunID) == strings.TrimSpace(runID)
 }
 
 func cancelTarget(envelope element.Envelope, request Cancel) string {

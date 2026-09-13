@@ -572,7 +572,7 @@ func (session *session) Cancel(ctx context.Context, reason string) error {
 				Sequence: sequence, TraceID: itemID,
 				CancellationScope: state.utterance.ID,
 				Payload: speechelements.Cancel{
-					UtteranceID: state.utterance.ID, Reason: reason,
+					UtteranceID: state.utterance.ID, RunID: state.runID, Reason: reason,
 				},
 			}
 			if parent := segmentationParents[state.runID]; parent != "" {

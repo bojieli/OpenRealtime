@@ -48,6 +48,8 @@ func TestOverlapBargeInCancelsCompletedStreamBeforeQueuedSpeechIsVisible(t *test
 				t.Fatalf("stop did not revoke the completed stream: %+v", decision)
 			}
 			assertExactOverlapRunCancel(t, h.output(t, "segmentation_cancel"), envelope.ItemID, runID)
+			assertExactOverlapSpeechRunCancel(t, h.output(t, "tts_cancel"), envelope.ItemID, runID)
+			assertExactOverlapSpeechRunCancel(t, h.output(t, "playback_cancel"), envelope.ItemID, runID)
 			// No speech-activity object is needed for an explicit semantic stop.
 			// Keep the horizon until every exact sink/terminal receipt arrives.
 			for i := 1; i <= 3; i++ {
