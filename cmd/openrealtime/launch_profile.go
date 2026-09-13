@@ -184,91 +184,12 @@ func runScenarioProfileFreezeWithOptions(arguments []string, output io.Writer, o
 	requireNoiseFilter := options.noiseFilterURL != ""
 	flags := flag.NewFlagSet("openrealtime profile scenario", flag.ContinueOnError)
 	flags.SetOutput(output)
-	flags.StringVar(&options.noiseFilterURL, "noise-filter-url", options.noiseFilterURL, "pre-ASR audio filter service base URL")
-	flags.IntVar(&options.noiseFilterTimeoutMS, "noise-filter-timeout-ms", options.noiseFilterTimeoutMS, "strict per-ingress-packet filtering deadline, 1..50ms")
-	flags.Func("case", "exact scenario name; repeat to freeze a diagnostic subset (default: all cases)", func(name string) error {
-		options.cases = append(options.cases, name)
-		return nil
-	})
 	flags.StringVar(&options.out, "out", "", "new absolute launch-profile YAML path")
 	flags.StringVar(&options.graphOut, "graph-out", "", "new absolute exact bound Graph IR JSON path")
 	flags.StringVar(&options.valuesOut, "values-out", "", "new absolute exact element-values JSON path")
 	flags.StringVar(&options.resolutionOut, "resolution-out", "", "new absolute expected live-resolution JSON path")
 	flags.StringVar(&options.executionOut, "execution-out", "", "new absolute reviewed execution-requirement JSON path")
-	flags.StringVar(&options.name, "name", options.name, "immutable profile name")
-	flags.Uint64Var(&options.revision, "revision", options.revision, "positive profile revision")
-	flags.StringVar(&options.architecture, "architecture", options.architecture, "exact interaction architecture id@revision")
-	flags.StringVar(&options.asrProvider, "asr-provider", options.asrProvider, "installed ASR provider plugin")
-	flags.StringVar(&options.asrModel, "asr-model", options.asrModel, "exact ASR model")
-	flags.StringVar(&options.asrURL, "asr-url", options.asrURL, "exact ASR base URL")
-	flags.StringVar(&options.asrLanguage, "asr-language", options.asrLanguage, "ASR language hint")
-	flags.Func("asr-keyterm", "Deepgram Nova-3 vocabulary hint; repeat for multiple phrases", func(value string) error {
-		options.asrKeyterms = append(options.asrKeyterms, value)
-		return nil
-	})
-	flags.Int64Var(&options.asrPartialMS, "asr-partial-ms", options.asrPartialMS, "batch partial-transcription interval")
-	flags.Int64Var(&options.asrEndpointingMS, "asr-endpointing-ms", options.asrEndpointingMS, "streaming-provider endpointing")
-	flags.Float64Var(&options.asrEOTThreshold, "asr-eot-threshold", options.asrEOTThreshold,
-		"Deepgram Flux EndOfTurn confidence, 0.5 to 1.0; 0 keeps the service default")
-	flags.Float64Var(&options.asrEagerEOTThreshold, "asr-eager-eot-threshold", options.asrEagerEOTThreshold,
-		"Deepgram Flux EagerEndOfTurn confidence, 0.3 to 0.9; 0 disables EagerEndOfTurn and TurnResumed")
-	flags.Int64Var(&options.asrEOTTimeoutMS, "asr-eot-timeout-ms", options.asrEOTTimeoutMS,
-		"Deepgram Flux silence that ends a turn regardless, 500 to 60000; 0 keeps the service default")
-	flags.Int64Var(&options.asrTimeoutMS, "asr-timeout-ms", options.asrTimeoutMS, "ASR request timeout")
-	flags.Int64Var(&options.asrCadenceMS, "asr-cadence-ms", options.asrCadenceMS, "ASR graph cadence")
-	flags.StringVar(&options.speakerURL, "speaker-url", options.speakerURL, "speaker-embedding endpoint ending in /embed")
-	flags.StringVar(&options.speakerModel, "speaker-model", options.speakerModel, "exact speaker-embedding model")
-	flags.Int64Var(&options.speakerTimeoutMS, "speaker-timeout-ms", options.speakerTimeoutMS, "speaker-embedding request timeout")
-	flags.StringVar(&options.modelProvider, "model-provider", options.modelProvider, "installed text-model provider plugin")
-	flags.StringVar(&options.modelName, "model", options.modelName, "exact text model")
-	flags.StringVar(&options.modelURL, "model-url", options.modelURL, "exact text-model base URL")
-	flags.StringVar(&options.modelEffort, "model-effort", options.modelEffort, "canonical reasoning effort")
-	flags.BoolVar(&options.modelVision, "model-vision", options.modelVision, "declare exact image-input support")
-	flags.StringVar(&options.modelReason, "model-reason", options.modelReason, "reasoning control: off, on, or default")
-	flags.BoolVar(&options.modelRetainReason, "model-retain-reasoning", options.modelRetainReason, "retain reasoning in the trajectory")
-	flags.Float64Var(&options.modelTemperature, "model-temperature", options.modelTemperature, "sampling temperature")
-	flags.Int64Var(&options.modelTimeoutMS, "model-timeout-ms", options.modelTimeoutMS, "text-model request timeout")
-	flags.StringVar(&options.policyProvider, "policy-provider", options.policyProvider, "installed enumerated semantic-policy provider plugin")
-	flags.StringVar(&options.policyModel, "policy-model", options.policyModel, "exact semantic-policy model")
-	flags.StringVar(&options.policyURL, "policy-url", options.policyURL, "exact semantic-policy base URL")
-	flags.Int64Var(&options.policyTimeoutMS, "policy-timeout-ms", options.policyTimeoutMS, "semantic-policy decision timeout")
-	flags.BoolVar(&options.policyVision, "policy-vision", options.policyVision, "declare exact semantic-policy image-input support")
-	flags.BoolVar(&options.policyGuided, "policy-guided-choice", options.policyGuided, "request provider-side enumerated-choice decoding")
-	flags.StringVar(&options.policyReasoning, "policy-reasoning", options.policyReasoning, "semantic-policy reasoning control")
-	flags.StringVar(&options.policyTokenEnv, "policy-token-env", options.policyTokenEnv, "optional provider-owned semantic-policy credential environment name")
-	flags.StringVar(&options.transcriptRules, "transcript-rules", options.transcriptRules,
-		"interaction-policy instruction read at every transcript, visual, and quiet event; empty selects the built-in rules")
-	flags.StringVar(&options.ttsProvider, "tts-provider", options.ttsProvider, "installed TTS provider plugin")
-	flags.StringVar(&options.ttsModel, "tts-model", options.ttsModel, "exact TTS model")
-	flags.StringVar(&options.ttsURL, "tts-url", options.ttsURL, "exact TTS endpoint")
-	flags.StringVar(&options.ttsVoice, "tts-voice", options.ttsVoice, "fixed TTS voice")
-	flags.StringVar(&options.ttsLanguage, "tts-language", options.ttsLanguage, "TTS language hint")
-	flags.Int64Var(&options.ttsTimeoutMS, "tts-timeout-ms", options.ttsTimeoutMS, "TTS request timeout")
-	flags.BoolVar(&options.ttsSentenceWrap, "tts-sentence-wrapping", options.ttsSentenceWrap, "synthesize prepared text by sentence")
-	flags.IntVar(&options.ttsSentenceMinimum, "tts-sentence-minimum-runes", options.ttsSentenceMinimum, "minimum sentence size")
-	flags.StringVar(&options.wordTimingsURL, "word-timings-url", options.wordTimingsURL,
-		"optional OpenAI-shaped transcription endpoint that returns word timestamps")
-	flags.StringVar(&options.wordTimingsModel, "word-timings-model", options.wordTimingsModel,
-		"exact recogniser served by the word-timing endpoint")
-	flags.StringVar(&options.wordTimingsLanguage, "word-timings-language", options.wordTimingsLanguage,
-		"word-timing recogniser language hint")
-	flags.Int64Var(&options.wordTimingsIntervalMS, "word-timings-interval-ms", options.wordTimingsIntervalMS,
-		"new synthesised audio required before refreshing word timings")
-	flags.Int64Var(&options.wordTimingsTimeoutMS, "word-timings-timeout-ms", options.wordTimingsTimeoutMS,
-		"word-timing request timeout")
-	flags.Float64Var(&options.gateThreshold, "gate-threshold", options.gateThreshold, "acoustic energy threshold")
-	flags.IntVar(&options.gatePrefixMS, "gate-prefix-ms", options.gatePrefixMS, "acoustic prefix padding")
-	flags.IntVar(&options.gateSilenceMS, "gate-silence-ms", options.gateSilenceMS, "silence that closes one utterance")
-	flags.IntVar(&options.gateSpeechMS, "gate-speech-ms", options.gateSpeechMS, "minimum admitted speech")
-	flags.IntVar(&options.maxOutputTokens, "max-output-tokens", options.maxOutputTokens, "model output-token bound")
-	flags.StringVar(&options.continuationInstruction, "continuation-instruction", options.continuationInstruction,
-		"profile-owned continuation evidence and deferred-action policy")
-	flags.StringVar(&options.fdbv3Dataset, "fdbv3-dataset", options.fdbv3Dataset, "released FDB v3 dataset whose exact tool union replaces the scenario-suite tools")
-	flags.StringVar(&options.serverTokenEnv, "token-env", options.serverTokenEnv, "optional gateway bearer-token environment name")
-	flags.StringVar(&options.operatorCapabilityEnv, "operator-capability-env", options.operatorCapabilityEnv,
-		"optional separate mgmt_ operator-capability environment name")
-	flags.Uint64Var(&options.inspectionTokenTTL, "inspection-token-ttl-ms", options.inspectionTokenTTL, "runtime-inspection token lifetime")
-	flags.IntVar(&options.maxAudioFrameBytes, "max-audio-frame-bytes", options.maxAudioFrameBytes, "Realtime audio-frame bound")
+	bindScenarioProfileSettings(flags, &options)
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -908,4 +829,91 @@ func writeCreateOnlyLaunchProfile(path string, payload []byte) (resultErr error)
 	}
 	complete = true
 	return nil
+}
+
+// bindScenarioProfileSettings registers every profile setting except the
+// output paths. The freeze command and a companion pipeline config share it, so
+// a config file can set exactly what `profile scenario` flags can and nothing
+// the frozen profile would not record.
+func bindScenarioProfileSettings(flags *flag.FlagSet, options *scenarioProfileOptions) {
+	flags.StringVar(&options.noiseFilterURL, "noise-filter-url", options.noiseFilterURL, "pre-ASR audio filter service base URL")
+	flags.IntVar(&options.noiseFilterTimeoutMS, "noise-filter-timeout-ms", options.noiseFilterTimeoutMS, "strict per-ingress-packet filtering deadline, 1..50ms")
+	flags.Func("case", "exact scenario name; repeat to freeze a diagnostic subset (default: all cases)", func(name string) error {
+		options.cases = append(options.cases, name)
+		return nil
+	})
+	flags.StringVar(&options.name, "name", options.name, "immutable profile name")
+	flags.Uint64Var(&options.revision, "revision", options.revision, "positive profile revision")
+	flags.StringVar(&options.architecture, "architecture", options.architecture, "exact interaction architecture id@revision")
+	flags.StringVar(&options.asrProvider, "asr-provider", options.asrProvider, "installed ASR provider plugin")
+	flags.StringVar(&options.asrModel, "asr-model", options.asrModel, "exact ASR model")
+	flags.StringVar(&options.asrURL, "asr-url", options.asrURL, "exact ASR base URL")
+	flags.StringVar(&options.asrLanguage, "asr-language", options.asrLanguage, "ASR language hint")
+	flags.Func("asr-keyterm", "Deepgram Nova-3 vocabulary hint; repeat for multiple phrases", func(value string) error {
+		options.asrKeyterms = append(options.asrKeyterms, value)
+		return nil
+	})
+	flags.Int64Var(&options.asrPartialMS, "asr-partial-ms", options.asrPartialMS, "batch partial-transcription interval")
+	flags.Int64Var(&options.asrEndpointingMS, "asr-endpointing-ms", options.asrEndpointingMS, "streaming-provider endpointing")
+	flags.Float64Var(&options.asrEOTThreshold, "asr-eot-threshold", options.asrEOTThreshold,
+		"Deepgram Flux EndOfTurn confidence, 0.5 to 1.0; 0 keeps the service default")
+	flags.Float64Var(&options.asrEagerEOTThreshold, "asr-eager-eot-threshold", options.asrEagerEOTThreshold,
+		"Deepgram Flux EagerEndOfTurn confidence, 0.3 to 0.9; 0 disables EagerEndOfTurn and TurnResumed")
+	flags.Int64Var(&options.asrEOTTimeoutMS, "asr-eot-timeout-ms", options.asrEOTTimeoutMS,
+		"Deepgram Flux silence that ends a turn regardless, 500 to 60000; 0 keeps the service default")
+	flags.Int64Var(&options.asrTimeoutMS, "asr-timeout-ms", options.asrTimeoutMS, "ASR request timeout")
+	flags.Int64Var(&options.asrCadenceMS, "asr-cadence-ms", options.asrCadenceMS, "ASR graph cadence")
+	flags.StringVar(&options.speakerURL, "speaker-url", options.speakerURL, "speaker-embedding endpoint ending in /embed")
+	flags.StringVar(&options.speakerModel, "speaker-model", options.speakerModel, "exact speaker-embedding model")
+	flags.Int64Var(&options.speakerTimeoutMS, "speaker-timeout-ms", options.speakerTimeoutMS, "speaker-embedding request timeout")
+	flags.StringVar(&options.modelProvider, "model-provider", options.modelProvider, "installed text-model provider plugin")
+	flags.StringVar(&options.modelName, "model", options.modelName, "exact text model")
+	flags.StringVar(&options.modelURL, "model-url", options.modelURL, "exact text-model base URL")
+	flags.StringVar(&options.modelEffort, "model-effort", options.modelEffort, "canonical reasoning effort")
+	flags.BoolVar(&options.modelVision, "model-vision", options.modelVision, "declare exact image-input support")
+	flags.StringVar(&options.modelReason, "model-reason", options.modelReason, "reasoning control: off, on, or default")
+	flags.BoolVar(&options.modelRetainReason, "model-retain-reasoning", options.modelRetainReason, "retain reasoning in the trajectory")
+	flags.Float64Var(&options.modelTemperature, "model-temperature", options.modelTemperature, "sampling temperature")
+	flags.Int64Var(&options.modelTimeoutMS, "model-timeout-ms", options.modelTimeoutMS, "text-model request timeout")
+	flags.StringVar(&options.policyProvider, "policy-provider", options.policyProvider, "installed enumerated semantic-policy provider plugin")
+	flags.StringVar(&options.policyModel, "policy-model", options.policyModel, "exact semantic-policy model")
+	flags.StringVar(&options.policyURL, "policy-url", options.policyURL, "exact semantic-policy base URL")
+	flags.Int64Var(&options.policyTimeoutMS, "policy-timeout-ms", options.policyTimeoutMS, "semantic-policy decision timeout")
+	flags.BoolVar(&options.policyVision, "policy-vision", options.policyVision, "declare exact semantic-policy image-input support")
+	flags.BoolVar(&options.policyGuided, "policy-guided-choice", options.policyGuided, "request provider-side enumerated-choice decoding")
+	flags.StringVar(&options.policyReasoning, "policy-reasoning", options.policyReasoning, "semantic-policy reasoning control")
+	flags.StringVar(&options.policyTokenEnv, "policy-token-env", options.policyTokenEnv, "optional provider-owned semantic-policy credential environment name")
+	flags.StringVar(&options.transcriptRules, "transcript-rules", options.transcriptRules,
+		"interaction-policy instruction read at every transcript, visual, and quiet event; empty selects the built-in rules")
+	flags.StringVar(&options.ttsProvider, "tts-provider", options.ttsProvider, "installed TTS provider plugin")
+	flags.StringVar(&options.ttsModel, "tts-model", options.ttsModel, "exact TTS model")
+	flags.StringVar(&options.ttsURL, "tts-url", options.ttsURL, "exact TTS endpoint")
+	flags.StringVar(&options.ttsVoice, "tts-voice", options.ttsVoice, "fixed TTS voice")
+	flags.StringVar(&options.ttsLanguage, "tts-language", options.ttsLanguage, "TTS language hint")
+	flags.Int64Var(&options.ttsTimeoutMS, "tts-timeout-ms", options.ttsTimeoutMS, "TTS request timeout")
+	flags.BoolVar(&options.ttsSentenceWrap, "tts-sentence-wrapping", options.ttsSentenceWrap, "synthesize prepared text by sentence")
+	flags.IntVar(&options.ttsSentenceMinimum, "tts-sentence-minimum-runes", options.ttsSentenceMinimum, "minimum sentence size")
+	flags.StringVar(&options.wordTimingsURL, "word-timings-url", options.wordTimingsURL,
+		"optional OpenAI-shaped transcription endpoint that returns word timestamps")
+	flags.StringVar(&options.wordTimingsModel, "word-timings-model", options.wordTimingsModel,
+		"exact recogniser served by the word-timing endpoint")
+	flags.StringVar(&options.wordTimingsLanguage, "word-timings-language", options.wordTimingsLanguage,
+		"word-timing recogniser language hint")
+	flags.Int64Var(&options.wordTimingsIntervalMS, "word-timings-interval-ms", options.wordTimingsIntervalMS,
+		"new synthesised audio required before refreshing word timings")
+	flags.Int64Var(&options.wordTimingsTimeoutMS, "word-timings-timeout-ms", options.wordTimingsTimeoutMS,
+		"word-timing request timeout")
+	flags.Float64Var(&options.gateThreshold, "gate-threshold", options.gateThreshold, "acoustic energy threshold")
+	flags.IntVar(&options.gatePrefixMS, "gate-prefix-ms", options.gatePrefixMS, "acoustic prefix padding")
+	flags.IntVar(&options.gateSilenceMS, "gate-silence-ms", options.gateSilenceMS, "silence that closes one utterance")
+	flags.IntVar(&options.gateSpeechMS, "gate-speech-ms", options.gateSpeechMS, "minimum admitted speech")
+	flags.IntVar(&options.maxOutputTokens, "max-output-tokens", options.maxOutputTokens, "model output-token bound")
+	flags.StringVar(&options.continuationInstruction, "continuation-instruction", options.continuationInstruction,
+		"profile-owned continuation evidence and deferred-action policy")
+	flags.StringVar(&options.fdbv3Dataset, "fdbv3-dataset", options.fdbv3Dataset, "released FDB v3 dataset whose exact tool union replaces the scenario-suite tools")
+	flags.StringVar(&options.serverTokenEnv, "token-env", options.serverTokenEnv, "optional gateway bearer-token environment name")
+	flags.StringVar(&options.operatorCapabilityEnv, "operator-capability-env", options.operatorCapabilityEnv,
+		"optional separate mgmt_ operator-capability environment name")
+	flags.Uint64Var(&options.inspectionTokenTTL, "inspection-token-ttl-ms", options.inspectionTokenTTL, "runtime-inspection token lifetime")
+	flags.IntVar(&options.maxAudioFrameBytes, "max-audio-frame-bytes", options.maxAudioFrameBytes, "Realtime audio-frame bound")
 }

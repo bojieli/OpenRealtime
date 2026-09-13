@@ -1,9 +1,175 @@
 package main
 
 import (
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/bojieli/OpenRealtime/adapters/deepgram"
 	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
 	"github.com/bojieli/OpenRealtime/interaction"
 )
+
+// roomPipeline is one pipeline the companion can run. Every pipeline is a
+// complete profile selection built from the room by changing what it names,
+// so two pipelines differ in exactly the settings their builders change.
+type roomPipeline struct {
+	Name    string
+	Summary string
+	options func() scenarioProfileOptions
+}
+
+// roomPipelines is the list `openrealtime pipelines` prints and
+// `companion -pipeline` accepts. The first is the default.
+func roomPipelines() []roomPipeline {
+	return []roomPipeline{
+		{
+			Name: "room",
+			Summary: "the default: Deepgram Nova-3 in English and Mandarin lanes, local Qwen policy, " +
+				"Gemini 3.8 Flash voice, Fish Speech, speaker identity",
+			options: defaultRoomProfileOptions,
+		},
+		{
+			Name: "room-flux",
+			Summary: "the room recognising with Deepgram Flux (flux-general-en) instead of Nova-3; " +
+				"English only, so the Mandarin translation scenario cannot pass",
+			options: defaultFluxRoomProfileOptions,
+		},
+		{
+			Name:    "room-filtered",
+			Summary: "the room with the pre-recognition noise filter at 127.0.0.1:8125",
+			options: defaultFilteredRoomProfileOptions,
+		},
+		{
+			Name: "room-target",
+			Summary: "the room extracting the enrolled speaker at 127.0.0.1:8126 before recognition, " +
+				"without per-utterance speaker comparison",
+			options: defaultTargetRoomProfileOptions,
+		},
+	}
+}
+
+func lookupRoomPipeline(name string) (roomPipeline, error) {
+	pipelines := roomPipelines()
+	if strings.TrimSpace(name) == "" {
+		return pipelines[0], nil
+	}
+	names := make([]string, 0, len(pipelines))
+	for _, pipeline := range pipelines {
+		if pipeline.Name == name {
+			return pipeline, nil
+		}
+		names = append(names, pipeline.Name)
+	}
+	return roomPipeline{}, fmt.Errorf("unknown pipeline %q; the pipelines are %s", name, strings.Join(names, ", "))
+}
+
+// roomPipelineSelection builds a pipeline's selection and applies a config
+// file of profile settings on top. The file uses the flag names of
+// `openrealtime profile scenario`, nested on dashes as serve's -config does,
+// and a key that is not a setting is an error.
+func roomPipelineSelection(name, configPath string) (scenarioProfileOptions, string, error) {
+	pipeline, err := lookupRoomPipeline(name)
+	if err != nil {
+		return scenarioProfileOptions{}, "", err
+	}
+	selection := pipeline.options()
+	label := pipeline.Name
+	if strings.TrimSpace(configPath) != "" {
+		flags := flag.NewFlagSet("pipeline config", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		bindScenarioProfileSettings(flags, &selection)
+		if err := loadConfig(flags, configPath); err != nil {
+			return scenarioProfileOptions{}, "", err
+		}
+		label += " with " + filepath.Base(configPath)
+	}
+	return selection, label, nil
+}
+
+// runPipelines lists the pipelines, or prints one pipeline's component
+// settings in the form a -pipeline-config file takes.
+func runPipelines(arguments []string, output io.Writer) error {
+	switch len(arguments) {
+	case 0:
+		table := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
+		for _, pipeline := range roomPipelines() {
+			fmt.Fprintf(table, "%s\t%s\n", pipeline.Name, pipeline.Summary)
+		}
+		if err := table.Flush(); err != nil {
+			return err
+		}
+		fmt.Fprintln(output, "\nrun \"openrealtime pipelines NAME\" for its settings and "+
+			"\"openrealtime companion -pipeline NAME\" to run it")
+		return nil
+	case 1:
+		if strings.HasPrefix(arguments[0], "-") {
+			return errors.New("usage: openrealtime pipelines [NAME]")
+		}
+		pipeline, err := lookupRoomPipeline(arguments[0])
+		if err != nil {
+			return err
+		}
+		describeRoomPipeline(output, pipeline)
+		return nil
+	default:
+		return errors.New("usage: openrealtime pipelines [NAME]")
+	}
+}
+
+// describeRoomPipeline writes the settings that tell pipelines apart. The
+// output is itself a valid -pipeline-config: applied to any pipeline, it
+// selects these components.
+func describeRoomPipeline(output io.Writer, pipeline roomPipeline) {
+	selection := pipeline.options()
+	fmt.Fprintf(output, "# %s: %s\n", pipeline.Name, pipeline.Summary)
+	text := func(name, value string) { fmt.Fprintf(output, "%s: %s\n", name, strconv.Quote(value)) }
+	number := func(name string, value int64) { fmt.Fprintf(output, "%s: %d\n", name, value) }
+	decimal := func(name string, value float64) {
+		if value != 0 {
+			fmt.Fprintf(output, "%s: %s\n", name, strconv.FormatFloat(value, 'f', -1, 64))
+		}
+	}
+	text("architecture", selection.architecture)
+	text("asr-provider", selection.asrProvider)
+	text("asr-model", selection.asrModel)
+	text("asr-url", selection.asrURL)
+	text("asr-language", selection.asrLanguage)
+	number("asr-endpointing-ms", selection.asrEndpointingMS)
+	decimal("asr-eot-threshold", selection.asrEOTThreshold)
+	decimal("asr-eager-eot-threshold", selection.asrEagerEOTThreshold)
+	if selection.asrEOTTimeoutMS != 0 {
+		number("asr-eot-timeout-ms", selection.asrEOTTimeoutMS)
+	}
+	number("asr-cadence-ms", selection.asrCadenceMS)
+	for _, keyterm := range selection.asrKeyterms {
+		// A config file's asr-keyterm adds to the pipeline's own, so repeating
+		// these would name them twice.
+		fmt.Fprintf(output, "# asr-keyterm: %s\n", strconv.Quote(keyterm))
+	}
+	text("policy-provider", selection.policyProvider)
+	text("policy-model", selection.policyModel)
+	text("policy-url", selection.policyURL)
+	text("model-provider", selection.modelProvider)
+	text("model", selection.modelName)
+	text("model-url", selection.modelURL)
+	text("model-effort", selection.modelEffort)
+	text("tts-provider", selection.ttsProvider)
+	text("tts-model", selection.ttsModel)
+	text("tts-url", selection.ttsURL)
+	text("speaker-url", selection.speakerURL)
+	text("noise-filter-url", selection.noiseFilterURL)
+	if selection.noiseFilterModel != "" {
+		// The filter model is fixed by the pipeline; no setting chooses it.
+		fmt.Fprintf(output, "# noise filter model: %s\n", strconv.Quote(selection.noiseFilterModel))
+	}
+	number("gate-silence-ms", int64(selection.gateSilenceMS))
+}
 
 // defaultRoomProfileOptions is the project's default pipeline: the cascade
 // the conversation room runs, accepted by the twelve scripted scenarios
@@ -52,6 +218,21 @@ func defaultRoomProfileOptions() scenarioProfileOptions {
 	selection.wordTimingsModel = wordtimings.DefaultModel
 	selection.wordTimingsLanguage = "en"
 	selection.wordTimingsIntervalMS = 900
+	return selection
+}
+
+// defaultFluxRoomProfileOptions is the room with Deepgram Flux recognising.
+// It changes the recogniser and nothing else, so a comparison with the room
+// measures the recogniser. Flux has no endpointing and no Mandarin: the
+// engine's acoustic gate still ends utterances, an open Flux turn is closed
+// with ForceEndTurn, and the one lane is English.
+func defaultFluxRoomProfileOptions() scenarioProfileOptions {
+	selection := defaultRoomProfileOptions()
+	selection.name = "openrealtime.launch.flux-room"
+	selection.asrModel = deepgram.DefaultFluxModel
+	selection.asrURL = deepgram.DefaultFluxURL
+	selection.asrLanguage = "en-US"
+	selection.asrEndpointingMS = 0
 	return selection
 }
 

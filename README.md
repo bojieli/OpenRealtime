@@ -80,6 +80,11 @@ The command starts the server and browser client, then opens
 `http://127.0.0.1:8767`. Allow microphone access, connect, and ask a question.
 Keep the terminal running; press **Ctrl+C** to stop.
 
+The room is the default pipeline. `./openrealtime pipelines` lists the others,
+such as `room-flux` with Deepgram Flux recognising, and
+`./openrealtime companion -pipeline NAME` runs one; see
+[Choosing a pipeline](docs/room.md#choosing-a-pipeline).
+
 For a first interaction, ask the assistant to explain a topic, then interrupt
 with a shorter follow-up. Listen for when it stops and how it responds. To
 hear the twelve scenarios rather than improvise, play them against the room

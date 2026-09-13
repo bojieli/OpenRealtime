@@ -147,6 +147,63 @@ action; both verdicts and the run's timeline are written under
 `.runtime/scenario-bench/`. `OPENREALTIME_SCENARIO_BENCH` can name a
 comma-separated subset and `OPENREALTIME_SCENARIO_JUDGE=0` skips the judge.
 
+## Choosing a pipeline
+
+The room is one of several pipelines the companion can run. List them, and
+print one's settings:
+
+```sh
+./openrealtime pipelines
+./openrealtime pipelines room-flux
+```
+
+| Pipeline | What differs from `room` |
+| --- | --- |
+| `room` | nothing: Deepgram Nova-3 in English and Mandarin lanes, the default |
+| `room-flux` | Deepgram Flux recognises instead of Nova-3; English only |
+| `room-filtered` | a pre-recognition noise filter at `127.0.0.1:8125` |
+| `room-target` | enrolled-speaker extraction at `127.0.0.1:8126`, no per-utterance speaker comparison |
+
+Run one with `-pipeline`, and adjust it with `-pipeline-config`, a YAML file
+of the same settings `openrealtime profile scenario` takes, nested on dashes
+the way serve's `-config` is. A key that is not a setting is refused:
+
+```yaml
+# eager.yaml
+asr-eager-eot-threshold: 0.5
+asr:
+  eot-threshold: 0.8
+gate-silence-ms: 400
+```
+
+```sh
+./openrealtime companion -pipeline room-flux -pipeline-config eager.yaml
+```
+
+The companion prints the pipeline it froze, and the frozen profile records
+every setting. `pipelines NAME` prints settings in this same form, so its
+output is a starting config. A pipeline cannot be combined with serve's own
+`-launch-profile`, `-config` or `-binding` after `--`; the companion refuses
+rather than ignore one of them.
+
+To compare pipelines, play the live scenarios against each in turn:
+
+```sh
+scripts/compare-pipelines.sh room room-flux room-flux:eager.yaml
+```
+
+Each pipeline gets its own companion and plays `TestLiveRoomTwelveScenarios`;
+the pipelines run one after another, because they share the local policy
+model and synthesiser. `OPENREALTIME_LIVE_SCENARIOS` narrows the scenarios.
+The script writes a scenario-by-pipeline table to
+`.runtime/pipeline-compare/<stamp>/summary.md` beside every log. Expect
+`room-flux` to fail the Mandarin translation scenario: no Flux model
+recognises Mandarin.
+
+The twelve-scenario benchmark in `graphs` scripts the recogniser, so it
+compares policy and voice choices but not recognisers; the live scenarios are
+where a recogniser is measured.
+
 ## One step at a time
 
 The interaction policy runs in lockstep with the voice. Every transcript

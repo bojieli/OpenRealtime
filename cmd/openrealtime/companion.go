@@ -63,6 +63,12 @@ type companionOptions struct {
 	readyTimeout        time.Duration
 	shutdownTimeout     time.Duration
 	serveArguments      []string
+	// pipeline and pipelineConfig choose the room profile the companion
+	// freezes when serve is given no configuration of its own.
+	pipeline       string
+	pipelineConfig string
+	// pipelineLabel names what was built, for the ready report.
+	pipelineLabel string
 }
 
 type companionReady struct {
@@ -291,6 +297,9 @@ func runCompanionContext(
 	} else {
 		fmt.Fprintln(output, "  native file  bundled observer-developer directory")
 	}
+	if options.pipelineLabel != "" {
+		fmt.Fprintf(output, "  pipeline     %s\n", options.pipelineLabel)
+	}
 	fmt.Fprintf(output, "  client       %s\n", options.client)
 	if runtime.onReady != nil {
 		runtime.onReady(ready)
@@ -338,6 +347,10 @@ func parseCompanionOptions(arguments []string, output io.Writer) (companionOptio
 		"bounded server, WebRTC, and presentation readiness deadline")
 	flags.DurationVar(&options.shutdownTimeout, "shutdown-timeout", 5*time.Second,
 		"bounded graceful shutdown deadline for each child")
+	flags.StringVar(&options.pipeline, "pipeline", "",
+		"room pipeline to run; \"openrealtime pipelines\" lists them (default room)")
+	flags.StringVar(&options.pipelineConfig, "pipeline-config", "",
+		"YAML of profile scenario settings applied over the pipeline, e.g. asr-eager-eot-threshold: 0.5")
 	flags.SetOutput(output)
 	if err := flags.Parse(supervisor); err != nil {
 		return companionOptions{}, err
@@ -420,6 +433,10 @@ func prepareCompanionPipeline(ctx context.Context, options *companionOptions) (f
 			explicit = true
 		}
 	}
+	if explicit && (options.pipeline != "" || options.pipelineConfig != "") {
+		return noop, false, errors.New("-pipeline and -pipeline-config build the room profile; " +
+			"they cannot be combined with serve's -launch-profile, -config or -binding")
+	}
 	if profilePath != "" {
 		profile, err := readServeLaunchProfile(ctx, profilePath)
 		if err != nil {
@@ -432,7 +449,11 @@ func prepareCompanionPipeline(ctx context.Context, options *companionOptions) (f
 	if explicit {
 		return noop, false, nil
 	}
-	selection := defaultRoomProfileOptions()
+	selection, label, err := roomPipelineSelection(options.pipeline, options.pipelineConfig)
+	if err != nil {
+		return noop, false, err
+	}
+	options.pipelineLabel = label
 	if strings.TrimSpace(os.Getenv(options.tokenEnvironment)) != "" {
 		selection.serverTokenEnv = options.tokenEnvironment
 	}

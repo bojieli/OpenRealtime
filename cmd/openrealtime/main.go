@@ -58,6 +58,8 @@ func run(arguments []string, stdout, stderr io.Writer) error {
 		return runProviders(arguments[1:], stdout)
 	case "architectures", "architecture":
 		return runArchitectures(arguments[1:], stdout)
+	case "pipelines", "pipeline":
+		return runPipelines(arguments[1:], stdout)
 	case "graph":
 		return runGraph(arguments[1:], stdout, stderr)
 	case "version":
@@ -79,6 +81,7 @@ commands:
   probe         drive a running server through one turn and report it
   present       run a descriptor-locked browser presentation host
   companion     run the clean server and composable browser/native companion host
+  pipelines     list the room pipelines companion can run, or print one's settings
   conformance   verify protocol and component conformance
   efficiency    measure the costs the design claims are small
   bench         run a measurement suite against a running server

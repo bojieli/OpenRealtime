@@ -198,6 +198,7 @@ openrealtime serve -asr-provider deepgram -asr-model flux-general-en \
 | `-asr-eager-eot-threshold` | `eager_eot_threshold` | 0.3 to 0.9, at most the EndOfTurn threshold | no eager events |
 | `-asr-eot-timeout` | `eot_timeout_ms` | 500 ms to 60 s | 5 s |
 
+`openrealtime companion -pipeline room-flux` runs the room with Flux, and
 `openrealtime profile scenario` takes the same settings as
 `-asr-eot-threshold`, `-asr-eager-eot-threshold` and `-asr-eot-timeout-ms`.
 Unset values are not sent, so the service's own defaults apply.
