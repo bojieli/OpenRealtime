@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -135,7 +136,10 @@ func scenarioFileStem(name string) string {
 // scenarioBenchLine is where one line of the script landed on the harness
 // clock, and the words the recogniser reveals for it.
 type scenarioBenchLine struct {
+	// index is this line's position; script is the scripted line it came
+	// from, since a scripted line is said one sentence at a time.
 	index   int
+	script  int
 	speaker string
 	text    string
 	words   []string
@@ -200,6 +204,13 @@ var scenarioBenchSegments = map[string][]string{
 // layoutScenario places every line on the harness clock the way Compose
 // places synthesised speech: at its scripted moment, or after a breath once
 // the previous line has finished, lasting as long as its words take to say.
+//
+// A scripted line is laid out one sentence at a time, with the breath a
+// voice takes between sentences, because that is what the room's recogniser
+// hears: it ends an utterance at the pause, so "Count out loud from one to
+// forty for me. Slowly, one number at a time." reaches the policy as two
+// finals, the first of them a complete request on its own. Laid out as one
+// final, the harness passed a scenario the live room did not.
 func layoutScenario(item scenario.Scenario) ([]scenarioBenchLine, int) {
 	lines := make([]scenarioBenchLine, 0, len(item.Script))
 	finished, spokenYet := 0, false
@@ -207,18 +218,20 @@ func layoutScenario(item scenario.Scenario) ([]scenarioBenchLine, int) {
 	for _, sight := range item.Sees {
 		total = max(total, sight.AtMS)
 	}
-	for index, line := range item.Script {
-		words := scenarioBenchWords(line.Text)
-		start := line.AtMS
-		if spokenYet && finished+600 > start {
-			start = finished + 600
+	for script, line := range item.Script {
+		for offset, sentence := range scenarioBenchSentences(line.Text) {
+			words := scenarioBenchWords(sentence)
+			start := line.AtMS
+			if offset > 0 || (spokenYet && finished+600 > start) {
+				start = finished + 600
+			}
+			duration := (len(words)*scenarioBenchFramesPerWord + 3) * scenarioBenchFrameMS
+			entry := scenarioBenchLine{index: len(lines), script: script, speaker: line.Speaker,
+				text: sentence, words: words, startMS: start, endMS: start + duration}
+			lines = append(lines, entry)
+			finished, spokenYet = entry.endMS, true
+			total = max(total, entry.endMS)
 		}
-		duration := (len(words)*scenarioBenchFramesPerWord + 3) * scenarioBenchFrameMS
-		entry := scenarioBenchLine{index: index, speaker: line.Speaker, text: line.Text, words: words,
-			startMS: start, endMS: start + duration}
-		lines = append(lines, entry)
-		finished, spokenYet = entry.endMS, true
-		total = max(total, entry.endMS)
 	}
 	if item.TrailingMS > 0 && len(item.Script) > 0 {
 		total = max(total, finished+item.TrailingMS)
@@ -229,6 +242,38 @@ func layoutScenario(item scenario.Scenario) ([]scenarioBenchLine, int) {
 // scenarioBenchWords splits a line into the units the recogniser reveals one
 // at a time: words where there are spaces, pairs of characters where there
 // are none.
+// scenarioBenchSentences splits a scripted line at the sentence ends a voice
+// pauses on: a full stop, question or exclamation mark before a space or the
+// end, and their full-width forms anywhere. A line with none is one sentence.
+func scenarioBenchSentences(text string) []string {
+	var sentences []string
+	runes := []rune(strings.TrimSpace(text))
+	start := 0
+	for index, r := range runes {
+		ends := false
+		switch r {
+		case '。', '！', '？':
+			ends = true
+		case '.', '!', '?':
+			ends = index+1 == len(runes) || unicode.IsSpace(runes[index+1])
+		}
+		if !ends || index+1 == len(runes) {
+			continue
+		}
+		if sentence := strings.TrimSpace(string(runes[start : index+1])); sentence != "" {
+			sentences = append(sentences, sentence)
+		}
+		start = index + 1
+	}
+	if rest := strings.TrimSpace(string(runes[start:])); rest != "" {
+		sentences = append(sentences, rest)
+	}
+	if len(sentences) == 0 {
+		return []string{strings.TrimSpace(text)}
+	}
+	return sentences
+}
+
 func scenarioBenchWords(text string) []string {
 	if segments, known := scenarioBenchSegments[strings.TrimSpace(text)]; known {
 		return segments
@@ -413,7 +458,12 @@ func playScenarioInProcess(
 	run.capture.SampleRateHz = 24_000
 	run.transcript.PlaybackMS = float64(totalMS)
 	run.timeline = scenario.Timeline{Samples: room, TotalMS: totalMS}
+	// A span per scripted line, covering every sentence it was said in.
 	for _, line := range lines {
+		if line.script < len(run.timeline.Spans) {
+			run.timeline.Spans[line.script].EndMS = line.endMS
+			continue
+		}
 		run.timeline.Spans = append(run.timeline.Spans, scenario.Span{StartMS: line.startMS, EndMS: line.endMS})
 	}
 	for _, sight := range item.Sees {
@@ -1004,4 +1054,25 @@ func truncateJudge(payload []byte) string {
 		return text[:300] + "…"
 	}
 	return text
+}
+
+func TestScenarioBenchSentencesSplitWhereAVoicePauses(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		text string
+		want []string
+	}{
+		{"Count out loud from one to forty for me, slowly, one number at a time, and don't say anything else.",
+			[]string{"Count out loud from one to forty for me, slowly, one number at a time, and don't say anything else."}},
+		{"Did you get the milk on the way in? I looked in the fridge and there wasn't any.",
+			[]string{"Did you get the milk on the way in?", "I looked in the fridge and there wasn't any."}},
+		{"It costs 3.5 dollars. Fine!", []string{"It costs 3.5 dollars.", "Fine!"}},
+		{"你好，很高兴见到你。", []string{"你好，很高兴见到你。"}},
+		{"好的。我们明天见面。", []string{"好的。", "我们明天见面。"}},
+		{"Right, carry on", []string{"Right, carry on"}},
+	} {
+		if got := scenarioBenchSentences(test.text); !slices.Equal(got, test.want) {
+			t.Errorf("sentences(%q) = %q, want %q", test.text, got, test.want)
+		}
+	}
 }
