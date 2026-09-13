@@ -117,8 +117,12 @@ try {
   const scrub = document.querySelector("#timeline-scrub");
   scrub.value = String(base + 1000);
   scrub.dispatchEvent(new Event("input"));
-  for (let attempt = 0; attempt < 50; attempt++) {
-    if (document.querySelectorAll("#timeline-rows li").length === events.length) break;
+  // The list and its status line are redrawn on the next animation frame,
+  // and the rows are already there from before the pause: wait for the
+  // redraw that reflects it, not merely for the rows.
+  const settled = () => document.querySelectorAll("#timeline-rows li").length === events.length &&
+    (document.querySelector("#timeline-status")?.textContent ?? "").endsWith("paused");
+  for (let attempt = 0; attempt < 100 && !settled(); attempt++) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   const section = document.querySelector('[data-view="timeline"]');

@@ -577,7 +577,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCanonicalEffectArguments$", "-fuzztime", "5s", "./authority"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCanonicalEffectArguments$", "-fuzztime", "150000x", "./authority"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:authority/FuzzCanonicalEffectArguments"]
@@ -589,7 +589,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectReceiptTamperNeverAuthorizes$", "-fuzztime", "5s", "./authority"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectReceiptTamperNeverAuthorizes$", "-fuzztime", "30000x", "./authority"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:authority/FuzzEffectReceiptTamperNeverAuthorizes"]
@@ -601,7 +601,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCredentialScanner$", "-fuzztime", "5s", "./bench/review/gemini"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCredentialScanner$", "-fuzztime", "75000x", "./bench/review/gemini"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:bench/review/gemini/FuzzCredentialScanner"]
@@ -613,7 +613,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzLoadCorpus$", "-fuzztime", "5s", "./client/reducer"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzLoadCorpus$", "-fuzztime", "1000x", "./client/reducer"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:client/reducer/FuzzLoadCorpus"]
@@ -625,7 +625,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzStandardConfigSchemaResolverIsExactAndSnapshotIsolated$", "-fuzztime", "5s", "./elements"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzStandardConfigSchemaResolverIsExactAndSnapshotIsolated$", "-fuzztime", "100000x", "./elements"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:elements/FuzzStandardConfigSchemaResolverIsExactAndSnapshotIsolated"]
@@ -637,7 +637,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPreflightRejectsImplementationInventoryDriftBeforeAcquisition$", "-fuzztime", "5s", "./graph/assembly"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPreflightRejectsImplementationInventoryDriftBeforeAcquisition$", "-fuzztime", "75000x", "./graph/assembly"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/assembly/FuzzPreflightRejectsImplementationInventoryDriftBeforeAcquisition"]
@@ -649,7 +649,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCatalogParseNeverPanics$", "-fuzztime", "5s", "./graph/catalog"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCatalogParseNeverPanics$", "-fuzztime", "5000x", "./graph/catalog"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/catalog/FuzzCatalogParseNeverPanics"]
@@ -661,7 +661,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCreateValuesArtifactNeverPanics$", "-fuzztime", "5s", "./graph/config"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzCreateValuesArtifactNeverPanics$", "-fuzztime", "20000x", "./graph/config"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/config/FuzzCreateValuesArtifactNeverPanics"]
@@ -673,7 +673,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzDeploymentEvidenceRejectsUnsafeFingerprint$", "-fuzztime", "5s", "./graph/inspect"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzDeploymentEvidenceRejectsUnsafeFingerprint$", "-fuzztime", "50000x", "./graph/inspect"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/inspect/FuzzDeploymentEvidenceRejectsUnsafeFingerprint"]
@@ -685,7 +685,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEvidenceParsersNeverPanicAndSuccessfulDocumentsRefingerprint$", "-fuzztime", "5s", "./graph/evidence"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEvidenceParsersNeverPanicAndSuccessfulDocumentsRefingerprint$", "-fuzztime", "80000x", "./graph/evidence"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/evidence/FuzzEvidenceParsersNeverPanicAndSuccessfulDocumentsRefingerprint"]
@@ -697,7 +697,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPropertyMetadataNeverAdmitsInvalidOrNondeterministicSchema$", "-fuzztime", "5s", "./graph/schema"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPropertyMetadataNeverAdmitsInvalidOrNondeterministicSchema$", "-fuzztime", "150000x", "./graph/schema"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/schema/FuzzPropertyMetadataNeverAdmitsInvalidOrNondeterministicSchema"]
@@ -709,7 +709,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzBroadcastTeeAtomicAccounting$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzBroadcastTeeAtomicAccounting$", "-fuzztime", "75000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzBroadcastTeeAtomicAccounting"]
@@ -721,7 +721,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzBroadcastTeeCancellationIsAtomic$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzBroadcastTeeCancellationIsAtomic$", "-fuzztime", "75000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzBroadcastTeeCancellationIsAtomic"]
@@ -733,7 +733,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzReceiveAnyMuxFairFIFO$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzReceiveAnyMuxFairFIFO$", "-fuzztime", "50000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzReceiveAnyMuxFairFIFO"]
@@ -745,7 +745,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPreparePlanRejectsExactProfileDrift$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzPreparePlanRejectsExactProfileDrift$", "-fuzztime", "25000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzPreparePlanRejectsExactProfileDrift"]
@@ -757,7 +757,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueCancellationRacesQuiesce$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueCancellationRacesQuiesce$", "-fuzztime", "50000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzQueueCancellationRacesQuiesce"]
@@ -769,7 +769,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueFIFOAndDropAccounting$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueFIFOAndDropAccounting$", "-fuzztime", "12000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzQueueFIFOAndDropAccounting"]
@@ -781,7 +781,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueWaiterCancellationAndCloseQuiesce$", "-fuzztime", "5s", "./graph/runtime"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzQueueWaiterCancellationAndCloseQuiesce$", "-fuzztime", "50000x", "./graph/runtime"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/runtime/FuzzQueueWaiterCancellationAndCloseQuiesce"]
@@ -793,7 +793,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzRecoveryIsBoundedAndNeverPromotesToStrictParse$", "-fuzztime", "5s", "./graph/syntax"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzRecoveryIsBoundedAndNeverPromotesToStrictParse$", "-fuzztime", "250000x", "./graph/syntax"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:graph/syntax/FuzzRecoveryIsBoundedAndNeverPromotesToStrictParse"]
@@ -805,7 +805,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzValidate$", "-fuzztime", "5s", "./internal/strictjson"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzValidate$", "-fuzztime", "300000x", "./internal/strictjson"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:internal/strictjson/FuzzValidate"]
@@ -817,7 +817,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectArgumentAdmission$", "-fuzztime", "5s", "./presentation/host"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectArgumentAdmission$", "-fuzztime", "30000x", "./presentation/host"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:presentation/host/FuzzEffectArgumentAdmission"]
@@ -829,7 +829,7 @@
       "selection": "default",
       "required": true,
       "working_directory": ".",
-      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectWireMessageDecoding$", "-fuzztime", "5s", "./presentation/host"],
+      "command": ["{go}", "test", "-run", "^$", "-fuzz", "^FuzzEffectWireMessageDecoding$", "-fuzztime", "60000x", "./presentation/host"],
       "timeout": "2m",
       "skip_policy": "forbid",
       "covers": ["fuzz:presentation/host/FuzzEffectWireMessageDecoding"]
