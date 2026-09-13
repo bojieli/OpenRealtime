@@ -3,6 +3,7 @@ package scenario
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,4 +47,40 @@ func TestGeminiHearingSendsTheWindowAndReturnsTheWords(t *testing.T) {
 	if prompt, _ := parts[1].(map[string]any)["text"].(string); !strings.Contains(prompt, "numbers written as words") {
 		t.Fatalf("prompt = %q", prompt)
 	}
+}
+
+func TestPacedShortensAPauseInsideALineAndKeepsItsEdges(t *testing.T) {
+	tone := func(frames int) []int16 {
+		out := make([]int16, frames*240)
+		for index := range out {
+			out[index] = int16(8000 * math.Sin(float64(index)*0.3))
+		}
+		return out
+	}
+	silence := func(frames int) []int16 { return make([]int16, frames*240) }
+	line := append(append(append(append(silence(20), tone(30)...), silence(115)...), tone(30)...), silence(50)...)
+	out := paced(line)
+	want := (20 + 30 + 40 + 30 + 50) * 240
+	if len(out) != want {
+		t.Fatalf("paced length = %d frames, want %d", len(out)/240, want/240)
+	}
+	if !equalSamples(out[:20*240], silence(20)) || !equalSamples(out[len(out)-50*240:], silence(50)) {
+		t.Fatal("paced moved the line's edges")
+	}
+	short := append(append(tone(30), silence(30)...), tone(30)...)
+	if len(paced(short)) != len(short) {
+		t.Fatal("a pause a speaker takes was shortened")
+	}
+}
+
+func equalSamples(a, b []int16) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index] != b[index] {
+			return false
+		}
+	}
+	return true
 }

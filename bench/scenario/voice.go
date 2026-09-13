@@ -64,7 +64,7 @@ func (voice SpeechVoice) Speak(ctx context.Context, speaker, text string) ([]int
 	}
 	key := cacheKey(voice.Model, name, text)
 	if samples, ok := readCached(key); ok {
-		return levelled(samples), nil
+		return paced(levelled(samples)), nil
 	}
 	body, err := json.Marshal(map[string]any{
 		"model": voice.Model, "input": text, "voice": name,
@@ -101,7 +101,59 @@ func (voice SpeechVoice) Speak(ctx context.Context, speaker, text string) ([]int
 		return nil, err
 	}
 	writeCached(key, samples)
-	return levelled(samples), nil
+	return paced(levelled(samples)), nil
+}
+
+// paced shortens a pause inside a synthesised line to the length a speaker
+// takes. Measured, the synthesiser rendered the comma in "你好，很高兴见到你"
+// as 1.15 s of silence; the room's gate, set for people, closed the
+// utterance there and handed the recogniser 290 ms of "你好" on its own.
+// Silence at the start and end of the line is left alone, so where a line
+// begins and ends on the room's clock does not move.
+func paced(samples []int16) []int16 {
+	const (
+		frame    = 240 // 10 ms at 24 kHz
+		quiet    = 0.01 * 32768
+		longest  = 40 // frames: 400 ms
+		keepHalf = longest / 2
+	)
+	frames := len(samples) / frame
+	silent := make([]bool, frames)
+	for index := range silent {
+		energy := 0.0
+		for _, sample := range samples[index*frame : (index+1)*frame] {
+			energy += float64(sample) * float64(sample)
+		}
+		silent[index] = math.Sqrt(energy/frame) < quiet
+	}
+	first, last := -1, -1
+	for index, quietFrame := range silent {
+		if !quietFrame {
+			if first < 0 {
+				first = index
+			}
+			last = index
+		}
+	}
+	if first < 0 {
+		return samples
+	}
+	out := make([]int16, 0, len(samples))
+	out = append(out, samples[:first*frame]...)
+	run := 0
+	for index := first; index <= last; index++ {
+		if silent[index] {
+			run++
+			if run > longest {
+				continue
+			}
+		} else {
+			run = 0
+		}
+		out = append(out, samples[index*frame:(index+1)*frame]...)
+	}
+	_ = keepHalf
+	return append(out, samples[(last+1)*frame:]...)
 }
 
 // levelled brings a synthesised line to the loudness people speak at in the
