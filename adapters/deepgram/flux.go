@@ -106,6 +106,11 @@ type FluxListener struct {
 	forcesOutstanding int
 	lastEmittedText   string
 	revisionID        uint64
+	// sentSamples is the audio written to the current stream since it was
+	// dialled, and transcribedTo how far into it Flux has reported, in
+	// seconds. A turn can only be ended on audio Flux has decoded.
+	sentSamples   uint64
+	transcribedTo float64
 }
 
 type fluxStream struct {
@@ -124,6 +129,7 @@ type fluxEvent struct {
 	confidence float64
 	trigger    string
 	code       string
+	windowEnd  float64
 }
 
 // NewFluxListener validates the configuration without opening a socket; the
@@ -267,6 +273,7 @@ func (listener *FluxListener) PushFrame(
 	listener.haveFrame = true
 	listener.nextFrameIndex = frame.Index + 1
 	listener.nextSourceSample = frame.SampleOffset + uint64(len(frame.PCM16LE)/2)
+	listener.sentSamples += uint64(len(frame.PCM16LE) / 2)
 	listener.applyAvailable()
 	return listener.revisionIfChanged(), nil
 }
@@ -289,7 +296,16 @@ func (listener *FluxListener) Finalize(
 		return v1.PerceptionRevision{}, fmt.Errorf(
 			"Deepgram Flux final source sample is %d; expected %d", sourceSample, listener.nextSourceSample)
 	}
-	if err := listener.endTurn(ctx); err != nil {
+	// End the turn only on audio Flux has decoded. A burst of frames - the
+	// first utterance of a session waits for the connection, then sends
+	// everything queued at once - reaches Finalize before a single TurnInfo,
+	// and ForceEndTurn with no turn begun would return nothing for words the
+	// service is still decoding.
+	err := listener.awaitTranscribed(ctx)
+	if err == nil {
+		err = listener.endTurn(ctx)
+	}
+	if err != nil {
 		// What was heard before the stream failed is still what the person
 		// said. Only an utterance with no words is a failure worth surfacing.
 		listener.shutdown()
@@ -363,6 +379,45 @@ func (listener *FluxListener) Confidence() float64 {
 	return listener.confidence
 }
 
+// fluxTranscriptionLag is how far behind the audio sent Flux's reported window
+// may be and still count as having heard all of it: Update messages come for
+// roughly every quarter second of transcribed audio.
+const fluxTranscriptionLag = 0.3
+
+// awaitTranscribed waits until Flux has reported transcribing the audio sent
+// on this stream, up to the drain timeout.
+func (listener *FluxListener) awaitTranscribed(ctx context.Context) error {
+	listener.applyAvailable()
+	if listener.stream == nil || listener.inputRate == 0 {
+		return nil
+	}
+	sent := float64(listener.sentSamples) / float64(listener.inputRate)
+	if listener.transcribedTo >= sent-fluxTranscriptionLag {
+		return nil
+	}
+	current := listener.stream
+	deadline := time.NewTimer(listener.config.DrainTimeout)
+	defer deadline.Stop()
+	for listener.transcribedTo < sent-fluxTranscriptionLag {
+		select {
+		case event := <-current.events:
+			listener.apply(event)
+		case err := <-current.readErr:
+			return err
+		case <-current.closed:
+			listener.applyAvailable()
+			return errors.New("Deepgram Flux closed the stream before transcribing the utterance")
+		case <-deadline.C:
+			// Not an error: the turn is ended on what was transcribed, as
+			// ForceEndTurn documents, rather than failing the utterance.
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
 func (listener *FluxListener) endTurn(ctx context.Context) error {
 	listener.applyAvailable()
 	if listener.turnActive {
@@ -420,6 +475,9 @@ func (listener *FluxListener) applyAvailable() {
 
 // apply folds one event into the utterance, following the Flux state machine.
 func (listener *FluxListener) apply(event fluxEvent) {
+	if event.windowEnd > listener.transcribedTo {
+		listener.transcribedTo = event.windowEnd
+	}
 	switch event.kind {
 	case "Warning":
 		if event.code == fluxNoActiveTurn {
@@ -550,6 +608,7 @@ func (listener *FluxListener) dial(ctx context.Context, sampleRateHz uint32) err
 	}
 	listener.stream = current
 	listener.forcesOutstanding = 0
+	listener.sentSamples, listener.transcribedTo = 0, 0
 	listener.lastWrite = time.Now()
 	// Flux has no KeepAlive message; the service keeps an idle stream open
 	// with WebSocket pings, which the reader answers by reading.
@@ -648,9 +707,10 @@ func (current *fluxStream) read() {
 			Words      []struct {
 				Confidence fluxNumber `json:"confidence"`
 			} `json:"words"`
-			Trigger     string `json:"trigger"`
-			Code        string `json:"code"`
-			Description string `json:"description"`
+			Trigger     string     `json:"trigger"`
+			WindowEnd   fluxNumber `json:"audio_window_end"`
+			Code        string     `json:"code"`
+			Description string     `json:"description"`
 		}
 		if err := json.Unmarshal(payload, &message); err != nil {
 			continue
@@ -660,6 +720,7 @@ func (current *fluxStream) read() {
 		case "TurnInfo":
 			event = fluxEvent{
 				kind: message.Event, transcript: strings.TrimSpace(message.Transcript), trigger: message.Trigger,
+				windowEnd: float64(message.WindowEnd),
 			}
 			if len(message.Words) > 0 {
 				total := 0.0

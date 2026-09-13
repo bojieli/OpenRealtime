@@ -21,6 +21,10 @@ import (
 // frame and answers ForceEndTurn the way the service does: an EndOfTurn with
 // trigger manual while a turn is open, a no-active-turn warning otherwise.
 type fakeFlux struct {
+	// lateAfter holds back every scripted entry from this frame on by
+	// lateDelay, the way a service still decoding a burst of audio answers.
+	lateAfter int
+	lateDelay time.Duration
 	server    *httptest.Server
 	query     chan url.Values
 	accepts   atomic.Int32
@@ -62,8 +66,18 @@ func newFakeFlux(t *testing.T, script ...string) *fakeFlux {
 				return
 			}
 			if kind == websocket.MessageBinary {
+				fake.mu.Lock()
+				late := fake.lateDelay > 0 && fake.next >= fake.lateAfter
+				delay := fake.lateDelay
+				fake.mu.Unlock()
 				if entry, ok := fake.take(); ok {
-					_ = connection.Write(request.Context(), websocket.MessageText, []byte(entry))
+					if late {
+						time.AfterFunc(delay, func() {
+							_ = connection.Write(context.Background(), websocket.MessageText, []byte(entry))
+						})
+					} else {
+						_ = connection.Write(request.Context(), websocket.MessageText, []byte(entry))
+					}
 				}
 				continue
 			}
@@ -492,5 +506,42 @@ func TestFluxRefusesSettingsItCannotHonour(t *testing.T) {
 	_, err = listener.PushFrame(context.Background(), v1.AudioFrame{SampleRateHz: 22_050, PCM16LE: tone(160)})
 	if err == nil || !strings.Contains(err.Error(), "22050") {
 		t.Fatalf("an unsupported sample rate was dialled: %v", err)
+	}
+}
+
+func turnInfoAt(event, transcript string, windowEnd float64) string {
+	message := map[string]any{
+		"type": "TurnInfo", "event": event, "turn_index": 0, "transcript": transcript,
+		"audio_window_start": 0, "audio_window_end": windowEnd, "end_of_turn_confidence": 0.1,
+		"words": []map[string]any{{"word": "w", "confidence": 0.9, "start": 0, "end": 0.1}},
+	}
+	payload, _ := json.Marshal(message)
+	return string(payload)
+}
+
+// The first utterance of a session waits for the connection and then sends a
+// burst. Finalize arrives before Flux has said anything about that audio; it
+// must wait for the words rather than end a turn that has not begun.
+func TestFluxFinalizeWaitsForTheAudioItSentToBeTranscribed(t *testing.T) {
+	t.Parallel()
+	// Twelve 80 ms frames: almost a second of speech, sent in one burst.
+	fake := newFakeFlux(t,
+		turnInfoAt("Update", "", 0.08),
+		turnInfoAt("StartOfTurn", "What is the capital of France?", 0.96),
+	)
+	fake.lateAfter, fake.lateDelay = 1, 400*time.Millisecond
+	listener := fluxListener(t, fake, FluxConfig{})
+	for index := uint64(0); index < 12; index++ {
+		pushFlux(t, listener, index)
+	}
+	final, err := listener.Finalize(context.Background(), 12*1_280)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.StableText != "What is the capital of France?" {
+		t.Fatalf("finalize did not wait for the burst to be transcribed: %+v", final)
+	}
+	if fake.forces.Load() != 1 {
+		t.Fatalf("ForceEndTurn messages = %d, want 1 once the turn had begun", fake.forces.Load())
 	}
 }
