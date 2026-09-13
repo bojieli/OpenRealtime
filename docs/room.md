@@ -174,6 +174,14 @@ turn it answered. A stream that has sent no event has said nothing the
 conversation could hear twice, so the second attempt is safe; one that has
 sent anything is never replayed.
 
+A response Gemini stops for RECITATION - which it reports as a normal
+finish - is asked to go on, up to three times, with what it had said so far
+as its own turn and a note to continue without repeating. A count from one
+to forty is the most memorised text there is: the room saw fourteen such
+stops in an evening, one count ending at "Twelve", a resumed one at "Twenty.
+Twenty", and the scorer read each as the agent's arithmetic. A stop that
+said nothing is reported as the failure it is.
+
 The voice says nothing by answering with exactly `<wait>`. The segmenter
 reassembles the token from the pieces a streaming provider hands over, never
 speaks it, and silences everything after it; words before it are still said,

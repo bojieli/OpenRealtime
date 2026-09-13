@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/bojieli/OpenRealtime/continuation"
 	"github.com/bojieli/OpenRealtime/internal/httpclient"
@@ -37,6 +38,17 @@ const (
 	// maxSilentAttempts is how many times one request is sent when the
 	// stream before it delivered nothing within FirstEventTimeout.
 	maxSilentAttempts = 2
+	// maxRecitationContinuations bounds how many times a response the
+	// provider stopped for RECITATION is asked to go on. A count from one
+	// to forty is the most memorised text there is; Gemini stopped one at
+	// "Twelve" and the resumed count at "Twenty. Twenty", each reported as a
+	// normal finish. The check runs again on every continuation, so a long
+	// recitation arrives in a few pieces rather than not at all.
+	maxRecitationContinuations = 3
+	// recitationContinueNote is what the model is told when it is asked to
+	// go on. It travels inside the provider request only.
+	recitationContinueNote = "Continue from exactly where you stopped. Do not repeat anything already said, " +
+		"and do not remark on the interruption."
 	// defaultFastFirstEventTimeout is the fast phase's silence budget. Over
 	// the twelve-scenario harness the voice's first audible clause arrived
 	// within 4.6 s of the request in every measured generation; the one
@@ -258,20 +270,42 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 	if err != nil {
 		return continuation.Completion{}, err
 	}
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return continuation.Completion{}, fmt.Errorf("encode Gemini request: %w", err)
-	}
-	adapter.dump(encoded)
 	if adapter.config.RequestTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, adapter.config.RequestTimeout)
 		defer cancel()
 	}
-	continuation.TraceRequest(adapter.Descriptor(), request.InvocationID, encoded)
 	endpoint := adapter.config.Endpoint + "/models/" + url.PathEscape(adapter.config.Model) + ":streamGenerateContent?alt=sse"
+	// said is the spoken text of this whole Continue, across every piece a
+	// recitation stop split it into; piece is the text of the current one.
+	var said, piece strings.Builder
+	joining := false
+	tracked := func(event continuation.Event) error {
+		if event.Kind == continuation.EventAssistantDelta {
+			if joining && event.Text != "" {
+				joining = false
+				if !endsWithSpace(said.String()) && !startsWithSpace(event.Text) {
+					if err := emit(continuation.Event{Kind: continuation.EventAssistantDelta, Text: " "}); err != nil {
+						return err
+					}
+					said.WriteString(" ")
+				}
+			}
+			said.WriteString(event.Text)
+			piece.WriteString(event.Text)
+		}
+		return emit(event)
+	}
+	continued := 0
 	for attempt := 1; ; attempt++ {
-		completion, stalled, err := adapter.stream(ctx, endpoint, encoded, request, emit)
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return continuation.Completion{}, fmt.Errorf("encode Gemini request: %w", err)
+		}
+		adapter.dump(encoded)
+		continuation.TraceRequest(adapter.Descriptor(), request.InvocationID, encoded)
+		piece.Reset()
+		completion, stalled, err := adapter.stream(ctx, endpoint, encoded, request, tracked)
 		if stalled && attempt < maxSilentAttempts && ctx.Err() == nil {
 			continue
 		}
@@ -279,8 +313,40 @@ func (adapter *Adapter) Continue(ctx context.Context, request continuation.Reque
 			err = fmt.Errorf("Gemini delivered nothing within %s on %d attempts: %w",
 				adapter.config.FirstEventTimeout, attempt, err)
 		}
+		if err == nil && completion.StopReason == "RECITATION" {
+			if piece.Len() == 0 {
+				return completion, errors.New("Gemini stopped the response for RECITATION before it said anything")
+			}
+			if continued < maxRecitationContinuations && ctx.Err() == nil {
+				body.Contents = append(body.Contents,
+					geminiContent{Role: "model", Parts: []json.RawMessage{mustTextPart(piece.String())}},
+					geminiContent{Role: "user", Parts: []json.RawMessage{mustTextPart(recitationContinueNote)}})
+				continued++
+				joining = true
+				attempt = 0
+				continue
+			}
+		}
+		if continued > 0 {
+			// The native state of the last piece is not the whole answer;
+			// the next turn is compiled from the portable text instead.
+			completion.ProviderState, completion.ProviderStateType = nil, ""
+		}
 		return completion, err
 	}
+}
+
+func mustTextPart(text string) json.RawMessage {
+	encoded, _ := json.Marshal(geminiPart{Text: text})
+	return encoded
+}
+
+func endsWithSpace(text string) bool {
+	return text != "" && unicode.IsSpace([]rune(text)[len([]rune(text))-1])
+}
+
+func startsWithSpace(text string) bool {
+	return text != "" && unicode.IsSpace([]rune(text)[0])
 }
 
 // stream sends one request and reads its stream to the end. It reports

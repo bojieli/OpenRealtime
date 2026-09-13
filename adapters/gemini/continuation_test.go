@@ -3,6 +3,7 @@ package gemini
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -290,6 +291,102 @@ func TestAdapterDoesNotResendAfterTheFirstEvent(t *testing.T) {
 	}
 	if got := spoken.String(); got != "once" {
 		t.Fatalf("spoken text = %q", got)
+	}
+}
+
+func TestAdapterAsksAResponseStoppedForRecitationToGoOn(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	var second []byte
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		if calls.Add(1) == 1 {
+			_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"One. Two.\"}]},\"finishReason\":\"RECITATION\"}]}\n\n"))
+			return
+		}
+		second, _ = io.ReadAll(request.Body)
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Three.\"}]},\"finishReason\":\"STOP\"}]}\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Endpoint: server.URL, Phase: trajectory.PhaseFast})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spoken strings.Builder
+	completion, err := adapter.Continue(t.Context(), silentStreamRequest(adapter), func(event continuation.Event) error {
+		spoken.WriteString(event.Text)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := spoken.String(); got != "One. Two. Three." {
+		t.Fatalf("spoken text = %q", got)
+	}
+	if calls.Load() != 2 || completion.StopReason != "STOP" || completion.ProviderStateType != "" {
+		t.Fatalf("calls=%d stop=%q state=%q", calls.Load(), completion.StopReason, completion.ProviderStateType)
+	}
+	var body struct {
+		Contents []struct {
+			Role  string `json:"role"`
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(second, &body); err != nil {
+		t.Fatal(err)
+	}
+	n := len(body.Contents)
+	if n < 3 || body.Contents[n-2].Role != "model" || body.Contents[n-2].Parts[0].Text != "One. Two." ||
+		body.Contents[n-1].Role != "user" || body.Contents[n-1].Parts[0].Text != recitationContinueNote {
+		t.Fatalf("continuation request contents = %+v", body.Contents)
+	}
+}
+
+func TestAdapterBoundsRecitationContinuations(t *testing.T) {
+	t.Parallel()
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"Ten.\"}]},\"finishReason\":\"RECITATION\"}]}\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Endpoint: server.URL, Phase: trajectory.PhaseFast})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spoken strings.Builder
+	completion, err := adapter.Continue(t.Context(), silentStreamRequest(adapter), func(event continuation.Event) error {
+		spoken.WriteString(event.Text)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Continue() error = %v", err)
+	}
+	if got := calls.Load(); got != 1+maxRecitationContinuations {
+		t.Fatalf("requests = %d, want %d", got, 1+maxRecitationContinuations)
+	}
+	if got := spoken.String(); got != "Ten. Ten. Ten. Ten." || completion.StopReason != "RECITATION" {
+		t.Fatalf("spoken text = %q, stop = %q", got, completion.StopReason)
+	}
+}
+
+func TestAdapterReportsARecitationStopThatSaidNothing(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = writer.Write([]byte("data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[]},\"finishReason\":\"RECITATION\"}]}\n\n"))
+	}))
+	defer server.Close()
+	adapter, err := New(Config{APIKey: "secret", Model: "gemini-test", Endpoint: server.URL, Phase: trajectory.PhaseFast})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = adapter.Continue(t.Context(), silentStreamRequest(adapter), func(continuation.Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "RECITATION before it said anything") {
+		t.Fatalf("Continue() error = %v", err)
 	}
 }
 
