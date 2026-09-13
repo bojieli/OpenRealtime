@@ -34,10 +34,13 @@
 
 ---
 
-> **Demo videos coming soon — 12 realtime scenarios.**
-> Planned featured clip: interrupt the assistant, then hear it pick up where
-> it was cut off. [Explore the demo gallery](docs/demos.md) for live translation,
-> screen awareness, acknowledgements, and knowing when to stay quiet.
+> **Twelve realtime scenarios, played against the real models.** Interrupt
+> the assistant and hear it pick up where it was cut off; have it count as you
+> talk, translate as you speak, press a key while a recording still reads, and
+> stay quiet when the words are for somebody else. The
+> [scenario gallery](docs/demos.md) describes each one, and
+> [the default pipeline](docs/room.md#the-default-pipeline) shows how to play
+> them all in about a minute.
 
 OpenRealtime brings conversation, background reasoning, and model integrations
 into one inspectable runtime. Use it to build voice assistants, meeting
@@ -78,9 +81,10 @@ The command starts the server and browser client, then opens
 Keep the terminal running; press **Ctrl+C** to stop.
 
 For a first interaction, ask the assistant to explain a topic, then interrupt
-with a shorter follow-up. Listen for when it stops and how it responds. This
-checks the configured conversation path; the [12 demo scenarios](docs/demos.md)
-will include their own configurations and reproduction instructions.
+with a shorter follow-up. Listen for when it stops and how it responds. To
+hear the twelve scenarios rather than improvise, play them against the room
+you just started; the commands are in
+[the default pipeline](docs/room.md#the-default-pipeline).
 
 See the [quickstart](docs/quickstart.md) for expected output, troubleshooting,
 and other hosted providers. To connect your own application, start with the
@@ -89,10 +93,12 @@ and other hosted providers. To connect your own application, start with the
 ### Use local models
 
 OpenRealtime connects to model servers you run; it does not bundle weights or
-start those services automatically. The default cascade uses local speech
-recognition, a local language model, and local speech synthesis, with Gemini
-as the background reasoner. The [local stack guide](docs/guides/local-stack.md)
-explains the endpoints and how to make the reasoner local too.
+start those services automatically. The room's default pipeline runs the
+interaction policy and speech synthesis locally and uses Deepgram for
+recognition and Gemini as the voice; `openrealtime profile scenario` authors
+the all-local variant with SenseVoice recognition and a local voice. The
+[local stack guide](docs/guides/local-stack.md) explains the endpoints and
+how to make every component local.
 
 ## How it works
 

@@ -39,9 +39,10 @@ and Go toolchain used for the build.
 
 ## 2. Start the conversation room
 
-The room uses the same OpenRealtime pipeline as the twelve interaction
-scenarios: streaming ASR, Qwen interaction policy, Gemini cognition, Fish
-speech, speaker identification, and word timing. Prepare the services and
+The room is the project's default pipeline, the one the twelve interaction
+scenarios accept: Deepgram streaming recognition, a local Qwen interaction
+policy, Gemini 3.8 Flash as the voice, Fish speech, speaker identification,
+and word timing. Prepare the services and
 credentials listed in [Conversation room](room.md), then run:
 
 ```bash
@@ -69,10 +70,11 @@ speaking, say: “Actually, give me the one-sentence version.” Listen for whet
 it stops and answers the revised request. You should see the conversation
 update and hear the shorter answer.
 
-This is a first-run check of your selected hosted voice. The provider controls
-its turn-taking in this configuration. The [demo gallery](demos.md) covers
-more specialized runtime interaction scenarios, with individual configurations
-to accompany the recordings.
+The runtime decides the turn-taking here, not the voice provider: the
+interaction policy is asked on every partial and final whether the person is
+cutting in. The [scenario gallery](demos.md) describes the twelve scripted
+situations, and [the default pipeline](room.md#the-default-pipeline) plays
+them against the room you just started.
 
 To see a client execute a tool, use the
 [SDK walkthrough](../examples/sdk-client/README.md). Its weather tool returns

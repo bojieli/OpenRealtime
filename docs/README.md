@@ -13,7 +13,7 @@ when running it from the repository root.
 | Task | Guide |
 | --- | --- |
 | Run a conversation without a GPU | [Quickstart](quickstart.md) |
-| Explore the planned 12 demo videos | [Demo gallery](demos.md) |
+| Play the twelve interaction scenarios | [Scenario gallery](demos.md) · [The default pipeline](room.md#the-default-pipeline) |
 | Run local speech and language models | [Local stack](guides/local-stack.md) |
 | Choose providers and credentials | [Providers](providers.md) |
 | Connect an application and execute a tool | [SDK walkthrough](../examples/sdk-client/README.md) |

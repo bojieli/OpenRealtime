@@ -2,13 +2,16 @@
 
 [← Project overview](../README.md) · [Run OpenRealtime](quickstart.md)
 
-Twelve planned videos explore when an assistant should speak, listen, act, or
-wait. Each recording will show one scenario from the project's
-[interaction suite](../bench/scenario/scenarios.go).
+Twelve scenarios explore when an assistant should speak, listen, act, or wait.
+They are the project's acceptance test: every one is scripted in the
+[interaction suite](../bench/scenario/scenarios.go), played against the real
+policy and voice models, scored on what a listener would have heard, and
+reviewed by Gemini as a judge. [The default pipeline](room.md#the-default-pipeline)
+gives the commands to play them in the harness, and live against a running
+room with synthesised speech.
 
-**Recording status: coming soon.** The descriptions below explain what to
-watch for in the planned demonstrations; they are not results from published
-videos.
+**Videos: not yet published.** The descriptions below say what to watch for
+when you play a scenario yourself.
 
 ## Start with these
 
