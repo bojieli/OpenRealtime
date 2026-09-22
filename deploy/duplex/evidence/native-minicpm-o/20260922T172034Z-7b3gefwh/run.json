@@ -1,0 +1,32 @@
+{
+  "schema": 2,
+  "profile": "native-minicpm-o",
+  "profile_sha256": "28c8aaf20fdd55ece70d44ade06035add9d1f06647e344c64d6805eeba27e77d",
+  "binary_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+  "binary": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+  "revision": "195d5e685780ed6857a37b930e89d2cadbab1007",
+  "tree_modified": true,
+  "started": "2026-09-22T17:20:34.966428+00:00",
+  "load_average": [
+    "71.73",
+    "68.43",
+    "51.84"
+  ],
+  "gpu_memory_mib": "76417",
+  "fdb_per_category": 2,
+  "fdbench_conversations": 2,
+  "expected_results": [
+    "fdb-user_interruption.json",
+    "fdb-user_backchannel.json",
+    "fdb-background_speech.json",
+    "fdb-talking_to_other.json",
+    "fdbench.json"
+  ],
+  "component_health": {
+    "slow-url": {
+      "url": "http://127.0.0.1:9100/health",
+      "captured": "2026-09-22T17:20:34.967020+00:00",
+      "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+    }
+  }
+}

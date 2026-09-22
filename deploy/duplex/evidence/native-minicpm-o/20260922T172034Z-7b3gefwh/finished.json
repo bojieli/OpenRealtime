@@ -1,0 +1,116 @@
+{
+  "finished": "2026-09-22T17:28:40.350610+00:00",
+  "exit_code": 0,
+  "errors": [],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260922T172034Z-7b3gefwh/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260922T172034Z-7b3gefwh/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260922T172034Z-7b3gefwh/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260922T172034Z-7b3gefwh/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260922T172034Z-7b3gefwh/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "55.41",
+    "62.68",
+    "56.39"
+  ],
+  "sha256": {
+    "run.json": "823a7cacdb5d13c4a5469d4b19c3e3e466183444abc04252f2fce5bc95e13c63",
+    "profile.yaml": "28c8aaf20fdd55ece70d44ade06035add9d1f06647e344c64d6805eeba27e77d",
+    "fdb-user_interruption.json": "2f823e9c146070e7795c84b50533a250b753f9963c0b7fd6919f034538d2fde5",
+    "fdb-user_backchannel.json": "d49ac53aa36d63356b7f67fb3aa9ec6b951d1b9ca1419a0d2972772ac5b499fa",
+    "fdb-background_speech.json": "94f746f7a478ab19d9a9d02b911d3c152937fb6d9ec59c0dbe1a768ee10f8d34",
+    "fdb-talking_to_other.json": "37e9c3c64eeae04f7fa4de0c77cc0cb4ae3b8f595c34d4b047424f6346cb641a",
+    "fdbench.json": "ac8e35cd93040b39a208ae377b5e16b3a7c68f02e643f231edf967be51359e51"
+  }
+}

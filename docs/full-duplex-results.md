@@ -306,9 +306,19 @@ Native validation remains incomplete. The retained component artifacts under
   as a full campaign and does not establish acceptable floor control.
   [Retained results, profile and integrity metadata](../deploy/duplex/evidence/native-moshi/20260922T171034Z-giltdhg4/)
   preserve the complete run.
-- **MiniCPM-o:** real component and historical smoke artifacts exist. The
-  official audio-only public profile is prepared; its new end-to-end run and
-  playback validation remain pending.
+- **MiniCPM-o:** the official audio-only profile completed public-Realtime smoke
+  run `20260922T172034Z-7b3gefwh` without task errors. Both interruption
+  recordings failed (20,457 ms and 2,537 ms yield latency). Backchannel hold
+  passed 1/1 applicable recording, with one not applicable; background speech
+  and other-talk each passed 2/2. FD-Bench answered 6/8 turns, missed two,
+  and had zero premature starts, but recorded 23,040 ms aggregate overlap
+  and six overrun turns. The median of the two per-conversation response
+  latency values was 891 ms. All result digests were verified before retaining
+  [the profile, results and runtime logs](../deploy/duplex/evidence/native-minicpm-o/20260922T172034Z-7b3gefwh/).
+  This is NOT REPORTABLE as a full campaign. The working tree was modified,
+  and the service remained on its original loaded code while cancellation
+  fixes were committed; this run does not validate those fixes. The model's
+  floor control, rendered playback and endurance remain unaccepted.
 - **VoiceChat:** the 8,192-position talker failed startup with a 1 GiB KV
   cache; 2 GiB allowed loading. The originally pinned vLLM-Omni `9ebef4b`
   then rejected duplex WebSockets because its new plugin framework disables
@@ -503,7 +513,8 @@ model itself was not measured here.
 | Deepgram Nova-3 / Flux | streaming ASR (closed) | existing adapter | measured (Nova-3) |
 | Kyutai TTS 1.6B | incremental TTS | `speech-socket` service | measured, used in the headline profile |
 | CosyVoice 3 0.5B | incremental TTS | `speech-socket` service | measured |
-| VibeVoice-Realtime 0.5B, Qwen3-TTS, Fish S2 Pro | incremental TTS | `speech-socket` services | see the synthesis section |
+| VibeVoice-Realtime 0.5B, Qwen3-TTS | synthesis | `speech-socket` services | see the synthesis section for actual input semantics |
+| Fish S2 Pro | sentence-input TTS, streaming audio output | `speech-socket` service | component evaluation and public cascade smoke measured; not incremental text input |
 | Deepgram Aura | incremental TTS (closed) | `speech-socket` bridge | measured |
 | Qwen3-8B as micro-turn controller | micro-turn LLM | `microturn` sidecar, orchestrated mode | measured end to end |
 | DuplexCascade | micro-turn LLM | `native-duplexcascade` profile and native sidecar | real ASR/model/TTS probes passed; public transport validation ongoing |
