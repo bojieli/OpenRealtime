@@ -1,0 +1,10 @@
+# Native duplex model (plan stage P8 comparison): Freeze-Omni - streaming
+# speech interfaces around a frozen Qwen2-7B-Instruct backbone, with a learned
+# listen/speak state head. The engine relay connects to the resident model
+# process started by deploy/duplex/services/freeze-omni.sh, so the weights are
+# loaded once and shared across runs.
+binding: duplex
+sidecar-address: tcp:127.0.0.1:9141
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
