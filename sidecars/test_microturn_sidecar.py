@@ -90,3 +90,19 @@ def test_activity_reports_sound_and_quiet():
     assert since < 0.1
     time.sleep(0.15)
     assert activity.state(time.monotonic())[0] == 0.0
+
+
+def test_a_quiet_period_is_reported_once():
+    activity = microturn.Activity(rate=16_000, hangover_ms=100)
+    tone = (0.2 * np.sin(np.arange(3_200) / 16_000 * 2 * math.pi * 200)).astype(np.float32)
+    activity.push(tone)
+    assert activity.settled(time.monotonic()) == 0.0  # still within the hangover
+    time.sleep(0.15)
+    first = activity.settled(time.monotonic())
+    assert first > 0
+    # The same quiet period keeps reporting the same instant, so a caller that
+    # acts on a change acts once.
+    assert activity.settled(time.monotonic()) == first
+    activity.push(tone)
+    time.sleep(0.15)
+    assert activity.settled(time.monotonic()) > first

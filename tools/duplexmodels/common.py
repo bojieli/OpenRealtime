@@ -52,7 +52,6 @@ Backends implement :class:`Recognizer` or :class:`Synthesizer` and call
 :func:`serve_recognizer` / :func:`serve_synthesizer`.
 """
 
-from __future__ import annotations
 
 import asyncio
 import base64

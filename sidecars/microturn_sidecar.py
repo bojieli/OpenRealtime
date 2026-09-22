@@ -109,6 +109,18 @@ class Activity:
                     self.last_voiced = now
         return onset
 
+    def settled(self, now: float) -> float:
+        """The end of the run of sound that has just gone quiet, or 0.
+
+        It returns the timestamp rather than a flag so a caller can act on
+        each quiet period once: the value is the same for as long as the user
+        stays quiet, and changes when they speak again.
+        """
+        with self.lock:
+            if not self.last_voiced or now - self.last_voiced < self.hangover:
+                return 0.0
+            return self.last_voiced
+
     def state(self, now: float) -> tuple[float, float]:
         """(seconds of current sound, seconds since the last sound)."""
         with self.lock:
@@ -538,6 +550,9 @@ class MicroTurnSidecar(Sidecar):
         self.trace = open(args.trace, "a", encoding="utf-8") if args.trace else None
         self.decision_ms: deque[float] = deque(maxlen=10_000)
         self.word_event: Optional[asyncio.Event] = None
+        # The end of the last run of sound already decided on, so one quiet
+        # period produces one decision.
+        self.decided_quiet_at = 0.0
         self.deadline_misses = 0
         self.tick_count = 0
 
@@ -663,7 +678,20 @@ class MicroTurnSidecar(Sidecar):
         while True:
             delay = next_tick - time.monotonic()
             triggered = False
-            if delay > 0:
+            if delay > 0 and self.args.decide_on_pause and not (
+                    self.response_task is not None and not self.response_task.done()) and self.pending:
+                # The user has words outstanding and the assistant is silent:
+                # the moment they stop speaking is when the floor is free, and
+                # waiting for the next tick spends up to a whole tick of it.
+                while time.monotonic() < next_tick:
+                    settled = self.activity.settled(time.monotonic())
+                    if settled and settled != self.decided_quiet_at:
+                        self.decided_quiet_at = settled
+                        triggered = True
+                        break
+                    await asyncio.sleep(0.02)
+                delay = next_tick - time.monotonic()
+            if delay > 0 and not triggered:
                 speaking_now = self.response_task is not None and not self.response_task.done()
                 if self.args.stop_on_words and speaking_now:
                     # While speaking, recognised words are decided on as they
@@ -684,7 +712,10 @@ class MicroTurnSidecar(Sidecar):
             fresh = self.pending[admitted:]
             admitted = len(self.pending)
             speaking = self.response_task is not None and not self.response_task.done()
-            tick = Tick(index, now, list(fresh), speaking, "word" if triggered else "clock")
+            trigger = "clock"
+            if triggered:
+                trigger = "pause" if not speaking else "word"
+            tick = Tick(index, now, list(fresh), speaking, trigger)
             self.ticks.append(tick)
             # With nothing unanswered and the assistant silent there is no
             # question to ask: a <no voice> tick can only mean wait.
@@ -694,6 +725,19 @@ class MicroTurnSidecar(Sidecar):
             sounding_now, _ = self.activity.state(now)
             if speaking and not fresh and not (self.args.sound_evidence and sounding_now > 0):
                 self._trace(tick, CONTINUE, 0.0)
+                continue
+            # Two rules the controller is never asked about, because they are
+            # about who holds the floor rather than about what was meant.
+            if not speaking and sounding_now > 0 and not self.args.respond_while_sounding:
+                # The user is still audibly speaking: the floor is theirs, and
+                # an answer now would be an answer to half a sentence.
+                self._trace(tick, WAIT, 0.0, fresh=fresh)
+                continue
+            began = self.speaking_since or self.response_started or now
+            if speaking and fresh and all(word.spoken < began for word in fresh):
+                # Words said before the assistant took the floor cannot be an
+                # interruption of it; they are the recogniser catching up.
+                self._trace(tick, CONTINUE, 0.0, fresh=fresh)
                 continue
             began = time.monotonic()
             sounding, quiet = self.activity.state(now)
@@ -941,6 +985,11 @@ def main() -> None:
     parser.add_argument("--tts-voice", default="default")
     parser.add_argument("--output-rate", type=int, default=24_000)
     parser.add_argument("--playout-lead-ms", type=int, default=60)
+    parser.add_argument("--decide-on-pause", action="store_true",
+                        help="while silent with words outstanding, decide as soon as the user stops speaking "
+                             "instead of at the next tick")
+    parser.add_argument("--respond-while-sounding", action="store_true",
+                        help="allow taking the floor while the user is still audibly speaking (off: wait)")
     parser.add_argument("--sound-evidence", action="store_true",
                         help="give the controller acoustic activity (sound with no words yet) as evidence")
     parser.add_argument("--backchannels", action="store_true",
