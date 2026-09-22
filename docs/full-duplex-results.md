@@ -195,8 +195,13 @@ not bounded by this transport change. The follow-up public attempt
 `20260922T162928Z-tbyao6ly` delivered 164.24 s of PCM without the keepalive
 failure, but its roughly 436-word response exceeded the benchmark's three-minute
 conversation deadline. Later connections encountered the still-occupied session.
-An EOF shutdown-order correction is unit-tested; full reconnect validation is
-pending. These remain failed smoke measurements.
+EOF shutdown now signals native workers before joining the response worker,
+and synthesis shutdown cancels a reader blocked on playback capacity. A real
+GPU reconnect probe then passed two consecutive audio sessions: disconnecting
+after the first output packet allowed a second handshake in 219 ms and fresh
+audio without protocol errors. This verifies early-output cleanup, not
+saturated-buffer or long-session shutdown. The public smoke rerun remains
+pending; prior failed measurements are retained.
 
 The new native sidecar also passed a real protocol question probe: “Paris,”
 2.0 s of paced output audio, one output turn boundary, and no protocol errors.
