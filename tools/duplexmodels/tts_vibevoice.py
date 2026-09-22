@@ -310,6 +310,9 @@ class VibeVoiceSynthesizer(Synthesizer):
 
     def health(self) -> dict:
         return {"voice": f"vibevoice-embedded-{self.voice}", "languages": ["en"], "ddpm_steps": self.steps,
+                # One 5-token text window, then the first diffusion frame
+                # (7.5 Hz) is decoded and sent.
+                "first_audio_needs": {"text_tokens": TEXT_WINDOW, "speech_frames": 1, "audio_s_per_chunk": 0.133},
                 "cfg_scale": self.cfg_scale, "attention": "sdpa", "loaded_seconds": round(self.loaded_seconds, 1),
                 "text_window_tokens": TEXT_WINDOW, "speech_window_frames": SPEECH_WINDOW,
                 "gpu_allocated_gb": round(torch.cuda.memory_allocated() / 2**30, 2),

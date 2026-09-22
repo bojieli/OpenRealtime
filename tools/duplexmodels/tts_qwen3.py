@@ -372,6 +372,10 @@ class Qwen3TTSSynthesizer(Synthesizer):
 
     def health(self) -> dict:
         return {"voice": "xvector:cosyvoice-asset-zero_shot_prompt (zh female)", "language": self.language,
+                # One text token starts the prefill; the codec decoder is
+                # causal, so audio goes out after first_chunk frames (80 ms each).
+                "first_audio_needs": {"text_tokens": 1, "codec_frames": self.first_chunk,
+                                      "audio_s_per_chunk": round(self.first_chunk * 0.08, 3)},
                 "languages": ["en", "zh"], "first_chunk_frames": self.first_chunk, "chunk_frames": self.chunk,
                 "fast_code_predictor": self.fast_code_predictor,
                 "loaded_seconds": round(self.loaded_seconds, 1),

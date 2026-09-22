@@ -421,7 +421,17 @@ class CosyVoice3Synthesizer(Synthesizer):
         yield from self._speak(token_stream(), cancel, hold_lock=True)
 
     def health(self) -> dict:
-        return {"voice": "cosyvoice-asset-zero_shot_prompt (zh female)", "lm_prompt": self.lm_prompt, "flow_prompt_aligned": self.align_flow_prompt,
+        hop = self.core.token_hop_len
+        prompt_tokens = int(self.prompt["flow_prompt_speech_token"].shape[1])
+        first_speech_tokens = hop + (-prompt_tokens % hop) + self.core.flow.pre_lookahead_len
+        return {"voice": "cosyvoice-asset-zero_shot_prompt (zh female)", "lm_prompt": self.lm_prompt,
+                # What "token granularity" costs here: the LM needs one 5-token
+                # group before it speaks, and the flow needs a whole 25-token
+                # chunk (+3 lookahead) before it can vocode, i.e. 28 speech
+                # tokens = 1.12 s of audio, generated one token at a time.
+                "first_audio_needs": {"text_tokens_estimate": 10 if self.lm_prompt == "none" else None,
+                                      "speech_tokens": first_speech_tokens,
+                                      "audio_s_per_chunk": first_speech_tokens / 25}, "flow_prompt_aligned": self.align_flow_prompt,
                 "flow_prompt_speech_tokens": int(self.prompt["flow_prompt_speech_token"].shape[1]),
                 "lm_prompt_speech_tokens": int(self.prompt["llm_prompt_speech_token"].shape[1]),
                 "languages": ["en", "zh"], "fp16": self.fp16, "loaded_seconds": round(self.loaded_seconds, 1),
