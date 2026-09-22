@@ -90,6 +90,12 @@ def question_timeline(question, duration, lead, repeat_every=0):
     return timeline, windows
 
 
+def delivered_windows(windows, sent_until_s):
+    return [{**window, "sent_end_s": min(window["end_s"], sent_until_s),
+             "complete": sent_until_s >= window["end_s"]}
+            for window in windows if window["start_s"] < sent_until_s]
+
+
 class Session:
     def __init__(self, arguments) -> None:
         self.arguments = arguments
@@ -267,6 +273,7 @@ def main() -> None:
 
     total = int(arguments.duration * RATE)
     sent_samples = 0
+    delivered_samples = 0
     interrupt_start_sample = None
     interrupt_control = None
     stop_sending_at = question_end + arguments.stop_after if arguments.stop_after > 0 else None
@@ -311,6 +318,7 @@ def main() -> None:
         if stop_sending_at is None or t_packet < stop_sending_at:
             packet = timeline[sent_samples:sent_samples + PACKET]
             session.send("audio", pcm16(packet))
+            delivered_samples = sent_samples + len(packet)
         sent_samples += PACKET
 
     session.close()
@@ -323,7 +331,11 @@ def main() -> None:
         "load_average": list(os.getloadavg()),
         "question": arguments.question, "question_start_s": round(question_start, 3),
         "question_end_s": round(question_end, 3),
-        "question_windows": question_windows,
+        "scheduled_question_windows": question_windows,
+        "question_windows": delivered_windows(question_windows, delivered_samples / RATE),
+        "input_audio_sent_s": delivered_samples / RATE,
+        "input_timeline_complete": delivered_samples >= total,
+        "input_timing_basis": "successful client writes; not server consumption acknowledgements",
         "repeat_question_every_s": arguments.repeat_question_every,
         "first_audio_s": state["first_audio"],
         "first_audio_latency_s": round(state["first_audio"] - question_end, 3) if state["first_audio"] else None,

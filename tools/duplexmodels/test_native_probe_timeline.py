@@ -20,3 +20,13 @@ def test_overlapping_questions_and_incomplete_first_question_are_rejected():
         question_timeline(question, 10, 1, .5)
     with pytest.raises(ValueError):
         question_timeline(question, 1.5, 1)
+
+
+def test_early_disconnect_does_not_claim_unsent_questions():
+    from native_probe import delivered_windows
+    windows = [{'start_s': 1, 'end_s': 2}, {'start_s': 4, 'end_s': 5}]
+    assert delivered_windows(windows, .5) == []
+    assert delivered_windows(windows, 1.5) == [
+        {'start_s': 1, 'end_s': 2, 'sent_end_s': 1.5, 'complete': False}]
+    assert delivered_windows(windows, 4) == [
+        {'start_s': 1, 'end_s': 2, 'sent_end_s': 2, 'complete': True}]
