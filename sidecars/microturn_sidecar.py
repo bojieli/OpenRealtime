@@ -489,12 +489,16 @@ class SpeechContext:
                     await self.socket.send(json.dumps({"type": "audio.credit", "context_id": self.id,
                                                        "bytes": len(pcm)}))
             elif kind in ("audio.done", "context.cancelled"):
-                on_audio(None)
+                result = on_audio(None)
+                if asyncio.iscoroutine(result):
+                    await result
                 return
             elif kind == "error":
                 self.failure = RuntimeError(f"tts error: {message.get('message')}")
                 log(str(self.failure))
-                on_audio(None)
+                result = on_audio(None)
+                if asyncio.iscoroutine(result):
+                    await result
                 return
 
     async def append(self, text: str) -> None:
@@ -514,6 +518,10 @@ class SpeechContext:
         await self.close()
 
     async def close(self) -> None:
+        reader = getattr(self, "reader", None)
+        if reader is not None and reader is not asyncio.current_task():
+            reader.cancel()
+            await asyncio.gather(reader, return_exceptions=True)
         if self.socket is not None:
             await self.socket.close()
 
