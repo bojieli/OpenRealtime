@@ -1,0 +1,157 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-personaplex",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "2e4fa5240566c6153cedcdedafeb70df1c2df3ec",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T15:36:07Z",
+    "finished_at": "2026-09-22T15:37:07Z"
+  },
+  "expected_tasks": 200,
+  "tasks": [
+    {
+      "id": "user_interruption/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 300,
+        "yield_latency_from_annotation_ms": 418.1700000000001,
+        "yield_latency_ms": 118.17000000000007
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How can I save money more effectively?",
+        "event": "Actually, what are some financial goals I should set?"
+      }
+    },
+    {
+      "id": "user_interruption/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 640,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 240,
+        "yield_latency_from_annotation_ms": 791.8379999999997,
+        "yield_latency_ms": 551.8379999999997
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are the latest trends in smartphones?",
+        "event": "Let's switch to talking about laptops."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 2,
+    "failed": 0,
+    "passed": 2,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "198 of 200 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 160,
+        "p50": 400,
+        "p90": 592,
+        "p95": 616,
+        "p99": 635.2,
+        "max": 640,
+        "mean": 400
+      },
+      "agent_audio_at_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 80,
+        "p50": 80,
+        "p90": 80,
+        "p95": 80,
+        "p99": 80,
+        "max": 80,
+        "mean": 80
+      },
+      "agent_audio_before_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 400,
+        "p50": 440,
+        "p90": 472,
+        "p95": 476,
+        "p99": 479.2,
+        "max": 480,
+        "mean": 440
+      },
+      "event_audible_after_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 240,
+        "p50": 270,
+        "p90": 294,
+        "p95": 297,
+        "p99": 299.4,
+        "max": 300,
+        "mean": 270
+      },
+      "yield_latency_from_annotation_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 418.1700000000001,
+        "p50": 605.0039999999999,
+        "p90": 754.4711999999998,
+        "p95": 773.1545999999997,
+        "p99": 788.1013199999998,
+        "max": 791.8379999999997,
+        "mean": 605.0039999999999
+      },
+      "yield_latency_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 118.17000000000007,
+        "p50": 335.0039999999999,
+        "p90": 508.4711999999998,
+        "p95": 530.1545999999997,
+        "p99": 547.5013199999997,
+        "max": 551.8379999999997,
+        "mean": 335.0039999999999
+      }
+    }
+  }
+}

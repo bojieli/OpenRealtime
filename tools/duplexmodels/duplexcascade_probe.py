@@ -21,6 +21,7 @@ def main():
     p.add_argument('--base', type=Path, required=True)
     p.add_argument('--chunks', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--slow-tokenizer', action='store_true', help='use released vocab/merges when the fast tokenizer format is newer than the runtime')
     a = p.parse_args()
     import torch
     from transformers import AutoTokenizer
@@ -29,7 +30,7 @@ def main():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     cfg = json.loads((a.snapshot / 'train_cfg.json').read_text())['model']
-    tokenizer = AutoTokenizer.from_pretrained(a.snapshot / 'tokenizer', local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained(a.snapshot / 'tokenizer', local_files_only=True, use_fast=not a.slow_tokenizer)
     started = time.perf_counter()
     model = module.Model(tokenizer, model_name=str(a.base), torch_dtype=torch.bfloat16,
                          attn_implementation='sdpa')
@@ -40,7 +41,7 @@ def main():
     model.to('cuda').eval()
     report = {'model_revision': a.snapshot.name, 'base_revision': a.base.name,
               'source_revision': subprocess.check_output(['git', '-C', str(a.source), 'rev-parse', 'HEAD'], text=True).strip(),
-              'dtype': 'bfloat16', 'attention': 'sdpa', 'strict_checkpoint_load': True,
+              'dtype': 'bfloat16', 'attention': 'sdpa', 'tokenizer_class': type(tokenizer).__name__, 'strict_checkpoint_load': True,
               'scope': 'text-only micro-turn probe, no paced audio or playback',
               'load_seconds': time.perf_counter()-started, 'turns': []}
     history = [] if tokenizer.bos_token_id is None else [tokenizer.bos_token_id]

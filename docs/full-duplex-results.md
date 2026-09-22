@@ -160,7 +160,13 @@ packet-arrival timing, not rendered playback latency. Across 312 model frames,
 p50/p95 compute was 28.61/31.93 ms per 80 ms frame, with one frame over budget
 and no dropped or starved input frames. The sidecar uses an explicit
 RMS/hangover policy for output boundaries; these are not native EOS signals.
-The public Realtime smoke campaign is pending.
+The public Realtime smoke run `20260922T153606Z-0uz6_y88` completed without
+task errors: interruption 2/2, backchannel 2/2, and FD-Bench 8/8 turns answered
+with zero premature starts and 212 ms median response latency. Both background
+and both other-talk recordings were not applicable because the assistant was
+not speaking at the event; neither category is validated. These small samples
+are NOT REPORTABLE as a full campaign. Result JSON, profile, and integrity
+metadata are retained under `deploy/duplex/evidence/native-personaplex/`.
 
 Native validation remains incomplete. The retained component artifacts under
 `results/native/` establish narrower findings:
