@@ -1,0 +1,81 @@
+{
+  "checked_at": "2026-09-22T18:18:12.298623+00:00",
+  "scope": "Prepared artifacts and CPU validation only; no new GPU run",
+  "revision": "096c0e63506849a76d19fa8760905b5b8fcf7d92",
+  "tree_modified": false,
+  "checkpoint_revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+  "files": {
+    ".gitattributes": {
+      "bytes": 1732,
+      "sha256": "f75ce98ed382f1d6c04774da0789866e18eba9175ae0db00d35923b4839925a3"
+    },
+    "README.md": {
+      "bytes": 11080,
+      "sha256": "9af15fd1599e7231b112304a532f625008430d6219e7ac6d523a2807e9c08376"
+    },
+    "bias.md": {
+      "bytes": 593,
+      "sha256": "aea3cf1e5fadc65a07cdf3c4ef6a729679a6283cd8960e9a9aead67cffe870fd"
+    },
+    "config.json": {
+      "bytes": 56,
+      "sha256": "2d1cfef43c2cec307f2a3c7f7835b69a87c685261e785549e2c6558f811e1b08"
+    },
+    "dist.tgz": {
+      "bytes": 598195,
+      "sha256": "8de47fe2477491fac3dca404185d0430c8d39f9e0daf4c90ada5f03fdf830f45"
+    },
+    "explainability.md": {
+      "bytes": 4693,
+      "sha256": "97f9027e2d25d0534f06bad1dacc895eabbc16a4dea3b571893c8be028d63d08"
+    },
+    "figures/.DS_Store": {
+      "bytes": 6148,
+      "sha256": "1ae3468de4cc8a886bfaddae28c6994075a75127b95c8892acb0ea46b7d6ff96"
+    },
+    "figures/results_conversation_dynamics.png": {
+      "bytes": 265915,
+      "sha256": "93cc850f6bd2c0d07c43d40ac2166b6ba20ee585d4c856d09fb4eff706fd0204"
+    },
+    "figures/results_latency.png": {
+      "bytes": 354245,
+      "sha256": "ffaed271517d2355566f1da635d3bbdc02fbee82077f210e8806ff057bb98850"
+    },
+    "figures/results_task_adherence.png": {
+      "bytes": 254701,
+      "sha256": "5a7e19c9f045fa87b3cb5edec87b5e854901dcb589f00c291cb11fbd5d0adfba"
+    },
+    "model.safetensors": {
+      "bytes": 16742874000,
+      "sha256": "db1290db583cdaa6cb4de444ed279e0b586ca2a372b41434b07a7461c8c0e2f4"
+    },
+    "privacy.md": {
+      "bytes": 2143,
+      "sha256": "37eb20a609fa901bd86301a4d58082bf4e11daeee344943518c8500467b9f102"
+    },
+    "safety.md": {
+      "bytes": 860,
+      "sha256": "d2a00bad1c1a60fff35656fe7facfa914657522bd268c185dffec7cf2d8595da"
+    },
+    "tokenizer-e351c8d8-checkpoint125.safetensors": {
+      "bytes": 384644900,
+      "sha256": "09b782f0629851a271227fb9d36db65c041790365f11bbe5d3d59369cf863f50"
+    },
+    "tokenizer_spm_32k_3.model": {
+      "bytes": 552778,
+      "sha256": "78d4336533ddc26f9acf7250d7fb83492152196c6ea4212c841df76933f18d2d"
+    },
+    "voices.tgz": {
+      "bytes": 6095521,
+      "sha256": "8564e9ca7a06ca723b07c3a77c623f0faa5937d04b2647b3a727b06c5ca0b7bb"
+    }
+  },
+  "voice": {
+    "name": "NATF2.pt",
+    "sha256": "b76cca73bcc8402e08ec3128c422160e95411a3b0af1503cb955aecf027f3e73"
+  },
+  "binary_sha256": "d0b2abfb1a6b95236e66fee976f7a881fc5f55fdadd5658da9a9a7e448b1528b",
+  "focused_tests": "3 passed (Moshi cancellation, PersonaPlex session isolation)",
+  "upstream_revision": "3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+  "upstream_tree_modified": false
+}
