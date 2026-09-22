@@ -1,0 +1,18 @@
+{
+  "outgoing_function_call_outputs": [
+    {
+      "t": 20.1091,
+      "dir": "out",
+      "event": {
+        "type": "conversation.item.create",
+        "item": {
+          "type": "function_call_output",
+          "call_id": "call_984f99d2853a45fe8fa99268b1251110",
+          "output": "The random number is 37."
+        }
+      }
+    }
+  ],
+  "waveform_sha256": "4f7f034ded7512a07216cb151424c10961a570e29a5ffcce515d022f48d38208",
+  "scope": "Fixed test result delivered twice; proves adapter suppression, not external exactly-once tool execution or public tool routing."
+}

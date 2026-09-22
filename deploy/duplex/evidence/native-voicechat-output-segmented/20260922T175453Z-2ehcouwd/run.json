@@ -1,0 +1,32 @@
+{
+  "schema": 2,
+  "profile": "native-voicechat-output-segmented",
+  "profile_sha256": "e33b0c917a32858f508d6c7d68e2c7f85ee5cd8e3e4187c216d43f999fd3f8eb",
+  "binary_sha256": "8a06f76e0d6fb91f8a6c53ca3e218adfedd6cb8f18459973d12ac89e4af84f95",
+  "binary": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-6809951c",
+  "revision": "6809951c5dcdc7e7c1910180b2bde3b99630bf62",
+  "tree_modified": false,
+  "started": "2026-09-22T17:54:53.252791+00:00",
+  "load_average": [
+    "107.42",
+    "85.84",
+    "72.01"
+  ],
+  "gpu_memory_mib": "87616",
+  "fdb_per_category": 2,
+  "fdbench_conversations": 2,
+  "expected_results": [
+    "fdb-user_interruption.json",
+    "fdb-user_backchannel.json",
+    "fdb-background_speech.json",
+    "fdb-talking_to_other.json",
+    "fdbench.json"
+  ],
+  "component_health": {
+    "slow-url": {
+      "url": "http://127.0.0.1:9100/health",
+      "captured": "2026-09-22T17:54:53.253286+00:00",
+      "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+    }
+  }
+}

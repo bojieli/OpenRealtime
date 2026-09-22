@@ -1,0 +1,176 @@
+{"t": 0.862, "type": "turn_done"}
+{"t": 1.718, "type": "text_delta", "text": "Hi"}
+{"t": 1.8, "type": "text_delta", "text": " there"}
+{"t": 1.889, "type": "text_delta", "text": "!"}
+{"t": 1.911, "type": "output_audio", "samples": 1764, "rms": 0.024}
+{"t": 1.964, "type": "text_delta", "text": " How"}
+{"t": 1.992, "type": "output_audio", "samples": 1764, "rms": 0.0254}
+{"t": 2.046, "type": "text_delta", "text": " can"}
+{"t": 2.068, "type": "output_audio", "samples": 1764, "rms": 0.0138}
+{"t": 2.12, "type": "text_delta", "text": " I"}
+{"t": 2.147, "type": "output_audio", "samples": 1764, "rms": 0.022}
+{"t": 2.199, "type": "text_delta", "text": " help"}
+{"t": 2.228, "type": "output_audio", "samples": 1764, "rms": 0.0265}
+{"t": 2.276, "type": "text_delta", "text": " you"}
+{"t": 2.304, "type": "output_audio", "samples": 1764, "rms": 0.0145}
+{"t": 2.358, "type": "text_delta", "text": " today"}
+{"t": 2.385, "type": "output_audio", "samples": 1764, "rms": 0.0028}
+{"t": 2.437, "type": "text_delta", "text": "?"}
+{"t": 2.46, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 2.599, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 2.683, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 2.764, "type": "output_audio", "samples": 1764, "rms": 0.0062}
+{"t": 2.845, "type": "output_audio", "samples": 1764, "rms": 0.018}
+{"t": 2.93, "type": "output_audio", "samples": 1764, "rms": 0.0129}
+{"t": 3.01, "type": "output_audio", "samples": 1764, "rms": 0.0235}
+{"t": 3.092, "type": "output_audio", "samples": 1764, "rms": 0.0188}
+{"t": 3.174, "type": "output_audio", "samples": 1764, "rms": 0.0202}
+{"t": 3.185, "type": "output_audio", "samples": 1764, "rms": 0.003}
+{"t": 3.185, "type": "text_done", "text": "Hi there! How can I help you today?"}
+{"t": 3.185, "type": "turn_done"}
+{"t": 3.568, "type": "text_delta", "text": "Hi"}
+{"t": 3.64, "type": "text_delta", "text": "!"}
+{"t": 3.719, "type": "text_delta", "text": " How"}
+{"t": 3.742, "type": "output_audio", "samples": 1764, "rms": 0.0133}
+{"t": 3.8, "type": "text_delta", "text": " can"}
+{"t": 3.843, "type": "output_audio", "samples": 1764, "rms": 0.0215}
+{"t": 3.881, "type": "text_delta", "text": " I"}
+{"t": 3.914, "type": "output_audio", "samples": 1764, "rms": 0.0198}
+{"t": 3.966, "type": "text_delta", "text": " help"}
+{"t": 3.997, "type": "output_audio", "samples": 1764, "rms": 0.0103}
+{"t": 4.041, "type": "text_delta", "text": " you"}
+{"t": 4.076, "type": "output_audio", "samples": 1764, "rms": 0.0051}
+{"t": 4.135, "type": "text_delta", "text": " today"}
+{"t": 4.178, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 4.197, "type": "text_delta", "text": "?"}
+{"t": 4.23, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 4.365, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 4.465, "type": "output_audio", "samples": 1764, "rms": 0.0145}
+{"t": 4.546, "type": "output_audio", "samples": 1764, "rms": 0.009}
+{"t": 4.625, "type": "output_audio", "samples": 1764, "rms": 0.0168}
+{"t": 4.703, "type": "output_audio", "samples": 1764, "rms": 0.0211}
+{"t": 4.786, "type": "output_audio", "samples": 1764, "rms": 0.0157}
+{"t": 4.881, "type": "output_audio", "samples": 1764, "rms": 0.0164}
+{"t": 4.962, "type": "output_audio", "samples": 1764, "rms": 0.0013}
+{"t": 5.044, "type": "output_audio", "samples": 1764, "rms": 0.0158}
+{"t": 5.123, "type": "output_audio", "samples": 1764, "rms": 0.0051}
+{"t": 5.204, "type": "output_audio", "samples": 1764, "rms": 0.0069}
+{"t": 5.285, "type": "output_audio", "samples": 1764, "rms": 0.0142}
+{"t": 5.366, "type": "output_audio", "samples": 1764, "rms": 0.0124}
+{"t": 5.447, "type": "output_audio", "samples": 1764, "rms": 0.0064}
+{"t": 5.529, "type": "output_audio", "samples": 1764, "rms": 0.0003}
+{"t": 5.61, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 5.691, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.773, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.854, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.935, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 6.016, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 6.099, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 6.183, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 6.183, "type": "log", "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"}
+{"t": 6.183, "type": "text_done", "text": "Hi! How can I help you today?"}
+{"t": 6.183, "type": "turn_done"}
+{"t": 14.765, "type": "tool_call", "call_id": "call_984f99d2853a45fe8fa99268b1251110", "name": "generate_random_number", "arguments": {"max": 50, "min": 1}}
+{"t": 14.765, "type": "turn_done"}
+{"t": 14.931, "type": "text_delta", "text": "I"}
+{"t": 14.931, "type": "text_delta", "text": " can"}
+{"t": 15.004, "type": "text_delta", "text": " generate"}
+{"t": 15.094, "type": "text_delta", "text": " a"}
+{"t": 15.16, "type": "text_delta", "text": " random"}
+{"t": 15.193, "type": "output_audio", "samples": 1764, "rms": 0.0109}
+{"t": 15.248, "type": "text_delta", "text": " number"}
+{"t": 15.272, "type": "output_audio", "samples": 1764, "rms": 0.0042}
+{"t": 15.332, "type": "text_delta", "text": " between"}
+{"t": 15.359, "type": "output_audio", "samples": 1764, "rms": 0.0142}
+{"t": 15.403, "type": "text_delta", "text": " one"}
+{"t": 15.434, "type": "output_audio", "samples": 1764, "rms": 0.0109}
+{"t": 15.492, "type": "text_delta", "text": " and"}
+{"t": 15.533, "type": "output_audio", "samples": 1764, "rms": 0.0359}
+{"t": 15.561, "type": "text_delta", "text": " fifty"}
+{"t": 15.584, "type": "output_audio", "samples": 1764, "rms": 0.0261}
+{"t": 15.646, "type": "text_delta", "text": " for"}
+{"t": 15.687, "type": "output_audio", "samples": 1764, "rms": 0.0231}
+{"t": 15.74, "type": "text_delta", "text": " you"}
+{"t": 15.766, "type": "output_audio", "samples": 1764, "rms": 0.0162}
+{"t": 15.805, "type": "text_delta", "text": "."}
+{"t": 15.832, "type": "output_audio", "samples": 1764, "rms": 0.0226}
+{"t": 15.975, "type": "output_audio", "samples": 1764, "rms": 0.014}
+{"t": 16.056, "type": "output_audio", "samples": 1764, "rms": 0.0237}
+{"t": 16.146, "type": "output_audio", "samples": 1764, "rms": 0.0203}
+{"t": 16.23, "type": "output_audio", "samples": 1764, "rms": 0.014}
+{"t": 16.246, "type": "output_audio", "samples": 1764, "rms": 0.0145}
+{"t": 16.401, "type": "output_audio", "samples": 1764, "rms": 0.0137}
+{"t": 16.475, "type": "output_audio", "samples": 1764, "rms": 0.0204}
+{"t": 16.556, "type": "output_audio", "samples": 1764, "rms": 0.0129}
+{"t": 16.639, "type": "output_audio", "samples": 1764, "rms": 0.017}
+{"t": 16.721, "type": "output_audio", "samples": 1764, "rms": 0.0099}
+{"t": 16.803, "type": "output_audio", "samples": 1764, "rms": 0.0048}
+{"t": 16.886, "type": "output_audio", "samples": 1764, "rms": 0.0066}
+{"t": 16.968, "type": "output_audio", "samples": 1764, "rms": 0.0117}
+{"t": 17.049, "type": "output_audio", "samples": 1764, "rms": 0.0112}
+{"t": 17.13, "type": "output_audio", "samples": 1764, "rms": 0.0121}
+{"t": 17.212, "type": "output_audio", "samples": 1764, "rms": 0.0155}
+{"t": 17.294, "type": "output_audio", "samples": 1764, "rms": 0.0116}
+{"t": 17.374, "type": "output_audio", "samples": 1764, "rms": 0.0084}
+{"t": 17.456, "type": "output_audio", "samples": 1764, "rms": 0.0008}
+{"t": 17.538, "type": "output_audio", "samples": 1764, "rms": 0.0166}
+{"t": 17.618, "type": "output_audio", "samples": 1764, "rms": 0.0011}
+{"t": 17.7, "type": "output_audio", "samples": 1764, "rms": 0.0073}
+{"t": 17.782, "type": "output_audio", "samples": 1764, "rms": 0.0056}
+{"t": 17.863, "type": "output_audio", "samples": 1764, "rms": 0.001}
+{"t": 17.944, "type": "output_audio", "samples": 1764, "rms": 0.0128}
+{"t": 18.026, "type": "output_audio", "samples": 1764, "rms": 0.0119}
+{"t": 18.106, "type": "output_audio", "samples": 1764, "rms": 0.0109}
+{"t": 18.19, "type": "output_audio", "samples": 1764, "rms": 0.0116}
+{"t": 18.269, "type": "output_audio", "samples": 1764, "rms": 0.0056}
+{"t": 18.35, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 18.432, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 18.514, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 18.595, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 18.678, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 18.758, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 18.782, "type": "log", "text": "voicechat duplicate tool result ignored: call_984f99d2853a45fe8fa99268b1251110"}
+{"t": 18.839, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 18.92, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 19.001, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 19.001, "type": "log", "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"}
+{"t": 19.001, "type": "text_done", "text": "I can generate a random number between one and fifty for you."}
+{"t": 19.001, "type": "turn_done"}
+{"t": 21.056, "type": "text_delta", "text": "The"}
+{"t": 21.056, "type": "text_delta", "text": " random"}
+{"t": 21.081, "type": "text_delta", "text": " number"}
+{"t": 21.187, "type": "text_delta", "text": " is"}
+{"t": 21.245, "type": "text_delta", "text": " thirty"}
+{"t": 21.344, "type": "text_delta", "text": " seven"}
+{"t": 21.417, "type": "text_delta", "text": "."}
+{"t": 21.74, "type": "output_audio", "samples": 1764, "rms": 0.0204}
+{"t": 21.822, "type": "output_audio", "samples": 1764, "rms": 0.0181}
+{"t": 21.903, "type": "output_audio", "samples": 1764, "rms": 0.0283}
+{"t": 21.99, "type": "output_audio", "samples": 1764, "rms": 0.0296}
+{"t": 22.089, "type": "output_audio", "samples": 1764, "rms": 0.0214}
+{"t": 22.171, "type": "output_audio", "samples": 1764, "rms": 0.039}
+{"t": 22.251, "type": "output_audio", "samples": 1764, "rms": 0.0294}
+{"t": 22.333, "type": "output_audio", "samples": 1764, "rms": 0.025}
+{"t": 22.415, "type": "output_audio", "samples": 1764, "rms": 0.0162}
+{"t": 22.496, "type": "output_audio", "samples": 1764, "rms": 0.0269}
+{"t": 22.579, "type": "output_audio", "samples": 1764, "rms": 0.0114}
+{"t": 22.661, "type": "output_audio", "samples": 1764, "rms": 0.0048}
+{"t": 22.745, "type": "output_audio", "samples": 1764, "rms": 0.0067}
+{"t": 22.825, "type": "output_audio", "samples": 1764, "rms": 0.0144}
+{"t": 22.904, "type": "output_audio", "samples": 1764, "rms": 0.0116}
+{"t": 22.987, "type": "output_audio", "samples": 1764, "rms": 0.0065}
+{"t": 23.067, "type": "output_audio", "samples": 1764, "rms": 0.0112}
+{"t": 23.149, "type": "output_audio", "samples": 1764, "rms": 0.0188}
+{"t": 23.231, "type": "output_audio", "samples": 1764, "rms": 0.0067}
+{"t": 23.313, "type": "output_audio", "samples": 1764, "rms": 0.0095}
+{"t": 23.395, "type": "output_audio", "samples": 1764, "rms": 0.0056}
+{"t": 23.477, "type": "output_audio", "samples": 1764, "rms": 0.0006}
+{"t": 23.559, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 23.64, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 23.722, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 23.804, "type": "output_audio", "samples": 1764, "rms": 0.0005}
+{"t": 23.886, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.966, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.966, "type": "log", "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"}
+{"t": 23.966, "type": "text_done", "text": "The random number is thirty seven."}
+{"t": 23.966, "type": "turn_done"}

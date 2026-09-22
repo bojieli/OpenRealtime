@@ -1,0 +1,11 @@
+[1/2] background_speech/1
+[2/2] background_speech/2
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : 6809951c5dcd on ubuntu
+tasks      : 2 completed, 0 failed, of 100 expected
+score      : 2/2 applicable, unavailable (incomplete campaign) (0 not applicable)
+  background_speech  hold  2/2 applicable  unavailable (incomplete campaign)  (0 not applicable)
+
+NOT REPORTABLE: cell "native-voicechat-output-segmented" is not reportable: 98 of 100 tasks were not attempted
+written to /home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T175453Z-2ehcouwd/fdb-background_speech.json

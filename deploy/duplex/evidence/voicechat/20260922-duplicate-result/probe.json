@@ -1,0 +1,128 @@
+{
+  "label": "run",
+  "scenario": "tool",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 1.438
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    133.91455078125,
+    115.3447265625,
+    88.5419921875
+  ],
+  "question": "/home/ubuntu/.cache/huggingface/hub/models--nvidia--NVIDIA-NemotronLabs-VoiceChat-11B/snapshots/a4c40ca5b4fe77db13e9840ca4a2b91becf030c8/tool_call.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 13.0,
+  "first_audio_s": 15.192712692078203,
+  "first_audio_latency_s": 2.193,
+  "audible_segments": [
+    [
+      1.911,
+      2.384
+    ],
+    [
+      2.845,
+      3.254
+    ],
+    [
+      3.742,
+      5.446
+    ],
+    [
+      15.193,
+      18.27
+    ],
+    [
+      21.74,
+      23.229
+    ]
+  ],
+  "turn_done_s": [
+    0.862,
+    3.185,
+    6.183,
+    14.765,
+    19.001,
+    23.966
+  ],
+  "text_done": [
+    {
+      "t": 3.185,
+      "text": "Hi there! How can I help you today?"
+    },
+    {
+      "t": 6.183,
+      "text": "Hi! How can I help you today?"
+    },
+    {
+      "t": 19.001,
+      "text": "I can generate a random number between one and fifty for you."
+    },
+    {
+      "t": 23.966,
+      "text": "The random number is thirty seven."
+    }
+  ],
+  "text_deltas": "Hi there! How can I help you today?Hi! How can I help you today?I can generate a random number between one and fifty for you.The random number is thirty seven.",
+  "tool_calls": [
+    {
+      "t": 14.765,
+      "call_id": "call_984f99d2853a45fe8fa99268b1251110",
+      "name": "generate_random_number",
+      "arguments": {
+        "max": 50,
+        "min": 1
+      }
+    }
+  ],
+  "tool_results": [
+    {
+      "t": 18.78,
+      "call_id": "call_984f99d2853a45fe8fa99268b1251110",
+      "name": "generate_random_number",
+      "output": "The random number is 37."
+    },
+    {
+      "t": 18.78,
+      "duplicate": true,
+      "call_id": "call_984f99d2853a45fe8fa99268b1251110",
+      "name": "generate_random_number",
+      "output": "The random number is 37."
+    }
+  ],
+  "errors": [],
+  "logs": [
+    {
+      "t": 6.183,
+      "type": "log",
+      "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"
+    },
+    {
+      "t": 18.782,
+      "type": "log",
+      "text": "voicechat duplicate tool result ignored: call_984f99d2853a45fe8fa99268b1251110"
+    },
+    {
+      "t": 19.001,
+      "type": "log",
+      "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"
+    },
+    {
+      "t": 23.966,
+      "type": "log",
+      "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"
+    }
+  ],
+  "output_seconds": 9.76
+}

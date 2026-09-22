@@ -397,7 +397,20 @@ Native validation remains incomplete. The retained component artifacts under
   1,088 ms. Adapter source changed during this attempt, so it is development
   evidence, not a fixed-revision result. The
   [retained development run](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T175022Z-ud9x6f2l/)
-  includes that limitation; a clean-checkout rerun at `6809951c` is in progress.
+  includes that limitation. The [clean-checkout rerun at `6809951c`](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T175453Z-2ehcouwd/)
+  completed with all recorded result digests verified: 8/8 applicable FDB
+  recordings passed (two per category), with interruption yields 296 and
+  692 ms. FD-Bench answered 6/8 turns, missed two, started prematurely once,
+  and recorded 3,520 ms aggregate overlap and three overruns. The median of
+  the two conversation latency values was 1,219 ms. This remains a smoke
+  subset, not full acceptance.
+
+  A [real-model duplicate-result probe](../deploy/duplex/evidence/voicechat/20260922-duplicate-result/)
+  delayed a fixed tool result by four seconds and submitted it twice. The
+  upstream trace contains exactly one outgoing function-call output for the
+  call; the model then spoke “The random number is thirty seven.” No protocol
+  errors occurred. This verifies adapter redelivery suppression, not external
+  exactly-once tool execution, corrections, or public-Realtime tool routing.
 
 ## Interaction prediction (P6)
 

@@ -1,0 +1,16 @@
+[1/2] cosyvoice2-single-round-combine-med/conversation_1
+[2/2] cosyvoice2-single-round-combine-med/conversation_10
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : 6809951c5dcd on ubuntu
+tasks      : 2 completed, 0 failed, of 293 expected
+clean      : 0 of 2 conversations answered every turn without interrupting
+  response_latency_ms      p50 1219 ms  p95 1451 ms  max 1476 ms
+  response_latency_p95_ms  p50 1721 ms  p95 1741 ms  max 1744 ms
+  missed_turns             p50 1        p95 1        max 1
+  premature_turns          p50 0.5      p95 0.95     max 1
+  overrun_turns            p50 1.5      p95 1.95     max 2
+  overlap_ms               p50 1760 ms  p95 3272 ms  max 3440 ms
+
+NOT REPORTABLE: cell "native-voicechat-output-segmented" is not reportable: 291 of 293 tasks were not attempted
+written to /home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T175453Z-2ehcouwd/fdbench.json
