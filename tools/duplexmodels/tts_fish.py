@@ -62,6 +62,26 @@ PROMPT_WAV = PLAN / "src" / "CosyVoice" / "asset" / "zero_shot_prompt.wav"
 PROMPT_TEXT = "希望你以后能够做的比我还好呦。"
 
 
+@torch.inference_mode()
+def encode_reference_audio(path, codec, device):
+    """Upstream encode_audio semantics using SoundFile instead of TorchCodec.
+
+    Only file decoding changes; retain torchaudio resampling, mono averaging,
+    codec dtype, and the feature-length slice from the upstream implementation.
+    """
+    import soundfile as sf
+    import torchaudio
+    samples, rate = sf.read(str(path), dtype='float32', always_2d=True)
+    wav = torch.from_numpy(samples.T.copy())
+    if wav.shape[0] > 1:
+        wav = wav.mean(dim=0, keepdim=True)
+    wav = torchaudio.functional.resample(wav.to(device), rate, codec.sample_rate)[0]
+    audios = wav[None, None].to(dtype=next(codec.parameters()).dtype)
+    lengths = torch.tensor([len(wav)],device=device,dtype=torch.long)
+    indices, feature_lengths = codec.encode(audios,lengths)
+    return indices[0, :, :feature_lengths[0]]
+
+
 class FishS2ProSynthesizer(Synthesizer):
     model = "fish-s2-pro"
     sample_rate = 44_100
@@ -70,7 +90,7 @@ class FishS2ProSynthesizer(Synthesizer):
 
     def __init__(self, compile_graphs: bool = True, first_chunk: int = 10, chunk: int = 16, holdback: int = 2,
                  max_seq_len: int = 4096, temperature: float = 0.8, top_p: float = 0.8, top_k: int = 30) -> None:
-        from fish_speech.models.text2semantic.inference import decode_one_token_ar, encode_audio, load_codec_model
+        from fish_speech.models.text2semantic.inference import decode_one_token_ar, load_codec_model
         from fish_speech.models.text2semantic.llama import DualARTransformer
 
         began = time.perf_counter()
@@ -87,7 +107,7 @@ class FishS2ProSynthesizer(Synthesizer):
         self.compiled = compile_graphs
         self.codec = load_codec_model(str(CHECKPOINT / "codec.pth"), self.device, self.precision)
         self.sample_rate = int(self.codec.sample_rate)
-        self.prompt_codes = encode_audio(PROMPT_WAV, self.codec, self.device).cpu()
+        self.prompt_codes = encode_reference_audio(PROMPT_WAV, self.codec, self.device).cpu()
         self.first_chunk, self.chunk, self.holdback = first_chunk, chunk, holdback
         self.sampling = dict(temperature=temperature, top_p=top_p, top_k=top_k)
         self.max_seq_len = max_seq_len
