@@ -1,0 +1,81 @@
+{"t": 7.189, "type": "text_delta", "text": " Yeah, you can. You"}
+{"t": 7.19, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 7.21, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 7.29, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 7.37, "type": "output_audio", "samples": 1920, "rms": 0.0009}
+{"t": 7.45, "type": "output_audio", "samples": 1920, "rms": 0.0205}
+{"t": 7.53, "type": "output_audio", "samples": 1920, "rms": 0.0181}
+{"t": 7.61, "type": "output_audio", "samples": 1920, "rms": 0.0126}
+{"t": 7.69, "type": "output_audio", "samples": 1920, "rms": 0.0114}
+{"t": 7.77, "type": "output_audio", "samples": 1920, "rms": 0.0121}
+{"t": 7.85, "type": "output_audio", "samples": 1920, "rms": 0.0234}
+{"t": 7.93, "type": "output_audio", "samples": 1920, "rms": 0.0018}
+{"t": 8.01, "type": "output_audio", "samples": 1920, "rms": 0.0051}
+{"t": 8.09, "type": "output_audio", "samples": 960, "rms": 0.0044}
+{"t": 8.284, "type": "text_delta", "text": " know what? I think"}
+{"t": 8.285, "type": "output_audio", "samples": 1920, "rms": 0.0275}
+{"t": 8.305, "type": "output_audio", "samples": 1920, "rms": 0.0295}
+{"t": 8.385, "type": "output_audio", "samples": 1920, "rms": 0.0259}
+{"t": 8.465, "type": "output_audio", "samples": 1920, "rms": 0.0225}
+{"t": 8.545, "type": "output_audio", "samples": 1920, "rms": 0.0148}
+{"t": 8.625, "type": "output_audio", "samples": 1920, "rms": 0.0043}
+{"t": 8.705, "type": "output_audio", "samples": 1920, "rms": 0.0001}
+{"t": 8.785, "type": "output_audio", "samples": 1920, "rms": 0.0001}
+{"t": 8.865, "type": "output_audio", "samples": 1920, "rms": 0.0218}
+{"t": 8.945, "type": "output_audio", "samples": 1920, "rms": 0.0287}
+{"t": 9.401, "type": "text_done", "text": " Yeah, you can. You know what? I think"}
+{"t": 9.401, "type": "turn_done"}
+{"t": 10.85, "type": "text_delta", "text": " start"}
+{"t": 10.85, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 10.871, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 10.951, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 11.031, "type": "output_audio", "samples": 1920, "rms": 0.0079}
+{"t": 11.111, "type": "output_audio", "samples": 1920, "rms": 0.0103}
+{"t": 11.191, "type": "output_audio", "samples": 1920, "rms": 0.0354}
+{"t": 11.271, "type": "output_audio", "samples": 1920, "rms": 0.0412}
+{"t": 11.351, "type": "output_audio", "samples": 1920, "rms": 0.0129}
+{"t": 11.431, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 11.511, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 11.591, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 11.671, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 11.751, "type": "output_audio", "samples": 960, "rms": 0.0}
+{"t": 11.966, "type": "text_delta", "text": " ly saving right"}
+{"t": 11.966, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 11.986, "type": "output_audio", "samples": 1920, "rms": 0.0017}
+{"t": 12.066, "type": "output_audio", "samples": 1920, "rms": 0.0006}
+{"t": 12.146, "type": "output_audio", "samples": 1920, "rms": 0.0002}
+{"t": 12.226, "type": "output_audio", "samples": 1920, "rms": 0.0001}
+{"t": 12.306, "type": "output_audio", "samples": 1920, "rms": 0.0002}
+{"t": 12.386, "type": "output_audio", "samples": 1920, "rms": 0.0167}
+{"t": 12.466, "type": "output_audio", "samples": 1920, "rms": 0.0144}
+{"t": 12.546, "type": "output_audio", "samples": 1920, "rms": 0.039}
+{"t": 12.626, "type": "output_audio", "samples": 1920, "rms": 0.0382}
+{"t": 12.706, "type": "output_audio", "samples": 1920, "rms": 0.038}
+{"t": 12.786, "type": "output_audio", "samples": 1920, "rms": 0.0286}
+{"t": 12.866, "type": "output_audio", "samples": 960, "rms": 0.0123}
+{"t": 12.883, "type": "text_delta", "text": " now."}
+{"t": 12.906, "type": "output_audio", "samples": 1920, "rms": 0.0463}
+{"t": 12.986, "type": "output_audio", "samples": 1920, "rms": 0.0751}
+{"t": 13.066, "type": "output_audio", "samples": 1920, "rms": 0.0385}
+{"t": 13.146, "type": "output_audio", "samples": 1920, "rms": 0.0509}
+{"t": 13.226, "type": "output_audio", "samples": 1920, "rms": 0.0428}
+{"t": 13.306, "type": "output_audio", "samples": 1920, "rms": 0.0385}
+{"t": 13.386, "type": "output_audio", "samples": 1920, "rms": 0.0297}
+{"t": 13.466, "type": "output_audio", "samples": 1920, "rms": 0.0145}
+{"t": 13.546, "type": "output_audio", "samples": 1920, "rms": 0.0002}
+{"t": 13.626, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 13.706, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 13.786, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 13.866, "type": "output_audio", "samples": 960, "rms": 0.0}
+{"t": 13.906, "type": "output_audio", "samples": 1920, "rms": 0.0115}
+{"t": 13.986, "type": "output_audio", "samples": 1920, "rms": 0.0315}
+{"t": 14.066, "type": "output_audio", "samples": 1920, "rms": 0.0218}
+{"t": 14.146, "type": "output_audio", "samples": 1920, "rms": 0.0232}
+{"t": 14.226, "type": "output_audio", "samples": 1920, "rms": 0.0255}
+{"t": 14.306, "type": "output_audio", "samples": 1920, "rms": 0.0212}
+{"t": 14.386, "type": "output_audio", "samples": 1920, "rms": 0.0191}
+{"t": 14.467, "type": "output_audio", "samples": 1920, "rms": 0.0067}
+{"t": 14.546, "type": "output_audio", "samples": 1920, "rms": 0.0}
+{"t": 14.626, "type": "output_audio", "samples": 960, "rms": 0.0}
+{"t": 14.626, "type": "text_done", "text": " start ly saving right now."}
+{"t": 14.627, "type": "turn_done"}

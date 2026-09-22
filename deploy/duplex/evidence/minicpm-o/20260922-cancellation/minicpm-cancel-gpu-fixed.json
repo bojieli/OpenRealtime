@@ -1,0 +1,88 @@
+{
+  "label": "minicpm-cancellation-fixed",
+  "scenario": "interrupt",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "openbmb/MiniCPM-o-4_5@503e7542 official duplex (MiniCPM-o-Demo@47709a92)",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in"
+    ],
+    "handshake_s": 0.869
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    55.853515625,
+    58.912109375,
+    55.92626953125
+  ],
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.613,
+  "first_audio_s": 7.449755408801138,
+  "first_audio_latency_s": 2.836,
+  "audible_segments": [
+    [
+      7.45,
+      9.025
+    ],
+    [
+      11.111,
+      11.431
+    ],
+    [
+      12.386,
+      14.466
+    ]
+  ],
+  "turn_done_s": [
+    9.401,
+    14.627
+  ],
+  "text_done": [
+    {
+      "t": 9.401,
+      "text": " Yeah, you can. You know what? I think"
+    },
+    {
+      "t": 14.626,
+      "text": " start ly saving right now."
+    }
+  ],
+  "text_deltas": " Yeah, you can. You know what? I think start ly saving right now.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 5.56,
+  "interrupt_control": {
+    "write_started_s": 8.96011454379186,
+    "write_completed_s": 8.960209012031555,
+    "next_turn_done_s": 9.401,
+    "boundary_latency_ms": 440.7909879684446,
+    "packets_received_before_boundary": 0,
+    "audio_received_before_boundary_ms": 0.0,
+    "interpretation": "client receive timing; includes in-flight packets; no server acknowledgement"
+  },
+  "interrupt_start_s": 8.96,
+  "interrupt_end_s": 11.915,
+  "answer_audio_stopped_after_onset_s": 0.065,
+  "second_answer_start_s": 12.386,
+  "second_answer_latency_s": 0.471,
+  "text_before_interrupt": " Yeah, you can. You know what? I think",
+  "text_after_interrupt": " start ly saving right now.",
+  "segments_after_onset": [
+    [
+      11.111,
+      11.431
+    ],
+    [
+      12.386,
+      14.466
+    ]
+  ]
+}

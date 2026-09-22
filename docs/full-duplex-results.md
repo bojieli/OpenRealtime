@@ -319,6 +319,16 @@ Native validation remains incomplete. The retained component artifacts under
   and the service remained on its original loaded code while cancellation
   fixes were committed; this run does not validate those fixes. The model's
   floor control, rendered playback and endurance remain unaccepted.
+  After reloading the cancellation fixes, a 40-second GPU probe sent an
+  explicit interrupt at 8.960 s. No audio packets arrived between that control
+  write and the turn boundary 441 ms later; previously received audio extended
+  an estimated 65 ms beyond onset. This is receive-time evidence, not rendered
+  playback. The model resumed audible output at 11.111 s while the interrupting
+  recording continued until 11.915 s, so successful packet suppression does
+  not establish correct floor behavior. The continuation text was fragmented
+  ("start ly saving right now."). No protocol errors occurred.
+  [Cancellation trace and summary](../deploy/duplex/evidence/minicpm-o/20260922-cancellation/)
+  retain this limitation alongside the transport result.
 - **VoiceChat:** the 8,192-position talker failed startup with a 1 GiB KV
   cache; 2 GiB allowed loading. The originally pinned vLLM-Omni `9ebef4b`
   then rejected duplex WebSockets because its new plugin framework disables
