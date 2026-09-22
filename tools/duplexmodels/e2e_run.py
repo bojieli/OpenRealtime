@@ -129,7 +129,7 @@ def terminate(process: subprocess.Popen) -> None:
     process.wait()
 
 
-def run(profile: str, per_category: int, conversations: int) -> int:
+def run(profile: str, per_category: int, conversations: int, *, full_selected: bool = False) -> int:
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', profile):
         raise ValueError('invalid profile name')
     config = ROOT / 'deploy/duplex/profiles' / f'{profile}.yaml'
@@ -153,17 +153,18 @@ def run(profile: str, per_category: int, conversations: int) -> int:
     except (OSError, subprocess.SubprocessError):
         gpu = 'unknown'
     expected = [f'fdb-{category}.json' for category in CATEGORIES]
-    if conversations:
+    if conversations or full_selected:
         expected.append('fdbench.json')
     metadata = {
-        'schema': 2, 'profile': profile, 'profile_sha256': digest(out / 'profile.yaml'),
+        'schema': 2, 'profile': profile,
+        'campaign_scope': 'all FDB categories and complete cosyvoice2-single-round-combine-med' if full_selected else 'smoke subset', 'profile_sha256': digest(out / 'profile.yaml'),
         'binary_sha256': digest(binary), 'binary': str(binary),
         'sidecar_source_sha256': sidecar_sources(ROOT),
         'revision': capture('git', 'rev-parse', 'HEAD'),
         'tree_modified': bool(capture('git', 'status', '--porcelain', '--', '.', ':!.runtime')),
         'started': now(), 'load_average': Path('/proc/loadavg').read_text().split()[:3],
-        'gpu_memory_mib': gpu, 'fdb_per_category': per_category,
-        'fdbench_conversations': conversations, 'expected_results': expected,
+        'gpu_memory_mib': gpu, 'fdb_per_category': 0 if full_selected else per_category,
+        'fdbench_conversations': 0 if full_selected else conversations, 'expected_results': expected,
         'component_health': component_health(config),
     }
     write_json(out / 'run.json', metadata)
@@ -202,9 +203,9 @@ def run(profile: str, per_category: int, conversations: int) -> int:
             if server.poll() is not None or not owns_listener(server.pid, port):
                 raise RuntimeError('owned server is no longer listening')
             if filename == 'fdbench.json':
-                arguments = ['fdbench', '-conditions', 'cosyvoice2-single-round-combine-med', '-limit', str(conversations)]
+                arguments = ['fdbench', '-conditions', 'cosyvoice2-single-round-combine-med', '-limit', str(0 if full_selected else conversations)]
             else:
-                arguments = ['fdb', '-categories', filename[4:-5], '-limit', str(per_category)]
+                arguments = ['fdb', '-categories', filename[4:-5], '-limit', str(0 if full_selected else per_category)]
             command = [str(binary), 'bench', *arguments, '-endpoint', f'ws://127.0.0.1:{port}/v1/realtime',
                        '-cell', profile, '-out', str(out / filename)]
             with (out / filename.replace('.json', '.log')).open('wb') as log:
@@ -249,11 +250,13 @@ def main() -> None:
     parser.add_argument('profile')
     parser.add_argument('per_category', type=int, nargs='?', default=10)
     parser.add_argument('conversations', type=int, nargs='?', default=12)
+    parser.add_argument('--full-selected', action='store_true',
+                        help='all FDB recordings and all conversations in the selected clean FD-Bench condition')
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise KeyboardInterrupt(f'signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
-    raise SystemExit(run(args.profile, args.per_category, args.conversations))
+    raise SystemExit(run(args.profile, args.per_category, args.conversations, full_selected=args.full_selected))
 
 
 if __name__ == '__main__':

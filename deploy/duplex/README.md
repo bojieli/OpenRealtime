@@ -183,3 +183,13 @@ the sidecar listening message before running the public benchmark. This
 profile does not enable vision or replace the official prompt with session
 instructions. Earlier component/smoke recordings are separate evidence; the
 new profile still requires a retained public run.
+
+### Complete selected benchmark partitions
+
+`deploy/duplex/run-e2e.sh PROFILE --full-selected` removes the recording
+limits for all four FDB categories and the entire
+`cosyvoice2-single-round-combine-med` FD-Bench condition. Other FD-Bench
+noise/synthesizer conditions are separate experiments and are not covered by
+this switch. Expect hours of wall-clock replay; use an isolated, fixed checkout
+and keep its model services running for the duration. Campaign completeness
+alone does not establish behavioral acceptance.

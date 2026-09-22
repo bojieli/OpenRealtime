@@ -78,6 +78,16 @@ class RunnerTests(unittest.TestCase):
         (first / 'fdbench.json').write_text('{}')
         self.assertIn('MODIFIED', e2e_summary.staleness(first))
 
+    def test_full_selected_removes_limits_and_keeps_condition_explicit(self):
+        self.assertEqual(e2e_run.run('sample', 1, 0, full_selected=True), 0)
+        done = json.loads((self.parent / 'latest/finished.json').read_text())
+        self.assertEqual(len(done['commands']), 5)
+        for entry in done['commands'].values():
+            argv = entry['argv']
+            self.assertEqual(argv[argv.index('-limit') + 1], '0')
+        argv = done['commands']['fdbench.json']['argv']
+        self.assertEqual(argv[argv.index('-conditions') + 1], 'cosyvoice2-single-round-combine-med')
+
     def test_existing_listener_is_not_adopted(self):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', self.port))
