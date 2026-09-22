@@ -456,6 +456,7 @@ class SpeechContext:
         self.socket = None
         self.id = f"ctx-{time.monotonic_ns()}"
         self.sample_rate = 24_000
+        self.failure = None
 
     async def open(self, on_audio) -> None:
         import websockets  # noqa: PLC0415
@@ -481,7 +482,8 @@ class SpeechContext:
                 on_audio(None)
                 return
             elif kind == "error":
-                log(f"tts error: {message.get('message')}")
+                self.failure = RuntimeError(f"tts error: {message.get('message')}")
+                log(str(self.failure))
                 on_audio(None)
                 return
 

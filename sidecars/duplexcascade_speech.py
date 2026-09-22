@@ -20,10 +20,26 @@ class DuplexCascadeSpeech:
             return
         context = self.factory()
         epoch = self.epoch
-        await context.open(lambda pcm: self.on_audio(pcm) if epoch == self.epoch else None)
+        try:
+            await context.open(lambda pcm: self.on_audio(pcm) if epoch == self.epoch else None)
+        except BaseException:
+            await context.close()
+            raise
         self.context = context
 
+    def check(self):
+        if self.context is None:
+            return
+        failure = getattr(self.context, 'failure', None)
+        if failure is not None:
+            raise failure
+        reader = getattr(self.context, 'reader', None)
+        if reader is not None and reader.done():
+            reader.result()
+            raise RuntimeError('persistent TTS context ended unexpectedly')
+
     async def apply(self, events):
+        self.check()
         for kind, value in events:
             if kind == 'text':
                 self.on_text(value)
@@ -55,4 +71,7 @@ class DuplexCascadeSpeech:
             await context.cancel()
 
     async def close(self):
-        await self.cancel()
+        try:
+            self.check()
+        finally:
+            await self.cancel()

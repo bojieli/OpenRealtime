@@ -30,5 +30,26 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(contexts), 2)
         self.assertEqual(text, ['Paris.', ' More.', 'New answer.'])
 
+    async def test_tts_error_is_not_reported_as_successful_audio_end(self):
+        context = Context()
+        bridge = DuplexCascadeSpeech(lambda:context, lambda pcm:None, lambda text:None, lambda:None)
+        await bridge.apply([('text','Hello')])
+        context.failure = RuntimeError('synthesis failed')
+        with self.assertRaisesRegex(RuntimeError, 'synthesis failed'):
+            await bridge.apply([('control','<|im_end|>')])
+        with self.assertRaisesRegex(RuntimeError, 'synthesis failed'):
+            await bridge.close()
+        self.assertIn('cancel', context.calls)
+
+    async def test_failed_open_closes_socket(self):
+        class Failed(Context):
+            async def open(self, callback): raise RuntimeError('bad handshake')
+            async def close(self): self.calls.append('close')
+        context = Failed()
+        bridge = DuplexCascadeSpeech(lambda:context, lambda pcm:None, lambda text:None, lambda:None)
+        with self.assertRaisesRegex(RuntimeError, 'bad handshake'):
+            await bridge.apply([('text','Hello')])
+        self.assertEqual(context.calls, ['close'])
+
 
 if __name__ == '__main__': unittest.main()
