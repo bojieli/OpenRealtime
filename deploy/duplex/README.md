@@ -193,3 +193,9 @@ noise/synthesizer conditions are separate experiments and are not covered by
 this switch. Expect hours of wall-clock replay; use an isolated, fixed checkout
 and keep its model services running for the duration. Campaign completeness
 alone does not establish behavioral acceptance.
+
+Full selected campaigns use a 24-hour outer timeout per benchmark command;
+smoke commands default to 30 minutes. `E2E_BENCH_TIMEOUT` overrides this in
+seconds and is recorded in `run.json`. This does not change the benchmark's
+per-conversation deadline. A large population needs more total replay time,
+not a more permissive behavioral deadline.

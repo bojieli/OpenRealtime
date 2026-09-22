@@ -138,6 +138,9 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
         raise ValueError('profile or executable does not exist')
     if per_category <= 0 or conversations < 0:
         raise ValueError('FDB count must be positive; FD-Bench count must be nonnegative')
+    bench_timeout = float(os.environ.get('E2E_BENCH_TIMEOUT', '86400' if full_selected else '1800'))
+    if not 0 < bench_timeout < float('inf'):
+        raise ValueError('benchmark timeout must be finite and positive')
     port = int(os.environ.get('E2E_PORT', '9290'))
     parent = ROOT / '.runtime/duplex-plan/results/e2e' / profile
     runs = parent / 'runs'
@@ -156,7 +159,7 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
     if conversations or full_selected:
         expected.append('fdbench.json')
     metadata = {
-        'schema': 2, 'profile': profile,
+        'schema': 2, 'profile': profile, 'bench_timeout_seconds': bench_timeout,
         'campaign_scope': 'all FDB categories and complete cosyvoice2-single-round-combine-med' if full_selected else 'smoke subset', 'profile_sha256': digest(out / 'profile.yaml'),
         'binary_sha256': digest(binary), 'binary': str(binary),
         'sidecar_source_sha256': sidecar_sources(ROOT),
@@ -211,7 +214,7 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
             with (out / filename.replace('.json', '.log')).open('wb') as log:
                 process = subprocess.Popen(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
                 try:
-                    code = process.wait(timeout=float(os.environ.get('E2E_BENCH_TIMEOUT', '1800')))
+                    code = process.wait(timeout=bench_timeout)
                 except subprocess.TimeoutExpired:
                     terminate(process)
                     code = 124

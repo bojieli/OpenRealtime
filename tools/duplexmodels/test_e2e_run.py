@@ -80,6 +80,8 @@ class RunnerTests(unittest.TestCase):
 
     def test_full_selected_removes_limits_and_keeps_condition_explicit(self):
         self.assertEqual(e2e_run.run('sample', 1, 0, full_selected=True), 0)
+        metadata = json.loads((self.parent / 'latest/run.json').read_text())
+        self.assertEqual(metadata['bench_timeout_seconds'], 86400)
         done = json.loads((self.parent / 'latest/finished.json').read_text())
         self.assertEqual(len(done['commands']), 5)
         for entry in done['commands'].values():
