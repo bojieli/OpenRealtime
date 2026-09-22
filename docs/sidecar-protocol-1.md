@@ -108,6 +108,12 @@ a generation loop is expected to check between chunks.
 | `error` | — | a failure; `fatal` ends the session |
 | `log` | — | a diagnostic line the engine forwards |
 
+`text_delta` carries a nonempty fragment of the output text. A fragment may
+consist entirely of whitespace (for example, a word separator or newline token);
+consumers must preserve it when concatenating the stream. Empty fragments are
+invalid. This does not relax the nonblank content requirement for `transcript`
+or injected `text` messages.
+
 An interrupted turn MUST still end with `turn_done`. The engine is waiting for a
 boundary, not for completion.
 

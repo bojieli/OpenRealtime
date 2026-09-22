@@ -314,7 +314,13 @@ func (message Message) Validate() error {
 		if strings.TrimSpace(message.Text) == "" {
 			return errors.New("text injection requires text")
 		}
-	case TypeTranscript, TypeTextDelta:
+	case TypeTextDelta:
+		// Token streams may carry word separators or newlines as a complete
+		// delta. Reject empty events, but preserve meaningful whitespace.
+		if message.Text == "" {
+			return fmt.Errorf("%s requires text", message.Type)
+		}
+	case TypeTranscript:
 		if strings.TrimSpace(message.Text) == "" {
 			return fmt.Errorf("%s requires text", message.Type)
 		}

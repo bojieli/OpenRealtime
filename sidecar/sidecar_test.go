@@ -16,6 +16,38 @@ import (
 	"github.com/bojieli/OpenRealtime/sidecar"
 )
 
+func TestStreamingTextPreservesWhitespaceTokens(t *testing.T) {
+	var wire bytes.Buffer
+	writer := sidecar.NewWriter(&wire)
+	parts := []string{"Hello", " ", "world", "\n", "\t", "again"}
+	for _, part := range parts {
+		if err := writer.Write(sidecar.Message{Type: sidecar.TypeTextDelta, Text: part}); err != nil {
+			t.Fatalf("write token %q: %v", part, err)
+		}
+	}
+	reader := sidecar.NewReader(&wire)
+	var text strings.Builder
+	for range parts {
+		message, err := reader.Read()
+		if err != nil {
+			t.Fatal(err)
+		}
+		text.WriteString(message.Text)
+	}
+	if got, want := text.String(), strings.Join(parts, ""); got != want {
+		t.Fatalf("streamed text = %q, want %q", got, want)
+	}
+	for _, message := range []sidecar.Message{
+		{Type: sidecar.TypeTextDelta},
+		{Type: sidecar.TypeTranscript, Text: " \n"},
+		{Type: sidecar.TypeText, Text: " \n"},
+	} {
+		if err := message.Validate(); err == nil {
+			t.Fatalf("accepted empty content: %#v", message)
+		}
+	}
+}
+
 func TestFramingRoundTripsHeadersAndPayloads(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := sidecar.NewWriter(&buffer)
