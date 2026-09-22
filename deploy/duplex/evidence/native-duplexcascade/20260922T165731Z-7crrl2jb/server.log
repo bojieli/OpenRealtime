@@ -1,0 +1,14 @@
+time=2026-09-22T16:57:32.062Z level=WARN msg="the Realtime endpoint has no bearer token" listen=127.0.0.1:9290 token_env=OPENREALTIME_TOKEN detail="anything that can reach this address can open a session, including a tunnel or proxy placed in front of it"
+OpenRealtime duplex listening on http://127.0.0.1:9290/v1/realtime
+  health   http://127.0.0.1:9290/healthz
+  server profile sha256:39de8137382b34fbf2a6b0645e9ff4c3235815dd8ba3ea47c9f55f5a30bcf8e1
+time=2026-09-22T16:57:33.898Z level=INFO msg="session started" session=sess_000000000001 binding=duplex model=openrealtime
+time=2026-09-22T17:00:33.894Z level=INFO msg="session completed" session=sess_000000000001 duration=3m0.000852687s
+time=2026-09-22T17:00:34.691Z level=INFO msg="session started" session=sess_000000000002 binding=duplex model=openrealtime
+time=2026-09-22T17:03:34.690Z level=INFO msg="session completed" session=sess_000000000002 duration=3m0.001399342s
+time=2026-09-22T17:03:35.442Z level=INFO msg="session started" session=sess_000000000003 binding=duplex model=openrealtime
+time=2026-09-22T17:05:57.640Z level=INFO msg="session completed" session=sess_000000000003 duration=2m22.202311356s
+time=2026-09-22T17:05:58.301Z level=INFO msg="session started" session=sess_000000000004 binding=duplex model=openrealtime
+time=2026-09-22T17:06:35.500Z level=INFO msg="session completed" session=sess_000000000004 duration=37.201210847s
+time=2026-09-22T17:06:35.614Z level=INFO msg="session started" session=sess_000000000005 binding=duplex model=openrealtime
+time=2026-09-22T17:09:06.612Z level=INFO msg="session completed" session=sess_000000000005 duration=2m31.002273073s

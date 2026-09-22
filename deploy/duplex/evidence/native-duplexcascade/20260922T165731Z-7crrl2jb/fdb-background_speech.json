@@ -1,0 +1,124 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "104a10f0bb2b02fab6bf964863a7f0944b96ced9",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T17:03:35Z",
+    "finished_at": "2026-09-22T17:05:57Z"
+  },
+  "expected_tasks": 100,
+  "tasks": [
+    {
+      "id": "background_speech/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 940,
+        "agent_audio_at_event_ms": 100,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 940,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn on the study lamp.",
+        "event": "Oh, it's starting to rain outside."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 1,
+    "failed": 0,
+    "passed": 1,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "99 of 100 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 1,
+        "unit": "ms",
+        "min": 940,
+        "p50": 940,
+        "p90": 940,
+        "p95": 940,
+        "p99": 940,
+        "max": 940,
+        "mean": 940
+      },
+      "agent_audio_at_event_ms": {
+        "count": 1,
+        "unit": "ms",
+        "min": 100,
+        "p50": 100,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "max": 100,
+        "mean": 100
+      },
+      "agent_audio_before_event_ms": {
+        "count": 1,
+        "unit": "ms",
+        "min": 480,
+        "p50": 480,
+        "p90": 480,
+        "p95": 480,
+        "p99": 480,
+        "max": 480,
+        "mean": 480
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 1,
+        "unit": "ms",
+        "min": 940,
+        "p50": 940,
+        "p90": 940,
+        "p95": 940,
+        "p99": 940,
+        "max": 940,
+        "mean": 940
+      },
+      "event_audible_after_ms": {
+        "count": 1,
+        "unit": "ms",
+        "min": 20,
+        "p50": 20,
+        "p90": 20,
+        "p95": 20,
+        "p99": 20,
+        "max": 20,
+        "mean": 20
+      }
+    }
+  }
+}

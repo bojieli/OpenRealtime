@@ -1,0 +1,119 @@
+{
+  "finished": "2026-09-22T17:09:06.677088+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; 1 task errors",
+    "fdb-user_backchannel.json: exit 0; 1 task errors"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T165731Z-7crrl2jb/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T165731Z-7crrl2jb/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T165731Z-7crrl2jb/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T165731Z-7crrl2jb/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T165731Z-7crrl2jb/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "32.54",
+    "33.75",
+    "34.73"
+  ],
+  "sha256": {
+    "run.json": "30c0a07859646c62bd20c783711100f2919a68fff7de902aeb6202db78bc4bac",
+    "profile.yaml": "65cb5b10d5717b9d7ca1dfaa30a7ece1740b28d688ca2abc6957b23a6fb494cc",
+    "fdb-user_interruption.json": "75497a3d2826c6365a78e5e8a4cbf434f128781f8e391e489e6d8485c61b9157",
+    "fdb-user_backchannel.json": "2ec84bb9e1eccae75df6fd4097370c42ee67c251775fc7df9110abe993a68d4c",
+    "fdb-background_speech.json": "ad33f48b1dbf28e373264ebc1e396e8b02fcbe1574a6beba287c6709447d3ccf",
+    "fdb-talking_to_other.json": "88fb8e4189d2c2dd678fdba0ed7d3756a580e06c23c46fd260e70e1d6822b025",
+    "fdbench.json": "408d162436adc625aa9f9b1eab27699dc571abf687d16cd8c30ff5f515221f6f"
+  }
+}

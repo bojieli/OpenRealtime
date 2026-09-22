@@ -142,6 +142,14 @@ comparison in `.runtime/duplex-plan/results/tts/` has the quieter re-runs and
 available raw outputs. Its latest summary marks intelligibility as unscored;
 latency and cancellation alone do not establish speech quality.
 
+Kyutai's model-side PCM queue now pauses at 25 frames (two seconds) per row.
+A live GPU backpressure probe exhausted a one-second transport credit window,
+observed generation remain at step 58 with exactly 25 queued frames, then
+returned credit and observed generation resume to step 71. Cancellation was
+acknowledged in 94 ms and released the row. This bounds model PCM and credited
+transport audio; it does not establish bounded text/history or rendered playback.
+Evidence: `deploy/duplex/evidence/kyutai/20260922-resume/bounded-queue.json`.
+
 ## Micro-turn language model (P4)
 
 The micro-turn cascade runs as one duplex model
@@ -202,6 +210,15 @@ after the first output packet allowed a second handshake in 219 ms and fresh
 audio without protocol errors. This verifies early-output cleanup, not
 saturated-buffer or long-session shutdown. The public smoke rerun remains
 pending; prior failed measurements are retained.
+
+The cleanup rerun `20260922T165731Z-7crrl2jb` completed all five sessions
+without connection refusals. It still failed overall: interruption and
+backchannel recordings each hit the three-minute conversation timeout.
+Background speech and talking-to-other each passed one applicable recording.
+The single FD-Bench conversation answered 3/4 turns, missed one, recorded zero
+premature starts, 4,960 ms overlap and 1,547 ms response latency. These are
+partial smoke observations within a failed run, not a supported profile.
+The complete attempt is retained under `deploy/duplex/evidence/native-duplexcascade/`.
 
 The new native sidecar also passed a real protocol question probe: “Paris,”
 2.0 s of paced output audio, one output turn boundary, and no protocol errors.

@@ -1,0 +1,214 @@
+{
+  "passed": true,
+  "window_bytes": 48000,
+  "delivered_bytes": [
+    48000,
+    48000
+  ],
+  "cancel_ack_ms": 93.97619171068072,
+  "before": {
+    "status": "ok",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "sample_rate": 24000,
+    "capabilities": {
+      "incremental_text": true,
+      "nonterminal_flush": true,
+      "input_granularity": "token"
+    },
+    "requests": 0,
+    "contexts": 0,
+    "first_audio_p50_s": null,
+    "worker_alive": true,
+    "worker_error": null,
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "text_unit": "word",
+    "lookahead_words": 2,
+    "audio_delay_s": 1.28,
+    "frame_ms": 80.0,
+    "rows": 4,
+    "rows_busy": 0,
+    "output_buffer_frames_per_row": 25,
+    "output_queued_frames": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "steps": 0,
+    "step_ms_p50": null,
+    "step_ms_p95": null,
+    "rows_per_step_mean": null,
+    "rtf_per_step_p50": null,
+    "contexts_total": 0,
+    "cancelled": 0,
+    "voices": 437,
+    "default_voice": "expresso/ex03-ex01_happy_001_channel1_334s.wav"
+  },
+  "paused": {
+    "status": "ok",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "sample_rate": 24000,
+    "capabilities": {
+      "incremental_text": true,
+      "nonterminal_flush": true,
+      "input_granularity": "token"
+    },
+    "requests": 0,
+    "contexts": 1,
+    "first_audio_p50_s": 0.29818206233903766,
+    "worker_alive": true,
+    "worker_error": null,
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "text_unit": "word",
+    "lookahead_words": 2,
+    "audio_delay_s": 1.28,
+    "frame_ms": 80.0,
+    "rows": 4,
+    "rows_busy": 1,
+    "output_buffer_frames_per_row": 25,
+    "output_queued_frames": [
+      25,
+      0,
+      0,
+      0
+    ],
+    "steps": 58,
+    "step_ms_p50": 16.639702022075653,
+    "step_ms_p95": 16.9318956322968,
+    "rows_per_step_mean": 1.0,
+    "rtf_per_step_p50": 0.20799627527594566,
+    "contexts_total": 1,
+    "cancelled": 0,
+    "voices": 437,
+    "default_voice": "expresso/ex03-ex01_happy_001_channel1_334s.wav"
+  },
+  "stable": {
+    "status": "ok",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "sample_rate": 24000,
+    "capabilities": {
+      "incremental_text": true,
+      "nonterminal_flush": true,
+      "input_granularity": "token"
+    },
+    "requests": 0,
+    "contexts": 1,
+    "first_audio_p50_s": 0.29818206233903766,
+    "worker_alive": true,
+    "worker_error": null,
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "text_unit": "word",
+    "lookahead_words": 2,
+    "audio_delay_s": 1.28,
+    "frame_ms": 80.0,
+    "rows": 4,
+    "rows_busy": 1,
+    "output_buffer_frames_per_row": 25,
+    "output_queued_frames": [
+      25,
+      0,
+      0,
+      0
+    ],
+    "steps": 58,
+    "step_ms_p50": 16.639702022075653,
+    "step_ms_p95": 16.9318956322968,
+    "rows_per_step_mean": 1.0,
+    "rtf_per_step_p50": 0.20799627527594566,
+    "contexts_total": 1,
+    "cancelled": 0,
+    "voices": 437,
+    "default_voice": "expresso/ex03-ex01_happy_001_channel1_334s.wav"
+  },
+  "resumed": {
+    "status": "ok",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "sample_rate": 24000,
+    "capabilities": {
+      "incremental_text": true,
+      "nonterminal_flush": true,
+      "input_granularity": "token"
+    },
+    "requests": 0,
+    "contexts": 1,
+    "first_audio_p50_s": 0.29818206233903766,
+    "worker_alive": true,
+    "worker_error": null,
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "text_unit": "word",
+    "lookahead_words": 2,
+    "audio_delay_s": 1.28,
+    "frame_ms": 80.0,
+    "rows": 4,
+    "rows_busy": 1,
+    "output_buffer_frames_per_row": 25,
+    "output_queued_frames": [
+      25,
+      0,
+      0,
+      0
+    ],
+    "steps": 71,
+    "step_ms_p50": 16.662408132106066,
+    "step_ms_p95": 18.28816207125783,
+    "rows_per_step_mean": 1.0,
+    "rtf_per_step_p50": 0.20828010165132582,
+    "contexts_total": 1,
+    "cancelled": 0,
+    "voices": 437,
+    "default_voice": "expresso/ex03-ex01_happy_001_channel1_334s.wav"
+  },
+  "after": {
+    "status": "ok",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "sample_rate": 24000,
+    "capabilities": {
+      "incremental_text": true,
+      "nonterminal_flush": true,
+      "input_granularity": "token"
+    },
+    "requests": 0,
+    "contexts": 1,
+    "first_audio_p50_s": 0.29818206233903766,
+    "worker_alive": true,
+    "worker_error": null,
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "text_unit": "word",
+    "lookahead_words": 2,
+    "audio_delay_s": 1.28,
+    "frame_ms": 80.0,
+    "rows": 4,
+    "rows_busy": 0,
+    "output_buffer_frames_per_row": 25,
+    "output_queued_frames": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "steps": 71,
+    "step_ms_p50": 16.662408132106066,
+    "step_ms_p95": 18.28816207125783,
+    "rows_per_step_mean": 1.0,
+    "rtf_per_step_p50": 0.20828010165132582,
+    "contexts_total": 1,
+    "cancelled": 1,
+    "voices": 437,
+    "default_voice": "expresso/ex03-ex01_happy_001_channel1_334s.wav"
+  }
+}
