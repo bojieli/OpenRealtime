@@ -325,6 +325,17 @@
       "license": "other",
       "access_verified": "2026-09-22",
       "snapshot_files_verified": true
+    },
+    {
+      "role": "sentence-tts",
+      "repository": "fishaudio/s2-pro",
+      "present": true,
+      "local_directory": "/home/ubuntu/OpenRealtime/.runtime/fish-speech/checkpoints/s2-pro",
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e",
+      "revision_source": "hf local-directory download metadata",
+      "bytes": 11011629649,
+      "license": "fish-audio-research-license",
+      "license_file": "LICENSE.md"
     }
   ]
 }

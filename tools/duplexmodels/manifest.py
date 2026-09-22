@@ -32,6 +32,7 @@ ASSETS = {
     "incremental-tts": ["kyutai/tts-1.6b-en_fr", "kyutai/tts-voices", "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
                         "microsoft/VibeVoice-Realtime-0.5B", "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
                         "Qwen/Qwen3-TTS-Tokenizer-12Hz"],
+    "sentence-tts": ["fishaudio/s2-pro"],
     "native-duplex": ["kyutai/moshiko-pytorch-bf16", "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B",
                       "openbmb/MiniCPM-o-4_5", "HIT-TMG/Lychee-FD", "stepfun-ai/Step-Audio-2-mini",
                       "VITA-MLLM/Freeze-Omni", "BayLing-Models/BayLing-Duplex", "nvidia/personaplex-7b-v1"],
@@ -43,7 +44,25 @@ ASSETS = {
 }
 
 
+LOCAL_DOWNLOADS = {
+    "fishaudio/s2-pro": Path(__file__).resolve().parents[2] / ".runtime/fish-speech/checkpoints/s2-pro",
+}
+
+
 def local(repository: str) -> dict:
+    directory = LOCAL_DOWNLOADS.get(repository)
+    if directory is not None and directory.is_dir():
+        metadata = directory / ".cache/huggingface/download"
+        revisions = {p.read_text().splitlines()[0] for p in metadata.rglob("*.metadata")}
+        files = [p for p in directory.rglob("*") if p.is_file() and ".cache" not in p.relative_to(directory).parts]
+        readme = (directory / "README.md").read_text(errors="ignore")
+        license_name = re.search(r"^license_name:\s*(\S+)", readme, re.MULTILINE)
+        return {"present": True, "local_directory": str(directory),
+                "revision": next(iter(revisions)) if len(revisions) == 1 else None,
+                "revision_source": "hf local-directory download metadata",
+                "bytes": sum(p.stat().st_size for p in files),
+                "license": license_name.group(1) if license_name else None,
+                "license_file": "LICENSE.md"}
     root = HUB / ("models--" + repository.replace("/", "--"))
     ref = root / "refs/main"
     if not ref.exists():

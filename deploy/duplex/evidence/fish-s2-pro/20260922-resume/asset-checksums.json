@@ -1,0 +1,51 @@
+{
+  "asset": {
+    "role": "sentence-tts",
+    "repository": "fishaudio/s2-pro",
+    "present": true,
+    "local_directory": "/home/ubuntu/OpenRealtime/.runtime/fish-speech/checkpoints/s2-pro",
+    "revision": "1de9996b6be38b745688de084d87a5633f714e4e",
+    "revision_source": "hf local-directory download metadata",
+    "bytes": 11011629649,
+    "license": "fish-audio-research-license",
+    "license_file": "LICENSE.md"
+  },
+  "files": [
+    {
+      "file": "model-00001-of-00002.safetensors",
+      "sha256": "c4218e8ac93be83b35eee30b4f94cb2e9b5ecff40f3e21611438d2f4f8804aad",
+      "bytes": 4986872984,
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e"
+    },
+    {
+      "file": "model-00002-of-00002.safetensors",
+      "sha256": "76738d23465deaac431433232c0762908cc99a6eddc3d49f67307d92680827be",
+      "bytes": 4136876104,
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e"
+    },
+    {
+      "file": "codec.pth",
+      "sha256": "74fc41c5a7151c6f350af8bd7e5d6e3accfcc7f3dfbfac23afd35af07052bb2f",
+      "bytes": 1871099728,
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e"
+    },
+    {
+      "file": "config.json",
+      "sha256": "261b519a2a9576710fc8533a77297fae007f0e7b3aa28a217f8352b7f32fe993",
+      "bytes": 1863,
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e"
+    },
+    {
+      "file": "tokenizer.json",
+      "sha256": "f24e08099d45a8adf3f52f5f0b03276e433bb9d689bb15fcbcc48ce58744588b",
+      "bytes": 12217872,
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e"
+    },
+    {
+      "file": "LICENSE.md",
+      "sha256": "aa7d9206e9d710590987a3636934f643529c00cd490323594e6206aaa0c32d80",
+      "bytes": 10360,
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e"
+    }
+  ]
+}

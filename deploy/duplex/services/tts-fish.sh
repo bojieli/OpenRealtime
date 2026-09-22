@@ -25,6 +25,22 @@ case "$action" in
   start)
     owned && { echo "$NAME already running (pid $(cat "$PIDFILE"))"; exit 0; }
     mkdir -p "$PLAN/pids" "$PLAN/logs" "$PLAN/gpu"
+    [[ "$(git -C "$ROOT/.runtime/fish-speech" rev-parse HEAD)" == e5e292632cb11e7a27b2b7487f58f612bc101e13 ]] || {
+      echo "unexpected Fish source revision" >&2; exit 1;
+    }
+    [[ -z "$(git -C "$ROOT/.runtime/fish-speech" status --porcelain)" ]] || {
+      echo "modified Fish source" >&2; exit 1;
+    }
+    for asset in model-00001-of-00002.safetensors model-00002-of-00002.safetensors codec.pth config.json tokenizer.json; do
+      checkpoint="$ROOT/.runtime/fish-speech/checkpoints/s2-pro"
+      [[ -f "$checkpoint/$asset" && -f "$checkpoint/.cache/huggingface/download/$asset.metadata" ]] || {
+        echo "missing local Fish asset: $asset" >&2; exit 1;
+      }
+      read -r revision < "$checkpoint/.cache/huggingface/download/$asset.metadata"
+      [[ "$revision" == 1de9996b6be38b745688de084d87a5633f714e4e ]] || {
+        echo "unexpected Fish asset revision: $asset" >&2; exit 1;
+      }
+    done
     "$ROOT/.runtime/fish-env/bin/python" - "$PORT" <<'PYTHON'
 import socket, subprocess, sys
 with socket.socket() as sock:

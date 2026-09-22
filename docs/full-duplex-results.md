@@ -117,6 +117,11 @@ further audio after the client cancelled. First-audio times include the probe's
 establish real-time synthesis. English/Mandarin intelligibility scoring and the
 new `cascade-nemotron-qwen3-fish` public profile are still pending. Evidence is
 retained in `deploy/duplex/evidence/fish-s2-pro/20260922-resume/`.
+The weights are revision `1de9996b6be38b745688de084d87a5633f714e4e`,
+with Fish source `e5e292632cb11e7a27b2b7487f58f612bc101e13`; retained
+checksums cover the weight shards, codec, config, tokenizer and license.
+The Fish Audio Research License permits research/non-commercial use;
+commercial use requires a separate Fish Audio license.
 
 All of these were measured while the machine was loaded; the per-service
 comparison in `.runtime/duplex-plan/results/tts/` has the quieter re-runs and
