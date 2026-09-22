@@ -1,0 +1,8 @@
+# Experimental N0: requires a warmed PersonaPlex sidecar on :9146.
+# Adapter RMS/hangover determines output turn boundaries. No text injection.
+binding: duplex
+sidecar-address: tcp:127.0.0.1:9146
+sidecar-protocol: 1
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
