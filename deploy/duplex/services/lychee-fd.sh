@@ -72,14 +72,29 @@ _run() {
   # hold this model, and confirm the memory again while holding it (another
   # lease holder may have taken it in between). The lease is then held on fd 9
   # for exactly as long as the servers below run, because they inherit it.
+  # nvidia-smi can block on a loaded host; a query that does not answer must
+  # not stall the wait, and a reading that does not parse must be visible
+  # rather than silently become "0 MiB free".
+  free_mib() {
+    local raw
+    raw=$(timeout 10 nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits 2>&1 | head -1 | tr -d ',')
+    read -r used total <<< "$raw"
+    if [[ ! $used =~ ^[0-9]+$ || ! $total =~ ^[0-9]+$ ]]; then
+      echo "nvidia-smi gave no usable reading: ${raw:-<empty/timeout>}" >&2
+      used=0 total=0
+      return 1
+    fi
+    return 0
+  }
   while true; do
-    read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
-    if (( total - used >= NEED_MIB )); then
+    if free_mib && (( total - used >= NEED_MIB )); then
       exec 9> "$PLAN/gpu/large.lock"
       if flock -w 30 9; then
-        read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
-        if (( total - used >= NEED_MIB )); then break; fi
+        if free_mib && (( total - used >= NEED_MIB )); then break; fi
         echo "lease taken but only $((total - used)) MiB free; releasing it again"
+        exec 9>&-
+      else
+        echo "$((total - used)) MiB free; waiting for the lease (held by another job)"
         exec 9>&-
       fi
     fi

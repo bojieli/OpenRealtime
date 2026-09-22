@@ -13,7 +13,8 @@
 #
 # The shipped duplex yaml asks for 0.62/0.12/0.06 of the GPU (~78 GB). This
 # host shares its GPU, so an overlay keeps the upstream fast profile and only
-# shrinks the per-stage memory budgets (~31 GB total).
+# shrinks the per-stage memory budgets and bounds each stage's paged cache
+# explicitly (~27 GB resident: 19.9 GB of it is the thinker's bf16 weights).
 #
 # The engine is a large model: it waits for GPU room *outside* the lease, then
 # takes the lease and holds it for exactly as long as the server lives. Waiting
@@ -36,16 +37,16 @@ SRC=${VOICECHAT_VLLM_OMNI:-$PLAN/src/vllm-omni-native}
 CHECKPOINT=${VOICECHAT_CHECKPOINT:-$HOME/.cache/huggingface/hub/models--nvidia--NVIDIA-NemotronLabs-VoiceChat-11B/snapshots/a4c40ca5b4fe77db13e9840ca4a2b91becf030c8}
 TOKENIZER=${NEMOTRON_VOICECHAT_LLM_PATH:-$HOME/.cache/huggingface/hub/models--nvidia--NVIDIA-Nemotron-Nano-9B-v2/snapshots/6533e8de2c68e4536bf7c411d7a3ce5734111476}
 THINKER_MEM=${VOICECHAT_THINKER_MEM:-0.245}
-TALKER_MEM=${VOICECHAT_TALKER_MEM:-0.055}
-CODEC_MEM=${VOICECHAT_CODEC_MEM:-0.025}
-THINKER_KV_BYTES=${VOICECHAT_THINKER_KV_BYTES:-1610612736}
-TALKER_KV_BYTES=${VOICECHAT_TALKER_KV_BYTES:-1073741824}
+TALKER_MEM=${VOICECHAT_TALKER_MEM:-0.05}
+CODEC_MEM=${VOICECHAT_CODEC_MEM:-0.02}
+THINKER_KV_BYTES=${VOICECHAT_THINKER_KV_BYTES:-536870912}
+TALKER_KV_BYTES=${VOICECHAT_TALKER_KV_BYTES:-268435456}
 PIDFILE=$PLAN/pids/voicechat.pid
 LOG=$PLAN/logs/voicechat.log
 OVERLAY=$PLAN/configs/voicechat-duplex-shared-gpu.yaml
 BALLAST=$PLAN/configs/voicechat-ballast.py
-BALLAST_FIRST_GIB=${VOICECHAT_BALLAST_FIRST_GIB:-6}
-BALLAST_SECOND_GIB=${VOICECHAT_BALLAST_SECOND_GIB:-3}
+BALLAST_FIRST_GIB=${VOICECHAT_BALLAST_FIRST_GIB:-5}
+BALLAST_SECOND_GIB=${VOICECHAT_BALLAST_SECOND_GIB:-2}
 ATTEMPTS=${VOICECHAT_ATTEMPTS:-4}
 
 write_ballast() {
@@ -159,7 +160,14 @@ _attempts() {
     echo "=== attempt $attempt of $ATTEMPTS"
     _wait_for_memory || return 1
     started=$SECONDS
-    flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/voicechat.sh" _run
+    if [[ ${VOICECHAT_LEASE:-1} == 0 ]]; then
+      # An explicit allocation from the coordinator: no lease, one attempt at
+      # the memory that was granted, and a failure is reported rather than
+      # retried in a loop against everyone else.
+      "$ROOT/deploy/duplex/services/voicechat.sh" _run
+    else
+      flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/voicechat.sh" _run
+    fi
     elapsed=$((SECONDS - started))
     if (( elapsed > 150 )); then
       echo "=== engine exited after ${elapsed}s; not retrying"

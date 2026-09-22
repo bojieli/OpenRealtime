@@ -52,14 +52,26 @@ case ${1:-status} in
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1 setsid nohup \
       bash -c 'echo $$ > "$0"; shift
         need=$1; lock=$2; shift 2; waited=0
+        free_mib() {
+          local raw
+          raw=$(timeout 10 nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits 2>&1 | head -1 | tr -d ",")
+          read -r used total <<< "$raw"
+          if [[ ! $used =~ ^[0-9]+$ || ! $total =~ ^[0-9]+$ ]]; then
+            echo "nvidia-smi gave no usable reading: ${raw:-<empty/timeout>}" >&2
+            used=0 total=0
+            return 1
+          fi
+          return 0
+        }
         while true; do
-          read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ",")
-          if (( total - used >= need )); then
+          if free_mib && (( total - used >= need )); then
             exec 9> "$lock"
             if flock -w 30 9; then
-              read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ",")
-              if (( total - used >= need )); then break; fi
+              if free_mib && (( total - used >= need )); then break; fi
               echo "lease taken but only $((total - used)) MiB free; releasing it again"
+              exec 9>&-
+            else
+              echo "$((total - used)) MiB free; waiting for the lease (held by another job)"
               exec 9>&-
             fi
           fi
