@@ -122,8 +122,14 @@ first audio was 707/769 ms (English/Mandarin), and mean RTF was 1.42/1.74.
 All 12 held-prefix cases waited for the suffix, as required by the declared
 sentence-input contract. All six cancellations were acknowledged in 30–106 ms,
 with no audio frames after the cancel request. The new
-`cascade-nemotron-qwen3-fish` public smoke run is underway; acceptance remains
-pending. Evidence is
+`cascade-nemotron-qwen3-fish` public smoke run completed without task errors:
+7/8 FD-Bench turns answered, one missed, zero premature starts, and 1,125 ms
+median of the two per-conversation response-latency values. FDB passed 1/1
+applicable interruption (245 ms yield), 1/1 background-speech case and 2/2
+talking-to-other cases. Four of eight recordings were not applicable, including
+both backchannels. This is a small NOT REPORTABLE smoke run, not full acceptance.
+The exact profile, results and timeline are retained under
+`deploy/duplex/evidence/cascade-nemotron-qwen3-fish/20260922T164918Z-uc548hir/`. Evidence is
 retained in `deploy/duplex/evidence/fish-s2-pro/20260922-resume/`.
 The weights are revision `1de9996b6be38b745688de084d87a5633f714e4e`,
 with Fish source `e5e292632cb11e7a27b2b7487f58f612bc101e13`; retained

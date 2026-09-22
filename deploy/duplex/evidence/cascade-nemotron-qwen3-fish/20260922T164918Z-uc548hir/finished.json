@@ -1,0 +1,116 @@
+{
+  "finished": "2026-09-22T16:55:17.120484+00:00",
+  "exit_code": 0,
+  "errors": [],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "cascade-nemotron-qwen3-fish",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/cascade-nemotron-qwen3-fish/runs/20260922T164918Z-uc548hir/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "cascade-nemotron-qwen3-fish",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/cascade-nemotron-qwen3-fish/runs/20260922T164918Z-uc548hir/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "cascade-nemotron-qwen3-fish",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/cascade-nemotron-qwen3-fish/runs/20260922T164918Z-uc548hir/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "cascade-nemotron-qwen3-fish",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/cascade-nemotron-qwen3-fish/runs/20260922T164918Z-uc548hir/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "cascade-nemotron-qwen3-fish",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/cascade-nemotron-qwen3-fish/runs/20260922T164918Z-uc548hir/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "32.42",
+    "35.35",
+    "35.12"
+  ],
+  "sha256": {
+    "run.json": "5bf480b5463ea1d25200666a91b92b07dbfbc1184883bcd622cb0ab5d60ed224",
+    "profile.yaml": "b31664d2ca1378f56b95feb74d644598699583f21280c3582bb6f712e39b9752",
+    "fdb-user_interruption.json": "6da847534aa414724bc72c83dc5fc6c2113282438b724f1a68b2f67b074a1b90",
+    "fdb-user_backchannel.json": "3718d3f8e30e1fd1b6ba03945c8395d17e2d9ab770199da2b89f53d775d7d48f",
+    "fdb-background_speech.json": "fa44479debfe4c08e13551f297dfa55a0dcf5912e60747f198b39572c0b37011",
+    "fdb-talking_to_other.json": "1d26460756d0cf4bbf2e45294aa8ef8b9aa56e3ed39ce729e2bb4f16ca73073d",
+    "fdbench.json": "41fd74579719dc6f17edcf6115643895ee2f85924c3bdb7dbffee3cea3344e41"
+  }
+}

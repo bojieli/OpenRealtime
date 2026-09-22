@@ -1,0 +1,121 @@
+{
+  "schema": 2,
+  "profile": "cascade-nemotron-qwen3-fish",
+  "profile_sha256": "b31664d2ca1378f56b95feb74d644598699583f21280c3582bb6f712e39b9752",
+  "binary_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+  "binary": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+  "revision": "6d59c24942081bd9ff2f00a64ec5ffd6d3795526",
+  "tree_modified": true,
+  "started": "2026-09-22T16:49:18.365582+00:00",
+  "load_average": [
+    "33.31",
+    "35.87",
+    "34.92"
+  ],
+  "gpu_memory_mib": "70289",
+  "fdb_per_category": 2,
+  "fdbench_conversations": 2,
+  "expected_results": [
+    "fdb-user_interruption.json",
+    "fdb-user_backchannel.json",
+    "fdb-background_speech.json",
+    "fdb-talking_to_other.json",
+    "fdbench.json"
+  ],
+  "component_health": {
+    "asr-url": {
+      "url": "http://127.0.0.1:9110/health",
+      "captured": "2026-09-22T16:49:18.366185+00:00",
+      "response": {
+        "status": "ok",
+        "model": "nvidia/nemotron-speech-streaming-en-0.6b",
+        "stability": "decoder-append-only",
+        "sessions": 0,
+        "stats": {
+          "chunks": 7350,
+          "chunk_seconds": 79.27453825203702,
+          "finishes": 59,
+          "finish_seconds": 2.351813018321991
+        },
+        "pid": 3854357,
+        "att_context_size": [
+          70,
+          1
+        ],
+        "trained_att_context_sizes": [
+          [
+            70,
+            13
+          ],
+          [
+            70,
+            6
+          ],
+          [
+            70,
+            1
+          ],
+          [
+            70,
+            0
+          ]
+        ],
+        "chunk_ms": 160,
+        "lookahead_ms": 80,
+        "language": "en",
+        "cuda_graphs": true,
+        "append_only": {
+          "responses": 7409,
+          "text_changes": 1816,
+          "violations": 0,
+          "examples": []
+        }
+      }
+    },
+    "fast-url": {
+      "url": "http://127.0.0.1:9100/health",
+      "captured": "2026-09-22T16:49:18.368693+00:00",
+      "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+    },
+    "slow-url": {
+      "url": "http://127.0.0.1:9100/health",
+      "captured": "2026-09-22T16:49:18.369617+00:00",
+      "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)"
+    },
+    "tts-url": {
+      "url": "http://127.0.0.1:9124/health",
+      "captured": "2026-09-22T16:49:18.370101+00:00",
+      "response": {
+        "status": "ok",
+        "model": "fish-s2-pro",
+        "sample_rate": 44100,
+        "capabilities": {
+          "incremental_text": false,
+          "nonterminal_flush": true,
+          "input_granularity": "sentence"
+        },
+        "requests": 40,
+        "contexts": 35,
+        "first_audio_p50_s": 0.9102614191360772,
+        "voice": "cosyvoice-asset-zero_shot_prompt (zh female)",
+        "languages": [
+          "en",
+          "zh"
+        ],
+        "compiled": false,
+        "first_chunk_frames": 10,
+        "chunk_frames": 16,
+        "holdback_frames": 2,
+        "sampling": {
+          "temperature": 0.8,
+          "top_p": 0.8,
+          "top_k": 30
+        },
+        "loaded_seconds": 57.2,
+        "gpu_allocated_gb": 12.94,
+        "gpu_reserved_gb": 13.59,
+        "frames": 9294
+      }
+    }
+  }
+}

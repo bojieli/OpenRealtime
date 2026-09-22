@@ -1,0 +1,350 @@
+2026-09-22T16:49:20.380Z sess_000000000001 ASR        speech start     [item_1]
+2026-09-22T16:49:20.705Z sess_000000000001 ASR        partial          "How"
+2026-09-22T16:49:20.705Z sess_000000000001 ASR        partial          "How can"
+2026-09-22T16:49:20.989Z sess_000000000001 ASR        partial          "How can I"
+2026-09-22T16:49:21.304Z sess_000000000001 ASR        partial          "How can I save money"
+2026-09-22T16:49:22.099Z sess_000000000001 ASR        partial          "How can I save money more"
+2026-09-22T16:49:22.391Z sess_000000000001 ASR        partial          "How can I save money more effective"
+2026-09-22T16:49:22.696Z sess_000000000001 ASR        partial          "How can I save money more effectively"
+2026-09-22T16:49:22.820Z sess_000000000001 ASR        speech end       3100 ms [item_1]
+2026-09-22T16:49:22.820Z sess_000000000001 ASR        final            "How can I save money more effectively?"
+2026-09-22T16:49:23.220Z sess_000000000001 TTS        speaking start   "One way to save money is to create a budget and track your expenses. This helps you understand where your money is going and identify areas to cut back." [speech_8]
+2026-09-22T16:49:24.534Z sess_000000000001 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:49:26.980Z sess_000000000001 ASR        speech start     [item_25]
+2026-09-22T16:49:26.981Z sess_000000000001 TTS        audio_sent       cut 1200 ms [speech_8]
+2026-09-22T16:49:27.307Z sess_000000000001 ASR        partial          "Actually"
+2026-09-22T16:49:27.906Z sess_000000000001 ASR        partial          "Actually,"
+2026-09-22T16:49:27.906Z sess_000000000001 ASR        partial          "Actually, what are some"
+2026-09-22T16:49:28.190Z sess_000000000001 ASR        partial          "Actually, what are some finan"
+2026-09-22T16:49:28.498Z sess_000000000001 ASR        partial          "Actually, what are some financial"
+2026-09-22T16:49:28.797Z sess_000000000001 ASR        partial          "Actually, what are some financial goals"
+2026-09-22T16:49:29.390Z sess_000000000001 ASR        partial          "Actually, what are some financial goals I"
+2026-09-22T16:49:29.705Z sess_000000000001 ASR        partial          "Actually, what are some financial goals I should set"
+2026-09-22T16:49:29.792Z sess_000000000001 ASR        speech end       10100 ms [item_25]
+2026-09-22T16:49:29.792Z sess_000000000001 ASR        final            "Actually, what are some financial goals I should set"
+2026-09-22T16:49:30.043Z sess_000000000001 TTS        speaking start   "Setting financial goals is essential for effective money management. Here are some common financial goals to consider:" [speech_39]
+2026-09-22T16:49:31.592Z sess_000000000001 TTS        first_audio      4800 bytes [speech_39]
+2026-09-22T16:49:41.382Z sess_000000000001 TTS        audio_sent       sent 7244 ms [speech_39]
+2026-09-22T16:49:41.382Z sess_000000000001 TTS        speaking start   "Short-term goals like building an emergency fund or saving for a vacation, and long-term goals like retirement savings or buying a home." [speech_46]
+2026-09-22T16:49:42.120Z sess_000000000001 TTS        first_audio      4800 bytes [speech_46]
+2026-09-22T16:50:01.592Z sess_000000000001 TTS        audio_sent       sent 8498 ms [speech_46]
+2026-09-22T16:50:01.593Z sess_000000000001 TTS        speaking start   "Here are some key financial goals to consider: an emergency fund, short-term savings like a vacation, medium-term goals such as a house down payment, and long-term objectives like retirement." [speech_57]
+2026-09-22T16:50:02.346Z sess_000000000001 TTS        first_audio      4800 bytes [speech_57]
+2026-09-22T16:50:21.732Z sess_000000000001 TTS        audio_sent       sent 12074 ms [speech_57]
+2026-09-22T16:50:25.089Z sess_000000000002 ASR        speech start     [item_1]
+2026-09-22T16:50:25.598Z sess_000000000002 ASR        partial          "What are"
+2026-09-22T16:50:25.913Z sess_000000000002 ASR        partial          "What are the"
+2026-09-22T16:50:26.206Z sess_000000000002 ASR        partial          "What are the latest"
+2026-09-22T16:50:26.518Z sess_000000000002 ASR        partial          "What are the latest trends"
+2026-09-22T16:50:27.172Z sess_000000000002 ASR        partial          "What are the latest trends in"
+2026-09-22T16:50:27.172Z sess_000000000002 ASR        partial          "What are the latest trends in smart"
+2026-09-22T16:50:27.423Z sess_000000000002 ASR        partial          "What are the latest trends in smartph"
+2026-09-22T16:50:27.555Z sess_000000000002 ASR        speech end       2800 ms [item_1]
+2026-09-22T16:50:27.555Z sess_000000000002 ASR        final            "What are the latest trends in smartphone"
+2026-09-22T16:50:28.674Z sess_000000000002 TTS        speaking start   "The latest trends in smartphones include foldable designs, improved camera systems, and enhanced battery life. Would you like more details on any of these?" [speech_8]
+2026-09-22T16:50:29.473Z sess_000000000002 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:50:31.589Z sess_000000000002 ASR        speech start     [item_16]
+2026-09-22T16:50:31.589Z sess_000000000002 TTS        audio_sent       cut 1200 ms [speech_8]
+2026-09-22T16:50:32.324Z sess_000000000002 ASR        partial          "Let's"
+2026-09-22T16:50:32.324Z sess_000000000002 ASR        partial          "Let's switch"
+2026-09-22T16:50:32.628Z sess_000000000002 ASR        partial          "Let's switch to talking about"
+2026-09-22T16:50:32.946Z sess_000000000002 ASR        partial          "Let's switch to talking about lap"
+2026-09-22T16:50:33.223Z sess_000000000002 ASR        partial          "Let's switch to talking about laptop"
+2026-09-22T16:50:33.336Z sess_000000000002 ASR        speech end       8600 ms [item_16]
+2026-09-22T16:50:33.336Z sess_000000000002 ASR        final            "Let's switch to talking about laptop"
+2026-09-22T16:50:33.965Z sess_000000000002 TTS        speaking start   "Let's switch to talking about laptop." [speech_26]
+2026-09-22T16:50:35.703Z sess_000000000002 TTS        first_audio      4800 bytes [speech_26]
+2026-09-22T16:50:41.907Z sess_000000000002 TTS        audio_sent       sent 2507 ms [speech_26]
+2026-09-22T16:50:41.908Z sess_000000000002 TTS        speaking start   "The latest trends in laptops include lightweight and ultra-thin designs, improved battery life, higher-resolution displays, and AI-powered features. Would you like more details on any of these?" [speech_41]
+2026-09-22T16:50:43.280Z sess_000000000002 TTS        first_audio      4800 bytes [speech_41]
+2026-09-22T16:51:16.187Z sess_000000000002 TTS        audio_sent       sent 12120 ms [speech_41]
+2026-09-22T16:51:20.187Z sess_000000000003 ASR        speech start     [item_1]
+2026-09-22T16:51:20.756Z sess_000000000003 ASR        partial          "Present"
+2026-09-22T16:51:21.015Z sess_000000000003 ASR        partial          "Present a thor"
+2026-09-22T16:51:21.339Z sess_000000000003 ASR        partial          "Present a thorough"
+2026-09-22T16:51:21.339Z sess_000000000003 ASR        partial          "Present a thorough explanat"
+2026-09-22T16:51:21.521Z sess_000000000003 ASR        partial          "Present a thorough explanation of"
+2026-09-22T16:51:22.329Z sess_000000000003 ASR        partial          "Present a thorough explanation of global war"
+2026-09-22T16:51:22.329Z sess_000000000003 ASR        partial          "Present a thorough explanation of global warming"
+2026-09-22T16:51:22.737Z sess_000000000003 ASR        speech end       2800 ms [item_1]
+2026-09-22T16:51:22.737Z sess_000000000003 ASR        final            "Present a thorough explanation of global warming"
+2026-09-22T16:51:24.327Z sess_000000000003 TTS        speaking start   "Global warming refers to the long-term rise in Earth's average temperature, primarily caused by human activities like burning fossil fuels, which release greenhouse gases into the atmosphere." [speech_8]
+2026-09-22T16:51:25.620Z sess_000000000003 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:51:26.686Z sess_000000000003 ASR        speech start     [item_12]
+2026-09-22T16:51:26.686Z sess_000000000003 TTS        audio_sent       cut 400 ms [speech_8]
+2026-09-22T16:51:27.110Z sess_000000000003 ASR        partial          "Yes"
+2026-09-22T16:51:27.302Z sess_000000000003 ASR        partial          "Yes,"
+2026-09-22T16:51:27.520Z sess_000000000003 ASR        partial          "Yes, yeah"
+2026-09-22T16:51:27.743Z sess_000000000003 ASR        speech end       7800 ms [item_12]
+2026-09-22T16:51:27.744Z sess_000000000003 ASR        final            "Yes, yeah"
+2026-09-22T16:51:28.721Z sess_000000000003 TTS        speaking start   "I'm here to help. Let me know what you'd like to discuss." [speech_26]
+2026-09-22T16:51:30.235Z sess_000000000003 TTS        first_audio      4800 bytes [speech_26]
+2026-09-22T16:51:38.597Z sess_000000000003 TTS        audio_sent       sent 3297 ms [speech_26]
+2026-09-22T16:51:41.903Z sess_000000000004 ASR        speech start     [item_1]
+2026-09-22T16:51:42.428Z sess_000000000004 ASR        partial          "Detail"
+2026-09-22T16:51:42.925Z sess_000000000004 ASR        partial          "Detail phot"
+2026-09-22T16:51:43.228Z sess_000000000004 ASR        partial          "Detail photosynthes"
+2026-09-22T16:51:43.526Z sess_000000000004 ASR        partial          "Detail photosynthesis"
+2026-09-22T16:51:43.714Z sess_000000000004 ASR        partial          "Detail photosynthesis in"
+2026-09-22T16:51:43.933Z sess_000000000004 ASR        partial          "Detail photosynthesis in full"
+2026-09-22T16:51:43.939Z sess_000000000004 ASR        speech end       2200 ms [item_1]
+2026-09-22T16:51:43.939Z sess_000000000004 ASR        final            "Detail photosynthesis in full"
+2026-09-22T16:51:44.321Z sess_000000000004 TTS        speaking start   "Photosynthesis is the process by which green plants, algae, and some bacteria convert light energy into chemical energy. It occurs in the chloroplasts of plant cells." [speech_8]
+2026-09-22T16:51:45.773Z sess_000000000004 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:51:47.903Z sess_000000000004 ASR        speech start     [item_14]
+2026-09-22T16:51:47.903Z sess_000000000004 TTS        audio_sent       cut 400 ms [speech_8]
+2026-09-22T16:51:48.423Z sess_000000000004 ASR        partial          "Right"
+2026-09-22T16:51:48.863Z sess_000000000004 ASR        partial          "Right. Yeah"
+2026-09-22T16:51:48.870Z sess_000000000004 ASR        speech end       7100 ms [item_14]
+2026-09-22T16:51:48.870Z sess_000000000004 ASR        final            "Right. Yeah"
+2026-09-22T16:51:49.793Z sess_000000000004 TTS        speaking start   "I'm here. Let me know when you're ready to continue." [speech_29]
+2026-09-22T16:51:50.905Z sess_000000000004 TTS        first_audio      4800 bytes [speech_29]
+2026-09-22T16:51:56.431Z sess_000000000004 TTS        audio_sent       sent 3157 ms [speech_29]
+2026-09-22T16:52:00.350Z sess_000000000005 ASR        speech start     [item_1]
+2026-09-22T16:52:00.880Z sess_000000000005 ASR        partial          "Turn on"
+2026-09-22T16:52:00.880Z sess_000000000005 ASR        partial          "Turn on the stud"
+2026-09-22T16:52:01.527Z sess_000000000005 ASR        partial          "Turn on the study"
+2026-09-22T16:52:01.527Z sess_000000000005 ASR        partial          "Turn on the study lamp"
+2026-09-22T16:52:01.584Z sess_000000000005 ASR        speech end       1500 ms [item_1]
+2026-09-22T16:52:01.584Z sess_000000000005 ASR        final            "Turn on the study lamp"
+2026-09-22T16:52:02.148Z sess_000000000005 TTS        speaking start   "I will turn on the study lamp." [speech_8]
+2026-09-22T16:52:02.768Z sess_000000000005 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:52:05.450Z sess_000000000005 ASR        speech start     [item_24]
+2026-09-22T16:52:05.450Z sess_000000000005 TTS        audio_sent       cut 1200 ms [speech_8]
+2026-09-22T16:52:05.883Z sess_000000000005 ASR        partial          "Oh"
+2026-09-22T16:52:06.219Z sess_000000000005 ASR        partial          "Oh, it's"
+2026-09-22T16:52:06.464Z sess_000000000005 ASR        partial          "Oh, it's starting to rain"
+2026-09-22T16:52:06.859Z sess_000000000005 ASR        speech end       6800 ms [item_24]
+2026-09-22T16:52:06.859Z sess_000000000005 ASR        final            "Oh, it's starting to rain out"
+2026-09-22T16:52:06.971Z sess_000000000005 TTS        speaking start   "I will turn on the study lamp." [speech_37]
+2026-09-22T16:52:07.701Z sess_000000000005 TTS        first_audio      4800 bytes [speech_37]
+2026-09-22T16:52:10.132Z sess_000000000005 TTS        audio_sent       sent 2089 ms [speech_37]
+2026-09-22T16:52:10.132Z sess_000000000005 TTS        speaking start   "The study lamp is on." [speech_49]
+2026-09-22T16:52:10.881Z sess_000000000005 TTS        first_audio      4800 bytes [speech_49]
+2026-09-22T16:52:12.948Z sess_000000000005 TTS        audio_sent       sent 1532 ms [speech_49]
+2026-09-22T16:52:16.667Z sess_000000000006 ASR        speech start     [item_1]
+2026-09-22T16:52:17.185Z sess_000000000006 ASR        partial          "Remind"
+2026-09-22T16:52:17.380Z sess_000000000006 ASR        partial          "Remind me to"
+2026-09-22T16:52:17.691Z sess_000000000006 ASR        partial          "Remind me to call"
+2026-09-22T16:52:17.983Z sess_000000000006 ASR        partial          "Remind me to call mom"
+2026-09-22T16:52:18.178Z sess_000000000006 ASR        partial          "Remind me to call mom later"
+2026-09-22T16:52:18.485Z sess_000000000006 ASR        partial          "Remind me to call mom later to"
+2026-09-22T16:52:18.485Z sess_000000000006 ASR        partial          "Remind me to call mom later today"
+2026-09-22T16:52:18.601Z sess_000000000006 ASR        speech end       2100 ms [item_1]
+2026-09-22T16:52:18.601Z sess_000000000006 ASR        final            "Remind me to call mom later today."
+2026-09-22T16:52:18.737Z sess_000000000006 TTS        speaking start   "I'll remind you to call mom later today." [speech_8]
+2026-09-22T16:52:19.566Z sess_000000000006 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:52:22.667Z sess_000000000006 ASR        speech start     [item_16]
+2026-09-22T16:52:22.667Z sess_000000000006 TTS        audio_sent       cut 2200 ms [speech_8]
+2026-09-22T16:52:22.883Z sess_000000000006 ASR        partial          "We need"
+2026-09-22T16:52:23.188Z sess_000000000006 ASR        partial          "We need to"
+2026-09-22T16:52:23.382Z sess_000000000006 ASR        partial          "We need to replace"
+2026-09-22T16:52:23.683Z sess_000000000006 ASR        partial          "We need to replace the"
+2026-09-22T16:52:23.989Z sess_000000000006 ASR        partial          "We need to replace the bat"
+2026-09-22T16:52:23.989Z sess_000000000006 ASR        partial          "We need to replace the batteries"
+2026-09-22T16:52:24.017Z sess_000000000006 ASR        speech end       7500 ms [item_16]
+2026-09-22T16:52:24.017Z sess_000000000006 ASR        final            "We need to replace the batteries."
+2026-09-22T16:52:24.230Z sess_000000000006 TTS        speaking start   "I'll remind you to call mom later today. We need to replace the batteries." [speech_26]
+2026-09-22T16:52:25.785Z sess_000000000006 TTS        first_audio      4800 bytes [speech_26]
+2026-09-22T16:52:33.191Z sess_000000000006 TTS        audio_sent       sent 5247 ms [speech_26]
+2026-09-22T16:52:33.191Z sess_000000000006 TTS        speaking start   "I'll remind you to call mom later today. Let me know if you need help replacing the batteries." [speech_38]
+2026-09-22T16:52:34.164Z sess_000000000006 TTS        first_audio      4800 bytes [speech_38]
+2026-09-22T16:52:42.982Z sess_000000000006 TTS        audio_sent       sent 6594 ms [speech_38]
+2026-09-22T16:52:47.037Z sess_000000000007 ASR        speech start     [item_1]
+2026-09-22T16:52:47.557Z sess_000000000007 ASR        partial          "What's the"
+2026-09-22T16:52:47.748Z sess_000000000007 ASR        partial          "What's the pop"
+2026-09-22T16:52:48.058Z sess_000000000007 ASR        partial          "What's the populat"
+2026-09-22T16:52:48.058Z sess_000000000007 ASR        partial          "What's the population"
+2026-09-22T16:52:48.356Z sess_000000000007 ASR        partial          "What's the population of"
+2026-09-22T16:52:48.658Z sess_000000000007 ASR        partial          "What's the population of Toronto"
+2026-09-22T16:52:48.984Z sess_000000000007 ASR        speech end       2100 ms [item_1]
+2026-09-22T16:52:48.984Z sess_000000000007 ASR        final            "What's the population of Toronto?"
+2026-09-22T16:52:49.195Z sess_000000000007 TTS        speaking start   "The population of Toronto is approximately 2.9 million as of the latest estimates." [speech_8]
+2026-09-22T16:52:49.993Z sess_000000000007 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:52:53.138Z sess_000000000007 ASR        speech start     [item_16]
+2026-09-22T16:52:53.138Z sess_000000000007 TTS        audio_sent       cut 2300 ms [speech_8]
+2026-09-22T16:52:53.856Z sess_000000000007 ASR        partial          "Dad"
+2026-09-22T16:52:54.155Z sess_000000000007 ASR        partial          "Dad microwave"
+2026-09-22T16:52:54.458Z sess_000000000007 ASR        partial          "Dad microwave just quit"
+2026-09-22T16:52:54.647Z sess_000000000007 ASR        partial          "Dad microwave just quit on"
+2026-09-22T16:52:54.671Z sess_000000000007 ASR        speech end       7800 ms [item_16]
+2026-09-22T16:52:54.671Z sess_000000000007 ASR        final            "Dad microwave just quit on"
+2026-09-22T16:52:54.898Z sess_000000000007 TTS        speaking start   "I'll check the microwave. Is there anything inside that might be causing it to stop?" [speech_26]
+2026-09-22T16:52:56.029Z sess_000000000007 TTS        first_audio      4800 bytes [speech_26]
+2026-09-22T16:53:04.427Z sess_000000000007 TTS        audio_sent       sent 5479 ms [speech_26]
+2026-09-22T16:53:07.668Z sess_000000000008 ASR        speech start     [item_1]
+2026-09-22T16:53:08.296Z sess_000000000008 ASR        partial          "What's"
+2026-09-22T16:53:08.296Z sess_000000000008 ASR        partial          "What's the"
+2026-09-22T16:53:08.892Z sess_000000000008 ASR        partial          "What's the sunrise"
+2026-09-22T16:53:09.079Z sess_000000000008 ASR        partial          "What's the sunrise time"
+2026-09-22T16:53:09.378Z sess_000000000008 ASR        partial          "What's the sunrise time tom"
+2026-09-22T16:53:09.697Z sess_000000000008 ASR        partial          "What's the sunrise time tomorrow"
+2026-09-22T16:53:09.699Z sess_000000000008 ASR        speech end       2200 ms [item_1]
+2026-09-22T16:53:09.699Z sess_000000000008 ASR        final            "What's the sunrise time tomorrow"
+2026-09-22T16:53:09.865Z sess_000000000008 TTS        speaking start   "I'll check the sunrise time for tomorrow. One moment please." [speech_8]
+2026-09-22T16:53:10.692Z sess_000000000008 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:53:13.768Z sess_000000000008 ASR        speech start     [item_16]
+2026-09-22T16:53:13.769Z sess_000000000008 TTS        audio_sent       cut 2200 ms [speech_8]
+2026-09-22T16:53:14.278Z sess_000000000008 ASR        partial          "Coach"
+2026-09-22T16:53:14.478Z sess_000000000008 ASR        partial          "Coach Gar"
+2026-09-22T16:53:14.786Z sess_000000000008 ASR        partial          "Coach Garcia"
+2026-09-22T16:53:15.378Z sess_000000000008 ASR        partial          "Coach Garcia ank"
+2026-09-22T16:53:15.694Z sess_000000000008 ASR        partial          "Coach Garcia ankles still"
+2026-09-22T16:53:15.694Z sess_000000000008 ASR        partial          "Coach Garcia ankles still kind of"
+2026-09-22T16:53:15.979Z sess_000000000008 ASR        partial          "Coach Garcia ankles still kind of sore"
+2026-09-22T16:53:16.101Z sess_000000000008 ASR        speech end       8600 ms [item_16]
+2026-09-22T16:53:16.101Z sess_000000000008 ASR        final            "Coach Garcia ankles still kind of sore"
+2026-09-22T16:53:16.268Z sess_000000000008 TTS        speaking start   "I'll check the sunrise time for tomorrow. One moment please." [speech_26]
+2026-09-22T16:53:17.316Z sess_000000000008 TTS        first_audio      4800 bytes [speech_26]
+2026-09-22T16:53:22.681Z sess_000000000008 TTS        audio_sent       sent 4133 ms [speech_26]
+2026-09-22T16:53:22.681Z sess_000000000008 TTS        speaking start   "The sunrise time for tomorrow is 6:12 AM." [speech_38]
+2026-09-22T16:53:23.387Z sess_000000000008 TTS        first_audio      4800 bytes [speech_38]
+2026-09-22T16:53:27.916Z sess_000000000008 TTS        audio_sent       sent 3436 ms [speech_38]
+2026-09-22T16:53:31.751Z sess_000000000009 ASR        speech start     [item_1]
+2026-09-22T16:53:32.565Z sess_000000000009 ASR        partial          "Any"
+2026-09-22T16:53:32.871Z sess_000000000009 ASR        partial          "Any advice"
+2026-09-22T16:53:32.871Z sess_000000000009 ASR        partial          "Any advice on"
+2026-09-22T16:53:33.159Z sess_000000000009 ASR        partial          "Any advice on start"
+2026-09-22T16:53:33.476Z sess_000000000009 ASR        partial          "Any advice on starting"
+2026-09-22T16:53:33.476Z sess_000000000009 ASR        partial          "Any advice on starting a med"
+2026-09-22T16:53:33.759Z sess_000000000009 ASR        partial          "Any advice on starting a meditat"
+2026-09-22T16:53:34.068Z sess_000000000009 ASR        partial          "Any advice on starting a meditation"
+2026-09-22T16:53:34.068Z sess_000000000009 ASR        partial          "Any advice on starting a meditation pract"
+2026-09-22T16:53:34.560Z sess_000000000009 ASR        partial          "Any advice on starting a meditation practice"
+2026-09-22T16:53:34.568Z sess_000000000009 ASR        speech end       3600 ms [item_1]
+2026-09-22T16:53:34.568Z sess_000000000009 ASR        final            "Any advice on starting a meditation practice"
+2026-09-22T16:53:34.903Z sess_000000000009 TTS        speaking start   "Start with short sessions, find a quiet space, and focus on your breath. Be patient with yourself and consistency is key." [speech_8]
+2026-09-22T16:53:35.504Z sess_000000000009 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:53:40.651Z sess_000000000009 ASR        speech start     [item_16]
+2026-09-22T16:53:40.652Z sess_000000000009 TTS        audio_sent       cut 4100 ms [speech_8]
+2026-09-22T16:53:41.168Z sess_000000000009 ASR        partial          "Can"
+2026-09-22T16:53:41.361Z sess_000000000009 ASR        partial          "Can med"
+2026-09-22T16:53:41.674Z sess_000000000009 ASR        partial          "Can meditation"
+2026-09-22T16:53:42.011Z sess_000000000009 ASR        speech end       11000 ms [item_16]
+2026-09-22T16:53:42.011Z sess_000000000009 ASR        final            "Can meditation"
+2026-09-22T16:53:42.089Z sess_000000000009 TTS        speaking start   "help you with?" [speech_26]
+2026-09-22T16:53:42.252Z sess_000000000009 ASR        speech start     [item_30]
+2026-09-22T16:53:42.253Z sess_000000000009 TTS        audio_sent       cut  [speech_26]
+2026-09-22T16:53:43.382Z sess_000000000009 ASR        partial          "Help"
+2026-09-22T16:53:43.565Z sess_000000000009 ASR        partial          "Help with"
+2026-09-22T16:53:44.063Z sess_000000000009 ASR        partial          "Help with stress"
+2026-09-22T16:53:44.119Z sess_000000000009 ASR        speech end       13100 ms [item_30]
+2026-09-22T16:53:44.119Z sess_000000000009 ASR        final            "Help with stress"
+2026-09-22T16:53:44.351Z sess_000000000009 ASR        speech start     [item_45]
+2026-09-22T16:53:44.862Z sess_000000000009 ASR        partial          "Relief"
+2026-09-22T16:53:45.625Z sess_000000000009 ASR        speech end       14600 ms [item_45]
+2026-09-22T16:53:45.625Z sess_000000000009 ASR        final            "Relief"
+2026-09-22T16:53:45.943Z sess_000000000009 TTS        speaking start   "Meditation can help with stress relief by calming the mind, reducing anxiety, and improving emotional resilience. Consistency is key." [speech_53]
+2026-09-22T16:53:46.741Z sess_000000000009 TTS        first_audio      4800 bytes [speech_53]
+2026-09-22T16:53:51.451Z sess_000000000009 ASR        speech start     [item_61]
+2026-09-22T16:53:51.454Z sess_000000000009 TTS        audio_sent       cut 3400 ms [speech_53]
+2026-09-22T16:53:52.265Z sess_000000000009 ASR        partial          "Oh"
+2026-09-22T16:53:52.584Z sess_000000000009 ASR        partial          "Oh also"
+2026-09-22T16:53:53.364Z sess_000000000009 ASR        partial          "Oh also, what"
+2026-09-22T16:53:53.664Z sess_000000000009 ASR        partial          "Oh also, what's"
+2026-09-22T16:53:53.980Z sess_000000000009 ASR        partial          "Oh also, what's a good"
+2026-09-22T16:53:54.166Z sess_000000000009 ASR        partial          "Oh also, what's a good app"
+2026-09-22T16:53:54.566Z sess_000000000009 ASR        partial          "Oh also, what's a good app for"
+2026-09-22T16:53:54.872Z sess_000000000009 ASR        partial          "Oh also, what's a good app for guided"
+2026-09-22T16:53:55.179Z sess_000000000009 ASR        partial          "Oh also, what's a good app for guided meditat"
+2026-09-22T16:53:55.780Z sess_000000000009 ASR        partial          "Oh also, what's a good app for guided meditation"
+2026-09-22T16:53:56.007Z sess_000000000009 ASR        speech end       25000 ms [item_61]
+2026-09-22T16:53:56.007Z sess_000000000009 ASR        final            "Oh also, what's a good app for guided meditation"
+2026-09-22T16:53:56.327Z sess_000000000009 TTS        speaking start   "Some popular apps for guided meditation include Headspace, Calm, and Insight Timer. They offer sessions for beginners and stress relief." [speech_71]
+2026-09-22T16:53:57.171Z sess_000000000009 TTS        first_audio      4800 bytes [speech_71]
+2026-09-22T16:54:00.751Z sess_000000000009 ASR        speech start     [item_79]
+2026-09-22T16:54:00.752Z sess_000000000009 TTS        audio_sent       cut 2600 ms [speech_71]
+2026-09-22T16:54:01.276Z sess_000000000009 ASR        partial          "By"
+2026-09-22T16:54:01.277Z sess_000000000009 ASR        partial          "By the way"
+2026-09-22T16:54:01.671Z sess_000000000009 ASR        speech end       30700 ms [item_79]
+2026-09-22T16:54:01.671Z sess_000000000009 ASR        final            "By the way"
+2026-09-22T16:54:01.827Z sess_000000000009 TTS        speaking start   "Is there anything else I can assist you with?" [speech_89]
+2026-09-22T16:54:02.151Z sess_000000000009 ASR        speech start     [item_97]
+2026-09-22T16:54:02.152Z sess_000000000009 TTS        audio_sent       cut  [speech_89]
+2026-09-22T16:54:02.480Z sess_000000000009 ASR        partial          "Do you"
+2026-09-22T16:54:02.663Z sess_000000000009 ASR        partial          "Do you know"
+2026-09-22T16:54:03.173Z sess_000000000009 ASR        partial          "Do you know if I"
+2026-09-22T16:54:03.364Z sess_000000000009 ASR        partial          "Do you know if I should"
+2026-09-22T16:54:03.872Z sess_000000000009 ASR        partial          "Do you know if I should meditate"
+2026-09-22T16:54:04.363Z sess_000000000009 ASR        partial          "Do you know if I should meditate in"
+2026-09-22T16:54:04.681Z sess_000000000009 ASR        partial          "Do you know if I should meditate in the"
+2026-09-22T16:54:04.681Z sess_000000000009 ASR        partial          "Do you know if I should meditate in the mor"
+2026-09-22T16:54:04.864Z sess_000000000009 ASR        partial          "Do you know if I should meditate in the morning"
+2026-09-22T16:54:05.765Z sess_000000000009 ASR        partial          "Do you know if I should meditate in the morning or even"
+2026-09-22T16:54:06.077Z sess_000000000009 ASR        partial          "Do you know if I should meditate in the morning or evening"
+2026-09-22T16:54:06.271Z sess_000000000009 ASR        speech end       35300 ms [item_97]
+2026-09-22T16:54:06.271Z sess_000000000009 ASR        final            "Do you know if I should meditate in the morning or evening"
+2026-09-22T16:54:06.646Z sess_000000000009 TTS        speaking start   "Meditation can be done anytime, but many find morning helpful for setting a calm tone, while evening can aid relaxation. What works best for you?" [speech_110]
+2026-09-22T16:54:07.476Z sess_000000000009 TTS        first_audio      4800 bytes [speech_110]
+2026-09-22T16:54:24.553Z sess_000000000009 TTS        audio_sent       sent 11331 ms [speech_110]
+2026-09-22T16:54:28.567Z sess_000000000010 ASR        speech start     [item_1]
+2026-09-22T16:54:28.901Z sess_000000000010 ASR        partial          "Can"
+2026-09-22T16:54:28.901Z sess_000000000010 ASR        partial          "Can you"
+2026-09-22T16:54:29.381Z sess_000000000010 ASR        partial          "Can you suggest"
+2026-09-22T16:54:29.698Z sess_000000000010 ASR        partial          "Can you suggest a"
+2026-09-22T16:54:29.884Z sess_000000000010 ASR        partial          "Can you suggest a quick"
+2026-09-22T16:54:30.179Z sess_000000000010 ASR        partial          "Can you suggest a quick and"
+2026-09-22T16:54:30.496Z sess_000000000010 ASR        partial          "Can you suggest a quick and easy"
+2026-09-22T16:54:30.779Z sess_000000000010 ASR        partial          "Can you suggest a quick and easy dinner"
+2026-09-22T16:54:30.981Z sess_000000000010 ASR        partial          "Can you suggest a quick and easy dinner reci"
+2026-09-22T16:54:31.186Z sess_000000000010 ASR        partial          "Can you suggest a quick and easy dinner recipe"
+2026-09-22T16:54:31.238Z sess_000000000010 ASR        speech end       3600 ms [item_1]
+2026-09-22T16:54:31.238Z sess_000000000010 ASR        final            "Can you suggest a quick and easy dinner recipe"
+2026-09-22T16:54:31.663Z sess_000000000010 TTS        speaking start   "Sure! How about a one-pan chicken and veggie stir-fry? It's quick, easy, and packed with flavor. Let me know if you'd like more details!" [speech_8]
+2026-09-22T16:54:32.355Z sess_000000000010 TTS        first_audio      4800 bytes [speech_8]
+2026-09-22T16:54:38.568Z sess_000000000010 ASR        speech start     [item_16]
+2026-09-22T16:54:38.568Z sess_000000000010 TTS        audio_sent       cut 3600 ms [speech_8]
+2026-09-22T16:54:39.178Z sess_000000000010 ASR        partial          "Oh"
+2026-09-22T16:54:39.499Z sess_000000000010 ASR        partial          "Oh do you"
+2026-09-22T16:54:40.386Z sess_000000000010 ASR        partial          "Oh do you you"
+2026-09-22T16:54:40.690Z sess_000000000010 ASR        partial          "Oh do you you know"
+2026-09-22T16:54:40.879Z sess_000000000010 ASR        partial          "Oh do you you know any"
+2026-09-22T16:54:41.090Z sess_000000000010 ASR        partial          "Oh do you you know any veget"
+2026-09-22T16:54:41.580Z sess_000000000010 ASR        partial          "Oh do you you know any vegetarian"
+2026-09-22T16:54:41.897Z sess_000000000010 ASR        partial          "Oh do you you know any vegetarian opt"
+2026-09-22T16:54:41.897Z sess_000000000010 ASR        partial          "Oh do you you know any vegetarian options"
+2026-09-22T16:54:42.181Z sess_000000000010 ASR        speech end       14600 ms [item_16]
+2026-09-22T16:54:42.181Z sess_000000000010 ASR        final            "Oh do you you know any vegetarian options"
+2026-09-22T16:54:42.510Z sess_000000000010 TTS        speaking start   "Of course! Try a simple pasta with tomato sauce and spinach. It's quick, easy, and delicious. Would you like more ideas?" [speech_26]
+2026-09-22T16:54:43.734Z sess_000000000010 TTS        first_audio      4800 bytes [speech_26]
+2026-09-22T16:54:47.667Z sess_000000000010 ASR        speech start     [item_42]
+2026-09-22T16:54:47.668Z sess_000000000010 TTS        audio_sent       cut 2600 ms [speech_26]
+2026-09-22T16:54:48.081Z sess_000000000010 ASR        partial          "Also"
+2026-09-22T16:54:48.590Z sess_000000000010 ASR        speech end       21000 ms [item_42]
+2026-09-22T16:54:48.591Z sess_000000000010 ASR        final            "Also"
+2026-09-22T16:54:48.748Z sess_000000000010 TTS        speaking start   "I'm here! How can I assist you further?" [speech_52]
+2026-09-22T16:54:49.067Z sess_000000000010 ASR        speech start     [item_60]
+2026-09-22T16:54:49.068Z sess_000000000010 TTS        audio_sent       cut  [speech_52]
+2026-09-22T16:54:49.397Z sess_000000000010 ASR        partial          "I"
+2026-09-22T16:54:49.680Z sess_000000000010 ASR        partial          "I needed"
+2026-09-22T16:54:50.393Z sess_000000000010 ASR        partial          "I needed desser"
+2026-09-22T16:54:50.393Z sess_000000000010 ASR        partial          "I needed dessert"
+2026-09-22T16:54:50.593Z sess_000000000010 ASR        partial          "I needed dessert idea"
+2026-09-22T16:54:50.732Z sess_000000000010 ASR        speech end       23100 ms [item_60]
+2026-09-22T16:54:50.793Z sess_000000000010 ASR        final            "I needed dessert idea"
+2026-09-22T16:54:50.867Z sess_000000000010 ASR        speech start     [item_72]
+2026-09-22T16:54:51.696Z sess_000000000010 ASR        partial          "That's not"
+2026-09-22T16:54:51.978Z sess_000000000010 ASR        partial          "That's not too"
+2026-09-22T16:54:52.087Z sess_000000000010 ASR        partial          "That's not too sweet"
+2026-09-22T16:54:52.091Z sess_000000000010 ASR        speech end       24500 ms [item_72]
+2026-09-22T16:54:52.092Z sess_000000000010 ASR        final            "That's not too sweet"
+2026-09-22T16:54:52.415Z sess_000000000010 TTS        speaking start   "I can suggest a light fruit salad with a hint of honey. It's refreshing and not too sweet. Would you like that?" [speech_80]
+2026-09-22T16:54:54.005Z sess_000000000010 TTS        first_audio      4800 bytes [speech_80]
+2026-09-22T16:54:57.268Z sess_000000000010 ASR        speech start     [item_95]
+2026-09-22T16:54:57.268Z sess_000000000010 TTS        audio_sent       cut 1200 ms [speech_80]
+2026-09-22T16:54:57.597Z sess_000000000010 ASR        partial          "Got"
+2026-09-22T16:54:57.880Z sess_000000000010 ASR        partial          "Got it"
+2026-09-22T16:54:58.681Z sess_000000000010 ASR        partial          "Got it by"
+2026-09-22T16:54:58.997Z sess_000000000010 ASR        partial          "Got it by the way"
+2026-09-22T16:54:59.799Z sess_000000000010 ASR        partial          "Got it by the way any tip"
+2026-09-22T16:55:00.080Z sess_000000000010 ASR        partial          "Got it by the way any tips on"
+2026-09-22T16:55:00.390Z sess_000000000010 ASR        partial          "Got it by the way any tips on redu"
+2026-09-22T16:55:00.390Z sess_000000000010 ASR        partial          "Got it by the way any tips on reducing"
+2026-09-22T16:55:00.685Z sess_000000000010 ASR        partial          "Got it by the way any tips on reducing food"
+2026-09-22T16:55:01.076Z sess_000000000010 ASR        partial          "Got it by the way any tips on reducing food was"
+2026-09-22T16:55:01.177Z sess_000000000010 ASR        partial          "Got it by the way any tips on reducing food waste"
+2026-09-22T16:55:01.221Z sess_000000000010 ASR        speech end       33600 ms [item_95]
+2026-09-22T16:55:01.222Z sess_000000000010 ASR        final            "Got it by the way any tips on reducing food waste"
+2026-09-22T16:55:01.622Z sess_000000000010 TTS        speaking start   "Sure! Here are a few tips: plan meals, use leftovers creatively, compost scraps, and store food properly. Let me know if you'd like more ideas!" [speech_105]
+2026-09-22T16:55:02.248Z sess_000000000010 TTS        first_audio      4800 bytes [speech_105]
+2026-09-22T16:55:13.942Z sess_000000000010 TTS        audio_sent       sent 11563 ms [speech_105]

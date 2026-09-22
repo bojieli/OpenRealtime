@@ -1,5 +1,5 @@
 # Fish S2 Pro synthesis substitution: sentence-level text admission, streamed
-# PCM output at 44.1 kHz. Requires tts-fish.sh; public smoke measured; full acceptance pending.
+# PCM output at 44.1 kHz. Requires tts-fish.sh; public acceptance pending.
 binding: cascade
 asr-provider: streaming-asr
 asr-url: http://127.0.0.1:9110
