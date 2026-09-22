@@ -11,7 +11,7 @@ import (
 	"github.com/bojieli/OpenRealtime/sidecar"
 )
 
-// The three reference sidecars are the documented way to run Qwen3-Omni,
+// The reference sidecars are the documented way to run Qwen3-Omni,
 // MiniCPM-o, and Moshi, and each accepts --mock so its plumbing can be
 // verified without a model. Nothing ran them: the Python suite covers the
 // framing library and the Qwen adapter's parsing, and the Go suite drove a Go
@@ -38,6 +38,7 @@ func TestReferenceSidecarsPassConformanceInMockMode(t *testing.T) {
 	}{
 		{script: "moshi_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "minicpm_o_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
+		{script: "minicpm_o_duplex_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "qwen3_omni_sidecar.py", versions: []int{1, sidecar.VersionMultimodal}},
 	}
 	for _, testCase := range cases {
