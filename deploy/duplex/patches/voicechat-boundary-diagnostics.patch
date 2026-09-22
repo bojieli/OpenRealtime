@@ -23,3 +23,23 @@ index 0fb3f93..e75dd6a 100644
                  if token_id == ids["eos"]:
                      if state.audio_frames >= state.text_frames:
                          yield _speech_end_event(request_id)
+diff --git a/vllm_omni/model_executor/models/nemotron_voicechat/nemotron_voicechat_thinker.py b/vllm_omni/model_executor/models/nemotron_voicechat/nemotron_voicechat_thinker.py
+index 0701a8b..671501a 100644
+--- a/vllm_omni/model_executor/models/nemotron_voicechat/nemotron_voicechat_thinker.py
++++ b/vllm_omni/model_executor/models/nemotron_voicechat/nemotron_voicechat_thinker.py
+@@ -450,7 +450,14 @@ class NemotronVoiceChatThinkerForConditionalGeneration(nn.Module, HasInnerState,
+             session = self._sessions.get(request_id)
+             if isinstance(session, dict) and isinstance(session.get("forced_function_token"), int):
+                 sampled[row_idx] = int(session["nvc_text_pad_id"])
+-            self._duplex_previous_text_tokens[request_id] = int(sampled[row_idx].item())
++            token_id = int(sampled[row_idx].item())
++            if os.environ.get("VOICECHAT_TRACE_BOUNDARIES") == "1":
++                previous = self._duplex_previous_text_tokens.get(request_id)
++                # Log transitions rather than every silent frame. This reads
++                # the actual sampled token before scheduler transport.
++                if token_id != previous:
++                    logger.info("NVC sampled request=%s previous=%s token=%s", request_id, previous, token_id)
++            self._duplex_previous_text_tokens[request_id] = token_id
+         return SamplerOutput(
+             sampled_token_ids=sampled.unsqueeze(-1),
+             logprobs_tensors=None,
