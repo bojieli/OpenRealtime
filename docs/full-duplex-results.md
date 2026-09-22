@@ -297,6 +297,12 @@ Native validation remains incomplete. The retained component artifacts under
   write with queue cancellation. This fixes local ordering but cannot retract
   device-buffered audio; a blocked transport can delay the cutoff. Real-model
   interruption latency and the endurance failure remain unresolved.
+  A separate shutdown regression reproduced session-state release while a
+  listening or generation worker remained alive after its join timeout.
+  Shutdown now waits for both workers before clearing caches and returning the
+  server session slot. The CPU regression and mock protocol conformance pass;
+  GPU reconnect validation remains pending. A hung model call keeps the slot
+  busy until service restart rather than admitting overlapping retired workers.
 - **Lychee-FD:** `lychee-control-summary.json` records 29 model interrupts
   and 26 audio-stall endings. Its 64 first-audio observations have a 1,099 ms
   median, but the control-delay sample is empty. This does not establish the

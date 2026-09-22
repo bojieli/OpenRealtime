@@ -320,12 +320,16 @@ class FreezeOmniSidecar(Sidecar):
         self._closing.set()
         self._stop_generation.set()
         self._chunks.put(None)
+        # Keep the server's session slot until model calls have actually
+        # returned. A timeout does not stop a Python worker or its CUDA work;
+        # releasing caches/the slot then allows overlapping retired sessions.
+        # A stuck backend therefore remains busy until the service is restarted.
         if self._listener is not None:
-            self._listener.join(timeout=5)
+            self._listener.join()
         with self._gen_lock:
             generation = self._generation
         if generation is not None:
-            generation.join(timeout=10)
+            generation.join()
         if self._pacer is not None:
             self._pacer.close(drain_timeout=0.5)
         stats = {"dropped_unplayed_s": round(self._pacer.dropped_samples / MODEL_OUTPUT_RATE, 3)
