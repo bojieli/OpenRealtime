@@ -94,6 +94,26 @@ a separately validated larger budget. A successful `/health` response is
 only startup evidence; the native sidecar and tool tests establish duplex
 operation.
 
+The retained native drivers are `tools/duplexmodels/native_probe.py` (sidecar
+protocol) and `tools/duplexmodels/realtime_probe.py` (public Realtime socket).
+Run them with the model's environment. For example, after VoiceChat is ready:
+
+```bash
+.runtime/duplex-plan/venvs/vllm-omni-native/bin/python tools/duplexmodels/native_probe.py \
+  --sidecar '.runtime/duplex-plan/venvs/vllm-omni-native/bin/python sidecars/voicechat_sidecar.py --server ws://127.0.0.1:9140/v1/realtime' \
+  --protocol 3 --scenario question \
+  --question .runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav \
+  --duration 30 --out .runtime/duplex-plan/results/native/question-new.json
+```
+
+Use a new output basename for each attempt. The native driver writes the
+summary, received-event trace and audio beside it. If `--event-log` is passed
+to the sidecar, choose a different filename from the driver's
+`<basename>.events.jsonl`, which contains the engine-facing trace. These
+drivers record packet arrival timing and do not simulate rendered-playback
+acknowledgments. The `tool` scenario supports `--tools`, `--tool-delay` and
+`--tool-output`; the `interrupt` scenario accepts a second recorded utterance.
+
 ```bash
 deploy/duplex/run-e2e.sh microturn-voxtral-qwen3-kyutai 10 12
 deploy/duplex/run-matrix.sh 8 8 profile-a profile-b …      # sequentially
