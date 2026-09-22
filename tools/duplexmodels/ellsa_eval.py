@@ -89,6 +89,25 @@ def patch_attention(implementation: str) -> None:
     Emu3ForMix.from_pretrained = classmethod(from_pretrained)
 
 
+def select_items(data: Path, count: int) -> list[dict]:
+    items = json.loads((data / "json/llama_questions.json").read_text())["annotation"]
+    if count <= 0 or count > len(items):
+        raise ValueError(f"count must be between 1 and {len(items)}")
+    selected = items[:count]
+    missing = [Path(item["path"][0]).name for item in selected
+               if not (data / "llama_questions" / Path(item["path"][0]).name).is_file()]
+    if missing:
+        raise ValueError(f"missing selected fixtures: {missing}")
+    return selected
+
+
+def save_report(path: Path, report: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    temporary.replace(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--count", type=int, default=8)
@@ -97,6 +116,9 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
+    items = select_items(DATA, args.count)
+    if args.time_block <= 0 or not math.isfinite(args.time_block):
+        parser.error("time block must be finite and positive")
     setup_environment()
     import soundfile as sf
     import torch
@@ -113,7 +135,9 @@ def main() -> None:
     report = {"model": f"tsinghua-ee/ELLSA@{snapshot('tsinghua-ee/ELLSA').name[:12]}",
               "code": "bytedance/SALMONN branch ELLSA (reference/RoboVLMs/eval/libero)",
               "attn_implementation": attn, "task_suite": "llama_questions", "generate_speech": False,
-              "time_block_s": args.time_block}
+              "time_block_s": args.time_block, "expected_items": len(items),
+              "complete": False, "items": []}
+    save_report(Path(args.out), report)
     began = time.perf_counter()
     model = EmuVLAModel(emu_hub=str(snapshot("tsinghua-ee/ELLSA")), vq_hub="", vision_hub=os.environ["VISION_VQ_PATH"],
                         device=torch.device("cuda"), speech=True, moe=True, mix=True, attn_adapter=False,
@@ -125,15 +149,10 @@ def main() -> None:
     report["load_seconds"] = round(time.perf_counter() - began, 1)
     report["gpu_allocated_gb_after_load"] = round(torch.cuda.memory_allocated() / 2**30, 2)
 
-    items = json.loads((DATA / "json/llama_questions.json").read_text())["annotation"]
     fbank = Fbank(FbankConfig(num_mel_bins=128))
     records = []
     for item in items:
-        if len(records) >= args.count:
-            break
         wav = DATA / "llama_questions" / Path(item["path"][0]).name
-        if not wav.exists():
-            continue
         model.reset()
         # torchaudio 2.9 routes load() through torchcodec; soundfile reads the same PCM.
         samples, fs = sf.read(str(wav), dtype="float32", always_2d=True)
@@ -170,14 +189,17 @@ def main() -> None:
             "block_ms_mean": round(sum(step_ms) / len(step_ms), 1), "block_ms_max": round(max(step_ms), 1),
             "raw_steps": outputs,
         })
+        report["items"] = records
+        report["completed_items"] = len(records)
+        save_report(Path(args.out), report)
         print(json.dumps({k: records[-1][k] for k in ("question", "reference", "answer", "first_text_block",
                                                         "speech_blocks", "block_ms_mean")}, ensure_ascii=False),
               flush=True)
     report["items"] = records
     report["accuracy_contains_reference"] = round(sum(r["contains_reference"] for r in records) / max(len(records), 1), 3)
     report["gpu_peak_allocated_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
-    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    report["complete"] = len(records) == report["expected_items"]
+    save_report(Path(args.out), report)
     print(json.dumps({k: v for k, v in report.items() if k != "items"}, indent=2))
 
 
