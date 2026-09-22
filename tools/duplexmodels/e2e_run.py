@@ -15,6 +15,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 from urllib.request import build_opener, ProxyHandler
+from urllib.parse import urlsplit, urlunsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 CATEGORIES = ('user_interruption', 'user_backchannel', 'background_speech', 'talking_to_other')
@@ -40,6 +41,38 @@ def now() -> str:
 
 def capture(*command: str) -> str:
     return subprocess.check_output(command, cwd=ROOT, text=True).strip()
+
+
+def component_health(config: Path) -> dict:
+    """Snapshot loopback component settings; never probe remote providers.
+
+    Deployment profiles use scalar top-level *-url keys. Keep failures as
+    evidence rather than implying that absent health data validated a service.
+    """
+    opener = build_opener(ProxyHandler({}))
+    result = {}
+    for line in config.read_text().splitlines():
+        match = re.fullmatch(r"([a-z0-9-]+-url):\s*(\S+)\s*", line)
+        if not match:
+            continue
+        key, value = match.groups()
+        parsed = urlsplit(value.strip("\"'"))
+        if (parsed.hostname not in ('127.0.0.1', 'localhost', '::1') or parsed.username
+                or parsed.scheme not in ('http', 'https', 'ws', 'wss')):
+            continue
+        scheme = 'https' if parsed.scheme in ('https', 'wss') else 'http'
+        url = urlunsplit((scheme, parsed.netloc, '/health', '', ''))
+        entry = {'url': url, 'captured': now()}
+        try:
+            with opener.open(url, timeout=3) as response:
+                payload = response.read((1 << 20)+1)
+            if len(payload) > 1 << 20:
+                raise ValueError('health response exceeds one MiB')
+            entry['response'] = json.loads(payload)
+        except Exception as error:
+            entry['error'] = f'{type(error).__name__}: {error}'
+        result[key] = entry
+    return result
 
 
 def owns_listener(pid: int, port: int) -> bool:
@@ -120,6 +153,7 @@ def run(profile: str, per_category: int, conversations: int) -> int:
         'started': now(), 'load_average': Path('/proc/loadavg').read_text().split()[:3],
         'gpu_memory_mib': gpu, 'fdb_per_category': per_category,
         'fdbench_conversations': conversations, 'expected_results': expected,
+        'component_health': component_health(config),
     }
     write_json(out / 'run.json', metadata)
     server = None

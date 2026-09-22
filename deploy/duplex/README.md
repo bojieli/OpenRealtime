@@ -126,7 +126,10 @@ python tools/duplexmodels/e2e_summary.py
 subset (the same number of recordings from each category) and an FD-Bench slice
 through the public Realtime protocol, and stops the server. It records the
 revision, profile digest, host load average and GPU memory with every run,
-because a latency number measured on a loaded machine has to say so. A subset
+because a latency number measured on a loaded machine has to say so.
+It also snapshots `/health` for loopback component URLs, retaining settings such
+as Fish's compilation mode and sample rate. Missing or invalid health responses
+are recorded as errors in that snapshot; they do not certify a component. A subset
 is a smoke measurement: the bench itself reports NOT REPORTABLE for anything
 short of a full campaign, and so should any summary of it.
 

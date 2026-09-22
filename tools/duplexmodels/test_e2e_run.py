@@ -53,6 +53,21 @@ class RunnerTests(unittest.TestCase):
             self.addCleanup(item.stop)
         self.parent = self.root / '.runtime/duplex-plan/results/e2e/sample'
 
+    def test_component_health_captures_settings_without_probing_remote_or_credentials(self):
+        import io
+        config=self.root/'components.yaml'
+        config.write_text('tts-url: ws://127.0.0.1:9124/v1/tts/stream\n'
+                          'slow-url: https://remote.example/v1\n'
+                          'asr-url: http://secret@localhost:9110/api\n')
+        from unittest.mock import Mock
+        opener=Mock()
+        opener.open.return_value=io.BytesIO(b'{"compiled":false,"sample_rate":44100}')
+        with patch.object(e2e_run,'build_opener',return_value=opener):
+            result=e2e_run.component_health(config)
+        self.assertEqual(list(result),['tts-url'])
+        self.assertFalse(result['tts-url']['response']['compiled'])
+        opener.open.assert_called_once_with('http://127.0.0.1:9124/health',timeout=3)
+
     def test_runs_preserved_and_tampering_excluded(self):
         self.assertEqual(e2e_run.run('sample', 1, 1), 0)
         first = (self.parent / 'latest').resolve()
