@@ -15,8 +15,9 @@
 # host shares its GPU, so an overlay keeps the upstream fast profile and only
 # shrinks the per-stage memory budgets (~31 GB total).
 #
-# The engine is a large model: it runs under the GPU large-model lease and
-# holds it for exactly as long as the server lives.
+# The engine is a large model: it waits for GPU room *outside* the lease, then
+# takes the lease and holds it for exactly as long as the server lives. Waiting
+# for memory while holding it starves every other large model on this host.
 #
 #   deploy/duplex/services/voicechat.sh start    # background, PID in .runtime/duplex-plan/pids/voicechat.pid
 #   deploy/duplex/services/voicechat.sh stop
@@ -145,42 +146,59 @@ start() {
   write_overlay
   write_ballast
   mkdir -p "$PLAN/pids" "$PLAN/logs"
-  # The lease is taken first; the engine then waits (holding it) until the
-  # shared GPU has room, rather than failing and handing the lease on.
-  setsid nohup flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/voicechat.sh" _run \
-    > "$LOG" 2>&1 < /dev/null &
+  setsid nohup "$ROOT/deploy/duplex/services/voicechat.sh" _attempts > "$LOG" 2>&1 < /dev/null &
   echo $! > "$PIDFILE"
   echo "voicechat starting (pid $(cat "$PIDFILE"), log $LOG, port $PORT)"
 }
 
-_run() {
-  local attempt=1
+# Wait for room first, then queue for the lease, and give the lease straight
+# back if the room disappeared before it arrived.
+_attempts() {
+  local attempt=1 started elapsed
   while (( attempt <= ATTEMPTS )); do
     echo "=== attempt $attempt of $ATTEMPTS"
     _wait_for_memory || return 1
-    "$VENV/bin/python" "$BALLAST" "$LOG" "$BALLAST_FIRST_GIB" "$BALLAST_SECOND_GIB" 900 &
-    local ballast=$!
-    _serve
-    kill "$ballast" 2>/dev/null || true
+    started=$SECONDS
+    flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/voicechat.sh" _run
+    elapsed=$((SECONDS - started))
+    if (( elapsed > 150 )); then
+      echo "=== engine exited after ${elapsed}s; not retrying"
+      return 0
+    fi
+    echo "=== engine did not reach a serving state (${elapsed}s); retrying"
     attempt=$((attempt + 1))
-    echo "=== engine exited; retrying under the same lease"
     sleep 10
   done
   echo "gave up after $ATTEMPTS attempts" >&2
   return 1
 }
 
+_run() {
+  local need=${VOICECHAT_NEED_MIB:-30000} used total
+  read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
+  if (( total - used < need )); then
+    echo "lease acquired but only $((total - used)) MiB is free; releasing it rather than holding it idle"
+    return 3
+  fi
+  echo "lease acquired with $((total - used)) MiB free"
+  "$VENV/bin/python" "$BALLAST" "$LOG" "$BALLAST_FIRST_GIB" "$BALLAST_SECOND_GIB" 900 &
+  local ballast=$!
+  _serve
+  local status=$?
+  kill "$ballast" 2>/dev/null || true
+  return $status
+}
+
 _wait_for_memory() {
-  local need=${VOICECHAT_NEED_MIB:-30000} waited=0
+  local need=${VOICECHAT_NEED_MIB:-30000} waited=0 used total
   while true; do
-    local used total
     read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
     if (( total - used >= need )); then break; fi
-    if (( waited % 60 == 0 )); then echo "lease held; waiting for ${need} MiB free (now $((total - used)) MiB)"; fi
-    if (( waited >= ${VOICECHAT_MEMORY_WAIT_S:-3600} )); then echo "gave up waiting for GPU memory" >&2; return 1; fi
+    if (( waited % 60 == 0 )); then echo "waiting (no lease held) for ${need} MiB free (now $((total - used)) MiB)"; fi
+    if (( waited >= ${VOICECHAT_MEMORY_WAIT_S:-7200} )); then echo "gave up waiting for GPU memory" >&2; return 1; fi
     sleep 5; waited=$((waited + 5))
   done
-  echo "starting engine with $((total - used)) MiB free"
+  echo "$((total - used)) MiB free; queueing for the large-model lease"
 }
 
 _serve() {
@@ -223,6 +241,7 @@ status() {
 
 case "${1:-start}" in
   start) start ;;
+  _attempts) _attempts ;;
   _run) _run ;;
   stop) stop ;;
   status) status ;;

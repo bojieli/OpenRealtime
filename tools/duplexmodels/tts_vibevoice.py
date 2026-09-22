@@ -65,7 +65,12 @@ SPEECH_WINDOW = 6
 
 
 class WordGate:
-    """Release appended text at whitespace so BPE sees whole words."""
+    """Release appended text at whitespace (or CJK) so BPE sees whole words.
+
+    Without the CJK case a Mandarin append would never reach a boundary and the
+    whole utterance would sit here until text.end, which would look like the
+    model buffering when it is the gate.
+    """
 
     def __init__(self) -> None:
         self.pending = ""
@@ -73,8 +78,12 @@ class WordGate:
     def push(self, text: str) -> str:
         self.pending += text
         for index in range(len(self.pending) - 1, 0, -1):
-            if self.pending[index].isspace():
+            char = self.pending[index]
+            if char.isspace():
                 ready, self.pending = self.pending[:index], self.pending[index:]
+                return ready
+            if "\u3000" <= char <= "\u9fff" or "\uff00" <= char <= "\uffef":
+                ready, self.pending = self.pending[:index + 1], self.pending[index + 1:]
                 return ready
         return ""
 

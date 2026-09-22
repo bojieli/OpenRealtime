@@ -10,8 +10,9 @@
 #   memory   ~17.4 GB resident on one GPU -> needs the large-model lease.
 #
 # The engine loads the weights once and serves one session at a time on
-# tcp:127.0.0.1:$FREEZE_OMNI_PORT. The engine runs under the large-model lease
-# (flock on .runtime/duplex-plan/gpu/large.lock) for exactly as long as it runs.
+# tcp:127.0.0.1:$FREEZE_OMNI_PORT. It waits (without the lease) until the card
+# has FREEZE_OMNI_NEED_MIB free, then holds the large-model lease (flock on
+# .runtime/duplex-plan/gpu/large.lock) for exactly as long as it runs.
 #
 #   deploy/duplex/services/freeze-omni.sh start     # waits for the lease, then for readiness
 #   deploy/duplex/services/freeze-omni.sh stop
@@ -43,11 +44,32 @@ case ${1:-status} in
     mkdir -p "$PLAN/pids" "$PLAN/logs"
     cd "$ROOT"
     rm -f "$PIDFILE"
-    # The recorded PID is flock's; the engine is its child and holds the lease
-    # exactly while it runs.
+    # The launcher waits for GPU memory *without* the lease and takes it only
+    # when the model can actually fit: holding the lease while waiting for
+    # memory blocks every other large model behind a job that cannot start.
+    # The lease then lives on fd 9, inherited by the engine, for exactly as
+    # long as the engine runs. The recorded PID leads the process group.
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1 setsid nohup \
-      bash -c 'echo $$ > "$0"; exec flock -w "$1" "$2" "${@:3}"' \
-      "$PIDFILE" "$LEASE_WAIT" "$PLAN/gpu/large.lock" \
+      bash -c 'echo $$ > "$0"; shift
+        need=$1; lock=$2; shift 2; waited=0
+        while true; do
+          read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ",")
+          if (( total - used >= need )); then
+            exec 9> "$lock"
+            if flock -w 30 9; then
+              read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ",")
+              if (( total - used >= need )); then break; fi
+              echo "lease taken but only $((total - used)) MiB free; releasing it again"
+              exec 9>&-
+            fi
+          fi
+          (( waited % 60 == 0 )) && echo "waiting (no lease) for ${need} MiB free (now $((total - used)) MiB)"
+          (( waited >= 14400 )) && { echo "gave up waiting for GPU memory" >&2; exit 1; }
+          sleep 5; waited=$((waited + 5))
+        done
+        echo "lease acquired; starting with $((total - used)) MiB free"
+        exec "$@"' \
+      "$PIDFILE" "${FREEZE_OMNI_NEED_MIB:-19000}" "$PLAN/gpu/large.lock" \
       "$VENV/bin/python" sidecars/freeze_omni_sidecar.py --serve --listen "127.0.0.1:$PORT" \
         --src "$SRC" --control-log "$CONTROL_LOG" \
       > "$LOG" 2>&1 < /dev/null &

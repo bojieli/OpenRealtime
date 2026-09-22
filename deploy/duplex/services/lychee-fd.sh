@@ -54,10 +54,13 @@ start() {
   if running; then echo "lychee-fd already running (pid $(cat "$PIDFILE"))"; return 0; fi
   mkdir -p "$PLAN/pids" "$PLAN/logs" "$RUNTIME_LOGS"
   rm -f "$PIDFILE"
-  # The recorded PID is flock's and it leads its own process group, so stop
-  # can signal the whole group (flock, the launcher, both servers).
-  setsid nohup bash -c 'echo $$ > "$0"; exec flock -w "$1" "$2" "$3" _run' \
-    "$PIDFILE" "${LEASE_WAIT:-14400}" "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/lychee-fd.sh" \
+  # The launcher waits for GPU memory *without* the lease and only then takes
+  # it (see _run): holding the lease while waiting for memory that is not
+  # there blocks every other large model behind a job that cannot start.
+  # The recorded PID leads its own process group, so stop can signal the whole
+  # group (launcher, token2wav, backend) and release the lease with it.
+  setsid nohup bash -c 'echo $$ > "$0"; exec "$1" _run' \
+    "$PIDFILE" "$ROOT/deploy/duplex/services/lychee-fd.sh" \
     > "$LOG" 2>&1 < /dev/null &
   for _ in $(seq 1 50); do [[ -s $PIDFILE ]] && break; sleep 0.1; done
   echo "lychee-fd starting (pid $(cat "$PIDFILE"), log $LOG, port $PORT)"
@@ -65,14 +68,26 @@ start() {
 
 _run() {
   local waited=0 used total
+  # Wait for the memory first, unlocked; take the lease only once the card can
+  # hold this model, and confirm the memory again while holding it (another
+  # lease holder may have taken it in between). The lease is then held on fd 9
+  # for exactly as long as the servers below run, because they inherit it.
   while true; do
     read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
-    if (( total - used >= NEED_MIB )); then break; fi
-    if (( waited % 60 == 0 )); then echo "lease held; waiting for ${NEED_MIB} MiB free (now $((total - used)) MiB)"; fi
-    if (( waited >= ${LYCHEE_FD_MEMORY_WAIT_S:-3600} )); then echo "gave up waiting for GPU memory" >&2; exit 1; fi
+    if (( total - used >= NEED_MIB )); then
+      exec 9> "$PLAN/gpu/large.lock"
+      if flock -w 30 9; then
+        read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
+        if (( total - used >= NEED_MIB )); then break; fi
+        echo "lease taken but only $((total - used)) MiB free; releasing it again"
+        exec 9>&-
+      fi
+    fi
+    if (( waited % 60 == 0 )); then echo "waiting (no lease) for ${NEED_MIB} MiB free (now $((total - used)) MiB)"; fi
+    if (( waited >= ${LYCHEE_FD_MEMORY_WAIT_S:-14400} )); then echo "gave up waiting for GPU memory" >&2; exit 1; fi
     sleep 5; waited=$((waited + 5))
   done
-  echo "starting with $((total - used)) MiB free"
+  echo "lease acquired; starting with $((total - used)) MiB free"
   export CUDA_VISIBLE_DEVICES=0 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
   export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
   export NUMBA_CACHE_DIR=$PLAN/logs/lychee-fd-numba OMP_NUM_THREADS=8 MKL_NUM_THREADS=8

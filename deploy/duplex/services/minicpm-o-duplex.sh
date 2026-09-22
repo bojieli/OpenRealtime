@@ -34,25 +34,53 @@ start() {
   fi
   mkdir -p "$PLAN/pids" "$PLAN/logs" "$(dirname "$METRICS")"
   cd "$ROOT"
-  # The lease is taken first; the model then waits (holding it) until the
-  # shared GPU has room, rather than failing and handing the lease on.
-  setsid nohup flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/minicpm-o-duplex.sh" _run "$@" \
-    > "$LOG" 2>&1 < /dev/null &
+  setsid nohup "$ROOT/deploy/duplex/services/minicpm-o-duplex.sh" _attempts "$@" > "$LOG" 2>&1 < /dev/null &
   echo $! > "$PIDFILE"
   echo "minicpm-o-duplex starting (pid $(cat "$PIDFILE"), log $LOG, tcp:127.0.0.1:$PORT)"
 }
 
-_run() {
-  local need=${MINICPM_DUPLEX_NEED_MIB:-26000} waited=0
+# GPU room is waited for *outside* the lease: holding the single large-model
+# lease while waiting starves every other large model on this host.
+_attempts() {
+  local attempt=1 started elapsed
+  while (( attempt <= ${MINICPM_DUPLEX_ATTEMPTS:-4} )); do
+    echo "=== attempt $attempt"
+    _wait_for_memory || return 1
+    started=$SECONDS
+    flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/minicpm-o-duplex.sh" _run "$@"
+    elapsed=$((SECONDS - started))
+    if (( elapsed > 120 )); then
+      echo "=== sidecar exited after ${elapsed}s; not retrying"
+      return 0
+    fi
+    echo "=== sidecar did not reach a serving state (${elapsed}s); retrying"
+    attempt=$((attempt + 1))
+    sleep 10
+  done
+  echo "gave up" >&2
+  return 1
+}
+
+_wait_for_memory() {
+  local need=${MINICPM_DUPLEX_NEED_MIB:-24000} waited=0 used total
   while true; do
-    local used total
     read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
     if (( total - used >= need )); then break; fi
-    if (( waited % 60 == 0 )); then echo "lease held; waiting for ${need} MiB free (now $((total - used)) MiB)"; fi
-    if (( waited >= ${MINICPM_DUPLEX_MEMORY_WAIT_S:-3600} )); then echo "gave up waiting for GPU memory" >&2; exit 1; fi
+    if (( waited % 60 == 0 )); then echo "waiting (no lease held) for ${need} MiB free (now $((total - used)) MiB)"; fi
+    if (( waited >= ${MINICPM_DUPLEX_MEMORY_WAIT_S:-7200} )); then echo "gave up waiting for GPU memory" >&2; return 1; fi
     sleep 5; waited=$((waited + 5))
   done
-  echo "starting model with $((total - used)) MiB free"
+  echo "$((total - used)) MiB free; queueing for the large-model lease"
+}
+
+_run() {
+  local need=${MINICPM_DUPLEX_NEED_MIB:-24000} used total
+  read -r used total < <(nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | tr -d ',')
+  if (( total - used < need )); then
+    echo "lease acquired but only $((total - used)) MiB is free; releasing it rather than holding it idle"
+    return 3
+  fi
+  echo "lease acquired with $((total - used)) MiB free"
   cd "$ROOT"
   export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
   exec "$PY" sidecars/minicpm_o_duplex_sidecar.py --listen "tcp:127.0.0.1:$PORT" \
@@ -82,6 +110,7 @@ command=${1:-start}
 shift || true
 case "$command" in
   start) start "$@" ;;
+  _attempts) _attempts "$@" ;;
   _run) _run "$@" ;;
   stop) stop ;;
   status) status ;;
