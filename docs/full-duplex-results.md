@@ -691,13 +691,14 @@ model itself was not measured here.
 | DuplexCascade | micro-turn LLM | `native-duplexcascade` profile and native sidecar | real ASR/model/TTS probes passed; public transport validation ongoing |
 | Moshi, VoiceChat 11B, MiniCPM-o 4.5, Lychee-FD, Freeze-Omni | native duplex | sidecar protocol v1 | see the native section; all pass mock conformance |
 | PersonaPlex 7B | native duplex | `native-personaplex` profile, sidecar protocol v1 | public smoke measured; full campaign pending |
-| Smart Turn v3.2, LiveKit, VAP, DualTurn, X2-Turn, SoulX-Duplug | interaction prediction | turn service + `-turn-end-url` hook | measured (I0, I1) |
+| Smart Turn v3.2, LiveKit, VAP, DualTurn, SoulX-Duplug | interaction prediction | turn service + `-turn-end-url` hook | measured (I0, I1); scope and partial sweeps described above |
+| X2-Turn | interaction prediction | turn service and offline harness | offline output retained; causal endpoint/overlap evidence excluded pending prefix validation |
 | Sortformer + multitalker Parakeet | speaker attribution | offline pipeline | see the perception section |
 | Audio Flamingo 3 | audio observer | bounded observer service | see the perception section |
 | DeepFilterNet | acoustic preprocessing | existing pre-ASR filter contract | measured (raw versus processed WER) |
 | Hibiki, SeamlessStreaming | translation | sidecar / offline harness | see the task section |
 | ELLSA, BayLing-Duplex | research extensions | feasibility only | see the task section |
-| OpenAI Live, Gemini Live | closed live agents | existing `upstream` binding | profiles written; runs pending |
+| OpenAI Live, Gemini Live | closed live agents | existing `upstream` binding | legacy runs exist but lack result digests and command statuses; verified reruns pending |
 
 ## Blocked and deferred
 
@@ -711,11 +712,13 @@ model itself was not measured here.
 
 ## What these numbers are not
 
-- **Subsets, not campaigns.** Each end-to-end cell drives the same number of
-  recordings from each FDB v1.5 category and a slice of FD-Bench. The bench
-  itself reports NOT REPORTABLE for anything short of the full 498-task
-  population, and nothing here should be quoted as a complete-cell result.
-  One full campaign on the headline profile is the natural next step.
+- **Coverage varies by run.** The earlier end-to-end cells are smoke subsets.
+  The selected VoiceChat campaign has processed all 498 FDB recordings, but
+  one interruption task errored, so that campaign has not established complete
+  FDB acceptance. Its selected 293-conversation FD-Bench condition is still
+  running and does not cover the other FD-Bench conditions. Complete category
+  results are identified above; neither those categories nor the earlier smoke
+  results establish a complete, passing end-to-end campaign.
 - **Measured on a shared, loaded machine.** Other users' jobs held the CPU at
   a load average of 90-250 throughout, and up to seven model integrations
   shared the GPU. Latencies and comparisons remain conditional on each run
