@@ -58,6 +58,7 @@ or investigate a failure.
 | Record | Read it for |
 | --- | --- |
 | [Streaming and full-duplex survey and plan](full-duplex-streaming-plan.md) | September 2026 model/API survey, composable streaming contracts, and the RTX Pro evaluation roadmap |
+| [Expanded open-model survey](open-duplex-models-survey.md) | native duplex agents, turn prediction, speaker/overlap perception, audio understanding, and additional integration priorities |
 | [Interaction findings](interaction-findings.md) | lessons about model inputs and timing decisions |
 | [Response latency](latency.md) | waveform timing and measured bottlenecks |
 | [The spoken boundary](spoken-boundary.md) | interruption and the words a listener actually heard |

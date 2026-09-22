@@ -2,6 +2,8 @@
 
 **Research cutoff:** 2026-09-22. **Status:** proposal; no implementation or model benchmarks performed for this document.
 
+**Plan revision:** incorporates the expanded open-model survey. This document is the authoritative implementation roadmap; [Open models beyond ASR and TTS](open-duplex-models-survey.md) retains detailed candidate analysis and release evidence. Its proposed ordering is consolidated into the stages below.
+
 **Repository inspected:** `c715c6701f376ad608e92fff632b628349a73377`. Sources are linked next to their claims. Public documentation and released artifacts establish candidate capabilities, not measured performance in OpenRealtime. This is a prioritized survey, not an exhaustive model directory.
 
 ## Recommendation
@@ -16,7 +18,24 @@ The main missing abstraction is **stateful, concurrent input and output with exp
 
 There are now relevant **text-based full-duplex LLMs**: DuplexCascade releases a fine-tuned Qwen2-7B-Instruct component for text micro-turn interaction. Most other well-known full-duplex models are speech language models, not interchangeable text-only components. Ordinary token-streaming chat APIs are still useful as an explicitly orchestrated baseline. They do not by themselves provide new-input admission during the same generation. See the [DuplexCascade code](https://github.com/sbintuitions/DuplexCascade) and [gated model card](https://huggingface.co/sbintuitions/DuplexCascade).
 
-**First evaluation shortlist:** preserve Qwen3-ASR and Fish S2 Pro as repository baselines; add native streaming ASR candidates Voxtral Realtime and Nemotron streaming; reproduce DuplexCascade with its prescribed Kyutai components; integrate the user's LLM/TTS through the same contracts; test CosyVoice 3 for a multilingual incremental TTS path. Compare this with Moshi/PersonaPlex, MiniCPM-o 4.5, and the already implemented live API paths. This is an integration priority, not a quality ranking.
+Across these three paths, support independently selected **interaction prediction, speaker/overlap perception, acoustic preprocessing, and background audio understanding**. Translation and speech-plus-action belong to separate task profiles. They must not silently alter the evidence or authority of an otherwise identical cascade.
+
+**First deliverable:** a measured 500 ms micro-turn pipeline using the user's LLM/TTS when their assets are available, plus a native speech/tool reference and one controlled endpoint-evidence comparison. Preserve Qwen3-ASR and Fish S2 Pro as baselines. Add Voxtral or Nemotron streaming ASR first, then the other as a substitution; use Kyutai for faithful DuplexCascade reproduction and CosyVoice for multilingual incremental synthesis. This is an integration priority, not a quality ranking.
+
+### Integration priorities
+
+| Priority | Candidates / capability | Reason and boundary |
+| --- | --- | --- |
+| **Core contracts and user models** | Timed revisions, 500 ms clock, live LLM, incremental TTS, playback reconciliation | Enable actual composition; preserve the user's training-time protocol |
+| **First supporting comparison** | Smart Turn plus a transcript endpoint baseline | Test acoustic versus textual completion evidence without replacing the language model |
+| **First new native reference** | NemotronLabs VoiceChat 11B | Exercise continuous speech and tool-result admission in the existing agent runtime |
+| **Reference reproductions** | DuplexCascade; existing Moshi/PersonaPlex, MiniCPM-o, and closed live paths | Establish faithful model/runtime behavior before substitutions |
+| **Next interaction/native candidates** | DualTurn with VAP baseline; Lychee-FD | Anticipatory overlap evidence and separate dialogue-control computation |
+| **Perception extensions** | Streaming Sortformer + multitalker Parakeet; one audio-understanding observer; acoustic preprocessing | Improve speaker attribution and non-text evidence with explicit delay and compute budgets |
+| **Later task profiles** | ELLSA, Freeze-Omni, Hibiki/SeamlessStreaming | Speech/action, frozen-backbone, and translation-specific research |
+| **Deferred** | DuplexOmni deployment; SALMONN-omni and OmniFlatten deployment | Hardware scale or matching release assets remain unresolved; retain architectural references |
+
+Candidate mechanisms, public assets, and limitations are sourced in the [expanded survey](open-duplex-models-survey.md). Select a small number of representatives per stage; comprehensive compatibility does not require implementing every candidate before the first release.
 
 ## 1. Scope and verified inventory
 
@@ -209,6 +228,34 @@ Select who controls endpointing, taking/yielding the floor, overlap, and respons
 
 Keep continuous microphone capture, echo handling, speaker evidence, model input, and playback distinct. An assistant hearing its own loudspeaker is a different problem from a model handling a real user interruption.
 
+### 7.7 Interaction forecasts and speaker evidence
+
+Add typed observations for endpoint probability, future speech activity, backchannel likelihood, and hold/yield proposals. Include subject/speaker, prediction horizon, calibration/model identity, source-audio interval, arrival time, and expiration. Smart Turn, transcript classifiers, VAP, and DualTurn predict different quantities; adapters must not relabel them all as a universal end-of-turn score.
+
+Speaker observations need simultaneous activity tracks, session-local IDs, capacity limits, uncertainty, and attribution revisions. Accept delayed corrections without rewriting what the LLM knew at an earlier tick. Sortformer's documented low-latency setting buffers about 1.04 seconds before computation, so speaker attribution must not automatically block the 500 ms interaction path. See the [speaker-perception survey](open-duplex-models-survey.md#3-speaker-identity-overlapping-speech-and-the-audio-front-end).
+
+Introduce predictors in observation-only mode. Promote them to control only through a versioned arbitration policy with measured premature endpoints, missed interruptions, and false stops. Keep prediction horizons distinct from any future context used to derive offline training labels; inference must remain causal.
+
+### 7.8 Playback-reference audio and asynchronous perception
+
+Expose a clock-aligned playback-reference stream, including discontinuities and uncertainty about device delay. Distinguish generated PCM, transmitted PCM, and rendered PCM. Dual-channel interaction models and echo cancellation need the appropriate reference; feeding future synthesized speech as if already heard leaks unavailable information into decisions.
+
+Acoustic preprocessing must declare sample formats, algorithmic delay, state/reset behavior, and raw-versus-processed provenance. Preserve a bypass for controlled comparisons. Noise suppression, echo cancellation, speaker diarization, and source separation are different capabilities.
+
+Background audio-understanding observations carry a bounded source window, task/schema, completion time, uncertainty, and expiration. Start with one observer from the expanded shortlist. Schedule it outside the 500 ms critical path, discard stale results, and measure whether it provides useful evidence without starving ASR/LLM/TTS. Inferred emotion is a hypothesis, not a verified fact.
+
+### 7.9 Native tools, actions, and translation
+
+Map a native model's tool channel into existing proposal, authorization, execution, result, and cancellation boundaries. Record the input revision and output epoch that caused the proposal. Test delayed results, duplicate proposals, and user correction while a tool is pending. A native tool-call format must not bypass exactly-once execution or imply that an already completed action can be undone by canceling speech.
+
+Translation profiles require source/target languages, a source-consumption frontier, translated-text revisions, and output alignment/lag. Speech/action profiles require a task-specific action schema and execution receipts. ELLSA robot tokens are not automatically desktop tool calls; begin with simulation. Keep these task profiles separate from conversational endpoint evaluation.
+
+### 7.10 Serving-runtime compatibility gate
+
+Before writing a model-specific scheduler, audit whether a released serving engine already exposes the needed live contract. Pin the engine revision, model revision, deployment mode, and endpoint together. Require handshake capabilities plus behavioral evidence of new input affecting active output; successful connection alone is insufficient.
+
+The expanded survey found that vLLM-Omni's unified duplex endpoint documentation currently names MiniCPM-o, while a separate VoiceChat recipe describes an experimental older path. Resolve this per pinned runtime instead of treating support as a model-wide boolean. See the [runtime findings and primary sources](open-duplex-models-survey.md#6-serving-runtime-findings-that-change-the-plan). Keep engine scheduling inside the serving process and OpenRealtime's authority/playback/provenance in the graph runtime.
+
 ## 8. Text versus latent: preserve both as testable options
 
 There is no universal theorem that a finite trained latent-based system must outperform a text cascade. With raw audio `X`, transcript `T=f(X)`, target `Y`, and the same conditioning context, data processing gives `I(Y;T) <= I(Y;X)`. An unconstrained predictor with access to `X` can emulate the transcript pipeline, so its ideal minimum risk cannot be worse. Strict improvement requires task-relevant information lost by `T`. A learned bottleneck `Z=g(X)` can itself lose information, and finite compute, data, optimization, and latency change the practical comparison.
@@ -225,19 +272,26 @@ Compare them with matched backbones/training wherever possible. Native omni vers
 
 ## 9. Implementation sequence and acceptance gates
 
-All stages below are future work. Preserve existing working paths while adding independent capability-driven elements.
+All stages below are future work. Preserve existing working paths while adding independent capability-driven elements. The stages define dependency and acceptance gates, not a requirement to implement every surveyed model serially.
 
 | Stage | Concrete deliverable / likely repository surfaces | Exit evidence |
 | --- | --- | --- |
-| **P0: freeze baselines** | Provider capability ledger in `docs/providers.md`; pinned model/engine/adapter manifests under deployment profiles; RTX Pro environment inventory | One retained ordinary cascade trace and one existing live-provider trace where credentials permit; distinguish existing historical records from these new runs |
-| **P1: stream contracts** | Versioned graph port schemas and sidecar v4 conformance additions; opt-in component interfaces; new catalog definitions | Deterministic fixtures for revision repair, late input, empty ticks, queue pressure, cancellation, and stale audio; existing API behavior preserved |
-| **P2: ASR evidence** | Audit Qwen/Deepgram semantics; add Voxtral and one Nemotron streaming element; timed-transcript/clock element | Realtime-paced multilingual audio, revision/stability traces, and evidence-lag distributions; no unmarked partial concatenation |
+| **P0: freeze baselines and feasibility** | Capability ledger in `docs/providers.md`; pinned manifests; RTX Pro availability/runtime audit; user-model protocol inventory | Retained ordinary cascade and entitled live-provider baseline traces; exact assets and execution route identified for each first-wave candidate |
+| **P1: streaming and evidence contracts** | Versioned graph ports and sidecar v4 conformance; live component extensions; interaction forecasts, playback-reference and speaker/observer schemas; new catalog definitions | Fixtures for revisions, late input, empty ticks, queue pressure, stale observations/audio, tool duplication, and causal channel alignment; existing API behavior preserved |
+| **P2: ASR evidence** | Audit Qwen/Deepgram semantics; first Voxtral or Nemotron streaming element, then the other; timed-transcript/clock element | Realtime-paced multilingual audio, revision/stability traces, and evidence-lag distributions; no unmarked partial concatenation |
 | **P3: incremental TTS** | Same-context synthesis interface; Kyutai/CosyVoice reference path; one closed WebSocket TTS path; existing Fish compatibility path | Audio begins before input ends, continuation stays in context, and cancel/restart reconciles actual playback; no stale-epoch audio after local cutoff |
 | **P4: micro-turn LLM** | User model adapter and DuplexCascade reference adapter; explicit ordinary-LLM fallback; tool-result admission | Reproduce reference protocol first; input arrives during output and causes measured changes without an artificial user endpoint; 500 ms profile exercised |
-| **P5: native speech/live APIs** | Validate Moshi, add PersonaPlex, audit MiniCPM-o duplex API; refresh existing closed live integrations | Continuous listening and behavioral response during output, silence behavior, transcript attribution, and playback reconciliation verified on real sessions |
-| **P6: comparative release** | Supported compatibility matrix, complete benchmark artifacts, reproducible deployment recipes, research limitations | Report Pareto tradeoffs and failures; publish only combinations with actual conformance and live evidence |
+| **P5: native speech, tools, and live APIs** | VoiceChat first new native/tool reference; validate Moshi/PersonaPlex and MiniCPM-o; refresh existing closed integrations; Lychee-FD after runtime feasibility | Input affects ongoing output; delayed tool results and user corrections reconcile correctly; playback state, control delay, and long-session memory measured |
+| **P6: interaction prediction** | Smart Turn plus transcript endpoint baseline; VAP/DualTurn next; compare existing X2-Turn/SoulX-Duplug candidates where feasible | Observation-only traces first; then one explicit controller policy; matched endpoint/overlap metrics and causal played-audio evidence |
+| **P7: richer perception** | Sortformer/multitalker ASR; one bounded audio-understanding observer; optional noise/AEC profiles | Speaker-attributed overlap quality, observation lag, preprocessing effects, and interference with critical-path deadlines measured |
+| **P8: task extensions** | ELLSA simulation/speech, Freeze-Omni comparison, Hibiki/Seamless translation; offline data/evaluation adapters | Task-specific contracts and metrics; no implicit promotion to generic duplex support |
+| **P9: comparative release** | Supported compatibility matrix, complete benchmark artifacts, reproducible deployment recipes, research limitations | Publish only tested profiles with clear semantic losses and Pareto tradeoffs; unsupported/deferred candidates remain explicit |
 
-P2 and P3 can proceed independently once P1 is specified. P4's DuplexCascade reproduction needs the prescribed Kyutai stack; integrate substitutions only after that reference works. The user's own checkpoint can proceed independently of the gated external model.
+**Dependencies:** P2 and P3 can proceed independently after the relevant P1 contracts. P4's DuplexCascade reproduction needs the prescribed Kyutai stack; the user's checkpoint does not depend on access to DuplexCascade. P5 needs P0 feasibility and P1 live/tool contracts, not completion of every cascade adapter. P6's initial endpoint comparison can run on the existing cascade after P1; dual-channel predictors additionally require a verified playback-reference stream. P7 and P8 are optional extensions, not blockers for the first P9 release.
+
+**First release scope:** one working micro-turn cascade, one native speech/tool profile, and one matched endpoint-evidence comparison, each with complete traces and playback/cancellation validation. Prefer the user's LLM/TTS for the cascade; if assets are unavailable, publish a clearly named reference profile and retain the user-model item as pending. A closed API profile is conditional on account access, not a mandatory dependency. Later releases expand the tested matrix rather than weakening the gates to claim broad support.
+
+**Defer explicitly:** DuplexOmni's published multi-GPU recommendation is outside the first single-server profile; SALMONN-omni/OmniFlatten need matching runnable assets before deployment work. Lychee-FD's patched older runtime requires Blackwell validation. Gate failures become documented unavailable profiles with a reason, while independent stages continue.
 
 ### Initial experiment cells
 
@@ -250,6 +304,13 @@ P2 and P3 can proceed independently once P1 is specified. P4's DuplexCascade rep
 | C4 | Hold ASR/LLM fixed; substitute CosyVoice, Fish compatibility, or closed incremental TTS | What is gained by same-context incremental synthesis? |
 | N0 | Moshi / PersonaPlex, each as its native integrated system | Native interaction reference and instruction-following tradeoff |
 | N1 | MiniCPM-o official duplex path | Audio first; visual evidence as a separately labeled treatment |
+| N2 | VoiceChat native session with the same tool schemas as a modular baseline | Do tool requests/results remain correct during speech, correction, and interruption? |
+| N3 | Lychee-FD native deployment | Does the separate control path remain responsive under synthesis load? |
+| I0 | Fixed cascade; Smart Turn versus transcript endpoint classifier versus calibrated fusion | What do acoustic and semantic completion evidence each contribute? |
+| I1 | Fixed cascade; current overlap policy versus VAP/DualTurn-informed policy | Can we distinguish acknowledgments from requests to take the floor? |
+| S0 | Mixed-audio recognition versus Sortformer plus multitalker recognition | Does speaker-attributed quality justify added delay and per-speaker compute? |
+| A0 | Fixed cascade with/without one bounded audio observer or preprocessing stage, one change at a time | Does extra acoustic information help without missed micro-turn deadlines? |
+| X0 | ELLSA speech/action simulation or Hibiki/Seamless translation, separately scored | Can task-specific concurrent input/output be represented faithfully? |
 | R0 | Existing OpenAI Live / Gemini Live and other entitled live APIs | Closed system reference with network/cost recorded |
 
 Run feasible cells, not an indiscriminate Cartesian product. Keep language and voice coverage visible. An English-only reference is not a Chinese quality baseline. If access to a checkpoint/API is unavailable, retain an explicit blocked cell and proceed with the other cells.
@@ -268,6 +329,8 @@ Run feasible cells, not an indiscriminate Cartesian product. Keep language and v
 
 Use server-local loopback for compute comparisons and an actual client for network/playout behavior. Do not subtract unsynchronized host wall clocks; establish clock mappings or use same-clock intervals, and record synchronization uncertainty. Closed API inference runs remotely by definition; drive and instrument those clients on `rtx-pro`, reporting network effects separately.
 
+Run CPU-oriented interaction baselines on `rtx-pro` as well, recording CPU load and thread settings. Test large native models in isolation before any co-location. For multi-stream models, inventory every codec/vocoder process and GPU allocation. Small parameter count does not excuse missing end-to-end measurements; auxiliary observers can still compete for CPU, memory bandwidth, or GPU scheduling.
+
 ### Measurements
 
 | Layer | Required observations |
@@ -277,6 +340,11 @@ Use server-local loopback for compute comparisons and an actual client for netwo
 | LLM | Time to useful response, instruction/task quality, wait/backchannel/yield decisions, response to new input during output, tool correctness, state growth |
 | TTS | First playable audio from a fixed usable text prefix, sustained real-time factor, underruns, input buffering, prosody seams, intelligibility, voice consistency |
 | Interruption | User onset to decision, decision to local playback stop, acknowledgment lag, stale frames discarded, actually heard text, false interruptions |
+| Interaction prediction | Premature endpoint rate, unnecessary waiting, hold/yield/backchannel errors, calibration, forecast horizon, input causality, and late-observation rate |
+| Speaker/overlap perception | Speaker-attributed WER or cpWER, diarization error with declared collar/overlap policy, ID consistency, attribution lag, active-speaker capacity and cost |
+| Acoustic processing / observers | Algorithmic delay, quiet-speech and backchannel preservation, echo/double-talk behavior, observation usefulness/expiry, and downstream deadline impact |
+| Native tools/actions | Duplicate execution, wrong or stale arguments, result-admission delay, correction recovery, and consistency between spoken claims and execution receipts |
+| Translation profiles | Translation quality versus source-to-target lag, alignment, omission/revision behavior, and sustained simultaneous operation |
 | Whole system | Task success, inappropriate overlap, missed backchannels, recovery from corrections, peak VRAM, utilization, cost per audio minute, long-session stability |
 
 Model frame size, network packet size, word emission interval, and end-to-end latency are different measurements. Also distinguish “barge-in detected” from “assistant stopped audibly.” For TTS, use a held-back text suffix to prove incremental input rather than accidentally testing a complete prompt.
@@ -286,6 +354,8 @@ Model frame size, network packet size, word emission interval, and end-to-end la
 Extend the existing twelve scenarios and the repository's full-duplex suites using the [benchmark guide](benchmarks.md). Add targeted fixtures for Chinese homophone repair, corrections involving negation/numbers, an unfinished clause, backchannels that should not interrupt, genuine interruption that should, long silence, speech without a decoded word, network jitter, disconnect/reconnect, rapid cancel-and-resume, and a tool result arriving during speech.
 
 Use clean loopback and real speaker/microphone conditions as separate populations. Include same-word/different-prosody pairs and competing speakers to test information beyond transcripts. Evaluate TTS with an independent recognizer and listening judgments, not the same model used to produce the input transcript.
+
+Add two- and four-speaker overlap, quiet acknowledgments during assistant playback, echo with simultaneous near-end speech, delayed speaker reassignment, expired background observations, and delayed tool results after a user correction. Playback-reference tests must include queued-but-unplayed speech and device discontinuities. Keep translation and simulated-action fixtures in separate task families. Offline data tools such as Sommelier can prepare fixtures, but preserve original timing and processing provenance and check the rights of each source dataset.
 
 For controlled comparisons, hold prompts, input evidence, voice where possible, model versions, policy, hardware, and fixture timing fixed. Repeat stochastic runs and report denominators and uncertainty. Tiny smoke suites can establish operation, not a reliable p95 or quality ranking. Native-model versus cascade results remain system comparisons unless the changed causal factor is isolated.
 
@@ -303,5 +373,7 @@ For controlled comparisons, hold prompts, input evidence, voice where possible, 
 Keep the existing provider proof levels (`documented`, `reachable`, `live-turn`) and add orthogonal evidence for streaming contracts: conformance fixtures, incremental input, concurrent input/output, cancellation/playback, and measured benchmark runs. A model card, a sidecar flag, and a mock test establish different things. None should silently promote a provider to “verified full duplex.”
 
 The first implementation pass needs the user's LLM/TTS checkpoint locations and native inference/training protocols. Further choices include primary languages, deployment/commercial constraints, preferred voices, quality/latency priorities, and allowed concurrency on the shared GPU. These do not block this survey or the protocol design, but they determine the concrete deployment profiles.
+
+Track work at the granularity of **model + checkpoint revision + serving runtime + graph profile**, with fields for public assets, license/dependency checks, hardware feasibility, contract conformance, live behavior, benchmark evidence, and next blocking condition. Inference release, training release, and data release are separate statuses. Native speech/tool models and small observers use the same promotion discipline. A failed or unavailable candidate must not be presented as implemented merely because its adapter or deployment recipe exists.
 
 External links in this document were consulted for the September 2026 survey. Before implementation, pin the exact upstream revisions and archive a capability manifest for each selected provider; moving documentation and model cards are not reproducibility records. No best-performing combination is asserted until the planned RTX Pro experiments produce evidence.
