@@ -171,3 +171,14 @@ Moshi has no session instruction or injected-text channel. Output turn
 boundaries are the adapter's RMS/hangover policy. Existing component smoke
 results do not establish acceptance of this deployment profile; a new public
 run remains required.
+
+### MiniCPM-o audio-only native reference
+
+`native-minicpm-o.yaml` connects to `services/minicpm-o-duplex.sh` on :9145,
+using the official audio-duplex call preset, reference voice, one-second model
+units and paced output. The launcher documents the pinned model and demo
+revisions. Its startup message only announces the background process; wait for
+the sidecar listening message before running the public benchmark. This
+profile does not enable vision or replace the official prompt with session
+instructions. Earlier component/smoke recordings are separate evidence; the
+new profile still requires a retained public run.
