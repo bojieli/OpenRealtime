@@ -20,14 +20,16 @@ type fixedTurnEnd struct {
 	mu          sync.Mutex
 	probability float64
 	windows     []int
+	transcripts []string
 }
 
 func (classifier *fixedTurnEnd) Name() string { return "fixed-turn-end" }
 
-func (classifier *fixedTurnEnd) Evaluate(_ context.Context, pcm16le []byte) (interaction.AcousticEndpoint, error) {
+func (classifier *fixedTurnEnd) Evaluate(_ context.Context, pcm16le []byte, transcript string) (interaction.AcousticEndpoint, error) {
 	classifier.mu.Lock()
 	defer classifier.mu.Unlock()
 	classifier.windows = append(classifier.windows, len(pcm16le))
+	classifier.transcripts = append(classifier.transcripts, transcript)
 	return interaction.AcousticEndpoint{Probability: classifier.probability, Model: "fixed"}, nil
 }
 
@@ -138,6 +140,12 @@ func TestAFinishedSoundingPauseEndsTheTurnBeforeTheSilenceThreshold(t *testing.T
 	windows := classifier.consulted()
 	if len(windows) == 0 || windows[0] < 16_000*2 {
 		t.Fatalf("classifier windows %v; it must read the speech before the pause at 16 kHz", windows)
+	}
+	classifier.mu.Lock()
+	heard := classifier.transcripts[0]
+	classifier.mu.Unlock()
+	if heard != "I would like to" {
+		t.Fatalf("a text-reading classifier must be given the turn so far, got %q", heard)
 	}
 	evidence := sink.named("turn_end.acoustic")
 	if len(evidence) == 0 || evidence[0].Attributes["probability"] != 0.9 {

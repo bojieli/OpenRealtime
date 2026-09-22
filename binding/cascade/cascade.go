@@ -62,10 +62,11 @@ func ParseObservationPolicy(value string) (ObservationPolicy, error) {
 }
 
 // TurnEndEvidence classifies whether a pause ends the user's turn from the
-// last seconds of their audio, 16 kHz mono PCM16 ending at the pause.
+// last seconds of their audio, 16 kHz mono PCM16 ending at the pause, and the
+// transcript heard so far (which an acoustic classifier ignores).
 type TurnEndEvidence interface {
 	Name() string
-	Evaluate(ctx context.Context, pcm16le []byte) (interaction.AcousticEndpoint, error)
+	Evaluate(ctx context.Context, pcm16le []byte, transcript string) (interaction.AcousticEndpoint, error)
 }
 
 // Config is the cascade's component set and its defaults.

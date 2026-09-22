@@ -5,7 +5,10 @@
 // The request body is the most recent user audio as little-endian float32
 // mono at 16 kHz, at most MaxWindow long and ending at the pause being judged;
 // the response is {"probability": P(turn complete), "model": "..."}. The
-// classifier never sees audio from after the pause, so the evidence is causal.
+// transcript heard so far travels percent-encoded in TranscriptHeader, so a
+// classifier that reads words (LiveKit's turn detector) or both (a fusion)
+// answers through the same route; an acoustic one ignores it. The classifier
+// never sees audio or words from after the pause, so the evidence is causal.
 package turnend
 
 import (
@@ -36,6 +39,10 @@ const (
 	DefaultTimeout = 300 * time.Millisecond
 
 	maxResponse = 64 << 10
+	// TranscriptHeader carries the percent-encoded transcript of the turn so
+	// far.
+	TranscriptHeader = "X-OpenRealtime-Transcript"
+	maxTranscript    = 4 << 10
 )
 
 // Config configures the client.
@@ -75,8 +82,9 @@ func New(config Config) (*Client, error) {
 func (client *Client) Name() string { return client.name }
 
 // Evaluate classifies the pause at the end of pcm16le, which must be 16 kHz
-// mono PCM16. Audio beyond MaxWindow is dropped from the front.
-func (client *Client) Evaluate(ctx context.Context, pcm16le []byte) (interaction.AcousticEndpoint, error) {
+// mono PCM16, given the transcript of the turn so far (possibly empty). Audio
+// beyond MaxWindow is dropped from the front.
+func (client *Client) Evaluate(ctx context.Context, pcm16le []byte, transcript string) (interaction.AcousticEndpoint, error) {
 	pcm16le = pcm16le[:len(pcm16le)/2*2]
 	if len(pcm16le) == 0 {
 		return interaction.AcousticEndpoint{}, errors.New("acoustic end-of-turn window is empty")
@@ -97,6 +105,12 @@ func (client *Client) Evaluate(ctx context.Context, pcm16le []byte) (interaction
 		return interaction.AcousticEndpoint{}, err
 	}
 	request.Header.Set("Content-Type", "application/octet-stream")
+	if transcript = strings.TrimSpace(transcript); transcript != "" {
+		if len(transcript) > maxTranscript {
+			transcript = transcript[len(transcript)-maxTranscript:]
+		}
+		request.Header.Set(TranscriptHeader, url.PathEscape(transcript))
+	}
 	started := time.Now()
 	response, err := client.config.HTTPClient.Do(request)
 	if err != nil {

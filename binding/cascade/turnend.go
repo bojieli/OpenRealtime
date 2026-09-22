@@ -50,7 +50,7 @@ func (runtime *runtime) recordTurnEndAudio(frame []byte, rateHz uint32) {
 // about to judge, and records the answer on the timeline whatever becomes of
 // it. A failure is recorded too and yields no evidence, which leaves the
 // floor's ordinary silence rule in charge.
-func (runtime *runtime) acousticEndpoint(revisionID uint64, silenceNS uint64) *interaction.AcousticEndpoint {
+func (runtime *runtime) acousticEndpoint(revisionID uint64, transcript string, silenceNS uint64) *interaction.AcousticEndpoint {
 	if runtime.config.TurnEnd == nil {
 		return nil
 	}
@@ -61,7 +61,7 @@ func (runtime *runtime) acousticEndpoint(revisionID uint64, silenceNS uint64) *i
 		return nil
 	}
 	started := time.Now()
-	evidence, err := runtime.config.TurnEnd.Evaluate(runtime.ctx, window)
+	evidence, err := runtime.config.TurnEnd.Evaluate(runtime.ctx, window, transcript)
 	attributes := map[string]any{
 		"classifier": runtime.config.TurnEnd.Name(),
 		"silence_ms": float64(silenceNS) / float64(time.Millisecond),

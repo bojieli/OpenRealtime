@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
@@ -16,8 +17,10 @@ import (
 func TestEvaluateSendsTheLastEightSecondsAsFloat32(t *testing.T) {
 	t.Parallel()
 	var received []byte
+	var transcript string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		received, _ = io.ReadAll(request.Body)
+		transcript, _ = url.PathUnescape(request.Header.Get(turnend.TranscriptHeader))
 		_, _ = writer.Write([]byte(`{"probability":0.83,"model":"smart-turn-v3.2"}`))
 	}))
 	defer server.Close()
@@ -29,9 +32,12 @@ func TestEvaluateSendsTheLastEightSecondsAsFloat32(t *testing.T) {
 	samples := 10 * 16_000
 	pcm := make([]byte, samples*2)
 	binary.LittleEndian.PutUint16(pcm[len(pcm)-2:], uint16(16_384))
-	evidence, err := client.Evaluate(context.Background(), pcm)
+	evidence, err := client.Evaluate(context.Background(), pcm, "我想订 a table for two")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if transcript != "我想订 a table for two" {
+		t.Fatalf("transcript header decoded to %q", transcript)
 	}
 	if evidence.Probability != 0.83 || evidence.Model != "smart-turn-v3.2" || evidence.WindowMS != 8_000 {
 		t.Fatalf("evidence = %+v", evidence)
@@ -55,7 +61,7 @@ func TestEvaluateRefusesAnswersThatAreNotProbabilities(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := client.Evaluate(context.Background(), make([]byte, 3_200)); err == nil {
+		if _, err := client.Evaluate(context.Background(), make([]byte, 3_200), ""); err == nil {
 			t.Errorf("body %q was accepted", body)
 		}
 		server.Close()
@@ -78,7 +84,7 @@ func TestASlowClassifierFailsWithinItsBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := time.Now()
-	if _, err := client.Evaluate(context.Background(), make([]byte, 3_200)); err == nil {
+	if _, err := client.Evaluate(context.Background(), make([]byte, 3_200), ""); err == nil {
 		t.Fatal("a classifier that never answered produced evidence")
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {

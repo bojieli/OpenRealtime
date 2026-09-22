@@ -318,7 +318,7 @@ func (runtime *runtime) holdsThroughPause(
 		situation := runtime.situation(decision)
 		decision.Situation = &situation
 	}
-	decision.AcousticEndpoint = runtime.acousticEndpoint(latest.ID, silenceNS)
+	decision.AcousticEndpoint = runtime.acousticEndpoint(latest.ID, latest.Text(), silenceNS)
 	endpoint := runtime.policies.Floor.Endpoint(decision)
 	runtime.debug(context.Background(), binding.DebugEvent{
 		Category: "policy", Name: "policy.floor.pause", Phase: "decision",
