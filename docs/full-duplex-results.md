@@ -37,7 +37,24 @@ Times are from the start of the audio. "Committed" is text the recogniser will
 not revise; "rewrites" counts hypotheses that took back text a consumer had
 already been shown.
 
-RESULTS_ASR
+| Recogniser | Route | Lang | Error rate | First hypothesis p50 | First committed p50 | Finalize p50 | Withdrawals | Rewrites |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-ASR 0.6B | start/chunk/finish (baseline) | en | **2.0%** WER | **847 ms** | 6,054 ms (final only) | 59 ms | 0 | n/a |
+| Nemotron streaming EN 0.6B, 160 ms chunk | start/chunk/finish | en | 2.4% WER | 1,313 ms | **1,313 ms** | 27 ms | 0 | 0 |
+| Nemotron streaming EN 0.6B, 560 ms chunk | start/chunk/finish | en | 2.4% WER | 1,805 ms | 1,805 ms | 98 ms | 0 | 0 |
+| Voxtral Mini 4B Realtime, 480 ms delay | vLLM /v1/realtime | en | 2.8% WER | 1,702 ms | 1,702 ms | 317 ms | 0 | 0 |
+| Voxtral Mini 4B Realtime | vLLM /v1/realtime | zh | 9.5% CER | 2,701 ms | 2,701 ms | 451 ms | 0 | 0 |
+| Deepgram Nova-3 (closed) | WebSocket | en | 4.5% WER | 1,101 ms | 4,439 ms | 41 ms | 0 | 31 |
+| Deepgram Nova-3 (closed) | WebSocket | zh | 12.9% CER | 2,101 ms | 4,701 ms | 75 ms | 0 | 61 |
+| Kyutai STT 1B | start/chunk/finish | en | 6.0% WER | 1,434 ms | 1,740 ms | 188 ms | 0 | 0 |
+| Kyutai STT 1B | start/chunk/finish | fr | 22.2% WER | 2,574 ms | 3,036 ms | 157 ms | 0 | 0 |
+| Nemotron 3.5 multilingual 0.6B, 320 ms | start/chunk/finish | en / zh | 4.7% / 18.0% | 1,813 / 2,534 ms | same | 177 / 65 ms | 0 | 0 |
+| FunASR streaming Paraformer, 600 ms chunk | start/chunk/finish | zh | 11.8% CER | 2,679 ms | 2,679 ms | 184 ms | 0 | 0 |
+
+Times are from the start of the audio, which carries 300 ms of pre-roll plus
+each recording's own leading silence, so they compare recognisers rather than
+state an absolute word lag. The full table, including the configurations not
+shown here, is `python tools/duplexmodels/asr_summary.py`.
 
 Readings:
 
@@ -63,7 +80,31 @@ RESULTS_TTS
 
 ## Micro-turn language model (P4)
 
-RESULTS_MICROTURN
+The micro-turn cascade runs as one duplex model
+(`sidecars/microturn_sidecar.py`): streaming ASR, a controller asked every
+500 ms, a streamed answer, and incremental synthesis, with its own floor.
+DuplexCascade's released checkpoint is gated, so the controller is an ordinary
+instruct model (Qwen3-8B) driven through the same protocol - the plan's
+"orchestrated micro-turns" fallback, and the sidecar refuses to pretend
+otherwise.
+
+What the clock costs and what it delivers, from the traces of the end-to-end
+runs (`python tools/duplexmodels/microturn_trace.py`):
+
+| Measurement | Value |
+| --- | --- |
+| Committed word to the tick that admitted it | p50 175 ms, p90 422 ms |
+| Control decision (Qwen3-8B, enumerated answer) | p50 123 ms, p90 198 ms |
+| Decisions that outlasted their 500 ms tick | 0 of 5,017 |
+| Decision triggers | 4,540 clock, 416 a word during speech, 61 the user going quiet |
+
+Three rules are enforced without asking the controller, because they are about
+who holds the floor rather than about what was meant: while the user is
+audibly speaking the assistant waits; words spoken before the assistant took
+the floor cannot be an interruption of it; and a decision is taken at the
+moment the user goes quiet rather than at the next tick. Before them the
+controller answered half-sentences and then stopped itself - FD-Bench answered
+turns went from 31/55 to 30/36 with no premature starts when they were added.
 
 ## Native speech models (P5)
 
