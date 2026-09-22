@@ -153,6 +153,15 @@ wall-clock replay or a public Realtime session. The summary, prompt, seed,
 and audio hashes are retained in
 [`personaplex/20260922-resume`](../deploy/duplex/evidence/personaplex/20260922-resume/).
 
+A subsequent 25 s wall-clock-paced sidecar question probe answered “Paris”
+and emitted an answer turn boundary without protocol errors. First audible
+answer packets arrived 158 ms after the supplied question ended; this is
+packet-arrival timing, not rendered playback latency. Across 312 model frames,
+p50/p95 compute was 28.61/31.93 ms per 80 ms frame, with one frame over budget
+and no dropped or starved input frames. The sidecar uses an explicit
+RMS/hangover policy for output boundaries; these are not native EOS signals.
+The public Realtime smoke campaign is pending.
+
 Native validation remains incomplete. The retained component artifacts under
 `results/native/` establish narrower findings:
 

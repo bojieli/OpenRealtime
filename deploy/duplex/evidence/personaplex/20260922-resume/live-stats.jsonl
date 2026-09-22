@@ -1,0 +1,1 @@
+{"model": "nvidia/personaplex-7b-v1", "pid": 160425, "frames": 312, "input_frames": 312, "starved_frames": 0, "dropped_frames": 0, "turns": 2, "interrupts": 0, "audio_frames_sent": 82, "session_seconds": 27.3, "frame_ms_p50": 28.61, "frame_ms_p95": 31.93, "frame_ms_max": 159.23, "rtf_p50": 0.358, "rtf_p95": 0.399, "frames_over_budget": 1}

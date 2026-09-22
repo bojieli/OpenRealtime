@@ -1,0 +1,58 @@
+{
+  "label": "run",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "nvidia/personaplex-7b-v1",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in"
+    ],
+    "handshake_s": 2.12
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    10.6455078125,
+    9.04541015625,
+    10.69873046875
+  ],
+  "question": ".runtime/duplex-plan/data/ellsa/ELLSA_test_data/llama_questions/1.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.022,
+  "first_audio_s": 4.180310395080596,
+  "first_audio_latency_s": 0.158,
+  "audible_segments": [
+    [
+      0.5,
+      2.409
+    ],
+    [
+      4.18,
+      8.329
+    ]
+  ],
+  "turn_done_s": [
+    2.98,
+    8.9
+  ],
+  "text_done": [
+    {
+      "t": 2.972,
+      "text": " Hey, let me know if you have any questions."
+    },
+    {
+      "t": 8.889,
+      "text": " capital of France is Paris, that's where the Eiffel Tower is, you know, all that good stuff."
+    }
+  ],
+  "text_deltas": " Hey, let me know if you have any questions. capital of France is Paris, that's where the Eiffel Tower is, you know, all that good stuff.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 6.56
+}
