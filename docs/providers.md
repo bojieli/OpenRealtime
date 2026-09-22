@@ -146,6 +146,8 @@ policy has nothing to observe without it:
 | Provider | Streams | Notes |
 | --- | --- | --- |
 | `qwen-asr` | yes | the local default; no account, no audio leaves the machine |
+| `vllm-realtime` | yes | natively streaming recognisers on vLLM's `/v1/realtime` route (Voxtral Mini 4B Realtime by default, Qwen3-ASR with `-asr-model`); deltas are append-only, so every reported word is committed |
+| `streaming-asr` | yes | the start/chunk/finish dialect served by `tools/duplexmodels` for Nemotron streaming, Kyutai STT and others; a committed prefix is reported when the service sends `stable_text` |
 | `deepgram` | yes | a WebSocket with interim results, built for voice agents |
 | `openai` | no | `/v1/audio/transcriptions` |
 | `groq` | no | Whisper, fast enough that the round trip is close to a streaming one |
@@ -283,6 +285,7 @@ openrealtime serve -config openrealtime.deepgram.yaml
 | `openai-compatible` | `/v1/audio/speech` | the local default: SGLang-Omni, Kokoro, anything |
 | `openai` | `/v1/audio/speech` | `alloy` and the rest |
 | `fish-audio` | the native Fish server | selected when the server starts |
+| `speech-socket` | `openrealtime-incremental-speech/1` WebSocket | selected by the service (`tools/duplexmodels`: CosyVoice, Kyutai, VibeVoice, Qwen3-TTS, Fish S2 Pro) |
 | `fish-audio-cloud`, `groq`, `siliconflow` | `/v1/audio/speech` | vendor voices |
 | `deepgram` | `/v1/speak` | named **inside the model**; setting a voice is refused |
 | `elevenlabs` | `/v1/text-to-speech/VOICE/stream` | required, and part of the path |
@@ -299,6 +302,16 @@ split a sample, and the rule that exactly one chunk carries the terminal flag.
 A vendor that answers `200` with a JSON error body is caught rather than
 synthesised: playing an error message to the caller as noise is worse than
 failing.
+
+`speech-socket` is the same-context synthesis contract of the
+[streaming plan](full-duplex-streaming-plan.md#74-incremental-synthesis-sessions):
+a context is opened, text is appended while audio is already being produced,
+and a cancel discards everything generated after it. Each service declares
+whether its model really conditions on a growing prefix (`incremental_text`,
+`input_granularity`) or has to be handed whole clauses or sentences, and the
+[TTS results](full-duplex-results.md) record which is which. As a provider it
+opens one context per spoken segment; the incremental API itself is
+`adapters/speechsocket.Context`.
 
 ## Realtime endpoints (the `upstream` binding)
 

@@ -58,6 +58,7 @@ or investigate a failure.
 | Record | Read it for |
 | --- | --- |
 | [Streaming and full-duplex survey and plan](full-duplex-streaming-plan.md) | September 2026 model/API survey, composable streaming contracts, and the RTX Pro evaluation roadmap |
+| [Streaming and full-duplex integration: results](full-duplex-results.md) | What the plan's first execution pass built, measured on the RTX Pro, and could not run, with deployment profiles |
 | [Expanded open-model survey](open-duplex-models-survey.md) | native duplex agents, turn prediction, speaker/overlap perception, audio understanding, and additional integration priorities |
 | [Interaction findings](interaction-findings.md) | lessons about model inputs and timing decisions |
 | [Response latency](latency.md) | waveform timing and measured bottlenecks |
