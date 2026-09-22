@@ -1,0 +1,113 @@
+{
+  "conditions": {
+    "chattts-single-round-combine-easy": {
+      "conversations": 291,
+      "duration_hours": 4.15869375,
+      "cases_with_issues": 0
+    },
+    "chattts-single-round-combine-hard": {
+      "conversations": 291,
+      "duration_hours": 2.59726380787037,
+      "cases_with_issues": 0
+    },
+    "chattts-single-round-combine-med": {
+      "conversations": 291,
+      "duration_hours": 3.1997910648148142,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy": {
+      "conversations": 293,
+      "duration_hours": 4.234613067129627,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy-noisy-bg-0dB": {
+      "conversations": 293,
+      "duration_hours": 4.232985960648147,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy-noisy-bg-10dB": {
+      "conversations": 293,
+      "duration_hours": 4.225351493055557,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy-noisy-bg-20dB": {
+      "conversations": 293,
+      "duration_hours": 4.228306967592591,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy-noisy-gap-0dB": {
+      "conversations": 293,
+      "duration_hours": 4.228998171296296,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy-noisy-gap-10dB": {
+      "conversations": 293,
+      "duration_hours": 4.2284778124999995,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-easy-noisy-gap-20dB": {
+      "conversations": 293,
+      "duration_hours": 4.224278356481485,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-hard": {
+      "conversations": 293,
+      "duration_hours": 2.6688656597222233,
+      "cases_with_issues": 0
+    },
+    "cosyvoice2-single-round-combine-med": {
+      "conversations": 293,
+      "duration_hours": 3.27675236111111,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy": {
+      "conversations": 293,
+      "duration_hours": 3.802195092592593,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy-noisy-bg-0dB": {
+      "conversations": 293,
+      "duration_hours": 3.7962706134259254,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy-noisy-bg-10dB": {
+      "conversations": 293,
+      "duration_hours": 3.8102750347222227,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy-noisy-bg-20dB": {
+      "conversations": 293,
+      "duration_hours": 3.810428148148149,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy-noisy-gap-0dB": {
+      "conversations": 293,
+      "duration_hours": 3.8001483449074063,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy-noisy-gap-10dB": {
+      "conversations": 293,
+      "duration_hours": 3.8022437384259242,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-easy-noisy-gap-20dB": {
+      "conversations": 293,
+      "duration_hours": 3.8051715625000013,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-hard": {
+      "conversations": 293,
+      "duration_hours": 2.2421476967592597,
+      "cases_with_issues": 0
+    },
+    "f5tts-single-round-combine-med": {
+      "conversations": 293,
+      "duration_hours": 2.845155185185185,
+      "cases_with_issues": 0
+    }
+  },
+  "total_conversations": 6147,
+  "total_audio_hours": 77.2184138888889,
+  "cases_with_issues": 0,
+  "manifest_sha256": "083657a6d66c25348a9641879e565e07508d83d9480f7d23d6cf2eb7fdd39a59"
+}

@@ -215,3 +215,10 @@ three synthesisers and three difficulties, plus background/gap noise at 0, 10,
 and 20 dB for the CosyVoice2 and F5-TTS easy populations. ChatTTS has 291 WAVs
 per condition; the others have 293. These file counts are inventory, not evidence
 that those populations have been evaluated or passed.
+
+The [2026-09-22 fixture audit](evidence/fixtures/20260922-fdbench/summary.json)
+checks all 6,147 local conversations (77.22 source-audio hours): WAV headers,
+PCM payload lengths, annotation presence/order/range, and file SHA256 hashes.
+No structural issues were found. The adjacent manifest pins each WAV and
+annotation; the audit script reproduces the check from the repository root.
+This does not validate semantic annotation accuracy or establish model results.
