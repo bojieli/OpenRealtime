@@ -38,6 +38,15 @@ Recognisers speak the start/chunk/finish contract with a committed prefix, and
 synthesisers `openrealtime-incremental-speech/1`; both are specified in the
 module docstring of `tools/duplexmodels/common.py`.
 
+Each family has its own virtual environment under
+`.runtime/duplex-plan/venvs/` (`nemo`, `kyutai`, `cosyvoice`, `vibevoice`,
+`qwen3tts`, `turn`, `perception`, `freezeomni`, `lychee`, `minicpm-duplex`,
+`microturn`, ...), because their pinned stacks conflict: several upstream
+projects pin a PyTorch with no sm_120 kernels, and each service script names
+the interpreter it needs. Every native sidecar also runs with `--mock`, which
+speaks the protocol without weights - that is how `openrealtime conformance
+sidecar` checks the plumbing before a GPU is involved.
+
 ## Sharing one GPU
 
 This is one 96 GB card. Small services (under 8 GB) run side by side; anything
