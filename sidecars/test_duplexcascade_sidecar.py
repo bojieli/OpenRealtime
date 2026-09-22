@@ -52,6 +52,43 @@ class ProtocolTests(unittest.TestCase):
             sidecar.closing.set()
             worker.join(1)
 
+    def test_disconnect_releases_native_workers_before_next_handshake(self):
+        import socket
+        import time
+        from unittest.mock import patch
+        from openrealtime_sidecar.protocol import read_message, write_message
+
+        class Recognizer:
+            def __init__(self, *args): pass
+            async def run(self): await asyncio.Event().wait()
+
+        backend=SimpleNamespace(session_lock=threading.Lock(),session=lambda:None)
+        args=SimpleNamespace(trace_dir=None,asr='unused',tts='unused',voice='default')
+        with patch('duplexcascade_sidecar.AppendOnlyRecognizer',Recognizer):
+            for _ in range(2):
+                client,server=socket.socketpair()
+                client.settimeout(2)
+                reader,writer=server.makefile('rb'),server.makefile('wb')
+                sidecar=NativeCascade(reader,writer,args=args,backend=backend)
+                thread=threading.Thread(target=sidecar.run,daemon=True)
+                thread.start()
+                remote_reader,remote_writer=client.makefile('rb'),client.makefile('wb')
+                try:
+                    write_message(remote_writer,'hello',version=1,sample_rate=16000)
+                    self.assertEqual(read_message(remote_reader).type,'ready')
+                    write_message(remote_writer,'respond')
+                    time.sleep(.03)  # response worker waits for model-owned output
+                    write_message(remote_writer,'bye')
+                    thread.join(1)
+                    self.assertFalse(thread.is_alive())
+                    self.assertTrue(sidecar.finished.is_set())
+                    self.assertFalse(backend.session_lock.locked())
+                finally:
+                    sidecar.closing.set()
+                    client.shutdown(socket.SHUT_RDWR)
+                    for handle in (remote_reader,remote_writer,client,reader,writer,server):
+                        handle.close()
+
     def test_failed_session_releases_model_for_next_connection(self):
         class Failed(NativeCascade):
             async def _main(self): raise RuntimeError('failed initialization')
