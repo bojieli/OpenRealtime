@@ -188,6 +188,8 @@ def main() -> None:
     parser.add_argument("--tool-delay", type=float, default=4.0)
     parser.add_argument("--tool-output", default=None)
     parser.add_argument("--tool-error", default=None)
+    parser.add_argument("--duplicate-tool-result", action="store_true",
+                        help="send each result twice to test adapter deduplication; no tool is executed")
     parser.add_argument("--instructions", default="")
     parser.add_argument("--duration", type=float, default=40.0, help="total seconds of session")
     parser.add_argument("--stop-after", type=float, default=0.0,
@@ -277,6 +279,9 @@ def main() -> None:
                     arguments.tool_output.strip()[:1] in "{[\"0123456789" else (arguments.tool_output or "ok")
             session.send("tool_result", **header)
             tool_results_sent.append({"t": round(now, 3), **header})
+            if arguments.duplicate_tool_result:
+                session.send("tool_result", **header)
+                tool_results_sent.append({"t": round(session.now(), 3), "duplicate": True, **header})
             print(f"[{now:6.2f}] tool_result sent {header}", flush=True)
         if stop_sending_at is None or t_packet < stop_sending_at:
             packet = timeline[sent_samples:sent_samples + PACKET]
