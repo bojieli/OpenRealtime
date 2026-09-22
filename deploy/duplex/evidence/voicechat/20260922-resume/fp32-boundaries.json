@@ -1,0 +1,41 @@
+{
+  "source": ".runtime/duplex-plan/results/native/voicechat-fp32-upstream.jsonl",
+  "timing_basis": "upstream packet arrival; RMS threshold 0.01 is diagnostic only",
+  "responses": {
+    "resp-openrealtime-408defd762514126a72fe2b26c2d841a-0-2068f570": {
+      "text": "",
+      "audio_packets": 10,
+      "audio_seconds": null,
+      "done_at": 3.431,
+      "last_audible_at": null,
+      "created_at": 2.7906,
+      "last_audio_at": 3.4308,
+      "audio_payload_redacted": true
+    },
+    "resp-openrealtime-408defd762514126a72fe2b26c2d841a-0-bbbb66d3": {
+      "text": "Hi there! How can I help you today?",
+      "audio_packets": 27,
+      "audio_seconds": null,
+      "done_at": 5.5959,
+      "last_audible_at": null,
+      "created_at": 3.5007,
+      "last_audio_at": 5.5956,
+      "audio_payload_redacted": true,
+      "last_text_at": 4.9995
+    },
+    "resp-openrealtime-408defd762514126a72fe2b26c2d841a-0-b6e96fdb": {
+      "text": "You could try making a budget and cutting unnecessary expenses.",
+      "audio_packets": 327,
+      "audio_seconds": null,
+      "done_at": null,
+      "last_audible_at": null,
+      "created_at": 5.6622,
+      "last_audio_at": 32.474,
+      "audio_payload_redacted": true,
+      "last_text_at": 8.547
+    }
+  },
+  "unterminated": [
+    "resp-openrealtime-408defd762514126a72fe2b26c2d841a-0-b6e96fdb"
+  ]
+}

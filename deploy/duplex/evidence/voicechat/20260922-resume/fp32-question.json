@@ -1,0 +1,59 @@
+{
+  "label": "run",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 2.675
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    10.92919921875,
+    10.576171875,
+    15.31689453125
+  ],
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.613,
+  "first_audio_s": 5.4820445398800075,
+  "first_audio_latency_s": 0.869,
+  "audible_segments": [
+    [
+      1.89,
+      2.373
+    ],
+    [
+      2.847,
+      3.089
+    ],
+    [
+      5.482,
+      8.719
+    ]
+  ],
+  "turn_done_s": [
+    0.854,
+    3.019
+  ],
+  "text_done": [
+    {
+      "t": 3.019,
+      "text": "Hi there! How can I help you today?"
+    }
+  ],
+  "text_deltas": "Hi there! How can I help you today?You could try making a budget and cutting unnecessary expenses.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 29.12
+}

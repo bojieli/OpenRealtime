@@ -27,3 +27,12 @@ silence feedback on EOS (`duplex_ear_tts.py`, `inference_force_speech_silence_on
 Therefore closing a response on every padding token would not reproduce the
 reference semantics. The upstream recipe also warns that BF16 greedy thinker
 decoding may diverge from FP32; a precision comparison remains outstanding.
+
+## FP32 eager thinker control
+
+The 30-second question probe also completed with an FP32 eager thinker,
+39.87 GiB loaded weights, retaining the native talker. No protocol errors
+were reported. The answer still lacked response.done; switching thinker
+precision/execution alone did not resolve the defect. See fp32-question.json,
+fp32-boundaries.json and the exact fp32-config.yaml. This is not complete
+NeMo parity because the talker remains on the optimized implementation.
