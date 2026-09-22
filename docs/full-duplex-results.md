@@ -368,6 +368,12 @@ Native validation remains incomplete. The retained component artifacts under
   end tokens for the greeting. This implicates generation in this configured
   runtime rather than a final end token discarded by the downstream projector;
   it does not yet distinguish model behavior from runtime numerical differences.
+  Delaying the question to 5 s (after the greeting's audible end at 3.888 s)
+  did not restore the final answer boundary. The greeting boundary instead
+  shifted to 5.849 s, after the new user onset, while the answer's audible
+  output ended at 14.126 s without a boundary by 25 s. This suggests the
+  marker may track a later dialogue transition rather than audible completion;
+  that interpretation still requires a controlled next-input check.
 
 ## Interaction prediction (P6)
 
