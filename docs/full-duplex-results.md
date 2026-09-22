@@ -76,7 +76,38 @@ Readings:
 
 ## Incremental synthesis (P3)
 
-RESULTS_TTS
+Six synthesisers serve `openrealtime-incremental-speech/1`. The acceptance
+test is the plan's: open a context, append the first half of a sentence, wait
+1.5 s, and see whether audio for that unfinished prefix arrives before the
+rest is sent - run through the runtime's own client (`tools/ttsprobe`), not
+the service's self-report.
+
+| Synthesiser | Declares | Audio for the unfinished prefix | First audio | Audio after cancel |
+| --- | --- | --- | --- | --- |
+| VibeVoice-Realtime 0.5B | token | **4 of 4** | **70-234 ms** | 0 ms |
+| Kyutai TTS 1.6B | token | 2 of 4 | 587-1,793 ms | 0 ms |
+| Deepgram Aura (closed) | flush | 1 of 4 | 323-1,612 ms | 0 ms |
+| CosyVoice 3 0.5B | token | 0 of 4 | 5,984-15,727 ms | 0 ms |
+| Qwen3-TTS 0.6B | token | 0 of 4 | 4,404-16,610 ms | 0 ms |
+| Fish S2 Pro | - | not served in this pass | - | - |
+
+Readings:
+
+- **A declaration is not a measurement.** CosyVoice and Qwen3-TTS both declare
+  token-level incremental input; neither produced audio for an unfinished
+  prefix in any probe. Deepgram declares the weaker flush granularity and its
+  one success is exactly the sentence whose prefix ended at a comma - the
+  honest declaration predicted its behaviour, the optimistic ones did not.
+- **Cancellation is clean everywhere**: no service delivered any audio after
+  the cancel was acknowledged, which is the property the runtime needs to stop
+  speaking without leaving stale speech in flight.
+- VibeVoice's first audio is an order of magnitude earlier than the rest, and
+  since the synthesiser dominates the end-to-end reply latency of this
+  cascade, that is the substitution most likely to move it.
+
+All of these were measured while the machine was loaded; the per-service
+comparison in `.runtime/duplex-plan/results/tts/` has the quieter re-runs and
+the intelligibility scores (recognised back with the local recogniser).
 
 ## Micro-turn language model (P4)
 
