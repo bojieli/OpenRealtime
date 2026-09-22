@@ -1,0 +1,104 @@
+{"t": 0.854, "type": "turn_done"}
+{"t": 1.705, "type": "text_delta", "text": "Hi"}
+{"t": 1.786, "type": "text_delta", "text": "!"}
+{"t": 1.885, "type": "text_delta", "text": " How"}
+{"t": 1.913, "type": "output_audio", "samples": 1764, "rms": 0.0363}
+{"t": 1.966, "type": "text_delta", "text": " can"}
+{"t": 1.99, "type": "output_audio", "samples": 1764, "rms": 0.0211}
+{"t": 2.044, "type": "text_delta", "text": " I"}
+{"t": 2.068, "type": "output_audio", "samples": 1764, "rms": 0.0237}
+{"t": 2.131, "type": "text_delta", "text": " help"}
+{"t": 2.158, "type": "output_audio", "samples": 1764, "rms": 0.0191}
+{"t": 2.211, "type": "text_delta", "text": " you"}
+{"t": 2.238, "type": "output_audio", "samples": 1764, "rms": 0.0231}
+{"t": 2.286, "type": "text_delta", "text": " today"}
+{"t": 2.311, "type": "output_audio", "samples": 1764, "rms": 0.0148}
+{"t": 2.368, "type": "text_delta", "text": "?"}
+{"t": 2.391, "type": "output_audio", "samples": 1764, "rms": 0.0088}
+{"t": 2.526, "type": "output_audio", "samples": 1764, "rms": 0.0027}
+{"t": 2.609, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 2.69, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 2.772, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 2.854, "type": "output_audio", "samples": 1764, "rms": 0.0003}
+{"t": 2.935, "type": "output_audio", "samples": 1764, "rms": 0.0224}
+{"t": 3.017, "type": "output_audio", "samples": 1764, "rms": 0.0215}
+{"t": 3.098, "type": "output_audio", "samples": 1764, "rms": 0.0113}
+{"t": 3.112, "type": "output_audio", "samples": 1764, "rms": 0.0025}
+{"t": 3.113, "type": "text_done", "text": "Hi! How can I help you today?"}
+{"t": 3.113, "type": "turn_done"}
+{"t": 3.19, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.324, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.405, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.488, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.57, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.652, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.733, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.814, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.896, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.896, "type": "log", "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"}
+{"t": 3.896, "type": "turn_done"}
+{"t": 5.166, "type": "text_delta", "text": "You"}
+{"t": 5.251, "type": "text_delta", "text": " can"}
+{"t": 5.324, "type": "text_delta", "text": " save"}
+{"t": 5.414, "type": "text_delta", "text": " money"}
+{"t": 5.494, "type": "text_delta", "text": " by"}
+{"t": 5.569, "type": "text_delta", "text": " making"}
+{"t": 5.648, "type": "text_delta", "text": " a"}
+{"t": 5.676, "type": "output_audio", "samples": 1764, "rms": 0.0283}
+{"t": 5.73, "type": "text_delta", "text": " budget"}
+{"t": 5.751, "type": "output_audio", "samples": 1764, "rms": 0.0116}
+{"t": 5.827, "type": "text_delta", "text": " and"}
+{"t": 5.854, "type": "output_audio", "samples": 1764, "rms": 0.0201}
+{"t": 5.891, "type": "text_delta", "text": " tracking"}
+{"t": 5.915, "type": "output_audio", "samples": 1764, "rms": 0.026}
+{"t": 5.973, "type": "text_delta", "text": " your"}
+{"t": 6.002, "type": "output_audio", "samples": 1764, "rms": 0.007}
+{"t": 6.041, "type": "text_delta", "text": " expenses"}
+{"t": 6.065, "type": "output_audio", "samples": 1764, "rms": 0.0365}
+{"t": 6.125, "type": "text_delta", "text": "."}
+{"t": 6.151, "type": "output_audio", "samples": 1764, "rms": 0.0322}
+{"t": 6.284, "type": "output_audio", "samples": 1764, "rms": 0.0118}
+{"t": 6.377, "type": "output_audio", "samples": 1764, "rms": 0.025}
+{"t": 6.458, "type": "output_audio", "samples": 1764, "rms": 0.0224}
+{"t": 6.54, "type": "output_audio", "samples": 1764, "rms": 0.0164}
+{"t": 6.629, "type": "output_audio", "samples": 1764, "rms": 0.0079}
+{"t": 6.635, "type": "output_audio", "samples": 1764, "rms": 0.0206}
+{"t": 6.775, "type": "output_audio", "samples": 1764, "rms": 0.012}
+{"t": 6.855, "type": "output_audio", "samples": 1764, "rms": 0.0161}
+{"t": 6.936, "type": "output_audio", "samples": 1764, "rms": 0.0053}
+{"t": 7.018, "type": "output_audio", "samples": 1764, "rms": 0.0121}
+{"t": 7.099, "type": "output_audio", "samples": 1764, "rms": 0.0159}
+{"t": 7.185, "type": "output_audio", "samples": 1764, "rms": 0.0042}
+{"t": 7.261, "type": "output_audio", "samples": 1764, "rms": 0.0231}
+{"t": 7.343, "type": "output_audio", "samples": 1764, "rms": 0.0174}
+{"t": 7.357, "type": "output_audio", "samples": 1764, "rms": 0.0134}
+{"t": 7.488, "type": "output_audio", "samples": 1764, "rms": 0.0166}
+{"t": 7.57, "type": "output_audio", "samples": 1764, "rms": 0.0064}
+{"t": 7.651, "type": "output_audio", "samples": 1764, "rms": 0.012}
+{"t": 7.733, "type": "output_audio", "samples": 1764, "rms": 0.0048}
+{"t": 7.814, "type": "output_audio", "samples": 1764, "rms": 0.0198}
+{"t": 7.895, "type": "output_audio", "samples": 1764, "rms": 0.0263}
+{"t": 7.977, "type": "output_audio", "samples": 1764, "rms": 0.0019}
+{"t": 8.059, "type": "output_audio", "samples": 1764, "rms": 0.0118}
+{"t": 8.141, "type": "output_audio", "samples": 1764, "rms": 0.0103}
+{"t": 8.223, "type": "output_audio", "samples": 1764, "rms": 0.0112}
+{"t": 8.31, "type": "output_audio", "samples": 1764, "rms": 0.007}
+{"t": 8.389, "type": "output_audio", "samples": 1764, "rms": 0.0053}
+{"t": 8.469, "type": "output_audio", "samples": 1764, "rms": 0.0084}
+{"t": 8.552, "type": "output_audio", "samples": 1764, "rms": 0.0141}
+{"t": 8.633, "type": "output_audio", "samples": 1764, "rms": 0.0066}
+{"t": 8.722, "type": "output_audio", "samples": 1764, "rms": 0.0068}
+{"t": 8.804, "type": "output_audio", "samples": 1764, "rms": 0.0122}
+{"t": 8.885, "type": "output_audio", "samples": 1764, "rms": 0.0059}
+{"t": 8.969, "type": "output_audio", "samples": 1764, "rms": 0.0047}
+{"t": 9.049, "type": "output_audio", "samples": 1764, "rms": 0.0004}
+{"t": 9.131, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 9.213, "type": "output_audio", "samples": 1764, "rms": 0.0003}
+{"t": 9.306, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 9.379, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 9.462, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.562, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.63, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.631, "type": "log", "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"}
+{"t": 9.631, "type": "text_done", "text": "You can save money by making a budget and tracking your expenses."}
+{"t": 9.631, "type": "turn_done"}

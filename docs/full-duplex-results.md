@@ -381,6 +381,16 @@ Native validation remains incomplete. The retained component artifacts under
   before 30 s. Upstream EOS therefore cannot be the sole playback-completion
   signal for this profile; an explicitly declared output-segmentation policy
   is needed without relabelling its boundaries as model decisions.
+  The opt-in `native-voicechat-output-segmented` profile now uses 800 ms of
+  decoded quiet PCM after audible output to close an adapter segment. It
+  suppresses idle codec silence and leaves the default upstream-EOS profile
+  available. A real GPU question probe closed the final answer at 8.907 s
+  (audible segment ended at 8.175 s), with no protocol errors or duplicate
+  greeting boundary. An earlier implementation's duplicate boundary and the
+  corrected result are both retained in
+  [the segmentation evidence](../deploy/duplex/evidence/voicechat/20260922-output-segmentation/).
+  This one-question check does not establish interruption or playback acceptance;
+  the new profile's public-Realtime evaluation is pending.
 
 ## Interaction prediction (P6)
 

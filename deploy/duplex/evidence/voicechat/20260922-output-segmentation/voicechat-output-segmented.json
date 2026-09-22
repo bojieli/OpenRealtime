@@ -1,0 +1,76 @@
+{
+  "label": "run",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 1.436
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    38.32421875,
+    61.48095703125,
+    62.63623046875
+  ],
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.613,
+  "first_audio_s": 5.676173838786781,
+  "first_audio_latency_s": 1.063,
+  "audible_segments": [
+    [
+      1.913,
+      2.391
+    ],
+    [
+      2.935,
+      3.178
+    ],
+    [
+      5.676,
+      8.884
+    ]
+  ],
+  "turn_done_s": [
+    0.854,
+    3.113,
+    3.896,
+    9.631
+  ],
+  "text_done": [
+    {
+      "t": 3.113,
+      "text": "Hi! How can I help you today?"
+    },
+    {
+      "t": 9.631,
+      "text": "You can save money by making a budget and tracking your expenses."
+    }
+  ],
+  "text_deltas": "Hi! How can I help you today?You can save money by making a budget and tracking your expenses.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [
+    {
+      "t": 3.896,
+      "type": "log",
+      "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"
+    },
+    {
+      "t": 9.631,
+      "type": "log",
+      "text": "voicechat adapter output boundary: 800 ms decoded silence; not model EOS"
+    }
+  ],
+  "output_seconds": 5.92
+}
