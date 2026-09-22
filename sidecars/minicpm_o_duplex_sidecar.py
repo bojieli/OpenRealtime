@@ -501,13 +501,26 @@ class MiniCPMODuplexSidecar(Sidecar):
         """
         packet_bytes = int(MODEL_OUTPUT_RATE * 0.08) * 2
         next_at: float | None = None
+        delivered_text: list[str] = []
         while not self._stop.is_set():
             try:
                 generation, kind, value = self._out.get(timeout=0.05)
             except queue.Empty:
                 continue
             if kind != "audio":
-                self._deliver(kind, value)
+                with self._out_lock:
+                    if self._stop.is_set():
+                        return
+                    if kind == "text":
+                        if generation != self._out_generation:
+                            continue
+                        self._deliver(kind, value)
+                        delivered_text.append(value)
+                    elif kind == "end":
+                        # Keep the boundary for a cancelled turn, but commit
+                        # only text whose deltas actually left this queue.
+                        self._deliver(kind, "".join(delivered_text))
+                        delivered_text.clear()
                 continue
             for offset in range(0, len(value), packet_bytes):
                 if generation != self._out_generation or self._stop.is_set():

@@ -38,6 +38,35 @@ class PacerTests(unittest.TestCase):
                 self.assertFalse(worker.is_alive())
                 self.assertEqual(sent, [packet])
 
+    def test_interrupt_discards_queued_words_but_keeps_turn_boundary(self):
+        sidecar = MiniCPMODuplexSidecar(
+            io.BytesIO(), io.BytesIO(), host=None, mock=False,
+            idle_fill_ms=0, use_hello_instructions=False, busy_timeout=0,
+            metrics_log=None, length_penalty=1.05, force_listen_count=3)
+        events = []
+
+        def text(value):
+            events.append(('text', value))
+            # The remainder was generated but has not reached the client.
+            sidecar.on_interrupt()
+
+        sidecar.text_delta = text
+        sidecar.text_done = lambda value: events.append(('done', value))
+        def turn_done():
+            events.append(('turn', None))
+            sidecar._stop.set()
+        sidecar.turn_done = turn_done
+        sidecar._queue_out('text', 'Heard prefix.')
+        sidecar._queue_out('text', ' Unheard suffix.')
+        sidecar._queue_out('end', 'Heard prefix. Unheard suffix.')
+        worker = threading.Thread(target=sidecar._pacer)
+        worker.start()
+        worker.join(1)
+        sidecar._stop.set()
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(events, [('text', 'Heard prefix.'),
+                                  ('done', 'Heard prefix.'), ('turn', None)])
+
 
 if __name__ == '__main__':
     unittest.main()
