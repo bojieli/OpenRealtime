@@ -17,3 +17,20 @@ The source setup script intentionally refuses an already patched tree; do not
 rerun setup over a diagnostic installation. Record the applied patch with the
 result provenance. Remove it with `git apply --reverse` using the same path
 when returning to the unmodified serving pin.
+
+## Thinker precision comparison
+
+The launcher accepts `VOICECHAT_THINKER_DTYPE` and `VOICECHAT_THINKER_EAGER`
+(defaults `bfloat16` and `false`). To compare the thinker against the upstream
+FP32 eager setting, reserve sufficient free GPU memory and use:
+
+```bash
+VOICECHAT_THINKER_DTYPE=float32 VOICECHAT_THINKER_EAGER=true \
+VOICECHAT_THINKER_MEM=0.46 VOICECHAT_NEED_MIB=50000 \
+VOICECHAT_TRACE_BOUNDARIES=1 deploy/duplex/services/voicechat.sh start
+```
+
+This changes thinker precision/execution only. It retains the native talker
+and does **not** claim complete bit parity with the upstream eager NeMo stack.
+Keep prompt and input identical to the BF16 probe and retain the generated
+`.runtime/duplex-plan/configs/voicechat-duplex-shared-gpu.yaml` with results.

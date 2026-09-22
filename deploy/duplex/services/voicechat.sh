@@ -39,6 +39,8 @@ SRC=${VOICECHAT_VLLM_OMNI:-$PLAN/src/vllm-omni-voicechat}
 CHECKPOINT=${VOICECHAT_CHECKPOINT:-$HOME/.cache/huggingface/hub/models--nvidia--NVIDIA-NemotronLabs-VoiceChat-11B/snapshots/a4c40ca5b4fe77db13e9840ca4a2b91becf030c8}
 TOKENIZER=${NEMOTRON_VOICECHAT_LLM_PATH:-$HOME/.cache/huggingface/hub/models--nvidia--NVIDIA-Nemotron-Nano-9B-v2/snapshots/6533e8de2c68e4536bf7c411d7a3ce5734111476}
 THINKER_MEM=${VOICECHAT_THINKER_MEM:-0.245}
+THINKER_DTYPE=${VOICECHAT_THINKER_DTYPE:-bfloat16}
+THINKER_EAGER=${VOICECHAT_THINKER_EAGER:-false}
 TALKER_MEM=${VOICECHAT_TALKER_MEM:-0.05}
 CODEC_MEM=${VOICECHAT_CODEC_MEM:-0.02}
 THINKER_KV_BYTES=${VOICECHAT_THINKER_KV_BYTES:-536870912}
@@ -128,6 +130,8 @@ base_config: $SRC/vllm_omni/deploy/nemotron_labs_voicechat_duplex.yaml
 stages:
   - stage_id: 0
     gpu_memory_utilization: $THINKER_MEM
+    dtype: $THINKER_DTYPE
+    enforce_eager: $THINKER_EAGER
     # The duplex prompt (instructions + at most five tools) is far below this;
     # a smaller prefill budget shrinks the activation peak on a shared GPU.
     max_num_batched_tokens: 2048
