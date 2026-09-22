@@ -41,6 +41,10 @@ across a wait. ``context.cancel`` stops that row's audio at the next step.
 
 Output: PCM at 24 kHz, 1920 samples (80 ms) per chunk, emitted as each frame is
 decoded (generation runs faster than real time; the client paces playback).
+The worker pauses a row at 25 queued PCM frames (two seconds), resuming when
+the consumer drains it. This bounds the model's PCM queue; transport queues
+require the scaffold's negotiated audio credits separately. Text/history
+budgets are separate from this PCM capacity limit.
 
 Voices: a path in ``kyutai/tts-voices`` (e.g. ``expresso/ex03-ex01_happy_001_channel1_334s.wav``
 or ``vctk/p225_023.wav``), its basename without extension, or ``default``.
@@ -82,6 +86,8 @@ DEFAULT_VOICE_REPOSITORY = "kyutai/tts-voices"
 DEFAULT_VOICE = "expresso/ex03-ex01_happy_001_channel1_334s.wav"
 #: CFG strength baked into the conditioning (the model is CFG-distilled).
 CFG_COEF = 2.0
+# 25 frames at 80 ms: pause this row before producing more than two seconds.
+OUTPUT_BUFFER_FRAMES = 25
 
 
 class _NoLock:
@@ -407,7 +413,12 @@ class KyutaiTTS(Synthesizer):
                             self._finish(row)
                         elif row.ending and not self._can_step(row):
                             self._finish(row)
-                    ready = [row for row in self.rows if row is not None and self._can_step(row)]
+                    # Do not put this capacity check inside _can_step: an
+                    # ending row with a full queue is paused, not finished.
+                    # The worker is the sole PCM producer and emits at most
+                    # one frame per selected row per step.
+                    ready = [row for row in self.rows if row is not None
+                             and row.out.qsize() < OUTPUT_BUFFER_FRAMES and self._can_step(row)]
                     if ready:
                         break
                     self.wake.wait(timeout=0.5)
@@ -495,6 +506,8 @@ class KyutaiTTS(Synthesizer):
                     # worker (and hold the server's graceful shutdown open).
                     raise RuntimeError(f"TTS worker is not running: {self.worker_error}")
                 continue
+            with self.wake:
+                self.wake.notify_all()
             if chunk is None:
                 return
             if cancel.is_set():
@@ -548,6 +561,8 @@ class KyutaiTTS(Synthesizer):
             "frame_ms": frame_ms,
             "rows": self.rows_count,
             "rows_busy": sum(1 for row in self.rows if row is not None),
+            "output_buffer_frames_per_row": OUTPUT_BUFFER_FRAMES,
+            "output_queued_frames": [row.out.qsize() if row is not None else 0 for row in self.rows],
             "steps": self.stats["steps"],
             "step_ms_p50": p50,
             "step_ms_p95": steps[int(len(steps) * 0.95)] if steps else None,
