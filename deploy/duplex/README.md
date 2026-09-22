@@ -235,3 +235,11 @@ It checks the PID's Linux start-time identity and exits when that process exits
 or is replaced. The output is created exclusively to preserve existing samples.
 Sampling can miss peaks; shared-host values are not per-session allocator
 measurements. A late attachment does not reconstruct earlier resource use.
+
+For sustained native-session input, `tools/duplexmodels/native_probe.py` accepts
+`--scenario question --repeat-question-every 30 --duration 600`. It replays the
+provided question every 30 seconds and records each input window. Intervals
+must leave silence between questions; the final question is omitted if it would
+be truncated by session end. Use this with resource sampling to inspect state
+growth. Repetition measures stability under repeated input, not conversational
+quality; output timings are received packets rather than device playback.

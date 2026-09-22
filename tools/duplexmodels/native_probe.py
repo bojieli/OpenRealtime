@@ -69,6 +69,27 @@ def pcm16(samples: np.ndarray) -> bytes:
     return (np.clip(samples, -1.0, 1.0) * 32767).astype("<i2").tobytes()
 
 
+def question_timeline(question, duration, lead, repeat_every=0):
+    if duration <= 0 or lead < 0 or repeat_every < 0:
+        raise ValueError("duration must be positive; lead and repeat interval nonnegative")
+    total = int(duration * RATE)
+    start = int(lead * RATE)
+    step = int(repeat_every * RATE)
+    if repeat_every and step <= len(question):
+        raise ValueError("repeat interval must leave silence between questions")
+    timeline = np.zeros(total, dtype=np.float32)
+    windows = []
+    while start + len(question) <= total:
+        timeline[start:start + len(question)] = question
+        windows.append({"start_s": start / RATE, "end_s": (start + len(question)) / RATE})
+        if not step:
+            break
+        start += step
+    if not windows:
+        raise ValueError("session duration must contain the complete first question")
+    return timeline, windows
+
+
 class Session:
     def __init__(self, arguments) -> None:
         self.arguments = arguments
@@ -194,15 +215,15 @@ def main() -> None:
     parser.add_argument("--duration", type=float, default=40.0, help="total seconds of session")
     parser.add_argument("--stop-after", type=float, default=0.0,
                         help="stop sending audio this many seconds after the question ends (0 = keep sending silence)")
+    parser.add_argument("--repeat-question-every", type=float, default=0,
+                        help="repeat complete questions at this interval for sustained-session probes")
     parser.add_argument("--label", default="run")
     parser.add_argument("--out", required=True, help="JSON result path; a .wav of the output is written beside it")
     arguments = parser.parse_args()
 
     tools = json.loads(arguments.tools) if arguments.tools else []
-    session = Session(arguments)
-    ready = session.hello(tools)
-    print(f"ready: {json.dumps(ready)[:300]}", flush=True)
-
+    if arguments.repeat_question_every and (arguments.scenario != "question" or arguments.stop_after):
+        parser.error("question repetition requires the question scenario without --stop-after")
     question = load_audio(arguments.question, arguments.question_channel)
     if arguments.question_trim > 0:
         question = question[: int(arguments.question_trim * RATE)]
@@ -210,6 +231,12 @@ def main() -> None:
     lead = int(arguments.lead_silence * RATE)
     question_start = lead / RATE
     question_end = question_start + len(question) / RATE
+
+    timeline, question_windows = question_timeline(
+        question, arguments.duration, arguments.lead_silence, arguments.repeat_question_every)
+    session = Session(arguments)
+    ready = session.hello(tools)
+    print(f"ready: {json.dumps(ready)[:300]}", flush=True)
 
     state = {"first_audio": None, "interrupt_at": None, "tool_calls": [], "interrupt_injected": False}
     pending_results: list[tuple[float, dict]] = []
@@ -239,8 +266,6 @@ def main() -> None:
     reader.start()
 
     total = int(arguments.duration * RATE)
-    timeline = np.zeros(total + len(question) + lead, dtype=np.float32)
-    timeline[lead:lead + len(question)] = question
     sent_samples = 0
     interrupt_start_sample = None
     interrupt_control = None
@@ -298,6 +323,8 @@ def main() -> None:
         "load_average": list(os.getloadavg()),
         "question": arguments.question, "question_start_s": round(question_start, 3),
         "question_end_s": round(question_end, 3),
+        "question_windows": question_windows,
+        "repeat_question_every_s": arguments.repeat_question_every,
         "first_audio_s": state["first_audio"],
         "first_audio_latency_s": round(state["first_audio"] - question_end, 3) if state["first_audio"] else None,
         "audible_segments": [[round(a, 3), round(b, 3)] for a, b in segments],
