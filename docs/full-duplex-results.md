@@ -348,6 +348,16 @@ Native validation remains incomplete. The retained component artifacts under
   stopped and retained as failed evidence under `deploy/duplex/evidence/native-voicechat`.
   Turn completion is an open integration defect; public tool handling,
   correction, duplicate calls, rendered playback and endurance remain unverified.
+  A fresh 30-second diagnostic replay reproduced the missing final boundary:
+  the answer's audible segment ended at 8.905 s, but no terminal event followed
+  before session close at 30 s. The runtime logged end tokens at text frames
+  10 and 38 (earlier output), then padding at frames 100, 200 and 300 with
+  an empty pending-end list and audio coverage one frame behind. Thus this
+  reproduction is not an end marker stuck waiting for the decoder; the final
+  answer's end marker did not reach the data-plane projection. First audible
+  answer latency was 1.235 s and no protocol errors occurred.
+  [Retained upstream events and model-boundary trace](../deploy/duplex/evidence/voicechat/20260922-boundary/)
+  narrow the investigation to token generation/projection before turn completion.
 
 ## Interaction prediction (P6)
 

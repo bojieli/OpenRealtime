@@ -1,0 +1,55 @@
+{
+  "label": "run",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 2.265
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    44.7275390625,
+    54.826171875,
+    55.27197265625
+  ],
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.613,
+  "first_audio_s": 5.84804224409163,
+  "first_audio_latency_s": 1.235,
+  "audible_segments": [
+    [
+      1.873,
+      3.14
+    ],
+    [
+      5.848,
+      8.905
+    ]
+  ],
+  "turn_done_s": [
+    0.838,
+    3.071
+  ],
+  "text_done": [
+    {
+      "t": 3.071,
+      "text": "Hi! How can I help you today?"
+    }
+  ],
+  "text_deltas": "Hi! How can I help you today?You can save money by making a budget and tracking your expenses.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 29.76
+}
