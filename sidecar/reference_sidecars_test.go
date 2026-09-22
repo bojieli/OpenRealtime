@@ -37,6 +37,7 @@ func TestReferenceSidecarsPassConformanceInMockMode(t *testing.T) {
 		required int
 	}{
 		{script: "moshi_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
+		{script: "personaplex_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "minicpm_o_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "minicpm_o_duplex_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "voicechat_sidecar.py", versions: []int{1, sidecar.VersionMultimodal}},

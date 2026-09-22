@@ -428,6 +428,11 @@ class MoshiSidecar(Sidecar):
                 self._frame_ms.append((time.perf_counter() - started) * 1000.0)
                 steps += 1
                 self._stats["frames"] += 1
+                # Inference can outlast a frame; consume a cancellation that
+                # arrived during the step before forwarding its output.
+                if self._interrupted.is_set():
+                    self._interrupted.clear()
+                    self._on_interrupt()
                 if pcm is not None:
                     self._emit(piece, pcm)
                 if steps % 750 == 0:

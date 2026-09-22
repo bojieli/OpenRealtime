@@ -428,6 +428,15 @@ Native validation remains incomplete. The retained component artifacts under
   nine focused adapter tests cover these cases. This does not implement user
   correction recovery or prove external execution receipts.
 
+Moshi and PersonaPlex share a streaming loop. A controlled CPU regression
+showed that interruption arriving inside a model step still forwarded that
+step's text and PCM before noticing cancellation on the next iteration. The
+loop now checks again after inference and applies its existing mute-until-quiet
+policy before emission. The regression and PersonaPlex session-isolation tests
+pass. PersonaPlex is also included in recurring mock protocol conformance.
+Real GPU cancellation, device playback cutoff and endurance remain unverified;
+this change does not make the model itself cancel its internal generation.
+
 ## Interaction prediction (P6)
 
 Six predictors run as evidence producers on one service
