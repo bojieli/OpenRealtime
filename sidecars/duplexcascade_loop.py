@@ -4,11 +4,12 @@ import time
 
 
 class DuplexCascadeLoop:
-    def __init__(self, session, speech, words, *, tick_seconds=.5, trace=None):
+    def __init__(self, session, speech, words, *, tick_seconds=.5, trace=None, separator=" "):
         if tick_seconds <= 0:
             raise ValueError('tick duration must be positive')
         self.session, self.speech, self.words = session, speech, words
         self.tick_seconds, self.trace = tick_seconds, trace
+        self.separator = separator
         self.closed = False
         self.inference = None
 
@@ -26,7 +27,7 @@ class DuplexCascadeLoop:
                 while not self.words.empty():
                     pending.append(self.words.get_nowait())
                 admitted, pending = pending, []
-                chunk = ' '.join(word.text for word in admitted)
+                chunk = self.separator.join(word.text for word in admitted)
                 # Inference must not block ASR's socket reader. Shielding keeps
                 # shutdown from abandoning a worker still updating KV/history.
                 self.inference = asyncio.create_task(asyncio.to_thread(self.session.step, chunk))

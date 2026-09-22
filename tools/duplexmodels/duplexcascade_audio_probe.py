@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'sidecars'))
 from duplexcascade_model import DuplexCascadeModel
 from duplexcascade_loop import DuplexCascadeLoop
 from duplexcascade_speech import DuplexCascadeSpeech
-from microturn_sidecar import ChunkRecognizer, SpeechContext
+from microturn_sidecar import SpeechContext
+from duplexcascade_recognizer import AppendOnlyRecognizer
 
 
 async def probe(args, backend):
@@ -25,18 +26,18 @@ async def probe(args, backend):
     if samples.ndim != 1 or rate != 16000:
         raise ValueError('probe requires mono 16 kHz WAV')
     words = asyncio.Queue()
-    asr = ChunkRecognizer(args.asr, words, .5)
     began = time.monotonic()
     report = {'model': backend.metadata, 'input': str(args.wav), 'asr': args.asr,
               'tts': args.tts, 'timing_basis': 'packet arrival; no rendered playback receipts',
-              'ticks': [], 'audio': [], 'text': [], 'cancellations': []}
+              'ticks': [], 'audio': [], 'text': [], 'cancellations': [], 'asr_trace': []}
+    asr = AppendOnlyRecognizer(args.asr, words, report['asr_trace'].append)
     def audio(pcm):
         report['audio'].append({'t': time.monotonic()-began, 'bytes':len(pcm) if pcm else 0})
     speech = DuplexCascadeSpeech(lambda:SpeechContext(args.tts, 'default'), audio,
                                  report['text'].append,
                                  lambda:report['cancellations'].append(time.monotonic()-began))
     session = backend.session()
-    loop = DuplexCascadeLoop(session, speech, words, trace=report['ticks'].append)
+    loop = DuplexCascadeLoop(session, speech, words, trace=report['ticks'].append, separator='')
     # Warm-up is explicit and uses a disposable history.
     backend.session().step('Hello')
     asr_task = asyncio.create_task(asr.run())
