@@ -1,0 +1,16 @@
+# Experimental released C1 path; requires Kyutai ASR :9112 and TTS :9125.
+# Startup loads ~17 GiB of model weights per session; GPU validation pending.
+# No session instruction or background-text channel in the released protocol.
+# Delivery is paced; turn boundary uses thinking + drained buffer + 600 ms quiet.
+binding: duplex
+sidecar: >-
+  env HF_HUB_OFFLINE=1 OMP_NUM_THREADS=4
+  flock -n .runtime/duplex-plan/gpu/large.lock
+  .runtime/duplex-plan/venvs/ellsa/bin/python sidecars/duplexcascade_sidecar.py
+  --source .runtime/duplex-plan/src/DuplexCascade
+  --snapshot /home/ubuntu/.cache/huggingface/hub/models--sbintuitions--DuplexCascade/snapshots/31c038ece2f006a28722dd60d1df3868fbb2cc42
+  --base /home/ubuntu/.cache/huggingface/hub/models--Qwen--Qwen2-7B-Instruct/snapshots/f2826a00ceef68f0f2b946d945ecc0477ce4450c
+sidecar-protocol: 1
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
