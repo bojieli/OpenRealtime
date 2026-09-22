@@ -142,9 +142,8 @@ available for inspection but need a new run to enter this summary.
 
 `native-duplexcascade.yaml` uses the pinned released checkpoint, the native
 500 ms micro-turn backend, append-only Kyutai ASR fragments, and persistent
-Kyutai synthesis. It requires ASR on :9112 and TTS on :9125. The profile connects to a warmed sidecar on :9147. Start the sidecar with
-`--listen tcp:127.0.0.1:9147` and the pinned source/snapshot/base paths recorded
-in the component evidence. Hold the large-model lease around that process.
+Kyutai synthesis. It requires ASR on :9112 and TTS on :9125. The profile connects to a warmed sidecar on :9147. Start it with `deploy/duplex/services/duplexcascade.sh start`; the launcher pins
+the source and both checkpoints and holds the large-model lease.
 It checks for 20,000 MiB free before loading; subsequent sequential sessions
 reuse the model and each receive a fresh micro-turn history.
 
