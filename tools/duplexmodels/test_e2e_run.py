@@ -26,7 +26,10 @@ else:
     out=Path(args[args.index('-out')+1])
     task={'passed':True,'notes':{'applicable':'true'},'metrics':{'turns':1,'answered':1}}
     if os.environ.get('FAKE_TASK_ERROR'): task['error']='connection refused'
-    out.write_text(json.dumps({'tasks':[task]}))
+    result={'tasks':[task]}
+    if os.environ.get('FAKE_INCOMPLETE'):
+        result['summary']={'complete':False,'incompleteness':'recording inventory incomplete'}
+    out.write_text(json.dumps(result))
     sys.exit(int(os.environ.get('FAKE_BENCH_EXIT','0')))
 '''
 
@@ -113,7 +116,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(done['commands'], {})
 
     def test_failed_bench_and_task_errors_fail_run(self):
-        for variable, value in [('FAKE_BENCH_EXIT', '7'), ('FAKE_TASK_ERROR', '1'), ('FAKE_EXIT', '1')]:
+        for variable, value in [('FAKE_BENCH_EXIT', '7'), ('FAKE_TASK_ERROR', '1'), ('FAKE_EXIT', '1'), ('FAKE_INCOMPLETE', '1')]:
             with self.subTest(variable=variable), patch.dict(os.environ, {variable: value}):
                 self.assertEqual(e2e_run.run('sample', 1, 0), 1)
                 self.assertIn('FAILED', e2e_summary.staleness(self.parent / 'latest'))

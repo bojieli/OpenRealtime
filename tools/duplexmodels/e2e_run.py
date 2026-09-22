@@ -107,7 +107,12 @@ def validate_result(path: Path) -> str:
         if not isinstance(tasks, list) or not tasks:
             return 'no tasks recorded'
         errors = sum(bool(task.get('error')) for task in tasks)
-        return f'{errors} task errors' if errors else ''
+        if errors:
+            return f'{errors} task errors'
+        summary = data.get('summary', {})
+        if summary.get('complete') is False:
+            return f"incomplete benchmark: {summary.get('incompleteness') or 'no reason recorded'}"
+        return ''
     except (OSError, ValueError, TypeError, AttributeError) as error:
         return f'invalid result: {error}'
 
