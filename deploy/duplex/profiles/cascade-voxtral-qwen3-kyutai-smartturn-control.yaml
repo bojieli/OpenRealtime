@@ -1,7 +1,7 @@
 # Cell I0 (control): the cascade of cascade-voxtral-qwen3-kyutai.yaml with Smart
 # Turn v3 asked at every pause (tools/duplexmodels/turn_server.py on :9130).
 # Control: the gate closes after 200 ms of quiet and Smart Turn decides - at or
-# above 0.5 the turn ends there, below it the floor holds, never past the
+# above 0.988 the turn ends there, below it the floor holds, never past the
 # 500 ms silence threshold plus the 1 s projection hold.
 binding: cascade
 asr-provider: vllm-realtime
@@ -18,6 +18,8 @@ tts-url: ws://127.0.0.1:9125/v1/tts/stream
 tts-model: kyutai/tts-1.6b-en_fr
 turn-end-url: http://127.0.0.1:9130/v1/endpoint/smart-turn
 turn-end-mode: control
-turn-end-threshold: 0.5
+turn-end-threshold: 0.988
 endpoint-silence: 200
 projection-hold: 1s
+# Threshold from the I0 calibration split at a 10% premature-endpoint budget:
+# Smart Turn's sigmoid saturates, so its own scale needs 0.988; ?score=calibrated puts the same point at 0.71.

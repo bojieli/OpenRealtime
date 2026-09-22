@@ -2,7 +2,7 @@
 # the calibrated Smart Turn + LiveKit fusion deciding every pause (tools/duplexmodels/turn_server.py on :9130).
 # acoustic and textual evidence combined by weights fitted on a held-out split.
 # The gate closes after 200 ms of quiet and the predictor decides: at or above
-# 0.5 the turn ends there, below it the floor holds, never past the 500 ms
+# 0.657 the turn ends there, below it the floor holds, never past the 500 ms
 # silence threshold plus the 1 s projection hold.
 binding: cascade
 asr-provider: vllm-realtime
@@ -19,6 +19,8 @@ tts-url: ws://127.0.0.1:9125/v1/tts/stream
 tts-model: kyutai/tts-1.6b-en_fr
 turn-end-url: http://127.0.0.1:9130/v1/endpoint/fusion
 turn-end-mode: control
-turn-end-threshold: 0.5
+turn-end-threshold: 0.657
 endpoint-silence: 200
 projection-hold: 1s
+# Threshold from the I0 calibration split at a 10% premature-endpoint budget:
+# the frozen Smart Turn + LiveKit fusion, the best endpoint AUC measured (0.882).
