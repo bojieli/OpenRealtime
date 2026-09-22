@@ -461,6 +461,9 @@ class LycheeSidecar(Sidecar):
             text = self._turn_text
             samples = self._turn_audio_samples
             waiter = self._respond_waiter
+        if reason == "audio_stalled":
+            self.error("Lychee output stalled before a model completion or yield",
+                       code="audio_stalled", fatal=False)
         self.control.event(self.session_label, "turn_end", reason=reason, text=text,
                            audio_s=round(samples / MODEL_OUTPUT_RATE, 3),
                            wall_ms=_now_ms() - self._turn_started_ms)

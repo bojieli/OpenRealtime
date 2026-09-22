@@ -301,6 +301,11 @@ Native validation remains incomplete. The retained component artifacts under
   and 26 audio-stall endings. Its 64 first-audio observations have a 1,099 ms
   median, but the control-delay sample is empty. This does not establish the
   planned control-latency acceptance criterion.
+  The adapter now reports its `audio_stalled` timeout as a nonfatal protocol
+  error before closing the partial turn; previously only the control log
+  distinguished it from a normal completion. The regression verifies one
+  error and one boundary. This improves failure reporting, not backend progress;
+  the 26 recorded stalls still require a real-model diagnosis and rerun.
 - **Moshi:** the pinned public-Realtime profile completed a two-recording-per-category
   smoke run (`20260922T171034Z-giltdhg4`) without task errors. It answered
   8/8 FD-Bench turns but started 4 prematurely. Interruption yield passed 1/2
