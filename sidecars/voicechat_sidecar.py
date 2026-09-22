@@ -558,7 +558,10 @@ class VoiceChatSidecar(Sidecar):
             return
         if kind == "error":
             detail = event.get("error") or event
-            self.send("log", text=f"voicechat upstream error: {json.dumps(detail)[:400]}")
+            # Preserve upstream failure as protocol evidence; a log-only
+            # message lets a broken session appear successful to benchmarks.
+            self.error(f"voicechat upstream error: {json.dumps(detail)[:400]}",
+                       code="upstream_error", fatal=False)
             return
 
     def _segmented_audio(self, payload: bytes) -> None:

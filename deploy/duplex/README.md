@@ -81,7 +81,8 @@ one experiment cell:
 | `cascade-…-smartturn-observe` | endpoint evidence recorded but deciding nothing (I0) |
 | `cascade-…-{smartturn,livekit,vap,dualturn,fusion}-control` | one endpoint predictor deciding the pause, at its calibrated threshold (I0) |
 | `native-freeze-omni` | a native duplex model through the sidecar relay (P5/P8) |
-| `native-voicechat` | experimental VoiceChat duplex and tool cell (N2); acceptance in progress |
+| `native-voicechat` | experimental VoiceChat duplex and tool cell (N2); upstream EOS boundaries, acceptance in progress |
+| `native-voicechat-output-segmented` | same model with opt-in 800 ms decoded-silence output boundaries; adapter policy, not model EOS; public evaluation in progress |
 | `closed-gemini-live`, `closed-openai-live` | closed live references (R0); the voice path leaves the machine |
 
 ## Running the end-to-end check

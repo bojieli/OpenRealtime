@@ -26,6 +26,16 @@ class CancellationTests(unittest.TestCase):
         self.assertIsNone(sidecar._gated_response)
         self.assertFalse(sidecar._gated('resp-next'))
 
+    def test_upstream_error_is_protocol_error_not_only_log(self):
+        sidecar = self.make_sidecar(None)
+        errors = []
+        sidecar.error = lambda message, **kwargs: errors.append((message, kwargs))
+        sidecar._handle_event({'type': 'error', 'error': {'code': 'unsupported',
+                                                       'message': 'cannot cancel'}})
+        self.assertEqual(len(errors), 1)
+        self.assertIn('cannot cancel', errors[0][0])
+        self.assertEqual(errors[0][1], {'code': 'upstream_error', 'fatal': False})
+
     def test_named_gate_does_not_mute_another_response(self):
         sidecar = self.make_sidecar('resp-old')
         self.assertTrue(sidecar._gated('resp-old'))
