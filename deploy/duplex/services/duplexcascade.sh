@@ -34,7 +34,7 @@ PY
   env -u HF_TOKEN HF_HUB_OFFLINE=1 OMP_NUM_THREADS=4 setsid nohup \
     flock -n "$PLAN/gpu/large.lock" "$PYTHON" sidecars/duplexcascade_sidecar.py \
     --source "$SOURCE" --snapshot "$SNAPSHOT" --base "$BASE" \
-    --listen "tcp:127.0.0.1:$PORT" \
+    --listen "tcp:127.0.0.1:$PORT" --trace-dir "$PLAN/results/native/duplexcascade-traces" \
     > "$LOG" 2>&1 < /dev/null &
   pid=$!
   echo "$pid" > "$PIDFILE"

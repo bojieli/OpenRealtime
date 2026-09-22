@@ -7,6 +7,7 @@ not a playback receipt or a native EOS. Instructions/text injection are not
 part of the released training protocol and are not advertised as supported.
 """
 import argparse
+import json
 import asyncio
 from pathlib import Path
 import threading
@@ -44,6 +45,7 @@ class NativeCascade(Sidecar):
         self.turn_audio = False
         self.resampler = None
         self.owns_session = False
+        self.trace = None
 
     def configure(self, hello):
         if not self.backend.session_lock.acquire(timeout=10):
@@ -68,6 +70,9 @@ class NativeCascade(Sidecar):
 
     def _thread(self):
         try:
+            if self.args.trace_dir:
+                self.args.trace_dir.mkdir(parents=True,exist_ok=True)
+                self.trace = (self.args.trace_dir / f'session-{time.time_ns()}.jsonl').open('w')
             asyncio.run(self._main())
         except Exception as error:
             self.failure = error
@@ -75,6 +80,8 @@ class NativeCascade(Sidecar):
             if not self.closing.is_set():
                 self.error(str(error),code='native_cascade_failed',fatal=True)
         finally:
+            if self.trace:
+                self.trace.close()
             if self.owns_session:
                 self.owns_session = False
                 self.backend.session_lock.release()
@@ -86,7 +93,7 @@ class NativeCascade(Sidecar):
         self.recognizer = AppendOnlyRecognizer(self.args.asr,words)
         self.player = PacedAudio(self.audio,rate=self.output_rate)
         self.speech = DuplexCascadeSpeech(self._context,self._audio,self._text,self._cancel)
-        self.clock = DuplexCascadeLoop(self.backend.session(),self.speech,words,separator='')
+        self.clock = DuplexCascadeLoop(self.backend.session(),self.speech,words,separator='',trace=self._trace)
         tasks = [asyncio.create_task(self.recognizer.run()),asyncio.create_task(self.player.run()),
                  asyncio.create_task(self.clock.run())]
         self.initialized.set()
@@ -111,6 +118,15 @@ class NativeCascade(Sidecar):
             for result in results:
                 if isinstance(result,Exception):
                     log(f'native component shutdown: {result}')
+
+    def _trace(self, tick):
+        if self.trace:
+            tick.update({'queued_audio_s':len(self.player.buffer)/(2*self.output_rate),
+                         'sent_audio_s':self.player.sent_samples/self.output_rate,
+                         'thinking':self.speech.thinking, 'turn_open':self.turn_open,
+                         'last_audio_age_s':time.monotonic()-self.last_audio})
+            self.trace.write(json.dumps(tick)+'\n')
+            self.trace.flush()
 
     def _context(self):
         return SpeechContext(self.args.tts,self.args.voice)
@@ -169,6 +185,7 @@ def main():
     p.add_argument('--tts',default='ws://127.0.0.1:9125/v1/tts/stream')
     p.add_argument('--voice',default='default')
     p.add_argument('--listen',default='')
+    p.add_argument('--trace-dir',type=Path)
     a=p.parse_args()
     free = int(subprocess.check_output(
         ['nvidia-smi','--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).splitlines()[0])

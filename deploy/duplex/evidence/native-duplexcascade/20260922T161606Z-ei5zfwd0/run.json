@@ -1,0 +1,25 @@
+{
+  "schema": 2,
+  "profile": "native-duplexcascade",
+  "profile_sha256": "65cb5b10d5717b9d7ca1dfaa30a7ece1740b28d688ca2abc6957b23a6fb494cc",
+  "binary_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+  "binary": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+  "revision": "0be5d6eacaf65677ab9373ea065d33032def43e3",
+  "tree_modified": true,
+  "started": "2026-09-22T16:16:06.456713+00:00",
+  "load_average": [
+    "39.89",
+    "36.22",
+    "28.46"
+  ],
+  "gpu_memory_mib": "73603",
+  "fdb_per_category": 2,
+  "fdbench_conversations": 2,
+  "expected_results": [
+    "fdb-user_interruption.json",
+    "fdb-user_backchannel.json",
+    "fdb-background_speech.json",
+    "fdb-talking_to_other.json",
+    "fdbench.json"
+  ]
+}

@@ -43,7 +43,7 @@ class ProtocolTests(unittest.TestCase):
         class Failed(NativeCascade):
             async def _main(self): raise RuntimeError('failed initialization')
         backend=SimpleNamespace(session_lock=threading.Lock())
-        sidecar=Failed(io.BytesIO(),io.BytesIO(),args=None,backend=backend)
+        sidecar=Failed(io.BytesIO(),io.BytesIO(),args=SimpleNamespace(trace_dir=None),backend=backend)
         sidecar.error=lambda *args,**kwargs:None
         sidecar.owns_session=True
         backend.session_lock.acquire()
