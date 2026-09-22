@@ -112,7 +112,55 @@ RESULTS_NATIVE
 
 ## Interaction prediction (P6)
 
-RESULTS_INTERACTION
+Six predictors run as evidence producers on one service
+(`tools/duplexmodels/turn_server.py`), each answering its own question and
+never relabelled as a universal end-of-turn score: Smart Turn v3.2 (acoustic),
+LiveKit's transcript detector, VAP and DualTurn (activity forecasts),
+X2-Turn and SoulX-Duplug (their own turn states). The survey recorded X2-Turn
+and SoulX-Duplug as having no released weights; that was a wrong repository
+id - `x-square-robot/X2-Turn-4B-0812` and `Soul-AILab/SoulX-Duplug-0.6B` are
+Apache-2.0 and were downloaded and integrated.
+
+**Cell I0 - endpointing.** 2,407 labelled pauses over 602 files (FD-Bench,
+FDB v1.5 and FDB v3), split by file into calibration and test; at each silence
+of 200 ms or more every predictor is asked, and re-asked as the silence grows.
+ROC-AUC on the test split at the 200 ms checkpoint:
+
+| Source | Smart Turn (acoustic) | LiveKit (transcript) | Fusion |
+| --- | --- | --- | --- |
+| all | 0.681 | 0.878 | **0.882** |
+| FD-Bench synthetic speech | 0.448-0.582 | 0.801-0.929 | 0.787-0.926 |
+| FDB v3 disfluent human speech | **0.813** | 0.772 | 0.803 |
+
+At a matched 10% premature-endpoint budget the fusion ends a turn after a mean
+558 ms of silence, LiveKit 578 ms, Smart Turn 1,136 ms, and a plain 0.95 s
+silence timer 750 ms; the shipped default (500 ms silence, no classifier) is
+45.8% premature on the same points. **Transcript lag decides the ranking**:
+with the transcript truncated as a streaming recogniser would leave it,
+LiveKit falls from 0.878 to 0.706 at 300 ms of lag and 0.567 at 600 ms, while
+Smart Turn is unchanged and the fusion degrades gracefully. Which is to say
+the text model wins on paper and loses part of that advantage in a live
+pipeline - and the acoustic model is the one that survives disfluent human
+speech.
+
+**Cell I1 - overlap.** On 297 FDB v1.5 events (backchannel versus
+interruption, with a constructed assistant channel), the forecasts carry
+signal - AUC at 0.8 s of overlap: DualTurn 0.818, VAP 0.713 - but at a matched
+10% false-stop budget a sustained-800 ms voice-activity rule beats both
+(balanced accuracy 0.886 against 0.729 and 0.601). On this fixture
+backchannels last 0.38-0.80 s and interruptions 1.8-3.8 s, so duration is
+nearly a sufficient statistic: that is a property of FDB v1.5 as much as of
+the models, and it is why the plan asks for real overlap fixtures before
+promoting a predictor to control.
+
+Per-call latency on the loaded host (p50): Smart Turn 14.6 ms, LiveKit
+26.6 ms, VAP 25.4 ms, fusion 27.8 ms, DualTurn 136.9 ms at a 3 s window and
+220 ms at 8 s - which is why the DualTurn cell raises the classifier bound to
+500 ms. Two integration findings worth keeping: LiveKit's raw probability
+decides English at 0.011, so a 0.5 threshold would never end a turn, and
+DualTurn's published `modeling_dualturn.py` silently drops the per-task layer
+attention its own config enables, so the service implements the research
+path and says which one it ran.
 
 ## Perception and task extensions (P7, P8)
 
