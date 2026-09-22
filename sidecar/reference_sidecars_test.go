@@ -39,6 +39,7 @@ func TestReferenceSidecarsPassConformanceInMockMode(t *testing.T) {
 		{script: "moshi_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "minicpm_o_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
 		{script: "minicpm_o_duplex_sidecar.py", versions: []int{1, sidecar.VersionInteraction}},
+		{script: "voicechat_sidecar.py", versions: []int{1, sidecar.VersionMultimodal}},
 		{script: "qwen3_omni_sidecar.py", versions: []int{1, sidecar.VersionMultimodal}},
 	}
 	for _, testCase := range cases {
