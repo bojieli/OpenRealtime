@@ -39,6 +39,19 @@ class ProtocolTests(unittest.TestCase):
         sidecar.speech.context.sample_rate=48000
         with self.assertRaises(ValueError):asyncio.run(sidecar._audio(b'\x00\x00'))
 
+    def test_peer_eof_unblocks_pending_response_before_worker_join(self):
+        sidecar=self.sidecar()
+        worker=threading.Thread(target=sidecar.on_respond,daemon=True)
+        worker.start()
+        try:
+            sidecar._read_loop()  # empty input is peer EOF
+            worker.join(.5)
+            self.assertFalse(worker.is_alive())
+            self.assertTrue(sidecar.closing.is_set())
+        finally:
+            sidecar.closing.set()
+            worker.join(1)
+
     def test_failed_session_releases_model_for_next_connection(self):
         class Failed(NativeCascade):
             async def _main(self): raise RuntimeError('failed initialization')

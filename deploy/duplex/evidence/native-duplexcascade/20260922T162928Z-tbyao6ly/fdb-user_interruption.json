@@ -1,0 +1,58 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "bcff3623f8ebb8ef644166f659603cdc9008a5be",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T16:29:30Z",
+    "finished_at": "2026-09-22T16:32:30Z"
+  },
+  "expected_tasks": 200,
+  "tasks": [
+    {
+      "id": "user_interruption/1",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How can I save money more effectively?",
+        "event": "Actually, what are some financial goals I should set?"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 0,
+    "failed": 1,
+    "passed": 0,
+    "pass_rate": 0,
+    "complete": false,
+    "incompleteness": "199 of 200 tasks were not attempted"
+  }
+}

@@ -173,6 +173,15 @@ class NativeCascade(Sidecar):
         while self.turn_open and not self.closing.is_set() and time.monotonic()<deadline:
             time.sleep(.02)
 
+    def _read_loop(self):
+        try:
+            super()._read_loop()
+        finally:
+            # Signal the native workers before Sidecar.run joins its response
+            # worker. Otherwise a disconnect waits ten seconds before cleanup,
+            # racing the next connection's session-lock acquisition timeout.
+            self.closing.set()
+
     def on_close(self):
         self.closing.set()
         self.finished.wait(30)

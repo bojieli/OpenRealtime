@@ -1,0 +1,58 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "9226d5693c292689f4be6cafc524bd0f65cdaca5",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T16:32:30Z",
+    "finished_at": "2026-09-22T16:32:41Z"
+  },
+  "expected_tasks": 98,
+  "tasks": [
+    {
+      "id": "user_backchannel/1",
+      "completed": false,
+      "passed": false,
+      "error": "send to the Realtime endpoint: failed to write msg: use of closed network connection",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Present a thorough explanation of global warming.",
+        "event": "yes yeah"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 0,
+    "failed": 1,
+    "passed": 0,
+    "pass_rate": 0,
+    "complete": false,
+    "incompleteness": "97 of 98 tasks were not attempted"
+  }
+}
