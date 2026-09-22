@@ -1,0 +1,2106 @@
+{
+  "model": {
+    "model_revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
+    "base_revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c",
+    "source_revision": "42893024ca90c8de8ac3ed624467ebc123512ff8",
+    "dtype": "bfloat16",
+    "attention": "sdpa",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "strict_checkpoint_load": true,
+    "renamed_checkpoint_keys": {
+      "llm.base_model.model.model.layers.0.self_attn.q_proj.bias": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.0.self_attn.q_proj.weight": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.0.self_attn.v_proj.bias": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.0.self_attn.v_proj.weight": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.1.self_attn.q_proj.bias": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.1.self_attn.q_proj.weight": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.1.self_attn.v_proj.bias": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.1.self_attn.v_proj.weight": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.10.self_attn.q_proj.bias": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.10.self_attn.q_proj.weight": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.10.self_attn.v_proj.bias": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.10.self_attn.v_proj.weight": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.11.self_attn.q_proj.bias": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.11.self_attn.q_proj.weight": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.11.self_attn.v_proj.bias": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.11.self_attn.v_proj.weight": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.12.self_attn.q_proj.bias": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.12.self_attn.q_proj.weight": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.12.self_attn.v_proj.bias": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.12.self_attn.v_proj.weight": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.13.self_attn.q_proj.bias": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.13.self_attn.q_proj.weight": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.13.self_attn.v_proj.bias": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.13.self_attn.v_proj.weight": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.14.self_attn.q_proj.bias": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.14.self_attn.q_proj.weight": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.14.self_attn.v_proj.bias": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.14.self_attn.v_proj.weight": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.15.self_attn.q_proj.bias": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.15.self_attn.q_proj.weight": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.15.self_attn.v_proj.bias": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.15.self_attn.v_proj.weight": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.16.self_attn.q_proj.bias": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.16.self_attn.q_proj.weight": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.16.self_attn.v_proj.bias": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.16.self_attn.v_proj.weight": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.17.self_attn.q_proj.bias": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.17.self_attn.q_proj.weight": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.17.self_attn.v_proj.bias": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.17.self_attn.v_proj.weight": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.18.self_attn.q_proj.bias": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.18.self_attn.q_proj.weight": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.18.self_attn.v_proj.bias": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.18.self_attn.v_proj.weight": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.19.self_attn.q_proj.bias": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.19.self_attn.q_proj.weight": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.19.self_attn.v_proj.bias": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.19.self_attn.v_proj.weight": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.2.self_attn.q_proj.bias": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.2.self_attn.q_proj.weight": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.2.self_attn.v_proj.bias": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.2.self_attn.v_proj.weight": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.20.self_attn.q_proj.bias": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.20.self_attn.q_proj.weight": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.20.self_attn.v_proj.bias": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.20.self_attn.v_proj.weight": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.21.self_attn.q_proj.bias": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.21.self_attn.q_proj.weight": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.21.self_attn.v_proj.bias": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.21.self_attn.v_proj.weight": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.22.self_attn.q_proj.bias": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.22.self_attn.q_proj.weight": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.22.self_attn.v_proj.bias": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.22.self_attn.v_proj.weight": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.23.self_attn.q_proj.bias": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.23.self_attn.q_proj.weight": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.23.self_attn.v_proj.bias": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.23.self_attn.v_proj.weight": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.24.self_attn.q_proj.bias": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.24.self_attn.q_proj.weight": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.24.self_attn.v_proj.bias": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.24.self_attn.v_proj.weight": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.25.self_attn.q_proj.bias": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.25.self_attn.q_proj.weight": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.25.self_attn.v_proj.bias": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.25.self_attn.v_proj.weight": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.26.self_attn.q_proj.bias": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.26.self_attn.q_proj.weight": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.26.self_attn.v_proj.bias": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.26.self_attn.v_proj.weight": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.27.self_attn.q_proj.bias": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.27.self_attn.q_proj.weight": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.27.self_attn.v_proj.bias": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.27.self_attn.v_proj.weight": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.3.self_attn.q_proj.bias": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.3.self_attn.q_proj.weight": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.3.self_attn.v_proj.bias": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.3.self_attn.v_proj.weight": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.4.self_attn.q_proj.bias": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.4.self_attn.q_proj.weight": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.4.self_attn.v_proj.bias": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.4.self_attn.v_proj.weight": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.5.self_attn.q_proj.bias": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.5.self_attn.q_proj.weight": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.5.self_attn.v_proj.bias": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.5.self_attn.v_proj.weight": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.6.self_attn.q_proj.bias": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.6.self_attn.q_proj.weight": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.6.self_attn.v_proj.bias": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.6.self_attn.v_proj.weight": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.7.self_attn.q_proj.bias": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.7.self_attn.q_proj.weight": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.7.self_attn.v_proj.bias": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.7.self_attn.v_proj.weight": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.8.self_attn.q_proj.bias": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.8.self_attn.q_proj.weight": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.8.self_attn.v_proj.bias": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.8.self_attn.v_proj.weight": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.9.self_attn.q_proj.bias": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.9.self_attn.q_proj.weight": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.9.self_attn.v_proj.bias": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.9.self_attn.v_proj.weight": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.weight"
+    },
+    "load_seconds": 29.55674008373171
+  },
+  "input": ".runtime/duplex-plan/data/ellsa/ELLSA_test_data/llama_questions/1.wav",
+  "asr": "http://127.0.0.1:9112",
+  "tts": "ws://127.0.0.1:9125/v1/tts/stream",
+  "timing_basis": "packet arrival; no rendered playback receipts",
+  "ticks": [
+    {
+      "tick": 0,
+      "input": "What is the",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.24395019188523,
+      "admission_lag_ms": [
+        500.21148193627596,
+        199.91180207580328,
+        94.28054979071021
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 1,
+      "input": " capital of",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 77.88155693560839,
+      "admission_lag_ms": [
+        194.86284209415317,
+        0.027027912437915802
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 2,
+      "input": " France",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.86147981137037,
+      "admission_lag_ms": [
+        0.02529192715883255
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 3,
+      "input": "?",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.88473165035248,
+      "admission_lag_ms": [
+        394.634114112705
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 4,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user finish talking|>"
+        ],
+        [
+          "text",
+          "The capital of France is Paris."
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 377.1799369715154,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 5,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.42050892859697,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 6,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 95.71795677766204,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 7,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 73.18104198202491,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 8,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.48608567938209,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 9,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 73.98241711780429,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 10,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 109.30623766034842,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 11,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.79532703757286,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 12,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 77.80437124893069,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 13,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 78.34417372941971,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 14,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 84.17268097400665,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 15,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 82.612588070333,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 16,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.82036994770169,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 17,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.45589918643236,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 18,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.5491621568799,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 19,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 77.43053417652845,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 20,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 75.45505277812481,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 21,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.21198007836938,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 22,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.76862413063645,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 23,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.75719310343266,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 24,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 75.28995303437114,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 25,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.66314675286412,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 26,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 80.81034664064646,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 27,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 77.92397914454341,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 28,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 75.05115028470755,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 29,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.40134825184941,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 30,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 75.13782801106572,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 31,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 82.13229198008776,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 32,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.30435470491648,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 33,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 80.51810599863529,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 34,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 75.3370150923729,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 35,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 78.30293197184801,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    }
+  ],
+  "audio": [
+    {
+      "t": 4.882693625986576,
+      "bytes": 3840
+    },
+    {
+      "t": 4.9003156600520015,
+      "bytes": 3840
+    },
+    {
+      "t": 4.924009670969099,
+      "bytes": 3840
+    },
+    {
+      "t": 4.94173617195338,
+      "bytes": 3840
+    },
+    {
+      "t": 4.959487988147885,
+      "bytes": 3840
+    },
+    {
+      "t": 4.976911468897015,
+      "bytes": 3840
+    },
+    {
+      "t": 4.994291067123413,
+      "bytes": 3840
+    },
+    {
+      "t": 5.016879894770682,
+      "bytes": 3840
+    },
+    {
+      "t": 5.033629016019404,
+      "bytes": 3840
+    },
+    {
+      "t": 5.050271634012461,
+      "bytes": 3840
+    },
+    {
+      "t": 5.066973465960473,
+      "bytes": 3840
+    },
+    {
+      "t": 5.083642141893506,
+      "bytes": 3840
+    },
+    {
+      "t": 5.100991431158036,
+      "bytes": 3840
+    },
+    {
+      "t": 5.123390450142324,
+      "bytes": 3840
+    },
+    {
+      "t": 5.140017087105662,
+      "bytes": 3840
+    },
+    {
+      "t": 5.15668092481792,
+      "bytes": 3840
+    },
+    {
+      "t": 5.173326062038541,
+      "bytes": 3840
+    },
+    {
+      "t": 5.189959465060383,
+      "bytes": 3840
+    },
+    {
+      "t": 5.208432260900736,
+      "bytes": 3840
+    },
+    {
+      "t": 5.238106789067388,
+      "bytes": 3840
+    },
+    {
+      "t": 5.269318759907037,
+      "bytes": 3840
+    },
+    {
+      "t": 5.295821959152818,
+      "bytes": 3840
+    },
+    {
+      "t": 5.32350523583591,
+      "bytes": 3840
+    },
+    {
+      "t": 5.340722125023603,
+      "bytes": 3840
+    },
+    {
+      "t": 5.357478579971939,
+      "bytes": 3840
+    },
+    {
+      "t": 5.374205127824098,
+      "bytes": 3840
+    },
+    {
+      "t": 5.39091827487573,
+      "bytes": 3840
+    },
+    {
+      "t": 5.410003167111427,
+      "bytes": 3840
+    },
+    {
+      "t": 5.430223369970918,
+      "bytes": 3840
+    },
+    {
+      "t": 5.4475975120440125,
+      "bytes": 3840
+    },
+    {
+      "t": 5.467070147860795,
+      "bytes": 3840
+    },
+    {
+      "t": 5.483204727992415,
+      "bytes": 3840
+    },
+    {
+      "t": 5.501534867100418,
+      "bytes": 3840
+    },
+    {
+      "t": 5.524554234929383,
+      "bytes": 3840
+    }
+  ],
+  "text": [
+    "The capital of France is Paris."
+  ],
+  "cancellations": [
+    20.001250899862498
+  ],
+  "asr_trace": [
+    {
+      "t": 2297363.474796307,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297363.513537861,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297363.614088159,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297363.713699599,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297363.818927944,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297363.913449681,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.013888911,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.115919961,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.21896411,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.313261309,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.413593323,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.513994585,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.620604229,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.71400802,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.813445526,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297364.916078695,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297365.019228732,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297365.113848102,
+      "text": "What",
+      "stable_text": "",
+      "delta": "What"
+    },
+    {
+      "t": 2297365.213229629,
+      "text": "What",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297365.313632254,
+      "text": "What",
+      "stable_text": "What",
+      "delta": ""
+    },
+    {
+      "t": 2297365.414149469,
+      "text": "What is",
+      "stable_text": "What",
+      "delta": " is"
+    },
+    {
+      "t": 2297365.51978052,
+      "text": "What is the",
+      "stable_text": "What is",
+      "delta": " the"
+    },
+    {
+      "t": 2297365.614035873,
+      "text": "What is the",
+      "stable_text": "What is",
+      "delta": ""
+    },
+    {
+      "t": 2297365.714809115,
+      "text": "What is the",
+      "stable_text": "What is",
+      "delta": ""
+    },
+    {
+      "t": 2297365.813932984,
+      "text": "What is the",
+      "stable_text": "What is the",
+      "delta": ""
+    },
+    {
+      "t": 2297365.919507132,
+      "text": "What is the capital",
+      "stable_text": "What is the",
+      "delta": " capital"
+    },
+    {
+      "t": 2297366.014397982,
+      "text": "What is the capital",
+      "stable_text": "What is the capital",
+      "delta": ""
+    },
+    {
+      "t": 2297366.114342897,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital",
+      "delta": " of"
+    },
+    {
+      "t": 2297366.216725939,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital",
+      "delta": ""
+    },
+    {
+      "t": 2297366.320365823,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital",
+      "delta": ""
+    },
+    {
+      "t": 2297366.414228026,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297366.517561873,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297366.614464475,
+      "text": "What is the capital of France",
+      "stable_text": "What is the capital of",
+      "delta": " France"
+    },
+    {
+      "t": 2297366.72142823,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": "?"
+    },
+    {
+      "t": 2297366.814298311,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297366.914355351,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.014356918,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.120177696,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.216893262,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.313813696,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.413648888,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.519379592,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.614215939,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.717518838,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.817410397,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297367.926489913,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.014863844,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.114333226,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.236380736,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.320181356,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.420389909,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.520108838,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.630070085,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.725645054,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.818543965,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297368.920978226,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.019764445,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.113709403,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.215698347,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.313578137,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.420204807,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.514123685,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.614236128,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.71594794,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.819638768,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297369.913585905,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.014506291,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.114388388,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.221683335,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.313569899,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.414406685,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.514281849,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.614177658,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.728818057,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.813967601,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297370.913762926,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.01366207,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.119986885,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.214641078,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.313558774,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.414546956,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.520300973,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.614254954,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.71696303,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.813813304,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297371.919620053,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.01456256,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.11448323,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.216829111,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.319541742,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.414433419,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.516337938,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.61433852,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.72006738,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.813971615,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297372.917807592,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.018160644,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.120863065,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.21717208,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.316827947,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.419292768,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.514262189,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.614130812,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.713699048,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.819330066,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297373.914620365,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.015622016,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.114561106,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.221506656,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.314495239,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.414521093,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.51457723,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.621233999,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.714784415,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.813861579,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297374.913924306,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.01959286,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.114644238,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.215150568,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.314149924,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.419960723,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.516112852,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.614014341,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.714432654,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.814357368,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297375.920028507,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.013950901,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.113840158,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.214069321,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.31966801,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.413521133,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.514404253,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.614314076,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.721498053,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.814377773,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297376.91435213,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.014342428,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.122098729,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.215820647,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.313750693,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.413551443,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.52020338,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.614172801,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.717132973,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.814247497,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297377.920176105,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.014333696,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.114519522,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.216176081,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.320059021,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.414300843,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.514536458,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.621235656,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.717172705,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.814333949,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297378.914450584,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.020303877,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.114237134,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.216688665,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.313569244,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.420203014,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.513972178,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.613726485,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.717969112,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.820504056,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297379.914458156,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.014361682,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.114270818,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.221561709,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.314427822,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.414384069,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.514297533,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.614150459,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.722393453,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.814246569,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297380.914679225,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.013446802,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.121788468,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.213885486,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.313734577,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.413646498,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.519348279,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.614106094,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.716743583,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.813766152,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297381.919475472,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.014407385,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.114344335,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.215918967,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.319650783,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.41356925,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.514578671,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.614411236,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.719383412,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.814173987,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297382.914036576,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297383.0138669,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297383.119691812,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297383.214785495,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297383.313640624,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    }
+  ],
+  "errors": []
+}

@@ -132,6 +132,17 @@ This is a concrete integration failure requiring investigation, not a passing
 native cascade. Its trace is retained as `audio-probe-failed.json` beside the
 component evidence below.
 
+The follow-up capture confirmed that Kyutai had recognized the full question
+but withheld its final word from `stable_text`. The native path now admits raw
+fragments only when the service explicitly declares `decoder-append-only`,
+rejects prefix revisions, and preserves fragment whitespace. On the same paced
+recording the composed pipeline answered “The capital of France is Paris” and
+returned 34 synthesis audio packets over 36 ticks, with no reported errors or
+500 ms tick overruns after explicit warm-up. This is one component probe,
+not public Realtime or rendered-playback acceptance. The successful trace and
+raw recognizer comparison are retained as `audio-fragments.json` and
+`asr-finalword.json` alongside the failed attempt.
+
 The released DuplexCascade checkpoint now passes a text-only GPU micro-turn
 probe with strict tensor loading after 112 shape-checked PEFT base-layer key
 renames. It emits `<|user is talking|>` for two incoming question chunks, then

@@ -1,0 +1,507 @@
+{
+  "rows": [
+    {
+      "t": 0.007092121988534927,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.1077636699192226,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.207537607755512,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.3076594187878072,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.41316392086446285,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.5072926669381559,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.6073909397237003,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.7072595139034092,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.8131030518561602,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 0.9074883437715471,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.007254815660417,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.107565637677908,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.213077341672033,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.307358562014997,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.4068736527115107,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.5075443927198648,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.6128752520307899,
+      "text": "",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.7070215409621596,
+      "text": "What",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.8073447928763926,
+      "text": "What",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": ""
+    },
+    {
+      "t": 1.9077809108421206,
+      "text": "What",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What"
+    },
+    {
+      "t": 2.0075997449457645,
+      "text": "What is",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What"
+    },
+    {
+      "t": 2.1133231720887125,
+      "text": "What is the",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is"
+    },
+    {
+      "t": 2.207446980755776,
+      "text": "What is the",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is"
+    },
+    {
+      "t": 2.307463862001896,
+      "text": "What is the",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is"
+    },
+    {
+      "t": 2.407411643769592,
+      "text": "What is the",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the"
+    },
+    {
+      "t": 2.513359012082219,
+      "text": "What is the capital",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the"
+    },
+    {
+      "t": 2.607674086932093,
+      "text": "What is the capital",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital"
+    },
+    {
+      "t": 2.707681864965707,
+      "text": "What is the capital of",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital"
+    },
+    {
+      "t": 2.807428300846368,
+      "text": "What is the capital of",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital"
+    },
+    {
+      "t": 2.9132219688035548,
+      "text": "What is the capital of",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital"
+    },
+    {
+      "t": 3.00763185787946,
+      "text": "What is the capital of",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.1075716856867075,
+      "text": "What is the capital of",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.207550785969943,
+      "text": "What is the capital of France",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.3132580569945276,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.407428765669465,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.507209083996713,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.6070647169835865,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.7128438861109316,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.807265833951533,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 3.907247551716864,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.007792293094099,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.113017702009529,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.207633254118264,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.307388080749661,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.407212035730481,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.51288414793089,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.607366822659969,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.707413627766073,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.813006164971739,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 4.907504233065993,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.007497787009925,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.10740714892745,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.212970037944615,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.307275763712823,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.407421601936221,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.507172896061093,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.612641470041126,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.7072981940582395,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.807307697832584,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 5.906918273773044,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.012601491995156,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.107701380737126,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.208317551761866,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.307642221916467,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.413005349691957,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.50748284580186,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.607500290963799,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.707571811974049,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.812591451685876,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 6.907080637756735,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    },
+    {
+      "t": 7.001539397984743,
+      "text": "What is the capital of France?",
+      "language": "",
+      "stability": "decoder-append-only",
+      "stable_text": "What is the capital of"
+    }
+  ],
+  "final": {
+    "text": "What is the capital of France?",
+    "language": "",
+    "stability": "decoder-append-only",
+    "stable_text": "What is the capital of France?"
+  }
+}
