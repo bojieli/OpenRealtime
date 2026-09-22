@@ -89,7 +89,7 @@ def staleness(directory: Path) -> str:
         if completion.get("exit_code") != 0 or completion.get("errors"):
             return "FAILED (see finished.json)"
         expected = [f"fdb-{category}.json" for category in CATEGORIES]
-        if (run.get("fdbench_conversations", 0) or
+        if (run.get("fdbench_conversations", 0) or run.get("full_selected") is True or
                 run.get("campaign_scope") == "all FDB categories and complete cosyvoice2-single-round-combine-med"):
             expected.append("fdbench.json")
         if run.get("expected_results") != expected:

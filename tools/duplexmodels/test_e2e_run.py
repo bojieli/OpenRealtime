@@ -90,6 +90,20 @@ class RunnerTests(unittest.TestCase):
         argv = done['commands']['fdbench.json']['argv']
         self.assertEqual(argv[argv.index('-conditions') + 1], 'cosyvoice2-single-round-combine-med')
 
+    def test_nondefault_condition_is_recorded_and_not_merged(self):
+        condition = 'cosyvoice2-single-round-combine-easy-noisy-bg-0dB'
+        self.assertEqual(e2e_run.run('sample', 1, 0, full_selected=True,
+                                    fdbench_condition=condition), 0)
+        path = self.parent / 'latest'
+        run = json.loads((path / 'run.json').read_text())
+        self.assertEqual(run['fdbench_condition'], condition)
+        done = json.loads((path / 'finished.json').read_text())
+        argv = done['commands']['fdbench.json']['argv']
+        self.assertEqual(argv[argv.index('-conditions') + 1], condition)
+        self.assertEqual(e2e_summary.staleness(path), '')
+        with self.assertRaises(ValueError):
+            e2e_run.run('sample', 1, 1, fdbench_condition='clean,noisy')
+
     def test_existing_listener_is_not_adopted(self):
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', self.port))

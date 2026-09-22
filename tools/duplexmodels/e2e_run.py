@@ -129,9 +129,12 @@ def terminate(process: subprocess.Popen) -> None:
     process.wait()
 
 
-def run(profile: str, per_category: int, conversations: int, *, full_selected: bool = False) -> int:
+def run(profile: str, per_category: int, conversations: int, *, full_selected: bool = False,
+        fdbench_condition: str = "cosyvoice2-single-round-combine-med") -> int:
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', profile):
         raise ValueError('invalid profile name')
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', fdbench_condition):
+        raise ValueError('select one valid FD-Bench condition per run')
     config = ROOT / 'deploy/duplex/profiles' / f'{profile}.yaml'
     binary = Path(os.environ.get('OPENREALTIME_BIN', str(ROOT / '.runtime/duplex-plan/bin/openrealtime'))).resolve()
     if not config.is_file() or not binary.is_file():
@@ -160,7 +163,8 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
         expected.append('fdbench.json')
     metadata = {
         'schema': 2, 'profile': profile, 'bench_timeout_seconds': bench_timeout,
-        'campaign_scope': 'all FDB categories and complete cosyvoice2-single-round-combine-med' if full_selected else 'smoke subset', 'profile_sha256': digest(out / 'profile.yaml'),
+        'full_selected': full_selected, 'fdbench_condition': fdbench_condition,
+        'campaign_scope': f'all FDB categories and complete {fdbench_condition}' if full_selected else 'smoke subset', 'profile_sha256': digest(out / 'profile.yaml'),
         'binary_sha256': digest(binary), 'binary': str(binary),
         'sidecar_source_sha256': sidecar_sources(ROOT),
         'revision': capture('git', 'rev-parse', 'HEAD'),
@@ -206,7 +210,7 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
             if server.poll() is not None or not owns_listener(server.pid, port):
                 raise RuntimeError('owned server is no longer listening')
             if filename == 'fdbench.json':
-                arguments = ['fdbench', '-conditions', 'cosyvoice2-single-round-combine-med', '-limit', str(0 if full_selected else conversations)]
+                arguments = ['fdbench', '-conditions', fdbench_condition, '-limit', str(0 if full_selected else conversations)]
             else:
                 arguments = ['fdb', '-categories', filename[4:-5], '-limit', str(0 if full_selected else per_category)]
             command = [str(binary), 'bench', *arguments, '-endpoint', f'ws://127.0.0.1:{port}/v1/realtime',
@@ -254,12 +258,15 @@ def main() -> None:
     parser.add_argument('per_category', type=int, nargs='?', default=10)
     parser.add_argument('conversations', type=int, nargs='?', default=12)
     parser.add_argument('--full-selected', action='store_true',
-                        help='all FDB recordings and all conversations in the selected clean FD-Bench condition')
+                        help='all FDB recordings and all conversations in the selected FD-Bench condition')
+    parser.add_argument('--fdbench-condition', default='cosyvoice2-single-round-combine-med',
+                        help='one dataset condition; results from different conditions remain separate')
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise KeyboardInterrupt(f'signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
-    raise SystemExit(run(args.profile, args.per_category, args.conversations, full_selected=args.full_selected))
+    raise SystemExit(run(args.profile, args.per_category, args.conversations, full_selected=args.full_selected,
+                         fdbench_condition=args.fdbench_condition))
 
 
 if __name__ == '__main__':

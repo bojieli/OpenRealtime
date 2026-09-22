@@ -199,3 +199,19 @@ smoke commands default to 30 minutes. `E2E_BENCH_TIMEOUT` overrides this in
 seconds and is recorded in `run.json`. This does not change the benchmark's
 per-conversation deadline. A large population needs more total replay time,
 not a more permissive behavioral deadline.
+
+Choose a different FD-Bench population explicitly, with one condition per run:
+
+```bash
+deploy/duplex/run-e2e.sh native-personaplex --full-selected \
+  --fdbench-condition cosyvoice2-single-round-combine-easy-noisy-bg-0dB
+```
+
+The default remains `cosyvoice2-single-round-combine-med`. Each attempt records
+`fdbench_condition` and its command; the retained run directories keep conditions
+separate, although `latest` points only to the most recent attempt for a profile.
+This host currently has 21 condition directories: nine clean combinations of
+three synthesisers and three difficulties, plus background/gap noise at 0, 10,
+and 20 dB for the CosyVoice2 and F5-TTS easy populations. ChatTTS has 291 WAVs
+per condition; the others have 293. These file counts are inventory, not evidence
+that those populations have been evaluated or passed.
