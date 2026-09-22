@@ -1,0 +1,2785 @@
+{
+  "model": {
+    "model_revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
+    "base_revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c",
+    "source_revision": "42893024ca90c8de8ac3ed624467ebc123512ff8",
+    "dtype": "bfloat16",
+    "attention": "sdpa",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "strict_checkpoint_load": true,
+    "renamed_checkpoint_keys": {
+      "llm.base_model.model.model.layers.0.self_attn.q_proj.bias": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.0.self_attn.q_proj.weight": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.0.self_attn.v_proj.bias": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.0.self_attn.v_proj.weight": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.1.self_attn.q_proj.bias": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.1.self_attn.q_proj.weight": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.1.self_attn.v_proj.bias": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.1.self_attn.v_proj.weight": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.10.self_attn.q_proj.bias": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.10.self_attn.q_proj.weight": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.10.self_attn.v_proj.bias": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.10.self_attn.v_proj.weight": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.11.self_attn.q_proj.bias": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.11.self_attn.q_proj.weight": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.11.self_attn.v_proj.bias": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.11.self_attn.v_proj.weight": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.12.self_attn.q_proj.bias": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.12.self_attn.q_proj.weight": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.12.self_attn.v_proj.bias": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.12.self_attn.v_proj.weight": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.13.self_attn.q_proj.bias": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.13.self_attn.q_proj.weight": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.13.self_attn.v_proj.bias": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.13.self_attn.v_proj.weight": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.14.self_attn.q_proj.bias": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.14.self_attn.q_proj.weight": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.14.self_attn.v_proj.bias": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.14.self_attn.v_proj.weight": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.15.self_attn.q_proj.bias": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.15.self_attn.q_proj.weight": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.15.self_attn.v_proj.bias": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.15.self_attn.v_proj.weight": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.16.self_attn.q_proj.bias": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.16.self_attn.q_proj.weight": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.16.self_attn.v_proj.bias": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.16.self_attn.v_proj.weight": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.17.self_attn.q_proj.bias": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.17.self_attn.q_proj.weight": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.17.self_attn.v_proj.bias": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.17.self_attn.v_proj.weight": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.18.self_attn.q_proj.bias": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.18.self_attn.q_proj.weight": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.18.self_attn.v_proj.bias": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.18.self_attn.v_proj.weight": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.19.self_attn.q_proj.bias": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.19.self_attn.q_proj.weight": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.19.self_attn.v_proj.bias": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.19.self_attn.v_proj.weight": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.2.self_attn.q_proj.bias": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.2.self_attn.q_proj.weight": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.2.self_attn.v_proj.bias": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.2.self_attn.v_proj.weight": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.20.self_attn.q_proj.bias": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.20.self_attn.q_proj.weight": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.20.self_attn.v_proj.bias": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.20.self_attn.v_proj.weight": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.21.self_attn.q_proj.bias": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.21.self_attn.q_proj.weight": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.21.self_attn.v_proj.bias": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.21.self_attn.v_proj.weight": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.22.self_attn.q_proj.bias": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.22.self_attn.q_proj.weight": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.22.self_attn.v_proj.bias": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.22.self_attn.v_proj.weight": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.23.self_attn.q_proj.bias": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.23.self_attn.q_proj.weight": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.23.self_attn.v_proj.bias": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.23.self_attn.v_proj.weight": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.24.self_attn.q_proj.bias": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.24.self_attn.q_proj.weight": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.24.self_attn.v_proj.bias": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.24.self_attn.v_proj.weight": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.25.self_attn.q_proj.bias": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.25.self_attn.q_proj.weight": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.25.self_attn.v_proj.bias": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.25.self_attn.v_proj.weight": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.26.self_attn.q_proj.bias": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.26.self_attn.q_proj.weight": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.26.self_attn.v_proj.bias": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.26.self_attn.v_proj.weight": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.27.self_attn.q_proj.bias": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.27.self_attn.q_proj.weight": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.27.self_attn.v_proj.bias": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.27.self_attn.v_proj.weight": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.3.self_attn.q_proj.bias": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.3.self_attn.q_proj.weight": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.3.self_attn.v_proj.bias": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.3.self_attn.v_proj.weight": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.4.self_attn.q_proj.bias": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.4.self_attn.q_proj.weight": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.4.self_attn.v_proj.bias": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.4.self_attn.v_proj.weight": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.5.self_attn.q_proj.bias": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.5.self_attn.q_proj.weight": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.5.self_attn.v_proj.bias": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.5.self_attn.v_proj.weight": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.6.self_attn.q_proj.bias": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.6.self_attn.q_proj.weight": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.6.self_attn.v_proj.bias": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.6.self_attn.v_proj.weight": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.7.self_attn.q_proj.bias": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.7.self_attn.q_proj.weight": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.7.self_attn.v_proj.bias": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.7.self_attn.v_proj.weight": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.8.self_attn.q_proj.bias": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.8.self_attn.q_proj.weight": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.8.self_attn.v_proj.bias": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.8.self_attn.v_proj.weight": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.9.self_attn.q_proj.bias": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.9.self_attn.q_proj.weight": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.9.self_attn.v_proj.bias": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.9.self_attn.v_proj.weight": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.weight"
+    },
+    "load_seconds": 60.50154492305592
+  },
+  "input": ".runtime/duplex-plan/data/ellsa/ELLSA_test_data/llama_questions/1.wav",
+  "asr": "http://127.0.0.1:9112",
+  "tts": "ws://127.0.0.1:9125/v1/tts/stream",
+  "timing_basis": "packet arrival; no rendered playback receipts",
+  "ticks": [
+    {
+      "tick": 0,
+      "input": "What is the",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.19731283187866,
+      "admission_lag_ms": [
+        503.27172316610813,
+        203.53490114212036,
+        97.68979297950864
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 1,
+      "input": " capital",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 43.973879888653755,
+      "admission_lag_ms": [
+        195.14332385733724
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 2,
+      "input": " of France",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 52.67015565186739,
+      "admission_lag_ms": [
+        497.98277439549565,
+        1.101211179047823
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 3,
+      "input": "?",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 44.767013750970364,
+      "admission_lag_ms": [
+        395.46348713338375
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 4,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user finish talking|>"
+        ],
+        [
+          "text",
+          "The capital of France is Paris."
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 191.99808174744248,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 5,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 45.286848209798336,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 6,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.38751310110092,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 7,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.11920094490051,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 8,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.726037696003914,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 9,
+      "input": " Who was",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 42.82860876992345,
+      "admission_lag_ms": [
+        295.5927629955113,
+        1.0912059806287289
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 10,
+      "input": " the first",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 80.79387061297894,
+      "admission_lag_ms": [
+        395.0581313110888,
+        101.06709599494934
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 11,
+      "input": " president",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 47.51070775091648,
+      "admission_lag_ms": [
+        202.7894682250917,
+        102.23676916211843
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 12,
+      "input": " of the",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.89113278314471,
+      "admission_lag_ms": [
+        491.8369217775762,
+        301.73147981986403
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 13,
+      "input": " United States",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 80.66305099055171,
+      "admission_lag_ms": [
+        396.42028603702784,
+        100.70485807955265,
+        0.03333901986479759
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 14,
+      "input": "?",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 75.16311993822455,
+      "admission_lag_ms": [
+        399.91143997758627
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 15,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user finish talking|>"
+        ],
+        [
+          "text",
+          "The first president of the United States was George Washington"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 470.97967797890306,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 16,
+      "input": "",
+      "events": [
+        [
+          "text",
+          "."
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 82.76126813143492,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 17,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 45.46079505234957,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 18,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 82.09204627200961,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 19,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 46.93244071677327,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 20,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 60.95723528414965,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 21,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 45.21947633475065,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 22,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 47.08830872550607,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 23,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 46.18997639045119,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 24,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 60.19105203449726,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 25,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 89.26621498540044,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 26,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 78.16166989505291,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 27,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.6933937817812,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 28,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.81216395273805,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 29,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 81.22870372608304,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 30,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 83.04714504629374,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 31,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 80.66317858174443,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 32,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 77.23640417680144,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 33,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 42.43669519200921,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 34,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 49.795358907431364,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 35,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 47.70894115790725,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 36,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 43.417009990662336,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 37,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 43.68242574855685,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 38,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 45.34339439123869,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 39,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 43.78735274076462,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 40,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 51.96558963507414,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 41,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 67.31782108545303,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 42,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 70.57533925399184,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 43,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 53.33399400115013,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 44,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 52.80201602727175,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 45,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 46.3457559235394,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    }
+  ],
+  "audio": [
+    {
+      "t": 4.837454821914434,
+      "bytes": 3840
+    },
+    {
+      "t": 4.852134229149669,
+      "bytes": 3840
+    },
+    {
+      "t": 4.872752007097006,
+      "bytes": 3840
+    },
+    {
+      "t": 4.890100833028555,
+      "bytes": 3840
+    },
+    {
+      "t": 4.908983419183642,
+      "bytes": 3840
+    },
+    {
+      "t": 4.929899827111512,
+      "bytes": 3840
+    },
+    {
+      "t": 4.94722212292254,
+      "bytes": 3840
+    },
+    {
+      "t": 4.964953073300421,
+      "bytes": 3840
+    },
+    {
+      "t": 4.982371487189084,
+      "bytes": 3840
+    },
+    {
+      "t": 5.003517688252032,
+      "bytes": 3840
+    },
+    {
+      "t": 5.026604860089719,
+      "bytes": 3840
+    },
+    {
+      "t": 5.044145877007395,
+      "bytes": 3840
+    },
+    {
+      "t": 5.061503901146352,
+      "bytes": 3840
+    },
+    {
+      "t": 5.078894711099565,
+      "bytes": 3840
+    },
+    {
+      "t": 5.0963610373437405,
+      "bytes": 3840
+    },
+    {
+      "t": 5.12026870297268,
+      "bytes": 3840
+    },
+    {
+      "t": 5.140947056002915,
+      "bytes": 3840
+    },
+    {
+      "t": 5.158641577232629,
+      "bytes": 3840
+    },
+    {
+      "t": 5.176125485915691,
+      "bytes": 3840
+    },
+    {
+      "t": 5.193633253220469,
+      "bytes": 3840
+    },
+    {
+      "t": 5.215536267962307,
+      "bytes": 3840
+    },
+    {
+      "t": 5.240557380951941,
+      "bytes": 3840
+    },
+    {
+      "t": 5.2830134043470025,
+      "bytes": 3840
+    },
+    {
+      "t": 5.302183398976922,
+      "bytes": 3840
+    },
+    {
+      "t": 5.32837195135653,
+      "bytes": 3840
+    },
+    {
+      "t": 5.345995966345072,
+      "bytes": 3840
+    },
+    {
+      "t": 5.3634350770153105,
+      "bytes": 3840
+    },
+    {
+      "t": 5.380920753348619,
+      "bytes": 3840
+    },
+    {
+      "t": 5.406106658279896,
+      "bytes": 3840
+    },
+    {
+      "t": 5.4254760053008795,
+      "bytes": 3840
+    },
+    {
+      "t": 5.444389258045703,
+      "bytes": 3840
+    },
+    {
+      "t": 5.461842973250896,
+      "bytes": 3840
+    },
+    {
+      "t": 10.389853111002594,
+      "bytes": 3840
+    },
+    {
+      "t": 10.408480500336736,
+      "bytes": 3840
+    },
+    {
+      "t": 10.435181655921042,
+      "bytes": 3840
+    },
+    {
+      "t": 10.453124868217856,
+      "bytes": 3840
+    },
+    {
+      "t": 10.77636780636385,
+      "bytes": 3840
+    },
+    {
+      "t": 10.793881162069738,
+      "bytes": 3840
+    },
+    {
+      "t": 10.82230677921325,
+      "bytes": 3840
+    },
+    {
+      "t": 10.84304635412991,
+      "bytes": 3840
+    },
+    {
+      "t": 10.860400800127536,
+      "bytes": 3840
+    },
+    {
+      "t": 10.879891037009656,
+      "bytes": 3840
+    },
+    {
+      "t": 10.89722519600764,
+      "bytes": 3840
+    },
+    {
+      "t": 10.924282516352832,
+      "bytes": 3840
+    },
+    {
+      "t": 10.943221140187234,
+      "bytes": 3840
+    },
+    {
+      "t": 10.960637378972024,
+      "bytes": 3840
+    },
+    {
+      "t": 10.979937627911568,
+      "bytes": 3840
+    },
+    {
+      "t": 10.997773215174675,
+      "bytes": 3840
+    },
+    {
+      "t": 11.021759395953268,
+      "bytes": 3840
+    },
+    {
+      "t": 11.03925303928554,
+      "bytes": 3840
+    },
+    {
+      "t": 11.060426367912441,
+      "bytes": 3840
+    },
+    {
+      "t": 11.080191656947136,
+      "bytes": 3840
+    },
+    {
+      "t": 11.095058395992965,
+      "bytes": 3840
+    },
+    {
+      "t": 11.117819572333246,
+      "bytes": 3840
+    },
+    {
+      "t": 11.139434217009693,
+      "bytes": 3840
+    },
+    {
+      "t": 11.156054085120559,
+      "bytes": 3840
+    },
+    {
+      "t": 11.173689048271626,
+      "bytes": 3840
+    },
+    {
+      "t": 11.191341520287097,
+      "bytes": 3840
+    },
+    {
+      "t": 11.210049191024154,
+      "bytes": 3840
+    },
+    {
+      "t": 11.238304723985493,
+      "bytes": 3840
+    },
+    {
+      "t": 11.27621761104092,
+      "bytes": 3840
+    },
+    {
+      "t": 11.305595542304218,
+      "bytes": 3840
+    },
+    {
+      "t": 11.327387856319547,
+      "bytes": 3840
+    },
+    {
+      "t": 11.345122710336,
+      "bytes": 3840
+    },
+    {
+      "t": 11.362711894325912,
+      "bytes": 3840
+    },
+    {
+      "t": 11.380477678962052,
+      "bytes": 3840
+    },
+    {
+      "t": 11.398091861978173,
+      "bytes": 3840
+    },
+    {
+      "t": 11.42328127194196,
+      "bytes": 3840
+    },
+    {
+      "t": 11.439838991966099,
+      "bytes": 3840
+    },
+    {
+      "t": 11.457446438260376,
+      "bytes": 3840
+    },
+    {
+      "t": 11.475147106219083,
+      "bytes": 3840
+    },
+    {
+      "t": 11.492816566023976,
+      "bytes": 3840
+    },
+    {
+      "t": 11.516463931184262,
+      "bytes": 3840
+    },
+    {
+      "t": 11.537385877221823,
+      "bytes": 3840
+    },
+    {
+      "t": 11.556639924179763,
+      "bytes": 3840
+    },
+    {
+      "t": 11.576479574199766,
+      "bytes": 3840
+    }
+  ],
+  "text": [
+    "The capital of France is Paris.",
+    "The first president of the United States was George Washington",
+    "."
+  ],
+  "cancellations": [
+    {
+      "t": 6.752513487357646,
+      "reason": "model"
+    },
+    {
+      "t": 25.000881562940776,
+      "reason": "shutdown"
+    }
+  ],
+  "asr_trace": [
+    {
+      "t": 2297637.484734498,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297637.512912849,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297637.613023908,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297637.716159014,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297637.81897333,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297637.913051671,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.013132517,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.113089958,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.218923232,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.312937117,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.412717935,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.512653472,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.618256439,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.712101253,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.813013045,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297638.913113392,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297639.018712582,
+      "text": "",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297639.112769093,
+      "text": "What",
+      "stable_text": "",
+      "delta": "What"
+    },
+    {
+      "t": 2297639.214683696,
+      "text": "What",
+      "stable_text": "",
+      "delta": ""
+    },
+    {
+      "t": 2297639.312479413,
+      "text": "What",
+      "stable_text": "What",
+      "delta": ""
+    },
+    {
+      "t": 2297639.412508021,
+      "text": "What is",
+      "stable_text": "What",
+      "delta": " is"
+    },
+    {
+      "t": 2297639.51835284,
+      "text": "What is the",
+      "stable_text": "What is",
+      "delta": " the"
+    },
+    {
+      "t": 2297639.612235718,
+      "text": "What is the",
+      "stable_text": "What is",
+      "delta": ""
+    },
+    {
+      "t": 2297639.714598178,
+      "text": "What is the",
+      "stable_text": "What is",
+      "delta": ""
+    },
+    {
+      "t": 2297639.812529115,
+      "text": "What is the",
+      "stable_text": "What is the",
+      "delta": ""
+    },
+    {
+      "t": 2297639.91813141,
+      "text": "What is the capital",
+      "stable_text": "What is the",
+      "delta": " capital"
+    },
+    {
+      "t": 2297640.013135036,
+      "text": "What is the capital",
+      "stable_text": "What is the capital",
+      "delta": ""
+    },
+    {
+      "t": 2297640.115846685,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital",
+      "delta": " of"
+    },
+    {
+      "t": 2297640.211813859,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital",
+      "delta": ""
+    },
+    {
+      "t": 2297640.318061972,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital",
+      "delta": ""
+    },
+    {
+      "t": 2297640.41274494,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297640.512771341,
+      "text": "What is the capital of",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297640.612727302,
+      "text": "What is the capital of France",
+      "stable_text": "What is the capital of",
+      "delta": " France"
+    },
+    {
+      "t": 2297640.717706956,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": "?"
+    },
+    {
+      "t": 2297640.814129657,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297640.912500606,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.012023836,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.119857372,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.212526431,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.311855847,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.412435693,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.517653124,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.612219265,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.71796269,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.812810141,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297641.931992494,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.01523661,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.112312879,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.225375411,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.315982852,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.421200115,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.52081891,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.629718189,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.720019514,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.820076983,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297642.91245387,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.017538683,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.112143159,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.211809895,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.313558017,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.419214852,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.512134048,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.612944534,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.712682208,
+      "text": "What is the capital of France?",
+      "stable_text": "What is the capital of",
+      "delta": ""
+    },
+    {
+      "t": 2297643.817895971,
+      "text": "What is the capital of France? Who",
+      "stable_text": "What is the capital of France?",
+      "delta": " Who"
+    },
+    {
+      "t": 2297643.912465076,
+      "text": "What is the capital of France? Who",
+      "stable_text": "What is the capital of France?",
+      "delta": ""
+    },
+    {
+      "t": 2297644.011883569,
+      "text": "What is the capital of France? Who",
+      "stable_text": "What is the capital of France? Who",
+      "delta": ""
+    },
+    {
+      "t": 2297644.112397973,
+      "text": "What is the capital of France? Who was",
+      "stable_text": "What is the capital of France? Who",
+      "delta": " was"
+    },
+    {
+      "t": 2297644.218820307,
+      "text": "What is the capital of France? Who was the",
+      "stable_text": "What is the capital of France? Who was",
+      "delta": " the"
+    },
+    {
+      "t": 2297644.312490149,
+      "text": "What is the capital of France? Who was the",
+      "stable_text": "What is the capital of France? Who was",
+      "delta": ""
+    },
+    {
+      "t": 2297644.411939298,
+      "text": "What is the capital of France? Who was the",
+      "stable_text": "What is the capital of France? Who was the",
+      "delta": ""
+    },
+    {
+      "t": 2297644.512811669,
+      "text": "What is the capital of France? Who was the first",
+      "stable_text": "What is the capital of France? Who was the",
+      "delta": " first"
+    },
+    {
+      "t": 2297644.612784108,
+      "text": "What is the capital of France? Who was the first",
+      "stable_text": "What is the capital of France? Who was the",
+      "delta": ""
+    },
+    {
+      "t": 2297644.718861814,
+      "text": "What is the capital of France? Who was the first",
+      "stable_text": "What is the capital of France? Who was the",
+      "delta": ""
+    },
+    {
+      "t": 2297644.812358433,
+      "text": "What is the capital of France? Who was the first",
+      "stable_text": "What is the capital of France? Who was the first",
+      "delta": ""
+    },
+    {
+      "t": 2297644.911837817,
+      "text": "What is the capital of France? Who was the first pres",
+      "stable_text": "What is the capital of France? Who was the first",
+      "delta": " pres"
+    },
+    {
+      "t": 2297645.012389683,
+      "text": "What is the capital of France? Who was the first president",
+      "stable_text": "What is the capital of France? Who was the first",
+      "delta": "ident"
+    },
+    {
+      "t": 2297645.121981293,
+      "text": "What is the capital of France? Who was the first president of",
+      "stable_text": "What is the capital of France? Who was the first president",
+      "delta": " of"
+    },
+    {
+      "t": 2297645.212512204,
+      "text": "What is the capital of France? Who was the first president of",
+      "stable_text": "What is the capital of France? Who was the first president of",
+      "delta": ""
+    },
+    {
+      "t": 2297645.312086532,
+      "text": "What is the capital of France? Who was the first president of the",
+      "stable_text": "What is the capital of France? Who was the first president of",
+      "delta": " the"
+    },
+    {
+      "t": 2297645.41512727,
+      "text": "What is the capital of France? Who was the first president of the",
+      "stable_text": "What is the capital of France? Who was the first president of",
+      "delta": ""
+    },
+    {
+      "t": 2297645.518341418,
+      "text": "What is the capital of France? Who was the first president of the",
+      "stable_text": "What is the capital of France? Who was the first president of the",
+      "delta": ""
+    },
+    {
+      "t": 2297645.611722268,
+      "text": "What is the capital of France? Who was the first president of the",
+      "stable_text": "What is the capital of France? Who was the first president of the",
+      "delta": ""
+    },
+    {
+      "t": 2297645.716435349,
+      "text": "What is the capital of France? Who was the first president of the United",
+      "stable_text": "What is the capital of France? Who was the first president of the",
+      "delta": " United"
+    },
+    {
+      "t": 2297645.812925846,
+      "text": "What is the capital of France? Who was the first president of the United",
+      "stable_text": "What is the capital of France? Who was the first president of the",
+      "delta": ""
+    },
+    {
+      "t": 2297645.917687612,
+      "text": "What is the capital of France? Who was the first president of the United",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.012150692,
+      "text": "What is the capital of France? Who was the first president of the United State",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": " State"
+    },
+    {
+      "t": 2297646.112822129,
+      "text": "What is the capital of France? Who was the first president of the United States",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": "s"
+    },
+    {
+      "t": 2297646.213888908,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": "?"
+    },
+    {
+      "t": 2297646.325875179,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.412652782,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.512630774,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.612704242,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.718549107,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.812397056,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297646.912362805,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.012272041,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.121090481,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.215216344,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.316993192,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.424280331,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.521848573,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.614523525,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.721643669,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.825520221,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297647.911835288,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.012267505,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.111902917,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.229377601,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.318903008,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.422398379,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.519770173,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.635727487,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.72218796,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.818882928,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297648.919017102,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.020163867,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.113106826,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.214328001,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.311846796,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.417913383,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.512525962,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.611854184,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.714412172,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.811814504,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297649.918246825,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.01182637,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.112429612,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.21206181,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.318518288,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.412548527,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.513072688,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.614186263,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.718219855,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.811720446,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297650.912611824,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.012472791,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.121931632,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.213684244,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.312259797,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.411815991,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.518098337,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.612735422,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.712090005,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.812833775,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297651.918338911,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.012298215,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.112279376,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.213167485,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.318861073,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.413133362,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.51322998,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.619180573,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.711991409,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.81277433,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297652.912659823,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.018400196,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.115182684,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.213592935,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.31256637,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.41823218,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.512230165,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.61327928,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.715162296,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.818871913,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297653.912812914,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.012742858,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.11547077,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.219290828,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.312135487,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.412907073,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.512756936,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.61265266,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.720262514,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.812237658,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297654.912151072,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.013202805,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.120080308,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.213041606,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.312865395,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.412853619,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.518539665,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.612438413,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.71362635,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.812511203,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297655.918080954,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.012692326,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.111862008,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.211701824,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.31807931,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.412536127,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.511959737,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.612533524,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.717500148,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.811833354,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297656.912170548,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.012704213,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.118338011,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.212063283,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.312677869,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.418021112,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.512499179,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.61201366,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.712170335,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.818446699,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297657.911967603,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.01254283,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.112419239,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.217347293,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.311427148,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.411773962,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.512252054,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.61745083,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.712087014,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.812567387,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297658.91184101,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.017514837,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.111820792,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.211688889,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.312215044,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.417812241,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.51269444,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.612398819,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.712215714,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.81238784,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297659.918126012,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.01325689,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.111543229,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.212568204,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.317073949,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.413731468,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.512500151,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.612297701,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.718427401,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.812115639,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297660.912543374,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.011984612,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.118568977,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.211788462,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.312050424,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.412430378,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.51756169,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.612006864,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.712255391,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.811729988,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297661.918045086,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297662.01267435,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297662.112324677,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297662.212451721,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    },
+    {
+      "t": 2297662.317809692,
+      "text": "What is the capital of France? Who was the first president of the United States?",
+      "stable_text": "What is the capital of France? Who was the first president of the United",
+      "delta": ""
+    }
+  ],
+  "interruption_started_s": 5.7,
+  "input_sha256": "c7b69510cb5a7cb51f479751cf989e555ae971a61bceb2b4685cd09b70cb78dd",
+  "errors": [],
+  "output": {
+    "path": ".runtime/duplex-plan/results/microturn/duplexcascade/audio-interrupt.wav",
+    "sha256": "ff9170bf73835551296187b04715e1ac36a84373ca38d4411826b284997bcfc9",
+    "sample_rate": 24000,
+    "seconds": 6.08,
+    "layout": "concatenated synthesis packets; not rendered timeline"
+  },
+  "provenance_note": "Run started before commit bd01c6a9; later additions of input hashes and exception metadata were not present in the executing process. Output WAV hash is from the run."
+}

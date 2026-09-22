@@ -143,6 +143,15 @@ not public Realtime or rendered-playback acceptance. The successful trace and
 raw recognizer comparison are retained as `audio-fragments.json` and
 `asr-finalword.json` alongside the failed attempt.
 
+A follow-up 25 s component probe injected a second recorded question 800 ms
+after the first synthesis packet. It answered Paris and then George Washington,
+with one model-driven synthesis cancellation at 6.753 s after second-input onset
+at 5.7 s (about 1.05 s). The trigger was `<|user is talking|>`, not a dedicated
+interruption token. All 46 ticks stayed within 500 ms; no errors were reported.
+The retained `audio-interrupt.json` includes the concatenated output waveform's
+hash (6.08 s at 24 kHz). Packet arrival and concatenated output do not establish
+rendered overlap or audible yield latency.
+
 The released DuplexCascade checkpoint now passes a text-only GPU micro-turn
 probe with strict tensor loading after 112 shape-checked PEFT base-layer key
 renames. It emits `<|user is talking|>` for two incoming question chunks, then
