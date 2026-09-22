@@ -255,6 +255,7 @@ class MiniCPMODuplexSidecar(Sidecar):
         # model, and an interrupt can drop the part not yet played.
         self._out: queue.Queue = queue.Queue()
         self._out_generation = 0
+        self._out_lock = threading.RLock()
         self._pace = pace_output
         self._playout_lead = max(0.0, playout_lead_ms / 1000.0)
         self._real_samples = 0
@@ -518,7 +519,13 @@ class MiniCPMODuplexSidecar(Sidecar):
                 if wait > 0:
                     time.sleep(wait)
                 packet = value[offset:offset + packet_bytes]
-                self.audio(packet)
+                # Interrupt can arrive during the pacing sleep. Serialize the
+                # final check and write with interrupt acknowledgement so no
+                # old packet is sent after on_interrupt returns.
+                with self._out_lock:
+                    if generation != self._out_generation or self._stop.is_set():
+                        break
+                    self.audio(packet)
                 next_at += len(packet) / 2 / MODEL_OUTPUT_RATE
 
     # --- engine controls ----------------------------------------------------------
@@ -527,7 +534,8 @@ class MiniCPMODuplexSidecar(Sidecar):
         """Force the model to listen on its next unit and drop unplayed audio."""
         self._force_listen_next.set()
         self._drop_unit.set()
-        self._out_generation += 1
+        with self._out_lock:
+            self._out_generation += 1
 
     def on_text(self, text: str, role: str) -> None:
         log(f"minicpm-o duplex ignored injected {role} text ({len(text)} chars): the duplex mode has no text seam")
