@@ -53,7 +53,7 @@ class PersonaPlexModel:
     def reset(self, instructions: str):
         from moshi.offline import wrap_with_system_tags
         with self.torch.no_grad():
-            self.generator.text_prompt_tokens = self.tokenizer.encode(wrap_with_system_tags(instructions)) if instructions else None
+            self.generator.text_prompt_tokens = self.tokenizer.encode(wrap_with_system_tags(instructions)) if instructions else []
             for module in (self.mimi, self.other_mimi, self.generator):
                 module.reset_streaming()
             self.generator.step_system_prompts(self.mimi)
@@ -87,7 +87,12 @@ class PersonaPlexSidecar(MoshiSidecar):
             if not model.lock.acquire(timeout=20):
                 raise RuntimeError("PersonaPlex is serving another session")
             self._model, self._holds_model = model, True
-            model.reset(self.instructions)
+            try:
+                model.reset(self.instructions)
+            except Exception:
+                self._holds_model = False
+                model.lock.release()
+                raise
             self._stream_thread = threading.Thread(target=self._stream, daemon=True)
         self._stream_thread.start()
 

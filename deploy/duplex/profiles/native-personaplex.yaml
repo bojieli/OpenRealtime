@@ -6,3 +6,4 @@ sidecar-protocol: 1
 slow-provider: openai-compatible
 slow-url: http://127.0.0.1:9100/v1
 slow-model: qwen3-8b
+instructions: You are a wise and friendly teacher. Answer questions or provide advice in a clear and engaging way.
