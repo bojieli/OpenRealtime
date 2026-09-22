@@ -292,6 +292,11 @@ Native validation remains incomplete. The retained component artifacts under
   ten-minute probe grew from 17,342 to 22,508 MiB and experienced shared-GPU
   out-of-memory errors; it is not a clean endurance pass. See
   `freeze-summary.json` and the referenced raw runs.
+  A CPU regression also reproduced `drop_audio()` returning while a dequeued
+  PCM frame was still waiting to be written. The pacer now serializes that
+  write with queue cancellation. This fixes local ordering but cannot retract
+  device-buffered audio; a blocked transport can delay the cutoff. Real-model
+  interruption latency and the endurance failure remain unresolved.
 - **Lychee-FD:** `lychee-control-summary.json` records 29 model interrupts
   and 26 audio-stall endings. Its 64 first-audio observations have a 1,099 ms
   median, but the control-delay sample is empty. This does not establish the

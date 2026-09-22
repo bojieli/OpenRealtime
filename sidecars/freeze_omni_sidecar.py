@@ -203,10 +203,12 @@ class OutputPacer:
                 else:
                     item = self._queue.popleft()
                 self._cv.notify_all()
-            try:
-                self._raw_send(item[0], item[1], **item[2])
-            except Exception:  # noqa: BLE001 - the peer went away; keep draining
-                pass
+                # A frame removed from the queue is still pending until its
+                # write completes. Keep drop_audio ordered after that write.
+                try:
+                    self._raw_send(item[0], item[1], **item[2])
+                except Exception:  # noqa: BLE001 - the peer went away; keep draining
+                    pass
 
 
 class FreezeOmniEngine:
