@@ -39,5 +39,57 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(traces), 3)
         self.assertTrue(speech.closed)
 
+    async def test_cancel_before_first_word_closes_synthesis(self):
+        class Speech:
+            closed = False
+            async def close(self): self.closed = True
+        speech = Speech()
+        loop = DuplexCascadeLoop(None, speech, asyncio.Queue())
+        task = asyncio.create_task(loop.run())
+        await asyncio.sleep(0)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError): await task
+        self.assertTrue(speech.closed)
+
+    async def test_failed_inference_still_closes_synthesis(self):
+        class Session:
+            def step(self, chunk): raise ValueError('inference failed')
+        class Speech:
+            closed = False
+            async def close(self): self.closed = True
+        speech = Speech()
+        words = asyncio.Queue()
+        await words.put(SimpleNamespace(text='hello', arrived=0))
+        loop = DuplexCascadeLoop(Session(), speech, words, tick_seconds=.001)
+        with self.assertRaisesRegex(ValueError, 'inference failed'): await loop.run()
+        self.assertTrue(speech.closed)
+
+    async def test_disconnect_waits_for_worker_without_emitting_answer(self):
+        started, release = threading.Event(), threading.Event()
+        class Session:
+            def step(self, chunk):
+                started.set()
+                if not release.wait(2): raise RuntimeError('worker timeout')
+                return [1]
+            def events(self, tokens): raise AssertionError('disconnected output')
+        class Speech:
+            closed = False
+            async def close(self): self.closed = True
+        words = asyncio.Queue()
+        await words.put(SimpleNamespace(text='hello', arrived=0))
+        speech = Speech()
+        loop = DuplexCascadeLoop(Session(), speech, words, tick_seconds=.001)
+        task = asyncio.create_task(loop.run())
+        try:
+            while not started.is_set(): await asyncio.sleep(.001)
+            task.cancel()
+            await asyncio.sleep(.01)
+            self.assertFalse(task.done())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError): await task
+            self.assertTrue(speech.closed)
+        finally:
+            release.set()
+
 
 if __name__ == '__main__': unittest.main()

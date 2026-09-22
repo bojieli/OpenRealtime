@@ -16,13 +16,15 @@ class DuplexCascadeLoop:
     async def run(self):
         # Upstream starts its clock at the first recognized text, then admits
         # new words every tick, including silence ticks after the answer.
-        first = await self.words.get()
-        pending = [first]
-        deadline = time.monotonic() + self.tick_seconds
-        index = 0
         try:
+            first = await self.words.get()
+            pending = [first]
+            deadline = time.monotonic() + self.tick_seconds
+            index = 0
             while not self.closed:
                 await asyncio.sleep(max(0, deadline-time.monotonic()))
+                if self.closed:
+                    break
                 began = time.monotonic()
                 while not self.words.empty():
                     pending.append(self.words.get_nowait())
@@ -48,6 +50,8 @@ class DuplexCascadeLoop:
                 deadline = max(deadline+self.tick_seconds, finished)
         finally:
             self.closed = True
-            if self.inference is not None:
-                await asyncio.shield(self.inference)
-            await self.speech.close()
+            try:
+                if self.inference is not None:
+                    await asyncio.shield(self.inference)
+            finally:
+                await self.speech.close()
