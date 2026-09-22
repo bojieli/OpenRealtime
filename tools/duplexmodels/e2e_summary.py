@@ -22,6 +22,17 @@ ROOT = Path(__file__).resolve().parents[2] / ".runtime/duplex-plan/results/e2e"
 CATEGORIES = ["user_interruption", "user_backchannel", "background_speech", "talking_to_other"]
 
 
+def applicability(task: dict) -> str:
+    typed = task.get("applicability")
+    legacy = {"true": "applicable", "false": "not_applicable"}.get(
+        task.get("notes", {}).get("applicable"))
+    if typed:
+        if typed not in ("applicable", "not_applicable") or (legacy and legacy != typed):
+            return "unknown"
+        return typed
+    return legacy or "unknown"
+
+
 def fdb(directory: Path) -> dict:
     result = {}
     for category in CATEGORIES:
@@ -30,14 +41,17 @@ def fdb(directory: Path) -> dict:
             continue
         data = json.loads(path.read_text())
         tasks = data.get("tasks", [])
-        applicable = [t for t in tasks if not t.get("error") and t.get("notes", {}).get("applicable") == "true"]
+        valid = [t for t in tasks if not t.get("error")]
+        applicable = [t for t in valid if applicability(t) == "applicable"]
         passed = [t for t in applicable if t.get("passed")]
         failed = [t for t in tasks if t.get("error")]
         latencies = [t["metrics"]["yield_latency_ms"] for t in applicable
                      if "yield_latency_ms" in t.get("metrics", {})]
         result[category] = {
             "tasks": len(tasks), "applicable": len(applicable), "passed": len(passed),
-            "not_applicable": len(tasks) - len(applicable) - len(failed), "errors": len(failed),
+            "not_applicable": sum(applicability(t) == "not_applicable" for t in valid),
+            "unknown_applicability": sum(applicability(t) == "unknown" for t in valid),
+            "errors": len(failed),
             "yield_latency_ms_p50": statistics.median(latencies) if latencies else None,
         }
     return result
@@ -121,7 +135,13 @@ def main() -> None:
         cells = [name]
         for category in CATEGORIES:
             entry = row["fdb"].get(category)
-            cells.append(f"{entry['passed']}/{entry['applicable']} (+{entry['not_applicable']} n/a)" if entry else "-")
+            if entry:
+                cell = f"{entry['passed']}/{entry['applicable']} (+{entry['not_applicable']} n/a)"
+                if entry["unknown_applicability"]:
+                    cell += f"; {entry['unknown_applicability']} unknown"
+                cells.append(cell)
+            else:
+                cells.append("-")
         yields = row["fdb"].get("user_interruption", {}).get("yield_latency_ms_p50")
         cells.append(f"{yields:.0f}" if yields is not None else "-")
         bench = row["fdbench"]
