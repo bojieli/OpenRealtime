@@ -1,0 +1,1616 @@
+{
+  "cell": "I0",
+  "text_condition": "reference",
+  "checkpoints_s": [
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    1.0,
+    1.2,
+    1.5
+  ],
+  "fallback_s": 2.0,
+  "records": {
+    "calibration": 1187,
+    "test": 1197
+  },
+  "fusion": {
+    "features": [
+      "logit P_smart_turn",
+      "logit P_livekit(reference)"
+    ],
+    "coef": [
+      0.1061,
+      0.8099
+    ],
+    "intercept": 1.4735,
+    "fit": "sklearn LogisticRegression(C=1) on the calibration split, 200 ms checkpoint"
+  },
+  "single_shot_200ms": {
+    "calibration": {
+      "smart_turn_auc": 0.6964113928399642,
+      "livekit_auc": 0.8962656611466134,
+      "fusion_auc": 0.8995997388854531
+    },
+    "test": {
+      "smart_turn_auc": 0.6808524037707966,
+      "livekit_auc": 0.8783405920419176,
+      "fusion_auc": 0.8821514140486799
+    },
+    "test_calibration": {
+      "smart_turn_platt": {
+        "brier": 0.2272,
+        "ece_10bin": 0.0561
+      },
+      "livekit_platt": {
+        "brier": 0.1393,
+        "ece_10bin": 0.0435
+      },
+      "fusion": {
+        "brier": 0.1368,
+        "ece_10bin": 0.0431
+      },
+      "smart_turn_raw": {
+        "brier": 0.3163,
+        "ece_10bin": 0.291
+      }
+    }
+  },
+  "mono_vap_dualturn_endpoint_auc_test": {
+    "note": "assistant channel assumed silent; last <= 8 s of user audio; maps as in turn_server.py (/v1/endpoint/vap = p_future assistant - the aggregate chosen on the calibration split - and /v1/endpoint/dualturn = eot/(eot+hold) over the last 400 ms)",
+    "0.2s": {
+      "vap_p_now_assistant": {
+        "n": 660,
+        "auc": 0.6462145808736718,
+        "per_source": {
+          "fdbench/chattts-easy": 0.4434782608695652,
+          "fdbench/cosyvoice2-easy": 0.6022237196765499,
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": 0.6666666666666667,
+          "fdbench/f5tts-easy": 0.6907142857142857,
+          "fdbv15-backchannel": null,
+          "fdbv15-interruption": 0.6182405165456013,
+          "fdbv3": 0.6842105263157895
+        }
+      },
+      "vap_p_future_assistant": {
+        "n": 660,
+        "auc": 0.7387101534828808,
+        "per_source": {
+          "fdbench/chattts-easy": 0.5608695652173914,
+          "fdbench/cosyvoice2-easy": 0.7001347708894877,
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": 0.7485380116959064,
+          "fdbench/f5tts-easy": 0.8030952380952382,
+          "fdbv15-backchannel": null,
+          "fdbv15-interruption": 0.7158999192897497,
+          "fdbv3": 0.7966507177033493
+        }
+      },
+      "dualturn_eot_over_eot_hold": {
+        "n": 660,
+        "auc": 0.7300582939787484,
+        "per_source": {
+          "fdbench/chattts-easy": 0.6630434782608696,
+          "fdbench/cosyvoice2-easy": 0.6555929919137466,
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": 0.8011695906432749,
+          "fdbench/f5tts-easy": 0.5733333333333334,
+          "fdbv15-backchannel": null,
+          "fdbv15-interruption": 0.48748991121872476,
+          "fdbv3": 0.854066985645933
+        }
+      },
+      "dualturn_eot_max": {
+        "n": 660,
+        "auc": 0.7218952922077921,
+        "per_source": {
+          "fdbench/chattts-easy": 0.6043478260869565,
+          "fdbench/cosyvoice2-easy": 0.6689353099730457,
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": 0.8304093567251463,
+          "fdbench/f5tts-easy": 0.5738095238095238,
+          "fdbv15-backchannel": null,
+          "fdbv15-interruption": 0.5254237288135594,
+          "fdbv3": 0.8421052631578947
+        }
+      },
+      "smart_turn_same_points": 0.64382563459268,
+      "livekit_same_points": 0.9022238414994097
+    }
+  },
+  "per_source_auc_test": {
+    "fdbench/chattts-easy": {
+      "test_holds": 25,
+      "test_endpoints": 78,
+      "smart_turn_auc": 0.4482051282051282,
+      "livekit_auc": 0.801025641025641,
+      "fusion_auc": 0.7866666666666667
+    },
+    "fdbench/cosyvoice2-easy": {
+      "test_holds": 140,
+      "test_endpoints": 106,
+      "smart_turn_auc": 0.548989218328841,
+      "livekit_auc": 0.9242587601078167,
+      "fusion_auc": 0.9211590296495956
+    },
+    "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+      "test_holds": 66,
+      "test_endpoints": 49,
+      "smart_turn_auc": 0.5820964749536178,
+      "livekit_auc": 0.9288806431663574,
+      "fusion_auc": 0.9257884972170686
+    },
+    "fdbench/f5tts-easy": {
+      "test_holds": 42,
+      "test_endpoints": 100,
+      "smart_turn_auc": 0.562857142857143,
+      "livekit_auc": 0.8938095238095238,
+      "fusion_auc": 0.8833333333333333
+    },
+    "fdbv15-backchannel": {
+      "test_holds": 0,
+      "test_endpoints": 53,
+      "smart_turn_auc": null,
+      "livekit_auc": null,
+      "fusion_auc": null
+    },
+    "fdbv15-interruption": {
+      "test_holds": 80,
+      "test_endpoints": 195,
+      "smart_turn_auc": 0.6217307692307692,
+      "livekit_auc": 0.8805128205128205,
+      "fusion_auc": 0.8709615384615386
+    },
+    "fdbv3": {
+      "test_holds": 215,
+      "test_endpoints": 48,
+      "smart_turn_auc": 0.8131782945736434,
+      "livekit_auc": 0.7723352713178294,
+      "fusion_auc": 0.8025193798449612
+    }
+  },
+  "matched_operating_points": {
+    "premature<=0.05": {
+      "smart_turn": {
+        "theta": 0.9925,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.0158,
+          "fallback_rate": 0.9984,
+          "added_wait_mean_ms": 1800.0,
+          "added_wait_p50_ms": 1800.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.0037,
+          "fallback_rate": 1.0,
+          "added_wait_mean_ms": 1800.0,
+          "added_wait_p50_ms": 1800.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.0357,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.9796,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.0186,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "livekit": {
+        "theta": 0.4925,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.0704,
+          "fallback_rate": 0.5087,
+          "added_wait_mean_ms": 915.7,
+          "added_wait_p50_ms": 1800.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.0464,
+          "fallback_rate": 0.4985,
+          "added_wait_mean_ms": 897.2,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.16,
+            "fallback_rate": 0.3974,
+            "added_wait_mean_ms": 715.4,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.0714,
+            "fallback_rate": 0.3491,
+            "added_wait_mean_ms": 628.3,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.0455,
+            "fallback_rate": 0.3878,
+            "added_wait_mean_ms": 698.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.0714,
+            "fallback_rate": 0.39,
+            "added_wait_mean_ms": 702.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 1.0,
+            "added_wait_mean_ms": 1800.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.075,
+            "fallback_rate": 0.5333,
+            "added_wait_mean_ms": 960.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.0651,
+            "fallback_rate": 0.7708,
+            "added_wait_mean_ms": 1387.5,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "fusion": {
+        "theta": 0.8625,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.0546,
+          "fallback_rate": 0.5167,
+          "added_wait_mean_ms": 951.8,
+          "added_wait_p50_ms": 1800.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.0482,
+          "fallback_rate": 0.4985,
+          "added_wait_mean_ms": 917.6,
+          "added_wait_p50_ms": 1300.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.12,
+            "fallback_rate": 0.4359,
+            "added_wait_mean_ms": 810.3,
+            "added_wait_p50_ms": 100.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.0643,
+            "fallback_rate": 0.3585,
+            "added_wait_mean_ms": 664.2,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.0303,
+            "fallback_rate": 0.3878,
+            "added_wait_mean_ms": 700.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.0714,
+            "fallback_rate": 0.39,
+            "added_wait_mean_ms": 728.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.9811,
+            "added_wait_mean_ms": 1766.0,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.0625,
+            "fallback_rate": 0.5179,
+            "added_wait_mean_ms": 966.2,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.0419,
+            "fallback_rate": 0.875,
+            "added_wait_mean_ms": 1583.3,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "silence_timer": {
+        "timeout_s": 1.2,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.0563,
+          "fallback_rate": 0.0,
+          "added_wait_mean_ms": 1000.0,
+          "added_wait_p50_ms": 1000.0,
+          "added_wait_p90_ms": 1000.0,
+          "added_wait_p95_ms": 1000.0
+        }
+      }
+    },
+    "premature<=0.1": {
+      "smart_turn": {
+        "theta": 0.99,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.0986,
+          "fallback_rate": 0.5533,
+          "added_wait_mean_ms": 1136.0,
+          "added_wait_p50_ms": 1800.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.0909,
+          "fallback_rate": 0.5725,
+          "added_wait_mean_ms": 1170.1,
+          "added_wait_p50_ms": 1800.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.12,
+            "fallback_rate": 0.6667,
+            "added_wait_mean_ms": 1330.8,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.1857,
+            "fallback_rate": 0.5943,
+            "added_wait_mean_ms": 1194.3,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.1364,
+            "fallback_rate": 0.4898,
+            "added_wait_mean_ms": 1056.3,
+            "added_wait_p50_ms": 1550.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.1667,
+            "fallback_rate": 0.5,
+            "added_wait_mean_ms": 1008.0,
+            "added_wait_p50_ms": 1300.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.1509,
+            "added_wait_mean_ms": 479.2,
+            "added_wait_p50_ms": 200.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.075,
+            "fallback_rate": 0.5385,
+            "added_wait_mean_ms": 1136.9,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.0233,
+            "fallback_rate": 0.9583,
+            "added_wait_mean_ms": 1758.3,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "livekit": {
+        "theta": 0.28,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.1338,
+          "fallback_rate": 0.3211,
+          "added_wait_mean_ms": 578.1,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.0983,
+          "fallback_rate": 0.284,
+          "added_wait_mean_ms": 511.1,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.2,
+            "fallback_rate": 0.2308,
+            "added_wait_mean_ms": 415.4,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.1286,
+            "fallback_rate": 0.2453,
+            "added_wait_mean_ms": 441.5,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.0758,
+            "fallback_rate": 0.2245,
+            "added_wait_mean_ms": 404.1,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.1905,
+            "fallback_rate": 0.22,
+            "added_wait_mean_ms": 396.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.7925,
+            "added_wait_mean_ms": 1426.4,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.2,
+            "fallback_rate": 0.2974,
+            "added_wait_mean_ms": 535.4,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.1116,
+            "fallback_rate": 0.5208,
+            "added_wait_mean_ms": 937.5,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "fusion": {
+        "theta": 0.72,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.1285,
+          "fallback_rate": 0.3021,
+          "added_wait_mean_ms": 557.6,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.0965,
+          "fallback_rate": 0.2438,
+          "added_wait_mean_ms": 455.4,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.16,
+            "fallback_rate": 0.2436,
+            "added_wait_mean_ms": 451.3,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.1286,
+            "fallback_rate": 0.1981,
+            "added_wait_mean_ms": 374.5,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.0758,
+            "fallback_rate": 0.1633,
+            "added_wait_mean_ms": 300.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.1905,
+            "fallback_rate": 0.19,
+            "added_wait_mean_ms": 358.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.7736,
+            "added_wait_mean_ms": 1392.5,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.1875,
+            "fallback_rate": 0.2769,
+            "added_wait_mean_ms": 510.8,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.107,
+            "fallback_rate": 0.5833,
+            "added_wait_mean_ms": 1081.2,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "silence_timer": {
+        "timeout_s": 0.95,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.1197,
+          "fallback_rate": 0.0,
+          "added_wait_mean_ms": 750.0,
+          "added_wait_p50_ms": 750.0,
+          "added_wait_p90_ms": 750.0,
+          "added_wait_p95_ms": 750.0
+        }
+      }
+    },
+    "premature<=0.2": {
+      "smart_turn": {
+        "theta": 0.9875,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.1901,
+          "fallback_rate": 0.3514,
+          "added_wait_mean_ms": 790.6,
+          "added_wait_p50_ms": 400.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.18,
+          "fallback_rate": 0.3889,
+          "added_wait_mean_ms": 836.6,
+          "added_wait_p50_ms": 400.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.28,
+            "fallback_rate": 0.3846,
+            "added_wait_mean_ms": 907.7,
+            "added_wait_p50_ms": 600.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.2857,
+            "fallback_rate": 0.3962,
+            "added_wait_mean_ms": 882.1,
+            "added_wait_p50_ms": 550.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.3182,
+            "fallback_rate": 0.2857,
+            "added_wait_mean_ms": 640.8,
+            "added_wait_p50_ms": 200.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.3333,
+            "fallback_rate": 0.27,
+            "added_wait_mean_ms": 639.0,
+            "added_wait_p50_ms": 250.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.0943,
+            "added_wait_mean_ms": 241.5,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 500.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.225,
+            "fallback_rate": 0.3436,
+            "added_wait_mean_ms": 795.4,
+            "added_wait_p50_ms": 400.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.0372,
+            "fallback_rate": 0.75,
+            "added_wait_mean_ms": 1454.2,
+            "added_wait_p50_ms": 1800.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "livekit": {
+        "theta": 0.1525,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.2042,
+          "fallback_rate": 0.1876,
+          "added_wait_mean_ms": 337.7,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.1985,
+          "fallback_rate": 0.1543,
+          "added_wait_mean_ms": 277.8,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.32,
+            "fallback_rate": 0.1538,
+            "added_wait_mean_ms": 276.9,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.1643,
+            "fallback_rate": 0.1132,
+            "added_wait_mean_ms": 203.8,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.0909,
+            "fallback_rate": 0.0612,
+            "added_wait_mean_ms": 110.2,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 0.0,
+            "added_wait_p95_ms": 1080.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.2857,
+            "fallback_rate": 0.11,
+            "added_wait_mean_ms": 198.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.4906,
+            "added_wait_mean_ms": 883.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.2125,
+            "fallback_rate": 0.1949,
+            "added_wait_mean_ms": 350.8,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.2326,
+            "fallback_rate": 0.3333,
+            "added_wait_mean_ms": 600.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "fusion": {
+        "theta": 0.5675,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.1972,
+          "fallback_rate": 0.1494,
+          "added_wait_mean_ms": 279.3,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "calibration": {
+          "holds": 539,
+          "endpoints": 648,
+          "premature_endpoint_rate": 0.1948,
+          "fallback_rate": 0.1481,
+          "added_wait_mean_ms": 274.5,
+          "added_wait_p50_ms": 0.0,
+          "added_wait_p90_ms": 1800.0,
+          "added_wait_p95_ms": 1800.0
+        },
+        "test_per_source": {
+          "fdbench/chattts-easy": {
+            "holds": 25,
+            "endpoints": 78,
+            "premature_endpoint_rate": 0.36,
+            "fallback_rate": 0.1154,
+            "added_wait_mean_ms": 229.5,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy": {
+            "holds": 140,
+            "endpoints": 106,
+            "premature_endpoint_rate": 0.1786,
+            "fallback_rate": 0.0849,
+            "added_wait_mean_ms": 159.4,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 50.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+            "holds": 66,
+            "endpoints": 49,
+            "premature_endpoint_rate": 0.1061,
+            "fallback_rate": 0.0612,
+            "added_wait_mean_ms": 118.4,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 20.0,
+            "added_wait_p95_ms": 1200.0
+          },
+          "fdbench/f5tts-easy": {
+            "holds": 42,
+            "endpoints": 100,
+            "premature_endpoint_rate": 0.3095,
+            "fallback_rate": 0.07,
+            "added_wait_mean_ms": 128.0,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 0.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-backchannel": {
+            "holds": 0,
+            "endpoints": 53,
+            "premature_endpoint_rate": 0.0,
+            "fallback_rate": 0.3774,
+            "added_wait_mean_ms": 686.8,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv15-interruption": {
+            "holds": 80,
+            "endpoints": 195,
+            "premature_endpoint_rate": 0.2375,
+            "fallback_rate": 0.1538,
+            "added_wait_mean_ms": 289.7,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          },
+          "fdbv3": {
+            "holds": 215,
+            "endpoints": 48,
+            "premature_endpoint_rate": 0.1814,
+            "fallback_rate": 0.3333,
+            "added_wait_mean_ms": 612.5,
+            "added_wait_p50_ms": 0.0,
+            "added_wait_p90_ms": 1800.0,
+            "added_wait_p95_ms": 1800.0
+          }
+        }
+      },
+      "silence_timer": {
+        "timeout_s": 0.75,
+        "test": {
+          "holds": 568,
+          "endpoints": 629,
+          "premature_endpoint_rate": 0.2095,
+          "fallback_rate": 0.0,
+          "added_wait_mean_ms": 550.0,
+          "added_wait_p50_ms": 550.0,
+          "added_wait_p90_ms": 550.0,
+          "added_wait_p95_ms": 550.0
+        }
+      }
+    }
+  },
+  "openrealtime_default_timer_500ms_test": {
+    "holds": 568,
+    "endpoints": 629,
+    "premature_endpoint_rate": 0.4577,
+    "fallback_rate": 0.0,
+    "added_wait_mean_ms": 300.0,
+    "added_wait_p50_ms": 300.0,
+    "added_wait_p90_ms": 300.0,
+    "added_wait_p95_ms": 300.0
+  },
+  "soulx_own_policy_test": {
+    "test": {
+      "holds": 190,
+      "endpoints": 247,
+      "premature_endpoint_rate": 0.4421,
+      "fallback_rate": 0.1538,
+      "added_wait_mean_ms": 677.1,
+      "added_wait_p50_ms": 184.0,
+      "added_wait_p90_ms": 1800.0,
+      "added_wait_p95_ms": 1800.0,
+      "endpoint_latency_from_speech_offset_ms": {
+        "mean": 877.1,
+        "p50": 384.0,
+        "p90": 2000.0
+      },
+      "note": "SoulX-Duplug's own state machine (semantic VAD + max_wait_num fallback); added_wait is relative to the shared 200 ms VAD decision point and can be negative when it fires sooner",
+      "turns_with_speak_during_speech": "139/289"
+    },
+    "test_per_source": {
+      "fdbench/chattts-easy": {
+        "holds": 8,
+        "endpoints": 41,
+        "premature_endpoint_rate": 0.25,
+        "fallback_rate": 0.0976,
+        "added_wait_mean_ms": 580.5,
+        "added_wait_p50_ms": 152.0,
+        "added_wait_p90_ms": 1624.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      "fdbench/cosyvoice2-easy": {
+        "holds": 140,
+        "endpoints": 106,
+        "premature_endpoint_rate": 0.4143,
+        "fallback_rate": 0.1698,
+        "added_wait_mean_ms": 723.2,
+        "added_wait_p50_ms": 920.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+        "holds": 0,
+        "endpoints": 0,
+        "premature_endpoint_rate": 0.0,
+        "fallback_rate": 0.0
+      },
+      "fdbench/f5tts-easy": {
+        "holds": 42,
+        "endpoints": 100,
+        "premature_endpoint_rate": 0.5714,
+        "fallback_rate": 0.16,
+        "added_wait_mean_ms": 667.8,
+        "added_wait_p50_ms": 184.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      "fdbv15-backchannel": {
+        "holds": 0,
+        "endpoints": 0,
+        "premature_endpoint_rate": 0.0,
+        "fallback_rate": 0.0
+      },
+      "fdbv15-interruption": {
+        "holds": 0,
+        "endpoints": 0,
+        "premature_endpoint_rate": 0.0,
+        "fallback_rate": 0.0
+      },
+      "fdbv3": {
+        "holds": 0,
+        "endpoints": 0,
+        "premature_endpoint_rate": 0.0,
+        "fallback_rate": 0.0
+      }
+    },
+    "files": 74
+  },
+  "tradeoff_curves_test": {
+    "smart_turn": [
+      {
+        "theta": 0.02,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.7676,
+        "fallback_rate": 0.0143,
+        "added_wait_mean_ms": 49.1,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 160.0
+      },
+      {
+        "theta": 0.05,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.706,
+        "fallback_rate": 0.0382,
+        "added_wait_mean_ms": 92.5,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 100.0,
+        "added_wait_p95_ms": 500.0
+      },
+      {
+        "theta": 0.1,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.6567,
+        "fallback_rate": 0.0429,
+        "added_wait_mean_ms": 110.0,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 200.0,
+        "added_wait_p95_ms": 800.0
+      },
+      {
+        "theta": 0.2,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.6197,
+        "fallback_rate": 0.0588,
+        "added_wait_mean_ms": 145.8,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 300.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.3,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.5915,
+        "fallback_rate": 0.0668,
+        "added_wait_mean_ms": 169.5,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 400.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.4,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.5687,
+        "fallback_rate": 0.0763,
+        "added_wait_mean_ms": 188.4,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 500.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.5,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.5458,
+        "fallback_rate": 0.0811,
+        "added_wait_mean_ms": 197.9,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 600.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.6,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.5264,
+        "fallback_rate": 0.0843,
+        "added_wait_mean_ms": 217.2,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 840.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.7,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.5088,
+        "fallback_rate": 0.0938,
+        "added_wait_mean_ms": 243.4,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1300.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.8,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.4894,
+        "fallback_rate": 0.1049,
+        "added_wait_mean_ms": 268.0,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.9,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.4437,
+        "fallback_rate": 0.132,
+        "added_wait_mean_ms": 329.1,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.95,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.3891,
+        "fallback_rate": 0.1479,
+        "added_wait_mean_ms": 393.2,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.98,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.2817,
+        "fallback_rate": 0.2591,
+        "added_wait_mean_ms": 592.7,
+        "added_wait_p50_ms": 200.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      }
+    ],
+    "livekit": [
+      {
+        "theta": 0.02,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.5845,
+        "fallback_rate": 0.0397,
+        "added_wait_mean_ms": 71.5,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 0.0
+      },
+      {
+        "theta": 0.05,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.4049,
+        "fallback_rate": 0.0684,
+        "added_wait_mean_ms": 123.1,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.1,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.2746,
+        "fallback_rate": 0.1304,
+        "added_wait_mean_ms": 234.7,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.2,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.1602,
+        "fallback_rate": 0.2528,
+        "added_wait_mean_ms": 455.0,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.3,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.125,
+        "fallback_rate": 0.3434,
+        "added_wait_mean_ms": 618.1,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.4,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0933,
+        "fallback_rate": 0.442,
+        "added_wait_mean_ms": 795.5,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.5,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0704,
+        "fallback_rate": 0.5135,
+        "added_wait_mean_ms": 924.3,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.6,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0458,
+        "fallback_rate": 0.6073,
+        "added_wait_mean_ms": 1093.2,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.7,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0299,
+        "fallback_rate": 0.7075,
+        "added_wait_mean_ms": 1273.4,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.8,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0211,
+        "fallback_rate": 0.8378,
+        "added_wait_mean_ms": 1510.5,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.9,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0194,
+        "fallback_rate": 0.9507,
+        "added_wait_mean_ms": 1714.0,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.95,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0176,
+        "fallback_rate": 0.9825,
+        "added_wait_mean_ms": 1771.3,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.98,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0158,
+        "fallback_rate": 0.9936,
+        "added_wait_mean_ms": 1791.4,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      }
+    ],
+    "fusion": [
+      {
+        "theta": 0.02,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.8768,
+        "fallback_rate": 0.0079,
+        "added_wait_mean_ms": 14.3,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 0.0
+      },
+      {
+        "theta": 0.05,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.787,
+        "fallback_rate": 0.0143,
+        "added_wait_mean_ms": 26.1,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 0.0
+      },
+      {
+        "theta": 0.1,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.6813,
+        "fallback_rate": 0.0238,
+        "added_wait_mean_ms": 44.5,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 0.0
+      },
+      {
+        "theta": 0.2,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.537,
+        "fallback_rate": 0.0334,
+        "added_wait_mean_ms": 61.4,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 0.0
+      },
+      {
+        "theta": 0.3,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.4278,
+        "fallback_rate": 0.0556,
+        "added_wait_mean_ms": 104.5,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 0.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.4,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.3415,
+        "fallback_rate": 0.0763,
+        "added_wait_mean_ms": 145.2,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 100.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.5,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.2553,
+        "fallback_rate": 0.1145,
+        "added_wait_mean_ms": 216.1,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.6,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.1778,
+        "fallback_rate": 0.1701,
+        "added_wait_mean_ms": 318.8,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.7,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.1303,
+        "fallback_rate": 0.2798,
+        "added_wait_mean_ms": 522.4,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.8,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0933,
+        "fallback_rate": 0.3943,
+        "added_wait_mean_ms": 732.6,
+        "added_wait_p50_ms": 0.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.9,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0387,
+        "fallback_rate": 0.62,
+        "added_wait_mean_ms": 1132.8,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.95,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0211,
+        "fallback_rate": 0.8331,
+        "added_wait_mean_ms": 1511.0,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      },
+      {
+        "theta": 0.98,
+        "holds": 568,
+        "endpoints": 629,
+        "premature_endpoint_rate": 0.0194,
+        "fallback_rate": 0.9682,
+        "added_wait_mean_ms": 1746.0,
+        "added_wait_p50_ms": 1800.0,
+        "added_wait_p90_ms": 1800.0,
+        "added_wait_p95_ms": 1800.0
+      }
+    ]
+  },
+  "server_latency_ms": {
+    "smart_turn": {
+      "n": 16860,
+      "p50": 51.087,
+      "p90": 647.0475000000001
+    },
+    "livekit": {
+      "n": 2384,
+      "p50": 592.8625,
+      "p90": 995.7812000000008
+    }
+  },
+  "transcript_alignment_check": {
+    "endpoint_points": 1277,
+    "reference_prefix_equals_full_turn": 1.0,
+    "mean_reference_words_matched_to_asr": 0.9484
+  },
+  "frozen_calibration_file": ".runtime/duplex-plan/results/interaction/causality-audit-i0/calibration.json"
+}

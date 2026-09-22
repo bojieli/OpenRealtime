@@ -509,6 +509,11 @@ Endpoint and overlap analyses now exclude these arrays unless prefix stability
 and nonnegative availability are explicitly verified. Existing offline X2-Turn
 scores must not be promoted to causal endpoint or interruption measurements.
 A fresh streaming or per-prefix evaluation remains required.
+Reanalysis in separate work directories completed successfully: the endpoint
+analysis warned and excluded X2-Turn; the overlap directory had no X2-Turn
+score file. All existing numerical comparisons were unchanged (only the copied
+calibration path differed). The regenerated results, logs and input hashes are
+retained alongside the timing probe; original results/calibration were preserved.
 
 ## Perception and task extensions (P7, P8)
 

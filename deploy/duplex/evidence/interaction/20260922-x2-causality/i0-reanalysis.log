@@ -1,0 +1,119 @@
+/home/ubuntu/OpenRealtime/tools/duplexmodels/endpoint_eval.py:796: RuntimeWarning: Excluding X2-Turn from causal scoring: unverified prefix timing in .runtime/duplex-plan/results/interaction/causality-audit-i0/x2turn_timing.json
+  if os.path.exists(x2_path) and os.path.exists(x2_timing) and causal_timing(x2_timing):
+records with both evidence types: 2407 of 2407 points
+{
+  "records": {
+    "calibration": 1187,
+    "test": 1197
+  },
+  "fusion": {
+    "features": [
+      "logit P_smart_turn",
+      "logit P_livekit(reference)"
+    ],
+    "coef": [
+      0.1061,
+      0.8099
+    ],
+    "intercept": 1.4735,
+    "fit": "sklearn LogisticRegression(C=1) on the calibration split, 200 ms checkpoint"
+  },
+  "single_shot_200ms": {
+    "calibration": {
+      "smart_turn_auc": 0.6964113928399642,
+      "livekit_auc": 0.8962656611466134,
+      "fusion_auc": 0.8995997388854531
+    },
+    "test": {
+      "smart_turn_auc": 0.6808524037707966,
+      "livekit_auc": 0.8783405920419176,
+      "fusion_auc": 0.8821514140486799
+    },
+    "test_calibration": {
+      "smart_turn_platt": {
+        "brier": 0.2272,
+        "ece_10bin": 0.0561
+      },
+      "livekit_platt": {
+        "brier": 0.1393,
+        "ece_10bin": 0.0435
+      },
+      "fusion": {
+        "brier": 0.1368,
+        "ece_10bin": 0.0431
+      },
+      "smart_turn_raw": {
+        "brier": 0.3163,
+        "ece_10bin": 0.291
+      }
+    }
+  },
+  "per_source_auc_test": {
+    "fdbench/chattts-easy": {
+      "test_holds": 25,
+      "test_endpoints": 78,
+      "smart_turn_auc": 0.4482051282051282,
+      "livekit_auc": 0.801025641025641,
+      "fusion_auc": 0.7866666666666667
+    },
+    "fdbench/cosyvoice2-easy": {
+      "test_holds": 140,
+      "test_endpoints": 106,
+      "smart_turn_auc": 0.548989218328841,
+      "livekit_auc": 0.9242587601078167,
+      "fusion_auc": 0.9211590296495956
+    },
+    "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+      "test_holds": 66,
+      "test_endpoints": 49,
+      "smart_turn_auc": 0.5820964749536178,
+      "livekit_auc": 0.9288806431663574,
+      "fusion_auc": 0.9257884972170686
+    },
+    "fdbench/f5tts-easy": {
+      "test_holds": 42,
+      "test_endpoints": 100,
+      "smart_turn_auc": 0.562857142857143,
+      "livekit_auc": 0.8938095238095238,
+      "fusion_auc": 0.8833333333333333
+    },
+    "fdbv15-backchannel": {
+      "test_holds": 0,
+      "test_endpoints": 53,
+      "smart_turn_auc": null,
+      "livekit_auc": null,
+      "fusion_auc": null
+    },
+    "fdbv15-interruption": {
+      "test_holds": 80,
+      "test_endpoints": 195,
+      "smart_turn_auc": 0.6217307692307692,
+      "livekit_auc": 0.8805128205128205,
+      "fusion_auc": 0.8709615384615386
+    },
+    "fdbv3": {
+      "test_holds": 215,
+      "test_endpoints": 48,
+      "smart_turn_auc": 0.8131782945736434,
+      "livekit_auc": 0.7723352713178294,
+      "fusion_auc": 0.8025193798449612
+    }
+  }
+}
+premature<=0.05
+  smart_turn    0.9925 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.0158, 'fallback_rate': 0.9984, 'added_wait_mean_ms': np.float64(1800.0), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  livekit       0.4925 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.0704, 'fallback_rate': 0.5087, 'added_wait_mean_ms': np.float64(915.7), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  fusion        0.8625 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.0546, 'fallback_rate': 0.5167, 'added_wait_mean_ms': np.float64(951.8), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  silence_timer 1.2 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.0563, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(1000.0), 'added_wait_p50_ms': np.float64(1000.0), 'added_wait_p90_ms': np.float64(1000.0), 'added_wait_p95_ms': np.float64(1000.0)}
+premature<=0.1
+  smart_turn    0.99 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.0986, 'fallback_rate': 0.5533, 'added_wait_mean_ms': np.float64(1136.0), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  livekit       0.28 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.1338, 'fallback_rate': 0.3211, 'added_wait_mean_ms': np.float64(578.1), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  fusion        0.72 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.1285, 'fallback_rate': 0.3021, 'added_wait_mean_ms': np.float64(557.6), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  silence_timer 0.95 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.1197, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(750.0), 'added_wait_p50_ms': np.float64(750.0), 'added_wait_p90_ms': np.float64(750.0), 'added_wait_p95_ms': np.float64(750.0)}
+premature<=0.2
+  smart_turn    0.9875 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.1901, 'fallback_rate': 0.3514, 'added_wait_mean_ms': np.float64(790.6), 'added_wait_p50_ms': np.float64(400.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  livekit       0.1525 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.2042, 'fallback_rate': 0.1876, 'added_wait_mean_ms': np.float64(337.7), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  fusion        0.5675 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.1972, 'fallback_rate': 0.1494, 'added_wait_mean_ms': np.float64(279.3), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  silence_timer 0.75 {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.2095, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(550.0), 'added_wait_p50_ms': np.float64(550.0), 'added_wait_p90_ms': np.float64(550.0), 'added_wait_p95_ms': np.float64(550.0)}
+default 500 ms timer: {'holds': 568, 'endpoints': 629, 'premature_endpoint_rate': 0.4577, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(300.0), 'added_wait_p50_ms': np.float64(300.0), 'added_wait_p90_ms': np.float64(300.0), 'added_wait_p95_ms': np.float64(300.0)}
+wrote .runtime/duplex-plan/results/interaction/causality-audit-i0/i0_results_reference.json

@@ -1,0 +1,1200 @@
+{
+  "cell": "I1",
+  "window_s": 1.6,
+  "step_s": 0.08,
+  "events": {
+    "backchannel": 97,
+    "interruption": 200
+  },
+  "assistant_channel": "LibriSpeech test-clean, starts response_delay after the request's VAD offset, continues through the event (not yet yielded), RMS-matched; no echo in user channel",
+  "declared_rules": {
+    "sustained-300ms (OpenRealtime default)": {
+      "backchannels": 97,
+      "interruptions": 200,
+      "accuracy": 0.6902,
+      "balanced_accuracy": 0.5258,
+      "false_stop_rate": 0.9485,
+      "missed_interruption_rate": 0.0,
+      "latency_mean_ms": 310.9,
+      "latency_p50_ms": 300.0,
+      "latency_p90_ms": 300.0,
+      "false_stop_latency_p50_ms": 300.0
+    },
+    "vap-p_future>=0.5": {
+      "backchannels": 97,
+      "interruptions": 200,
+      "accuracy": 0.7239,
+      "balanced_accuracy": 0.6012,
+      "false_stop_rate": 0.7526,
+      "missed_interruption_rate": 0.045,
+      "latency_mean_ms": 310.8,
+      "latency_p50_ms": 80.0,
+      "latency_p90_ms": 800.0,
+      "false_stop_latency_p50_ms": 80.0
+    },
+    "dualturn-fvad960>=0.5": {
+      "backchannels": 97,
+      "interruptions": 200,
+      "accuracy": 0.7576,
+      "balanced_accuracy": 0.6501,
+      "false_stop_rate": 0.6598,
+      "missed_interruption_rate": 0.04,
+      "latency_mean_ms": 290.4,
+      "latency_p50_ms": 80.0,
+      "latency_p90_ms": 872.0,
+      "false_stop_latency_p50_ms": 80.0
+    },
+    "dualturn-fvad960>=0.5-bcveto": {
+      "backchannels": 97,
+      "interruptions": 200,
+      "accuracy": 0.7643,
+      "balanced_accuracy": 0.6763,
+      "false_stop_rate": 0.5773,
+      "missed_interruption_rate": 0.07,
+      "latency_mean_ms": 415.9,
+      "latency_p50_ms": 320.0,
+      "latency_p90_ms": 1000.0,
+      "false_stop_latency_p50_ms": 160.0
+    }
+  },
+  "sweeps_all_events": {
+    "sustained": [
+      {
+        "hold_s": 0.1,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6768,
+        "balanced_accuracy": 0.5052,
+        "false_stop_rate": 0.9897,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 102.6,
+        "latency_p50_ms": 100.0,
+        "latency_p90_ms": 100.0,
+        "false_stop_latency_p50_ms": 100.0
+      },
+      {
+        "hold_s": 0.2,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6801,
+        "balanced_accuracy": 0.5103,
+        "false_stop_rate": 0.9794,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 206.2,
+        "latency_p50_ms": 200.0,
+        "latency_p90_ms": 200.0,
+        "false_stop_latency_p50_ms": 200.0
+      },
+      {
+        "hold_s": 0.3,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6902,
+        "balanced_accuracy": 0.5258,
+        "false_stop_rate": 0.9485,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 310.9,
+        "latency_p50_ms": 300.0,
+        "latency_p90_ms": 300.0,
+        "false_stop_latency_p50_ms": 300.0
+      },
+      {
+        "hold_s": 0.4,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7273,
+        "balanced_accuracy": 0.5825,
+        "false_stop_rate": 0.8351,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 426.9,
+        "latency_p50_ms": 400.0,
+        "latency_p90_ms": 400.0,
+        "false_stop_latency_p50_ms": 400.0
+      },
+      {
+        "hold_s": 0.5,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.771,
+        "balanced_accuracy": 0.6495,
+        "false_stop_rate": 0.701,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 581.3,
+        "latency_p50_ms": 500.0,
+        "latency_p90_ms": 890.4,
+        "false_stop_latency_p50_ms": 500.0
+      },
+      {
+        "hold_s": 0.6,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.8316,
+        "balanced_accuracy": 0.7502,
+        "false_stop_rate": 0.4845,
+        "missed_interruption_rate": 0.015,
+        "latency_mean_ms": 705.4,
+        "latency_p50_ms": 600.0,
+        "latency_p90_ms": 1208.0,
+        "false_stop_latency_p50_ms": 600.0
+      },
+      {
+        "hold_s": 0.8,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.8889,
+        "balanced_accuracy": 0.9016,
+        "false_stop_rate": 0.0619,
+        "missed_interruption_rate": 0.135,
+        "latency_mean_ms": 868.6,
+        "latency_p50_ms": 800.0,
+        "latency_p90_ms": 1152.0,
+        "false_stop_latency_p50_ms": 800.0
+      },
+      {
+        "hold_s": 1.0,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.8047,
+        "balanced_accuracy": 0.855,
+        "false_stop_rate": 0.0,
+        "missed_interruption_rate": 0.29,
+        "latency_mean_ms": 1023.4,
+        "latency_p50_ms": 1000.0,
+        "latency_p90_ms": 1000.0
+      },
+      {
+        "hold_s": 1.2,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7138,
+        "balanced_accuracy": 0.7875,
+        "false_stop_rate": 0.0,
+        "missed_interruption_rate": 0.425,
+        "latency_mean_ms": 1212.2,
+        "latency_p50_ms": 1200.0,
+        "latency_p90_ms": 1200.0
+      }
+    ],
+    "vap-p_future": [
+      {
+        "theta": 0.2,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6734,
+        "balanced_accuracy": 0.5,
+        "false_stop_rate": 1.0,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 120.0,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 160.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.3,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6768,
+        "balanced_accuracy": 0.5078,
+        "false_stop_rate": 0.9794,
+        "missed_interruption_rate": 0.005,
+        "latency_mean_ms": 154.4,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 336.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.4,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6835,
+        "balanced_accuracy": 0.5261,
+        "false_stop_rate": 0.9278,
+        "missed_interruption_rate": 0.02,
+        "latency_mean_ms": 234.7,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 640.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.5,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7239,
+        "balanced_accuracy": 0.6012,
+        "false_stop_rate": 0.7526,
+        "missed_interruption_rate": 0.045,
+        "latency_mean_ms": 310.8,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 800.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.6,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7374,
+        "balanced_accuracy": 0.6457,
+        "false_stop_rate": 0.6186,
+        "missed_interruption_rate": 0.09,
+        "latency_mean_ms": 418.5,
+        "latency_p50_ms": 160.0,
+        "latency_p90_ms": 1112.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.7,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7104,
+        "balanced_accuracy": 0.6762,
+        "false_stop_rate": 0.4227,
+        "missed_interruption_rate": 0.225,
+        "latency_mean_ms": 520.8,
+        "latency_p50_ms": 320.0,
+        "latency_p90_ms": 1200.0,
+        "false_stop_latency_p50_ms": 240.0
+      },
+      {
+        "theta": 0.8,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.5589,
+        "balanced_accuracy": 0.6061,
+        "false_stop_rate": 0.2577,
+        "missed_interruption_rate": 0.53,
+        "latency_mean_ms": 669.8,
+        "latency_p50_ms": 640.0,
+        "latency_p90_ms": 1360.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.9,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.4007,
+        "balanced_accuracy": 0.5364,
+        "false_stop_rate": 0.0722,
+        "missed_interruption_rate": 0.855,
+        "latency_mean_ms": 888.3,
+        "latency_p50_ms": 1040.0,
+        "latency_p90_ms": 1440.0,
+        "false_stop_latency_p50_ms": 160.0
+      }
+    ],
+    "vap-p_active_bin2": [
+      {
+        "theta": 0.2,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6734,
+        "balanced_accuracy": 0.5,
+        "false_stop_rate": 1.0,
+        "missed_interruption_rate": 0.0,
+        "latency_mean_ms": 132.0,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 240.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.3,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6801,
+        "balanced_accuracy": 0.513,
+        "false_stop_rate": 0.9691,
+        "missed_interruption_rate": 0.005,
+        "latency_mean_ms": 180.5,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 432.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.4,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.697,
+        "balanced_accuracy": 0.5494,
+        "false_stop_rate": 0.8763,
+        "missed_interruption_rate": 0.025,
+        "latency_mean_ms": 235.1,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 640.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.5,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7239,
+        "balanced_accuracy": 0.6012,
+        "false_stop_rate": 0.7526,
+        "missed_interruption_rate": 0.045,
+        "latency_mean_ms": 310.8,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 880.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.6,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7239,
+        "balanced_accuracy": 0.6331,
+        "false_stop_rate": 0.6289,
+        "missed_interruption_rate": 0.105,
+        "latency_mean_ms": 398.7,
+        "latency_p50_ms": 240.0,
+        "latency_p90_ms": 1040.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.7,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.734,
+        "balanced_accuracy": 0.6963,
+        "false_stop_rate": 0.4124,
+        "missed_interruption_rate": 0.195,
+        "latency_mean_ms": 542.6,
+        "latency_p50_ms": 400.0,
+        "latency_p90_ms": 1280.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.8,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6263,
+        "balanced_accuracy": 0.6588,
+        "false_stop_rate": 0.2474,
+        "missed_interruption_rate": 0.435,
+        "latency_mean_ms": 749.7,
+        "latency_p50_ms": 640.0,
+        "latency_p90_ms": 1440.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.9,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.4444,
+        "balanced_accuracy": 0.5663,
+        "false_stop_rate": 0.0825,
+        "missed_interruption_rate": 0.785,
+        "latency_mean_ms": 1004.7,
+        "latency_p50_ms": 1040.0,
+        "latency_p90_ms": 1440.0,
+        "false_stop_latency_p50_ms": 160.0
+      }
+    ],
+    "dualturn-fvad960": [
+      {
+        "theta": 0.2,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6768,
+        "balanced_accuracy": 0.5078,
+        "false_stop_rate": 0.9794,
+        "missed_interruption_rate": 0.005,
+        "latency_mean_ms": 104.1,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 80.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.3,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7071,
+        "balanced_accuracy": 0.5569,
+        "false_stop_rate": 0.8763,
+        "missed_interruption_rate": 0.01,
+        "latency_mean_ms": 152.7,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 320.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.4,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7239,
+        "balanced_accuracy": 0.5879,
+        "false_stop_rate": 0.8041,
+        "missed_interruption_rate": 0.02,
+        "latency_mean_ms": 209.0,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 560.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.5,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7576,
+        "balanced_accuracy": 0.6501,
+        "false_stop_rate": 0.6598,
+        "missed_interruption_rate": 0.04,
+        "latency_mean_ms": 290.4,
+        "latency_p50_ms": 80.0,
+        "latency_p90_ms": 872.0,
+        "false_stop_latency_p50_ms": 80.0
+      },
+      {
+        "theta": 0.6,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7576,
+        "balanced_accuracy": 0.6766,
+        "false_stop_rate": 0.5567,
+        "missed_interruption_rate": 0.09,
+        "latency_mean_ms": 362.6,
+        "latency_p50_ms": 160.0,
+        "latency_p90_ms": 1112.0,
+        "false_stop_latency_p50_ms": 120.0
+      },
+      {
+        "theta": 0.7,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7306,
+        "balanced_accuracy": 0.6859,
+        "false_stop_rate": 0.4433,
+        "missed_interruption_rate": 0.185,
+        "latency_mean_ms": 512.4,
+        "latency_p50_ms": 240.0,
+        "latency_p90_ms": 1344.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.8,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6465,
+        "balanced_accuracy": 0.6632,
+        "false_stop_rate": 0.2887,
+        "missed_interruption_rate": 0.385,
+        "latency_mean_ms": 603.6,
+        "latency_p50_ms": 480.0,
+        "latency_p90_ms": 1344.0,
+        "false_stop_latency_p50_ms": 200.0
+      },
+      {
+        "theta": 0.9,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.4613,
+        "balanced_accuracy": 0.5841,
+        "false_stop_rate": 0.0619,
+        "missed_interruption_rate": 0.77,
+        "latency_mean_ms": 716.5,
+        "latency_p50_ms": 720.0,
+        "latency_p90_ms": 1320.0,
+        "false_stop_latency_p50_ms": 120.0
+      }
+    ],
+    "dualturn-fvad960-bcveto": [
+      {
+        "theta": 0.2,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7205,
+        "balanced_accuracy": 0.5748,
+        "false_stop_rate": 0.8454,
+        "missed_interruption_rate": 0.005,
+        "latency_mean_ms": 371.9,
+        "latency_p50_ms": 320.0,
+        "latency_p90_ms": 720.0,
+        "false_stop_latency_p50_ms": 280.0
+      },
+      {
+        "theta": 0.3,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7441,
+        "balanced_accuracy": 0.6136,
+        "false_stop_rate": 0.7629,
+        "missed_interruption_rate": 0.01,
+        "latency_mean_ms": 382.2,
+        "latency_p50_ms": 320.0,
+        "latency_p90_ms": 800.0,
+        "false_stop_latency_p50_ms": 240.0
+      },
+      {
+        "theta": 0.4,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.771,
+        "balanced_accuracy": 0.6628,
+        "false_stop_rate": 0.6495,
+        "missed_interruption_rate": 0.025,
+        "latency_mean_ms": 401.2,
+        "latency_p50_ms": 320.0,
+        "latency_p90_ms": 800.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.5,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7643,
+        "balanced_accuracy": 0.6763,
+        "false_stop_rate": 0.5773,
+        "missed_interruption_rate": 0.07,
+        "latency_mean_ms": 415.9,
+        "latency_p50_ms": 320.0,
+        "latency_p90_ms": 1000.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.6,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.7508,
+        "balanced_accuracy": 0.6876,
+        "false_stop_rate": 0.4948,
+        "missed_interruption_rate": 0.13,
+        "latency_mean_ms": 453.3,
+        "latency_p50_ms": 240.0,
+        "latency_p90_ms": 1200.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.7,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.734,
+        "balanced_accuracy": 0.7016,
+        "false_stop_rate": 0.3918,
+        "missed_interruption_rate": 0.205,
+        "latency_mean_ms": 537.9,
+        "latency_p50_ms": 320.0,
+        "latency_p90_ms": 1360.0,
+        "false_stop_latency_p50_ms": 160.0
+      },
+      {
+        "theta": 0.8,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.6431,
+        "balanced_accuracy": 0.6607,
+        "false_stop_rate": 0.2887,
+        "missed_interruption_rate": 0.39,
+        "latency_mean_ms": 609.2,
+        "latency_p50_ms": 480.0,
+        "latency_p90_ms": 1352.0,
+        "false_stop_latency_p50_ms": 200.0
+      },
+      {
+        "theta": 0.9,
+        "backchannels": 97,
+        "interruptions": 200,
+        "accuracy": 0.4613,
+        "balanced_accuracy": 0.5841,
+        "false_stop_rate": 0.0619,
+        "missed_interruption_rate": 0.77,
+        "latency_mean_ms": 716.5,
+        "latency_p50_ms": 720.0,
+        "latency_p90_ms": 1320.0,
+        "false_stop_latency_p50_ms": 120.0
+      }
+    ]
+  },
+  "single_channel_models_user_only": {
+    "soulx-nonidle [semantic VAD: backchannels map to idle]": {
+      "backchannels": 32,
+      "interruptions": 26,
+      "accuracy": 0.5862,
+      "balanced_accuracy": 0.625,
+      "false_stop_rate": 0.75,
+      "missed_interruption_rate": 0.0,
+      "latency_mean_ms": 353.2,
+      "latency_p50_ms": 256.0,
+      "latency_p90_ms": 736.0,
+      "false_stop_latency_p50_ms": 192.0
+    }
+  },
+  "matched_on_calibration_reported_on_test": {
+    "false_stop<=0.1": {
+      "sustained": {
+        "parameter": 0.8,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.9041,
+          "balanced_accuracy": 0.9184,
+          "false_stop_rate": 0.0455,
+          "missed_interruption_rate": 0.1176,
+          "latency_mean_ms": 878.9,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 1254.4,
+          "false_stop_latency_p50_ms": 800.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.8742,
+          "balanced_accuracy": 0.8857,
+          "false_stop_rate": 0.0755,
+          "missed_interruption_rate": 0.1531,
+          "latency_mean_ms": 857.4,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 800.0,
+          "false_stop_latency_p50_ms": 800.0
+        }
+      },
+      "vap-p_future": {
+        "parameter": 0.95,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.3219,
+          "balanced_accuracy": 0.5082,
+          "false_stop_rate": 0.0227,
+          "missed_interruption_rate": 0.9608,
+          "latency_mean_ms": 1060.0,
+          "latency_p50_ms": 1080.0,
+          "latency_p90_ms": 1456.0,
+          "false_stop_latency_p50_ms": 80.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.3642,
+          "balanced_accuracy": 0.5102,
+          "false_stop_rate": 0.0,
+          "missed_interruption_rate": 0.9796,
+          "latency_mean_ms": 1440.0,
+          "latency_p50_ms": 1440.0,
+          "latency_p90_ms": 1504.0
+        }
+      },
+      "vap-p_active_bin2": {
+        "parameter": 0.95,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.3219,
+          "balanced_accuracy": 0.5147,
+          "false_stop_rate": 0.0,
+          "missed_interruption_rate": 0.9706,
+          "latency_mean_ms": 1253.3,
+          "latency_p50_ms": 1280.0,
+          "latency_p90_ms": 1408.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.3642,
+          "balanced_accuracy": 0.5102,
+          "false_stop_rate": 0.0,
+          "missed_interruption_rate": 0.9796,
+          "latency_mean_ms": 1120.0,
+          "latency_p50_ms": 1120.0,
+          "latency_p90_ms": 1248.0
+        }
+      },
+      "dualturn-fvad960": {
+        "parameter": 0.9,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.4521,
+          "balanced_accuracy": 0.5949,
+          "false_stop_rate": 0.0455,
+          "missed_interruption_rate": 0.7647,
+          "latency_mean_ms": 660.0,
+          "latency_p50_ms": 640.0,
+          "latency_p90_ms": 1176.0,
+          "false_stop_latency_p50_ms": 120.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.4702,
+          "balanced_accuracy": 0.5745,
+          "false_stop_rate": 0.0755,
+          "missed_interruption_rate": 0.7755,
+          "latency_mean_ms": 778.2,
+          "latency_p50_ms": 840.0,
+          "latency_p90_ms": 1432.0,
+          "false_stop_latency_p50_ms": 120.0
+        }
+      },
+      "dualturn-fvad960-bcveto": {
+        "parameter": 0.9,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.4521,
+          "balanced_accuracy": 0.5949,
+          "false_stop_rate": 0.0455,
+          "missed_interruption_rate": 0.7647,
+          "latency_mean_ms": 660.0,
+          "latency_p50_ms": 640.0,
+          "latency_p90_ms": 1176.0,
+          "false_stop_latency_p50_ms": 120.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.4702,
+          "balanced_accuracy": 0.5745,
+          "false_stop_rate": 0.0755,
+          "missed_interruption_rate": 0.7755,
+          "latency_mean_ms": 778.2,
+          "latency_p50_ms": 840.0,
+          "latency_p90_ms": 1432.0,
+          "false_stop_latency_p50_ms": 120.0
+        }
+      }
+    },
+    "false_stop<=0.2": {
+      "sustained": {
+        "parameter": 0.68,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.9315,
+          "balanced_accuracy": 0.9057,
+          "false_stop_rate": 0.1591,
+          "missed_interruption_rate": 0.0294,
+          "latency_mean_ms": 800.2,
+          "latency_p50_ms": 680.0,
+          "latency_p90_ms": 1332.8,
+          "false_stop_latency_p50_ms": 680.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.8543,
+          "balanced_accuracy": 0.8184,
+          "false_stop_rate": 0.3019,
+          "missed_interruption_rate": 0.0612,
+          "latency_mean_ms": 763.1,
+          "latency_p50_ms": 680.0,
+          "latency_p90_ms": 1060.8,
+          "false_stop_latency_p50_ms": 680.0
+        }
+      },
+      "vap-p_future": {
+        "parameter": 0.9,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.3836,
+          "balanced_accuracy": 0.5265,
+          "false_stop_rate": 0.1136,
+          "missed_interruption_rate": 0.8333,
+          "latency_mean_ms": 800.0,
+          "latency_p50_ms": 880.0,
+          "latency_p90_ms": 1232.0,
+          "false_stop_latency_p50_ms": 160.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.4172,
+          "balanced_accuracy": 0.5424,
+          "false_stop_rate": 0.0377,
+          "missed_interruption_rate": 0.8776,
+          "latency_mean_ms": 1013.3,
+          "latency_p50_ms": 1200.0,
+          "latency_p90_ms": 1440.0,
+          "false_stop_latency_p50_ms": 280.0
+        }
+      },
+      "vap-p_active_bin2": {
+        "parameter": 0.9,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.4521,
+          "balanced_accuracy": 0.5691,
+          "false_stop_rate": 0.1364,
+          "missed_interruption_rate": 0.7255,
+          "latency_mean_ms": 977.1,
+          "latency_p50_ms": 1080.0,
+          "latency_p90_ms": 1352.0,
+          "false_stop_latency_p50_ms": 160.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.4371,
+          "balanced_accuracy": 0.5577,
+          "false_stop_rate": 0.0377,
+          "missed_interruption_rate": 0.8469,
+          "latency_mean_ms": 1056.0,
+          "latency_p50_ms": 1040.0,
+          "latency_p90_ms": 1440.0,
+          "false_stop_latency_p50_ms": 280.0
+        }
+      },
+      "dualturn-fvad960": {
+        "parameter": 0.85,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.6027,
+          "balanced_accuracy": 0.6769,
+          "false_stop_rate": 0.1364,
+          "missed_interruption_rate": 0.5098,
+          "latency_mean_ms": 684.8,
+          "latency_p50_ms": 640.0,
+          "latency_p90_ms": 1304.0,
+          "false_stop_latency_p50_ms": 200.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.5166,
+          "balanced_accuracy": 0.5842,
+          "false_stop_rate": 0.1887,
+          "missed_interruption_rate": 0.6429,
+          "latency_mean_ms": 566.9,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 1120.0,
+          "false_stop_latency_p50_ms": 160.0
+        }
+      },
+      "dualturn-fvad960-bcveto": {
+        "parameter": 0.85,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.6027,
+          "balanced_accuracy": 0.6769,
+          "false_stop_rate": 0.1364,
+          "missed_interruption_rate": 0.5098,
+          "latency_mean_ms": 684.8,
+          "latency_p50_ms": 640.0,
+          "latency_p90_ms": 1304.0,
+          "false_stop_latency_p50_ms": 200.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.5166,
+          "balanced_accuracy": 0.5842,
+          "false_stop_rate": 0.1887,
+          "missed_interruption_rate": 0.6429,
+          "latency_mean_ms": 566.9,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 1120.0,
+          "false_stop_latency_p50_ms": 160.0
+        }
+      }
+    }
+  },
+  "post_hoc_fixed_time_decision": {
+    "decide_at_0.48s (false_stop<=0.1 on calibration)": {
+      "vap.p_future_user": {
+        "theta": 0.7,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.4932,
+          "balanced_accuracy": 0.6114,
+          "false_stop_rate": 0.0909,
+          "missed_interruption_rate": 0.6863,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0,
+          "false_stop_latency_p50_ms": 480.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.3974,
+          "balanced_accuracy": 0.5097,
+          "false_stop_rate": 0.1132,
+          "missed_interruption_rate": 0.8673,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0,
+          "false_stop_latency_p50_ms": 480.0
+        }
+      },
+      "dualturn.fvad_user[960ms]": {
+        "theta": 0.7,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.5,
+          "balanced_accuracy": 0.6163,
+          "false_stop_rate": 0.0909,
+          "missed_interruption_rate": 0.6765,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0,
+          "false_stop_latency_p50_ms": 480.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.3775,
+          "balanced_accuracy": 0.4728,
+          "false_stop_rate": 0.2075,
+          "missed_interruption_rate": 0.8469,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0,
+          "false_stop_latency_p50_ms": 480.0
+        }
+      },
+      "dualturn.1-bc_user": {
+        "theta": 0.75,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.4589,
+          "balanced_accuracy": 0.5998,
+          "false_stop_rate": 0.0455,
+          "missed_interruption_rate": 0.7549,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0,
+          "false_stop_latency_p50_ms": 480.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.4238,
+          "balanced_accuracy": 0.5561,
+          "false_stop_rate": 0.0,
+          "missed_interruption_rate": 0.8878,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0
+        }
+      },
+      "vad: still speaking at this instant": {
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.7285,
+          "balanced_accuracy": 0.6305,
+          "false_stop_rate": 0.6981,
+          "missed_interruption_rate": 0.0408,
+          "latency_mean_ms": 480.0,
+          "latency_p50_ms": 480.0,
+          "latency_p90_ms": 480.0,
+          "false_stop_latency_p50_ms": 480.0
+        }
+      }
+    },
+    "decide_at_0.80s (false_stop<=0.1 on calibration)": {
+      "vap.p_future_user": {
+        "theta": 0.6,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.6096,
+          "balanced_accuracy": 0.6947,
+          "false_stop_rate": 0.0909,
+          "missed_interruption_rate": 0.5196,
+          "latency_mean_ms": 800.0,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 800.0,
+          "false_stop_latency_p50_ms": 800.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.5099,
+          "balanced_accuracy": 0.6008,
+          "false_stop_rate": 0.0943,
+          "missed_interruption_rate": 0.7041,
+          "latency_mean_ms": 800.0,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 800.0,
+          "false_stop_latency_p50_ms": 800.0
+        }
+      },
+      "dualturn.fvad_user[960ms]": {
+        "theta": 0.5,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.7329,
+          "balanced_accuracy": 0.7894,
+          "false_stop_rate": 0.0682,
+          "missed_interruption_rate": 0.3529,
+          "latency_mean_ms": 800.0,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 800.0,
+          "false_stop_latency_p50_ms": 800.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.6821,
+          "balanced_accuracy": 0.7291,
+          "false_stop_rate": 0.1132,
+          "missed_interruption_rate": 0.4286,
+          "latency_mean_ms": 800.0,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 800.0,
+          "false_stop_latency_p50_ms": 800.0
+        }
+      },
+      "vad: still speaking at this instant": {
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.8543,
+          "balanced_accuracy": 0.8444,
+          "false_stop_rate": 0.1887,
+          "missed_interruption_rate": 0.1224,
+          "latency_mean_ms": 800.0,
+          "latency_p50_ms": 800.0,
+          "latency_p90_ms": 800.0,
+          "false_stop_latency_p50_ms": 800.0
+        }
+      }
+    },
+    "decide_at_1.20s (false_stop<=0.1 on calibration)": {
+      "vap.p_future_user": {
+        "theta": 0.8,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.411,
+          "balanced_accuracy": 0.572,
+          "false_stop_rate": 0.0227,
+          "missed_interruption_rate": 0.8333,
+          "latency_mean_ms": 1200.0,
+          "latency_p50_ms": 1200.0,
+          "latency_p90_ms": 1200.0,
+          "false_stop_latency_p50_ms": 1200.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.3907,
+          "balanced_accuracy": 0.5263,
+          "false_stop_rate": 0.0189,
+          "missed_interruption_rate": 0.9286,
+          "latency_mean_ms": 1200.0,
+          "latency_p50_ms": 1200.0,
+          "latency_p90_ms": 1200.0,
+          "false_stop_latency_p50_ms": 1200.0
+        }
+      },
+      "dualturn.fvad_user[960ms]": {
+        "theta": 0.6,
+        "calibration": {
+          "backchannels": 44,
+          "interruptions": 102,
+          "accuracy": 0.6781,
+          "balanced_accuracy": 0.7502,
+          "false_stop_rate": 0.0682,
+          "missed_interruption_rate": 0.4314,
+          "latency_mean_ms": 1200.0,
+          "latency_p50_ms": 1200.0,
+          "latency_p90_ms": 1200.0,
+          "false_stop_latency_p50_ms": 1200.0
+        },
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.5828,
+          "balanced_accuracy": 0.6482,
+          "false_stop_rate": 0.1321,
+          "missed_interruption_rate": 0.5714,
+          "latency_mean_ms": 1200.0,
+          "latency_p50_ms": 1200.0,
+          "latency_p90_ms": 1200.0,
+          "false_stop_latency_p50_ms": 1200.0
+        }
+      },
+      "vad: still speaking at this instant": {
+        "test": {
+          "backchannels": 53,
+          "interruptions": 98,
+          "accuracy": 0.8742,
+          "balanced_accuracy": 0.9031,
+          "false_stop_rate": 0.0,
+          "missed_interruption_rate": 0.1939,
+          "latency_mean_ms": 1200.0,
+          "latency_p50_ms": 1200.0,
+          "latency_p90_ms": 1200.0
+        }
+      }
+    }
+  },
+  "auc_interruption_vs_backchannel_by_time_after_onset": {
+    "0.16s": {
+      "vap.p_future_user": 0.5528,
+      "vap.p_active_user[2]": 0.5693,
+      "dualturn.fvad_user[2]": 0.6083,
+      "dualturn.bc_user": 0.4771,
+      "dualturn.bot_user": 0.5676
+    },
+    "0.32s": {
+      "vap.p_future_user": 0.5998,
+      "vap.p_active_user[2]": 0.6044,
+      "dualturn.fvad_user[2]": 0.6139,
+      "dualturn.bc_user": 0.4076,
+      "dualturn.bot_user": 0.6113
+    },
+    "0.48s": {
+      "vap.p_future_user": 0.6192,
+      "vap.p_active_user[2]": 0.619,
+      "dualturn.fvad_user[2]": 0.655,
+      "dualturn.bc_user": 0.3219,
+      "dualturn.bot_user": 0.5702
+    },
+    "0.80s": {
+      "vap.p_future_user": 0.7125,
+      "vap.p_active_user[2]": 0.7111,
+      "dualturn.fvad_user[2]": 0.8178,
+      "dualturn.bc_user": 0.4768,
+      "dualturn.bot_user": 0.6172
+    },
+    "1.20s": {
+      "vap.p_future_user": 0.7133,
+      "vap.p_active_user[2]": 0.6853,
+      "dualturn.fvad_user[2]": 0.8108,
+      "dualturn.bc_user": 0.6931,
+      "dualturn.bot_user": 0.4243
+    },
+    "1.60s": {
+      "vap.p_future_user": 0.8104,
+      "vap.p_active_user[2]": 0.7572,
+      "dualturn.fvad_user[2]": 0.7911,
+      "dualturn.bc_user": 0.358,
+      "dualturn.bot_user": 0.3406
+    }
+  },
+  "endpoint_models_on_completed_event": {
+    "note": "scored 200 ms after the event ends; answers 'is the utterance complete', not hold/yield",
+    "smart_turn_auc_interruption_vs_backchannel": 0.6054,
+    "smart_turn_mean_p": {
+      "backchannel": 0.5938,
+      "interruption": 0.6453
+    },
+    "livekit_auc_interruption_vs_backchannel": 0.7272,
+    "livekit_mean_p": {
+      "backchannel": 0.34,
+      "interruption": 0.524
+    },
+    "event_duration_s": {
+      "backchannel_mean": 0.603,
+      "interruption_mean": 2.824
+    }
+  },
+  "server_latency_ms": {
+    "vap": {
+      "n": 5940,
+      "p50": 95.93299999999999,
+      "p90": 156.75830000000002
+    },
+    "dualturn": {
+      "n": 5940,
+      "p50": 472.536,
+      "p90": 1018.8045000000002
+    }
+  }
+}
