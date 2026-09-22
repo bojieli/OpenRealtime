@@ -29,6 +29,9 @@ binary="${OPENREALTIME_BIN:-${repository}/.runtime/duplex-plan/bin/openrealtime}
 port="${E2E_PORT:-9290}"
 out="${repository}/.runtime/duplex-plan/results/e2e/${profile}"
 mkdir -p "${out}"
+# A rerun must not leave a previous run's results beside its own: a summary
+# that mixed the two would read as one run that never happened.
+rm -f "${out}"/fdb-*.json "${out}"/fdb-*.log "${out}"/fdbench.json "${out}"/fdbench.log "${out}"/finished.json
 cd "${repository}"
 
 gpu_memory="$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 || echo unknown)"
