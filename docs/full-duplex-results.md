@@ -199,6 +199,37 @@ The clock's own evidence for every traced run:
 | mt-fdbench3.jsonl | 8 | 1039 | 180/458 | 93/163 | 0 | {'continue': 557, 'wait': 210, 'idle': 137, 'respond': 73, 'stop': 62} | {'clock': 866, 'word': 114, 'pause': 59} |
 <!-- end generated -->
 
+## Compatibility matrix
+
+What each model is integrated as, and how far it was taken. "Measured" means
+a real model produced real output under wall-clock replay on this GPU;
+"protocol only" means the integration passes conformance with `--mock` but the
+model itself was not measured here.
+
+| Model | Role | Integration | Status |
+| --- | --- | --- | --- |
+| Qwen3-ASR 0.6B | streaming ASR | `qwen-asr` start/chunk/finish | measured (baseline) |
+| Voxtral Mini 4B Realtime | streaming ASR | `vllm-realtime` on vLLM `/v1/realtime` | measured, used in the headline profile |
+| Nemotron streaming EN 0.6B / 3.5 multilingual | streaming ASR | `streaming-asr` service | measured, both chunk settings |
+| Kyutai STT 1B | streaming ASR | `streaming-asr` service | measured (en, fr) |
+| FunASR streaming Paraformer | streaming ASR | `streaming-asr` service | measured (zh), append-only verified |
+| Deepgram Nova-3 / Flux | streaming ASR (closed) | existing adapter | measured (Nova-3) |
+| Kyutai TTS 1.6B | incremental TTS | `speech-socket` service | measured, used in the headline profile |
+| CosyVoice 3 0.5B | incremental TTS | `speech-socket` service | measured |
+| VibeVoice-Realtime 0.5B, Qwen3-TTS, Fish S2 Pro | incremental TTS | `speech-socket` services | see the synthesis section |
+| Deepgram Aura | incremental TTS (closed) | `speech-socket` bridge | measured |
+| Qwen3-8B as micro-turn controller | micro-turn LLM | `microturn` sidecar, orchestrated mode | measured end to end |
+| DuplexCascade | micro-turn LLM | `microturn` sidecar, native mode | blocked: gated checkpoint |
+| Moshi, VoiceChat 11B, MiniCPM-o 4.5, Lychee-FD, Freeze-Omni | native duplex | sidecar protocol v1 | see the native section; all pass mock conformance |
+| PersonaPlex 7B | native duplex | sidecar protocol v1 | blocked: gated checkpoint |
+| Smart Turn v3.2, LiveKit, VAP, DualTurn, X2-Turn, SoulX-Duplug | interaction prediction | turn service + `-turn-end-url` hook | measured (I0, I1) |
+| Sortformer + multitalker Parakeet | speaker attribution | offline pipeline | see the perception section |
+| Audio Flamingo 3 | audio observer | bounded observer service | see the perception section |
+| DeepFilterNet | acoustic preprocessing | existing pre-ASR filter contract | measured (raw versus processed WER) |
+| Hibiki, SeamlessStreaming | translation | sidecar / offline harness | see the task section |
+| ELLSA, BayLing-Duplex | research extensions | feasibility only | see the task section |
+| OpenAI Live, Gemini Live | closed live agents | existing `upstream` binding | profiles written; runs pending |
+
 ## Blocked and deferred
 
 | Item | Status | Reason |
