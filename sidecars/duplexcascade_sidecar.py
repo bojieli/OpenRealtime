@@ -21,6 +21,7 @@ from duplexcascade_recognizer import AppendOnlyRecognizer
 from duplexcascade_speech import DuplexCascadeSpeech
 from duplexcascade_playout import PacedAudio
 from microturn_sidecar import LinearResampler, SpeechContext
+from moshi_sidecar import _listen
 
 
 class NativeCascade(Sidecar):
@@ -42,15 +43,25 @@ class NativeCascade(Sidecar):
         self.turn_open = False
         self.turn_audio = False
         self.resampler = None
+        self.owns_session = False
 
     def configure(self, hello):
+        if not self.backend.session_lock.acquire(timeout=10):
+            raise RuntimeError('native DuplexCascade is serving another session')
+        self.owns_session = True
         if self.instructions:
             log('released DuplexCascade does not consume session instructions')
         if self.input_rate != 16000:
             self.resampler = LinearResampler(self.input_rate,16000)
         self.thread = threading.Thread(target=self._thread,daemon=True)
-        self.thread.start()
+        try:
+            self.thread.start()
+        except BaseException:
+            self.backend.session_lock.release()
+            self.owns_session = False
+            raise
         if not self.initialized.wait(15):
+            self.closing.set()
             raise RuntimeError('native cascade initialization timed out')
         if self.failure:
             raise self.failure
@@ -64,6 +75,9 @@ class NativeCascade(Sidecar):
             if not self.closing.is_set():
                 self.error(str(error),code='native_cascade_failed',fatal=True)
         finally:
+            if self.owns_session:
+                self.owns_session = False
+                self.backend.session_lock.release()
             self.finished.set()
 
     async def _main(self):
@@ -154,6 +168,7 @@ def main():
     p.add_argument('--asr',default='http://127.0.0.1:9112')
     p.add_argument('--tts',default='ws://127.0.0.1:9125/v1/tts/stream')
     p.add_argument('--voice',default='default')
+    p.add_argument('--listen',default='')
     a=p.parse_args()
     free = int(subprocess.check_output(
         ['nvidia-smi','--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).splitlines()[0])
@@ -161,6 +176,10 @@ def main():
         raise RuntimeError(f'native DuplexCascade needs 20000 MiB free before load; available {free}')
     backend=DuplexCascadeModel(a.source,a.snapshot,a.base,slow_tokenizer=True)
     backend.session().step('Hello')
+    backend.session_lock = threading.Lock()
+    if a.listen:
+        _listen(a.listen,lambda reader,writer:NativeCascade(reader,writer,args=a,backend=backend))
+        return
     run(NativeCascade,args=a,backend=backend)
 
 

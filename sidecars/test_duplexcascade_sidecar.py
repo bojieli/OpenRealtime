@@ -1,5 +1,6 @@
 import io
 import unittest
+import threading
 from types import SimpleNamespace
 from duplexcascade_sidecar import NativeCascade
 from duplexcascade_playout import PacedAudio
@@ -36,6 +37,20 @@ class ProtocolTests(unittest.TestCase):
         sidecar=self.sidecar()
         sidecar.speech.context.sample_rate=48000
         with self.assertRaises(ValueError):sidecar._audio(b'\x00\x00')
+
+    def test_failed_session_releases_model_for_next_connection(self):
+        class Failed(NativeCascade):
+            async def _main(self): raise RuntimeError('failed initialization')
+        backend=SimpleNamespace(session_lock=threading.Lock())
+        sidecar=Failed(io.BytesIO(),io.BytesIO(),args=None,backend=backend)
+        sidecar.error=lambda *args,**kwargs:None
+        sidecar.owns_session=True
+        backend.session_lock.acquire()
+        sidecar._thread()
+        self.assertTrue(sidecar.finished.is_set())
+        self.assertFalse(backend.session_lock.locked())
+        self.assertFalse(sidecar.owns_session)
+        self.assertIsInstance(sidecar.failure,RuntimeError)
 
 
 if __name__=='__main__':unittest.main()
