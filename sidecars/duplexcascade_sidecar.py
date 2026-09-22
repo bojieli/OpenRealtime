@@ -129,7 +129,7 @@ class NativeCascade(Sidecar):
             self.trace.flush()
 
     def _context(self):
-        return SpeechContext(self.args.tts,self.args.voice)
+        return SpeechContext(self.args.tts,self.args.voice,audio_window_bytes=self.output_rate*2)
 
     async def _audio(self, pcm):
         if pcm:

@@ -41,6 +41,12 @@ The WebSocket contract ("openrealtime-incremental-speech/1"):
     server <- {"type":"context.cancelled","context_id":C}
     server <- {"type":"error","context_id":C,"message":"..."}
 
+A client may request ``audio_window_bytes`` in context.open (PCM16 bytes,
+maximum five seconds). context.ready echoes the accepted window. It replenishes
+that window with ``audio.credit`` / ``bytes`` after consuming each audio packet.
+This bounds transport audio without blocking WebSocket control reads; it does
+not by itself bound a backend's internal generation queue.
+
 A backend declares honestly how it consumes text: a model that can condition on
 a growing text prefix inside one generation declares ``incremental_text`` and
 ``input_granularity: token``; a model that needs a whole clause or sentence
@@ -274,6 +280,38 @@ def to_pcm16(chunk: np.ndarray) -> bytes:
     return chunk.astype("<i2").tobytes()
 
 
+class AudioCredits:
+    """Optional byte credits bound audio sent ahead of a consuming client.
+
+    Waiting occurs in the context producer thread, never the WebSocket reader.
+    Cancellation remains observable even when the client grants no more credit.
+    """
+    def __init__(self, window):
+        self.window = window
+        self.available = window
+        self.condition = threading.Condition()
+
+    def grant(self, count):
+        if count <= 0 or count % 2:
+            raise ValueError("audio credit must be a positive whole PCM16 sample")
+        with self.condition:
+            self.available = min(self.window, self.available + count)
+            self.condition.notify_all()
+
+    def packets(self, pcm, cancel, packet_bytes):
+        offset = 0
+        while offset < len(pcm):
+            size = min(packet_bytes, self.window, len(pcm)-offset)
+            with self.condition:
+                while self.available < size and not cancel.is_set():
+                    self.condition.wait(.1)
+                if cancel.is_set():
+                    return
+                self.available -= size
+            yield pcm[offset:offset+size]
+            offset += size
+
+
 def serve_synthesizer(synthesizer: Synthesizer, host: str, port: int) -> None:
     from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
     from fastapi.responses import JSONResponse, StreamingResponse
@@ -356,9 +394,16 @@ def serve_synthesizer(synthesizer: Synthesizer, host: str, port: int) -> None:
                             break
                         if seq == 0:
                             stats["first_audio_seconds"].append(time.perf_counter() - began)
-                        emit({"type": "audio", "context_id": context_id, "seq": seq,
-                              "pcm16": base64.b64encode(to_pcm16(chunk)).decode()})
-                        seq += 1
+                        pcm = to_pcm16(chunk)
+                        credits = state["credits"]
+                        packets = (credits.packets(pcm, state["cancel"], synthesizer.sample_rate//10*2)
+                                   if credits is not None else (pcm,))
+                        for packet in packets:
+                            if state["cancel"].is_set():
+                                break
+                            emit({"type": "audio", "context_id": context_id, "seq": seq,
+                                  "pcm16": base64.b64encode(packet).decode()})
+                            seq += 1
                 if state["cancel"].is_set():
                     emit({"type": "context.cancelled", "context_id": context_id})
                 else:
@@ -379,20 +424,30 @@ def serve_synthesizer(synthesizer: Synthesizer, host: str, port: int) -> None:
                 kind = message.get("type")
                 context_id = str(message.get("context_id", "default"))
                 if kind == "context.open":
+                    window = int(message.get("audio_window_bytes", 0))
+                    if window < 0 or window % 2 or window > synthesizer.sample_rate*2*5:
+                        await outgoing.put({"type": "error", "context_id": context_id,
+                                            "message": "invalid audio window (maximum five seconds)"})
+                        continue
                     state = {"texts": queue.Queue(), "cancel": threading.Event(), "chars": 0,
+                             "credits": AudioCredits(window) if window else None,
                              "voice": str(message.get("voice") or "default")}
                     contexts[context_id] = state
                     stats["contexts"] += 1
                     threading.Thread(target=run, args=(context_id, state), daemon=True).start()
                     await outgoing.put({"type": "context.ready", "context_id": context_id,
                                         "sample_rate": synthesizer.sample_rate, "model": synthesizer.model,
+                                        "audio_window_bytes": window,
                                         "capabilities": synthesizer.capabilities.__dict__})
                     continue
                 state = contexts.get(context_id)
                 if state is None:
                     await outgoing.put({"type": "error", "context_id": context_id, "message": "unknown context"})
                     continue
-                if kind == "text.append":
+                if kind == "audio.credit":
+                    if state["credits"] is not None:
+                        state["credits"].grant(int(message.get("bytes", 0)))
+                elif kind == "text.append":
                     text = str(message.get("text", ""))
                     state["texts"].put(text)
                     state["chars"] += len(text)

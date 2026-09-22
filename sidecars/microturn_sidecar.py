@@ -451,7 +451,8 @@ class OrchestratedModel:
 
 
 class SpeechContext:
-    def __init__(self, url: str, voice: str) -> None:
+    def __init__(self, url: str, voice: str, *, audio_window_bytes: int = 0) -> None:
+        self.audio_window_bytes = audio_window_bytes
         self.url, self.voice = url, voice
         self.socket = None
         self.id = f"ctx-{time.monotonic_ns()}"
@@ -462,11 +463,14 @@ class SpeechContext:
         import websockets  # noqa: PLC0415
 
         self.socket = await websockets.connect(self.url, max_size=None)
-        await self.socket.send(json.dumps({"type": "context.open", "context_id": self.id, "voice": self.voice}))
+        await self.socket.send(json.dumps({"type": "context.open", "context_id": self.id, "voice": self.voice,
+                                           "audio_window_bytes": self.audio_window_bytes}))
         while True:
             message = json.loads(await self.socket.recv())
             if message.get("type") == "context.ready":
                 self.sample_rate = int(message["sample_rate"])
+                if self.audio_window_bytes and message.get("audio_window_bytes") != self.audio_window_bytes:
+                    raise RuntimeError("TTS service does not support requested audio credits")
                 break
             if message.get("type") == "error":
                 raise RuntimeError(message.get("message"))
@@ -477,9 +481,13 @@ class SpeechContext:
             message = json.loads(raw)
             kind = message.get("type")
             if kind == "audio":
-                result = on_audio(base64.b64decode(message["pcm16"]))
+                pcm = base64.b64decode(message["pcm16"])
+                result = on_audio(pcm)
                 if asyncio.iscoroutine(result):
                     await result
+                if self.audio_window_bytes:
+                    await self.socket.send(json.dumps({"type": "audio.credit", "context_id": self.id,
+                                                       "bytes": len(pcm)}))
             elif kind in ("audio.done", "context.cancelled"):
                 on_audio(None)
                 return

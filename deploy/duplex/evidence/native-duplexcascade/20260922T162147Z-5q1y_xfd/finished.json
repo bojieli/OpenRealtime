@@ -1,0 +1,61 @@
+{
+  "finished": "2026-09-22T16:25:50.529928+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; 1 task errors",
+    "fdb-user_backchannel.json: exit 0; 1 task errors",
+    "signal 15"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T162147Z-5q1y_xfd/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "1",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T162147Z-5q1y_xfd/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    }
+  },
+  "load_average_end": [
+    "37.69",
+    "36.65",
+    "32.17"
+  ],
+  "sha256": {
+    "run.json": "f211bf6ef5a93634d0487aa6a5cd9f74bd824763f2a61884941204e2e1b3ff1f",
+    "profile.yaml": "65cb5b10d5717b9d7ca1dfaa30a7ece1740b28d688ca2abc6957b23a6fb494cc",
+    "fdb-user_interruption.json": "b83372485cd624b4e0403ccccc73a117158cdeae238f30c36bf382fe76bea95d",
+    "fdb-user_backchannel.json": "3107d15e975c3bab1a54d09c6f27b41446027e83f000cfcf1b569ebfcd6edce4",
+    "fdb-background_speech.json": "519cb8a38d4705ad9dcf093b5323ed22b86b35fd9ec1a360f6484eab8824e2c9"
+  }
+}
