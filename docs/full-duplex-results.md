@@ -328,7 +328,11 @@ Native validation remains incomplete. The retained component artifacts under
   not establish correct floor behavior. The continuation text was fragmented
   ("start ly saving right now."). No protocol errors occurred.
   [Cancellation trace and summary](../deploy/duplex/evidence/minicpm-o/20260922-cancellation/)
-  retain this limitation alongside the transport result.
+  retain this limitation alongside the transport result. A subsequent real-model
+  disconnect/reconnect probe also passed: both sessions produced fresh PCM,
+  with handshakes of 345 ms and 358 ms and no protocol errors. It disconnects
+  at the first audio packet; full-buffer cancellation and endurance remain
+  unverified.
 - **VoiceChat:** the 8,192-position talker failed startup with a 1 GiB KV
   cache; 2 GiB allowed loading. The originally pinned vLLM-Omni `9ebef4b`
   then rejected duplex WebSockets because its new plugin framework disables

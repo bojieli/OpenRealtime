@@ -1,0 +1,24 @@
+{
+  "address": "tcp:127.0.0.1:9145",
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "timing_basis": "received PCM packets, not rendered playback",
+  "attempts": [
+    {
+      "handshake_s": 0.34460187098011374,
+      "input_sent_s": 4.42,
+      "first_audio_s": 4.416094453074038,
+      "audio_bytes": 3840,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "handshake_s": 0.3582548121921718,
+      "input_sent_s": 4.72,
+      "first_audio_s": 4.706179668195546,
+      "audio_bytes": 3840,
+      "errors": [],
+      "passed": true
+    }
+  ],
+  "passed": true
+}
