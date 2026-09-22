@@ -556,7 +556,7 @@ class VoiceChatSidecar(Sidecar):
     def _gated(self, response_id: str) -> bool:
         with self._state_lock:
             return bool(self._gated_response) and (
-                not response_id or response_id == self._gated_response)
+                not response_id or self._gated_response in ("*", response_id))
 
     def _propose_call(self, event: dict) -> None:
         call_id = str(event.get("call_id") or "")
@@ -577,7 +577,7 @@ class VoiceChatSidecar(Sidecar):
     def _finish_turn(self, response_id: str, event: dict) -> None:
         with self._state_lock:
             was_gated = bool(self._gated_response) and (
-                not response_id or response_id == self._gated_response)
+                not response_id or self._gated_response in ("*", response_id))
             if was_gated:
                 self._gated_response = None
             text = "".join(self._response_text)
