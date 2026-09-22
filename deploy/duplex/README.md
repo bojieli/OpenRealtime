@@ -222,3 +222,16 @@ PCM payload lengths, annotation presence/order/range, and file SHA256 hashes.
 No structural issues were found. The adjacent manifest pins each WAV and
 annotation; the audit script reproduces the check from the repository root.
 This does not validate semantic annotation accuracy or establish model results.
+
+For a long campaign, attach the read-only resource sampler to the runner PID:
+
+```bash
+python tools/duplexmodels/process_monitor.py --pid RUNNER_PID \
+  --out /absolute/run/directory/resources.jsonl --interval 10
+```
+
+It records shared GPU memory/utilization, per-process GPU memory and host load.
+It checks the PID's Linux start-time identity and exits when that process exits
+or is replaced. The output is created exclusively to preserve existing samples.
+Sampling can miss peaks; shared-host values are not per-session allocator
+measurements. A late attachment does not reconstruct earlier resource use.
