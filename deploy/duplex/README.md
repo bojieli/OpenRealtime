@@ -73,9 +73,11 @@ one experiment cell:
 | `microturn-voxtral-qwen3-kyutai` | the micro-turn cascade: streaming ASR, a 500 ms controller, incremental TTS |
 | `microturn-clock-only` | the same without acoustic evidence or between-tick decisions: what the clock's phase costs |
 | `microturn-nemotron-qwen3-kyutai`, `microturn-kyutaistt-qwen3-kyutai` | recogniser substitution (C3) |
-| `microturn-voxtral-qwen3-deepgram` | synthesiser substitution (C4), closed |
+| `microturn-voxtral-qwen3-{vibevoice,cosyvoice,deepgram}` | synthesiser substitution (C4); the last one is closed |
 | `cascade-voxtral-qwen3-kyutai`, `cascade-nemotron-qwen3-kyutai` | the engine-floor cascade with the same components |
-| `cascade-…-smartturn-observe`, `cascade-…-smartturn-control` | endpoint evidence observed versus controlling (I0) |
+| `cascade-…-smartturn-observe` | endpoint evidence recorded but deciding nothing (I0) |
+| `cascade-…-{smartturn,livekit,vap,dualturn,fusion}-control` | one endpoint predictor deciding the pause, at its calibrated threshold (I0) |
+| `native-freeze-omni` | a native duplex model through the sidecar relay (P5/P8) |
 | `closed-gemini-live`, `closed-openai-live` | closed live references (R0); the voice path leaves the machine |
 
 ## Running the end-to-end check
