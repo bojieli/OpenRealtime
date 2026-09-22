@@ -1,0 +1,325 @@
+{
+  "scope": "64 component synthesis outputs; waveform files retained under ignored runtime directory",
+  "files": [
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-00.wav",
+      "bytes": 188460,
+      "sha256": "38a6bb7908de3f842bba7f5c3c05c0dca84e448bab22cc8bab5d38f254500881"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-01.wav",
+      "bytes": 213036,
+      "sha256": "d8ef89e3ac3cebf1d4ab15e24d15b65daf83a08ce9c0f41fb58737173f57f452"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-02.wav",
+      "bytes": 163884,
+      "sha256": "12537ea94893724ab36ec80cd1f6e15bb287cdaf35e839a6a79566736668d3a2"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-03.wav",
+      "bytes": 167980,
+      "sha256": "8efdd285429b2235de93fdf9dbb3febbe393e9d2d81951ab8d9354c2478e6f44"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-04.wav",
+      "bytes": 233516,
+      "sha256": "88a4f1c160e812f6508bf2ba745906dae1317790dd44d40c9f920e89d294a263"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-05.wav",
+      "bytes": 233516,
+      "sha256": "78fbf0198c02ce2995f138d60c807c99d3845f039d052e1ad12a7f8a04c9613e"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-06.wav",
+      "bytes": 122924,
+      "sha256": "e1c319dafb7911f97c8e0eb1f4ea4d6047075db531507ec870b18e2a0cf20483"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-07.wav",
+      "bytes": 516140,
+      "sha256": "cd0ce5943e6ea96c02787b18d3c5b545462446cbbfb895319eb361ea4332bf29"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-08.wav",
+      "bytes": 524332,
+      "sha256": "1e1ea44c8c650e1ce8cba4f62d4ec0d8bfc4d4a8af8a117d2c64a5fd90acf0b4"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-09.wav",
+      "bytes": 471084,
+      "sha256": "2fa89fda2948ab7e586bf7646c4e1e418d3d69ac0c4f0e002ae438a48cae57d3"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-10.wav",
+      "bytes": 516140,
+      "sha256": "4a694eab3d319bbfb98679cf98f4d63f8520626a49b40a78cdbacdfc7705594e"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-11.wav",
+      "bytes": 536620,
+      "sha256": "a7472bfe32311935e478a3bf8df7ebb0a7ba5e4f85969de01e8eed2dd3db6acf"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-12.wav",
+      "bytes": 475180,
+      "sha256": "e304588a51e76db580cb3be871b1961d7d30dc5fafc8c97af4898fd738320135"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-13.wav",
+      "bytes": 368684,
+      "sha256": "b6d7cda237322cc8b404155fbccf6f469ce69ed6a20152062fea192e7274dba5"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-14.wav",
+      "bytes": 790572,
+      "sha256": "292b6317b12c14adda5a43d49709b8457af6e0b4cb703e9ed5535fb0a80e98b7"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-15.wav",
+      "bytes": 888876,
+      "sha256": "49a8dc891bd5e2319c91344ecdd994fd6235073f5146b7aef681861967f8d90a"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-16.wav",
+      "bytes": 852012,
+      "sha256": "894acc28bb8d193a44b41c449ccdc66ceff43ac252af114fe5ce5b74f3c9c423"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-17.wav",
+      "bytes": 716844,
+      "sha256": "d2cc97f641f56cdabff3e9ba0454813978517e8bb6cd84f93bdf0192063f07bc"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-18.wav",
+      "bytes": 798764,
+      "sha256": "d2aea5b4fa06c345c24c95cf5f53392e7d3d386f52d092c0eafcc835c2976292"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-en-19.wav",
+      "bytes": 868396,
+      "sha256": "6a9dca8f32dcd2dade098cdfe46a2b68178275d0de5165ee947c88b8921d909a"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-00.wav",
+      "bytes": 155692,
+      "sha256": "c7572e30eb49eda7b232a0ba2a4a6691f80f00ed22e31bad409f0a4f5ec6a6c8"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-01.wav",
+      "bytes": 127020,
+      "sha256": "eba19a0b32fac2166822f8da94a39ea017dd02e8cc177beab01e5a7a14e2055e"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-02.wav",
+      "bytes": 155692,
+      "sha256": "9cd0b46b1431586913b5289e191a9118d9a6a8c0a2fc8a898c72cd4976784164"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-03.wav",
+      "bytes": 135212,
+      "sha256": "99f9041331124379df12777f94b6d3f9aafbeb1ecdf07ff8f403faa169d41536"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-04.wav",
+      "bytes": 167980,
+      "sha256": "3d53ed77ccec1aa45b57d5a63a4fcae95d58f1165771898660792b3170ab9594"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-05.wav",
+      "bytes": 135212,
+      "sha256": "8a32d2f0c7f11fe0034d41211da3fbc43a448e7fe2c153d8ea70da36ed65d3ea"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-06.wav",
+      "bytes": 98348,
+      "sha256": "134544e4760620ca8e3096b58eb40d5a7ca3263f4edd6978a33285fbf74d789c"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-07.wav",
+      "bytes": 475180,
+      "sha256": "656cc3466a6fb8465bd3961267848cc829d90768fc3bd4139244853f6741ecb2"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-08.wav",
+      "bytes": 380972,
+      "sha256": "e07d204dfa4c47008477e211a869886cbc405aa6f4516de8e95db84c3eb9dde0"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-09.wav",
+      "bytes": 507948,
+      "sha256": "b128f62131817ef06cf7c62a94a4f1f1d29b9b31073783763fee6f8a5209d32a"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-10.wav",
+      "bytes": 331820,
+      "sha256": "7d5eac89a23294651910bc7049531437655868a5eb1d59e81fe4678890151924"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-11.wav",
+      "bytes": 409644,
+      "sha256": "09154bb5527f99700ce8845cf4d788551b3c8bd0dd074de9dfa1cfc541afa80d"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-12.wav",
+      "bytes": 442412,
+      "sha256": "6078502ec57918f30559aa2dcc025ac1af8602eb98472311fe128389b05d74c1"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-13.wav",
+      "bytes": 368684,
+      "sha256": "4a82fd1f82c30d5ede5a864731ed2b532db459171f0d34ecae85a3db61bedb12"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-14.wav",
+      "bytes": 901164,
+      "sha256": "1ba0448a417bb9e10bbda961790c7892b6f1da7f28d26377901abb0718e93d5d"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-15.wav",
+      "bytes": 794668,
+      "sha256": "b15e665cc29ea1163629f98a49208245d22039e4b7869d2f1b8ceb5ad501c943"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-16.wav",
+      "bytes": 884780,
+      "sha256": "3c923c578bcdd751b0d98092c100c330e2f728e10890db595807d98c2a3138e9"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-17.wav",
+      "bytes": 696364,
+      "sha256": "5177fa2a0e1188d0b45f659fbc85eed55ba5b16fcd7d852d346686f6b2c8c4b4"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-18.wav",
+      "bytes": 671788,
+      "sha256": "09eedd1725cf45496ec87e466dc5414e9ef2951ac857363a8d0d93ee8f2dbbca"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/complete-zh-19.wav",
+      "bytes": 757804,
+      "sha256": "d1973d6a63a22c8b122434581422e9c3eb08bad5bf854e685d798990a39d8444"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-en-00.wav",
+      "bytes": 454700,
+      "sha256": "1fa83800c4600b925ad68bced671555d871bf0ea01440c89d67128f20b6ca68e"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-en-01.wav",
+      "bytes": 503852,
+      "sha256": "7cf5e1851bbe20e5a80a7a796a73a57874f8f624c509fc6d8d5720ee01a774a2"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-en-02.wav",
+      "bytes": 872492,
+      "sha256": "c49b06671502df7588adc92c71ebb01ffbd2f76ac8d7d4763b4daa697fc2632a"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-en-03.wav",
+      "bytes": 835628,
+      "sha256": "e9b451b6f924ab5d0abae27d5bcbfe73f0565e2287006abf180fa9a2e5418448"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-en-04.wav",
+      "bytes": 860204,
+      "sha256": "c7064be6b59a04e0b8fc90cb7020420ea935c5eecb6300b6e4e521dbfaa2d659"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-en-05.wav",
+      "bytes": 716844,
+      "sha256": "de18c99547d2b2c83070f3fc3d1f41672eae027294b5cfe9da9257382f53a081"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-zh-00.wav",
+      "bytes": 401452,
+      "sha256": "60ac91999c09374d108f64c5a9561ccf72ec782f5de64a9e372bd91a4037847e"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-zh-01.wav",
+      "bytes": 397356,
+      "sha256": "a667f934ebe3c207d387d6a95024d06197fb1ef2fc46a592753271375c8ad3d0"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-zh-02.wav",
+      "bytes": 958508,
+      "sha256": "642cd7fec28d647b75fe5cb1b0568b975b1697af797920be30802b234e69227d"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-zh-03.wav",
+      "bytes": 765996,
+      "sha256": "42f5136b67389f3a95f3c3a6ab05ad9d5ec46eb83972633bc80ebee09a565ae7"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-zh-04.wav",
+      "bytes": 942124,
+      "sha256": "254c191da0ce0b0caae4399fdb214a5bde411b57af5986742ad5d60c1f4e3268"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/held-zh-05.wav",
+      "bytes": 671788,
+      "sha256": "a680ecc746b37bb6258ba5839c810366738d65534969c08b618b4cb8dfa181df"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-en-00.wav",
+      "bytes": 491564,
+      "sha256": "65557ffca31ae97d7e4f0a297689daaeebe300d4de0f3c05893b2c4b00931d8e"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-en-01.wav",
+      "bytes": 512044,
+      "sha256": "a80a5544009f86319ed3dccfadd10b53e4619b85fc78d7864af8ead3d32ed53b"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-en-02.wav",
+      "bytes": 806956,
+      "sha256": "052f1a219c3804a5e7582230b34364d6632968d5cc9e60dcda2779661e8293eb"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-en-03.wav",
+      "bytes": 815148,
+      "sha256": "8b7d497c5583245dbf57747a3f5fbca78e15352fbd718e9ddd83de4e5b5ff90c"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-en-04.wav",
+      "bytes": 913452,
+      "sha256": "a5d08f294ea466919aab8e83367ccdceed0d3404f89a9aa23d183e2e4a41835c"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-en-05.wav",
+      "bytes": 696364,
+      "sha256": "59ae6ac9a8be895d01b3b9d03362199d55ac86ade4e567ffa5654eaa70a3ec8f"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-zh-00.wav",
+      "bytes": 421932,
+      "sha256": "9f7547d1c23630a93e4e12d65b73f1e10ea2ba170b09091dbc4a4002c648bb18"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-zh-01.wav",
+      "bytes": 393260,
+      "sha256": "750897d33008feced3276929a4015926b0c3b796828bf9e0d3c1829706e576f2"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-zh-02.wav",
+      "bytes": 876588,
+      "sha256": "4a474b666bc62308e0ed9dbb05e92cd19f5fe9db5a103de49ecb27bec75c4c74"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-zh-03.wav",
+      "bytes": 741420,
+      "sha256": "3b7d08d3e70d826a182e384ac8b7ec35a5391b93818b3b96cfbae11f3f2555d8"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-zh-04.wav",
+      "bytes": 913452,
+      "sha256": "c65b5df7e9aa822569d6826715de37848f28530c051d7bc1db249c09a1f64871"
+    },
+    {
+      "file": ".runtime/duplex-plan/results/tts-fish-resume/fish-s2-pro-no-compile/words-zh-05.wav",
+      "bytes": 671788,
+      "sha256": "2a7be89f718e0d96748150b3be3e3c799aa2984e9077a02348443a87d51f4863"
+    }
+  ]
+}

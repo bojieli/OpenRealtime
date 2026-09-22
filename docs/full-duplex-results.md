@@ -114,8 +114,16 @@ resampling and codec encoding are retained). Four English probes through the
 real Go adapter produced 4.46–5.90 s of audio each; cancellation delivered no
 further audio after the client cancelled. First-audio times include the probe's
 1.5 s held suffix. Uncompiled wall times were 6.92–14.04 s, so these runs do not
-establish real-time synthesis. English/Mandarin intelligibility scoring and the
-new `cascade-nemotron-qwen3-fish` public profile are still pending. Evidence is
+establish real-time synthesis. The subsequent 70-case component run completed: 40 complete-text, 12 held-prefix,
+12 word-by-word, and six cancellation cases. Qwen3-ASR transcription of the
+complete-text outputs measured 0% English WER and 0.67% Mandarin CER (20 cases
+each); these are intelligibility proxies, not human quality ratings. Median
+first audio was 707/769 ms (English/Mandarin), and mean RTF was 1.42/1.74.
+All 12 held-prefix cases waited for the suffix, as required by the declared
+sentence-input contract. All six cancellations were acknowledged in 30–106 ms,
+with no audio frames after the cancel request. The new
+`cascade-nemotron-qwen3-fish` public smoke run is underway; acceptance remains
+pending. Evidence is
 retained in `deploy/duplex/evidence/fish-s2-pro/20260922-resume/`.
 The weights are revision `1de9996b6be38b745688de084d87a5633f714e4e`,
 with Fish source `e5e292632cb11e7a27b2b7487f58f612bc101e13`; retained

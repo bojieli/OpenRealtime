@@ -1,0 +1,325 @@
+{
+  "scope": "nonempty and PCM range checks only; not intelligibility or listening quality",
+  "files": [
+    {
+      "file": "complete-en-00.wav",
+      "sample_rate": 44100,
+      "duration_s": 2.136235827664399,
+      "peak": 0.172821044921875,
+      "rms": 0.0394188099871463,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-01.wav",
+      "sample_rate": 44100,
+      "duration_s": 2.414875283446712,
+      "peak": 0.294891357421875,
+      "rms": 0.055031333758672744,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-02.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.8575963718820863,
+      "peak": 0.300750732421875,
+      "rms": 0.04848117250554789,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-03.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.9040362811791383,
+      "peak": 0.431610107421875,
+      "rms": 0.05486215501207649,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-04.wav",
+      "sample_rate": 44100,
+      "duration_s": 2.647074829931973,
+      "peak": 0.277313232421875,
+      "rms": 0.04851705916653108,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-05.wav",
+      "sample_rate": 44100,
+      "duration_s": 2.647074829931973,
+      "peak": 0.172821044921875,
+      "rms": 0.020968549815934292,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-06.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.3931972789115645,
+      "peak": 0.412078857421875,
+      "rms": 0.07714197858479009,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-07.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.851428571428571,
+      "peak": 0.353485107421875,
+      "rms": 0.044039412384224694,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-08.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.944308390022676,
+      "peak": 0.279266357421875,
+      "rms": 0.028773894035566544,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-09.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.340589569160998,
+      "peak": 0.388641357421875,
+      "rms": 0.04308531857006989,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-10.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.851428571428571,
+      "peak": 0.287078857421875,
+      "rms": 0.032290603221013195,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-11.wav",
+      "sample_rate": 44100,
+      "duration_s": 6.0836281179138325,
+      "peak": 0.374969482421875,
+      "rms": 0.032515910148733174,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-12.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.38702947845805,
+      "peak": 0.511688232421875,
+      "rms": 0.0637479607428866,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-13.wav",
+      "sample_rate": 44100,
+      "duration_s": 4.179591836734694,
+      "peak": 0.435516357421875,
+      "rms": 0.05051467199982147,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-14.wav",
+      "sample_rate": 44100,
+      "duration_s": 8.962902494331066,
+      "peak": 0.151336669921875,
+      "rms": 0.023709076131699938,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-15.wav",
+      "sample_rate": 44100,
+      "duration_s": 10.077460317460318,
+      "peak": 0.361297607421875,
+      "rms": 0.032936694747476916,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-16.wav",
+      "sample_rate": 44100,
+      "duration_s": 9.659501133786849,
+      "peak": 0.248992919921875,
+      "rms": 0.027621047558148336,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-17.wav",
+      "sample_rate": 44100,
+      "duration_s": 8.126984126984127,
+      "peak": 0.287078857421875,
+      "rms": 0.037124929566108335,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-18.wav",
+      "sample_rate": 44100,
+      "duration_s": 9.05578231292517,
+      "peak": 0.410125732421875,
+      "rms": 0.041318610814694075,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-en-19.wav",
+      "sample_rate": 44100,
+      "duration_s": 9.845260770975056,
+      "peak": 0.326141357421875,
+      "rms": 0.03724455767613188,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-00.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.7647165532879818,
+      "peak": 0.439422607421875,
+      "rms": 0.061840136899136824,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-01.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.4396371882086167,
+      "peak": 0.412078857421875,
+      "rms": 0.07177933024102243,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-02.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.7647165532879818,
+      "peak": 0.314422607421875,
+      "rms": 0.05813166141645537,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-03.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.5325170068027212,
+      "peak": 0.406219482421875,
+      "rms": 0.05202429322398357,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-04.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.9040362811791383,
+      "peak": 0.244110107421875,
+      "rms": 0.04415041112464165,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-05.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.5325170068027212,
+      "peak": 0.439422607421875,
+      "rms": 0.06555375389759231,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-06.wav",
+      "sample_rate": 44100,
+      "duration_s": 1.1145578231292517,
+      "peak": 0.402313232421875,
+      "rms": 0.06496280838101588,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-07.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.38702947845805,
+      "peak": 0.283172607421875,
+      "rms": 0.039703813318704186,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-08.wav",
+      "sample_rate": 44100,
+      "duration_s": 4.31891156462585,
+      "peak": 0.302703857421875,
+      "rms": 0.047447655132448516,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-09.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.758548752834467,
+      "peak": 0.496063232421875,
+      "rms": 0.06885694172041681,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-10.wav",
+      "sample_rate": 44100,
+      "duration_s": 3.7616326530612243,
+      "peak": 0.249969482421875,
+      "rms": 0.04006372937065405,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-11.wav",
+      "sample_rate": 44100,
+      "duration_s": 4.6439909297052155,
+      "peak": 0.417938232421875,
+      "rms": 0.05765474712323123,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-12.wav",
+      "sample_rate": 44100,
+      "duration_s": 5.015510204081632,
+      "peak": 0.394500732421875,
+      "rms": 0.04477909026343341,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-13.wav",
+      "sample_rate": 44100,
+      "duration_s": 4.179591836734694,
+      "peak": 0.443328857421875,
+      "rms": 0.06548205062325704,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-14.wav",
+      "sample_rate": 44100,
+      "duration_s": 10.216780045351474,
+      "peak": 0.558563232421875,
+      "rms": 0.04679958601539251,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-15.wav",
+      "sample_rate": 44100,
+      "duration_s": 9.009342403628118,
+      "peak": 0.451141357421875,
+      "rms": 0.05249158874596328,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-16.wav",
+      "sample_rate": 44100,
+      "duration_s": 10.031020408163265,
+      "peak": 0.503875732421875,
+      "rms": 0.0515859658666532,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-17.wav",
+      "sample_rate": 44100,
+      "duration_s": 7.894784580498866,
+      "peak": 0.312469482421875,
+      "rms": 0.04138581717110012,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-18.wav",
+      "sample_rate": 44100,
+      "duration_s": 7.616145124716553,
+      "peak": 0.457000732421875,
+      "rms": 0.054967721292220134,
+      "clipped_samples": 0
+    },
+    {
+      "file": "complete-zh-19.wav",
+      "sample_rate": 44100,
+      "duration_s": 8.591383219954649,
+      "peak": 0.415985107421875,
+      "rms": 0.05411981468642317,
+      "clipped_samples": 0
+    }
+  ]
+}
