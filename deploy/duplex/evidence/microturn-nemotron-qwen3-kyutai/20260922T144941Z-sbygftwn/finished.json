@@ -1,0 +1,116 @@
+{
+  "finished": "2026-09-22T14:54:25.218695+00:00",
+  "exit_code": 0,
+  "errors": [],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9294/v1/realtime",
+        "-cell",
+        "microturn-nemotron-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-nemotron-qwen3-kyutai/runs/20260922T144941Z-sbygftwn/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9294/v1/realtime",
+        "-cell",
+        "microturn-nemotron-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-nemotron-qwen3-kyutai/runs/20260922T144941Z-sbygftwn/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9294/v1/realtime",
+        "-cell",
+        "microturn-nemotron-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-nemotron-qwen3-kyutai/runs/20260922T144941Z-sbygftwn/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9294/v1/realtime",
+        "-cell",
+        "microturn-nemotron-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-nemotron-qwen3-kyutai/runs/20260922T144941Z-sbygftwn/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9294/v1/realtime",
+        "-cell",
+        "microturn-nemotron-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-nemotron-qwen3-kyutai/runs/20260922T144941Z-sbygftwn/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "24.61",
+    "35.16",
+    "28.66"
+  ],
+  "sha256": {
+    "run.json": "b78ba520bad2fc13e4a7f65df586d22d53eb4f3e9477e4c60b1b1a6fbb116256",
+    "profile.yaml": "6e5e05e4f95beb42ce3343d553a744aeb96f0223e4267df940915e1901fe6607",
+    "fdb-user_interruption.json": "2315cde4d77d6373896a8daf5e2151275f1e1e13e570fa414e2280f4490b67c7",
+    "fdb-user_backchannel.json": "f952df5f7acaf6553f3c5963d9f45ede60ae9dd35448bdd528ba839bbbab4cfb",
+    "fdb-background_speech.json": "111443bc2db36a2817c5472857f010445159f77d1856ecd8245ebdf83c700303",
+    "fdb-talking_to_other.json": "713037b0c786ae038a930061d18e9d9346a89850e835230a5a15bdd835cb7b74",
+    "fdbench.json": "8d0f4b14658e4f8fdf7abd659010c4aea902c397f2383bacd10ddd90d6c75008"
+  }
+}

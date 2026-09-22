@@ -261,6 +261,11 @@ typed as expiring hypotheses.
 
 ## End-to-end voice agent performance (P9)
 
+The resumed Nemotron/Qwen3/Kyutai smoke run retains its hashed result JSON
+and profile in [`deploy/duplex/evidence`](../deploy/duplex/evidence/). It covers
+two recordings per FDB category and two FD-Bench conversations. The working
+tree was modified, so this is a diagnostic result, not release evidence.
+
 Each cell is one profile driven through the public Realtime protocol: the same
 number of FDB v1.5 recordings from each of its four categories, then an
 FD-Bench slice. "n/a" recordings are those where the agent was not speaking
@@ -278,8 +283,7 @@ Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified run
 | closed-openai-live | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
 | microturn-clock-only | - | - | - | - | - | - | - | - | 222.01 200.98 160.93 |
 | microturn-clock-only | **INCOMPLETE (no finished.json)** | | | | | | | | |
-| microturn-nemotron-qwen3-kyutai | - | - | - | - | - | - | - | - | ['65.88', '39.67', '26.48'] |
-| microturn-nemotron-qwen3-kyutai | **INCOMPLETE (no finished.json)** | | | | | | | | |
+| microturn-nemotron-qwen3-kyutai | 2/2 (+0 n/a) | 2/2 (+0 n/a) | 1/2 (+0 n/a) | 2/2 (+0 n/a) | 44 | 6/8 | 0 | 872 | ['65.88', '39.67', '26.48'] |
 | microturn-voxtral-qwen3-kyutai | - | - | - | - | - | - | - | - | 145.43 146.51 120.52 |
 | microturn-voxtral-qwen3-kyutai | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
 <!-- end generated -->
@@ -290,7 +294,7 @@ The clock's own evidence for every traced run:
 | trace | sessions | ticks | evidence wait p50/p90 ms | decision p50/p90 ms | over tick | decisions | triggers |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | microturn-clock-only.jsonl | 39 | 2256 | 259/457 | 80/143 | 0 | {'continue': 1524, 'idle': 311, 'wait': 250, 'respond': 116, 'stop': 55} | {'clock': 2256} |
-| microturn-nemotron-qwen3-kyutai.jsonl | 3 | 99 | 263/441 | 112/312 | 0 | {'continue': 59, 'wait': 19, 'idle': 15, 'respond': 4, 'stop': 2} | {'clock': 92, 'word': 4, 'pause': 3} |
+| microturn-nemotron-qwen3-kyutai.jsonl | 10 | 615 | 234/442 | 66/287 | 0 | {'continue': 346, 'wait': 119, 'idle': 94, 'respond': 34, 'stop': 22} | {'clock': 549, 'word': 34, 'pause': 32} |
 | microturn-smoke.jsonl | 4 | 216 | 238/413 | 108/188 | 0 | {'continue': 148, 'wait': 25, 'idle': 22, 'respond': 12, 'stop': 8, 'backchannel': 1} | {'clock': 216} |
 | microturn-smoke2.jsonl | 6 | 301 | 266/448 | 96/136 | 0 | {'continue': 139, 'wait': 85, 'idle': 45, 'respond': 19, 'stop': 13} | {'clock': 301} |
 | microturn-smoke3.jsonl | 6 | 266 | 249/466 | 97/149 | 0 | {'continue': 129, 'idle': 82, 'wait': 27, 'respond': 18, 'stop': 9, 'backchannel': 1} | {'clock': 266} |

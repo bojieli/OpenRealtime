@@ -1,0 +1,25 @@
+{
+  "schema": 2,
+  "profile": "microturn-nemotron-qwen3-kyutai",
+  "profile_sha256": "6e5e05e4f95beb42ce3343d553a744aeb96f0223e4267df940915e1901fe6607",
+  "binary_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+  "binary": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+  "revision": "cd5ccf39ae294c5595fb1ec1a871b8ca04e3b6e0",
+  "tree_modified": true,
+  "started": "2026-09-22T14:49:41.737948+00:00",
+  "load_average": [
+    "65.88",
+    "39.67",
+    "26.48"
+  ],
+  "gpu_memory_mib": "63699",
+  "fdb_per_category": 2,
+  "fdbench_conversations": 2,
+  "expected_results": [
+    "fdb-user_interruption.json",
+    "fdb-user_backchannel.json",
+    "fdb-background_speech.json",
+    "fdb-talking_to_other.json",
+    "fdbench.json"
+  ]
+}

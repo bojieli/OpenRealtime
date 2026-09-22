@@ -1,0 +1,199 @@
+{
+  "suite": "fd-bench",
+  "cell": {
+    "name": "microturn-nemotron-qwen3-kyutai",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "ca0ca7868814d83b866a45da13a399bb7386e539",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T14:52:43Z",
+    "finished_at": "2026-09-22T14:54:25Z"
+  },
+  "expected_tasks": 293,
+  "tasks": [
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_1",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 440,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1098.6825000000026,
+        "response_latency_p95_ms": 1302.2485500000005,
+        "turn_end_lead_ms": 1920.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_10",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 280,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 644.5345000000016,
+        "response_latency_p95_ms": 758.6306500000002,
+        "turn_end_lead_ms": 1688.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 2,
+    "failed": 0,
+    "passed": 0,
+    "pass_rate": 0,
+    "complete": false,
+    "incompleteness": "291 of 293 tasks were not attempted",
+    "distributions": {
+      "answered": {
+        "count": 2,
+        "unit": "count",
+        "min": 3,
+        "p50": 3,
+        "p90": 3,
+        "p95": 3,
+        "p99": 3,
+        "max": 3,
+        "mean": 3
+      },
+      "missed_turns": {
+        "count": 2,
+        "unit": "count",
+        "min": 1,
+        "p50": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "mean": 1
+      },
+      "overlap_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 280,
+        "p50": 360,
+        "p90": 424,
+        "p95": 432,
+        "p99": 438.40000000000003,
+        "max": 440,
+        "mean": 360
+      },
+      "overrun_turns": {
+        "count": 2,
+        "unit": "count",
+        "min": 2,
+        "p50": 2.5,
+        "p90": 2.9000000000000004,
+        "p95": 2.9499999999999997,
+        "p99": 2.9899999999999998,
+        "max": 3,
+        "mean": 2.5
+      },
+      "premature_turns": {
+        "count": 2,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "premature_turns_after_speech_ended": {
+        "count": 2,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "response_latency_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 644.5345000000016,
+        "p50": 871.6085000000021,
+        "p90": 1053.2677000000026,
+        "p95": 1075.9751000000026,
+        "p99": 1094.1410200000028,
+        "max": 1098.6825000000026,
+        "mean": 871.6085000000021
+      },
+      "response_latency_p95_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 758.6306500000002,
+        "p50": 1030.4396000000004,
+        "p90": 1247.8867600000005,
+        "p95": 1275.0676550000003,
+        "p99": 1296.8123710000004,
+        "max": 1302.2485500000005,
+        "mean": 1030.4396000000004
+      },
+      "turn_end_lead_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 1688.0208333333321,
+        "p50": 1804.020833333334,
+        "p90": 1896.8208333333355,
+        "p95": 1908.4208333333356,
+        "p99": 1917.7008333333356,
+        "max": 1920.0208333333358,
+        "mean": 1804.020833333334
+      },
+      "turns": {
+        "count": 2,
+        "unit": "count",
+        "min": 4,
+        "p50": 4,
+        "p90": 4,
+        "p95": 4,
+        "p99": 4,
+        "max": 4,
+        "mean": 4
+      }
+    }
+  }
+}
