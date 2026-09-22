@@ -11,6 +11,12 @@ pass count is not a current performance guarantee.
 
 ## Questions and reading paths
 
+The proposed [interaction capability study](interaction-capability-study.md)
+separates temporal representation, acoustic evidence, policy learning, and
+speech planning. Its [implementation and GPU plan](interaction-capability-plan.md)
+distinguishes existing runnable smoke checks from the new experiments still to
+build. It reports no new measurements.
+
 | Question | Start here | Supporting detail |
 | --- | --- | --- |
 | What behavior is the project trying to demonstrate? | [12-scenario demo gallery](demos.md) | [Scenario definitions](../bench/scenario/scenarios.go) |

@@ -57,6 +57,8 @@ or investigate a failure.
 
 | Record | Read it for |
 | --- | --- |
+| [Interaction capability study](interaction-capability-study.md) | Test the limits of timed sparse representations, joint micro-turn policies, and incremental speech planning |
+| [Capability study implementation and GPU plan](interaction-capability-plan.md) | Staged implementation, controlled treatments, and an existing RTX Pro baseline smoke run |
 | [Streaming and full-duplex survey and plan](full-duplex-streaming-plan.md) | September 2026 model/API survey, composable streaming contracts, and the RTX Pro evaluation roadmap |
 | [Streaming and full-duplex integration: results](full-duplex-results.md) | What the plan's first execution pass built, measured on the RTX Pro, and could not run, with deployment profiles |
 | [Expanded open-model survey](open-duplex-models-survey.md) | native duplex agents, turn prediction, speaker/overlap perception, audio understanding, and additional integration priorities |
