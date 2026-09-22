@@ -494,6 +494,7 @@ Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified run
 
 | profile | interrupt yield | backchannel hold | background hold | other-talk hold | yield p50 ms | FD-Bench answered/turns | premature | resp p50 ms | load |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cascade-nemotron-qwen3-fish | 1/1 (+1 n/a) | 0/0 (+2 n/a) | 1/1 (+1 n/a) | 2/2 (+0 n/a) | 245 | 7/8 | 0 | 1125 | ['33.31', '35.87', '34.92'] |
 | closed-gemini-live | - | - | - | - | - | - | - | - | 218.92 247.93 236.45 |
 | closed-gemini-live | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
 | closed-openai-live | - | - | - | - | - | - | - | - | 265.13 254.39 239.89 |
@@ -503,6 +504,11 @@ Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified run
 | microturn-nemotron-qwen3-kyutai | 2/2 (+0 n/a) | 2/2 (+0 n/a) | 1/2 (+0 n/a) | 2/2 (+0 n/a) | 44 | 6/8 | 0 | 872 | ['65.88', '39.67', '26.48'] |
 | microturn-voxtral-qwen3-kyutai | - | - | - | - | - | - | - | - | 145.43 146.51 120.52 |
 | microturn-voxtral-qwen3-kyutai | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
+| native-duplexcascade | - | - | - | - | - | - | - | - | ['38.03', '36.42', '35.55'] |
+| native-duplexcascade | **FAILED (see finished.json)** | | | | | | | | |
+| native-minicpm-o | 0/2 (+0 n/a) | 1/1 (+1 n/a) | 2/2 (+0 n/a) | 2/2 (+0 n/a) | 11497 | 6/8 | 0 | 891 | ['71.73', '68.43', '51.84'] |
+| native-moshi | 1/2 (+0 n/a) | 1/1 (+1 n/a) | 0/0 (+2 n/a) | 0/0 (+2 n/a) | 1578 | 8/8 | 4 | 210 | ['36.58', '34.54', '34.90'] |
+| native-personaplex | 2/2 (+0 n/a) | 2/2 (+0 n/a) | 0/0 (+2 n/a) | 0/0 (+2 n/a) | 335 | 8/8 | 0 | 212 | ['9.08', '8.79', '10.39'] |
 | native-voicechat | - | - | - | - | - | - | - | - | ['9.49', '18.16', '23.06'] |
 | native-voicechat | **FAILED (see finished.json)** | | | | | | | | |
 <!-- end generated -->
