@@ -488,6 +488,9 @@ class SpeechContext:
     async def append(self, text: str) -> None:
         await self.socket.send(json.dumps({"type": "text.append", "context_id": self.id, "text": text}))
 
+    async def flush(self) -> None:
+        await self.socket.send(json.dumps({"type": "text.flush", "context_id": self.id}))
+
     async def end(self) -> None:
         await self.socket.send(json.dumps({"type": "text.end", "context_id": self.id}))
 
