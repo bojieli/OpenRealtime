@@ -1,0 +1,40 @@
+{
+  "finished": "2026-09-22T16:14:30.108002+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; 2 task errors",
+    "signal 15"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-duplexcascade",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260922T161253Z-7yptv1t4/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "2 task errors"
+    }
+  },
+  "load_average_end": [
+    "38.02",
+    "34.48",
+    "27.11"
+  ],
+  "sha256": {
+    "run.json": "571a5e39d3862b62589341f26472be6c237731b23a74f69d81ef2848f50fbade",
+    "profile.yaml": "65cb5b10d5717b9d7ca1dfaa30a7ece1740b28d688ca2abc6957b23a6fb494cc",
+    "fdb-user_interruption.json": "1617023fd8f8f986fb4c59177cd75a8fcd518817e84aeda15c14dae25385b6b1",
+    "fdb-user_backchannel.json": "d64054d811cee4c3201f19970817711136730ca4e68b9aa8b1e8f5c061c79d3d"
+  }
+}

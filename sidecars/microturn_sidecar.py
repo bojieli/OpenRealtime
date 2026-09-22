@@ -477,7 +477,9 @@ class SpeechContext:
             message = json.loads(raw)
             kind = message.get("type")
             if kind == "audio":
-                on_audio(base64.b64decode(message["pcm16"]))
+                result = on_audio(base64.b64decode(message["pcm16"]))
+                if asyncio.iscoroutine(result):
+                    await result
             elif kind in ("audio.done", "context.cancelled"):
                 on_audio(None)
                 return

@@ -40,5 +40,15 @@ class PacingTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):player.append(b'x')
         with self.assertRaises(BufferError):player.append(b'xx'*101)
 
+    async def test_backpressure_wait_is_cancelled_without_stale_suffix(self):
+        player=PacedAudio(lambda pcm:None,rate=1000,max_buffer_seconds=.1)
+        task=asyncio.create_task(player.put(b'xx'*300))
+        await asyncio.sleep(.01)
+        self.assertEqual(len(player.buffer),200)
+        self.assertFalse(task.done())
+        player.cancel()
+        await asyncio.wait_for(task,.2)
+        self.assertEqual(len(player.buffer),0)
+
 
 if __name__=='__main__':unittest.main()

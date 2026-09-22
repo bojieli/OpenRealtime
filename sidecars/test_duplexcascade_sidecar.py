@@ -1,4 +1,5 @@
 import io
+import asyncio
 import unittest
 import threading
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ class ProtocolTests(unittest.TestCase):
     def test_model_cancel_discards_queued_audio_and_ends_once(self):
         sidecar=self.sidecar()
         sidecar._text('Paris')
-        sidecar._audio(b'\x01\x00'*2400)
+        asyncio.run(sidecar._audio(b'\x01\x00'*2400))
         sidecar._cancel()
         sidecar._cancel()
         self.assertEqual(len(sidecar.player.buffer),0)
@@ -36,7 +37,7 @@ class ProtocolTests(unittest.TestCase):
     def test_unexpected_synthesis_rate_is_rejected(self):
         sidecar=self.sidecar()
         sidecar.speech.context.sample_rate=48000
-        with self.assertRaises(ValueError):sidecar._audio(b'\x00\x00')
+        with self.assertRaises(ValueError):asyncio.run(sidecar._audio(b'\x00\x00'))
 
     def test_failed_session_releases_model_for_next_connection(self):
         class Failed(NativeCascade):

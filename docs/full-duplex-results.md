@@ -152,6 +152,13 @@ The retained `audio-interrupt.json` includes the concatenated output waveform's
 hash (6.08 s at 24 kHz). Packet arrival and concatenated output do not establish
 rendered overlap or audible yield latency.
 
+The first public native-cascade smoke attempt failed: persistent synthesis
+outran paced delivery and exceeded the bounded 30 s output queue. Its failed
+results are retained under `deploy/duplex/evidence/native-duplexcascade/`.
+The delivery path now applies backpressure to the synthesis reader instead of
+expanding the buffer; cancellation wakes a blocked producer and discards the
+old suffix. Public validation of that correction is pending.
+
 The new native sidecar also passed a real protocol question probe: “Paris,”
 2.0 s of paced output audio, one output turn boundary, and no protocol errors.
 First audible packets arrived 1.445 s after the supplied question ended.

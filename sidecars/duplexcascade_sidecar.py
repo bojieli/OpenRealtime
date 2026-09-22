@@ -115,13 +115,13 @@ class NativeCascade(Sidecar):
     def _context(self):
         return SpeechContext(self.args.tts,self.args.voice)
 
-    def _audio(self, pcm):
+    async def _audio(self, pcm):
         if pcm:
             if self.speech.context is not None and self.speech.context.sample_rate != self.output_rate:
                 raise ValueError('native profile requires 24 kHz synthesis')
             self.last_audio = time.monotonic()
             self.turn_audio = True
-            self.player.append(pcm)
+            await self.player.put(pcm)
 
     def _text(self,text):
         if text.strip():

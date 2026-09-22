@@ -19,6 +19,7 @@ class PacedAudio:
         self.limit = int(rate*max_buffer_seconds)*2
         self.buffer = bytearray()
         self.changed = asyncio.Event()
+        self.space = asyncio.Event()
         self.epoch = 0
         self.closed = False
         self.sent_samples = 0
@@ -36,10 +37,27 @@ class PacedAudio:
         self.buffer.extend(pcm)
         self.changed.set()
 
+    async def put(self, pcm):
+        """Wait for bounded capacity; cancellation discards the pending suffix."""
+        if pcm is None: return
+        if len(pcm) % 2: raise ValueError('PCM16 chunk has a partial sample')
+        epoch = self.epoch
+        offset = 0
+        while offset < len(pcm) and not self.closed and epoch == self.epoch:
+            available = (self.limit-len(self.buffer))//2*2
+            if not available:
+                self.space.clear()
+                await self.space.wait()
+                continue
+            end = min(len(pcm),offset+available)
+            self.append(pcm[offset:end])
+            offset = end
+
     def cancel(self):
         self.discarded_samples += len(self.buffer)//2
         self.buffer.clear()
         self.epoch += 1
+        self.space.set()
         self.changed.set()
 
     def close(self):
@@ -70,6 +88,7 @@ class PacedAudio:
                 continue
             frame = bytes(self.buffer[:self.frame_bytes])
             del self.buffer[:len(frame)]
+            self.space.set()
             self.send(frame)
             samples = len(frame)//2
             self.sent_samples += samples

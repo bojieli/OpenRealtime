@@ -22,7 +22,7 @@ case "${1:-status}" in
  start)
   owned && { echo "already running $(cat "$PIDFILE")"; exit 0; }
   [[ "$(git -C "$SOURCE" rev-parse HEAD)" == "$REV" ]] || { echo 'unexpected source revision' >&2; exit 1; }
-  [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || { echo 'modified DuplexCascade source' >&2; exit 1; }
+  [[ -z "$(git -C "$SOURCE" status --porcelain -- . ":(exclude)__pycache__")" ]] || { echo 'modified DuplexCascade source' >&2; exit 1; }
   [[ -f "$SNAPSHOT/model_state.safetensors" && -f "$BASE/config.json" ]] || { echo 'missing local checkpoint or base model' >&2; exit 1; }
   "$PYTHON" - "$PORT" <<'PY'
 import socket,sys
