@@ -118,10 +118,11 @@ latency and cancellation alone do not establish speech quality.
 The micro-turn cascade runs as one duplex model
 (`sidecars/microturn_sidecar.py`): streaming ASR, a controller asked every
 500 ms, a streamed answer, and incremental synthesis, with its own floor.
-DuplexCascade's released checkpoint is gated, so the controller is an ordinary
-instruct model (Qwen3-8B) driven through the same protocol - the plan's
-"orchestrated micro-turns" fallback, and the sidecar refuses to pretend
-otherwise.
+The measurements below use an ordinary instruct model (Qwen3-8B), the plan's
+"orchestrated micro-turns" fallback; they do not establish released DuplexCascade
+behavior. Access to DuplexCascade and PersonaPlex was verified on 2026-09-22
+using the saved Hugging Face login after removing an environment credential
+override. Their pinned checkpoint downloads and integrations are now in progress.
 
 What the clock costs and what it delivers, from the traces of the end-to-end
 runs (`python tools/duplexmodels/microturn_trace.py`):
@@ -337,9 +338,9 @@ model itself was not measured here.
 | VibeVoice-Realtime 0.5B, Qwen3-TTS, Fish S2 Pro | incremental TTS | `speech-socket` services | see the synthesis section |
 | Deepgram Aura | incremental TTS (closed) | `speech-socket` bridge | measured |
 | Qwen3-8B as micro-turn controller | micro-turn LLM | `microturn` sidecar, orchestrated mode | measured end to end |
-| DuplexCascade | micro-turn LLM | `microturn` sidecar, native mode | blocked: gated checkpoint |
+| DuplexCascade | micro-turn LLM | `microturn` sidecar, native mode | access verified; integration pending |
 | Moshi, VoiceChat 11B, MiniCPM-o 4.5, Lychee-FD, Freeze-Omni | native duplex | sidecar protocol v1 | see the native section; all pass mock conformance |
-| PersonaPlex 7B | native duplex | sidecar protocol v1 | blocked: gated checkpoint |
+| PersonaPlex 7B | native duplex | sidecar protocol v1 | access verified; integration pending |
 | Smart Turn v3.2, LiveKit, VAP, DualTurn, X2-Turn, SoulX-Duplug | interaction prediction | turn service + `-turn-end-url` hook | measured (I0, I1) |
 | Sortformer + multitalker Parakeet | speaker attribution | offline pipeline | see the perception section |
 | Audio Flamingo 3 | audio observer | bounded observer service | see the perception section |
@@ -352,8 +353,8 @@ model itself was not measured here.
 
 | Item | Status | Reason |
 | --- | --- | --- |
-| DuplexCascade checkpoint (cell C1 as released) | blocked | `sbintuitions/DuplexCascade` is gated on the Hub and this account is not authorised; accepting its terms is the account owner's decision. The micro-turn sidecar refuses `--llm duplexcascade` with that reason and runs the orchestrated fallback |
-| PersonaPlex 7B (cell N0 second half) | blocked | `nvidia/personaplex-7b-v1` gated the same way |
+| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint download started; native micro-turn integration and GPU validation pending |
+| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint download started; prompt-aware integration and GPU validation pending |
 | User's own micro-turn LLM and TTS (cell C2) | pending | No checkpoint locations were provided |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |

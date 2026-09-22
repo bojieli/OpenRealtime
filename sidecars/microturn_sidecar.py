@@ -560,8 +560,8 @@ class MicroTurnSidecar(Sidecar):
 
     def configure(self, hello) -> None:
         if self.args.llm != "orchestrated" and not self.args.mock:
-            raise RuntimeError("--llm duplexcascade needs the gated sbintuitions/DuplexCascade checkpoint, "
-                               "which this deployment cannot download; use --llm orchestrated")
+            raise RuntimeError("--llm duplexcascade is not integrated in this sidecar yet; "
+                               "use --llm orchestrated for the explicit fallback")
         if self.input_rate != ASR_RATE:
             self.resampler = LinearResampler(self.input_rate, ASR_RATE)
         if not self.args.mock:

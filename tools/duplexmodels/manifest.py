@@ -34,12 +34,12 @@ ASSETS = {
                         "Qwen/Qwen3-TTS-Tokenizer-12Hz"],
     "native-duplex": ["kyutai/moshiko-pytorch-bf16", "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B",
                       "openbmb/MiniCPM-o-4_5", "HIT-TMG/Lychee-FD", "stepfun-ai/Step-Audio-2-mini",
-                      "VITA-MLLM/Freeze-Omni", "BayLing-Models/BayLing-Duplex"],
+                      "VITA-MLLM/Freeze-Omni", "BayLing-Models/BayLing-Duplex", "nvidia/personaplex-7b-v1"],
     "interaction": ["pipecat-ai/smart-turn-v3", "livekit/turn-detector", "anyreach-ai/dualturn-qwen2.5-mimi-0.5B"],
     "speaker": ["nvidia/diar_streaming_sortformer_4spk-v2.1", "nvidia/multitalker-parakeet-streaming-0.6b-v1"],
     "observer": ["nvidia/audio-flamingo-3", "nvidia/audio-flamingo-3-hf"],
     "task": ["kyutai/hibiki-2b-pytorch-bf16", "facebook/seamless-streaming", "tsinghua-ee/ELLSA"],
-    "gated-not-downloaded": ["sbintuitions/DuplexCascade", "nvidia/personaplex-7b-v1"],
+    "microturn-llm": ["sbintuitions/DuplexCascade"],
 }
 
 
