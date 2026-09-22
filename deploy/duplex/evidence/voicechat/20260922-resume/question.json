@@ -1,0 +1,49 @@
+{
+  "label": "voicechat-resume-question",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 12.082
+  },
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.613,
+  "first_audio_s": 5.813183288089931,
+  "first_audio_latency_s": 1.2,
+  "audible_segments": [
+    [
+      1.955,
+      3.17
+    ],
+    [
+      5.813,
+      8.886
+    ]
+  ],
+  "turn_done_s": [
+    1.183,
+    3.138
+  ],
+  "text_done": [
+    {
+      "t": 3.138,
+      "text": "Hi! How can I help you today?"
+    }
+  ],
+  "text_deltas": "Hi! How can I help you today?You can save money by making a budget and tracking your expenses.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 29.84
+}

@@ -1,0 +1,12 @@
+{
+  "source_revision": "9005d789033b8c3ec5876a7a68c4e2d9238f5c69",
+  "weights_revision": "a4c40ca5b4fe77db13e9840ca4a2b91becf030c8",
+  "repository_revision": "eb19fd4a22340f0060024e0abd434159011a1afd",
+  "scope": "Single-session sidecar probes; not public-Realtime end-to-end acceptance. No actual rendered-playback acknowledgments.",
+  "sha256": {
+    ".runtime/duplex-plan/results/native/voicechat-harness.py": "5b7fe5e9f0817ee82434689b153279ab076c5a0e95c5de2be0be25a24e7b7195",
+    "sidecars/voicechat_sidecar.py": "2286089dbe07aec0dab7b6ad8eb945548538bb8350dd069ba0a0cd95187e032e",
+    ".runtime/duplex-plan/results/native/voicechat-resume-question.events.jsonl": "2373cfe38ee7722a2b20f8ac38c6160d8e64001ea10c7b806dfc828c5cd6c25b",
+    ".runtime/duplex-plan/results/native/voicechat-resume-tool.events.jsonl": "4b2616287a40416ae77239eeecee18713888f44b023d7f3d3729d50dceb3dc9c"
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "label": "voicechat-resume-tool",
+  "scenario": "tool",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 0.737
+  },
+  "question": "/home/ubuntu/.cache/huggingface/hub/models--nvidia--NVIDIA-NemotronLabs-VoiceChat-11B/snapshots/a4c40ca5b4fe77db13e9840ca4a2b91becf030c8/tool_call.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 13.0,
+  "first_audio_s": 15.233831398189068,
+  "first_audio_latency_s": 2.234,
+  "audible_segments": [
+    [
+      1.872,
+      2.269
+    ],
+    [
+      2.899,
+      3.222
+    ],
+    [
+      3.711,
+      5.466
+    ],
+    [
+      15.234,
+      17.572
+    ],
+    [
+      21.232,
+      23.013
+    ]
+  ],
+  "turn_done_s": [
+    0.833,
+    3.153,
+    6.139,
+    14.757
+  ],
+  "text_done": [
+    {
+      "t": 3.153,
+      "text": "Hi there! How can I help you today?"
+    },
+    {
+      "t": 6.139,
+      "text": "Hi! How can I help you today?"
+    }
+  ],
+  "text_deltas": "Hi there! How can I help you today?Hi! How can I help you today?I can generate a random number between one and fifty for you.The random number is thirty seven.",
+  "tool_calls": [
+    {
+      "t": 14.757,
+      "call_id": "call_653a1541f44d4ef995c44ad3dc8b8371",
+      "name": "generate_random_number",
+      "arguments": {
+        "min": 1,
+        "max": 50
+      }
+    }
+  ],
+  "tool_results": [
+    {
+      "t": 18.76,
+      "call_id": "call_653a1541f44d4ef995c44ad3dc8b8371",
+      "name": "generate_random_number",
+      "output": "The random number is 37."
+    }
+  ],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 44.8
+}

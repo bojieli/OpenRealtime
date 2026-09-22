@@ -163,8 +163,14 @@ Native validation remains incomplete. The retained component artifacts under
 - **VoiceChat:** the 8,192-position talker failed startup with a 1 GiB KV
   cache; 2 GiB allowed loading. The originally pinned vLLM-Omni `9ebef4b`
   then rejected duplex WebSockets because its new plugin framework disables
-  the legacy VoiceChat integration. Validation of the earlier `9005d789`
-  serving revision is in progress. HTTP health is not a duplex acceptance test.
+  the legacy VoiceChat integration. On the earlier `9005d789` revision, a
+  30-second real question session answered with 1.2 s measured first audible
+  response latency after the question; a separate 45-second session called
+  `generate_random_number`, accepted a result delayed four seconds, and said
+  “The random number is thirty seven.” Both probes recorded no protocol
+  errors. [Retained summaries](../deploy/duplex/evidence/voicechat/20260922-resume/)
+  are sidecar-level evidence. Public-Realtime tool handling, correction,
+  duplicate calls, rendered playback and endurance remain unverified.
 
 ## Interaction prediction (P6)
 
