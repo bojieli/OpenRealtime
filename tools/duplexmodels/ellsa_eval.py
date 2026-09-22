@@ -72,6 +72,12 @@ def setup_environment() -> None:
 def patch_attention(implementation: str) -> None:
     from emu3.mllm import Emu3ForMix
 
+    if implementation == "sdpa":
+        from emu3.mllm.modeling_emu3_mix import Emu3SdpaAttention
+        from ellsa_attention import joint_sdpa
+
+        Emu3SdpaAttention._flash_attention_forward = joint_sdpa
+
     original = Emu3ForMix.from_pretrained.__func__
 
     def from_pretrained(cls, *args, **kwargs):
