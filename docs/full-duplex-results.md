@@ -435,7 +435,12 @@ Native validation remains incomplete. The retained component artifacts under
   reliable interruption handling. The [complete background-speech category](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-background/)
   processed 100 recordings without task errors: 80/82 applicable recordings
   passed the hold criterion, two failed it, and 18 were not applicable.
-  Other-talk and the selected FD-Bench condition remain pending.
+  The [complete talking-to-other category](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-other-talk/)
+  processed 100 recordings without task errors: 77/80 applicable recordings
+  passed the hold criterion, three failed it, and 20 were not applicable.
+  All four FDB category commands have finished, but the interruption category
+  remains incomplete because of its protocol error. The selected
+  293-conversation FD-Bench condition is still running.
   The binding fix at `ea210076`
   also preserves standalone whitespace after receiver validation, avoiding
   concatenated words and duplicate final text; its regression passed, but

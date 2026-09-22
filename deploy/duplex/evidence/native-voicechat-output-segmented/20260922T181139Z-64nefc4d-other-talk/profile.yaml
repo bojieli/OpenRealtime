@@ -1,0 +1,10 @@
+# Experimental VoiceChat with adapter output segmentation: 800 ms decoded
+# silence after audible speech. These boundaries are not model EOS decisions.
+binding: duplex
+sidecar: >-
+  .runtime/duplex-plan/venvs/vllm-omni-native/bin/python sidecars/voicechat_sidecar.py
+  --server ws://127.0.0.1:9140/v1/realtime --output-quiet-ms 800
+sidecar-protocol: 3
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
