@@ -42,18 +42,21 @@ start() {
 # GPU room is waited for *outside* the lease: holding the single large-model
 # lease while waiting starves every other large model on this host.
 _attempts() {
-  local attempt=1 started elapsed
+  local attempt=1 started elapsed status
   while (( attempt <= ${MINICPM_DUPLEX_ATTEMPTS:-4} )); do
     echo "=== attempt $attempt"
     _wait_for_memory || return 1
     started=$SECONDS
-    flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/minicpm-o-duplex.sh" _run "$@"
+    # Capture failure explicitly: under set -e a bare flock failure exits
+    # before the retry path, including a capacity race after lease acquisition.
+    status=0
+    flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/minicpm-o-duplex.sh" _run "$@" || status=$?
     elapsed=$((SECONDS - started))
     if (( elapsed > 120 )); then
       echo "=== sidecar exited after ${elapsed}s; not retrying"
-      return 0
+      return "$status"
     fi
-    echo "=== sidecar did not reach a serving state (${elapsed}s); retrying"
+    echo "=== sidecar did not reach a serving state (${elapsed}s, exit $status); retrying"
     attempt=$((attempt + 1))
     sleep 10
   done
