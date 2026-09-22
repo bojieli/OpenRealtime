@@ -120,7 +120,36 @@ RESULTS_PERCEPTION
 
 ## End-to-end voice agent performance (P9)
 
-RESULTS_E2E
+Each cell is one profile driven through the public Realtime protocol: the same
+number of FDB v1.5 recordings from each of its four categories, then an
+FD-Bench slice. "n/a" recordings are those where the agent was not speaking
+when the event arrived, which is a latency failure of a different kind and is
+counted separately rather than scored.
+
+<!-- generated: e2e -->
+| profile | interrupt yield | backchannel hold | background hold | other-talk hold | yield p50 ms | FD-Bench answered/turns | premature | resp p50 ms | load |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| microturn-clock-only | 0/8 (+0 n/a) | - | - | - | 1854 | - | - | - | 222.01 200.98 160.93 |
+| microturn-clock-only | **INCOMPLETE (no finished.json)** | | | | | | | | |
+| microturn-voxtral-qwen3-kyutai | 8/8 (+0 n/a) | 7/8 (+0 n/a) | 7/7 (+1 n/a) | 7/7 (+1 n/a) | 55 | 31/55 | 0 | 1556 | 145.43 146.51 120.52 |
+| microturn-voxtral-qwen3-kyutai | **MIXED (results newer than the run that finished)** | | | | | | | | |
+<!-- end generated -->
+
+The clock's own evidence for every traced run:
+
+<!-- generated: microturn -->
+| trace | sessions | ticks | evidence wait p50/p90 ms | decision p50/p90 ms | over tick | decisions | triggers |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| microturn-clock-only.jsonl | 14 | 787 | 229/449 | 116/182 | 0 | {'continue': 570, 'idle': 110, 'wait': 61, 'respond': 32, 'stop': 14} | {'clock': 787} |
+| microturn-smoke.jsonl | 4 | 216 | 238/413 | 108/188 | 0 | {'continue': 148, 'wait': 25, 'idle': 22, 'respond': 12, 'stop': 8, 'backchannel': 1} | {'clock': 216} |
+| microturn-smoke2.jsonl | 6 | 301 | 266/448 | 96/136 | 0 | {'continue': 139, 'wait': 85, 'idle': 45, 'respond': 19, 'stop': 13} | {'clock': 301} |
+| microturn-smoke3.jsonl | 6 | 266 | 249/466 | 97/149 | 0 | {'continue': 129, 'idle': 82, 'wait': 27, 'respond': 18, 'stop': 9, 'backchannel': 1} | {'clock': 266} |
+| microturn-smoke4.jsonl | 6 | 304 | 186/447 | 131/212 | 0 | {'continue': 196, 'idle': 42, 'wait': 26, 'respond': 21, 'stop': 17, 'backchannel': 2} | {'clock': 273, 'word': 31} |
+| microturn-smoke5.jsonl | 12 | 623 | 161/380 | 143/203 | 0 | {'continue': 335, 'idle': 154, 'wait': 50, 'respond': 48, 'stop': 36} | {'clock': 576, 'word': 47} |
+| microturn-voxtral-qwen3-kyutai.jsonl | 84 | 5017 | 175/422 | 123/198 | 0 | {'continue': 2616, 'idle': 1121, 'wait': 602, 'respond': 384, 'stop': 294} | {'clock': 4540, 'word': 416, 'pause': 61} |
+| mt-fdbench2.jsonl | 8 | 1004 | 244/459 | 160/239 | 0 | {'continue': 572, 'wait': 206, 'idle': 130, 'respond': 55, 'stop': 41} | {'clock': 921, 'word': 83} |
+| mt-fdbench3.jsonl | 8 | 1039 | 180/458 | 93/163 | 0 | {'continue': 557, 'wait': 210, 'idle': 137, 'respond': 73, 'stop': 62} | {'clock': 866, 'word': 114, 'pause': 59} |
+<!-- end generated -->
 
 ## Blocked and deferred
 
