@@ -1,0 +1,49 @@
+{
+  "label": "run",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "sbintuitions/DuplexCascade/native-cascade",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_vad",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 61.697
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    34.80224609375,
+    31.8154296875,
+    23.7666015625
+  ],
+  "question": ".runtime/duplex-plan/data/ellsa/ELLSA_test_data/llama_questions/1.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.022,
+  "first_audio_s": 5.467524724081159,
+  "first_audio_latency_s": 1.445,
+  "audible_segments": [
+    [
+      5.468,
+      7.218
+    ]
+  ],
+  "turn_done_s": [
+    7.55
+  ],
+  "text_done": [
+    {
+      "t": 7.55,
+      "text": "The capital of France is Paris."
+    }
+  ],
+  "text_deltas": "The capital of France is Paris.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 2.0
+}

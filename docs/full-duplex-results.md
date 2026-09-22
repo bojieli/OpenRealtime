@@ -152,6 +152,14 @@ The retained `audio-interrupt.json` includes the concatenated output waveform's
 hash (6.08 s at 24 kHz). Packet arrival and concatenated output do not establish
 rendered overlap or audible yield latency.
 
+The new native sidecar also passed a real protocol question probe: “Paris,”
+2.0 s of paced output audio, one output turn boundary, and no protocol errors.
+First audible packets arrived 1.445 s after the supplied question ended.
+Cold model loading plus warm-up made the handshake 61.697 s; persistent serving
+is still needed before practical public benchmark runs. The output boundary
+uses the documented thinking/drain/quiet adapter policy, not a native EOS or
+playback receipt. Evidence: `sidecar-question.json`.
+
 The released DuplexCascade checkpoint now passes a text-only GPU micro-turn
 probe with strict tensor loading after 112 shape-checked PEFT base-layer key
 renames. It emits `<|user is talking|>` for two incoming question chunks, then
