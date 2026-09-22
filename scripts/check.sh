@@ -205,7 +205,7 @@ check_python_sidecars() {
   if python3 -c 'import pytest' >/dev/null 2>&1; then
     PYTHONPATH="${repository_root}/sidecars" python3 -m pytest -q \
       sidecars/test_protocol.py sidecars/test_qwen3_omni_sidecar.py \
-      tools/fish15/test_audio_contract.py
+      sidecars/test_microturn_sidecar.py tools/fish15/test_audio_contract.py
     return
   fi
   echo "NOT VERIFIED: Python sidecar conformance requires pytest" >&2
