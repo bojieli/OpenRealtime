@@ -131,6 +131,10 @@ class Session:
                     entry.update({k: v for k, v in message.header.items() if k not in ("type",)})
                 self.events.append(entry)
                 on_frame(message, t)
+        except Exception as error:
+            self.events.append({"t": round(self.now(), 3), "type": "error",
+                                "code": "probe_reader_failed",
+                                "message": f"{type(error).__name__}: {error}"})
         finally:
             self.closed.set()
 
@@ -347,6 +351,10 @@ def main() -> None:
             handle.setframerate(session.output_rate)
             handle.writeframes(bytes(session.output))
     print(json.dumps({k: summary[k] for k in summary if k not in ("logs", "ready")}, indent=1, ensure_ascii=False)[:3000])
+    # A completed observation is not a behavioral pass. Still, protocol or
+    # transport errors must fail orchestration after preserving the evidence.
+    if summary["errors"]:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
