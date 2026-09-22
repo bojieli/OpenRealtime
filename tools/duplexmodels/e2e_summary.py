@@ -89,7 +89,8 @@ def staleness(directory: Path) -> str:
         if completion.get("exit_code") != 0 or completion.get("errors"):
             return "FAILED (see finished.json)"
         expected = [f"fdb-{category}.json" for category in CATEGORIES]
-        if run.get("fdbench_conversations", 0):
+        if (run.get("fdbench_conversations", 0) or
+                run.get("campaign_scope") == "all FDB categories and complete cosyvoice2-single-round-combine-med"):
             expected.append("fdbench.json")
         if run.get("expected_results") != expected:
             return "INVALID result inventory"
@@ -104,6 +105,27 @@ def staleness(directory: Path) -> str:
         return ""
     except (OSError, ValueError, TypeError, AttributeError) as error:
         return f"INVALID metadata: {error}"
+
+
+
+def coverage(directory: Path, expected: list[str]) -> str:
+    """Describe observed population coverage independently of runner limits."""
+    if not expected:
+        return "unknown population"
+    incomplete = []
+    for name in expected:
+        data = json.loads((directory / name).read_text())
+        tasks = data.get("tasks", [])
+        count = data.get("expected_tasks")
+        ids = [task.get("id") for task in tasks]
+        if (not isinstance(count, int) or count <= 0 or len(tasks) != count
+                or len(set(ids)) != count or any(not identity for identity in ids)
+                or any(task.get("error") for task in tasks)
+                or data.get("summary", {}).get("complete") is not True):
+            incomplete.append(name)
+    if incomplete:
+        return "subset or incomplete population; NOT REPORTABLE as a full campaign"
+    return "complete selected populations; other conditions and acceptance criteria remain separate"
 
 
 def main() -> None:
@@ -125,10 +147,11 @@ def main() -> None:
         rows[name] = {"run": run, "path": str(directory.resolve()),
                       "fdb": fdb(directory) if not integrity else {},
                       "fdbench": fdbench(directory) if not integrity else {},
-                      "integrity": integrity}
+                      "integrity": integrity,
+                      "coverage": coverage(directory, run.get("expected_results", [])) if not integrity else "unverified"}
     columns = ["profile", "interrupt yield", "backchannel hold", "background hold", "other-talk hold",
-               "yield p50 ms", "FD-Bench answered/turns", "premature", "resp p50 ms", "load"]
-    print("Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified runs are excluded.\n")
+               "yield p50 ms", "FD-Bench answered/turns", "premature", "resp p50 ms", "load", "coverage"]
+    print("Coverage is checked against recorded task populations. Invalid or unverified runs are excluded.\n")
     print("| " + " | ".join(columns) + " |")
     print("|" + " --- |" * len(columns))
     for name, row in rows.items():
@@ -150,6 +173,7 @@ def main() -> None:
         latency = bench.get("response_latency_ms_p50")
         cells.append(f"{latency:.0f}" if latency is not None else "-")
         cells.append(str(row["run"].get("load_average", "?")))
+        cells.append(row["coverage"])
         print("| " + " | ".join(cells) + " |")
         if row["integrity"]:
             print(f"| {name} | **{row['integrity']}** |" + " |" * (len(columns) - 2))
