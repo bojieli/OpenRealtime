@@ -1,0 +1,12 @@
+# Micro-turn cascade cell: Kyutai STT 1B and Kyutai TTS 1.6B, the DuplexCascade reference stack (cell C1) with an orchestrated controller standing in for the gated checkpoint.
+binding: duplex
+sidecar: >-
+  .runtime/duplex-plan/venvs/microturn/bin/python sidecars/microturn_sidecar.py
+  --asr chunk --asr-url http://127.0.0.1:9112 --asr-model kyutai/stt-1b-en_fr --asr-delay-ms 500
+  --llm orchestrated --llm-url http://127.0.0.1:9100/v1 --llm-model qwen3-8b --tick-ms 500
+  --stop-on-words --sound-evidence --decide-on-pause
+  --tts-url ws://127.0.0.1:9125/v1/tts/stream
+  --trace .runtime/duplex-plan/traces/microturn-kyutaistt-qwen3-kyutai.jsonl
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

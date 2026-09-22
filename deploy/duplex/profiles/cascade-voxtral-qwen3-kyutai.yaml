@@ -1,0 +1,18 @@
+# Engine-floor cascade with the streaming recogniser and incremental
+# synthesiser the plan adds (P2/P3), everything local:
+#   Voxtral Mini 4B Realtime via the vllm-realtime recogniser (committed text)
+#   -> Qwen3-8B foreground and background (vLLM, thinking off)
+#   -> Kyutai TTS 1.6B via the speech-socket adapter (one context per segment).
+binding: cascade
+asr-provider: vllm-realtime
+asr-url: ws://127.0.0.1:9101/v1/realtime
+asr-model: voxtral-realtime
+fast-provider: vllm
+fast-url: http://127.0.0.1:9100/v1
+fast-model: qwen3-8b
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
+tts-provider: speech-socket
+tts-url: ws://127.0.0.1:9125/v1/tts/stream
+tts-model: kyutai/tts-1.6b-en_fr

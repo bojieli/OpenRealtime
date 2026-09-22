@@ -1,0 +1,320 @@
+{
+  "generated": "2026-09-22T11:30:41+00:00",
+  "cache": "/home/ubuntu/.cache/huggingface/hub",
+  "assets": [
+    {
+      "role": "llm",
+      "repository": "Qwen/Qwen3-8B",
+      "present": true,
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "bytes": 16397792053,
+      "license": "apache-2.0",
+      "hub_revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "gated": false
+    },
+    {
+      "role": "llm",
+      "repository": "Qwen/Qwen2-7B-Instruct",
+      "present": true,
+      "revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c",
+      "bytes": 15242797945,
+      "license": "apache-2.0",
+      "hub_revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c",
+      "gated": false
+    },
+    {
+      "role": "streaming-asr",
+      "repository": "mistralai/Voxtral-Mini-4B-Realtime-2602",
+      "present": true,
+      "revision": "2769294da9567371363522aac9bbcfdd19447add",
+      "bytes": 8874393091,
+      "license": "apache-2.0",
+      "hub_revision": "2769294da9567371363522aac9bbcfdd19447add",
+      "gated": false
+    },
+    {
+      "role": "streaming-asr",
+      "repository": "Qwen/Qwen3-ASR-0.6B",
+      "present": true,
+      "revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+      "bytes": 1880619678,
+      "license": "apache-2.0",
+      "hub_revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+      "gated": false
+    },
+    {
+      "role": "streaming-asr",
+      "repository": "nvidia/nemotron-speech-streaming-en-0.6b",
+      "present": true,
+      "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+      "bytes": 2473475723,
+      "license": "other",
+      "hub_revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+      "gated": false
+    },
+    {
+      "role": "streaming-asr",
+      "repository": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "present": true,
+      "revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+      "bytes": 2369103086,
+      "license": "other",
+      "hub_revision": "ea30d66debe3740a08b573244286791d423d6b3e",
+      "gated": false
+    },
+    {
+      "role": "streaming-asr",
+      "repository": "kyutai/stt-1b-en_fr",
+      "present": true,
+      "revision": "1c34c6b4f7e9299bb61985f145052ff131005dde",
+      "bytes": 2363195369,
+      "license": "cc-by-4.0",
+      "hub_revision": "1c34c6b4f7e9299bb61985f145052ff131005dde",
+      "gated": false
+    },
+    {
+      "role": "incremental-tts",
+      "repository": "kyutai/tts-1.6b-en_fr",
+      "present": true,
+      "revision": "f65439609986c392cb12df63938abcc550c3fb15",
+      "bytes": 4068492850,
+      "license": "cc-by-4.0",
+      "hub_revision": "f65439609986c392cb12df63938abcc550c3fb15",
+      "gated": false
+    },
+    {
+      "role": "incremental-tts",
+      "repository": "kyutai/tts-voices",
+      "present": true,
+      "revision": "323332d33f997de8394f24a193e1a76df720e01a",
+      "bytes": 361976326,
+      "license": null,
+      "hub_revision": "323332d33f997de8394f24a193e1a76df720e01a",
+      "gated": false
+    },
+    {
+      "role": "incremental-tts",
+      "repository": "FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+      "present": true,
+      "revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+      "bytes": 6753382465,
+      "license": "apache-2.0",
+      "hub_revision": "29e01c4e8d000f4bcd70751be16fa94bf3d85a18",
+      "gated": false
+    },
+    {
+      "role": "incremental-tts",
+      "repository": "microsoft/VibeVoice-Realtime-0.5B",
+      "present": true,
+      "revision": "6bce5f06044837fe6d2c5d7a71a84f0416bd57e4",
+      "bytes": 2035470640,
+      "license": "mit",
+      "hub_revision": "6bce5f06044837fe6d2c5d7a71a84f0416bd57e4",
+      "gated": false
+    },
+    {
+      "role": "incremental-tts",
+      "repository": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+      "present": true,
+      "revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+      "bytes": 2516106051,
+      "license": "apache-2.0",
+      "hub_revision": "5d83992436eae1d760afd27aff78a71d676296fc",
+      "gated": false
+    },
+    {
+      "role": "incremental-tts",
+      "repository": "Qwen/Qwen3-TTS-Tokenizer-12Hz",
+      "present": true,
+      "revision": "7dd38ad4e9bad454aae9cd937d0cd577604fe229",
+      "bytes": 682300739,
+      "license": "apache-2.0",
+      "hub_revision": "7dd38ad4e9bad454aae9cd937d0cd577604fe229",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "kyutai/moshiko-pytorch-bf16",
+      "present": true,
+      "revision": "2bfc9ae6e89079a5cc7ed2a68436010d91a3d289",
+      "bytes": 15760704992,
+      "license": "cc-by-4.0",
+      "hub_revision": "2bfc9ae6e89079a5cc7ed2a68436010d91a3d289",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B",
+      "present": true,
+      "revision": "a4c40ca5b4fe77db13e9840ca4a2b91becf030c8",
+      "bytes": 44398397358,
+      "license": "openmdw-1.1",
+      "hub_revision": "a4c40ca5b4fe77db13e9840ca4a2b91becf030c8",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "openbmb/MiniCPM-o-4_5",
+      "present": true,
+      "revision": "503e754207c94da6bb26850b4469f367c9ea3582",
+      "bytes": 20002632401,
+      "license": "apache-2.0",
+      "hub_revision": "503e754207c94da6bb26850b4469f367c9ea3582",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "HIT-TMG/Lychee-FD",
+      "present": true,
+      "revision": "ac06087bef70b33d4dfebf63a3eadadb4e024f33",
+      "bytes": 25630746830,
+      "license": "apache-2.0",
+      "hub_revision": "ac06087bef70b33d4dfebf63a3eadadb4e024f33",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "stepfun-ai/Step-Audio-2-mini",
+      "present": true,
+      "revision": "e36fdd5d71e0ea22f09dd94bbab9bfc544ca1e36",
+      "bytes": 1248182026,
+      "license": "apache-2.0",
+      "hub_revision": "e36fdd5d71e0ea22f09dd94bbab9bfc544ca1e36",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "VITA-MLLM/Freeze-Omni",
+      "present": true,
+      "revision": "c8b191874fee0f18fa6d207f26ca9843471726e2",
+      "bytes": 2329435449,
+      "license": "apache-2.0",
+      "hub_revision": "c8b191874fee0f18fa6d207f26ca9843471726e2",
+      "gated": false
+    },
+    {
+      "role": "native-duplex",
+      "repository": "BayLing-Models/BayLing-Duplex",
+      "present": true,
+      "revision": "b314288d7fc545cdac3b2fe0c4caeb9084c5526b",
+      "bytes": 19091806599,
+      "license": null,
+      "hub_revision": "b314288d7fc545cdac3b2fe0c4caeb9084c5526b",
+      "gated": false
+    },
+    {
+      "role": "interaction",
+      "repository": "pipecat-ai/smart-turn-v3",
+      "present": true,
+      "revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
+      "bytes": 90966743,
+      "license": "bsd-2-clause",
+      "hub_revision": "f766f81d3cfdf7737ac64aad813d91bbfd56bf93",
+      "gated": false
+    },
+    {
+      "role": "interaction",
+      "repository": "livekit/turn-detector",
+      "present": true,
+      "revision": "fba34c38ad5d30a63ebb83a9e6bf271cf4c91d67",
+      "bytes": 707944533,
+      "license": "other",
+      "hub_revision": "fba34c38ad5d30a63ebb83a9e6bf271cf4c91d67",
+      "gated": false
+    },
+    {
+      "role": "interaction",
+      "repository": "anyreach-ai/dualturn-qwen2.5-mimi-0.5B",
+      "present": true,
+      "revision": "d7abba2c0c8d1ab8e992879c6a186384e00f94cb",
+      "bytes": 2634514914,
+      "license": "apache-2.0",
+      "hub_revision": "d7abba2c0c8d1ab8e992879c6a186384e00f94cb",
+      "gated": false
+    },
+    {
+      "role": "speaker",
+      "repository": "nvidia/diar_streaming_sortformer_4spk-v2.1",
+      "present": true,
+      "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+      "bytes": 492026077,
+      "license": "other",
+      "hub_revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+      "gated": false
+    },
+    {
+      "role": "speaker",
+      "repository": "nvidia/multitalker-parakeet-streaming-0.6b-v1",
+      "present": true,
+      "revision": "8749fc71fd6e2d88ef230159bbf2aea69b524ee1",
+      "bytes": 2491036491,
+      "license": "other",
+      "hub_revision": "8749fc71fd6e2d88ef230159bbf2aea69b524ee1",
+      "gated": false
+    },
+    {
+      "role": "observer",
+      "repository": "nvidia/audio-flamingo-3",
+      "present": true,
+      "revision": "ee26c58423988d7d7cda7b85dd3ce5d97ee8753d",
+      "bytes": 17961809773,
+      "license": "other",
+      "hub_revision": "ee26c58423988d7d7cda7b85dd3ce5d97ee8753d",
+      "gated": false
+    },
+    {
+      "role": "observer",
+      "repository": "nvidia/audio-flamingo-3-hf",
+      "present": true,
+      "revision": "7d4bae64ee29878af6504ae6f6bb3e40492838ad",
+      "bytes": 34496389015,
+      "license": "other",
+      "hub_revision": "7d4bae64ee29878af6504ae6f6bb3e40492838ad",
+      "gated": false
+    },
+    {
+      "role": "task",
+      "repository": "kyutai/hibiki-2b-pytorch-bf16",
+      "present": true,
+      "revision": "bd71144c96f26040612f6414716f5f48ee4fce69",
+      "bytes": 5960273242,
+      "license": "cc-by-4.0",
+      "hub_revision": "bd71144c96f26040612f6414716f5f48ee4fce69",
+      "gated": false
+    },
+    {
+      "role": "task",
+      "repository": "facebook/seamless-streaming",
+      "present": true,
+      "revision": "82746da73c2927b962e53ad2f723babf1ae0e0b5",
+      "bytes": 8034713424,
+      "license": "cc-by-nc-4.0",
+      "hub_revision": "82746da73c2927b962e53ad2f723babf1ae0e0b5",
+      "gated": false
+    },
+    {
+      "role": "task",
+      "repository": "tsinghua-ee/ELLSA",
+      "present": true,
+      "revision": "e81951892591a0f3a0f0bc7478224d1ae7966d29",
+      "bytes": 36652063772,
+      "license": "apache-2.0",
+      "hub_revision": "e81951892591a0f3a0f0bc7478224d1ae7966d29",
+      "gated": false
+    },
+    {
+      "role": "gated-not-downloaded",
+      "repository": "sbintuitions/DuplexCascade",
+      "present": false,
+      "hub_revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
+      "gated": "auto"
+    },
+    {
+      "role": "gated-not-downloaded",
+      "repository": "nvidia/personaplex-7b-v1",
+      "present": false,
+      "hub_revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+      "gated": "auto"
+    }
+  ]
+}

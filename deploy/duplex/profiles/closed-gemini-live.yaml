@@ -1,0 +1,11 @@
+# Closed live reference (plan cell R0): Google's native-audio Live API as one
+# integrated element through the upstream binding; the background reasoner is
+# the local Qwen3-8B so only the voice path leaves the machine.
+# Needs GEMINI_API_KEY. Network and per-minute cost belong to this cell.
+binding: upstream
+upstream-provider: google
+upstream-model: gemini-2.5-flash-native-audio-latest
+upstream-token-env: GEMINI_API_KEY
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

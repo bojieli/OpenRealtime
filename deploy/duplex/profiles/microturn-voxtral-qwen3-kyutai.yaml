@@ -1,0 +1,20 @@
+# Micro-turn cascade, orchestrated micro-turns (plan P4, cells C1/C3 with an
+# ordinary instruct model standing in for a trained micro-turn LLM):
+#   Voxtral Mini 4B Realtime (vLLM /v1/realtime, 480 ms delay)
+#   -> Qwen3-8B controller asked every 500 ms (wait/respond, continue/stop),
+#      with acoustic activity as evidence and, between ticks, a decision at the
+#      two moments that change who holds the floor: a word arriving while the
+#      assistant speaks, and the user going quiet with words outstanding
+#   -> Qwen3-8B streamed answer -> Kyutai TTS 1.6B, one incremental context per answer.
+# Services: deploy/duplex/services/{llm-qwen3-8b,asr-voxtral,kyutai-tts}.sh
+binding: duplex
+sidecar: >-
+  .runtime/duplex-plan/venvs/microturn/bin/python sidecars/microturn_sidecar.py
+  --asr vllm-realtime --asr-url ws://127.0.0.1:9101/v1/realtime --asr-model voxtral-realtime --asr-delay-ms 480
+  --llm orchestrated --llm-url http://127.0.0.1:9100/v1 --llm-model qwen3-8b --tick-ms 500
+  --stop-on-words --sound-evidence --decide-on-pause
+  --tts-url ws://127.0.0.1:9125/v1/tts/stream
+  --trace .runtime/duplex-plan/traces/microturn-voxtral-qwen3-kyutai.jsonl
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

@@ -1,0 +1,9 @@
+# Closed live reference (plan cell R0): OpenAI Live (v1/live/sessions), a
+# continuous full-duplex stream without response boundaries, translated into
+# the Realtime dialect; background reasoner local. Needs OPENAI_API_KEY.
+binding: upstream
+upstream-provider: openai-live
+upstream-token-env: OPENAI_API_KEY
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

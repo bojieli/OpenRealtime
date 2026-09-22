@@ -1,0 +1,12 @@
+# Micro-turn cascade cell: Deepgram Aura's streaming WebSocket as the closed incremental synthesiser (cell C4 substitution); the voice path leaves the machine.
+binding: duplex
+sidecar: >-
+  .runtime/duplex-plan/venvs/microturn/bin/python sidecars/microturn_sidecar.py
+  --asr vllm-realtime --asr-url ws://127.0.0.1:9101/v1/realtime --asr-model voxtral-realtime --asr-delay-ms 480
+  --llm orchestrated --llm-url http://127.0.0.1:9100/v1 --llm-model qwen3-8b --tick-ms 500
+  --stop-on-words --sound-evidence --decide-on-pause
+  --tts-url ws://127.0.0.1:9126/v1/tts/stream
+  --trace .runtime/duplex-plan/traces/microturn-voxtral-qwen3-deepgram.jsonl
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

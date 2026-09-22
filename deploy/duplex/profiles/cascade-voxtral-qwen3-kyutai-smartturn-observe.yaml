@@ -1,0 +1,19 @@
+# Cell I0 (observe): the cascade of cascade-voxtral-qwen3-kyutai.yaml with Smart
+# Turn v3 asked at every pause (tools/duplexmodels/turn_server.py on :9130).
+# Observe: the probability is recorded on the timeline (turn_end.acoustic) and
+# decides nothing; endpointing stays the silence rule.
+binding: cascade
+asr-provider: vllm-realtime
+asr-url: ws://127.0.0.1:9101/v1/realtime
+asr-model: voxtral-realtime
+fast-provider: vllm
+fast-url: http://127.0.0.1:9100/v1
+fast-model: qwen3-8b
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
+tts-provider: speech-socket
+tts-url: ws://127.0.0.1:9125/v1/tts/stream
+tts-model: kyutai/tts-1.6b-en_fr
+turn-end-url: http://127.0.0.1:9130/v1/endpoint/smart-turn
+turn-end-mode: observe

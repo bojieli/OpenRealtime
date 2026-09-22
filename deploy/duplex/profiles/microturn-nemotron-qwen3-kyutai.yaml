@@ -1,0 +1,12 @@
+# Micro-turn cascade cell: Nemotron streaming ASR (cache-aware RNN-T, committed as decoded) instead of Voxtral; ASR substitution for cell C3.
+binding: duplex
+sidecar: >-
+  .runtime/duplex-plan/venvs/microturn/bin/python sidecars/microturn_sidecar.py
+  --asr chunk --asr-url http://127.0.0.1:9110 --asr-model nvidia/nemotron-speech-streaming-en-0.6b --asr-delay-ms 560
+  --llm orchestrated --llm-url http://127.0.0.1:9100/v1 --llm-model qwen3-8b --tick-ms 500
+  --stop-on-words --sound-evidence --decide-on-pause
+  --tts-url ws://127.0.0.1:9125/v1/tts/stream
+  --trace .runtime/duplex-plan/traces/microturn-nemotron-qwen3-kyutai.jsonl
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
