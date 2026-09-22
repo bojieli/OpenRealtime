@@ -1,0 +1,417 @@
+{"t": 0.21, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.226, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.351, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.444, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.525, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.607, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.687, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.768, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.85, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.869, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 0.869, "type": "turn_done"}
+{"t": 0.947, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.085, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.168, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.25, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.331, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.413, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.497, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.579, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.661, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.672, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.726, "type": "text_delta", "text": "Hi"}
+{"t": 1.755, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 1.808, "type": "text_delta", "text": "!"}
+{"t": 1.837, "type": "output_audio", "samples": 1764, "rms": 0.0053}
+{"t": 1.889, "type": "text_delta", "text": " How"}
+{"t": 1.917, "type": "output_audio", "samples": 1764, "rms": 0.0385}
+{"t": 1.966, "type": "text_delta", "text": " can"}
+{"t": 1.99, "type": "output_audio", "samples": 1764, "rms": 0.0525}
+{"t": 2.048, "type": "text_delta", "text": " I"}
+{"t": 2.075, "type": "output_audio", "samples": 1764, "rms": 0.0461}
+{"t": 2.124, "type": "text_delta", "text": " help"}
+{"t": 2.148, "type": "output_audio", "samples": 1764, "rms": 0.0288}
+{"t": 2.202, "type": "text_delta", "text": " you"}
+{"t": 2.225, "type": "output_audio", "samples": 1764, "rms": 0.0201}
+{"t": 2.282, "type": "text_delta", "text": " today"}
+{"t": 2.309, "type": "output_audio", "samples": 1764, "rms": 0.0188}
+{"t": 2.365, "type": "text_delta", "text": "?"}
+{"t": 2.389, "type": "output_audio", "samples": 1764, "rms": 0.0071}
+{"t": 2.524, "type": "output_audio", "samples": 1764, "rms": 0.0008}
+{"t": 2.605, "type": "output_audio", "samples": 1764, "rms": 0.0013}
+{"t": 2.686, "type": "output_audio", "samples": 1764, "rms": 0.0465}
+{"t": 2.768, "type": "output_audio", "samples": 1764, "rms": 0.0301}
+{"t": 2.849, "type": "output_audio", "samples": 1764, "rms": 0.0177}
+{"t": 2.931, "type": "output_audio", "samples": 1764, "rms": 0.0314}
+{"t": 3.013, "type": "output_audio", "samples": 1764, "rms": 0.0284}
+{"t": 3.094, "type": "output_audio", "samples": 1764, "rms": 0.0228}
+{"t": 3.116, "type": "output_audio", "samples": 1764, "rms": 0.0074}
+{"t": 3.116, "type": "text_done", "text": "Hi! How can I help you today?"}
+{"t": 3.116, "type": "turn_done"}
+{"t": 3.194, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.327, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.408, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.491, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.572, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.654, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.739, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.82, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.9, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 3.989, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.066, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.075, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.214, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.296, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.386, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.463, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.544, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.625, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.706, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.787, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.868, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 4.95, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.031, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.109, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.126, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.167, "type": "text_delta", "text": "You"}
+{"t": 5.186, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 5.253, "type": "text_delta", "text": " can"}
+{"t": 5.274, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 5.323, "type": "text_delta", "text": " save"}
+{"t": 5.353, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 5.408, "type": "text_delta", "text": " money"}
+{"t": 5.434, "type": "output_audio", "samples": 1764, "rms": 0.0015}
+{"t": 5.484, "type": "text_delta", "text": " by"}
+{"t": 5.51, "type": "output_audio", "samples": 1764, "rms": 0.0252}
+{"t": 5.567, "type": "text_delta", "text": " making"}
+{"t": 5.593, "type": "output_audio", "samples": 1764, "rms": 0.005}
+{"t": 5.651, "type": "text_delta", "text": " a"}
+{"t": 5.682, "type": "output_audio", "samples": 1764, "rms": 0.0274}
+{"t": 5.724, "type": "text_delta", "text": " budget"}
+{"t": 5.766, "type": "output_audio", "samples": 1764, "rms": 0.016}
+{"t": 5.806, "type": "text_delta", "text": " and"}
+{"t": 5.835, "type": "output_audio", "samples": 1764, "rms": 0.0141}
+{"t": 5.878, "type": "text_delta", "text": " tracking"}
+{"t": 5.913, "type": "output_audio", "samples": 1764, "rms": 0.0234}
+{"t": 5.974, "type": "text_delta", "text": " your"}
+{"t": 6.002, "type": "output_audio", "samples": 1764, "rms": 0.0125}
+{"t": 6.041, "type": "text_delta", "text": " expenses"}
+{"t": 6.065, "type": "output_audio", "samples": 1764, "rms": 0.0238}
+{"t": 6.129, "type": "text_delta", "text": "."}
+{"t": 6.162, "type": "output_audio", "samples": 1764, "rms": 0.0272}
+{"t": 6.284, "type": "output_audio", "samples": 1764, "rms": 0.018}
+{"t": 6.375, "type": "output_audio", "samples": 1764, "rms": 0.0133}
+{"t": 6.456, "type": "output_audio", "samples": 1764, "rms": 0.0233}
+{"t": 6.538, "type": "output_audio", "samples": 1764, "rms": 0.0176}
+{"t": 6.619, "type": "output_audio", "samples": 1764, "rms": 0.0137}
+{"t": 6.701, "type": "output_audio", "samples": 1764, "rms": 0.0082}
+{"t": 6.79, "type": "output_audio", "samples": 1764, "rms": 0.0086}
+{"t": 6.866, "type": "output_audio", "samples": 1764, "rms": 0.0131}
+{"t": 6.945, "type": "output_audio", "samples": 1764, "rms": 0.0101}
+{"t": 7.026, "type": "output_audio", "samples": 1764, "rms": 0.0149}
+{"t": 7.11, "type": "output_audio", "samples": 1764, "rms": 0.0189}
+{"t": 7.191, "type": "output_audio", "samples": 1764, "rms": 0.0063}
+{"t": 7.273, "type": "output_audio", "samples": 1764, "rms": 0.0126}
+{"t": 7.354, "type": "output_audio", "samples": 1764, "rms": 0.0098}
+{"t": 7.436, "type": "output_audio", "samples": 1764, "rms": 0.0008}
+{"t": 7.516, "type": "output_audio", "samples": 1764, "rms": 0.0086}
+{"t": 7.598, "type": "output_audio", "samples": 1764, "rms": 0.0083}
+{"t": 7.679, "type": "output_audio", "samples": 1764, "rms": 0.0035}
+{"t": 7.76, "type": "output_audio", "samples": 1764, "rms": 0.0212}
+{"t": 7.841, "type": "output_audio", "samples": 1764, "rms": 0.0134}
+{"t": 7.922, "type": "output_audio", "samples": 1764, "rms": 0.0062}
+{"t": 8.004, "type": "output_audio", "samples": 1764, "rms": 0.01}
+{"t": 8.088, "type": "output_audio", "samples": 1764, "rms": 0.0096}
+{"t": 8.167, "type": "output_audio", "samples": 1764, "rms": 0.0117}
+{"t": 8.249, "type": "output_audio", "samples": 1764, "rms": 0.0052}
+{"t": 8.33, "type": "output_audio", "samples": 1764, "rms": 0.0053}
+{"t": 8.412, "type": "output_audio", "samples": 1764, "rms": 0.0092}
+{"t": 8.492, "type": "output_audio", "samples": 1764, "rms": 0.0147}
+{"t": 8.574, "type": "output_audio", "samples": 1764, "rms": 0.0075}
+{"t": 8.656, "type": "output_audio", "samples": 1764, "rms": 0.0078}
+{"t": 8.737, "type": "output_audio", "samples": 1764, "rms": 0.0168}
+{"t": 8.817, "type": "output_audio", "samples": 1764, "rms": 0.0098}
+{"t": 8.898, "type": "output_audio", "samples": 1764, "rms": 0.0069}
+{"t": 8.98, "type": "output_audio", "samples": 1764, "rms": 0.0027}
+{"t": 9.062, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 9.144, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 9.224, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 9.305, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 9.386, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 9.467, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 9.549, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.631, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.712, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.793, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.874, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 9.957, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.037, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.117, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.199, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.28, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.362, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.443, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.525, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.607, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.688, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.77, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.851, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 10.932, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.013, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.095, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.176, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.258, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.34, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.423, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.503, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.594, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.672, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.764, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.846, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 11.927, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.009, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.089, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.172, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.252, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.333, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.415, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.504, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.505, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.505, "type": "text_done", "text": "You can save money by making a budget and tracking your expenses."}
+{"t": 12.505, "type": "turn_done"}
+{"t": 12.505, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 12.584, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.666, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.748, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.83, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.911, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 12.993, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.073, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.155, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.237, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.318, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.399, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.481, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.562, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.644, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.729, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.81, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.89, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 13.971, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.053, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.135, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.217, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.298, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.379, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.461, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.545, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.622, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.708, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.788, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.868, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 14.949, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 15.032, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 15.117, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 15.117, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 15.117, "type": "text_delta", "text": "You"}
+{"t": 15.117, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 15.16, "type": "text_delta", "text": " should"}
+{"t": 15.191, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 15.264, "type": "text_delta", "text": " set"}
+{"t": 15.283, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 15.327, "type": "text_delta", "text": " goals"}
+{"t": 15.354, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 15.408, "type": "text_delta", "text": " like"}
+{"t": 15.432, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 15.489, "type": "text_delta", "text": " building"}
+{"t": 15.517, "type": "output_audio", "samples": 1764, "rms": 0.0003}
+{"t": 15.574, "type": "text_delta", "text": " an"}
+{"t": 15.599, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 15.648, "type": "text_delta", "text": " emergency"}
+{"t": 15.67, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 15.726, "type": "text_delta", "text": " fund"}
+{"t": 15.755, "type": "output_audio", "samples": 1764, "rms": 0.0187}
+{"t": 15.805, "type": "text_delta", "text": ","}
+{"t": 15.828, "type": "output_audio", "samples": 1764, "rms": 0.0277}
+{"t": 15.888, "type": "text_delta", "text": " saving"}
+{"t": 15.915, "type": "output_audio", "samples": 1764, "rms": 0.013}
+{"t": 15.964, "type": "text_delta", "text": " for"}
+{"t": 15.99, "type": "output_audio", "samples": 1764, "rms": 0.0144}
+{"t": 16.05, "type": "text_delta", "text": " retirement"}
+{"t": 16.073, "type": "output_audio", "samples": 1764, "rms": 0.0063}
+{"t": 16.142, "type": "text_delta", "text": ","}
+{"t": 16.166, "type": "output_audio", "samples": 1764, "rms": 0.031}
+{"t": 16.208, "type": "text_delta", "text": " and"}
+{"t": 16.23, "type": "output_audio", "samples": 1764, "rms": 0.0297}
+{"t": 16.288, "type": "text_delta", "text": " paying"}
+{"t": 16.31, "type": "output_audio", "samples": 1764, "rms": 0.0029}
+{"t": 16.373, "type": "text_delta", "text": " off"}
+{"t": 16.404, "type": "output_audio", "samples": 1764, "rms": 0.0231}
+{"t": 16.441, "type": "text_delta", "text": " debt"}
+{"t": 16.465, "type": "output_audio", "samples": 1764, "rms": 0.0218}
+{"t": 16.532, "type": "text_delta", "text": "."}
+{"t": 16.555, "type": "output_audio", "samples": 1764, "rms": 0.009}
+{"t": 16.688, "type": "output_audio", "samples": 1764, "rms": 0.0199}
+{"t": 16.769, "type": "output_audio", "samples": 1764, "rms": 0.0181}
+{"t": 16.851, "type": "output_audio", "samples": 1764, "rms": 0.001}
+{"t": 16.932, "type": "output_audio", "samples": 1764, "rms": 0.0253}
+{"t": 17.018, "type": "output_audio", "samples": 1764, "rms": 0.0188}
+{"t": 17.106, "type": "output_audio", "samples": 1764, "rms": 0.0125}
+{"t": 17.187, "type": "output_audio", "samples": 1764, "rms": 0.0123}
+{"t": 17.195, "type": "output_audio", "samples": 1764, "rms": 0.0143}
+{"t": 17.329, "type": "output_audio", "samples": 1764, "rms": 0.0143}
+{"t": 17.411, "type": "output_audio", "samples": 1764, "rms": 0.0162}
+{"t": 17.491, "type": "output_audio", "samples": 1764, "rms": 0.0164}
+{"t": 17.573, "type": "output_audio", "samples": 1764, "rms": 0.0098}
+{"t": 17.655, "type": "output_audio", "samples": 1764, "rms": 0.0103}
+{"t": 17.738, "type": "output_audio", "samples": 1764, "rms": 0.0054}
+{"t": 17.823, "type": "output_audio", "samples": 1764, "rms": 0.009}
+{"t": 17.901, "type": "output_audio", "samples": 1764, "rms": 0.0013}
+{"t": 17.984, "type": "output_audio", "samples": 1764, "rms": 0.0142}
+{"t": 17.992, "type": "output_audio", "samples": 1764, "rms": 0.0102}
+{"t": 18.128, "type": "output_audio", "samples": 1764, "rms": 0.0082}
+{"t": 18.235, "type": "output_audio", "samples": 1764, "rms": 0.0014}
+{"t": 18.317, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 18.399, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 18.481, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 18.562, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 18.643, "type": "output_audio", "samples": 1764, "rms": 0.0025}
+{"t": 18.726, "type": "output_audio", "samples": 1764, "rms": 0.0151}
+{"t": 18.805, "type": "output_audio", "samples": 1764, "rms": 0.0293}
+{"t": 18.887, "type": "output_audio", "samples": 1764, "rms": 0.0122}
+{"t": 18.969, "type": "output_audio", "samples": 1764, "rms": 0.0137}
+{"t": 19.051, "type": "output_audio", "samples": 1764, "rms": 0.0067}
+{"t": 19.131, "type": "output_audio", "samples": 1764, "rms": 0.0121}
+{"t": 19.213, "type": "output_audio", "samples": 1764, "rms": 0.0106}
+{"t": 19.294, "type": "output_audio", "samples": 1764, "rms": 0.0053}
+{"t": 19.377, "type": "output_audio", "samples": 1764, "rms": 0.0193}
+{"t": 19.458, "type": "output_audio", "samples": 1764, "rms": 0.0275}
+{"t": 19.541, "type": "output_audio", "samples": 1764, "rms": 0.0219}
+{"t": 19.618, "type": "output_audio", "samples": 1764, "rms": 0.0142}
+{"t": 19.7, "type": "output_audio", "samples": 1764, "rms": 0.0104}
+{"t": 19.782, "type": "output_audio", "samples": 1764, "rms": 0.0081}
+{"t": 19.864, "type": "output_audio", "samples": 1764, "rms": 0.0051}
+{"t": 19.946, "type": "output_audio", "samples": 1764, "rms": 0.0052}
+{"t": 20.028, "type": "output_audio", "samples": 1764, "rms": 0.0123}
+{"t": 20.11, "type": "output_audio", "samples": 1764, "rms": 0.003}
+{"t": 20.192, "type": "output_audio", "samples": 1764, "rms": 0.0107}
+{"t": 20.273, "type": "output_audio", "samples": 1764, "rms": 0.0131}
+{"t": 20.355, "type": "output_audio", "samples": 1764, "rms": 0.0111}
+{"t": 20.436, "type": "output_audio", "samples": 1764, "rms": 0.0164}
+{"t": 20.518, "type": "output_audio", "samples": 1764, "rms": 0.013}
+{"t": 20.599, "type": "output_audio", "samples": 1764, "rms": 0.0007}
+{"t": 20.681, "type": "output_audio", "samples": 1764, "rms": 0.0128}
+{"t": 20.761, "type": "output_audio", "samples": 1764, "rms": 0.0201}
+{"t": 20.842, "type": "output_audio", "samples": 1764, "rms": 0.0123}
+{"t": 20.923, "type": "output_audio", "samples": 1764, "rms": 0.0011}
+{"t": 21.005, "type": "output_audio", "samples": 1764, "rms": 0.0044}
+{"t": 21.085, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 21.167, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 21.248, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 21.33, "type": "output_audio", "samples": 1764, "rms": 0.0002}
+{"t": 21.411, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 21.492, "type": "output_audio", "samples": 1764, "rms": 0.0001}
+{"t": 21.573, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 21.655, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 21.736, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 21.817, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 21.901, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 21.981, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.061, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.143, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.225, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.305, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.392, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.473, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.554, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.637, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.717, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.798, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.879, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 22.96, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.042, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.122, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.204, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.285, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.366, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.446, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.528, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.608, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.69, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.772, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.853, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 23.935, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.016, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.097, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.179, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.259, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.34, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.422, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.503, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.584, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.665, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.747, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.828, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.91, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 24.992, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.073, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.154, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.237, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.318, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.4, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.482, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.563, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.645, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.727, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.807, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.889, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 25.97, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.14, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.14, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.215, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.298, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.378, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.463, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.544, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.625, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.706, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.788, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.871, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 26.951, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.032, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.113, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.194, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.275, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.357, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.439, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.52, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.601, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.682, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.764, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.845, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 27.927, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.008, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.09, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.171, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.252, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.333, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.414, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.495, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.577, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.658, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.739, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.82, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.901, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 28.982, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.064, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.149, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.229, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.31, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.392, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.472, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.553, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.634, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.715, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.797, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.877, "type": "output_audio", "samples": 1764, "rms": 0.0}
+{"t": 29.959, "type": "output_audio", "samples": 1764, "rms": 0.0}

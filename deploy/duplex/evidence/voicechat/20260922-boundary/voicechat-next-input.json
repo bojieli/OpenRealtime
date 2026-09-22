@@ -1,0 +1,89 @@
+{
+  "label": "run",
+  "scenario": "interrupt",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 1.912
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    80.87939453125,
+    80.0732421875,
+    67.89111328125
+  ],
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.613,
+  "first_audio_s": 5.509816378355026,
+  "first_audio_latency_s": 0.896,
+  "audible_segments": [
+    [
+      1.917,
+      3.174
+    ],
+    [
+      5.51,
+      7.353
+    ],
+    [
+      7.76,
+      8.817
+    ],
+    [
+      15.755,
+      18.072
+    ],
+    [
+      18.726,
+      20.922
+    ]
+  ],
+  "turn_done_s": [
+    0.869,
+    3.116,
+    12.505
+  ],
+  "text_done": [
+    {
+      "t": 3.116,
+      "text": "Hi! How can I help you today?"
+    },
+    {
+      "t": 12.505,
+      "text": "You can save money by making a budget and tracking your expenses."
+    }
+  ],
+  "text_deltas": "Hi! How can I help you today?You can save money by making a budget and tracking your expenses.You should set goals like building an emergency fund, saving for retirement, and paying off debt.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 29.68,
+  "interrupt_start_s": 11.52,
+  "interrupt_end_s": 14.475,
+  "answer_audio_stopped_after_onset_s": 0.0,
+  "second_answer_start_s": 15.755,
+  "second_answer_latency_s": 1.28,
+  "text_before_interrupt": "Hi! How can I help you today?You can save money by making a budget and tracking your expenses.",
+  "text_after_interrupt": "You should set goals like building an emergency fund, saving for retirement, and paying off debt.",
+  "segments_after_onset": [
+    [
+      15.755,
+      18.072
+    ],
+    [
+      18.726,
+      20.922
+    ]
+  ]
+}

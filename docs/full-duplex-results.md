@@ -372,8 +372,15 @@ Native validation remains incomplete. The retained component artifacts under
   did not restore the final answer boundary. The greeting boundary instead
   shifted to 5.849 s, after the new user onset, while the answer's audible
   output ended at 14.126 s without a boundary by 25 s. This suggests the
-  marker may track a later dialogue transition rather than audible completion;
-  that interpretation still requires a controlled next-input check.
+  marker may track a later dialogue transition rather than audible completion.
+  A controlled next-input check confirmed that behavior in this runtime: after
+  the first answer's audible end at 8.817 s, a second recorded utterance began
+  at 11.520 s with no explicit interrupt command. An end token was then sampled
+  and the first answer's boundary arrived at 12.505 s (985 ms after new input
+  onset). The second answer ended audibly at 20.922 s but had no final boundary
+  before 30 s. Upstream EOS therefore cannot be the sole playback-completion
+  signal for this profile; an explicitly declared output-segmentation policy
+  is needed without relabelling its boundaries as model decisions.
 
 ## Interaction prediction (P6)
 
