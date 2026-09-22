@@ -76,6 +76,7 @@ one experiment cell:
 | `microturn-nemotron-qwen3-kyutai`, `microturn-kyutaistt-qwen3-kyutai` | recogniser substitution (C3) |
 | `microturn-voxtral-qwen3-{vibevoice,cosyvoice,deepgram}` | synthesiser substitution (C4); the last one is closed |
 | `cascade-voxtral-qwen3-kyutai`, `cascade-nemotron-qwen3-kyutai` | the engine-floor cascade with the same components |
+| `cascade-nemotron-qwen3-fish` | Fish S2 Pro sentence-input synthesis substitution; public acceptance pending |
 | `cascade-…-smartturn-observe` | endpoint evidence recorded but deciding nothing (I0) |
 | `cascade-…-{smartturn,livekit,vap,dualturn,fusion}-control` | one endpoint predictor deciding the pause, at its calibrated threshold (I0) |
 | `native-freeze-omni` | a native duplex model through the sidecar relay (P5/P8) |

@@ -91,7 +91,7 @@ the service's self-report.
 | Deepgram Aura (closed) | flush | 1 of 4 | 323-1,612 ms | 0 ms |
 | CosyVoice 3 0.5B | token | 0 of 4 | 5,984-15,727 ms | 0 ms |
 | Qwen3-TTS 0.6B | token | 0 of 4 | 4,404-16,610 ms | 0 ms |
-| Fish S2 Pro | - | not served in this pass | - | - |
+| Fish S2 Pro, no compile (resumed pass) | sentence | 0 of 4, as declared | 2,186–2,830 ms | 0 ms |
 
 Readings:
 
@@ -107,6 +107,16 @@ Readings:
 - VibeVoice's first audio is an order of magnitude earlier than the rest, and
   since the synthesiser dominates the end-to-end reply latency of this
   cascade, that is the substitution most likely to move it.
+
+The resumed Fish S2 Pro service loads on this GPU after replacing its incompatible
+TorchCodec reference-file decoder with SoundFile (the same mono conversion,
+resampling and codec encoding are retained). Four English probes through the
+real Go adapter produced 4.46–5.90 s of audio each; cancellation delivered no
+further audio after the client cancelled. First-audio times include the probe's
+1.5 s held suffix. Uncompiled wall times were 6.92–14.04 s, so these runs do not
+establish real-time synthesis. English/Mandarin intelligibility scoring and the
+new `cascade-nemotron-qwen3-fish` public profile are still pending. Evidence is
+retained in `deploy/duplex/evidence/fish-s2-pro/20260922-resume/`.
 
 All of these were measured while the machine was loaded; the per-service
 comparison in `.runtime/duplex-plan/results/tts/` has the quieter re-runs and

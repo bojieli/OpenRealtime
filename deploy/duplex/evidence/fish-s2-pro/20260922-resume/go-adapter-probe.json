@@ -1,0 +1,45 @@
+{
+  "cancel": {
+    "audio_after_cancel_ms": 0,
+    "audio_before_cancel_ms": 1207.437641723356,
+    "cancelled": true,
+    "closed_ms": 0.339
+  },
+  "declared": {
+    "incremental_text": false,
+    "nonterminal_flush": true,
+    "input_granularity": "sentence"
+  },
+  "hold_ms": 1500,
+  "sentences": [
+    {
+      "text": "The weather today is sunny with a light breeze, perfect for a walk in the park.",
+      "prefix_audio_before_rest": false,
+      "first_audio_ms": 2830.357,
+      "audio_ms": 5387.02947845805,
+      "wall_ms": 14043.286
+    },
+    {
+      "text": "If you want to save money, start by tracking every expense for one month.",
+      "prefix_audio_before_rest": false,
+      "first_audio_ms": 2192.824,
+      "audio_ms": 4458.231292517007,
+      "wall_ms": 6915.957
+    },
+    {
+      "text": "Our meeting is scheduled for three o'clock, so please bring the quarterly report.",
+      "prefix_audio_before_rest": false,
+      "first_audio_ms": 2185.718,
+      "audio_ms": 5897.868480725623,
+      "wall_ms": 8876.103
+    },
+    {
+      "text": "Indoor plants need bright indirect light and water only when the soil feels dry.",
+      "prefix_audio_before_rest": false,
+      "first_audio_ms": 2250.29,
+      "audio_ms": 5619.229024943311,
+      "wall_ms": 8577.235
+    }
+  ],
+  "url": "ws://127.0.0.1:9124/v1/tts/stream"
+}

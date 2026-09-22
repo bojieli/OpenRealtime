@@ -1,0 +1,31 @@
+{
+  "status": "ok",
+  "model": "fish-s2-pro",
+  "sample_rate": 44100,
+  "capabilities": {
+    "incremental_text": false,
+    "nonterminal_flush": true,
+    "input_granularity": "sentence"
+  },
+  "requests": 1,
+  "contexts": 5,
+  "first_audio_p50_s": 2.191968724131584,
+  "voice": "cosyvoice-asset-zero_shot_prompt (zh female)",
+  "languages": [
+    "en",
+    "zh"
+  ],
+  "compiled": false,
+  "first_chunk_frames": 10,
+  "chunk_frames": 16,
+  "holdback_frames": 2,
+  "sampling": {
+    "temperature": 0.8,
+    "top_p": 0.8,
+    "top_k": 30
+  },
+  "loaded_seconds": 57.2,
+  "gpu_allocated_gb": 12.94,
+  "gpu_reserved_gb": 13.29,
+  "frames": 612
+}
