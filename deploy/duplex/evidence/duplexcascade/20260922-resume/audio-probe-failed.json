@@ -1,0 +1,758 @@
+{
+  "model": {
+    "model_revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
+    "base_revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c",
+    "source_revision": "42893024ca90c8de8ac3ed624467ebc123512ff8",
+    "dtype": "bfloat16",
+    "attention": "sdpa",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "strict_checkpoint_load": true,
+    "renamed_checkpoint_keys": {
+      "llm.base_model.model.model.layers.0.self_attn.q_proj.bias": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.0.self_attn.q_proj.weight": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.0.self_attn.v_proj.bias": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.0.self_attn.v_proj.weight": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.1.self_attn.q_proj.bias": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.1.self_attn.q_proj.weight": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.1.self_attn.v_proj.bias": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.1.self_attn.v_proj.weight": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.10.self_attn.q_proj.bias": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.10.self_attn.q_proj.weight": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.10.self_attn.v_proj.bias": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.10.self_attn.v_proj.weight": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.11.self_attn.q_proj.bias": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.11.self_attn.q_proj.weight": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.11.self_attn.v_proj.bias": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.11.self_attn.v_proj.weight": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.12.self_attn.q_proj.bias": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.12.self_attn.q_proj.weight": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.12.self_attn.v_proj.bias": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.12.self_attn.v_proj.weight": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.13.self_attn.q_proj.bias": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.13.self_attn.q_proj.weight": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.13.self_attn.v_proj.bias": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.13.self_attn.v_proj.weight": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.14.self_attn.q_proj.bias": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.14.self_attn.q_proj.weight": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.14.self_attn.v_proj.bias": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.14.self_attn.v_proj.weight": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.15.self_attn.q_proj.bias": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.15.self_attn.q_proj.weight": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.15.self_attn.v_proj.bias": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.15.self_attn.v_proj.weight": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.16.self_attn.q_proj.bias": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.16.self_attn.q_proj.weight": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.16.self_attn.v_proj.bias": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.16.self_attn.v_proj.weight": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.17.self_attn.q_proj.bias": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.17.self_attn.q_proj.weight": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.17.self_attn.v_proj.bias": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.17.self_attn.v_proj.weight": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.18.self_attn.q_proj.bias": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.18.self_attn.q_proj.weight": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.18.self_attn.v_proj.bias": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.18.self_attn.v_proj.weight": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.19.self_attn.q_proj.bias": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.19.self_attn.q_proj.weight": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.19.self_attn.v_proj.bias": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.19.self_attn.v_proj.weight": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.2.self_attn.q_proj.bias": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.2.self_attn.q_proj.weight": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.2.self_attn.v_proj.bias": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.2.self_attn.v_proj.weight": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.20.self_attn.q_proj.bias": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.20.self_attn.q_proj.weight": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.20.self_attn.v_proj.bias": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.20.self_attn.v_proj.weight": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.21.self_attn.q_proj.bias": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.21.self_attn.q_proj.weight": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.21.self_attn.v_proj.bias": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.21.self_attn.v_proj.weight": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.22.self_attn.q_proj.bias": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.22.self_attn.q_proj.weight": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.22.self_attn.v_proj.bias": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.22.self_attn.v_proj.weight": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.23.self_attn.q_proj.bias": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.23.self_attn.q_proj.weight": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.23.self_attn.v_proj.bias": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.23.self_attn.v_proj.weight": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.24.self_attn.q_proj.bias": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.24.self_attn.q_proj.weight": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.24.self_attn.v_proj.bias": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.24.self_attn.v_proj.weight": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.25.self_attn.q_proj.bias": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.25.self_attn.q_proj.weight": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.25.self_attn.v_proj.bias": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.25.self_attn.v_proj.weight": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.26.self_attn.q_proj.bias": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.26.self_attn.q_proj.weight": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.26.self_attn.v_proj.bias": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.26.self_attn.v_proj.weight": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.27.self_attn.q_proj.bias": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.27.self_attn.q_proj.weight": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.27.self_attn.v_proj.bias": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.27.self_attn.v_proj.weight": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.3.self_attn.q_proj.bias": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.3.self_attn.q_proj.weight": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.3.self_attn.v_proj.bias": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.3.self_attn.v_proj.weight": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.4.self_attn.q_proj.bias": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.4.self_attn.q_proj.weight": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.4.self_attn.v_proj.bias": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.4.self_attn.v_proj.weight": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.5.self_attn.q_proj.bias": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.5.self_attn.q_proj.weight": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.5.self_attn.v_proj.bias": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.5.self_attn.v_proj.weight": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.6.self_attn.q_proj.bias": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.6.self_attn.q_proj.weight": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.6.self_attn.v_proj.bias": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.6.self_attn.v_proj.weight": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.7.self_attn.q_proj.bias": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.7.self_attn.q_proj.weight": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.7.self_attn.v_proj.bias": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.7.self_attn.v_proj.weight": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.8.self_attn.q_proj.bias": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.8.self_attn.q_proj.weight": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.8.self_attn.v_proj.bias": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.8.self_attn.v_proj.weight": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.9.self_attn.q_proj.bias": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.9.self_attn.q_proj.weight": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.weight",
+      "llm.base_model.model.model.layers.9.self_attn.v_proj.bias": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.bias",
+      "llm.base_model.model.model.layers.9.self_attn.v_proj.weight": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.weight"
+    },
+    "load_seconds": 34.38448605267331
+  },
+  "input": ".runtime/duplex-plan/data/ellsa/ELLSA_test_data/llama_questions/1.wav",
+  "asr": "http://127.0.0.1:9112",
+  "tts": "ws://127.0.0.1:9125/v1/tts/stream",
+  "timing_basis": "packet arrival; no rendered playback receipts",
+  "ticks": [
+    {
+      "tick": 0,
+      "input": "What is",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 105.7540038600564,
+      "admission_lag_ms": [
+        501.50442542508245,
+        289.61587930098176
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 1,
+      "input": "the capital",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 81.66750194504857,
+      "admission_lag_ms": [
+        492.8853437304497,
+        300.16514007002115
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 2,
+      "input": "of",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 71.4596570469439,
+      "admission_lag_ms": [
+        405.99479898810387
+      ],
+      "deadline_missed": false
+    },
+    {
+      "tick": 3,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 38.37266797199845,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 4,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 39.77736784145236,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 5,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 51.945989951491356,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 6,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 36.81750921532512,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 7,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 66.63954071700573,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 8,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 58.39064111933112,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 9,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 91.04571305215359,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 10,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 78.51105090230703,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 11,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 55.208574049174786,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 12,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 86.67597500607371,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 13,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 67.22214305773377,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 14,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 59.836422093212605,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 15,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 77.91381981223822,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 16,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 42.91933495551348,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 17,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 35.81992629915476,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 18,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 79.81881406158209,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 19,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 44.00386894121766,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 20,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 74.90439573302865,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 21,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 83.90737511217594,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 22,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 37.55675395950675,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 23,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 55.110118351876736,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 24,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 114.1486749984324,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 25,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 42.50777279958129,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 26,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 38.89073338359594,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 27,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 39.09864369779825,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 28,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 39.253572933375835,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 29,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.411907248198986,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 30,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.3654626570642,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 31,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 40.51872901618481,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 32,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.60642126575112,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 33,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 76.54674584046006,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 34,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 41.6511632502079,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    },
+    {
+      "tick": 35,
+      "input": "",
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ],
+      "compute_and_dispatch_ms": 56.43009301275015,
+      "admission_lag_ms": [],
+      "deadline_missed": false
+    }
+  ],
+  "audio": [],
+  "text": [],
+  "cancellations": [
+    20.000677527859807
+  ],
+  "errors": []
+}

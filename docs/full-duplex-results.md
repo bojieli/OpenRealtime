@@ -124,6 +124,14 @@ behavior. Access to DuplexCascade and PersonaPlex was verified on 2026-09-22
 using the saved Hugging Face login after removing an environment credential
 override. Their pinned checkpoints are now fully downloaded; integrations are in progress.
 
+The first composed Kyutai ASR → released DuplexCascade → Kyutai TTS probe
+failed to answer: 36 ticks, no text answer and no audio. The admitted transcript
+stopped at “What is the capital of”; the recognizer's completed-word commitment
+policy can retain its final word until a following boundary or session finish.
+This is a concrete integration failure requiring investigation, not a passing
+native cascade. Its trace is retained as `audio-probe-failed.json` beside the
+component evidence below.
+
 The released DuplexCascade checkpoint now passes a text-only GPU micro-turn
 probe with strict tensor loading after 112 shape-checked PEFT base-layer key
 renames. It emits `<|user is talking|>` for two incoming question chunks, then
