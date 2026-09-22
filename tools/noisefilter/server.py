@@ -1,9 +1,17 @@
-"""Session-local RNNoise before ASR. No transcript or speaker enrollment input.
+"""Session-local noise suppression before ASR. No transcript or speaker enrollment input.
 
-The wire contract is PCM16LE, same number of samples in and out. RNNoise has
-10ms algorithmic delay; an additional fixed 10ms FIFO handles arbitrary packet
-boundaries without padding each packet or resetting recurrent state. Thus every
-sample is delayed by 20ms, including across utterance/commit boundaries.
+The wire contract is PCM16LE, same number of samples in and out. Two models sit
+behind it; both run 480-sample (10 ms) frames at 48 kHz with recurrent state
+carried across packets, plus a fixed 10 ms FIFO that handles arbitrary packet
+boundaries without padding each packet or resetting state:
+
+- ``rnnoise`` (default): 10 ms algorithmic delay, so every sample is delayed by
+  20 ms, including across utterance/commit boundaries.
+- ``deepfilternet``: DeepFilterNet3 through libDF's C API (the upstream Rust/tract
+  real-time path, the one its LADSPA plugin uses). Its 20 ms STFT window plus a
+  2-frame (20 ms) lookahead is 30 ms of waveform delay at 48 kHz (window minus
+  hop, plus lookahead), so with the FIFO every sample is delayed by 40 ms.
+  Build the library and fetch the model with ``tools/noisefilter/build_deepfilter.sh``.
 """
 
 import argparse
@@ -44,6 +52,9 @@ class RNNoise:
 
 
 class Stream:
+    # Sample scale the model's frame function expects (RNNoise: 16-bit range).
+    scale = 1.0
+
     def __init__(self, model, rate):
         if rate not in (16000, 24000, 48000):
             raise ValueError("rate must be 16000, 24000, or 48000")
@@ -73,12 +84,13 @@ class Stream:
                 )
             self.previous = float(sample)
             if len(self.pending) == 480:
-                self.buffer[:] = self.pending
-                self.model.lib.rnnoise_process_frame(
-                    self.state, self.buffer, self.buffer
-                )
+                if self.scale == 1.0:
+                    self.buffer[:] = self.pending
+                else:
+                    self.buffer[:] = [value * self.scale for value in self.pending]
+                self.process_frame()
                 for index in range(0, 480, factor):
-                    value = sum(self.buffer[index : index + factor]) / factor
+                    value = sum(self.buffer[index : index + factor]) / factor / self.scale
                     if not math.isfinite(value):
                         raise ValueError("non-finite filtered audio")
                     self.output.append(max(-32768, min(32767, round(value))))
@@ -88,9 +100,102 @@ class Stream:
             result.byteswap()
         return result.tobytes()
 
+    def process_frame(self):
+        self.model.lib.rnnoise_process_frame(self.state, self.buffer, self.buffer)
+
     def close(self):
         if self.state:
             self.model.lib.rnnoise_destroy(self.state)
+            self.state = None
+
+
+class DeepFilterNet:
+    """DeepFilterNet3 via libDF's C API (``df_create``/``df_process_frame``).
+
+    ``df_create`` parses the ONNX archive and plans the tract graphs, which takes
+    far longer than one packet's budget, so fresh states are created ahead of
+    time on a background thread and a new session takes one from the pool. A
+    state is never reused across sessions (it carries recurrent history).
+    """
+
+    audio_delay_ms = 40
+    frame_ms = 10
+
+    def __init__(self, library, model_path, atten_lim_db=100.0, pool=2):
+        self.lib = ctypes.CDLL(library)
+        self.lib.df_create.argtypes = [ctypes.c_char_p, ctypes.c_float]
+        self.lib.df_create.restype = ctypes.c_void_p
+        self.lib.df_get_frame_length.argtypes = [ctypes.c_void_p]
+        self.lib.df_get_frame_length.restype = ctypes.c_size_t
+        self.lib.df_process_frame.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_float),
+            ctypes.POINTER(ctypes.c_float),
+        ]
+        self.lib.df_process_frame.restype = ctypes.c_float
+        self.lib.df_free.argtypes = [ctypes.c_void_p]
+        self.model_path = str(model_path).encode()
+        self.atten_lim_db = float(atten_lim_db)
+        probe = self.create()
+        try:
+            if self.lib.df_get_frame_length(probe) != 480:
+                raise ValueError("DeepFilterNet must use 480-sample / 10ms frames")
+        finally:
+            self.lib.df_free(probe)
+        self.pool_size = max(0, pool)
+        self.ready = deque()
+        self.pool_lock = threading.Condition()
+        self.closed = False
+        if self.pool_size:
+            threading.Thread(target=self._refill, daemon=True).start()
+
+    def create(self):
+        state = self.lib.df_create(self.model_path, self.atten_lim_db)
+        if not state:
+            raise RuntimeError("DeepFilterNet allocation failed")
+        return state
+
+    def _refill(self):
+        while True:
+            with self.pool_lock:
+                while not self.closed and len(self.ready) >= self.pool_size:
+                    self.pool_lock.wait()
+                if self.closed:
+                    return
+            state = self.create()
+            with self.pool_lock:
+                self.ready.append(state)
+                self.pool_lock.notify_all()
+
+    def state(self):
+        with self.pool_lock:
+            if self.ready:
+                state = self.ready.popleft()
+                self.pool_lock.notify_all()
+                return state
+        # Pool exhausted: a session start pays the model build; later packets do not.
+        return self.create()
+
+    def wait_ready(self, timeout=60):
+        deadline = time.monotonic() + timeout
+        with self.pool_lock:
+            while len(self.ready) < self.pool_size:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self.pool_lock.wait(remaining):
+                    return len(self.ready) >= self.pool_size
+        return True
+
+
+class DeepFilterStream(Stream):
+    # libDF takes float audio in [-1, 1].
+    scale = 1.0 / 32768.0
+
+    def process_frame(self):
+        self.model.lib.df_process_frame(self.state, self.buffer, self.buffer)
+
+    def close(self):
+        if self.state:
+            self.model.lib.df_free(self.state)
             self.state = None
 
 
@@ -253,24 +358,57 @@ def handler_for(
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--library", required=True)
+    parser.add_argument("--model", choices=["rnnoise", "deepfilternet"], default="rnnoise")
+    parser.add_argument(
+        "--library", required=True, help="librnnoise.so, or libdf.so for deepfilternet"
+    )
+    parser.add_argument(
+        "--deepfilter-model",
+        help="DeepFilterNet3 ONNX archive (DeepFilterNet3_onnx.tar.gz) for --model deepfilternet",
+    )
+    parser.add_argument(
+        "--atten-lim-db",
+        type=float,
+        default=100.0,
+        help="deepfilternet attenuation limit in dB (100 = upstream default, unlimited)",
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8125)
     parser.add_argument("--max-sessions", type=int, default=32)
     args = parser.parse_args()
     if args.max_sessions < 1:
         parser.error("max-sessions must be positive")
-    model = RNNoise(args.library)
-    warm = Stream(model, 24000)
+    if args.model == "deepfilternet":
+        if not args.deepfilter_model:
+            parser.error("--model deepfilternet requires --deepfilter-model")
+        model = DeepFilterNet(args.library, args.deepfilter_model, args.atten_lim_db)
+        stream_factory, delay, frame = DeepFilterStream, model.audio_delay_ms, model.frame_ms
+    else:
+        model = RNNoise(args.library)
+        stream_factory, delay, frame = Stream, 20, 10
+    warm = stream_factory(model, 24000)
     for _ in range(10):
         warm.process(bytes(4800))
     warm.close()
+    if args.model == "deepfilternet":
+        model.wait_ready()
     server = ThreadingHTTPServer(
-        (args.host, args.port), handler_for(Sessions(model, args.max_sessions))
+        (args.host, args.port),
+        handler_for(
+            Sessions(model, args.max_sessions, stream_factory=stream_factory),
+            model_name=args.model,
+            audio_delay_ms=delay,
+            frame_ms=frame,
+        ),
     )
     print(
         json.dumps(
-            {"ready": True, "model": "rnnoise", "address": server.server_address}
+            {
+                "ready": True,
+                "model": args.model,
+                "audio_delay_ms": delay,
+                "address": server.server_address,
+            }
         ),
         flush=True,
     )
