@@ -1,0 +1,260 @@
+{
+  "model_revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
+  "base_revision": "f2826a00ceef68f0f2b946d945ecc0477ce4450c",
+  "source_revision": "42893024ca90c8de8ac3ed624467ebc123512ff8",
+  "dtype": "bfloat16",
+  "attention": "sdpa",
+  "tokenizer_class": "Qwen2Tokenizer",
+  "strict_checkpoint_load": true,
+  "renamed_checkpoint_keys": {
+    "llm.base_model.model.model.layers.0.self_attn.q_proj.bias": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.0.self_attn.q_proj.weight": "llm.base_model.model.model.layers.0.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.0.self_attn.v_proj.bias": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.0.self_attn.v_proj.weight": "llm.base_model.model.model.layers.0.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.1.self_attn.q_proj.bias": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.1.self_attn.q_proj.weight": "llm.base_model.model.model.layers.1.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.1.self_attn.v_proj.bias": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.1.self_attn.v_proj.weight": "llm.base_model.model.model.layers.1.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.10.self_attn.q_proj.bias": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.10.self_attn.q_proj.weight": "llm.base_model.model.model.layers.10.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.10.self_attn.v_proj.bias": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.10.self_attn.v_proj.weight": "llm.base_model.model.model.layers.10.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.11.self_attn.q_proj.bias": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.11.self_attn.q_proj.weight": "llm.base_model.model.model.layers.11.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.11.self_attn.v_proj.bias": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.11.self_attn.v_proj.weight": "llm.base_model.model.model.layers.11.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.12.self_attn.q_proj.bias": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.12.self_attn.q_proj.weight": "llm.base_model.model.model.layers.12.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.12.self_attn.v_proj.bias": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.12.self_attn.v_proj.weight": "llm.base_model.model.model.layers.12.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.13.self_attn.q_proj.bias": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.13.self_attn.q_proj.weight": "llm.base_model.model.model.layers.13.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.13.self_attn.v_proj.bias": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.13.self_attn.v_proj.weight": "llm.base_model.model.model.layers.13.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.14.self_attn.q_proj.bias": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.14.self_attn.q_proj.weight": "llm.base_model.model.model.layers.14.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.14.self_attn.v_proj.bias": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.14.self_attn.v_proj.weight": "llm.base_model.model.model.layers.14.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.15.self_attn.q_proj.bias": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.15.self_attn.q_proj.weight": "llm.base_model.model.model.layers.15.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.15.self_attn.v_proj.bias": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.15.self_attn.v_proj.weight": "llm.base_model.model.model.layers.15.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.16.self_attn.q_proj.bias": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.16.self_attn.q_proj.weight": "llm.base_model.model.model.layers.16.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.16.self_attn.v_proj.bias": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.16.self_attn.v_proj.weight": "llm.base_model.model.model.layers.16.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.17.self_attn.q_proj.bias": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.17.self_attn.q_proj.weight": "llm.base_model.model.model.layers.17.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.17.self_attn.v_proj.bias": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.17.self_attn.v_proj.weight": "llm.base_model.model.model.layers.17.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.18.self_attn.q_proj.bias": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.18.self_attn.q_proj.weight": "llm.base_model.model.model.layers.18.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.18.self_attn.v_proj.bias": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.18.self_attn.v_proj.weight": "llm.base_model.model.model.layers.18.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.19.self_attn.q_proj.bias": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.19.self_attn.q_proj.weight": "llm.base_model.model.model.layers.19.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.19.self_attn.v_proj.bias": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.19.self_attn.v_proj.weight": "llm.base_model.model.model.layers.19.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.2.self_attn.q_proj.bias": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.2.self_attn.q_proj.weight": "llm.base_model.model.model.layers.2.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.2.self_attn.v_proj.bias": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.2.self_attn.v_proj.weight": "llm.base_model.model.model.layers.2.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.20.self_attn.q_proj.bias": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.20.self_attn.q_proj.weight": "llm.base_model.model.model.layers.20.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.20.self_attn.v_proj.bias": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.20.self_attn.v_proj.weight": "llm.base_model.model.model.layers.20.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.21.self_attn.q_proj.bias": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.21.self_attn.q_proj.weight": "llm.base_model.model.model.layers.21.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.21.self_attn.v_proj.bias": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.21.self_attn.v_proj.weight": "llm.base_model.model.model.layers.21.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.22.self_attn.q_proj.bias": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.22.self_attn.q_proj.weight": "llm.base_model.model.model.layers.22.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.22.self_attn.v_proj.bias": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.22.self_attn.v_proj.weight": "llm.base_model.model.model.layers.22.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.23.self_attn.q_proj.bias": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.23.self_attn.q_proj.weight": "llm.base_model.model.model.layers.23.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.23.self_attn.v_proj.bias": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.23.self_attn.v_proj.weight": "llm.base_model.model.model.layers.23.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.24.self_attn.q_proj.bias": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.24.self_attn.q_proj.weight": "llm.base_model.model.model.layers.24.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.24.self_attn.v_proj.bias": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.24.self_attn.v_proj.weight": "llm.base_model.model.model.layers.24.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.25.self_attn.q_proj.bias": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.25.self_attn.q_proj.weight": "llm.base_model.model.model.layers.25.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.25.self_attn.v_proj.bias": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.25.self_attn.v_proj.weight": "llm.base_model.model.model.layers.25.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.26.self_attn.q_proj.bias": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.26.self_attn.q_proj.weight": "llm.base_model.model.model.layers.26.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.26.self_attn.v_proj.bias": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.26.self_attn.v_proj.weight": "llm.base_model.model.model.layers.26.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.27.self_attn.q_proj.bias": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.27.self_attn.q_proj.weight": "llm.base_model.model.model.layers.27.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.27.self_attn.v_proj.bias": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.27.self_attn.v_proj.weight": "llm.base_model.model.model.layers.27.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.3.self_attn.q_proj.bias": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.3.self_attn.q_proj.weight": "llm.base_model.model.model.layers.3.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.3.self_attn.v_proj.bias": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.3.self_attn.v_proj.weight": "llm.base_model.model.model.layers.3.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.4.self_attn.q_proj.bias": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.4.self_attn.q_proj.weight": "llm.base_model.model.model.layers.4.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.4.self_attn.v_proj.bias": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.4.self_attn.v_proj.weight": "llm.base_model.model.model.layers.4.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.5.self_attn.q_proj.bias": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.5.self_attn.q_proj.weight": "llm.base_model.model.model.layers.5.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.5.self_attn.v_proj.bias": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.5.self_attn.v_proj.weight": "llm.base_model.model.model.layers.5.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.6.self_attn.q_proj.bias": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.6.self_attn.q_proj.weight": "llm.base_model.model.model.layers.6.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.6.self_attn.v_proj.bias": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.6.self_attn.v_proj.weight": "llm.base_model.model.model.layers.6.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.7.self_attn.q_proj.bias": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.7.self_attn.q_proj.weight": "llm.base_model.model.model.layers.7.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.7.self_attn.v_proj.bias": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.7.self_attn.v_proj.weight": "llm.base_model.model.model.layers.7.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.8.self_attn.q_proj.bias": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.8.self_attn.q_proj.weight": "llm.base_model.model.model.layers.8.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.8.self_attn.v_proj.bias": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.8.self_attn.v_proj.weight": "llm.base_model.model.model.layers.8.self_attn.v_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.9.self_attn.q_proj.bias": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.9.self_attn.q_proj.weight": "llm.base_model.model.model.layers.9.self_attn.q_proj.base_layer.weight",
+    "llm.base_model.model.model.layers.9.self_attn.v_proj.bias": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.bias",
+    "llm.base_model.model.model.layers.9.self_attn.v_proj.weight": "llm.base_model.model.model.layers.9.self_attn.v_proj.base_layer.weight"
+  },
+  "load_seconds": 27.90835291100666,
+  "scope": "text-only micro-turn probe, no paced audio or playback",
+  "turns": [
+    {
+      "tick": 0,
+      "input": "What is",
+      "generated": "<|user is talking|><|im_end|>",
+      "compute_ms": 607.0222528651357,
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 1,
+      "input": "the capital of France?",
+      "generated": "<|user is talking|><|im_end|>",
+      "compute_ms": 27.166077867150307,
+      "events": [
+        [
+          "control",
+          "<|user is talking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 2,
+      "input": "",
+      "generated": "<|user finish talking|>The capital of France is Paris.<|im_end|>",
+      "compute_ms": 117.44970921427011,
+      "events": [
+        [
+          "control",
+          "<|user finish talking|>"
+        ],
+        [
+          "text",
+          "The capital of France is Paris."
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 3,
+      "input": "",
+      "generated": "<|user is thinking|><|im_end|>",
+      "compute_ms": 28.49279996007681,
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 4,
+      "input": "",
+      "generated": "<|user is thinking|><|im_end|>",
+      "compute_ms": 71.15840120241046,
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 5,
+      "input": "",
+      "generated": "<|user is thinking|><|im_end|>",
+      "compute_ms": 71.79637579247355,
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 6,
+      "input": "",
+      "generated": "<|user is thinking|><|im_end|>",
+      "compute_ms": 72.45286786928773,
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    },
+    {
+      "tick": 7,
+      "input": "",
+      "generated": "<|user is thinking|><|im_end|>",
+      "compute_ms": 48.62141190096736,
+      "events": [
+        [
+          "control",
+          "<|user is thinking|>"
+        ],
+        [
+          "control",
+          "<|im_end|>"
+        ]
+      ]
+    }
+  ],
+  "gpu_peak_gib": 16.80989933013916
+}
