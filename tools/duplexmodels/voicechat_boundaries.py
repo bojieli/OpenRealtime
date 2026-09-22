@@ -39,11 +39,12 @@ def audit(path):
             row['last_audio_at'] = time
             if event['delta'].startswith('<'):
                 row['audio_payload_redacted'] = True
+                row['audio_seconds'] = None
                 continue
             pcm = base64.b64decode(event['delta'], validate=True)
             samples = [sample[0] for sample in struct.iter_unpack('<h', pcm)]
             rms = math.sqrt(sum(sample * sample for sample in samples) / max(1, len(samples))) / 32768
-            row['audio_seconds'] += len(samples) / int(event.get('sample_rate_hz') or 22050)
+            row['audio_seconds'] = (row['audio_seconds'] or 0) + len(samples) / int(event.get('sample_rate_hz') or 22050)
             if rms >= 0.01:
                 row['last_audible_at'] = time
     return {'source': str(path), 'timing_basis': 'upstream packet arrival; RMS threshold 0.01 is diagnostic only',

@@ -5,7 +5,7 @@
     "resp-openrealtime-d4c87af83a2f4e44a426af972513c9ed-0-2986c4bc": {
       "text": "",
       "audio_packets": 10,
-      "audio_seconds": 0.0,
+      "audio_seconds": null,
       "done_at": 1.5377,
       "last_audible_at": null,
       "created_at": 0.8846,
@@ -15,7 +15,7 @@
     "resp-openrealtime-d4c87af83a2f4e44a426af972513c9ed-0-0864bf71": {
       "text": "Hi! How can I help you today?",
       "audio_packets": 28,
-      "audio_seconds": 0.0,
+      "audio_seconds": null,
       "done_at": 3.7794,
       "last_audible_at": null,
       "created_at": 1.6175,
@@ -26,7 +26,7 @@
     "resp-openrealtime-d4c87af83a2f4e44a426af972513c9ed-0-ca282a72": {
       "text": "You can save money by making a budget and tracking your expenses.",
       "audio_packets": 185,
-      "audio_seconds": 0.0,
+      "audio_seconds": null,
       "done_at": null,
       "last_audible_at": null,
       "created_at": 3.8644,
