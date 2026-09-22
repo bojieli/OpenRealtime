@@ -227,6 +227,8 @@ class MiniCPMODuplexSidecar(Sidecar):
         super().__init__(ControlTap(input_stream, self.on_interrupt), output_stream)
         self.host = host
         self.mock = mock
+        if mock:
+            self.model_name = "minicpm-o-duplex-protocol-mock (no model inference)"
         self.idle_fill_seconds = max(0.0, idle_fill_ms / 1000.0)
         self.use_hello_instructions = use_hello_instructions
         self.busy_timeout = busy_timeout
