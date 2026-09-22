@@ -556,6 +556,12 @@ it is informative: AUROC 0.88 for "is there background speech", 0.95 for
 a useful uncertain observer, not a controller - and it is why its answers are
 typed as expiring hypotheses.
 
+The previously incomplete ELLSA Llama Questions fixture download is now
+complete: all 300 annotated clips at dataset revision `b21eb8b8` exist with
+intact WAV payloads. [Per-file hashes](../deploy/duplex/evidence/ellsa/20260922-fixtures/inventory.json)
+are retained. The eight-clip model result below has not been expanded by this
+fixture preparation.
+
 **Task extensions (P8).** ELLSA's speech-only research loop now runs on the
 GPU after bridging its joint speech/vision attention to SDPA. The bridge was
 checked against explicit attention calculations for prefill, cached decoding,
