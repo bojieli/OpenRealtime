@@ -240,6 +240,30 @@ model itself was not measured here.
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |
 
+## What these numbers are not
+
+- **Subsets, not campaigns.** Each end-to-end cell drives the same number of
+  recordings from each FDB v1.5 category and a slice of FD-Bench. The bench
+  itself reports NOT REPORTABLE for anything short of the full 498-task
+  population, and nothing here should be quoted as a complete-cell result.
+  One full campaign on the headline profile is the natural next step.
+- **Measured on a shared, loaded machine.** Other users' jobs held the CPU at
+  a load average of 90-250 throughout, and up to seven model integrations
+  shared the GPU. Latencies are upper bounds; the comparisons between cells
+  are more trustworthy than any single number, because the cells ran under
+  similar conditions and each records its own.
+- **System comparisons, not causal ones.** A native speech model against this
+  cascade differs in backbone, training and serving stack at once. Only the
+  cells that change exactly one factor - the recogniser, the synthesiser, the
+  endpoint predictor, the clock's triggers - support a causal reading.
+- **No quality judgement of what was said.** The suites score interaction
+  timing and tool behaviour, and the component benchmarks score recognition
+  and intelligibility. Whether an answer was a good answer is not measured
+  here.
+- **One voice, mostly English.** Mandarin appears in the recognition and
+  synthesis components; the end-to-end suites are English. A recogniser's
+  Mandarin error rate here does not describe a Mandarin conversation.
+
 ## Reproduce
 
 ```bash
