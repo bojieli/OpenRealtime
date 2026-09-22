@@ -237,6 +237,7 @@ def main() -> None:
     timeline[lead:lead + len(question)] = question
     sent_samples = 0
     interrupt_start_sample = None
+    interrupt_control = None
     stop_sending_at = question_end + arguments.stop_after if arguments.stop_after > 0 else None
     tool_results_sent = []
     while sent_samples < total and not session.closed.is_set():
@@ -254,7 +255,10 @@ def main() -> None:
             state["interrupt_injected"] = True
             interrupt_start_sample = start
             if arguments.send_interrupt:
+                control_started = session.now()
                 session.send("interrupt")
+                interrupt_control = {"write_started_s": control_started,
+                                     "write_completed_s": session.now()}
             print(f"[{now:6.2f}] injecting interruption ({len(interruption) / RATE:.2f}s)", flush=True)
         with result_lock:
             due = [item for item in pending_results if item[0] <= now]
@@ -296,6 +300,23 @@ def main() -> None:
         "logs": [e for e in events if e["type"] == "log"],
         "output_seconds": round(len(session.output) / 2 / max(session.output_rate, 1), 3),
     }
+    if interrupt_control is not None:
+        # Write completion is a client-side timestamp, not a server ack. Frames
+        # already in transport may still arrive; keep this diagnostic separate
+        # from rendered playback and model-native interruption measurements.
+        sent_at = interrupt_control["write_completed_s"]
+        boundary = next((e["t"] for e in events
+                         if e["type"] == "turn_done" and e["t"] >= sent_at), None)
+        trailing = [e for e in events if e["type"] == "output_audio"
+                    and e["t"] >= sent_at and (boundary is None or e["t"] <= boundary)]
+        summary["interrupt_control"] = {
+            **interrupt_control, "next_turn_done_s": boundary,
+            "boundary_latency_ms": (boundary - sent_at) * 1000 if boundary is not None else None,
+            "packets_received_before_boundary": len(trailing),
+            "audio_received_before_boundary_ms": sum(e["samples"] for e in trailing)
+                * 1000 / max(session.output_rate, 1),
+            "interpretation": "client receive timing; includes in-flight packets; no server acknowledgement",
+        }
     if interrupt_start_sample is not None:
         onset = interrupt_start_sample / RATE
         summary["interrupt_start_s"] = round(onset, 3)
