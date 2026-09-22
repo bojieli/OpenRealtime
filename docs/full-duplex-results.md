@@ -195,7 +195,39 @@ path and says which one it ran.
 
 ## Perception and task extensions (P7, P8)
 
-RESULTS_PERCEPTION
+**Speaker attribution under overlap (cell S0).** Controlled mixtures from
+LibriSpeech test-clean at 25% overlap, scored by concatenated
+minimum-permutation WER:
+
+| Condition | Ordinary mixed-audio recognition | Streaming Sortformer + multitalker Parakeet |
+| --- | --- | --- |
+| 2 speakers | cpWER 0.74 | **cpWER 0.18** |
+| 4 speakers | cpWER 1.24 | **cpWER 0.17** |
+
+Mixed-audio recognition does not degrade gracefully under overlap - at four
+speakers it is worse than useless - while the diarizer-plus-multitalker path
+holds. That gain is paid for in delay and per-speaker compute, and Sortformer's
+documented low-latency setting buffers about a second before computing, so
+speaker attribution must not sit on the 500 ms interaction path; it belongs
+where a late, revisable answer is acceptable.
+
+**Acoustic preprocessing (cell A0).** DeepFilterNet3 behind the existing
+pre-ASR filter contract, at a measured 40 ms waveform delay: on FD-Bench's
+0 dB background-noise condition it lowers WER from 14.4% to 12.2%, and at
+10 dB it changes nothing (2.42% to 2.49%). It also cuts what the recogniser
+hallucinates in the gaps between turns (488 to 450 words, gap level -30.7 dB
+to -56.4 dB). So it earns its place only where the noise is severe, which is
+why it stays an opt-in branch with a bypass rather than a default.
+
+**Background audio understanding (cell A0).** Audio Flamingo 3 serves bounded
+windows off the critical path, every answer carrying when it became available
+and when it expires, shedding load rather than queueing. As a four-way
+classifier of what an overlapping sound means it fails (42% accuracy; it never
+recognises background speech or side conversation as such), but as a detector
+it is informative: AUROC 0.88 for "is there background speech", 0.95 for
+"side conversation versus interruption". That is the shape the plan predicted -
+a useful uncertain observer, not a controller - and it is why its answers are
+typed as expiring hypotheses.
 
 ## End-to-end voice agent performance (P9)
 
