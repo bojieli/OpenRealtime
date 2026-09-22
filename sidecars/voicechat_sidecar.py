@@ -211,7 +211,7 @@ class VoiceChatSidecar(Sidecar):
     def __init__(self, input_stream, output_stream, *, server: str, served_model: str,
                  mock: bool, instructions: str | None, idle_fill_ms: int,
                  forward_commit: bool, event_log: str | None, connect_timeout: float,
-                 mock_tool_call: bool) -> None:
+                 mock_tool_call: bool, output_quiet_ms: int = 0) -> None:
         super().__init__(ControlTap(input_stream, self.on_interrupt), output_stream)
         self.server = server
         self.served_model = served_model
@@ -223,6 +223,11 @@ class VoiceChatSidecar(Sidecar):
         self.forward_commit = forward_commit
         self.connect_timeout = connect_timeout
         self.mock_tool_call = mock_tool_call
+        if output_quiet_ms < 0:
+            raise ValueError("output_quiet_ms cannot be negative")
+        self.output_quiet_ms = output_quiet_ms
+        self._output_audible = False
+        self._output_quiet_samples = 0
         self._event_log = open(event_log, "a", encoding="utf-8") if event_log else None
         self._event_log_lock = threading.Lock()
         self._t0 = time.monotonic()
@@ -519,9 +524,12 @@ class VoiceChatSidecar(Sidecar):
             rate = int(event.get("sample_rate_hz") or MODEL_OUTPUT_RATE)
             if rate != MODEL_OUTPUT_RATE:
                 log(f"voicechat audio arrived at {rate} Hz, declared {MODEL_OUTPUT_RATE}")
-            with self._state_lock:
-                self._response_active = True
-            self.audio(payload)
+            if self.output_quiet_ms:
+                self._segmented_audio(payload)
+            else:
+                with self._state_lock:
+                    self._response_active = True
+                self.audio(payload)
             return
         if kind in ("response.output_audio_transcript.delta", "response.output_text.delta",
                     "response.text.delta"):
@@ -553,6 +561,38 @@ class VoiceChatSidecar(Sidecar):
             self.send("log", text=f"voicechat upstream error: {json.dumps(detail)[:400]}")
             return
 
+    def _segmented_audio(self, payload: bytes) -> None:
+        """Adapter output boundary; upstream EOS may wait for the next user.
+
+        Count decoded PCM time, not a wall-clock gap caused by a stalled GPU.
+        Retain quiet packets during speech; suppress idle codec silence.
+        """
+        samples = np.frombuffer(payload, dtype="<i2").astype(np.float32) / 32768.0
+        loud = bool(samples.size) and float(np.sqrt(np.mean(samples * samples))) >= 0.01
+        if loud:
+            self._output_audible = True
+            self._output_quiet_samples = 0
+        elif self._output_audible:
+            self._output_quiet_samples += samples.size
+        if not self._output_audible:
+            return
+        with self._state_lock:
+            self._response_active = True
+        self.audio(payload)
+        if not loud and self._output_quiet_samples * 1000 >= self.output_quiet_ms * MODEL_OUTPUT_RATE:
+            self._output_audible = False
+            self._output_quiet_samples = 0
+            with self._state_lock:
+                text = "".join(self._response_text)
+                self._response_text = []
+                self._response_active = False
+                self._turns_done += 1
+                self._turn_finished.notify_all()
+            self.send("log", text=f"voicechat adapter output boundary: {self.output_quiet_ms} ms decoded silence; not model EOS")
+            if text.strip():
+                self.text_done(text)
+            self.turn_done()
+
     def _gated(self, response_id: str) -> bool:
         with self._state_lock:
             return bool(self._gated_response) and (
@@ -575,6 +615,8 @@ class VoiceChatSidecar(Sidecar):
         self.send("tool_call", call_id=call_id, name=name, arguments=arguments)
 
     def _finish_turn(self, response_id: str, event: dict) -> None:
+        self._output_audible = False
+        self._output_quiet_samples = 0
         with self._state_lock:
             was_gated = bool(self._gated_response) and (
                 not response_id or self._gated_response in ("*", response_id))
@@ -786,6 +828,8 @@ def main() -> None:
                         help="append silence frames after this long without engine audio; 0 disables")
     parser.add_argument("--no-forward-commit", action="store_true",
                         help="do not forward engine commit frames as input_audio_buffer.commit")
+    parser.add_argument("--output-quiet-ms", type=int, default=0,
+                        help="opt-in adapter output boundary after decoded silence (0: upstream EOS only)")
     parser.add_argument("--event-log", default=None, help="append every upstream event (JSONL) here")
     parser.add_argument("--connect-timeout", type=float, default=45.0,
                         help="seconds to wait for the one-session engine to admit this session")
@@ -799,7 +843,7 @@ def main() -> None:
         mock=arguments.mock, instructions=arguments.instructions,
         idle_fill_ms=arguments.idle_fill_ms, forward_commit=not arguments.no_forward_commit,
         event_log=arguments.event_log, connect_timeout=arguments.connect_timeout,
-        mock_tool_call=arguments.mock_tool_call,
+        mock_tool_call=arguments.mock_tool_call, output_quiet_ms=arguments.output_quiet_ms,
     )
 
 
