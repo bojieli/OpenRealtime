@@ -657,6 +657,13 @@ class VoiceChatSidecar(Sidecar):
     def on_tool_result(self, message) -> None:
         call_id = str(message.get("call_id", ""))
         call = self._calls.get(call_id)
+        if call is None:
+            self.error(f"voicechat result has no proposed call: {call_id}",
+                       code="unknown_tool_call", fatal=False)
+            return
+        if call.get("result_delivered"):
+            self.send("log", text=f"voicechat duplicate tool result ignored: {call_id}")
+            return
         if message.get("error"):
             output = ascii_prompt(f"Error: {message.get('error')}")
         else:
@@ -666,6 +673,7 @@ class VoiceChatSidecar(Sidecar):
         log(f"voicechat tool_result for {call_id} after {latency:.2f}s: {output[:200]}")
         if self.mock:
             self._mock_speak(f"The tool said: {output[:80]}")
+            call["result_delivered"] = True
             return
         if self._ws is None:
             return
@@ -673,6 +681,7 @@ class VoiceChatSidecar(Sidecar):
             "type": "conversation.item.create",
             "item": {"type": "function_call_output", "call_id": call_id, "output": output},
         })
+        call["result_delivered"] = True
 
     def on_tools_update(self, tools: list[dict]) -> None:
         self.tools = tools

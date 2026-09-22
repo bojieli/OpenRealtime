@@ -80,5 +80,36 @@ class SegmentationTests(unittest.TestCase):
         self.assertEqual(s._output_quiet_samples, 0)
 
 
+class ToolResultTests(unittest.TestCase):
+    def test_only_proposed_result_is_forwarded_once(self):
+        import time
+        s = VoiceChatSidecar.__new__(VoiceChatSidecar)
+        s._calls = {'call-1': {'proposed_at': time.monotonic()}}
+        s.mock = False
+        s._ws = object()
+        sent, errors = [], []
+        s._ws_send = sent.append
+        s.send = lambda *a, **k: None
+        s.error = lambda *a, **k: errors.append(k['code'])
+        s.on_tool_result({'call_id': 'unknown', 'output': 'bad'})
+        s.on_tool_result({'call_id': 'call-1', 'output': '37'})
+        s.on_tool_result({'call_id': 'call-1', 'output': '38'})
+        self.assertEqual(errors, ['unknown_tool_call'])
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0]['item']['output'], '37')
+
+    def test_failed_write_does_not_mark_result_delivered(self):
+        import time
+        s = VoiceChatSidecar.__new__(VoiceChatSidecar)
+        s._calls = {'call-1': {'proposed_at': time.monotonic()}}
+        s.mock = False
+        s._ws = object()
+        def fail(_): raise OSError('closed')
+        s._ws_send = fail
+        with self.assertRaises(OSError):
+            s.on_tool_result({'call_id': 'call-1', 'output': '37'})
+        self.assertFalse(s._calls['call-1'].get('result_delivered', False))
+
+
 if __name__ == '__main__':
     unittest.main()
