@@ -361,7 +361,13 @@ Native validation remains incomplete. The retained component artifacts under
   A second recorded question reproduced the same pattern: 1.222 s first-audio
   latency, audible answer ending at 9.341 s, and no final boundary by 30 s.
   Both cases used the same warmed runtime and different context recordings;
-  the missing boundary is not confined to the first question.
+  the missing boundary is not confined to the first question. Instrumenting
+  the thinker's greedy sampler before scheduler transport then localized the
+  first case: the answer's final punctuation token (1046) transitioned directly
+  to padding (12), with no sampled end token (2). The sampler did emit earlier
+  end tokens for the greeting. This implicates generation in this configured
+  runtime rather than a final end token discarded by the downstream projector;
+  it does not yet distinguish model behavior from runtime numerical differences.
 
 ## Interaction prediction (P6)
 
