@@ -29,6 +29,16 @@ def digest(path: Path) -> str:
         return checksum.hexdigest()
 
 
+def sidecar_sources(root: Path) -> dict[str, str]:
+    """Record local Python adapter code, including its shared protocol library.
+
+    External serving processes have separate provenance; this inventory only
+    guards scripts that a profile can spawn from this checkout per session.
+    """
+    return {str(path.relative_to(root)): digest(path)
+            for path in sorted((root / 'sidecars').rglob('*.py')) if path.is_file()}
+
+
 def write_json(path: Path, value: dict) -> None:
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value, indent=2) + '\n')
@@ -148,6 +158,7 @@ def run(profile: str, per_category: int, conversations: int) -> int:
     metadata = {
         'schema': 2, 'profile': profile, 'profile_sha256': digest(out / 'profile.yaml'),
         'binary_sha256': digest(binary), 'binary': str(binary),
+        'sidecar_source_sha256': sidecar_sources(ROOT),
         'revision': capture('git', 'rev-parse', 'HEAD'),
         'tree_modified': bool(capture('git', 'status', '--porcelain', '--', '.', ':!.runtime')),
         'started': now(), 'load_average': Path('/proc/loadavg').read_text().split()[:3],
@@ -186,6 +197,8 @@ def run(profile: str, per_category: int, conversations: int) -> int:
         else:
             raise RuntimeError('server readiness timeout')
         for filename in expected:
+            if sidecar_sources(ROOT) != metadata['sidecar_source_sha256']:
+                raise RuntimeError('local sidecar source inventory changed during run')
             if server.poll() is not None or not owns_listener(server.pid, port):
                 raise RuntimeError('owned server is no longer listening')
             if filename == 'fdbench.json':
@@ -210,6 +223,8 @@ def run(profile: str, per_category: int, conversations: int) -> int:
                 errors.append(f'{filename}: exit {code}; {error}')
         if digest(binary) != metadata['binary_sha256']:
             errors.append('executable changed during run')
+        if sidecar_sources(ROOT) != metadata['sidecar_source_sha256']:
+            errors.append('local sidecar source inventory changed during run')
         if server.poll() is not None or not owns_listener(server.pid, port):
             errors.append('owned server exited before measurement completed')
         status = int(bool(errors))

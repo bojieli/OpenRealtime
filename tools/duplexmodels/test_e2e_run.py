@@ -101,3 +101,23 @@ class RunnerTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SourceInventoryTests(unittest.TestCase):
+    def test_edit_add_and_delete_change_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'sidecars' / 'protocol' / 'reader.py'
+            source.parent.mkdir(parents=True)
+            source.write_text('old')
+            before = e2e_run.sidecar_sources(root)
+            source.write_text('new')
+            self.assertNotEqual(before, e2e_run.sidecar_sources(root))
+            source.write_text('old')
+            extra = source.with_name('writer.py')
+            extra.write_text('added')
+            self.assertNotEqual(before, e2e_run.sidecar_sources(root))
+            extra.unlink()
+            self.assertEqual(before, e2e_run.sidecar_sources(root))
+            source.unlink()
+            self.assertNotEqual(before, e2e_run.sidecar_sources(root))
