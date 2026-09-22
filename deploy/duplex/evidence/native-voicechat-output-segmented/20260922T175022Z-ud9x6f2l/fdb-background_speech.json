@@ -1,0 +1,144 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-voicechat-output-segmented",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "6809951c5dcdc7e7c1910180b2bde3b99630bf62",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T17:51:54Z",
+    "finished_at": "2026-09-22T17:52:28Z"
+  },
+  "expected_tasks": 100,
+  "tasks": [
+    {
+      "id": "background_speech/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 719.9583333333333,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 719.9583333333333,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn on the study lamp.",
+        "event": "Oh, it's starting to rain outside."
+      }
+    },
+    {
+      "id": "background_speech/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Remind me to call Mom later today.",
+        "event": "We need to replace the batteries."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 2,
+    "failed": 0,
+    "passed": 2,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "98 of 100 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 719.9583333333333,
+        "p50": 879.9791666666666,
+        "p90": 1007.9958333333333,
+        "p95": 1023.9979166666667,
+        "p99": 1036.7995833333332,
+        "max": 1040,
+        "mean": 879.9791666666666
+      },
+      "agent_audio_at_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 80,
+        "p50": 120,
+        "p90": 152,
+        "p95": 156,
+        "p99": 159.20000000000002,
+        "max": 160,
+        "mean": 120
+      },
+      "agent_audio_before_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 400,
+        "p50": 480,
+        "p90": 544,
+        "p95": 552,
+        "p99": 558.4,
+        "max": 560,
+        "mean": 480
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 719.9583333333333,
+        "p50": 879.9791666666666,
+        "p90": 1007.9958333333333,
+        "p95": 1023.9979166666667,
+        "p99": 1036.7995833333332,
+        "max": 1040,
+        "mean": 879.9791666666666
+      },
+      "event_audible_after_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 20,
+        "p50": 40,
+        "p90": 56,
+        "p95": 58,
+        "p99": 59.6,
+        "max": 60,
+        "mean": 40
+      }
+    }
+  }
+}

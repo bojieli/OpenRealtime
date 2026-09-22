@@ -390,7 +390,14 @@ Native validation remains incomplete. The retained component artifacts under
   corrected result are both retained in
   [the segmentation evidence](../deploy/duplex/evidence/voicechat/20260922-output-segmentation/).
   This one-question check does not establish interruption or playback acceptance;
-  the new profile's public-Realtime evaluation is pending.
+  the first public-Realtime development smoke run completed without task
+  errors: interruption 1/2, backchannel/background/other-talk 2/2 each, FD-Bench
+  6/8 answered, two missed, zero premature, 8,000 ms aggregate overlap and
+  five overruns. The median of the two conversation latency values was
+  1,088 ms. Adapter source changed during this attempt, so it is development
+  evidence, not a fixed-revision result. The
+  [retained development run](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T175022Z-ud9x6f2l/)
+  includes that limitation; a clean-checkout rerun at `6809951c` is in progress.
 
 ## Interaction prediction (P6)
 

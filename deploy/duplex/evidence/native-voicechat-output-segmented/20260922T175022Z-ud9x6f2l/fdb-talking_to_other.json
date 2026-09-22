@@ -1,0 +1,144 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-voicechat-output-segmented",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "6809951c5dcdc7e7c1910180b2bde3b99630bf62",
+    "modified": true,
+    "executable_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T17:52:29Z",
+    "finished_at": "2026-09-22T17:53:14Z"
+  },
+  "expected_tasks": 100,
+  "tasks": [
+    {
+      "id": "talking_to_other/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 220
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "What's the population of Toronto?",
+        "event": "Dad, microwave just quit on us."
+      }
+    },
+    {
+      "id": "talking_to_other/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 479.9583333333333,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "What’s the sunrise time tomorrow?",
+        "event": "Coach Garcia, ankle's still kinda sore."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 2,
+    "failed": 0,
+    "passed": 2,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "98 of 100 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 880,
+        "p50": 920,
+        "p90": 952,
+        "p95": 956,
+        "p99": 959.1999999999999,
+        "max": 960,
+        "mean": 920
+      },
+      "agent_audio_at_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 80,
+        "p50": 80,
+        "p90": 80,
+        "p95": 80,
+        "p99": 80,
+        "max": 80,
+        "mean": 80
+      },
+      "agent_audio_before_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 479.9583333333333,
+        "p50": 479.97916666666663,
+        "p90": 479.99583333333334,
+        "p95": 479.9979166666667,
+        "p99": 479.9995833333333,
+        "max": 480,
+        "mean": 479.97916666666663
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 880,
+        "p50": 920,
+        "p90": 952,
+        "p95": 956,
+        "p99": 959.1999999999999,
+        "max": 960,
+        "mean": 920
+      },
+      "event_audible_after_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 120,
+        "p50": 170,
+        "p90": 210,
+        "p95": 215,
+        "p99": 219,
+        "max": 220,
+        "mean": 170
+      }
+    }
+  }
+}
