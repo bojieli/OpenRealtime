@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- The streaming and full-duplex plan was executed on the RTX Pro: eleven open
+  models are integrated behind three contracts, and what each one does is
+  measured rather than declared. Recognisers speak a start/chunk/finish dialect
+  that now carries a committed prefix, or vLLM's realtime route where the
+  decoder is append-only; synthesisers speak `openrealtime-incremental-speech/1`,
+  a same-context WebSocket where text can be appended while audio is already
+  playing and a cancel leaves nothing in flight; native speech models stay
+  behind the existing sidecar protocol.
+
+  The measurements say things the model cards do not. When a recogniser's
+  evidence becomes usable differs far more than its accuracy: Qwen3-ASR has the
+  lowest English error rate here and commits nothing until the utterance ends,
+  about six seconds in, while Nemotron and Voxtral commit as they decode.
+  Two synthesisers that declare token-level incremental input never once spoke
+  an unfinished prefix, while the one declaring the weaker flush granularity
+  behaved exactly as it said; VibeVoice-Realtime starts speaking a prefix in
+  70-234 ms. Under 25% overlap, ordinary mixed-audio recognition reaches a
+  cpWER of 0.74 with two speakers and 1.24 with four, where a diarizer with
+  multitalker recognition stays at 0.18.
+
+  A micro-turn cascade - streaming ASR, a controller asked every 500 ms, and
+  incremental synthesis - runs as one duplex model behind the existing binding.
+  Its clock is measurable: a committed word waits a median 175 ms for the tick
+  that admits it, decisions take 123 ms, and none outlasted its tick. Three
+  rules are enforced without asking the controller, because they are about who
+  holds the floor rather than what was meant, and they are what made it answer
+  whole turns instead of half-sentences.
+
+  An acoustic end-of-turn classifier can now be consulted at every pause
+  (`-turn-end-url`). By default it decides nothing and is only recorded on the
+  timeline; `-turn-end-mode control` promotes it to the floor's projection,
+  bounded by the floor's own hold. Six predictors were compared on 2,407
+  labelled pauses, and the ranking reverses with recogniser lag: the transcript
+  model leads on complete text and loses most of that lead once the transcript
+  trails speech by 600 ms, while the acoustic model is the one that holds up on
+  disfluent human speech.
+
+  Full results, including what could not be run and why, are in
+  [the results record](docs/full-duplex-results.md); the deployment is in
+  [deploy/duplex](deploy/duplex/README.md).
+
 - A telephone caller reached a realtime endpoint three times too fast, and the
   agent behind it never spoke again after the greeting. A frame carries its own
   sample rate because callers differ - a telephone leg arrives as G.711 at 8kHz,
