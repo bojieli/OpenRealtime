@@ -3,7 +3,9 @@
 
 Uses the sidecar wire protocol and recorded input paced at wall-clock speed.
 Packet arrival is not rendered playback. A reconnect is successful only when
-both fresh sessions handshake and emit audio, not merely when TCP accepts.
+both fresh sessions handshake and emit at least 100 ms of consecutive audio
+above -40 dBFS RMS, not merely when TCP accepts or silent PCM arrives.
+This energy criterion does not establish intelligibility or answer correctness.
 """
 import argparse
 import json
@@ -12,8 +14,29 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
+
 from native_probe import load_audio, pcm16, RATE, PACKET
 from openrealtime_sidecar.protocol import read_message, write_message
+
+
+class AudioActivity:
+    """Packet-independent 20 ms RMS windows; require five active windows."""
+    def __init__(self):
+        self.pending = b''
+        self.consecutive = 0
+        self.detected = False
+
+    def push(self, payload):
+        self.pending += payload
+        window_bytes = PACKET * 2
+        while len(self.pending) >= window_bytes:
+            samples = np.frombuffer(self.pending[:window_bytes], dtype='<i2').astype(np.float64) / 32768
+            self.pending = self.pending[window_bytes:]
+            active = np.sqrt(np.mean(samples * samples)) >= 0.01
+            self.consecutive = self.consecutive + 1 if active else 0
+            self.detected |= self.consecutive >= 5
+        return self.detected
 
 
 def attempt(address, question, timeout):
@@ -25,6 +48,7 @@ def attempt(address, question, timeout):
     received = threading.Event()
     errors = []
     audio_bytes = 0
+    activity = AudioActivity()
     thread = None
     try:
         write_message(writer, 'hello', version=1, sample_rate=RATE)
@@ -48,14 +72,14 @@ def attempt(address, question, timeout):
                         audio_bytes += len(message.payload)
                         if first_audio is None:
                             first_audio = time.monotonic()
-                        received.set()
+                        if activity.push(message.payload):
+                            received.set()
             except OSError as error:
                 if not received.is_set():
                     errors.append(str(error))
                     received.set()
         thread = threading.Thread(target=receive, daemon=True)
         thread.start()
-        import numpy as np
         began = time.monotonic()
         sent = 0
         while not received.is_set() and time.monotonic()-began < timeout:
@@ -68,11 +92,15 @@ def attempt(address, question, timeout):
         result = {'handshake_s':handshake, 'input_sent_s':sent/RATE,
                   'first_audio_s':first_audio-began if first_audio else None,
                   'audio_bytes':audio_bytes, 'errors':errors,
-                  'passed':bool(audio_bytes) and not errors}
+                  'active_audio_detected': activity.detected,
+                  'passed':activity.detected and not errors}
         # Abrupt peer disconnect exercises EOF, not a cooperative model stop.
         return result
     finally:
-        connection.shutdown(socket.SHUT_RDWR)
+        try:
+            connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass  # The peer may have already disconnected.
         if thread is not None:
             thread.join(2)
         for handle in (reader, writer, connection):
@@ -88,7 +116,10 @@ def main():
     args = parser.parse_args()
     question = load_audio(args.question)
     result = {'address':args.address, 'question':args.question,
-              'timing_basis':'received PCM packets, not rendered playback', 'attempts':[]}
+              'timing_basis':'received PCM packets, not rendered playback',
+              'activity_criterion': {'rms_dbfs': -40, 'consecutive_ms': 100,
+                                     'window_ms': 20, 'sample_rate': RATE},
+              'attempts':[]}
     try:
         for _ in range(2):
             row = attempt(args.address, question, args.timeout)

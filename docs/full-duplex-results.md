@@ -667,6 +667,17 @@ The clock's own evidence for every traced run:
 | mt-fdbench3.jsonl | 8 | 1039 | 180/458 | 93/163 | 0 | {'continue': 557, 'wait': 210, 'idle': 137, 'respond': 73, 'stop': 62} | {'clock': 866, 'word': 114, 'pause': 59} |
 <!-- end generated -->
 
+## Reconnect evidence scope
+
+Earlier `native_reconnect_probe.py` results establish handshake and nonempty
+PCM delivery after reconnect; the probe accepted silence as successful output.
+A local socket regression reproduced that false positive. The current probe
+requires five consecutive 20 ms windows at or above −40 dBFS RMS (100 ms),
+independent of transport packet boundaries, and records that criterion in its
+result. Earlier GPU results have not been revalidated against this stronger
+criterion. Even an energy-qualified pass does not establish intelligibility,
+answer correctness, rendered playback, or long-session resource stability.
+
 ## Compatibility matrix
 
 What each model is integrated as, and how far it was taken. "Measured" means
