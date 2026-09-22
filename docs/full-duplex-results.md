@@ -499,6 +499,17 @@ DualTurn's published `modeling_dualturn.py` silently drops the per-task layer
 attention its own config enables, so the service implements the research
 path and says which one it ran.
 
+**X2-Turn causality remains unverified.** The retained
+[timing probe](../deploy/duplex/evidence/interaction/20260922-x2-causality/timing.json)
+reported a frame-count-derived delay of −10 frames and up to 0.99096 change
+between prefix and full-buffer probabilities. That is not evidence of negative
+latency: the offline runtime performs generated-sequence alignment and a second
+forward pass, and nominal output indices do not establish causal availability.
+Endpoint and overlap analyses now exclude these arrays unless prefix stability
+and nonnegative availability are explicitly verified. Existing offline X2-Turn
+scores must not be promoted to causal endpoint or interruption measurements.
+A fresh streaming or per-prefix evaluation remains required.
+
 ## Perception and task extensions (P7, P8)
 
 **Speaker attribution under overlap (cell S0).** Controlled mixtures from

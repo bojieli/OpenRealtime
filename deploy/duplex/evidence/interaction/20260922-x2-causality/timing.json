@@ -1,0 +1,145 @@
+{
+  "available_after_frames": -10,
+  "delays_seen": [
+    -10
+  ],
+  "max_abs_diff_prefix_vs_full": 0.99096,
+  "rows": [
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+      "t": 3.04,
+      "frames": 48,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.12165,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+      "t": 4.0,
+      "frames": 60,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.12329,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+      "t": 6.96,
+      "frames": 97,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.99096,
+      "last3_max_abs_diff": 0.01137
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+      "t": 8.0,
+      "frames": 110,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.27722,
+      "last3_max_abs_diff": 0.27722
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+      "t": 9.6,
+      "frames": 130,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.12222,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/2/input.wav",
+      "t": 3.04,
+      "frames": 48,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.00704,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/2/input.wav",
+      "t": 4.0,
+      "frames": 60,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.10858,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/2/input.wav",
+      "t": 6.96,
+      "frames": 97,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.74766,
+      "last3_max_abs_diff": 0.00355
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/2/input.wav",
+      "t": 8.0,
+      "frames": 110,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.10858,
+      "last3_max_abs_diff": 3e-05
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/2/input.wav",
+      "t": 9.6,
+      "frames": 130,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.10858,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/3/input.wav",
+      "t": 3.04,
+      "frames": 48,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.01146,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/3/input.wav",
+      "t": 4.0,
+      "frames": 60,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.01133,
+      "last3_max_abs_diff": 0.0
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/3/input.wav",
+      "t": 6.96,
+      "frames": 97,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.46788,
+      "last3_max_abs_diff": 0.00343
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/3/input.wav",
+      "t": 8.0,
+      "frames": 110,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.10837,
+      "last3_max_abs_diff": 3e-05
+    },
+    {
+      "file": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/3/input.wav",
+      "t": 9.6,
+      "frames": 130,
+      "provisional_tail_frames": 0,
+      "delay_frames": -10,
+      "max_abs_diff_vs_full": 0.01823,
+      "last3_max_abs_diff": 0.0
+    }
+  ],
+  "meaning": "frame f (covering [f, f+1) x 80 ms) is first produced once (f + 1 + available_after_frames) x 80 ms of audio exist; max_abs_diff says whether its value changes once later audio arrives"
+}

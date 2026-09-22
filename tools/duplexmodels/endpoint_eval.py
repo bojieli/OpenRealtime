@@ -54,6 +54,8 @@ Every stage caches under ``--work`` (default
 
 from __future__ import annotations
 
+from x2_evidence import causal_timing
+
 import argparse
 import concurrent.futures as futures
 import difflib
@@ -791,7 +793,7 @@ def cmd_analyze(args) -> None:
     scorers = {"smart_turn": score_smart, "livekit": score_live, "fusion": score_fusion}
     x2_path = os.path.join(args.work, "external_x2turn.jsonl")
     x2_timing = os.path.join(args.work, "x2turn_timing.json")
-    if os.path.exists(x2_path) and os.path.exists(x2_timing):
+    if os.path.exists(x2_path) and os.path.exists(x2_timing) and causal_timing(x2_timing):
         x2 = {json.loads(l)["file_id"]: json.loads(l) for l in open(x2_path)}
         delay_frames = json.load(open(x2_timing))["available_after_frames"]
 

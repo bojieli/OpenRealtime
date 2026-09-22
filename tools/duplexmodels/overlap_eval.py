@@ -42,6 +42,8 @@ Subcommands: ``prepare``, ``score`` (resumable, calls :9130), ``analyze``,
 
 from __future__ import annotations
 
+from x2_evidence import causal_timing
+
 import argparse
 import concurrent.futures as futures
 import hashlib
@@ -356,7 +358,7 @@ def cmd_analyze(args) -> None:
 
     external = {}
     x2_path, x2_timing = os.path.join(args.work, "external_x2turn.jsonl"), os.path.join(args.work, "x2turn_timing.json")
-    if os.path.exists(x2_path) and os.path.exists(x2_timing):
+    if os.path.exists(x2_path) and os.path.exists(x2_timing) and causal_timing(x2_timing):
         x2 = {json.loads(l)["key"]: json.loads(l) for l in open(x2_path)}
         delay = json.load(open(x2_timing))["available_after_frames"]
 
