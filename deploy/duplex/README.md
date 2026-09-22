@@ -32,6 +32,7 @@ Each script takes `start`, `stop` or `status`, logs to
 | 9126 | `tools/duplexmodels/tts_deepgram.py` | Deepgram Aura streaming WebSocket (closed comparison) |
 | 9130 | `services/turn.sh` | Smart Turn, LiveKit turn detector, VAP, DualTurn |
 | 9140-9159 | `services/{voicechat,minicpm-o-duplex,lychee-fd,freeze-omni}.sh` | native duplex models |
+| 9146 | `services/personaplex.sh` | PersonaPlex 7B, pinned upstream runtime and NATF2 voice; session instructions supply the role prompt |
 | 9160 | `services/audio-observer.sh` | Audio Flamingo 3, bounded observer off the critical path |
 
 Recognisers speak the start/chunk/finish contract with a committed prefix, and
