@@ -9,8 +9,9 @@ measurement on this host, not a release-grade campaign.
 **Host conditions.** The machine is shared. Throughout the runs, other users'
 EDA jobs (yosys/OpenROAD) kept the 32-core CPU at a load average of roughly
 90–250, and up to seven model-integration jobs shared the GPU under a single
-large-model lease. Latency numbers are therefore upper bounds for this
-hardware; every result file records the load average it was measured under.
+large-model lease. Latency numbers describe these shared-host runs; they do not establish an
+upper bound or isolated performance for this hardware. Result metadata records
+the load average where available.
 Faster-than-real-time throughput was never substituted for wall-clock replay.
 
 Result files live under `.runtime/duplex-plan/results/` (not committed); the
@@ -133,9 +134,10 @@ Three rules are enforced without asking the controller, because they are about
 who holds the floor rather than about what was meant: while the user is
 audibly speaking the assistant waits; words spoken before the assistant took
 the floor cannot be an interruption of it; and a decision is taken at the
-moment the user goes quiet rather than at the next tick. Before them the
-controller answered half-sentences and then stopped itself - FD-Bench answered
-turns went from 31/55 to 30/36 with no premature starts when they were added.
+moment the user goes quiet rather than at the next tick. Two exploratory
+FD-Bench runs recorded 31/55 and 30/36 answered turns with no premature starts.
+Their different denominators and run conditions prevent attributing the
+difference to these rules; a matched replay is still required.
 
 ## Native speech models (P5)
 
@@ -238,12 +240,20 @@ when the event arrived, which is a latency failure of a different kind and is
 counted separately rather than scored.
 
 <!-- generated: e2e -->
+Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified runs are excluded.
+
 | profile | interrupt yield | backchannel hold | background hold | other-talk hold | yield p50 ms | FD-Bench answered/turns | premature | resp p50 ms | load |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| microturn-clock-only | 0/8 (+0 n/a) | - | - | - | 1854 | - | - | - | 222.01 200.98 160.93 |
+| closed-gemini-live | - | - | - | - | - | - | - | - | 218.92 247.93 236.45 |
+| closed-gemini-live | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
+| closed-openai-live | - | - | - | - | - | - | - | - | 265.13 254.39 239.89 |
+| closed-openai-live | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
+| microturn-clock-only | - | - | - | - | - | - | - | - | 222.01 200.98 160.93 |
 | microturn-clock-only | **INCOMPLETE (no finished.json)** | | | | | | | | |
-| microturn-voxtral-qwen3-kyutai | 8/8 (+0 n/a) | 7/8 (+0 n/a) | 7/7 (+1 n/a) | 7/7 (+1 n/a) | 55 | 31/55 | 0 | 1556 | 145.43 146.51 120.52 |
-| microturn-voxtral-qwen3-kyutai | **MIXED (results newer than the run that finished)** | | | | | | | | |
+| microturn-nemotron-qwen3-kyutai | - | - | - | - | - | - | - | - | ['65.88', '39.67', '26.48'] |
+| microturn-nemotron-qwen3-kyutai | **INCOMPLETE (no finished.json)** | | | | | | | | |
+| microturn-voxtral-qwen3-kyutai | - | - | - | - | - | - | - | - | 145.43 146.51 120.52 |
+| microturn-voxtral-qwen3-kyutai | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
 <!-- end generated -->
 
 The clock's own evidence for every traced run:
@@ -251,7 +261,8 @@ The clock's own evidence for every traced run:
 <!-- generated: microturn -->
 | trace | sessions | ticks | evidence wait p50/p90 ms | decision p50/p90 ms | over tick | decisions | triggers |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| microturn-clock-only.jsonl | 14 | 787 | 229/449 | 116/182 | 0 | {'continue': 570, 'idle': 110, 'wait': 61, 'respond': 32, 'stop': 14} | {'clock': 787} |
+| microturn-clock-only.jsonl | 39 | 2256 | 259/457 | 80/143 | 0 | {'continue': 1524, 'idle': 311, 'wait': 250, 'respond': 116, 'stop': 55} | {'clock': 2256} |
+| microturn-nemotron-qwen3-kyutai.jsonl | 3 | 99 | 263/441 | 112/312 | 0 | {'continue': 59, 'wait': 19, 'idle': 15, 'respond': 4, 'stop': 2} | {'clock': 92, 'word': 4, 'pause': 3} |
 | microturn-smoke.jsonl | 4 | 216 | 238/413 | 108/188 | 0 | {'continue': 148, 'wait': 25, 'idle': 22, 'respond': 12, 'stop': 8, 'backchannel': 1} | {'clock': 216} |
 | microturn-smoke2.jsonl | 6 | 301 | 266/448 | 96/136 | 0 | {'continue': 139, 'wait': 85, 'idle': 45, 'respond': 19, 'stop': 13} | {'clock': 301} |
 | microturn-smoke3.jsonl | 6 | 266 | 249/466 | 97/149 | 0 | {'continue': 129, 'idle': 82, 'wait': 27, 'respond': 18, 'stop': 9, 'backchannel': 1} | {'clock': 266} |
@@ -312,13 +323,14 @@ model itself was not measured here.
   One full campaign on the headline profile is the natural next step.
 - **Measured on a shared, loaded machine.** Other users' jobs held the CPU at
   a load average of 90-250 throughout, and up to seven model integrations
-  shared the GPU. Latencies are upper bounds; the comparisons between cells
-  are more trustworthy than any single number, because the cells ran under
-  similar conditions and each records its own.
+  shared the GPU. Latencies and comparisons remain conditional on each run
+  environment. Similar load averages do not establish equal scheduling
+  pressure or remove this confound.
 - **System comparisons, not causal ones.** A native speech model against this
   cascade differs in backbone, training and serving stack at once. Only the
   cells that change exactly one factor - the recogniser, the synthesiser, the
-  endpoint predictor, the clock's triggers - support a causal reading.
+  endpoint predictor, the clock's triggers - are candidates for controlled
+  comparisons, provided fixtures, repetitions and runtime conditions also match.
 - **No quality judgement of what was said.** The suites score interaction
   timing and tool behaviour, and the component benchmarks score recognition
   and intelligibility. Whether an answer was a good answer is not measured

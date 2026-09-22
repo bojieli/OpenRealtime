@@ -1,6 +1,6 @@
 # Streaming and full-duplex components: survey and implementation plan
 
-**Research cutoff:** 2026-09-22. **Status:** first execution pass completed on 2026-09-22; what was built, measured, blocked, and deferred is recorded in [Streaming and full-duplex integration: results](full-duplex-results.md). The proposal text below is unchanged.
+**Research cutoff:** 2026-09-22. **Status:** execution in progress on 2026-09-22; what was built, measured, blocked, and deferred is recorded in [Streaming and full-duplex integration: results](full-duplex-results.md). The proposal text below is unchanged.
 
 **Plan revision:** incorporates the expanded open-model survey. This document is the authoritative implementation roadmap; [Open models beyond ASR and TTS](open-duplex-models-survey.md) retains detailed candidate analysis and release evidence. Its proposed ordering is consolidated into the stages below.
 
