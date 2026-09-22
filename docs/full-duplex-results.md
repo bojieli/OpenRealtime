@@ -358,6 +358,10 @@ Native validation remains incomplete. The retained component artifacts under
   answer latency was 1.235 s and no protocol errors occurred.
   [Retained upstream events and model-boundary trace](../deploy/duplex/evidence/voicechat/20260922-boundary/)
   narrow the investigation to token generation/projection before turn completion.
+  A second recorded question reproduced the same pattern: 1.222 s first-audio
+  latency, audible answer ending at 9.341 s, and no final boundary by 30 s.
+  Both cases used the same warmed runtime and different context recordings;
+  the missing boundary is not confined to the first question.
 
 ## Interaction prediction (P6)
 

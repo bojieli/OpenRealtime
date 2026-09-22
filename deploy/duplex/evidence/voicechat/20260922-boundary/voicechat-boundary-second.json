@@ -1,0 +1,59 @@
+{
+  "label": "run",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 3,
+    "model": "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex",
+    "output_rate": 22050,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in",
+      "tools"
+    ],
+    "handshake_s": 1.362
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    38.169921875,
+    50.5595703125,
+    53.74853515625
+  ],
+  "question": ".runtime/full-duplex-bench-v1.5/dataset/user_interruption/2/context.wav",
+  "question_start_s": 2.0,
+  "question_end_s": 4.443,
+  "first_audio_s": 5.664773554075509,
+  "first_audio_latency_s": 1.222,
+  "audible_segments": [
+    [
+      1.914,
+      2.39
+    ],
+    [
+      2.874,
+      3.089
+    ],
+    [
+      5.665,
+      9.341
+    ]
+  ],
+  "turn_done_s": [
+    0.875,
+    2.803
+  ],
+  "text_done": [
+    {
+      "t": 2.803,
+      "text": "Hi! How can I help you today?"
+    }
+  ],
+  "text_deltas": "Hi! How can I help you today?Currently, foldable phones and five G connectivity are trending.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 29.52
+}
