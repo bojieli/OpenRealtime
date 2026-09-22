@@ -1,0 +1,7 @@
+{
+  "model": "kyutai/tts-1.6b-en_fr",
+  "window_bytes": 48000,
+  "withheld_credit_seconds": 2,
+  "ping_ms": 0.30830036848783493,
+  "cancel_ms": 99.89686822518706
+}

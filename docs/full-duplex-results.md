@@ -155,15 +155,20 @@ rendered overlap or audible yield latency.
 The first public native-cascade smoke attempt failed: persistent synthesis
 outran paced delivery and exceeded the bounded 30 s output queue. Its failed
 results are retained under `deploy/duplex/evidence/native-duplexcascade/`.
-The delivery path now applies backpressure to the synthesis reader instead of
-expanding the buffer; cancellation wakes a blocked producer and discards the
-old suffix. Public validation of that correction is pending.
+Backpressure at the synthesis reader preserved the buffer bound but exposed a
+second failure: long answers filled the WebSocket receive queue and delayed
+keepalive handling. Trace evidence from `20260922T162147Z-5q1y_xfd` shows PCM
+playout progressing normally, with a successful initial model interruption,
+while the follow-up answer filled the 30 s queue. The transport now negotiates
+byte credits, so synthesis sends only the audio the consumer has capacity to
+receive while control messages remain readable. Backend generation queues are
+not bounded by this transport change. Public validation is pending.
 
 The new native sidecar also passed a real protocol question probe: “Paris,”
 2.0 s of paced output audio, one output turn boundary, and no protocol errors.
 First audible packets arrived 1.445 s after the supplied question ended.
-Cold model loading plus warm-up made the handshake 61.697 s; persistent serving
-is still needed before practical public benchmark runs. The output boundary
+Cold model loading plus warm-up made the handshake 61.697 s; the deployment
+now loads once behind a persistent TCP listener for public benchmark runs. The output boundary
 uses the documented thinking/drain/quiet adapter policy, not a native EOS or
 playback receipt. Evidence: `sidecar-question.json`.
 
@@ -435,9 +440,9 @@ model itself was not measured here.
 | VibeVoice-Realtime 0.5B, Qwen3-TTS, Fish S2 Pro | incremental TTS | `speech-socket` services | see the synthesis section |
 | Deepgram Aura | incremental TTS (closed) | `speech-socket` bridge | measured |
 | Qwen3-8B as micro-turn controller | micro-turn LLM | `microturn` sidecar, orchestrated mode | measured end to end |
-| DuplexCascade | micro-turn LLM | `microturn` sidecar, native mode | access verified; integration pending |
+| DuplexCascade | micro-turn LLM | `native-duplexcascade` profile and native sidecar | real ASR/model/TTS probes passed; public transport validation ongoing |
 | Moshi, VoiceChat 11B, MiniCPM-o 4.5, Lychee-FD, Freeze-Omni | native duplex | sidecar protocol v1 | see the native section; all pass mock conformance |
-| PersonaPlex 7B | native duplex | sidecar protocol v1 | access verified; integration pending |
+| PersonaPlex 7B | native duplex | `native-personaplex` profile, sidecar protocol v1 | public smoke measured; full campaign pending |
 | Smart Turn v3.2, LiveKit, VAP, DualTurn, X2-Turn, SoulX-Duplug | interaction prediction | turn service + `-turn-end-url` hook | measured (I0, I1) |
 | Sortformer + multitalker Parakeet | speaker attribution | offline pipeline | see the perception section |
 | Audio Flamingo 3 | audio observer | bounded observer service | see the perception section |
@@ -450,8 +455,8 @@ model itself was not measured here.
 
 | Item | Status | Reason |
 | --- | --- | --- |
-| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; strict GPU text micro-turn probe passed; ASR/TTS integration and end-to-end validation pending |
-| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference passed; live profile integration and acceptance pending |
+| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; strict GPU loading and live ASR/TTS integration passed; public end-to-end transport failures under investigation |
+| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference and public live-profile smoke passed; full acceptance pending |
 | User's own micro-turn LLM and TTS (cell C2) | pending | No checkpoint locations were provided |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |

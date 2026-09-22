@@ -118,3 +118,13 @@ serve_synthesizer(Fake(), '127.0.0.1', PORT)
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait()
+
+
+def test_window_not_divisible_by_packet_size_is_fully_usable():
+    credits = AudioCredits(10)
+    cancel = threading.Event()
+    packets = credits.packets(bytes(range(20)), cancel, 4)
+    assert [len(next(packets)) for _ in range(3)] == [4, 4, 2]
+    assert credits.available == 0
+    cancel.set()
+    assert list(packets) == []

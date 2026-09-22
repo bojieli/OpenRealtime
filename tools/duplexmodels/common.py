@@ -303,10 +303,11 @@ class AudioCredits:
         while offset < len(pcm):
             size = min(packet_bytes, self.window, len(pcm)-offset)
             with self.condition:
-                while self.available < size and not cancel.is_set():
+                while not self.available and not cancel.is_set():
                     self.condition.wait(.1)
                 if cancel.is_set():
                     return
+                size = min(size, self.available)
                 self.available -= size
             yield pcm[offset:offset+size]
             offset += size
