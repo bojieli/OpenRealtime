@@ -27,6 +27,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/openaivision"
 	"github.com/bojieli/OpenRealtime/adapters/qwenasr"
 	"github.com/bojieli/OpenRealtime/adapters/speakerid"
+	"github.com/bojieli/OpenRealtime/adapters/turnend"
 	"github.com/bojieli/OpenRealtime/adapters/wordtimings"
 	"github.com/bojieli/OpenRealtime/admission"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
@@ -188,6 +189,10 @@ type serveOptions struct {
 	transcriptTimeout        time.Duration
 	transcriptExtractTimeout time.Duration
 	projectionHold           time.Duration
+	turnEndURL               string
+	turnEndMode              string
+	turnEndThreshold         float64
+	turnEndTimeout           time.Duration
 	holdingAfter             time.Duration
 	bargeIn                  string
 	bargeInHold              time.Duration
@@ -447,6 +452,14 @@ func runServe(arguments []string, output io.Writer) error {
 		"how long the reasoner may run before the voice says what is happening; 0 leaves the user in silence")
 	flags.DurationVar(&options.projectionHold, "projection-hold", time.Second,
 		"how much extra silence a turn-projection model may buy by judging the turn unfinished")
+	flags.StringVar(&options.turnEndURL, "turn-end-url", "",
+		"acoustic end-of-turn classifier (e.g. Smart Turn at http://127.0.0.1:9130/v1/endpoint/smart-turn) consulted at every pause; unset consults none")
+	flags.StringVar(&options.turnEndMode, "turn-end-mode", "observe",
+		"what the acoustic end-of-turn evidence may do: observe (timeline only) or control (end or hold the pause, bounded by -projection-hold)")
+	flags.Float64Var(&options.turnEndThreshold, "turn-end-threshold", 0.5,
+		"P(turn complete) at or above which a controlling acoustic classifier ends the turn at the pause")
+	flags.DurationVar(&options.turnEndTimeout, "turn-end-timeout", 300*time.Millisecond,
+		"bound on one acoustic end-of-turn classification; a slower answer is recorded as a failure and silence decides")
 	flags.StringVar(&options.bargeIn, "barge-in", "immediate", "barge-in policy: immediate, sustained, or never")
 	flags.DurationVar(&options.bargeInHold, "barge-in-hold", 300*time.Millisecond, "how long a sustained barge-in policy holds the floor before yielding")
 	flags.IntVar(&options.gpuCapacity, "compute-capacity", 0,
@@ -733,6 +746,10 @@ func buildBinding(options serveOptions) (binding.Binding, *asrbuffer.Accumulator
 	if transcriptPolicyEnabled(options.transcriptPolicy) && bindingName != "cascade" {
 		return nil, nil, fmt.Errorf(
 			"the transcript-event policy is implemented by the cascade binding, not %q", bindingName)
+	}
+	if strings.TrimSpace(options.turnEndURL) != "" && bindingName != "cascade" {
+		return nil, nil, fmt.Errorf(
+			"acoustic end-of-turn evidence is consulted by the cascade binding's floor, not %q", bindingName)
 	}
 	governor, err := buildGovernor(options)
 	if err != nil {
@@ -1048,7 +1065,49 @@ func buildPolicies(options serveOptions, governor *admission.Governor) (interact
 	if err := applyPolicyModels(&policies, options, governor); err != nil {
 		return interaction.Policies{}, err
 	}
+	if err := applyAcousticEndpoint(&policies, options); err != nil {
+		return interaction.Policies{}, err
+	}
 	return policies, nil
+}
+
+// applyAcousticEndpoint promotes acoustic end-of-turn evidence to the floor's
+// projection when, and only when, -turn-end-mode control selects it. In the
+// default observe mode the classifier is consulted and recorded but decides
+// nothing, which is how a new predictor earns its promotion.
+func applyAcousticEndpoint(policies *interaction.Policies, options serveOptions) error {
+	mode := strings.ToLower(strings.TrimSpace(options.turnEndMode))
+	switch mode {
+	case "", "observe":
+		mode = "observe"
+	case "control":
+	default:
+		return fmt.Errorf("turn-end mode must be observe or control, got %q", options.turnEndMode)
+	}
+	if strings.TrimSpace(options.turnEndURL) == "" {
+		if mode == "control" {
+			return errors.New("-turn-end-mode control needs -turn-end-url")
+		}
+		return nil
+	}
+	if mode != "control" {
+		return nil
+	}
+	if policies.TurnProjection != nil && policies.TurnProjection.Name() != "vad-only" {
+		return fmt.Errorf("-turn-end-mode control and the %s turn projection are parallel endpoint controllers; select one",
+			policies.TurnProjection.Name())
+	}
+	projection, err := interaction.NewAcousticProjection(options.turnEndThreshold)
+	if err != nil {
+		return err
+	}
+	policies.TurnProjection = projection
+	// The floor consults the projection; installing one without rebuilding
+	// the floor would leave it unused.
+	policies.Floor = interaction.NewEngineFloor(interaction.EngineFloorOptions{
+		Projection: projection, ProjectionHold: options.projectionHold,
+	})
+	return nil
 }
 
 // applyPolicyModels installs the small models that make the two judgement
@@ -1355,8 +1414,17 @@ func buildCascade(
 		}
 		wordTimings = aligner
 	}
+	var turnEnd cascade.TurnEndEvidence
+	if endpoint := strings.TrimSpace(options.turnEndURL); endpoint != "" {
+		client, err := turnend.New(turnend.Config{URL: endpoint, Timeout: options.turnEndTimeout})
+		if err != nil {
+			return nil, fmt.Errorf("configure the acoustic end-of-turn classifier: %w", err)
+		}
+		turnEnd = client
+	}
 	return cascade.New(cascade.Config{
 		Profile:                   options.profile,
+		TurnEnd:                   turnEnd,
 		WordTimings:               wordTimings,
 		WordTimingInterval:        options.wordTimingsInterval,
 		Voices:                    listener,

@@ -34,6 +34,7 @@ func (runtime *runtime) Audio(ctx context.Context, frame perception.Frame) error
 	if frame.Kind != perception.FrameAudio {
 		return errors.New("audio path requires an audio frame")
 	}
+	runtime.recordTurnEndAudio(frame.PCM16LE, frame.SampleRateHz)
 	manual := runtime.manualTurns()
 	runtime.audioMu.Lock()
 	acoustic, err := runtime.acousticFor(frame.SampleRateHz)
@@ -317,6 +318,7 @@ func (runtime *runtime) holdsThroughPause(
 		situation := runtime.situation(decision)
 		decision.Situation = &situation
 	}
+	decision.AcousticEndpoint = runtime.acousticEndpoint(latest.ID, silenceNS)
 	endpoint := runtime.policies.Floor.Endpoint(decision)
 	runtime.debug(context.Background(), binding.DebugEvent{
 		Category: "policy", Name: "policy.floor.pause", Phase: "decision",

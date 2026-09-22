@@ -301,4 +301,8 @@ type Context struct {
 	// by which it could arrive. It is a pointer because most decisions do not
 	// need it and assembling it is not free.
 	Situation *Situation
+	// AcousticEndpoint is acoustic end-of-turn evidence about the pause this
+	// decision concerns, when the runtime has a classifier and consulted it.
+	// Nil everywhere else; only a policy selected to read it acts on it.
+	AcousticEndpoint *AcousticEndpoint
 }

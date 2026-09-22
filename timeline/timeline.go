@@ -86,6 +86,8 @@ var names = map[string]struct{}{
 	"canonical_call_outcome": {}, "ledger_outcome": {}, "dispatch_outcome": {},
 	"result_commit_outcome": {}, "client_tool_result_join_outcome": {},
 	"model_commit_outcome": {},
+	// Acoustic end-of-turn evidence at a pause, whether or not it decided.
+	"turn_end.acoustic": {},
 }
 
 // Projects reports whether a debug event of this name has a place on the
@@ -130,6 +132,19 @@ func Project(entry binding.DebugEvent) []Event {
 			detail = "rev " + strconv.FormatInt(int64(revision), 10)
 		}
 		return []Event{{Lane: LaneASR, Kind: kind, Phase: "point", Detail: detail, Text: text(entry.Payload["text"])}}
+	case "turn_end.acoustic":
+		detail := text(entry.Attributes["classifier"])
+		if probability, ok := number(entry.Attributes["probability"]); ok {
+			detail = "p=" + strconv.FormatFloat(probability, 'f', 2, 64) + " " + detail
+		}
+		if failure := text(entry.Attributes["error"]); failure != "" {
+			detail += " failed: " + truncate(failure, 120)
+		}
+		event := Event{Lane: LanePolicy, Kind: "endpoint-evidence", Phase: "point", Span: entry.CorrelationID, Detail: detail}
+		if latency, ok := number(entry.Attributes["latency_ms"]); ok {
+			event.DurationMS = latency
+		}
+		return []Event{event}
 	case "semantic_decision":
 		return projectDecision(value)
 	case "semantic_admission_outcome":

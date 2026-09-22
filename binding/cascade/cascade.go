@@ -61,6 +61,13 @@ func ParseObservationPolicy(value string) (ObservationPolicy, error) {
 	}
 }
 
+// TurnEndEvidence classifies whether a pause ends the user's turn from the
+// last seconds of their audio, 16 kHz mono PCM16 ending at the pause.
+type TurnEndEvidence interface {
+	Name() string
+	Evaluate(ctx context.Context, pcm16le []byte) (interaction.AcousticEndpoint, error)
+}
+
 // Config is the cascade's component set and its defaults.
 type Config struct {
 	// Profile names the normalized deployment shape for health and evidence.
@@ -182,6 +189,13 @@ type Config struct {
 	// Its immutable model artifact remains a deployment pin; this is the
 	// independently observed runtime spelling and adapter revision.
 	SpeakerIdentityDescriptor v1.Descriptor
+	// TurnEnd, when set, is asked at every pause decision whether the recent
+	// user audio sounds like a finished turn. Its answer is attached to the
+	// decision as interaction.AcousticEndpoint evidence and recorded on the
+	// timeline; it ends or holds a turn only if the selected floor's
+	// projection reads it (interaction.AcousticProjection). Nil consults
+	// nothing.
+	TurnEnd TurnEndEvidence
 	// Policies is the interaction policy set. A zero value selects the
 	// shipped defaults.
 	Policies interaction.Policies

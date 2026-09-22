@@ -19,6 +19,7 @@ import (
 	"github.com/bojieli/OpenRealtime/eventloop"
 	"github.com/bojieli/OpenRealtime/interaction"
 	"github.com/bojieli/OpenRealtime/internal/clock"
+	"github.com/bojieli/OpenRealtime/pcm"
 	"github.com/bojieli/OpenRealtime/perception"
 	"github.com/bojieli/OpenRealtime/perception/voices"
 	"github.com/bojieli/OpenRealtime/protocol/openrealtime"
@@ -146,6 +147,13 @@ type runtime struct {
 	// being the same uninterrupted pause.
 	pauseTimer      clock.Timer
 	pauseGeneration uint64
+
+	// turnEnd holds the last few seconds of user audio at 16 kHz for the
+	// acoustic end-of-turn classifier, silence included: the pause it judges
+	// is part of the evidence. Only kept when Config.TurnEnd is set.
+	turnEndMu        sync.Mutex
+	turnEndResampler *pcm.Resampler
+	turnEndWindow    []byte
 	// extractedText is the stretch extraction last read, so an utterance that
 	// keeps growing is not re-read from the beginning on every partial.
 	extractedText    string
