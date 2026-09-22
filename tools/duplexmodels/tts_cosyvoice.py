@@ -131,8 +131,11 @@ def bistream(llm, text, prompt_text, prompt_speech_token, sampling: int = 25):
     def step(inputs):
         nonlocal cache
         seq_len = inputs.shape[1] if cache is None else inputs.shape[1] + cache[0][0].size(2)
-        y_pred, cache = llm.llm.forward_one_step(
-            inputs, masks=torch.tril(torch.ones((1, seq_len, seq_len), device=device)).to(torch.bool), cache=cache)
+        # forward_one_step only reads masks[:, -1, :], the last row of the
+        # lower-triangular mask, which is all ones. Upstream materialises the
+        # whole (1, S, S) triangle for every token; this is the row it uses.
+        masks = torch.ones((1, 1, seq_len), dtype=torch.bool, device=device)
+        y_pred, cache = llm.llm.forward_one_step(inputs, masks=masks, cache=cache)
         return llm.llm_decoder(y_pred[:, -1]).log_softmax(dim=-1)
 
     for this_text in text:
@@ -397,7 +400,14 @@ class CosyVoice3Synthesizer(Synthesizer):
                             yield torch.tensor([[token]], dtype=torch.int32, device=self.device)
                     return
                 if item == "\x00flush":
-                    continue  # nonterminal flush is not supported by the bistream LM
+                    # A flush hands the LM whatever text is buffered (including a
+                    # partial word). It cannot make the LM speak a partial
+                    # 5-token group, which is why nonterminal_flush is false.
+                    flushed = gate.drain()
+                    if flushed.strip():
+                        for token in tokenizer.encode(flushed, allowed_special=allowed):
+                            yield torch.tensor([[token]], dtype=torch.int32, device=self.device)
+                    continue
                 if not started[0]:
                     item = item.lstrip()
                     if not item:

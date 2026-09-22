@@ -577,7 +577,8 @@ def cmd_score_external(args) -> None:
     import requests
 
     manifest = [m for m in json.load(open(os.path.join(args.work, "manifest.json")))
-                if m["scored"] and (args.split == "all" or m["split"] == args.split)]
+                if m["scored"] and (args.split == "all" or m["split"] == args.split)
+                and int(hashlib.sha1(m["file_id"].encode()).hexdigest(), 16) % args.external_sample_mod == 0]
     out_path = os.path.join(args.work, f"external_{args.model}.jsonl")
     seen = {json.loads(line)["file_id"] for line in open(out_path)} if os.path.exists(out_path) else set()
     session = requests.Session()
@@ -1048,6 +1049,8 @@ def main() -> None:
     parser.add_argument("command", choices=["prepare", "transcribe", "score", "score-external", "x2turn-timing",
                                             "analyze"])
     parser.add_argument("--model", default="x2turn", choices=["x2turn", "soulx"], help="score-external target")
+    parser.add_argument("--external-sample-mod", type=int, default=1,
+                        help="score-external: keep files whose hash %% N == 0 (these models are slow)")
     parser.add_argument("--split", default="test", choices=["test", "calibration", "all"],
                         help="score-external: which files (external models have no fitted parameters)")
     parser.add_argument("--work", default=DEFAULT_WORK)

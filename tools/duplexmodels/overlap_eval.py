@@ -242,8 +242,11 @@ def cmd_score_external(args) -> None:
     json.dump(session.get(args.url + "/health", timeout=10).json(),
               open(os.path.join(args.work, f"server_health_{args.model}.json"), "w"), indent=2)
     began = time.time()
+    todo = [e for e in events if e["key"] not in seen
+            and int(hashlib.sha1(e["key"].encode()).hexdigest(), 16) % args.external_sample_mod == 0]
+    print(f"[score-external] {args.model}: {len(todo)} events ({len(seen)} cached)", flush=True)
     with open(out_path, "a") as handle:
-        for e in [e for e in events if e["key"] not in seen]:
+        for e in todo:
             if time.time() - began > args.budget:
                 print("[score-external] budget reached; rerun to continue", flush=True)
                 break
@@ -549,6 +552,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=["prepare", "score", "score-external", "analyze", "check-causality"])
     parser.add_argument("--model", default="x2turn", choices=["x2turn", "soulx"])
+    parser.add_argument("--external-sample-mod", type=int, default=1,
+                        help="score-external: keep events whose hash %% N == 0 (these models are slow)")
     parser.add_argument("--work", default=DEFAULT_WORK)
     parser.add_argument("--url", default="http://127.0.0.1:9130")
     parser.add_argument("--response-delay", type=float, default=0.8)
