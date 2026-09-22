@@ -1,0 +1,18 @@
+{
+  "finished": "2026-09-22T15:03:20.262340+00:00",
+  "exit_code": 1,
+  "errors": [
+    "signal 15"
+  ],
+  "commands": {},
+  "load_average_end": [
+    "21.57",
+    "18.58",
+    "22.13"
+  ],
+  "sha256": {
+    "run.json": "e06829b1244a2f81bb6c2378b8a69ad3e9d4e8bbd76a8aacf1d303821dfaffa3",
+    "profile.yaml": "36f5a4cc6549bc57255616b0b4a00dfe18300e8957e139c42fc7fbf05a21c865",
+    "fdb-user_interruption.json": "a8a3cb0c65da53110d45640e4f4f2775a1d2b5bb5de9c604c2d5d7693027f567"
+  }
+}

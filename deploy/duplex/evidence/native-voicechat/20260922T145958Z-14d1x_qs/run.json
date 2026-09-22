@@ -1,0 +1,25 @@
+{
+  "schema": 2,
+  "profile": "native-voicechat",
+  "profile_sha256": "36f5a4cc6549bc57255616b0b4a00dfe18300e8957e139c42fc7fbf05a21c865",
+  "binary_sha256": "a381f550d5f175f8e50ea5307c83e6b9405164fb0fb827a03973d12c0e5e626f",
+  "binary": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime",
+  "revision": "d2344dacaa5b8aed97b47cc9243b514488b2ab99",
+  "tree_modified": true,
+  "started": "2026-09-22T14:59:58.901325+00:00",
+  "load_average": [
+    "9.49",
+    "18.16",
+    "23.06"
+  ],
+  "gpu_memory_mib": "95799",
+  "fdb_per_category": 2,
+  "fdbench_conversations": 2,
+  "expected_results": [
+    "fdb-user_interruption.json",
+    "fdb-user_backchannel.json",
+    "fdb-background_speech.json",
+    "fdb-talking_to_other.json",
+    "fdbench.json"
+  ]
+}

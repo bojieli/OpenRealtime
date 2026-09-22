@@ -1,0 +1,10 @@
+# Experimental N2 cell. Requires the VoiceChat engine on :9140 and Qwen3 on
+# :9100. Tool and playback acceptance are still being measured.
+binding: duplex
+sidecar: >-
+  .runtime/duplex-plan/venvs/vllm-omni-native/bin/python sidecars/voicechat_sidecar.py
+  --server ws://127.0.0.1:9140/v1/realtime
+sidecar-protocol: 3
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

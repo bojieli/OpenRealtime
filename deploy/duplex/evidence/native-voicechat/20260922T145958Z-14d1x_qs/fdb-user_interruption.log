@@ -1,0 +1,11 @@
+[1/2] user_interruption/1
+[2/2] user_interruption/2
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : d2344dacaa5b (modified) on ubuntu
+tasks      : 0 completed, 2 failed, of 200 expected
+score      : 0/0 applicable, unavailable (no applicable recordings) (0 not applicable)
+  user_interruption  yield  0/0 applicable  unavailable (no applicable recordings)  (0 not applicable)
+
+NOT REPORTABLE: cell "native-voicechat" is not reportable: 198 of 200 tasks were not attempted; the working tree was modified: this run is not reproducible
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-voicechat/runs/20260922T145958Z-14d1x_qs/fdb-user_interruption.json

@@ -169,8 +169,12 @@ Native validation remains incomplete. The retained component artifacts under
   `generate_random_number`, accepted a result delayed four seconds, and said
   “The random number is thirty seven.” Both probes recorded no protocol
   errors. [Retained summaries](../deploy/duplex/evidence/voicechat/20260922-resume/)
-  are sidecar-level evidence. Public-Realtime tool handling, correction,
-  duplicate calls, rendered playback and endurance remain unverified.
+  are sidecar-level evidence. The subsequent public-Realtime FDB probe
+  reached its three-minute timeout on the first recording: continuous
+  silence-frame output kept a response active after input ended. The run was
+  stopped and retained as failed evidence under `deploy/duplex/evidence/native-voicechat`.
+  Turn completion is an open integration defect; public tool handling,
+  correction, duplicate calls, rendered playback and endurance remain unverified.
 
 ## Interaction prediction (P6)
 
@@ -292,6 +296,8 @@ Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified run
 | microturn-nemotron-qwen3-kyutai | 2/2 (+0 n/a) | 2/2 (+0 n/a) | 1/2 (+0 n/a) | 2/2 (+0 n/a) | 44 | 6/8 | 0 | 872 | ['65.88', '39.67', '26.48'] |
 | microturn-voxtral-qwen3-kyutai | - | - | - | - | - | - | - | - | 145.43 146.51 120.52 |
 | microturn-voxtral-qwen3-kyutai | **UNVERIFIED legacy run (no result digests or command statuses)** | | | | | | | | |
+| native-voicechat | - | - | - | - | - | - | - | - | ['9.49', '18.16', '23.06'] |
+| native-voicechat | **FAILED (see finished.json)** | | | | | | | | |
 <!-- end generated -->
 
 The clock's own evidence for every traced run:
