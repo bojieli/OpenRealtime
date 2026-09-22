@@ -9,6 +9,7 @@ class CancellationTests(unittest.TestCase):
     def make_sidecar(self, gate):
         sidecar = VoiceChatSidecar.__new__(VoiceChatSidecar)
         sidecar._state_lock = threading.Lock()
+        sidecar._output_lock = threading.Lock()
         sidecar._turn_finished = threading.Condition(sidecar._state_lock)
         sidecar._gated_response = gate
         sidecar._response_text = []
@@ -35,6 +36,51 @@ class CancellationTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn('cannot cancel', errors[0][0])
         self.assertEqual(errors[0][1], {'code': 'upstream_error', 'fatal': False})
+
+    def test_interrupt_boundary_cannot_overtake_admitted_audio(self):
+        import base64
+        s = self.make_sidecar(None)
+        s.mock = False
+        s.output_quiet_ms = 0
+        s._response_active = True
+        s._current_response = 'response'
+        s._ws_send = lambda event: None
+        checked, release, interrupt_started = (threading.Event() for _ in range(3))
+        events = []
+        s.audio = lambda payload: events.append('audio')
+        s.turn_done = lambda: events.append('end')
+        original_gate = s._gated
+        def delayed_gate(identity):
+            result = original_gate(identity)
+            checked.set()
+            if not release.wait(2):
+                raise RuntimeError('test gate timed out')
+            return result
+        s._gated = delayed_gate
+        packet = {'type': 'response.output_audio.delta', 'response_id': 'response',
+                  'delta': base64.b64encode(b'\x01\x00').decode()}
+        output = threading.Thread(target=s._handle_event, args=(packet,))
+        def interrupt():
+            interrupt_started.set()
+            s.on_interrupt()
+        control = threading.Thread(target=interrupt)
+        output.start()
+        try:
+            self.assertTrue(checked.wait(2))
+            control.start()
+            self.assertTrue(interrupt_started.wait(2))
+            control.join(.05)
+        finally:
+            release.set()
+            output.join(2)
+            if control.ident is not None:
+                control.join(2)
+        self.assertFalse(output.is_alive())
+        self.assertFalse(control.is_alive())
+        self.assertEqual(events, ['audio', 'end'])
+        s._gated = original_gate
+        s._handle_event(packet)
+        self.assertEqual(events, ['audio', 'end'])
 
     def test_named_gate_does_not_mute_another_response(self):
         sidecar = self.make_sidecar('resp-old')

@@ -412,6 +412,15 @@ Native validation remains incomplete. The retained component artifacts under
   errors occurred. This verifies adapter redelivery suppression, not external
   exactly-once tool execution, corrections, or public-Realtime tool routing.
 
+  A deterministic threaded adapter regression reproduced audio emitted after
+  the local interrupt boundary: the packet had passed its gate before the
+  control thread emitted `turn_done`. Output event processing now shares a
+  lock with local interruption, ordering admitted packets before the boundary
+  and suppressing later packets from that response. Eight focused CPU tests
+  pass. This establishes adapter ordering only; already queued device audio,
+  blocked transport latency and real-model cancellation still need measurement.
+  The campaign started at `97aa1661` retains its original adapter revision.
+
 ## Interaction prediction (P6)
 
 Six predictors run as evidence producers on one service

@@ -247,6 +247,8 @@ class VoiceChatSidecar(Sidecar):
         self._session_tools: list[dict] = []
         # Response state (reader thread).
         self._state_lock = threading.Lock()
+        # Serialize output admission/write with the local interrupt boundary.
+        self._output_lock = threading.Lock()
         self._response_active = False
         self._response_text: list[str] = []
         self._gated_response: str | None = None
@@ -509,6 +511,10 @@ class VoiceChatSidecar(Sidecar):
                 self._turn_finished.notify_all()
 
     def _handle_event(self, event: dict) -> None:
+        with self._output_lock:
+            self._handle_output_event(event)
+
+    def _handle_output_event(self, event: dict) -> None:
         kind = str(event.get("type", ""))
         response_id = str(event.get("response_id") or (event.get("response") or {}).get("id") or "")
         if kind == "response.created":
@@ -748,6 +754,10 @@ class VoiceChatSidecar(Sidecar):
         if self.mock:
             self._mock_cancel.set()
             return
+        with self._output_lock:
+            self._interrupt_output()
+
+    def _interrupt_output(self) -> None:
         with self._state_lock:
             active = self._response_active
             if active:
