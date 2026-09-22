@@ -179,7 +179,7 @@ func (runtime *runtime) commitModelSpeech(text string) error {
 // spoke before it made a sound. Text and audio can arrive in either order, and
 // whichever comes first is what starts the turn.
 func (runtime *runtime) forwardText(delta string) error {
-	if strings.TrimSpace(delta) == "" {
+	if delta == "" {
 		return nil
 	}
 	utterance, err := runtime.currentUtterance()
