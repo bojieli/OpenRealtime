@@ -165,3 +165,39 @@ func TestRejectUnknownFilterModel(t *testing.T) {
 		t.Fatal("unknown filter accepted")
 	}
 }
+
+// Each model's waveform delay is part of the contract: the service says what
+// it is and the client refuses a frame that claims a different one, because a
+// filter that changed its latency would shift every capture position.
+func TestEachFilterModelPinsItsWaveformDelay(t *testing.T) {
+	t.Parallel()
+	// real-tse is excluded: its frames go through the target-voice worker,
+	// which has its own enrollment path and is covered by target_worker_test.
+	for model, delay := range map[string]string{"rnnoise": "20", "deepfilternet": "40"} {
+		var seen string
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			body, _ := io.ReadAll(request.Body)
+			writer.Header().Set("X-Sequence", request.Header.Get("X-Sequence"))
+			writer.Header().Set("X-Filter-Model", model)
+			writer.Header().Set("X-Audio-Delay-MS", seen)
+			writer.Header().Set("X-Target-Voice-State", "extracting")
+			_, _ = writer.Write(body)
+		}))
+		client, err := New(Config{URL: server.URL, TimeoutMS: 50, Model: model})
+		if err != nil {
+			t.Fatalf("%s: %v", model, err)
+		}
+		seen = delay
+		if _, err := client.Process(context.Background(), make([]byte, 640), 16_000); err != nil {
+			t.Errorf("%s declared %s ms and was refused: %v", model, delay, err)
+		}
+		seen = "999"
+		if _, err := client.Process(context.Background(), make([]byte, 640), 16_000); err == nil {
+			t.Errorf("%s was accepted while reporting a different delay", model)
+		}
+		server.Close()
+	}
+	if _, err := New(Config{URL: "http://127.0.0.1:1", TimeoutMS: 50, Model: "whatever"}); err == nil {
+		t.Error("an unknown filter model was accepted")
+	}
+}

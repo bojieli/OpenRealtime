@@ -33,8 +33,9 @@ func (config Config) ModelName() string {
 }
 
 func (config Config) Validate() error {
-	if config.ModelName() != "rnnoise" && config.ModelName() != "real-tse" {
-		return errors.New("audio filter model must be rnnoise or real-tse")
+	if config.ModelName() != "rnnoise" && config.ModelName() != "real-tse" &&
+		config.ModelName() != "deepfilternet" {
+		return errors.New("audio filter model must be rnnoise, deepfilternet, or real-tse")
 	}
 	u, err := url.Parse(config.URL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
@@ -84,8 +85,9 @@ func New(config Config) (*Client, error) {
 	return client, nil
 }
 
-// Process returns the same sample count. RNNoise has a 20ms streaming delay;
-// real-tse advertises a 65ms bound including its FIFO and resampling.
+// Process returns the same sample count. RNNoise has a 20ms streaming delay,
+// DeepFilterNet3 40ms, and real-tse advertises a 65ms bound including its FIFO
+// and resampling.
 // The caller must forward this result, never the original PCM, to admission.
 // Large ingress packets are split into <=100ms processing requests, all sharing
 // one delivery deadline so batching cannot multiply caller latency. Target jobs
@@ -148,9 +150,17 @@ func (client *Client) processChunk(parent context.Context, pcm []byte, rate uint
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("pre-ASR noise filter returned HTTP %d", response.StatusCode)
 	}
+	// Each model's waveform delay is pinned here and checked against what the
+	// service reports, so a filter that quietly changed its latency fails the
+	// frame rather than shifting every capture position by a few milliseconds.
+	// DeepFilterNet3: 10 ms hop plus a two-frame lookahead, plus the 10 ms
+	// packetization FIFO, measured by cross-correlation at 40 ms.
 	delay := "20"
-	if client.config.ModelName() == "real-tse" {
+	switch client.config.ModelName() {
+	case "real-tse":
 		delay = "65"
+	case "deepfilternet":
+		delay = "40"
 	}
 	if response.Header.Get("X-Sequence") != request.Header.Get("X-Sequence") || response.Header.Get("X-Filter-Model") != client.config.ModelName() || response.Header.Get("X-Audio-Delay-MS") != delay {
 		return nil, errors.New("noise filter response contract mismatch")
