@@ -1,0 +1,2086 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-voicechat-output-segmented",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "1a8c216f5c9407a4957ca9c9c4d70afae8c3d502",
+    "modified": false,
+    "executable_sha256": "8a06f76e0d6fb91f8a6c53ca3e218adfedd6cb8f18459973d12ac89e4af84f95",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-22T20:06:38Z",
+    "finished_at": "2026-09-22T20:39:57Z"
+  },
+  "expected_tasks": 100,
+  "tasks": [
+    {
+      "id": "background_speech/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn on the study lamp.",
+        "event": "Oh, it's starting to rain outside."
+      }
+    },
+    {
+      "id": "background_speech/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1280,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1280,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Remind me to call Mom later today.",
+        "event": "We need to replace the batteries."
+      }
+    },
+    {
+      "id": "background_speech/3",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 719.9583333333333,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's the time in Tokyo?",
+        "event": "Do we have any milk left?"
+      }
+    },
+    {
+      "id": "background_speech/4",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the definition of serendipity?",
+        "event": "Have you seen my glasses anywhere?"
+      }
+    },
+    {
+      "id": "background_speech/5",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 560,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Show me photos from last summer.",
+        "event": "Could you turn the TV down a bit?"
+      }
+    },
+    {
+      "id": "background_speech/6",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Start a group call with the project team.",
+        "event": "We need to replace the batteries."
+      }
+    },
+    {
+      "id": "background_speech/7",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1120,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Remind me to stretch at 3 PM.",
+        "event": "What do you want for dinner tonight?"
+      }
+    },
+    {
+      "id": "background_speech/8",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 799.9583333333333,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 799.9583333333333,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's my current heart rate?",
+        "event": "I think we ran out of paper towels."
+      }
+    },
+    {
+      "id": "background_speech/9",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add bananas to my grocery list.",
+        "event": "Mom, have you fed the cat yet?"
+      }
+    },
+    {
+      "id": "background_speech/10",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Translate 'good evening' to French.",
+        "event": "We should water the plants later."
+      }
+    },
+    {
+      "id": "background_speech/11",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How many calories are in an avocado?",
+        "event": "Who used up all the hot water?"
+      }
+    },
+    {
+      "id": "background_speech/12",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 160,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Check the status of my flight.",
+        "event": "Mom, have you fed the cat yet?"
+      }
+    },
+    {
+      "id": "background_speech/13",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Find cheap flights to Seattle next weekend.",
+        "event": "This laundry pile is never‑ending."
+      }
+    },
+    {
+      "id": "background_speech/14",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 959.9583333333333,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 959.9583333333333,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add a recurring meeting every Wednesday at 10.",
+        "event": "Let's bake cookies later."
+      }
+    },
+    {
+      "id": "background_speech/15",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn off all smart plugs.",
+        "event": "The delivery guy is at the door."
+      }
+    },
+    {
+      "id": "background_speech/16",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 0,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Check if my Amazon order has shipped.",
+        "event": "I need to finish this report by 5 PM."
+      }
+    },
+    {
+      "id": "background_speech/17",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 720,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 720,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the UV index today?",
+        "event": "I'm going to take a nap."
+      }
+    },
+    {
+      "id": "background_speech/18",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 399.9583333333333,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's the time in Tokyo?",
+        "event": "The doorbell just rang."
+      }
+    },
+    {
+      "id": "background_speech/19",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 240,
+        "agent_audio_before_event_ms": 720,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the weather like tomorrow morning?",
+        "event": "I'm starving."
+      }
+    },
+    {
+      "id": "background_speech/20",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Start a new audiobook.",
+        "event": "My phone battery is almost dead."
+      }
+    },
+    {
+      "id": "background_speech/21",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 180
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn off all smart plugs.",
+        "event": "I think we ran out of paper towels."
+      }
+    },
+    {
+      "id": "background_speech/22",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 79.95833333333333,
+        "agent_audio_before_event_ms": 79.95833333333333,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 180
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Set a reminder for my dentist appointment in six months.",
+        "event": "Should we invite Mark to the barbecue?"
+      }
+    },
+    {
+      "id": "background_speech/23",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 720,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 720,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Play the latest episode of my favorite podcast.",
+        "event": "We should water the plants later."
+      }
+    },
+    {
+      "id": "background_speech/24",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Enable dark mode.",
+        "event": "Let's watch a movie later."
+      }
+    },
+    {
+      "id": "background_speech/25",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 640,
+        "agent_audio_before_event_ms": 1040,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Tell me a fun science fact.",
+        "event": "What do you want for dinner tonight?"
+      }
+    },
+    {
+      "id": "background_speech/26",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 399.9583333333333,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the best route to the airport right now?",
+        "event": "I can't believe the traffic downtown today."
+      }
+    },
+    {
+      "id": "background_speech/27",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 0,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Define the word 'ephemeral'.",
+        "event": "Your coffee's getting cold."
+      }
+    },
+    {
+      "id": "background_speech/28",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 399.9583333333333,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How's Bitcoin performing today?",
+        "event": "Can you keep it down? I'm on a call."
+      }
+    },
+    {
+      "id": "background_speech/29",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 80,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "When is the next full moon?",
+        "event": "The doorbell just rang."
+      }
+    },
+    {
+      "id": "background_speech/30",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn off the living‑room lights.",
+        "event": "I can't log into my account."
+      }
+    },
+    {
+      "id": "background_speech/31",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Did the Lakers win last night?",
+        "event": "My laptop just froze."
+      }
+    },
+    {
+      "id": "background_speech/32",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 220
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Increase the thermostat by two degrees.",
+        "event": "The printer's out of ink."
+      }
+    },
+    {
+      "id": "background_speech/33",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Start a 20‑minute meditation session.",
+        "event": "Who's at the door?"
+      }
+    },
+    {
+      "id": "background_speech/34",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Play white noise for sleeping.",
+        "event": "I forgot to water the herbs."
+      }
+    },
+    {
+      "id": "background_speech/35",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 240,
+        "event_audible_after_ms": 200
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's 37 degrees Celsius in Fahrenheit?",
+        "event": "I should do laundry tonight."
+      }
+    },
+    {
+      "id": "background_speech/36",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 879.9166666666666,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 320,
+        "event_audible_after_ms": 200
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Update me on the latest tech news.",
+        "event": "Have you tried this new snack?"
+      }
+    },
+    {
+      "id": "background_speech/37",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Resume playback.",
+        "event": "What time is dinner?"
+      }
+    },
+    {
+      "id": "background_speech/38",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Read me my schedule for Friday.",
+        "event": "Ugh, this email won't send!"
+      }
+    },
+    {
+      "id": "background_speech/39",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1680,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1680,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How old is the Eiffel Tower?",
+        "event": "Can someone help me open this jar?"
+      }
+    },
+    {
+      "id": "background_speech/40",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 400,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Disable dark mode.",
+        "event": "Turn the oven off when the timer beeps."
+      }
+    },
+    {
+      "id": "background_speech/41",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 639.9583333333333,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Start a 20‑minute meditation session.",
+        "event": "Where did the cat go?"
+      }
+    },
+    {
+      "id": "background_speech/42",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1280,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 639.9583333333333,
+        "agent_audio_hold_window_ms": 1280,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How many calories are in an avocado?",
+        "event": "My back hurts from sitting all day."
+      }
+    },
+    {
+      "id": "background_speech/43",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's the exchange rate for euros to dollars?",
+        "event": "The printer's out of ink."
+      }
+    },
+    {
+      "id": "background_speech/44",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 400,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the time in Tokyo?",
+        "event": "This chair is wobbly."
+      }
+    },
+    {
+      "id": "background_speech/45",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Turn on the study lamp.",
+        "event": "I forgot to water the herbs."
+      }
+    },
+    {
+      "id": "background_speech/46",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1119.9583333333333,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Update me on the latest tech news.",
+        "event": "My phone battery is almost dead."
+      }
+    },
+    {
+      "id": "background_speech/47",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Tell me a joke.",
+        "event": "The window is stuck again."
+      }
+    },
+    {
+      "id": "background_speech/48",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 879.9583333333334,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 879.9583333333334,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What are the ingredients in a margarita?",
+        "event": "Why is the sink dripping?"
+      }
+    },
+    {
+      "id": "background_speech/49",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add 'budget review' to my calendar next Monday.",
+        "event": "Your package just arrived."
+      }
+    },
+    {
+      "id": "background_speech/50",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What day of the week is July 4th, 2026?",
+        "event": "I still haven't finished my book."
+      }
+    },
+    {
+      "id": "background_speech/51",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 480,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 480,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Find a nearby coffee shop that's still open.",
+        "event": "Can you keep it down? I'm on a call."
+      }
+    },
+    {
+      "id": "background_speech/52",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Turn on the study lamp.",
+        "event": "Don't forget Sarah's birthday is next week."
+      }
+    },
+    {
+      "id": "background_speech/53",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Open my reading list.",
+        "event": "I can't log into my account."
+      }
+    },
+    {
+      "id": "background_speech/54",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the stock price of Tesla right now?",
+        "event": "My phone battery is almost dead."
+      }
+    },
+    {
+      "id": "background_speech/55",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Set screen brightness to 70 percent.",
+        "event": "The printer's out of ink."
+      }
+    },
+    {
+      "id": "background_speech/56",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add 'budget review' to my calendar next Monday.",
+        "event": "The neighbor's music is too loud."
+      }
+    },
+    {
+      "id": "background_speech/57",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 200
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Lock the front door.",
+        "event": "I forgot to charge my watch."
+      }
+    },
+    {
+      "id": "background_speech/58",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1440,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1440,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the definition of serendipity?",
+        "event": "Did the power go out?"
+      }
+    },
+    {
+      "id": "background_speech/59",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 160,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "How do you say 'thank you' in Italian?",
+        "event": "Did you turn in your assignment?"
+      }
+    },
+    {
+      "id": "background_speech/60",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 160,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Disable dark mode.",
+        "event": "I have to finish my essay."
+      }
+    },
+    {
+      "id": "background_speech/61",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the score of the Mariners game?",
+        "event": "Can someone help me open this jar?"
+      }
+    },
+    {
+      "id": "background_speech/62",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 879.9583333333333,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 240,
+        "event_audible_after_ms": 920
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Add bananas to my grocery list.",
+        "event": "The doorbell just rang."
+      }
+    },
+    {
+      "id": "background_speech/63",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Open the front door camera feed.",
+        "event": "I'm running low on detergent."
+      }
+    },
+    {
+      "id": "background_speech/64",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1200,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1200,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add 'budget review' to my calendar next Monday.",
+        "event": "Who's picking up the kids today?"
+      }
+    },
+    {
+      "id": "background_speech/65",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Remind me to stand up every hour.",
+        "event": "The soup is boiling over!"
+      }
+    },
+    {
+      "id": "background_speech/66",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 479.9583333333333,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add a recurring meeting every Wednesday at 10.",
+        "event": "We need to clean the guest room."
+      }
+    },
+    {
+      "id": "background_speech/67",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Remind me to stand up every hour.",
+        "event": "Let's bake cookies later."
+      }
+    },
+    {
+      "id": "background_speech/68",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 800,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 800,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add 'call the bank' to today's agenda.",
+        "event": "We should plan a vacation soon."
+      }
+    },
+    {
+      "id": "background_speech/69",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 340
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Track my package from FedEx.",
+        "event": "This chair is wobbly."
+      }
+    },
+    {
+      "id": "background_speech/70",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 320,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 320,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Text Alex 'I'll be there in five'.",
+        "event": "Who left the lights on in the garage?"
+      }
+    },
+    {
+      "id": "background_speech/71",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 480,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 480,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Switch the TV to HDMI‑2.",
+        "event": "Do we have any milk left?"
+      }
+    },
+    {
+      "id": "background_speech/72",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 200
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How many miles is a 10K?",
+        "event": "I forgot to charge my watch."
+      }
+    },
+    {
+      "id": "background_speech/73",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1120,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Open my reading list.",
+        "event": "Who left the lights on in the garage?"
+      }
+    },
+    {
+      "id": "background_speech/74",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 320,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 320,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How many miles is a 10K?",
+        "event": "The meeting got rescheduled."
+      }
+    },
+    {
+      "id": "background_speech/75",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1679.9583333333333,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 399.9583333333333,
+        "agent_audio_hold_window_ms": 1679.9583333333333,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Schedule a meeting with John on Friday at 2.",
+        "event": "The meeting got rescheduled."
+      }
+    },
+    {
+      "id": "background_speech/76",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Cancel all timers.",
+        "event": "I have to call my mom back."
+      }
+    },
+    {
+      "id": "background_speech/77",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 200
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the definition of serendipity?",
+        "event": "Have you seen my glasses anywhere?"
+      }
+    },
+    {
+      "id": "background_speech/78",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn off the bedroom fan.",
+        "event": "Can you water the flowers tomorrow?"
+      }
+    },
+    {
+      "id": "background_speech/79",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Translate 'good evening' to French.",
+        "event": "Who ate the last cupcake?"
+      }
+    },
+    {
+      "id": "background_speech/80",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "How long will it take to drive to work?",
+        "event": "My back hurts from sitting all day."
+      }
+    },
+    {
+      "id": "background_speech/81",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 719.9583333333333,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 719.9583333333333,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Set a 10‑minute timer for pasta.",
+        "event": "Can you believe how hot it is today?"
+      }
+    },
+    {
+      "id": "background_speech/82",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's 37 degrees Celsius in Fahrenheit?",
+        "event": "My phone battery is almost dead."
+      }
+    },
+    {
+      "id": "background_speech/83",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 959.9583333333333,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 959.9583333333333,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Find vegetarian restaurants open now.",
+        "event": "Did the power go out?"
+      }
+    },
+    {
+      "id": "background_speech/84",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 800,
+        "agent_audio_at_event_ms": 560,
+        "agent_audio_before_event_ms": 960,
+        "agent_audio_hold_window_ms": 800,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Schedule a meeting with John on Friday at 2.",
+        "event": "We're almost out of gas."
+      }
+    },
+    {
+      "id": "background_speech/85",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 320,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Read me my schedule for Friday.",
+        "event": "Someone left the fridge open."
+      }
+    },
+    {
+      "id": "background_speech/86",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1519.9583333333333,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 160,
+        "event_audible_after_ms": 180
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's the best route to the airport right now?",
+        "event": "We're almost out of gas."
+      }
+    },
+    {
+      "id": "background_speech/87",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Set screen brightness to 70 percent.",
+        "event": "Let's grab coffee later."
+      }
+    },
+    {
+      "id": "background_speech/88",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 640,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 640,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Start a workout routine for beginners.",
+        "event": "Who's at the door?"
+      }
+    },
+    {
+      "id": "background_speech/89",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 240,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Play some upbeat jazz music.",
+        "event": "Did the power go out?"
+      }
+    },
+    {
+      "id": "background_speech/90",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Play a lullaby playlist.",
+        "event": "Oh, it's starting to rain outside."
+      }
+    },
+    {
+      "id": "background_speech/91",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 800,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 800,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What day of the week is July 4th, 2026?",
+        "event": "I'll be back in ten."
+      }
+    },
+    {
+      "id": "background_speech/92",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 319.9583333333333,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Open my reading list.",
+        "event": "Who ate the last cupcake?"
+      }
+    },
+    {
+      "id": "background_speech/93",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 719.9583333333334,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 719.9583333333334,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Add 'budget review' to my calendar next Monday.",
+        "event": "Why is the internet so slow?"
+      }
+    },
+    {
+      "id": "background_speech/94",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 959.9583333333334,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Track my package from FedEx.",
+        "event": "Let's watch a movie later."
+      }
+    },
+    {
+      "id": "background_speech/95",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 479.9583333333333,
+        "agent_audio_hold_window_ms": 880,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Set a 10‑minute timer for pasta.",
+        "event": "Turn the oven off when the timer beeps."
+      }
+    },
+    {
+      "id": "background_speech/96",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 959.9583333333333,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 959.9583333333333,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn on the backyard sprinklers for 15 minutes.",
+        "event": "My phone battery is almost dead."
+      }
+    },
+    {
+      "id": "background_speech/97",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 560,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Did the Lakers win last night?",
+        "event": "Hey, where did I put my keys again?"
+      }
+    },
+    {
+      "id": "background_speech/98",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 800,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 479.9583333333333,
+        "agent_audio_hold_window_ms": 800,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Play a lullaby playlist.",
+        "event": "I misplaced my passport."
+      }
+    },
+    {
+      "id": "background_speech/99",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 639.9583333333333,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 639.9583333333333,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Play a lullaby playlist.",
+        "event": "Who left the lights on in the garage?"
+      }
+    },
+    {
+      "id": "background_speech/100",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 1040,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 1040,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's the meaning of life?",
+        "event": "I'm starving."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 100,
+    "failed": 0,
+    "passed": 80,
+    "not_applicable": 18,
+    "pass_rate": 0.975609756097561,
+    "complete": true,
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 100,
+        "unit": "ms",
+        "min": 0,
+        "p50": 960,
+        "p90": 1047.995833333334,
+        "p95": 1280,
+        "p99": 1679.95875,
+        "max": 1680,
+        "mean": 818.3933333333331
+      },
+      "agent_audio_at_event_ms": {
+        "count": 100,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 160,
+        "p95": 160,
+        "p99": 560.8000000000004,
+        "max": 640,
+        "mean": 94.39958333333333
+      },
+      "agent_audio_before_event_ms": {
+        "count": 100,
+        "unit": "ms",
+        "min": 0,
+        "p50": 480,
+        "p90": 560,
+        "p95": 563.9979166666665,
+        "p99": 960.8000000000004,
+        "max": 1040,
+        "mean": 440.7954166666667
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 82,
+        "unit": "ms",
+        "min": 0,
+        "p50": 960,
+        "p90": 1040,
+        "p95": 1276.0000000000002,
+        "p99": 1679.96625,
+        "max": 1680,
+        "mean": 893.653963414634
+      },
+      "event_audible_after_ms": {
+        "count": 100,
+        "unit": "ms",
+        "min": 0,
+        "p50": 120,
+        "p90": 180,
+        "p95": 200,
+        "p99": 345.80000000000297,
+        "max": 920,
+        "mean": 124
+      }
+    }
+  }
+}

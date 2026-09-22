@@ -432,8 +432,11 @@ Native validation remains incomplete. The retained component artifacts under
   processed all 98 recordings without task errors: 94/94 applicable recordings
   passed the hold criterion, and four were not applicable. This supports
   holding the floor through these backchannels, but does not establish
-  reliable interruption handling. Background speech, other-talk and the
-  selected FD-Bench condition remain pending. The binding fix at `ea210076`
+  reliable interruption handling. The [complete background-speech category](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-background/)
+  processed 100 recordings without task errors: 80/82 applicable recordings
+  passed the hold criterion, two failed it, and 18 were not applicable.
+  Other-talk and the selected FD-Bench condition remain pending.
+  The binding fix at `ea210076`
   also preserves standalone whitespace after receiver validation, avoiding
   concatenated words and duplicate final text; its regression passed, but
   this running campaign predates both whitespace fixes.
