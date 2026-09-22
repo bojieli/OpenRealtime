@@ -137,3 +137,19 @@ and task errors. Failed commands, startup failures, and task errors produce a
 nonzero exit status. The summary excludes incomplete, changed, failed, and
 legacy runs whose provenance cannot be verified. Earlier artifacts remain
 available for inspection but need a new run to enter this summary.
+
+### Released DuplexCascade profile (experimental)
+
+`native-duplexcascade.yaml` uses the pinned released checkpoint, the native
+500 ms micro-turn backend, append-only Kyutai ASR fragments, and persistent
+Kyutai synthesis. It requires ASR on :9112 and TTS on :9125. The sidecar loads
+its own model per session and checks for 20,000 MiB free GPU memory before
+loading; it holds the large-model lease for the session.
+
+Output PCM is paced in 20 ms frames with a bounded 30 s queue. Model-directed
+cancellation discards unsent audio. Output turn boundaries use the model's
+thinking state plus a drained delivery buffer and 600 ms without a synthesis
+packet. This is an adapter policy, not a native terminal token or rendered
+playback acknowledgement. The released protocol does not consume session
+instructions or injected background text. Public Realtime validation is still
+pending; component probe results do not establish profile acceptance.
