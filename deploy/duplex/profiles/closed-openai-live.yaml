@@ -4,6 +4,8 @@
 binding: upstream
 upstream-provider: openai-live
 upstream-token-env: OPENAI_API_KEY
-slow-provider: openai-compatible
-slow-url: http://127.0.0.1:9100/v1
-slow-model: qwen3-8b
+# The background reasoner is hosted too, so this cell needs no local GPU and
+# can run while the card is busy with the open models.
+slow-provider: openai
+slow-model: gpt-5-mini
+slow-token-env: OPENAI_API_KEY

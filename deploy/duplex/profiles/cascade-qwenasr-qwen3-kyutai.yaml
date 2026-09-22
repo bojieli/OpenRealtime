@@ -1,0 +1,19 @@
+# Cell C0, the baseline the plan asks to keep: the engine-floor cascade with
+# the recogniser this repository already shipped (Qwen3-ASR 0.6B on the
+# start/chunk/finish service), the local language model, and an incremental
+# synthesiser. Qwen3-ASR commits nothing before the utterance ends, so this is
+# also the control for "what does a committed prefix buy".
+# It cannot serve concurrent sessions, so run this cell alone.
+binding: cascade
+asr-provider: qwen-asr
+asr-url: http://127.0.0.1:9102
+asr-model: Qwen/Qwen3-ASR-0.6B
+fast-provider: vllm
+fast-url: http://127.0.0.1:9100/v1
+fast-model: qwen3-8b
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
+tts-provider: speech-socket
+tts-url: ws://127.0.0.1:9121/v1/tts/stream
+tts-model: microsoft/VibeVoice-Realtime-0.5B

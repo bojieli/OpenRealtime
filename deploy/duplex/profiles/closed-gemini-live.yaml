@@ -6,6 +6,8 @@ binding: upstream
 upstream-provider: google
 upstream-model: gemini-2.5-flash-native-audio-latest
 upstream-token-env: GEMINI_API_KEY
-slow-provider: openai-compatible
-slow-url: http://127.0.0.1:9100/v1
-slow-model: qwen3-8b
+# The background reasoner is hosted too, so this cell needs no local GPU and
+# can run while the card is busy with the open models.
+slow-provider: google
+slow-model: gemini-3.5-flash
+slow-token-env: GEMINI_API_KEY
