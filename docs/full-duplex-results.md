@@ -421,6 +421,13 @@ Native validation remains incomplete. The retained component artifacts under
   blocked transport latency and real-model cancellation still need measurement.
   The campaign started at `97aa1661` retains its original adapter revision.
 
+  Tool proposals now reject malformed or non-object JSON arguments instead of
+  forwarding synthetic `_unparsed`/`value` objects. An identical repeated call
+  ID is deduplicated; a changed name or argument object under that ID emits a
+  `conflicting_tool_call` error while preserving the original proposal. The
+  nine focused adapter tests cover these cases. This does not implement user
+  correction recovery or prove external execution receipts.
+
 ## Interaction prediction (P6)
 
 Six predictors run as evidence producers on one service

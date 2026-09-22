@@ -127,6 +127,26 @@ class SegmentationTests(unittest.TestCase):
 
 
 class ToolResultTests(unittest.TestCase):
+    def test_invalid_or_conflicting_proposals_never_become_new_calls(self):
+        s = VoiceChatSidecar.__new__(VoiceChatSidecar)
+        s._calls = {}
+        sent, errors = [], []
+        s.send = lambda *a, **k: sent.append((a, k))
+        s.error = lambda *a, **k: errors.append(k['code'])
+        for arguments in ['{bad', '[]', 'null', 'false', [], False]:
+            s._propose_call({'call_id': 'invalid', 'name': 'lookup', 'arguments': arguments})
+        self.assertEqual(sent, [])
+        self.assertEqual(errors, ['invalid_tool_arguments'] * 6)
+        call = {'call_id': 'valid', 'name': 'lookup', 'arguments': '{"number": 37}'}
+        s._propose_call(call)
+        s._propose_call(dict(call, arguments={'number': 37}))
+        self.assertEqual(len(sent), 1)
+        s._propose_call(dict(call, arguments='{"number": 38}'))
+        s._propose_call(dict(call, name='other'))
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(errors[-2:], ['conflicting_tool_call'] * 2)
+        self.assertEqual(s._calls['valid']['arguments'], {'number': 37})
+
     def test_only_proposed_result_is_forwarded_once(self):
         import time
         s = VoiceChatSidecar.__new__(VoiceChatSidecar)

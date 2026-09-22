@@ -610,15 +610,25 @@ class VoiceChatSidecar(Sidecar):
     def _propose_call(self, event: dict) -> None:
         call_id = str(event.get("call_id") or "")
         name = str(event.get("name") or "")
-        if not call_id or not name or call_id in self._calls:
+        if not call_id or not name:
             return
-        raw_arguments = event.get("arguments") or "{}"
+        raw_arguments = event.get("arguments", "{}")
         try:
             arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
         except json.JSONDecodeError:
-            arguments = {"_unparsed": str(raw_arguments)}
+            self.error(f"voicechat call {call_id} has malformed JSON arguments",
+                       code="invalid_tool_arguments", fatal=False)
+            return
         if not isinstance(arguments, dict):
-            arguments = {"value": arguments}
+            self.error(f"voicechat call {call_id} arguments must be an object",
+                       code="invalid_tool_arguments", fatal=False)
+            return
+        previous = self._calls.get(call_id)
+        if previous is not None:
+            if previous["name"] != name or previous["arguments"] != arguments:
+                self.error(f"voicechat call {call_id} was repeated with a different name or arguments",
+                           code="conflicting_tool_call", fatal=False)
+            return
         self._calls[call_id] = {"name": name, "proposed_at": time.monotonic(), "arguments": arguments}
         log(f"voicechat function channel proposed {name}({json.dumps(arguments)}) call_id={call_id}")
         self.send("tool_call", call_id=call_id, name=name, arguments=arguments)
