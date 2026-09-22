@@ -1,0 +1,61 @@
+{
+  "cases": [
+    [
+      "What is the capital of France?",
+      [
+        3838,
+        374,
+        279,
+        6722,
+        315,
+        9625,
+        30
+      ]
+    ],
+    [
+      "<|im_start|>user\n<|no voice|><|im_end|>\n<|im_start|>assistant\n",
+      [
+        151644,
+        872,
+        198,
+        151646,
+        151645,
+        198,
+        151644,
+        77091,
+        198
+      ]
+    ],
+    [
+      "\u4f60\u597d\uff0c\u5df4\u9ece\u5728\u54ea\u91cc\uff1f",
+      [
+        108386,
+        3837,
+        106004,
+        105930,
+        11319
+      ]
+    ],
+    [
+      "Wait\u2014actually, stop.",
+      [
+        14190,
+        2293,
+        73028,
+        11,
+        2936,
+        13
+      ]
+    ],
+    [
+      "<|user interruption|><|user backchannel|>",
+      [
+        151650,
+        151651
+      ]
+    ]
+  ],
+  "result": "all five matched",
+  "reference": "released tokenizer.json via perception venv tokenizers",
+  "candidate": "released vocab/merges via ellsa venv Qwen2Tokenizer"
+}

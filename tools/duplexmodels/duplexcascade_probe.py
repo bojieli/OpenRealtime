@@ -37,11 +37,24 @@ def main():
     model.enable_lora_adapter(mode=cfg['use_lora'], r=cfg['lora_r'], alpha=cfg['lora_alpha'],
                               dropout=cfg['lora_dropout'], bias=cfg['lora_bias'])
     # Unlike upstream strict=False, do not silently accept missing checkpoint weights.
-    model.load_state_dict(load_file(str(a.snapshot / 'model_state.safetensors')), strict=True)
+    state = load_file(str(a.snapshot / 'model_state.safetensors'))
+    expected = model.state_dict()
+    renamed = {}
+    for key in list(state):
+        if key in expected:
+            continue
+        prefix, parameter = key.rsplit('.', 1)
+        target = prefix + '.base_layer.' + parameter
+        if (prefix.endswith(('.q_proj', '.v_proj')) and target in expected
+                and state[key].shape == expected[target].shape and target not in state):
+            state[target] = state.pop(key)
+            renamed[key] = target
+    model.load_state_dict(state, strict=True)
+    del state, expected
     model.to('cuda').eval()
     report = {'model_revision': a.snapshot.name, 'base_revision': a.base.name,
               'source_revision': subprocess.check_output(['git', '-C', str(a.source), 'rev-parse', 'HEAD'], text=True).strip(),
-              'dtype': 'bfloat16', 'attention': 'sdpa', 'tokenizer_class': type(tokenizer).__name__, 'strict_checkpoint_load': True,
+              'dtype': 'bfloat16', 'attention': 'sdpa', 'tokenizer_class': type(tokenizer).__name__, 'strict_checkpoint_load': True, 'renamed_checkpoint_keys': renamed,
               'scope': 'text-only micro-turn probe, no paced audio or playback',
               'load_seconds': time.perf_counter()-started, 'turns': []}
     history = [] if tokenizer.bos_token_id is None else [tokenizer.bos_token_id]

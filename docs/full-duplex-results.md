@@ -124,6 +124,17 @@ behavior. Access to DuplexCascade and PersonaPlex was verified on 2026-09-22
 using the saved Hugging Face login after removing an environment credential
 override. Their pinned checkpoints are now fully downloaded; integrations are in progress.
 
+The released DuplexCascade checkpoint now passes a text-only GPU micro-turn
+probe with strict tensor loading after 112 shape-checked PEFT base-layer key
+renames. It emits `<|user is talking|>` for two incoming question chunks, then
+`<|user finish talking|>` and “The capital of France is Paris” on the first
+silence chunk. Peak allocation was 16.81 GiB. The cold first generation took
+727 ms; subsequent generations took 28–148 ms. This unpaced probe does not
+establish the 500 ms audio pipeline. The slow tokenizer matched the released
+fast tokenizer IDs on five prompt/control/multilingual examples; its use and
+the complete key mapping are retained in
+[`duplexcascade/20260922-resume`](../deploy/duplex/evidence/duplexcascade/20260922-resume/).
+
 What the clock costs and what it delivers, from the traces of the end-to-end
 runs (`python tools/duplexmodels/microturn_trace.py`):
 
@@ -396,7 +407,7 @@ model itself was not measured here.
 
 | Item | Status | Reason |
 | --- | --- | --- |
-| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; native micro-turn integration and GPU validation pending |
+| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; strict GPU text micro-turn probe passed; ASR/TTS integration and end-to-end validation pending |
 | PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference passed; live profile integration and acceptance pending |
 | User's own micro-turn LLM and TTS (cell C2) | pending | No checkpoint locations were provided |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
