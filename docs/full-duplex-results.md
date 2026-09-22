@@ -3,7 +3,7 @@
 **Executed:** 2026-09-22 on `rtx-pro` (one RTX PRO 6000 Blackwell, 96 GB,
 driver 595.91.07). **Plan:** [streaming and full-duplex components](full-duplex-streaming-plan.md)
 and the [open-model survey](open-duplex-models-survey.md). **Status:** first
-execution pass of stages P0–P9; every number below is a component or smoke
+execution in progress across stages P0–P9; every number below is a component or smoke
 measurement on this host, not a release-grade campaign.
 
 **Host conditions.** The machine is shared. Throughout the runs, other users'
@@ -12,7 +12,8 @@ EDA jobs (yosys/OpenROAD) kept the 32-core CPU at a load average of roughly
 large-model lease. Latency numbers describe these shared-host runs; they do not establish an
 upper bound or isolated performance for this hardware. Result metadata records
 the load average where available.
-Faster-than-real-time throughput was never substituted for wall-clock replay.
+ASR and end-to-end interaction probes use wall-clock replay; offline task
+evaluations must be interpreted according to their own timing protocol.
 
 Result files live under `.runtime/duplex-plan/results/` (not committed); the
 tables here are generated from them by `tools/duplexmodels/asr_summary.py` and
@@ -94,11 +95,12 @@ the service's self-report.
 
 Readings:
 
-- **A declaration is not a measurement.** CosyVoice and Qwen3-TTS both declare
-  token-level incremental input; neither produced audio for an unfinished
-  prefix in any probe. Deepgram declares the weaker flush granularity and its
-  one success is exactly the sentence whose prefix ended at a comma - the
-  honest declaration predicted its behaviour, the optimistic ones did not.
+- **A 1.5-second held-prefix probe measures responsiveness under its run
+  conditions.** Failure to produce audio inside that window does not disprove
+  incremental input. The later component report (`results/tts/SUMMARY.md`)
+  records Qwen3 producing early audio on 6/6 English prefixes and CosyVoice
+  on 1/6; those are separate runs, not a matched latency comparison.
+  Deepgram requires an explicit flush rather than token-by-token admission.
 - **Cancellation is clean everywhere**: no service delivered any audio after
   the cancel was acknowledged, which is the property the runtime needs to stop
   speaking without leaving stale speech in flight.
@@ -108,7 +110,8 @@ Readings:
 
 All of these were measured while the machine was loaded; the per-service
 comparison in `.runtime/duplex-plan/results/tts/` has the quieter re-runs and
-the intelligibility scores (recognised back with the local recogniser).
+available raw outputs. Its latest summary marks intelligibility as unscored;
+latency and cancellation alone do not establish speech quality.
 
 ## Micro-turn language model (P4)
 
@@ -141,7 +144,27 @@ difference to these rules; a matched replay is still required.
 
 ## Native speech models (P5)
 
-RESULTS_NATIVE
+Native validation remains incomplete. The retained component artifacts under
+`results/native/` establish narrower findings:
+
+- **Freeze-Omni:** the recorded eight-clip interruption smoke run had seven
+  applicable clips and zero yield passes, with 3,392 ms median yield latency.
+  The model generally waited until the interrupting utterance ended. Its
+  ten-minute probe grew from 17,342 to 22,508 MiB and experienced shared-GPU
+  out-of-memory errors; it is not a clean endurance pass. See
+  `freeze-summary.json` and the referenced raw runs.
+- **Lychee-FD:** `lychee-control-summary.json` records 29 model interrupts
+  and 26 audio-stall endings. Its 64 first-audio observations have a 1,099 ms
+  median, but the control-delay sample is empty. This does not establish the
+  planned control-latency acceptance criterion.
+- **Moshi and MiniCPM-o:** real component and smoke artifacts exist, but the
+  current result inventory and playback semantics still need reconciliation
+  before a supported end-to-end profile can be claimed.
+- **VoiceChat:** the 8,192-position talker failed startup with a 1 GiB KV
+  cache; 2 GiB allowed loading. The originally pinned vLLM-Omni `9ebef4b`
+  then rejected duplex WebSockets because its new plugin framework disables
+  the legacy VoiceChat integration. Validation of the earlier `9005d789`
+  serving revision is in progress. HTTP health is not a duplex acceptance test.
 
 ## Interaction prediction (P6)
 
@@ -214,12 +237,17 @@ speaker attribution must not sit on the 500 ms interaction path; it belongs
 where a late, revisable answer is acceptable.
 
 **Acoustic preprocessing (cell A0).** DeepFilterNet3 behind the existing
-pre-ASR filter contract, at a measured 40 ms waveform delay: on FD-Bench's
+pre-ASR filter contract has a measured 40 ms waveform delay. In the separate
+offline preprocessing comparison on FD-Bench's
 0 dB background-noise condition it lowers WER from 14.4% to 12.2%, and at
 10 dB it changes nothing (2.42% to 2.49%). It also cuts what the recogniser
 hallucinates in the gaps between turns (488 to 450 words, gap level -30.7 dB
-to -56.4 dB). So it earns its place only where the noise is severe, which is
-why it stays an opt-in branch with a bypass rather than a default.
+to -56.4 dB). These offline results do not validate the runtime resampler:
+its identity round trip measured only 17.73 dB SNR at 16 kHz. An indicative
+29-turn comparison recorded 38.0% streaming WER versus 28.1% with offline
+polyphase resampling. Quiet backchannels mixed with noise also lost word
+recall (0.82 to 0.44 in the recorded probe). Runtime resampling and quiet-speech
+preservation remain open acceptance items; this is an experimental branch.
 
 **Background audio understanding (cell A0).** Audio Flamingo 3 serves bounded
 windows off the critical path, every answer carrying when it became available
