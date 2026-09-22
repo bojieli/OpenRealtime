@@ -1,0 +1,25 @@
+diff --git a/vllm_omni/model_executor/models/nemotron_voicechat/duplex/data_plane.py b/vllm_omni/model_executor/models/nemotron_voicechat/duplex/data_plane.py
+index 0fb3f93..e75dd6a 100644
+--- a/vllm_omni/model_executor/models/nemotron_voicechat/duplex/data_plane.py
++++ b/vllm_omni/model_executor/models/nemotron_voicechat/duplex/data_plane.py
+@@ -6,6 +6,7 @@
+ from __future__ import annotations
+ 
+ import json
++import os
+ from collections.abc import Callable, Iterator, Mapping
+ from dataclasses import dataclass, field
+ from typing import Any
+@@ -243,6 +244,12 @@ class NemotronVoiceChatDataPlaneSession:
+                 )
+             for token_id in text_ids[-1:]:
+                 state.text_frames += 1
++                if os.environ.get("VOICECHAT_TRACE_BOUNDARIES") == "1" and (
++                    token_id == ids["eos"] or state.text_frames % 100 == 0
++                ):
++                    logger.info("NVC boundary request=%s token=%s eos=%s text_frames=%s audio_frames=%s pending=%s token_batch=%s",
++                                request_id, token_id, ids["eos"], state.text_frames,
++                                state.audio_frames, state.pending_speech_end_frames, len(text_ids))
+                 if token_id == ids["eos"]:
+                     if state.audio_frames >= state.text_frames:
+                         yield _speech_end_event(request_id)
