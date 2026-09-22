@@ -1,0 +1,88 @@
+"""Failure-path checks for retained end-to-end measurements (no model needed)."""
+import json
+import os
+from pathlib import Path
+import socket
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import e2e_run
+import e2e_summary
+
+FAKE = '''#!/usr/bin/env python3
+import http.server, json, os, sys
+from pathlib import Path
+args=sys.argv[1:]
+if args[0]=='serve':
+    if os.environ.get('FAKE_EXIT'): sys.exit(3)
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200); self.end_headers(); self.wfile.write(b'{}')
+        def log_message(self, *args): pass
+    port=int(args[args.index('-listen')+1].split(':')[1])
+    http.server.HTTPServer(('127.0.0.1',port),Handler).serve_forever()
+else:
+    out=Path(args[args.index('-out')+1])
+    task={'passed':True,'notes':{'applicable':'true'},'metrics':{'turns':1,'answered':1}}
+    if os.environ.get('FAKE_TASK_ERROR'): task['error']='connection refused'
+    out.write_text(json.dumps({'tasks':[task]}))
+    sys.exit(int(os.environ.get('FAKE_BENCH_EXIT','0')))
+'''
+
+
+class RunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        profiles = self.root / 'deploy/duplex/profiles'
+        profiles.mkdir(parents=True)
+        (profiles / 'sample.yaml').write_text('binding: duplex\n')
+        binary = self.root / 'fake'
+        binary.write_text(FAKE)
+        binary.chmod(0o755)
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            self.port = sock.getsockname()[1]
+        self.patches = [patch.object(e2e_run, 'ROOT', self.root),
+                        patch.object(e2e_run, 'capture', return_value='test'),
+                        patch.dict(os.environ, OPENREALTIME_BIN=str(binary), E2E_PORT=str(self.port), E2E_READY_TIMEOUT='2')]
+        for item in self.patches:
+            item.start()
+            self.addCleanup(item.stop)
+        self.parent = self.root / '.runtime/duplex-plan/results/e2e/sample'
+
+    def test_runs_preserved_and_tampering_excluded(self):
+        self.assertEqual(e2e_run.run('sample', 1, 1), 0)
+        first = (self.parent / 'latest').resolve()
+        self.assertEqual(e2e_summary.staleness(first), '')
+        self.assertEqual(e2e_run.run('sample', 1, 0), 0)
+        self.assertNotEqual(first, (self.parent / 'latest').resolve())
+        self.assertTrue((first / 'fdbench.json').exists())
+        (first / 'fdbench.json').write_text('{}')
+        self.assertIn('MODIFIED', e2e_summary.staleness(first))
+
+    def test_existing_listener_is_not_adopted(self):
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', self.port))
+            sock.listen()
+            self.assertEqual(e2e_run.run('sample', 1, 0), 1)
+        done = json.loads((self.parent / 'latest/finished.json').read_text())
+        self.assertEqual(done['commands'], {})
+
+    def test_failed_bench_and_task_errors_fail_run(self):
+        for variable, value in [('FAKE_BENCH_EXIT', '7'), ('FAKE_TASK_ERROR', '1'), ('FAKE_EXIT', '1')]:
+            with self.subTest(variable=variable), patch.dict(os.environ, {variable: value}):
+                self.assertEqual(e2e_run.run('sample', 1, 0), 1)
+                self.assertIn('FAILED', e2e_summary.staleness(self.parent / 'latest'))
+
+    def test_legacy_is_not_verified_by_mtime(self):
+        self.parent.mkdir(parents=True)
+        (self.parent / 'run.json').write_text('{}')
+        (self.parent / 'finished.json').write_text('{}')
+        self.assertIn('UNVERIFIED', e2e_summary.staleness(self.parent))
+
+
+if __name__ == '__main__':
+    unittest.main()

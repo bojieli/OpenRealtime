@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+from e2e_run import digest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2] / ".runtime/duplex-plan/results/e2e"
@@ -29,7 +30,7 @@ def fdb(directory: Path) -> dict:
             continue
         data = json.loads(path.read_text())
         tasks = data.get("tasks", [])
-        applicable = [t for t in tasks if t.get("notes", {}).get("applicable") == "true"]
+        applicable = [t for t in tasks if not t.get("error") and t.get("notes", {}).get("applicable") == "true"]
         passed = [t for t in applicable if t.get("passed")]
         failed = [t for t in tasks if t.get("error")]
         latencies = [t["metrics"]["yield_latency_ms"] for t in applicable
@@ -66,12 +67,29 @@ def staleness(directory: Path) -> str:
     finished = directory / "finished.json"
     if not finished.exists():
         return "INCOMPLETE (no finished.json)"
-    newest = max((path.stat().st_mtime for path in directory.glob("fdb*.json")), default=0)
-    if newest > finished.stat().st_mtime + 1:
-        return "MIXED (results newer than the run that finished)"
-    stale = [path.name for path in directory.glob("fdb*.json")
-             if path.stat().st_mtime < finished.stat().st_mtime - 3600]
-    return "STALE: " + ", ".join(stale) if stale else ""
+    try:
+        run = json.loads((directory / "run.json").read_text())
+        completion = json.loads(finished.read_text())
+        if run.get("schema") != 2:
+            return "UNVERIFIED legacy run (no result digests or command statuses)"
+        if completion.get("exit_code") != 0 or completion.get("errors"):
+            return "FAILED (see finished.json)"
+        expected = [f"fdb-{category}.json" for category in CATEGORIES]
+        if run.get("fdbench_conversations", 0):
+            expected.append("fdbench.json")
+        if run.get("expected_results") != expected:
+            return "INVALID result inventory"
+        for name in ["run.json", "profile.yaml", *expected]:
+            actual = digest(directory / name)
+            if completion.get("sha256", {}).get(name) != actual:
+                return f"MODIFIED or missing digest: {name}"
+        for name in expected:
+            command = completion.get("commands", {}).get(name, {})
+            if command.get("exit_code") != 0 or command.get("error"):
+                return f"FAILED or missing command: {name}"
+        return ""
+    except (OSError, ValueError, TypeError, AttributeError) as error:
+        return f"INVALID metadata: {error}"
 
 
 def main() -> None:
@@ -79,14 +97,24 @@ def main() -> None:
     parser.add_argument("profiles", nargs="*")
     parser.add_argument("--json", default="")
     args = parser.parse_args()
-    directories = [ROOT / name for name in args.profiles] if args.profiles else sorted(p for p in ROOT.iterdir() if p.is_dir())
+    directories = [ROOT / name for name in args.profiles] if args.profiles else sorted(p for p in ROOT.glob("*") if p.is_dir())
     rows = {}
     for directory in directories:
-        run = json.loads((directory / "run.json").read_text()) if (directory / "run.json").exists() else {}
-        rows[directory.name] = {"run": run, "fdb": fdb(directory), "fdbench": fdbench(directory),
-                                "integrity": staleness(directory)}
+        name = directory.name
+        if (directory / "latest").is_symlink():
+            directory = directory / "latest"
+        integrity = staleness(directory)
+        try:
+            run = json.loads((directory / "run.json").read_text())
+        except (OSError, ValueError):
+            run = {}
+        rows[name] = {"run": run, "path": str(directory.resolve()),
+                      "fdb": fdb(directory) if not integrity else {},
+                      "fdbench": fdbench(directory) if not integrity else {},
+                      "integrity": integrity}
     columns = ["profile", "interrupt yield", "backchannel hold", "background hold", "other-talk hold",
                "yield p50 ms", "FD-Bench answered/turns", "premature", "resp p50 ms", "load"]
+    print("Smoke measurements; NOT REPORTABLE as a full campaign. Invalid or unverified runs are excluded.\n")
     print("| " + " | ".join(columns) + " |")
     print("|" + " --- |" * len(columns))
     for name, row in rows.items():

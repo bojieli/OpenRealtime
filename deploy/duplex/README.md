@@ -95,3 +95,12 @@ revision, profile digest, host load average and GPU memory with every run,
 because a latency number measured on a loaded machine has to say so. A subset
 is a smoke measurement: the bench itself reports NOT REPORTABLE for anything
 short of a full campaign, and so should any summary of it.
+
+Each attempt is retained under `results/e2e/<profile>/runs/<run-id>/`; the
+`latest` symlink identifies the latest attempt, including failed attempts.
+The runner snapshots the profile, hashes the executable and results, verifies
+that its own server owns the listening socket, and records command exit codes
+and task errors. Failed commands, startup failures, and task errors produce a
+nonzero exit status. The summary excludes incomplete, changed, failed, and
+legacy runs whose provenance cannot be verified. Earlier artifacts remain
+available for inspection but need a new run to enter this summary.
