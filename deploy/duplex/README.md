@@ -33,6 +33,7 @@ Each script takes `start`, `stop` or `status`, logs to
 | 9130 | `services/turn.sh` | Smart Turn, LiveKit turn detector, VAP, DualTurn |
 | 9140-9159 | `services/{voicechat,minicpm-o-duplex,lychee-fd,freeze-omni}.sh` | native duplex models |
 | 9146 | `services/personaplex.sh` | PersonaPlex 7B, pinned upstream runtime and NATF2 voice; session instructions supply the role prompt |
+| 9148 | `services/moshi.sh` | Moshi 7B, pinned checkpoint/tokenizer/codec; no instruction input |
 | 9160 | `services/audio-observer.sh` | Audio Flamingo 3, bounded observer off the critical path |
 
 Recognisers speak the start/chunk/finish contract with a committed prefix, and
@@ -158,3 +159,15 @@ packet. This is an adapter policy, not a native terminal token or rendered
 playback acknowledgement. The released protocol does not consume session
 instructions or injected background text. Public Realtime validation is still
 pending; component probe results do not establish profile acceptance.
+
+### Moshi native reference
+
+`services/moshi.sh start` loads `kyutai/moshiko-pytorch-bf16` revision
+`2bfc9ae6e89079a5cc7ed2a68436010d91a3d289` in the existing Kyutai environment
+and serves sequential sessions on :9148. The launcher requires 22,000 MiB free
+and takes the large-model lease without queuing. `native-moshi.yaml` connects
+to this service. Model, codec and tokenizer use the same explicit Hub revision.
+Moshi has no session instruction or injected-text channel. Output turn
+boundaries are the adapter's RMS/hangover policy. Existing component smoke
+results do not establish acceptance of this deployment profile; a new public
+run remains required.

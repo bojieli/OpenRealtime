@@ -138,7 +138,7 @@ class MoshiModel:
     at warmup stay valid across resets.
     """
 
-    def __init__(self, repository: str, device: str, seed: int) -> None:
+    def __init__(self, repository: str, device: str, seed: int, revision: str | None = None) -> None:
         import torch  # noqa: PLC0415
         from moshi.models import LMGen, loaders  # noqa: PLC0415
 
@@ -149,7 +149,7 @@ class MoshiModel:
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         log(f"loading {repository}")
-        info = loaders.CheckpointInfo.from_hf_repo(repository)
+        info = loaders.CheckpointInfo.from_hf_repo(repository, revision=revision)
         if info.model_type != "moshi":
             raise RuntimeError(f"{repository} is a {info.model_type!r} checkpoint, not a Moshi dialogue model")
         self.mimi = info.get_mimi(device=device)
@@ -228,9 +228,10 @@ class MoshiSidecar(Sidecar):
 
     def __init__(self, input_stream, output_stream, *, repository: str, mock: bool,
                  device: str, seed: int = 42424242, shared: MoshiModel | None = None,
-                 options: TurnOptions | None = None, stats_file: str = "") -> None:
+                 options: TurnOptions | None = None, stats_file: str = "", revision: str | None = None) -> None:
         super().__init__(input_stream, output_stream)
         self.repository = repository
+        self.revision = revision
         self.mock = mock
         self.device = device
         self.seed = seed
@@ -276,7 +277,7 @@ class MoshiSidecar(Sidecar):
             self._stream_thread = threading.Thread(target=self._mock_stream, daemon=True)
             self._stream_thread.start()
             return
-        model = self._shared or MoshiModel(self.repository, self.device, self.seed)
+        model = self._shared or MoshiModel(self.repository, self.device, self.seed, self.revision)
         # One session at a time: a session that is still closing releases the
         # model within its shutdown, so a short wait absorbs the handover.
         if not model.lock.acquire(timeout=20):
@@ -588,6 +589,7 @@ def _listen(address: str, factory) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--repository", default=DEFAULT_REPOSITORY, help="Moshi weights repository")
+    parser.add_argument("--revision", default=None, help="pinned Hub model/tokenizer/codec revision")
     parser.add_argument("--device", default="cuda", help="device to place the model on")
     parser.add_argument("--seed", type=int, default=42424242, help="sampling seed (upstream server default)")
     parser.add_argument("--listen", default="",
@@ -615,9 +617,9 @@ def main() -> None:
         respond_timeout=arguments.respond_timeout,
     )
     common = dict(repository=arguments.repository, mock=arguments.mock, device=arguments.device,
-                  seed=arguments.seed, options=options, stats_file=arguments.stats_file)
+                  seed=arguments.seed, options=options, stats_file=arguments.stats_file, revision=arguments.revision)
     if arguments.listen:
-        shared = None if arguments.mock else MoshiModel(arguments.repository, arguments.device, arguments.seed)
+        shared = None if arguments.mock else MoshiModel(arguments.repository, arguments.device, arguments.seed, arguments.revision)
         _listen(arguments.listen, lambda reader, writer: MoshiSidecar(reader, writer, shared=shared, **common))
         return
     run(MoshiSidecar, **common)

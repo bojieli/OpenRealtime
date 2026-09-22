@@ -1,0 +1,9 @@
+# N0 reference: warmed Moshi :9148. No instruction or text-injection channel.
+# Output RMS/hangover is an adapter turn boundary, not a native EOS.
+# Public acceptance pending for this pinned deployment profile.
+binding: duplex
+sidecar-address: tcp:127.0.0.1:9148
+sidecar-protocol: 1
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
