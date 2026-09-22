@@ -58,7 +58,6 @@ class PersonaPlexModel:
                 module.reset_streaming()
             self.generator.step_system_prompts(self.mimi)
             self.mimi.reset_streaming()
-        self.first = True
 
     def step(self, samples):
         with self.torch.no_grad():
@@ -66,9 +65,6 @@ class PersonaPlexModel:
                 samples = np.zeros(FRAME_SAMPLES, dtype=np.float32)
             chunk = self.torch.from_numpy(samples).to(self.device)[None, None]
             codes = self.mimi.encode(chunk)
-            if self.first:
-                self.mimi.reset_streaming()
-                self.first = False
             tokens = self.generator.step(codes)
             if tokens is None:
                 return None, None
