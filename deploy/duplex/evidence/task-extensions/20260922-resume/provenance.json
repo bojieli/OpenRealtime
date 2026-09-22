@@ -1,0 +1,13 @@
+{
+  "revision": "29932a8f1d8b1545f087374624cb1336f45522ef",
+  "tree_modified": true,
+  "scope": "Component research probes; not public Realtime or rendered-playback acceptance",
+  "ellsa_attention_bridge": "SDPA; nine numerical reference comparisons passed",
+  "ellsa_source": "d006a330462de3fce41bc2352bfda06b93e0580d",
+  "bayling_provenance": "Retained earlier GPU run; original source revision not recorded in its JSON",
+  "files": {
+    "ellsa-one.json": "d868f6975f08a973e987eae68817cc52a0b9fe5597a6468958f4d4b3c06b98fa",
+    "ellsa-eight.json": "4b22a62e5b68741aeb217dfd29f4f0167c686bbde2213968dd49639ebe85f63b",
+    "bayling-eval.json": "8a665fc4dce2acb816645eb42c9a9214e1724c1e837a3ca38f2be26822fe9259"
+  }
+}

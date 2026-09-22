@@ -303,18 +303,28 @@
       "gated": false
     },
     {
-      "role": "gated-not-downloaded",
+      "role": "microturn-llm",
       "repository": "sbintuitions/DuplexCascade",
-      "present": false,
+      "present": true,
       "hub_revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
-      "gated": "auto"
+      "gated": "auto",
+      "revision": "31c038ece2f006a28722dd60d1df3868fbb2cc42",
+      "bytes": 17435532765,
+      "license": "mit",
+      "access_verified": "2026-09-22",
+      "snapshot_files_verified": true
     },
     {
-      "role": "gated-not-downloaded",
+      "role": "native-duplex",
       "repository": "nvidia/personaplex-7b-v1",
-      "present": false,
+      "present": true,
       "hub_revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
-      "gated": "auto"
+      "gated": "auto",
+      "revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+      "bytes": 17135667560,
+      "license": "other",
+      "access_verified": "2026-09-22",
+      "snapshot_files_verified": true
     }
   ]
 }

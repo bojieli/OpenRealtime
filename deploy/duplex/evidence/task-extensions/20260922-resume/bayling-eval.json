@@ -1,0 +1,392 @@
+{
+  "model": "BayLing-Models/BayLing-Duplex@b314288d7fc5",
+  "speech_tokenizer": "zai-org/glm-4-voice-tokenizer@a5f2404e63c8",
+  "speech_decoder": "zai-org/glm-4-voice-decoder@81ed541f0350",
+  "interleave_ratio": "10:5:10",
+  "temperature": 0.6,
+  "top_p": 0.8,
+  "seed": 7,
+  "load_seconds": 22.7,
+  "gpu_allocated_gb_after_load": 19.62,
+  "cases": [
+    {
+      "sample": "29",
+      "kind": "question_only",
+      "user_audio_s": 3.19,
+      "context_text": "I want to plan a trip for the upcoming holiday",
+      "interruption_text": "Can we talk about something else? I need some book recommendations.",
+      "interruption_window_s": null,
+      "tokenize_ms": 997.1,
+      "blocks": 17,
+      "block_ms": {
+        "n": 17,
+        "mean": 925.2,
+        "p50": 682.1,
+        "p90": 1263.3,
+        "max": 2662.8
+      },
+      "stopped": true,
+      "assistant_turns": 1,
+      "epads": 1,
+      "segments": [
+        {
+          "text": "I'd be happy to help you plan your trip. What type of holiday are you looking for? Beach relaxation, city exploration, or something else?",
+          "start_time_s": 4.0,
+          "turn_taking_time_s": 0.81,
+          "start_block": 4,
+          "end_block": 16
+        }
+      ],
+      "decode_audio_ms": 1476.1,
+      "audio_file": "29-question_only.wav",
+      "audio_s": 10.39
+    },
+    {
+      "sample": "29",
+      "kind": "with_interruption",
+      "user_audio_s": 15.61,
+      "context_text": "I want to plan a trip for the upcoming holiday",
+      "interruption_text": "Can we talk about something else? I need some book recommendations.",
+      "interruption_window_s": [
+        7.189,
+        10.613
+      ],
+      "tokenize_ms": 265.3,
+      "blocks": 12,
+      "block_ms": {
+        "n": 12,
+        "mean": 376.0,
+        "p50": 359.4,
+        "p90": 399.6,
+        "max": 463.1
+      },
+      "stopped": true,
+      "assistant_turns": 2,
+      "epads": 2,
+      "segments": [
+        {
+          "text": "I'd be happy to help you plan a trip for your holiday. What type of vacation are you looking for? Beach relaxation, city exploration skirts",
+          "start_time_s": 3.36,
+          "turn_taking_time_s": -12.25,
+          "start_block": 3,
+          "end_block": 9
+        },
+        {
+          "text": "Yes a lot",
+          "start_time_s": 9.28,
+          "turn_taking_time_s": -6.33,
+          "start_block": 10,
+          "end_block": 11
+        }
+      ],
+      "decode_audio_ms": 728.4,
+      "audio_file": "29-with_interruption.wav",
+      "audio_s": 9.59
+    },
+    {
+      "sample": "5",
+      "kind": "question_only",
+      "user_audio_s": 3.0,
+      "context_text": "What are the benefits of eating more fruits?",
+      "interruption_text": "Can we talk about something else?",
+      "interruption_window_s": null,
+      "tokenize_ms": 171.3,
+      "blocks": 26,
+      "block_ms": {
+        "n": 26,
+        "mean": 376.6,
+        "p50": 376.5,
+        "p90": 401.4,
+        "max": 462.8
+      },
+      "stopped": true,
+      "assistant_turns": 1,
+      "epads": 1,
+      "segments": [
+        {
+          "text": "Eating more fruit provides several benefits, including boosting your immune system, supporting healthy digestion, and reducing the risk of chronic diseases like heart disease and diabetes. It's also rich in vitamins, minerals, and antioxidants that can help improve your overall health and well-being.",
+          "start_time_s": 3.52,
+          "turn_taking_time_s": 0.52,
+          "start_block": 3,
+          "end_block": 25
+        }
+      ],
+      "decode_audio_ms": 825.6,
+      "audio_file": "5-question_only.wav",
+      "audio_s": 18.39
+    },
+    {
+      "sample": "5",
+      "kind": "with_interruption",
+      "user_audio_s": 13.8,
+      "context_text": "What are the benefits of eating more fruits?",
+      "interruption_text": "Can we talk about something else?",
+      "interruption_window_s": [
+        6.997,
+        8.8
+      ],
+      "tokenize_ms": 185.3,
+      "blocks": 26,
+      "block_ms": {
+        "n": 26,
+        "mean": 390.3,
+        "p50": 386.1,
+        "p90": 409.8,
+        "max": 427.3
+      },
+      "stopped": true,
+      "assistant_turns": 2,
+      "epads": 2,
+      "segments": [
+        {
+          "text": "Eating more fruit provides several benefits, including boosting your immune system, supporting healthy digestion, and reducing the risk of chronic diseases like heart disease and diabetes.",
+          "start_time_s": 3.52,
+          "turn_taking_time_s": -10.28,
+          "start_block": 3,
+          "end_block": 9
+        },
+        {
+          "text": "I'm not aware of any information about someone named Jane. Could you provide more context or clarify who Jane is?",
+          "start_time_s": 9.6,
+          "turn_taking_time_s": -4.2,
+          "start_block": 11,
+          "end_block": 25
+        }
+      ],
+      "decode_audio_ms": 891.4,
+      "audio_file": "5-with_interruption.wav",
+      "audio_s": 20.79
+    },
+    {
+      "sample": "42",
+      "kind": "question_only",
+      "user_audio_s": 2.02,
+      "context_text": "I've been thinking about starting a diet",
+      "interruption_text": "Oh, before I forget, I signed up for a marathon.",
+      "interruption_window_s": null,
+      "tokenize_ms": 185.2,
+      "blocks": 15,
+      "block_ms": {
+        "n": 15,
+        "mean": 386.0,
+        "p50": 387.0,
+        "p90": 397.7,
+        "max": 412.9
+      },
+      "stopped": true,
+      "assistant_turns": 1,
+      "epads": 1,
+      "segments": [
+        {
+          "text": "I'm not capable of making dietary recommendations. However, I can provide you with general information on healthy eating habits if you'd like.",
+          "start_time_s": 3.36,
+          "turn_taking_time_s": 1.34,
+          "start_block": 3,
+          "end_block": 14
+        }
+      ],
+      "decode_audio_ms": 836.5,
+      "audio_file": "42-question_only.wav",
+      "audio_s": 9.59
+    },
+    {
+      "sample": "42",
+      "kind": "with_interruption",
+      "user_audio_s": 14.14,
+      "context_text": "I've been thinking about starting a diet",
+      "interruption_text": "Oh, before I forget, I signed up for a marathon.",
+      "interruption_window_s": [
+        6.016,
+        9.141
+      ],
+      "tokenize_ms": 186.8,
+      "blocks": 28,
+      "block_ms": {
+        "n": 28,
+        "mean": 933.3,
+        "p50": 851.1,
+        "p90": 1251.1,
+        "max": 1402.0
+      },
+      "stopped": true,
+      "assistant_turns": 2,
+      "epads": 2,
+      "segments": [
+        {
+          "text": "I'm not aware of any information about someone named Sarah starting a new business. Could you please provide more context or clarify who Sarah is",
+          "start_time_s": 3.2,
+          "turn_taking_time_s": -10.94,
+          "start_block": 3,
+          "end_block": 8
+        },
+        {
+          "text": "I apologize, but I'm a large language model, I don't have personal experiences or memories, so I didn't sign up for a marathon. I'm here to provide information and assist with your queries.",
+          "start_time_s": 9.76,
+          "turn_taking_time_s": -4.38,
+          "start_block": 11,
+          "end_block": 27
+        }
+      ],
+      "decode_audio_ms": 1951.9,
+      "audio_file": "42-with_interruption.wav",
+      "audio_s": 22.4
+    }
+  ],
+  "block_ms_all": {
+    "n": 124,
+    "mean": 581.5,
+    "p50": 395.4,
+    "p90": 994.3,
+    "max": 2662.8
+  },
+  "block_audio_ms": 800,
+  "block_rtf_p90": 1.243,
+  "tokenizer_prefix_stability": {
+    "clip": "user_interruption/29",
+    "steps": [
+      {
+        "prefix_s": 0.8,
+        "tokens": 10,
+        "differ_from_final": 7,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 1.6,
+        "tokens": 20,
+        "differ_from_final": 10,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 2.4,
+        "tokens": 30,
+        "differ_from_final": 11,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 3.2,
+        "tokens": 40,
+        "differ_from_final": 10,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 4.0,
+        "tokens": 50,
+        "differ_from_final": 1,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 4.8,
+        "tokens": 60,
+        "differ_from_final": 8,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 5.6,
+        "tokens": 70,
+        "differ_from_final": 10,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 6.4,
+        "tokens": 80,
+        "differ_from_final": 18,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 7.2,
+        "tokens": 90,
+        "differ_from_final": 25,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 8.0,
+        "tokens": 100,
+        "differ_from_final": 1,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 8.8,
+        "tokens": 110,
+        "differ_from_final": 6,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 9.6,
+        "tokens": 120,
+        "differ_from_final": 10,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 10.4,
+        "tokens": 130,
+        "differ_from_final": 15,
+        "differ_in_completed_4s_blocks": 1
+      },
+      {
+        "prefix_s": 11.2,
+        "tokens": 140,
+        "differ_from_final": 7,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 12.0,
+        "tokens": 150,
+        "differ_from_final": 0,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 12.8,
+        "tokens": 160,
+        "differ_from_final": 8,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 13.6,
+        "tokens": 170,
+        "differ_from_final": 13,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 14.4,
+        "tokens": 180,
+        "differ_from_final": 11,
+        "differ_in_completed_4s_blocks": 0
+      },
+      {
+        "prefix_s": 15.2,
+        "tokens": 190,
+        "differ_from_final": 5,
+        "differ_in_completed_4s_blocks": 0
+      }
+    ],
+    "tokens_compared": 1900,
+    "tokens_differing": 176,
+    "tokens_differing_in_completed_blocks": 9,
+    "note": "block-causal VQ encoder (quantize_causal_block_size=200 frames = 4 s): tokens are final only once their 4 s block is complete"
+  },
+  "live_simulation": {
+    "clip": "user_interruption/29 (+8 s silence)",
+    "blocks": 23,
+    "block_ms_including_retokenize": {
+      "n": 23,
+      "mean": 868.9,
+      "p50": 903.0,
+      "p90": 1015.7,
+      "max": 1052.1
+    },
+    "fed_tokens_differing_from_offline": 99,
+    "fed_tokens": 230,
+    "segments": [
+      {
+        "text": "I'd be happy to help you plan a trip for the upcoming holiday. What type of holiday are you thinking of, and how many people",
+        "start_time_s": 3.36
+      },
+      {
+        "text": "I'd be happy to help you with that. What type of holiday are you thinking of, and how many people are traveling?",
+        "start_time_s": 11.2
+      }
+    ],
+    "note": "re-tokenizes the whole prefix each block (O(n) per block); a production path would re-encode only the current 4 s block"
+  },
+  "gpu_peak_allocated_gb": 20.19
+}

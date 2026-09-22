@@ -1,0 +1,41 @@
+{
+  "model": "tsinghua-ee/ELLSA@e81951892591",
+  "code": "bytedance/SALMONN branch ELLSA (reference/RoboVLMs/eval/libero)",
+  "attn_implementation": "sdpa",
+  "task_suite": "llama_questions",
+  "generate_speech": false,
+  "time_block_s": 1.0,
+  "load_seconds": 40.3,
+  "gpu_allocated_gb_after_load": 34.3,
+  "items": [
+    {
+      "wav": "1.wav",
+      "question": "What is the capital of France?",
+      "reference": "Paris",
+      "answer": "The capital of France is Paris. It 's a beautiful city known for its iconic landmarks like the Eiffel Tower, Notre-Dame Cathedral, and the Lou vre Museum. Paris is also famous for its romantic atmosphere, charming streets, and delicious French cuisine. It's a popular tourist destination and a hub for art, fashion, and culture.",
+      "contains_reference": true,
+      "speech_blocks": 3,
+      "blocks_run": 12,
+      "first_text_block": 2,
+      "response_onset_after_speech_end_s": 0.0,
+      "block_ms_mean": 1358.1,
+      "block_ms_max": 1854.7,
+      "raw_steps": [
+        "<silence><eot>",
+        "<silence><eot>",
+        "The capital of France is Paris. It<eot>",
+        "'s a beautiful city known for its iconic<eot>",
+        " landmarks like the Eiffel Tower,<eot>",
+        " Notre-Dame Cathedral, and the Lou<eot>",
+        "vre Museum.  Paris is also famous<eot>",
+        " for its romantic atmosphere, charming streets,<eot>",
+        " and delicious French cuisine.  It's<eot>",
+        " a popular tourist destination and a hub for<eot>",
+        " art, fashion, and culture.<silence><eot>",
+        "<silence><eot>"
+      ]
+    }
+  ],
+  "accuracy_contains_reference": 1.0,
+  "gpu_peak_allocated_gb": 34.8
+}

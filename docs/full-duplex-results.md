@@ -122,7 +122,7 @@ The measurements below use an ordinary instruct model (Qwen3-8B), the plan's
 "orchestrated micro-turns" fallback; they do not establish released DuplexCascade
 behavior. Access to DuplexCascade and PersonaPlex was verified on 2026-09-22
 using the saved Hugging Face login after removing an environment credential
-override. Their pinned checkpoint downloads and integrations are now in progress.
+override. Their pinned checkpoints are now fully downloaded; integrations are in progress.
 
 What the clock costs and what it delivers, from the traces of the end-to-end
 runs (`python tools/duplexmodels/microturn_trace.py`):
@@ -270,6 +270,26 @@ it is informative: AUROC 0.88 for "is there background speech", 0.95 for
 a useful uncertain observer, not a controller - and it is why its answers are
 typed as expiring hypotheses.
 
+**Task extensions (P8).** ELLSA's speech-only research loop now runs on the
+GPU after bridging its joint speech/vision attention to SDPA. The bridge was
+checked against explicit attention calculations for prefill, cached decoding,
+grouped-query heads, and padding masks. Eight available Llama Questions clips
+completed: six answers contain the dataset reference string (a limited scoring
+rule, not a semantic accuracy assessment), with 36.04 GiB peak allocation and
+approximately 684 ms mean compute per 1 s block. Whole-clip fbank preparation
+and history recomputation follow the research driver; spoken output, actions,
+causal live input, and public agent acceptance remain unverified.
+
+BayLing's retained GPU run covers six question/interruption cases. Its offline
+path tokenizes the complete clip before generation. A separate live-prefix
+simulation took 903 ms p50 / 1,016 ms p90 per 800 ms block and fed 99/230 tokens
+different from the offline sequence. The prefix stability probe found 176
+mismatches in 1,900 comparisons, including nine within completed 4 s blocks;
+its older claim of perfectly stable completed blocks is not supported by this
+GPU result. These are component feasibility measurements. The JSON and their
+provenance are retained in
+[`task-extensions/20260922-resume`](../deploy/duplex/evidence/task-extensions/20260922-resume/).
+
 ## End-to-end voice agent performance (P9)
 
 The resumed Nemotron/Qwen3/Kyutai smoke run retains its hashed result JSON
@@ -353,8 +373,8 @@ model itself was not measured here.
 
 | Item | Status | Reason |
 | --- | --- | --- |
-| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint download started; native micro-turn integration and GPU validation pending |
-| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint download started; prompt-aware integration and GPU validation pending |
+| DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; native micro-turn integration and GPU validation pending |
+| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; prompt-aware integration and GPU validation pending |
 | User's own micro-turn LLM and TTS (cell C2) | pending | No checkpoint locations were provided |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |
