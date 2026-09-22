@@ -145,6 +145,14 @@ difference to these rules; a matched replay is still required.
 
 ## Native speech models (P5)
 
+PersonaPlex now runs with the authorized pinned weights and upstream code
+`3428dfd95309a7f3c84fd93259ded0f810d1ff91`. Its 40 s assistant example
+produced 40 s of finite, non-silent 24 kHz audio with voice prompt NATF2 and
+the upstream teacher role prompt. This was offline frame inference, not
+wall-clock replay or a public Realtime session. The summary, prompt, seed,
+and audio hashes are retained in
+[`personaplex/20260922-resume`](../deploy/duplex/evidence/personaplex/20260922-resume/).
+
 Native validation remains incomplete. The retained component artifacts under
 `results/native/` establish narrower findings:
 
@@ -374,7 +382,7 @@ model itself was not measured here.
 | Item | Status | Reason |
 | --- | --- | --- |
 | DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; native micro-turn integration and GPU validation pending |
-| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; prompt-aware integration and GPU validation pending |
+| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference passed; live profile integration and acceptance pending |
 | User's own micro-turn LLM and TTS (cell C2) | pending | No checkpoint locations were provided |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |

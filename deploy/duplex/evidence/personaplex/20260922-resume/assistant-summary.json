@@ -1,0 +1,19 @@
+{
+  "model": "nvidia/personaplex-7b-v1",
+  "revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+  "code_revision": "3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+  "torch": "2.9.1+cu128",
+  "seed": 42424242,
+  "voice_prompt": "NATF2.pt",
+  "text_prompt": "You are a wise and friendly teacher. Answer questions or provide advice in a clear and engaging way.",
+  "scope": "Upstream offline frame inference; not wall-clock replay or public Realtime acceptance",
+  "input_seconds": 40.0,
+  "output_seconds": 40.0,
+  "sample_rate": 24000,
+  "finite": true,
+  "rms": 0.04919109911009866,
+  "peak": 0.7227783203125,
+  "text": " Hey, let me know if you have any questions. Hmm, try rinsing the rice a few times until the water runs clear. You can also soak it for 15 minutes before cooking, that helps cut down on sticking. Another tip is to add a little extra water when you start, like 1.5inch above the Okay, a quick garnish could be a few chopped fresh cilantro leaves or a dash of crumbled feta cheese, both add a bright colour and nice texture. You could also toss in a few pomegranate seeds or sprinkle some toasted sesame seeds for a pop of colour.",
+  "input_sha256": "6fefe378a39602d83d8ea0ef165309b7a7508bd371c1d5bea6196e6ff6f57d2e",
+  "output_sha256": "ec0dfa7e0fd9c925fb9067f29860ccf6693f4129e2705a330e854050107e5aa2"
+}
