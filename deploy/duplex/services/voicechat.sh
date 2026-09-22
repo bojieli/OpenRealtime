@@ -6,7 +6,9 @@
 # 3-stage thinker/talker/code2wav pipeline with an 80 ms frame clock and the
 # model's function channel surfaced as Realtime function-call events.
 #
-#   vLLM-Omni  9ebef4b1d3cb69181bcc2eb159cc6ef35f272b6f (src/vllm-omni-native)
+#   vLLM-Omni  9005d789033b8c3ec5876a7a68c4e2d9238f5c69 (src/vllm-omni-voicechat)
+#   Later 9ebef4b disables VoiceChat's legacy duplex integration; its healthy
+#   HTTP server rejects duplex sessions. Keep this model on the earlier API.
 #   vLLM       0.29.0 (torch 2.13.0+cu130), venv .runtime/duplex-plan/venvs/vllm-omni-native
 #   weights    nvidia/NVIDIA-NemotronLabs-VoiceChat-11B @ a4c40ca5b4fe77db13e9840ca4a2b91becf030c8
 #   tokenizer  nvidia/NVIDIA-Nemotron-Nano-9B-v2 @ 6533e8de2c68e4536bf7c411d7a3ce5734111476 (tokenizer files only)
@@ -33,14 +35,15 @@ ROOT=/home/ubuntu/OpenRealtime
 PLAN=$ROOT/.runtime/duplex-plan
 PORT=${VOICECHAT_PORT:-9140}
 VENV=${VOICECHAT_VENV:-$PLAN/venvs/vllm-omni-native}
-SRC=${VOICECHAT_VLLM_OMNI:-$PLAN/src/vllm-omni-native}
+SRC=${VOICECHAT_VLLM_OMNI:-$PLAN/src/vllm-omni-voicechat}
 CHECKPOINT=${VOICECHAT_CHECKPOINT:-$HOME/.cache/huggingface/hub/models--nvidia--NVIDIA-NemotronLabs-VoiceChat-11B/snapshots/a4c40ca5b4fe77db13e9840ca4a2b91becf030c8}
 TOKENIZER=${NEMOTRON_VOICECHAT_LLM_PATH:-$HOME/.cache/huggingface/hub/models--nvidia--NVIDIA-Nemotron-Nano-9B-v2/snapshots/6533e8de2c68e4536bf7c411d7a3ce5734111476}
 THINKER_MEM=${VOICECHAT_THINKER_MEM:-0.245}
 TALKER_MEM=${VOICECHAT_TALKER_MEM:-0.05}
 CODEC_MEM=${VOICECHAT_CODEC_MEM:-0.02}
 THINKER_KV_BYTES=${VOICECHAT_THINKER_KV_BYTES:-536870912}
-TALKER_KV_BYTES=${VOICECHAT_TALKER_KV_BYTES:-268435456}
+TALKER_KV_BYTES=${VOICECHAT_TALKER_KV_BYTES:-2147483648}
+TALKER_LEN=${VOICECHAT_TALKER_LEN:-8192}
 PIDFILE=$PLAN/pids/voicechat.pid
 LOG=$PLAN/logs/voicechat.log
 OVERLAY=$PLAN/configs/voicechat-duplex-shared-gpu.yaml
@@ -135,12 +138,22 @@ stages:
   - stage_id: 1
     gpu_memory_utilization: $TALKER_MEM
     kv_cache_memory_bytes: $TALKER_KV_BYTES
+    # Startup validation requires 1.82 GiB of KV for 8192 positions.
+    # Reserve 2 GiB; the previous 1 GiB budget failed before serving.
+    # At 80 ms per frame this bounds one session to about ten minutes.
+    max_model_len: $TALKER_LEN
+    default_sampling_params:
+      max_tokens: $((TALKER_LEN - 37))
   - stage_id: 2
     gpu_memory_utilization: $CODEC_MEM
 EOF
 }
 
 start() {
+  [[ -f "$SRC/vllm_omni/entrypoints/duplex/capability.py" ]] || {
+    echo "VoiceChat needs the legacy duplex source; run deploy/duplex/services/setup-voicechat-source.sh" >&2
+    return 1
+  }
   if [[ -f $PIDFILE ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
     echo "voicechat already running (pid $(cat "$PIDFILE"))"; return 0
   fi
@@ -155,7 +168,7 @@ start() {
 # Wait for room first, then queue for the lease, and give the lease straight
 # back if the room disappeared before it arrived.
 _attempts() {
-  local attempt=1 started elapsed
+  local attempt=1 started elapsed status
   while (( attempt <= ATTEMPTS )); do
     echo "=== attempt $attempt of $ATTEMPTS"
     _wait_for_memory || return 1
@@ -164,14 +177,14 @@ _attempts() {
       # An explicit allocation from the coordinator: no lease, one attempt at
       # the memory that was granted, and a failure is reported rather than
       # retried in a loop against everyone else.
-      "$ROOT/deploy/duplex/services/voicechat.sh" _run
+      if "$ROOT/deploy/duplex/services/voicechat.sh" _run; then status=0; else status=$?; fi
     else
-      flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/voicechat.sh" _run
+      if flock -w 14400 "$PLAN/gpu/large.lock" "$ROOT/deploy/duplex/services/voicechat.sh" _run; then status=0; else status=$?; fi
     fi
     elapsed=$((SECONDS - started))
     if (( elapsed > 150 )); then
       echo "=== engine exited after ${elapsed}s; not retrying"
-      return 0
+      return "$status"
     fi
     echo "=== engine did not reach a serving state (${elapsed}s); retrying"
     attempt=$((attempt + 1))
@@ -191,9 +204,10 @@ _run() {
   echo "lease acquired with $((total - used)) MiB free"
   "$VENV/bin/python" "$BALLAST" "$LOG" "$BALLAST_FIRST_GIB" "$BALLAST_SECOND_GIB" 900 &
   local ballast=$!
-  _serve
-  local status=$?
+  local status
+  if _serve; then status=0; else status=$?; fi
   kill "$ballast" 2>/dev/null || true
+  wait "$ballast" 2>/dev/null || true
   return $status
 }
 
@@ -211,6 +225,7 @@ _wait_for_memory() {
 
 _serve() {
   cd "$SRC"
+  export PYTHONPATH="$SRC${PYTHONPATH:+:$PYTHONPATH}"
   # HF_HUB_OFFLINE: the weights and tokenizer are pinned in the local cache.
   # FlashInfer normalises sm_120 against the system CUDA toolkit (12.8 here)
   # and raises "SM 12.x requires CUDA >= 12.9"; its import-time probe swallows

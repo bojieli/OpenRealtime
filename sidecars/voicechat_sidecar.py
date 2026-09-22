@@ -64,7 +64,7 @@ warnings.filterwarnings("ignore", message=r"connect\(\) must be used as a contex
 
 DEFAULT_SERVER = "ws://127.0.0.1:9140/v1/realtime"
 DEFAULT_MODEL = "nemotron-voicechat"
-MODEL_IDENTITY = "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via vllm-omni@9ebef4b1 duplex"
+MODEL_IDENTITY = "nvidia/NVIDIA-NemotronLabs-VoiceChat-11B@a4c40ca5 via configured-vllm-omni@9005d789 duplex"
 #: The model hears 16 kHz and speaks 22.05 kHz, one frame per 80 ms.
 MODEL_INPUT_RATE = 16_000
 MODEL_OUTPUT_RATE = 22_050
@@ -216,6 +216,8 @@ class VoiceChatSidecar(Sidecar):
         self.server = server
         self.served_model = served_model
         self.mock = mock
+        if mock:
+            self.model_name = "voicechat-protocol-mock (no model inference)"
         self.instructions_override = instructions
         self.idle_fill_seconds = max(0.0, idle_fill_ms / 1000.0)
         self.forward_commit = forward_commit

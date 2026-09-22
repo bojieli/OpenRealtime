@@ -78,9 +78,21 @@ one experiment cell:
 | `cascade-…-smartturn-observe` | endpoint evidence recorded but deciding nothing (I0) |
 | `cascade-…-{smartturn,livekit,vap,dualturn,fusion}-control` | one endpoint predictor deciding the pause, at its calibrated threshold (I0) |
 | `native-freeze-omni` | a native duplex model through the sidecar relay (P5/P8) |
+| `native-voicechat` | experimental VoiceChat duplex and tool cell (N2); acceptance in progress |
 | `closed-gemini-live`, `closed-openai-live` | closed live references (R0); the voice path leaves the machine |
 
 ## Running the end-to-end check
+
+VoiceChat uses a separate source pin because vLLM-Omni `9ebef4b` loads its
+weights but disables its legacy duplex endpoint. Prepare the compatible
+`9005d789033b8c3ec5876a7a68c4e2d9238f5c69` source with
+`services/setup-voicechat-source.sh` before `services/voicechat.sh start`.
+The launcher uses the existing `vllm-omni-native` environment and sets
+`PYTHONPATH` for this source only. Its talker reserves 2 GiB of KV cache for
+8,192 positions (about ten minutes at 80 ms per frame); longer sessions need
+a separately validated larger budget. A successful `/health` response is
+only startup evidence; the native sidecar and tool tests establish duplex
+operation.
 
 ```bash
 deploy/duplex/run-e2e.sh microturn-voxtral-qwen3-kyutai 10 12
