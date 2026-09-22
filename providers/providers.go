@@ -75,9 +75,15 @@ const (
 	DialectDeepgramListen Dialect = "deepgram-listen"
 	// DialectQwenASR is the local Qwen3-ASR start/chunk/finish service.
 	DialectQwenASR Dialect = "qwen-asr"
+	// DialectVLLMRealtime is vLLM's /v1/realtime transcription WebSocket,
+	// which streams append-only text deltas from one running generation.
+	DialectVLLMRealtime Dialect = "vllm-realtime"
 
 	// DialectOpenAISpeech is /v1/audio/speech with a PCM stream.
 	DialectOpenAISpeech Dialect = "openai-speech"
+	// DialectSpeechSocket is openrealtime-incremental-speech/1, the
+	// same-context synthesis WebSocket of the duplex-plan TTS services.
+	DialectSpeechSocket Dialect = "speech-socket"
 	// DialectFishNative is the Fish Speech /v1/tts server.
 	DialectFishNative Dialect = "fish-native"
 	// DialectPCMPost is a POST whose response body is the PCM stream, which

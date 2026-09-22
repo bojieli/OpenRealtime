@@ -66,6 +66,7 @@ type Adapter struct {
 	nextFrameIndex   uint64
 	nextSourceSample uint64
 	lastText         string
+	lastStable       string
 	lastEmittedText  string
 	language         string
 	revisionID       uint64
@@ -137,8 +138,9 @@ func (adapter *Adapter) Language() string {
 
 // PushFrame resamples a contiguous PCM16LE frame to 16 kHz float32, advances
 // the remote streaming state once, and returns a revision only when text has
-// changed. Partial Qwen output remains UnstableText because the server does not
-// expose a stable-prefix boundary.
+// changed. Partial Qwen output remains UnstableText because the official server
+// does not expose a stable-prefix boundary; a service that sends stable_text
+// has that prefix reported as StableText.
 func (adapter *Adapter) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v1.PerceptionRevision, error) {
 	adapter.mu.Lock()
 	defer adapter.mu.Unlock()
@@ -179,10 +181,16 @@ func (adapter *Adapter) PushFrame(ctx context.Context, frame v1.AudioFrame) ([]v
 	}
 	adapter.language = result.Language
 	adapter.lastText = result.Text
-	if result.Text == adapter.lastEmittedText {
+	stable := adapter.committed(result)
+	if result.Text == adapter.lastEmittedText && stable == adapter.lastStable {
 		return nil, nil
 	}
 	revision := adapter.revision(result.Text, endSample, false)
+	if stable != "" {
+		revision.StableText = stable
+		revision.UnstableText = strings.TrimPrefix(result.Text, stable)
+	}
+	adapter.lastStable = stable
 	return []v1.PerceptionRevision{revision}, nil
 }
 
@@ -265,7 +273,11 @@ type startResponse struct {
 type transcriptResponse struct {
 	Language string `json:"language"`
 	Text     string `json:"text"`
-	Error    string `json:"error,omitempty"`
+	// StableText is the optional committed prefix of Text. The official
+	// Qwen service never sends it; the duplex-plan recogniser services
+	// (tools/duplexmodels) send it when their decoder cannot revise it.
+	StableText *string `json:"stable_text,omitempty"`
+	Error      string  `json:"error,omitempty"`
 }
 
 func (adapter *Adapter) ensureSession(ctx context.Context) error {
@@ -364,6 +376,25 @@ func (adapter *Adapter) revision(text string, sourceSample uint64, final bool) v
 	}
 	adapter.lastEmittedText = text
 	return revision
+}
+
+// committed returns the service's committed prefix when it sent one that is
+// a prefix of the text and does not withdraw what was committed before. A
+// response that violates either is treated as committing nothing new rather
+// than trusted, so a misbehaving service degrades to the provisional
+// contract instead of revising stable text.
+func (adapter *Adapter) committed(result transcriptResponse) string {
+	if result.StableText == nil {
+		return ""
+	}
+	stable := *result.StableText
+	if !strings.HasPrefix(result.Text, stable) || !strings.HasPrefix(stable, adapter.lastStable) {
+		if strings.HasPrefix(result.Text, adapter.lastStable) {
+			return adapter.lastStable
+		}
+		return ""
+	}
+	return stable
 }
 
 func (adapter *Adapter) fail(err error) error {

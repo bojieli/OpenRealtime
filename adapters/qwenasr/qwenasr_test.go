@@ -185,3 +185,60 @@ func transcriptServer(t *testing.T, text string) *httptest.Server {
 }
 
 func pcm16(samples int) []byte { return make([]byte, samples*2) }
+
+// A service that sends stable_text has that prefix reported as committed, and
+// one that tries to withdraw a committed prefix is not believed.
+func TestAdapterReportsAServiceCommittedPrefix(t *testing.T) {
+	answers := []map[string]string{
+		{"text": "hello wor", "stable_text": "hello "},
+		{"text": "hello world again", "stable_text": "hello world "},
+		// A withdrawal: the committed prefix shrinks. The adapter keeps what
+		// was committed rather than trusting the regression.
+		{"text": "hello world again and", "stable_text": "hello "},
+	}
+	var mu sync.Mutex
+	call := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/start":
+			_ = json.NewEncoder(writer).Encode(map[string]string{"session_id": "s"})
+		case "/api/chunk":
+			mu.Lock()
+			answer := answers[min(call, len(answers)-1)]
+			call++
+			mu.Unlock()
+			_ = json.NewEncoder(writer).Encode(answer)
+		case "/api/finish":
+			_ = json.NewEncoder(writer).Encode(map[string]string{"text": "hello world again and more"})
+		}
+	}))
+	defer server.Close()
+	adapter, err := New(Config{BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []struct{ stable, unstable string }{
+		{"hello ", "wor"}, {"hello world ", "again"}, {"hello world ", "again and"},
+	}
+	var offset uint64
+	for index, expected := range want {
+		revisions, err := adapter.PushFrame(context.Background(), v1.AudioFrame{
+			Index: uint64(index), SampleOffset: offset, SampleRateHz: 16_000, PCM16LE: pcm16(1_600),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		offset += 1_600
+		if len(revisions) != 1 || revisions[0].StableText != expected.stable || revisions[0].UnstableText != expected.unstable {
+			t.Fatalf("frame %d revisions = %+v; want stable %q unstable %q", index, revisions, expected.stable, expected.unstable)
+		}
+	}
+	final, err := adapter.Finalize(context.Background(), offset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !final.Final || final.StableText != "hello world again and more" {
+		t.Fatalf("final = %+v", final)
+	}
+}

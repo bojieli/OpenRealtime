@@ -10,6 +10,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/fishaudio"
 	"github.com/bojieli/OpenRealtime/adapters/openaitts"
 	"github.com/bojieli/OpenRealtime/adapters/pcmtts"
+	"github.com/bojieli/OpenRealtime/adapters/speechsocket"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 )
 
@@ -41,6 +42,17 @@ var ttsCatalog = []TTS{
 			Notes:  "The self-hosted default: SGLang-Omni, Kokoro, or anything serving /v1/audio/speech.",
 		},
 		Model: openaitts.DefaultModel, Voice: "default",
+	},
+	{
+		Common: Common{
+			Name: "speech-socket", Aliases: []string{"incremental-speech"},
+			Label: "Local incremental speech service (same-context WebSocket)", Dialect: DialectSpeechSocket,
+			BaseURL: speechsocket.DefaultURL, Auth: AuthBearer, Local: true,
+			KeyEnv: []string{"OPENREALTIME_TTS_API_KEY"},
+			Notes: "openrealtime-incremental-speech/1 served by tools/duplexmodels (CosyVoice, Kyutai, " +
+				"VibeVoice, Qwen3-TTS, Fish); each plan is one synthesis context.",
+		},
+		Model: speechsocket.DefaultModel, Voice: "default",
 	},
 	{
 		Common: Common{
@@ -211,6 +223,11 @@ func NewTTS(request TTSRequest) (v1.StreamingSpeechProvider, error) {
 			Endpoint: endpoint, Model: model, Voice: voice, BearerToken: key,
 			Headers: request.Header, RequestTimeout: request.RequestTimeout,
 			FallbackSampleRate: rate, OutputSampleRateHz: rate,
+		})
+	case DialectSpeechSocket:
+		return speechsocket.New(speechsocket.Config{
+			URL: endpoint, Model: model, Voice: voice, BearerToken: key,
+			Header: request.Header, OutputRateHz: rate,
 		})
 	case DialectFishNative:
 		return fishaudio.New(fishaudio.Config{

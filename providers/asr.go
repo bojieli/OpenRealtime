@@ -10,6 +10,7 @@ import (
 	"github.com/bojieli/OpenRealtime/adapters/deepgram"
 	"github.com/bojieli/OpenRealtime/adapters/openaitranscribe"
 	"github.com/bojieli/OpenRealtime/adapters/qwenasr"
+	"github.com/bojieli/OpenRealtime/adapters/vllmrealtime"
 	v1 "github.com/bojieli/OpenRealtime/api/v1"
 )
 
@@ -45,6 +46,29 @@ var asrCatalog = []ASR{
 			Notes:  "The self-hosted default: streaming, no account, no audio leaves the machine.",
 		},
 		Model: qwenasr.DefaultModel, Streaming: true,
+	},
+	{
+		Common: Common{
+			Name: "streaming-asr", Aliases: []string{"local-streaming"},
+			Label: "Local streaming recogniser service (start/chunk/finish)", Dialect: DialectQwenASR,
+			BaseURL: "http://127.0.0.1:9110", Auth: AuthBearer, Local: true,
+			KeyEnv: []string{"OPENREALTIME_ASR_API_KEY"},
+			Notes: "The qwen-asr dialect served by tools/duplexmodels for any streaming recogniser " +
+				"(Nemotron, Kyutai STT, ...); a committed prefix is reported when the service sends one.",
+		},
+		Model: "nvidia/nemotron-speech-streaming-en-0.6b", Streaming: true,
+	},
+	{
+		Common: Common{
+			Name: "vllm-realtime", Aliases: []string{"voxtral", "voxtral-realtime"},
+			Label: "vLLM realtime transcription (local)", Dialect: DialectVLLMRealtime,
+			BaseURL: vllmrealtime.DefaultURL, Auth: AuthBearer, Local: true,
+			KeyEnv: []string{"OPENREALTIME_ASR_API_KEY"},
+			Notes: "Natively streaming recognisers served by vLLM's /v1/realtime route - Voxtral " +
+				"Mini 4B Realtime by default, Qwen3-ASR with -asr-model and -asr-url. Deltas are " +
+				"append-only, so every reported word is already committed.",
+		},
+		Model: vllmrealtime.DefaultModel, Streaming: true,
 	},
 	{
 		Common: Common{
@@ -200,7 +224,7 @@ func ASRAcceptsLanguage(provider string) bool {
 	if err != nil {
 		return false
 	}
-	return entry.Dialect != DialectQwenASR
+	return entry.Dialect != DialectQwenASR && entry.Dialect != DialectVLLMRealtime
 }
 
 // DescribeASR validates and normalizes through the same constructor path as a
@@ -287,6 +311,25 @@ func NewASRFactory(request ASRRequest) (func() (v1.PerceptionProvider, error), e
 			return qwenasr.New(qwenasr.Config{
 				BaseURL: baseURL, Model: model, BearerToken: key,
 				Headers: request.Header, RequestTimeout: request.RequestTimeout,
+			})
+		}, nil
+	case DialectVLLMRealtime:
+		// The realtime route detects the language itself and exposes neither
+		// vocabulary hints nor its own endpointing; refuse rather than drop.
+		if language := strings.TrimSpace(request.Language); language != "" {
+			return nil, fmt.Errorf("recogniser %q detects the language itself and cannot honour language %q; "+
+				"leave -asr-language unset for it", entry.Name, language)
+		}
+		if len(request.Keyterms) > 0 {
+			return nil, fmt.Errorf("recogniser %q has no vocabulary hints and cannot honour keyterms", entry.Name)
+		}
+		if request.Endpointing > 0 {
+			return nil, fmt.Errorf("recogniser %q leaves endpointing to the engine's own gate and cannot honour endpointing %s",
+				entry.Name, request.Endpointing)
+		}
+		return func() (v1.PerceptionProvider, error) {
+			return vllmrealtime.New(vllmrealtime.Config{
+				URL: baseURL, Model: model, BearerToken: key, Header: request.Header,
 			})
 		}, nil
 	case DialectDeepgramListen:
