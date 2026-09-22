@@ -57,6 +57,23 @@ def fdbench(directory: Path) -> dict:
     }
 
 
+def staleness(directory: Path) -> str:
+    """Report result files older than the run that should have replaced them.
+
+    A cell that failed part way leaves a previous run's files in place, and a
+    table that mixed the two would present them as one measurement.
+    """
+    finished = directory / "finished.json"
+    if not finished.exists():
+        return "INCOMPLETE (no finished.json)"
+    newest = max((path.stat().st_mtime for path in directory.glob("fdb*.json")), default=0)
+    if newest > finished.stat().st_mtime + 1:
+        return "MIXED (results newer than the run that finished)"
+    stale = [path.name for path in directory.glob("fdb*.json")
+             if path.stat().st_mtime < finished.stat().st_mtime - 3600]
+    return "STALE: " + ", ".join(stale) if stale else ""
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("profiles", nargs="*")
@@ -66,7 +83,8 @@ def main() -> None:
     rows = {}
     for directory in directories:
         run = json.loads((directory / "run.json").read_text()) if (directory / "run.json").exists() else {}
-        rows[directory.name] = {"run": run, "fdb": fdb(directory), "fdbench": fdbench(directory)}
+        rows[directory.name] = {"run": run, "fdb": fdb(directory), "fdbench": fdbench(directory),
+                                "integrity": staleness(directory)}
     columns = ["profile", "interrupt yield", "backchannel hold", "background hold", "other-talk hold",
                "yield p50 ms", "FD-Bench answered/turns", "premature", "resp p50 ms", "load"]
     print("| " + " | ".join(columns) + " |")
@@ -85,6 +103,8 @@ def main() -> None:
         cells.append(f"{latency:.0f}" if latency is not None else "-")
         cells.append(str(row["run"].get("load_average", "?")))
         print("| " + " | ".join(cells) + " |")
+        if row["integrity"]:
+            print(f"| {name} | **{row['integrity']}** |" + " |" * (len(columns) - 2))
     if args.json:
         Path(args.json).write_text(json.dumps(rows, indent=2))
 
