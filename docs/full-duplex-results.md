@@ -419,8 +419,7 @@ Native validation remains incomplete. The retained component artifacts under
   interruption category: 199 completed, 138 were applicable, 73 passed and
   61 were not applicable. Applicable yield latency was 961 ms p50 and
   1,704 ms p90. Recording `user_interruption/68` failed with
-  `text_delta requires text`, so this category is incomplete, and the other
-  categories and selected FD-Bench condition are still running. The
+  `text_delta requires text`, so this category is incomplete. The
   [retained category results and provenance](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-interruption/)
   supersede any inference of broad reliability from the eight-recording smoke.
   A regression reproduces the same protocol error on a standalone space
@@ -428,6 +427,16 @@ Native validation remains incomplete. The retained component artifacts under
   while rejecting empty ones; the offending upstream token was not retained.
   The running campaign remains pinned to its original receiver, and GPU
   validation of the corrected receiver remains pending.
+
+  The same campaign's [complete backchannel category](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-backchannel/)
+  processed all 98 recordings without task errors: 94/94 applicable recordings
+  passed the hold criterion, and four were not applicable. This supports
+  holding the floor through these backchannels, but does not establish
+  reliable interruption handling. Background speech, other-talk and the
+  selected FD-Bench condition remain pending. The binding fix at `ea210076`
+  also preserves standalone whitespace after receiver validation, avoiding
+  concatenated words and duplicate final text; its regression passed, but
+  this running campaign predates both whitespace fixes.
 
   A [real-model duplicate-result probe](../deploy/duplex/evidence/voicechat/20260922-duplicate-result/)
   delayed a fixed tool result by four seconds and submitted it twice. The
