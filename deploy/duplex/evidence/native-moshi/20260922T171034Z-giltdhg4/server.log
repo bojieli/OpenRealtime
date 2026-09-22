@@ -1,0 +1,24 @@
+time=2026-09-22T17:10:34.738Z level=WARN msg="the Realtime endpoint has no bearer token" listen=127.0.0.1:9290 token_env=OPENREALTIME_TOKEN detail="anything that can reach this address can open a session, including a tunnel or proxy placed in front of it"
+OpenRealtime duplex listening on http://127.0.0.1:9290/v1/realtime
+  health   http://127.0.0.1:9290/healthz
+  server profile sha256:39de8137382b34fbf2a6b0645e9ff4c3235815dd8ba3ea47c9f55f5a30bcf8e1
+time=2026-09-22T17:10:36.829Z level=INFO msg="session started" session=sess_000000000001 binding=duplex model=openrealtime
+time=2026-09-22T17:10:55.615Z level=INFO msg="session completed" session=sess_000000000001 duration=18.800784456s
+time=2026-09-22T17:10:55.661Z level=INFO msg="session started" session=sess_000000000002 binding=duplex model=openrealtime
+time=2026-09-22T17:11:13.043Z level=INFO msg="session completed" session=sess_000000000002 duration=17.400374213s
+time=2026-09-22T17:11:13.851Z level=INFO msg="session started" session=sess_000000000003 binding=duplex model=openrealtime
+time=2026-09-22T17:11:37.844Z level=INFO msg="session completed" session=sess_000000000003 duration=23.999966435s
+time=2026-09-22T17:11:37.871Z level=INFO msg="session started" session=sess_000000000004 binding=duplex model=openrealtime
+time=2026-09-22T17:11:58.068Z level=INFO msg="session completed" session=sess_000000000004 duration=20.205012251s
+time=2026-09-22T17:11:58.993Z level=INFO msg="session started" session=sess_000000000005 binding=duplex model=openrealtime
+time=2026-09-22T17:12:15.386Z level=INFO msg="session completed" session=sess_000000000005 duration=16.401453811s
+time=2026-09-22T17:12:15.402Z level=INFO msg="session started" session=sess_000000000006 binding=duplex model=openrealtime
+time=2026-09-22T17:12:32.393Z level=INFO msg="session completed" session=sess_000000000006 duration=17.000699639s
+time=2026-09-22T17:12:33.193Z level=INFO msg="session started" session=sess_000000000007 binding=duplex model=openrealtime
+time=2026-09-22T17:12:49.984Z level=INFO msg="session completed" session=sess_000000000007 duration=16.800706737s
+time=2026-09-22T17:12:50.006Z level=INFO msg="session started" session=sess_000000000008 binding=duplex model=openrealtime
+time=2026-09-22T17:13:11.196Z level=INFO msg="session completed" session=sess_000000000008 duration=21.201311404s
+time=2026-09-22T17:13:11.284Z level=INFO msg="session started" session=sess_000000000009 binding=duplex model=openrealtime
+time=2026-09-22T17:14:03.076Z level=INFO msg="session completed" session=sess_000000000009 duration=51.802229193s
+time=2026-09-22T17:14:03.130Z level=INFO msg="session started" session=sess_000000000010 binding=duplex model=openrealtime
+time=2026-09-22T17:14:44.483Z level=INFO msg="session completed" session=sess_000000000010 duration=41.403943572s

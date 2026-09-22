@@ -296,9 +296,19 @@ Native validation remains incomplete. The retained component artifacts under
   and 26 audio-stall endings. Its 64 first-audio observations have a 1,099 ms
   median, but the control-delay sample is empty. This does not establish the
   planned control-latency acceptance criterion.
-- **Moshi and MiniCPM-o:** real component and smoke artifacts exist, but the
-  current result inventory and playback semantics still need reconciliation
-  before a supported end-to-end profile can be claimed.
+- **Moshi:** the pinned public-Realtime profile completed a two-recording-per-category
+  smoke run (`20260922T171034Z-giltdhg4`) without task errors. It answered
+  8/8 FD-Bench turns but started 4 prematurely. Interruption yield passed 1/2
+  (213 ms and 2,943 ms); backchannel hold passed the one applicable recording,
+  with the other not applicable. Both background and both other-talk recordings
+  were not applicable, so those behaviors remain unvalidated. The median of
+  the two conversation response-latency values was 210 ms. This is NOT REPORTABLE
+  as a full campaign and does not establish acceptable floor control.
+  [Retained results, profile and integrity metadata](../deploy/duplex/evidence/native-moshi/20260922T171034Z-giltdhg4/)
+  preserve the complete run.
+- **MiniCPM-o:** real component and historical smoke artifacts exist. The
+  official audio-only public profile is prepared; its new end-to-end run and
+  playback validation remain pending.
 - **VoiceChat:** the 8,192-position talker failed startup with a 1 GiB KV
   cache; 2 GiB allowed loading. The originally pinned vLLM-Omni `9ebef4b`
   then rejected duplex WebSockets because its new plugin framework disables
