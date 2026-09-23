@@ -1,0 +1,6 @@
+{'input_audio_sent_s': 605.0, 'input_timeline_complete': True, 'first_audio_s': 599.5119450427592, 'output_seconds': 568.368} turn_done 67 errors []
+control events {'session_start': 1, 'vad_start': 68, 'model_ss': 68, 'cache_memory': 156, 'first_text': 68, 'first_audio': 68, 'interrupt_answer': 46, 'answer_end': 68, 'interrupt_playback': 21, 'session_end': 1}
+answer_start seq 116 live MB 10 snapshot MB 10 shared 0 allocated GiB 16.21 reserved GiB 16.31
+answer_end seq 10062 live MB 865 snapshot MB 865 shared 0 allocated GiB 18.58 reserved GiB 23.83
+max allocated GiB 20.14, max reserved GiB 23.83
+process VRAM MiB samples 121 first 17312 max 25118 last 25118 | card used max 80781

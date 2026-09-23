@@ -378,6 +378,13 @@ Native validation remains incomplete. The retained component artifacts under
   write with queue cancellation. This fixes local ordering but cannot retract
   device-buffered audio; a blocked transport can delay the cutoff. Real-model
   interruption latency and the endurance failure remain unresolved.
+  A [600 s reproduction with KV diagnostics](../deploy/duplex/evidence/freeze-omni/20260923-endurance/)
+  (card peak 80.8 GB, no OOM, 68 answers, no errors) located the growth. The
+  conversation KV cache is never truncated: 116 to 10,062 tokens in ten
+  minutes. The deep-copied generation snapshot shares no storage and doubles
+  it (865 MB each). Process VRAM rose from 17,312 to 25,118 MiB, and reserved
+  memory grew faster than allocated. Bounding the context changes model
+  behavior, so no fix was applied without a matched quality run.
   A separate shutdown regression reproduced session-state release while a
   listening or generation worker remained alive after its join timeout.
   Shutdown now waits for both workers before clearing caches and returning the
