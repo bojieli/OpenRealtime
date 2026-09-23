@@ -1,0 +1,2278 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "microturn-voxtral-qwen3-kyutai",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "83c4c106bc4ebf0f25f4ce02132dfb6913893eaf",
+    "modified": false,
+    "executable_sha256": "2c94fd06ba7c0b104e7b4f6c23359dc4badd27ae36d59069ec79a5d9cc4e3bf0",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-23T15:02:38Z",
+    "finished_at": "2026-09-23T15:44:30Z"
+  },
+  "expected_tasks": 98,
+  "tasks": [
+    {
+      "id": "user_backchannel/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 191.6229999999996,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present a thorough explanation of global warming.",
+        "event": "yes yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 208.46299999999974,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail photosynthesis in full.",
+        "event": "right yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/3",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 236.88900000000012,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe quantum computing comprehensively.",
+        "event": "yup"
+      }
+    },
+    {
+      "id": "user_backchannel/4",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 209.53700000000026,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a complete breakdown of machine learning.",
+        "event": "uh-huh"
+      }
+    },
+    {
+      "id": "user_backchannel/5",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 157.29699999999866,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide an in-depth overview of blockchain technology.",
+        "event": "mm-hmm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/6",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 210.51100000000042,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Discuss climate change exhaustively.",
+        "event": "yeah right"
+      }
+    },
+    {
+      "id": "user_backchannel/7",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 167.66899999999987,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give a detailed introduction to the stock market.",
+        "event": "right yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/8",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 61.61999999999989,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Illuminate mental health holistically.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/9",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 88.98899999999958,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a full exploration of the human brain.",
+        "event": "yeah okay"
+      }
+    },
+    {
+      "id": "user_backchannel/10",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 123.2559999999994,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline ancient Egypt clearly.",
+        "event": "alright"
+      }
+    },
+    {
+      "id": "user_backchannel/11",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 208.79700000000048,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize black holes comprehensively.",
+        "event": "mm-hmm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/12",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 124.58699999999953,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain time-travel theories completely.",
+        "event": "mm-hmm"
+      }
+    },
+    {
+      "id": "user_backchannel/13",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 103.89099999999962,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present renewable energy in depth.",
+        "event": "totally"
+      }
+    },
+    {
+      "id": "user_backchannel/14",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 122.41100000000006,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail robotics thoroughly.",
+        "event": "yeah yes"
+      }
+    },
+    {
+      "id": "user_backchannel/15",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 103.95700000000033,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe electric vehicles comprehensively.",
+        "event": "uh-huh sure"
+      }
+    },
+    {
+      "id": "user_backchannel/16",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 193.28799999999956,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a step-by-step account of artificial intelligence.",
+        "event": "uh-huh sure"
+      }
+    },
+    {
+      "id": "user_backchannel/17",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 107.49699999999939,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide a complete review of vaccines.",
+        "event": "mhm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/18",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 160,
+        "agent_playout_after_event_ms": 242.28000000000065,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Discuss nutrition in detail.",
+        "event": "yeah right"
+      }
+    },
+    {
+      "id": "user_backchannel/19",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 90.23899999999958,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give a full picture of exercise benefits.",
+        "event": "sure yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/20",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 72.52100000000064,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_backchannel",
+        "context": "Illuminate public speaking thoroughly.",
+        "event": "yeah right"
+      }
+    },
+    {
+      "id": "user_backchannel/21",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 177.01299999999992,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a deep exploration of space exploration.",
+        "event": "okay yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/22",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 326.33200000000033,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline the history of the internet comprehensively.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/23",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 116.86399999999867,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize data privacy clearly.",
+        "event": "sure yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/24",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 164.28899999999976,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain sustainable agriculture fully.",
+        "event": "I see that"
+      }
+    },
+    {
+      "id": "user_backchannel/25",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 280,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 280,
+        "agent_playout_after_event_ms": 343.66699999999946,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present cloud computing step by step.",
+        "event": "indeed"
+      }
+    },
+    {
+      "id": "user_backchannel/26",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 208.9920000000002,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail neural networks thoroughly.",
+        "event": "ok sure"
+      }
+    },
+    {
+      "id": "user_backchannel/27",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 231.78200000000015,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe 5G technology comprehensively.",
+        "event": "uh-huh"
+      }
+    },
+    {
+      "id": "user_backchannel/28",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 338.03800000000047,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a complete overview of cybersecurity.",
+        "event": "yup"
+      }
+    },
+    {
+      "id": "user_backchannel/29",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 171.4400000000005,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide an in-depth look at virtual reality.",
+        "event": "alright"
+      }
+    },
+    {
+      "id": "user_backchannel/30",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 191.6289999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Discuss augmented reality holistically.",
+        "event": "yeah yes"
+      }
+    },
+    {
+      "id": "user_backchannel/31",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 124.13900000000012,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give a step-by-step history of World War II.",
+        "event": "yeah yes"
+      }
+    },
+    {
+      "id": "user_backchannel/32",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 177.72299999999996,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Illuminate quantum entanglement comprehensively.",
+        "event": "yup"
+      }
+    },
+    {
+      "id": "user_backchannel/33",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 167.0609999999997,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a full exploration of meditation.",
+        "event": "yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/34",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 105.4439999999995,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline sleep science clearly.",
+        "event": "sure"
+      }
+    },
+    {
+      "id": "user_backchannel/35",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 133.91300000000047,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize the carbon footprint thoroughly.",
+        "event": "right"
+      }
+    },
+    {
+      "id": "user_backchannel/36",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 312.3879999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain digital marketing in depth.",
+        "event": "exactly"
+      }
+    },
+    {
+      "id": "user_backchannel/37",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 123.04399999999987,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present social media algorithms clearly.",
+        "event": "uhuh"
+      }
+    },
+    {
+      "id": "user_backchannel/38",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 183.8739999999998,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail autonomous cars comprehensively.",
+        "event": "yeah yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/39",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 93.39099999999962,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe cryptocurrency thoroughly.",
+        "event": "indeed"
+      }
+    },
+    {
+      "id": "user_backchannel/40",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 174.64099999999962,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a complete breakdown of machine translation.",
+        "event": "mm-hmm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/41",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 133.0010000000002,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide an in-depth overview of language acquisition.",
+        "event": "ok sure"
+      }
+    },
+    {
+      "id": "user_backchannel/42",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 360,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 47.086999999999534,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_backchannel",
+        "context": "Discuss bilingualism fully.",
+        "event": "uh-huh sure"
+      }
+    },
+    {
+      "id": "user_backchannel/43",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 196.8789999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give a comprehensive review of ancient Greek mythology.",
+        "event": "alright"
+      }
+    },
+    {
+      "id": "user_backchannel/44",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 280,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_backchannel",
+        "context": "Illuminate dinosaurs holistically.",
+        "event": "mhm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/45",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 173.85399999999936,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a clear account of ocean currents.",
+        "event": "I see that"
+      }
+    },
+    {
+      "id": "user_backchannel/46",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 150.8690000000006,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline the water cycle thoroughly.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/47",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 103.98500000000058,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize gravity comprehensively.",
+        "event": "sure yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/48",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 316.3299999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain the periodic table completely.",
+        "event": "yes yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/49",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 205.45499999999993,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present volcanoes in detail.",
+        "event": "I see"
+      }
+    },
+    {
+      "id": "user_backchannel/50",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 174.38999999999942,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail earthquakes thoroughly.",
+        "event": "exactly"
+      }
+    },
+    {
+      "id": "user_backchannel/51",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 74.88299999999981,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe tsunamis comprehensively.",
+        "event": "sure yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/52",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 323.8249999999998,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer an exhaustive overview of tornadoes.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/53",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 49.521999999999935,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide a deep dive into hurricanes.",
+        "event": "totally"
+      }
+    },
+    {
+      "id": "user_backchannel/54",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 124.75200000000041,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Discuss weather forecasting fully.",
+        "event": "uh-huh"
+      }
+    },
+    {
+      "id": "user_backchannel/55",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 188.28799999999956,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give an in-depth explanation of genetic engineering.",
+        "event": "right yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/56",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 148.53900000000067,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Illuminate stem cells holistically.",
+        "event": "yes"
+      }
+    },
+    {
+      "id": "user_backchannel/57",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 102.09199999999964,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a thorough overview of the immune system.",
+        "event": "got it"
+      }
+    },
+    {
+      "id": "user_backchannel/58",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 210.6819999999998,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline bacteria and viruses clearly.",
+        "event": "yeah okay"
+      }
+    },
+    {
+      "id": "user_backchannel/59",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 122.26900000000023,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize antibiotics comprehensively.",
+        "event": "yes yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/60",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 312.3270000000002,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain astronomy in depth.",
+        "event": "yes sure"
+      }
+    },
+    {
+      "id": "user_backchannel/61",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 156.05099999999948,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present the solar system thoroughly.",
+        "event": "I see"
+      }
+    },
+    {
+      "id": "user_backchannel/62",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 188.9459999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail life on Mars comprehensively.",
+        "event": "exactly"
+      }
+    },
+    {
+      "id": "user_backchannel/63",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 280,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 280,
+        "agent_playout_after_event_ms": 377.10699999999997,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe space telescopes completely.",
+        "event": "mm-hmm"
+      }
+    },
+    {
+      "id": "user_backchannel/64",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 160.66600000000017,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a clear account of the moon landing.",
+        "event": "yeah yes"
+      }
+    },
+    {
+      "id": "user_backchannel/65",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 317.5569999999989,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide a step-by-step view of the International Space Station.",
+        "event": "okay yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/66",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 280,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 280,
+        "agent_playout_after_event_ms": 376.695999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Discuss renewable and non-renewable energy holistically.",
+        "event": "yeah sure"
+      }
+    },
+    {
+      "id": "user_backchannel/67",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 301.9750000000013,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give a comprehensive explanation of the greenhouse effect.",
+        "event": "exactly"
+      }
+    },
+    {
+      "id": "user_backchannel/68",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 320,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 320,
+        "agent_playout_after_event_ms": 457.237000000001,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Illuminate photosynthesis and respiration thoroughly.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/69",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 160,
+        "agent_playout_after_event_ms": 227.6210000000001,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a full exploration of biodiversity.",
+        "event": "yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/70",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 174.01800000000003,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline ecosystems clearly.",
+        "event": "mm-hmm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/71",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 127.90500000000065,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize food chains comprehensively.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/72",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 168.74099999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain recycling in depth.",
+        "event": "yes"
+      }
+    },
+    {
+      "id": "user_backchannel/73",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 160,
+        "agent_playout_after_event_ms": 250.8789999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present plastic pollution thoroughly.",
+        "event": "indeed"
+      }
+    },
+    {
+      "id": "user_backchannel/74",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 150.8159999999998,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail deforestation comprehensively.",
+        "event": "mm-hmm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/75",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 152.1280000000006,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe endangered species fully.",
+        "event": "ok sure"
+      }
+    },
+    {
+      "id": "user_backchannel/76",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 188.8670000000002,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a complete overview of evolution.",
+        "event": "yeah right"
+      }
+    },
+    {
+      "id": "user_backchannel/77",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 342.3289999999997,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide an in-depth review of Darwin’s theory.",
+        "event": "yeah sure"
+      }
+    },
+    {
+      "id": "user_backchannel/78",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 232.27499999999964,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Discuss gene editing step by step.",
+        "event": "yeah yes"
+      }
+    },
+    {
+      "id": "user_backchannel/79",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 200,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 200,
+        "agent_playout_after_event_ms": 288.2950000000001,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give a thorough account of CRISPR.",
+        "event": "yes yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/80",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 240,
+        "agent_playout_after_event_ms": 319.6280000000006,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Illuminate vaccination history comprehensively.",
+        "event": "I see"
+      }
+    },
+    {
+      "id": "user_backchannel/81",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 240.6329999999998,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a full exploration of COVID-19.",
+        "event": "yeah yes"
+      }
+    },
+    {
+      "id": "user_backchannel/82",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 0,
+        "agent_playout_after_event_ms": 145.1329999999998,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline pandemics clearly.",
+        "event": "mm-hmm"
+      }
+    },
+    {
+      "id": "user_backchannel/83",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 160,
+        "agent_playout_after_event_ms": 361.3699999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize mental disorders comprehensively.",
+        "event": "yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/84",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 249.1189999999997,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 100
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain stress management in depth.",
+        "event": "sure"
+      }
+    },
+    {
+      "id": "user_backchannel/85",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 122.42599999999948,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present emotional intelligence thoroughly.",
+        "event": "alright"
+      }
+    },
+    {
+      "id": "user_backchannel/86",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 280,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 280,
+        "agent_playout_after_event_ms": 361.7619999999997,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail mindfulness comprehensively.",
+        "event": "yeah sure"
+      }
+    },
+    {
+      "id": "user_backchannel/87",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 102.46500000000015,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe cognitive biases step by step.",
+        "event": "mm-hmm"
+      }
+    },
+    {
+      "id": "user_backchannel/88",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 220.08100000000013,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Offer a clear guide to logical fallacies.",
+        "event": "uh-huh"
+      }
+    },
+    {
+      "id": "user_backchannel/89",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 148.92300000000068,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Provide a thorough overview of the philosophy of science.",
+        "event": "uhuh"
+      }
+    },
+    {
+      "id": "user_backchannel/90",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "agent_playout_after_event_ms": 5.175999999998567,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_backchannel",
+        "context": "Discuss moral dilemmas fully.",
+        "event": "totally"
+      }
+    },
+    {
+      "id": "user_backchannel/91",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 182.32700000000023,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Give an in-depth explanation of ethics in AI.",
+        "event": "okay yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/92",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 155.01599999999962,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Illuminate robot ethics comprehensively.",
+        "event": "yeah yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/93",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 40,
+        "agent_playout_after_event_ms": 159.60399999999936,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Deliver a step-by-step view of the future of work.",
+        "event": "uhuh"
+      }
+    },
+    {
+      "id": "user_backchannel/94",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 120,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 120,
+        "agent_playout_after_event_ms": 204.32200000000012,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Outline remote work trends clearly.",
+        "event": "exactly"
+      }
+    },
+    {
+      "id": "user_backchannel/95",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 145.39800000000014,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Summarize the digital nomad lifestyle comprehensively.",
+        "event": "yeah right"
+      }
+    },
+    {
+      "id": "user_backchannel/96",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 179.38500000000022,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Explain the gig economy in depth.",
+        "event": "exactly"
+      }
+    },
+    {
+      "id": "user_backchannel/97",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 200,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 200,
+        "agent_playout_after_event_ms": 286.53000000000065,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present entrepreneurship thoroughly.",
+        "event": "totally"
+      }
+    },
+    {
+      "id": "user_backchannel/98",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_audio_hold_window_ms": 80,
+        "agent_playout_after_event_ms": 168.1959999999999,
+        "agent_playout_at_event_ms": 100,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail startups comprehensively.",
+        "event": "mm-hmm yeah"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 98,
+    "failed": 0,
+    "passed": 86,
+    "not_applicable": 4,
+    "pass_rate": 0.9148936170212766,
+    "complete": true,
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 98,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 240,
+        "p95": 245.99999999999966,
+        "p99": 281.20000000000005,
+        "max": 320,
+        "mean": 99.59183673469387
+      },
+      "agent_audio_at_event_ms": {
+        "count": 98,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 120,
+        "p95": 120,
+        "p99": 120,
+        "max": 120,
+        "mean": 96.3265306122449
+      },
+      "agent_audio_before_event_ms": {
+        "count": 98,
+        "unit": "ms",
+        "min": 280,
+        "p50": 480,
+        "p90": 520,
+        "p95": 520,
+        "p99": 520,
+        "max": 520,
+        "mean": 494.6938775510204
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 94,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 240,
+        "p95": 253.99999999999977,
+        "p99": 282.7999999999997,
+        "max": 320,
+        "mean": 103.82978723404256
+      },
+      "agent_playout_after_event_ms": {
+        "count": 98,
+        "unit": "ms",
+        "min": 0,
+        "p50": 174.20399999999972,
+        "p90": 320.8871000000004,
+        "p95": 346.3224499999994,
+        "p99": 379.5109000000001,
+        "max": 457.237000000001,
+        "mean": 187.02051020408157
+      },
+      "agent_playout_at_event_ms": {
+        "count": 98,
+        "unit": "ms",
+        "min": 0,
+        "p50": 100,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "max": 100,
+        "mean": 98.15926530612245
+      },
+      "event_audible_after_ms": {
+        "count": 98,
+        "unit": "ms",
+        "min": 0,
+        "p50": 30,
+        "p90": 80,
+        "p95": 140,
+        "p99": 140,
+        "max": 140,
+        "mean": 38.16326530612245
+      }
+    }
+  }
+}
