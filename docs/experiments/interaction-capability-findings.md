@@ -78,3 +78,62 @@ not established.
 - Kyutai synthesis is stochastic: re-preparing the same text changes durations
   and word times. Freeze fixtures by retained PCM hash, not by text.
 - Temperature-0 decisions were not bit-identical under shared vLLM batching.
+
+## Re-run on the fresh clone: v3 and v4 over all 24 pilot pairs (2026-09-23)
+
+`pilot-dev-v3v4-combined-20260923-12` covers the 24 pilot pairs under A2 with
+history omitted, v3 and v4 interleaved per pair in alternating order, one
+repeat. The 15 mid-speech pairs use gap10 fixtures. Silence and proactive use
+original timing. Revision uses the late-constraint fixtures. Five pairs are
+taken from an interleaved supplement: four had hit a runner defect that
+aborted a pair when a branch correctly stayed silent (now fixed), and one had
+a stalled Qwen request. Their originals are retained. The causal audit passes
+all 12,717 requests in both campaigns. Two v3 branches failed with genuine
+policy errors, where the action overran the 128-token budget; they stay
+recorded as failures.
+
+| | v3 | v4 |
+| --- | ---: | ---: |
+| Played sentences | 511 | 248 |
+| Verbatim repeats of the previous sentence | 188, in 75/96 branches | 33, in 28/96 branches |
+| 500 ms deadline misses | 957 | 628 |
+| Lexical feedback-only passes | 1 (ov-03) | 1 (st-01 skip) |
+
+**Repetition: revised.** v4 cuts verbatim repetition by about 80% but does not
+remove it, so v3's idle line was not its only cause. v4 speaks half as much and
+stayed silent through the whole correction window in sc-02 and sc-03. Neither
+wording is adequate. The trade-off between repetition and silence is the
+policy's, not the protocol's.
+
+**Adaptation: partly re-established, still not reliable.** A single-rater
+review of independent Nemotron ASR of each window, feedback against muted
+control, for the semantic-correction and steering change variants:
+- v3, sc-02: "…if you're using olive oil it will add…" against the control's
+  butter. This reproduces the olive-oil adaptation. The lexical screen missed
+  it because the required second word group was absent.
+- v3, sc-01 and sc-03: audible acknowledgement-and-redirect ("I heard you meant
+  Kyoto. Let me suggest…") without the corrected content inside the window.
+- v4, st-01 skip: "…establishes a connection using either HTTP or HTTPS",
+  against the control still locating the server.
+- v4, st-02 deepen: "The feeding schedule involves feeding…".
+- v4, st-03 deepen: "…the refrigerant cycle starts with a compressor that
+  pressurizes…", against the control's repeated "similar to a refrigerator in
+  reverse".
+- All other skips failed.
+
+The lexical screen caught one of these four genuine changes, and its other
+pass (v3, ov-03) is only an acknowledgement ("let's explore options that meet
+this requirement"). Lexical verdicts are therefore not a usable capability
+score.
+
+**Semantic judge: not validated.** With Qwen3-8B as judge, validation failed.
+It first rejected the confirmed olive-oil correction because the window opens
+on the interrupted "butter" fragment. After a rubric rule for interrupted
+fragments, it rejected a skip that moves to baking after such a fragment. The
+judge refuses to score until it passes. A stronger judge (a larger local model,
+or an external service if approved) or human raters are needed before any
+semantic score is reported.
+
+**Opportunity.** 115 of 192 branches had assistant speech playing at the
+variant's onset. The gap fixtures do create mid-speech situations in most
+branches.
