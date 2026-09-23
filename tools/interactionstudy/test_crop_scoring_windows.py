@@ -44,3 +44,27 @@ class CropTest(unittest.TestCase):
                 self.assertEqual(struct.unpack('<hh', wav.readframes(2)), (20, 30))
             with self.assertRaises(FileExistsError):
                 module.package_go(root, out)
+
+    def test_silent_branch_crops_to_silence_only_when_nothing_played(self):
+        for played in (0, 5):
+            with self.subTest(played=played), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                variant = {"id": "quiet", "events": [{"id": "feedback", "available_at": 500_000_000}],
+                           "expect": {"after": "feedback", "within": 1_000_000_000}}
+                (root / "fixtures.json").write_text(json.dumps([{"id": "pair", "prefix": [], "variants": [variant]}]))
+                trial = root / "trial"
+                trial.mkdir()
+                (trial / "actions.jsonl").write_text(json.dumps({"pair_id": "pair", "variant_id": "quiet", "cell_id": "A2"}) + "\n")
+                (trial / "result.json").write_text(json.dumps({"status": "complete", "ledger": {"segments": [{"played_samples": played}]}}))
+                with wave.open(str(trial / "input.wav"), "wb") as wav:
+                    wav.setparams((1, 2, 4, 0, "NONE", "not compressed"))
+                    wav.writeframes(b"\0\0" * 8)
+                if played:
+                    with self.assertRaisesRegex(ValueError, "missing although the ledger"):
+                        module.package_go(root, root / "windows")
+                    continue
+                module.package_go(root, root / "windows")
+                with wave.open(str(root / "windows" / "trial.wav")) as wav:
+                    self.assertEqual((wav.getframerate(), wav.readframes(10)), (4, b"\0\0" * 4))
+                manifest = json.loads((root / "windows" / "manifest.json").read_text())
+                self.assertIn("no played audio", manifest[0]["source_sha256"])

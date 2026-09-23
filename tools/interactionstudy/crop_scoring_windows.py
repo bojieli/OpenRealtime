@@ -66,11 +66,23 @@ def package_go(root, out):
         source = path.with_name("output.wav")
         result_path = path.with_name("result.json")
         result = json.loads(result_path.read_text())
-        with wave.open(str(source)) as wav:
-            if wav.getnchannels() != 1 or wav.getsampwidth() != 2:
-                raise ValueError("expected mono PCM16")
-            rate = wav.getframerate()
-            pcm = wav.readframes(wav.getnframes())
+        if source.exists():
+            with wave.open(str(source)) as wav:
+                if wav.getnchannels() != 1 or wav.getsampwidth() != 2:
+                    raise ValueError("expected mono PCM16")
+                rate = wav.getframerate()
+                pcm = wav.readframes(wav.getnframes())
+            source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+        else:
+            # A branch that never spoke has no recording. Silence is inferred
+            # only when the ledger confirms that nothing played; otherwise a
+            # missing file is lost evidence and stays an error.
+            played = sum(s.get("played_samples", 0) for s in (result.get("ledger") or {}).get("segments") or [])
+            if played:
+                raise ValueError(f"{source}: missing although the ledger records {played} played samples")
+            with wave.open(str(path.with_name("input.wav"))) as wav:
+                rate = wav.getframerate()
+            pcm, source_sha256 = b"", "none: ledger records no played audio"
         data = crop(pcm, rate, start, end)
         name = path.parent.name + ".wav"
         with wave.open(str(out / name), "wb") as wav:
@@ -79,7 +91,7 @@ def package_go(root, out):
         manifest.append({"file": name, "pair_id": pair["id"],
                          "variant_id": identity["variant_id"], "cell_id": identity["cell_id"],
                          "status": result["status"], "start_ns": start, "end_ns": end,
-                         "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                         "source_sha256": source_sha256,
                          "trace_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
                          "result_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
                          "crop_pcm_sha256": hashlib.sha256(data).hexdigest(),
