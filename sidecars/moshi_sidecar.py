@@ -260,7 +260,8 @@ class MoshiSidecar(Sidecar):
         # Frame-loop evidence.
         self._frame_ms: deque[float] = deque(maxlen=20_000)
         self._stats = {"frames": 0, "input_frames": 0, "starved_frames": 0, "dropped_frames": 0,
-                       "turns": 0, "interrupts": 0, "audio_frames_sent": 0}
+                       "turns": 0, "interrupts": 0, "audio_frames_sent": 0,
+                       "max_input_packet_samples": 0, "max_queued_frames": 0}
         self._session_began = time.monotonic()
 
     # --- lifecycle ----------------------------------------------------------
@@ -324,18 +325,24 @@ class MoshiSidecar(Sidecar):
         samples = np.frombuffer(pcm16[: len(pcm16) // 2 * 2], dtype="<i2").astype(np.float32) / 32768.0
         if self._resampler is not None:
             samples = self._resampler(samples)
+        self._stats["max_input_packet_samples"] = max(self._stats["max_input_packet_samples"], len(samples))
         self._pending = np.concatenate([self._pending, samples])
         while len(self._pending) >= FRAME_SAMPLES:
             frame = self._pending[:FRAME_SAMPLES].copy()
             self._pending = self._pending[FRAME_SAMPLES:]
             self._frames.put(frame)
             self._stats["input_frames"] += 1
+            self._stats["max_queued_frames"] = max(self._stats["max_queued_frames"], self._frames.qsize())
             while self._frames.qsize() > self.options.max_backlog_frames:
                 # Dropping the oldest frame is the right failure for realtime
                 # audio: a backlog the model works through late is worse than
                 # a gap it never hears.
                 try:
                     self._frames.get_nowait()
+                    if self._stats["dropped_frames"] == 0:
+                        self._stats["first_drop_session_ms"] = round((time.monotonic() - self._session_began) * 1000, 2)
+                        self._stats["input_frames_at_first_drop"] = self._stats["input_frames"]
+                        self._stats["model_frames_at_first_drop"] = self._stats["frames"]
                     self._stats["dropped_frames"] += 1
                 except queue.Empty:
                     break

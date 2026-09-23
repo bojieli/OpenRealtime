@@ -8,6 +8,20 @@ from moshi_sidecar import MoshiSidecar, FRAME_SAMPLES
 
 
 class CancellationTests(unittest.TestCase):
+    def test_input_overflow_records_burst_and_preserves_newest_frames(self):
+        s = MoshiSidecar(io.BytesIO(), io.BytesIO(), repository='test', mock=False, device='cpu')
+        s.options.max_backlog_frames = 2
+        frames = np.concatenate([np.full(FRAME_SAMPLES, value, dtype='<i2') for value in (1, 2, 3, 4)])
+        s.on_audio(frames.tobytes())
+        self.assertEqual(s._stats['dropped_frames'], 2)
+        self.assertEqual(s._stats['max_input_packet_samples'], FRAME_SAMPLES * 4)
+        self.assertEqual(s._stats['max_queued_frames'], 3)
+        self.assertEqual(s._stats['input_frames_at_first_drop'], 3)
+        self.assertEqual(s._stats['model_frames_at_first_drop'], 0)
+        self.assertGreaterEqual(s._stats['first_drop_session_ms'], 0)
+        self.assertEqual(float(s._frames.get()[0]), 3 / 32768)
+        self.assertEqual(float(s._frames.get()[0]), 4 / 32768)
+
     def test_failed_reset_releases_session_lock(self):
         def fail():
             raise ValueError('reset failed')
