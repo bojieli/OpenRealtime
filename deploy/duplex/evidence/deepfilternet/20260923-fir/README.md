@@ -45,3 +45,12 @@ Four-session follow-up (`concurrency4/`): 1,200 requests total, one exceeded
 Per-session p99 ranged 8.85–9.51 ms. This fails a zero-deadline-miss
 four-session gate despite low typical latency. The reports do not retain
 per-request timestamps, so the outlier's position/cause is not established.
+
+Traced repeat (`concurrency4-traced/`): three deadline misses, all at
+sequence 0 or 1. Two first requests took about 89 ms round trip and
+86.5 ms server time; one second request took 55.5/54.6 ms. The service's
+prebuilt-state pool defaults to two, and pool exhaustion calls `df_create`
+on the request path. This is a startup bottleneck candidate, not a measured
+allocation attribution. Per-request timings are retained; failures are not
+excluded as warmup. Next comparison should provision four fresh states and
+retain all first packets in the scoring population.

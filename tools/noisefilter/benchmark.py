@@ -50,7 +50,7 @@ def main():
     connection = http.client.HTTPConnection(endpoint.hostname, endpoint.port, timeout=5)
     identity = uuid.uuid4().hex
     path = endpoint.path.rstrip("/") + "/v1/filter/" + identity
-    times, server_times, output = [], [], []
+    times, server_times, output, request_timings = [], [], [], []
     contract = None
     chunk = rate * args.packet_ms // 1000 * 2
     replay_started = time.perf_counter()
@@ -89,6 +89,14 @@ def main():
             contract = observed
             times.append(elapsed)
             server_times.append(float(response.getheader("X-Processing-MS")))
+            request_timings.append({
+                "sequence": sequence,
+                "source_ms": offset / (rate * 2) * 1000,
+                "started_replay_ms": (started - replay_started) * 1000,
+                "roundtrip_ms": elapsed,
+                "server_processing_ms": server_times[-1],
+                "send_lateness_ms": send_lateness[-1] if args.realtime else None,
+            })
             output.append(filtered)
     finally:
         connection.request("DELETE", path)
@@ -108,6 +116,7 @@ def main():
         "realtime": args.realtime,
         "send_lateness_ms_max": max(send_lateness) if send_lateness else None,
         "requests": len(times),
+        "request_timings": request_timings,
         "roundtrip_ms": {
             "p50": statistics.median(times),
             "p95": percentile(times, 0.95),

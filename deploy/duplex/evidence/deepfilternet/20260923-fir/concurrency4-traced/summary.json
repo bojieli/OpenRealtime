@@ -1,0 +1,59 @@
+{
+  "load_start": [
+    11.76416015625,
+    13.76318359375,
+    13.54833984375
+  ],
+  "load_end": [
+    11.0849609375,
+    13.40283203125,
+    13.43408203125
+  ],
+  "statuses": [
+    {
+      "session": 0,
+      "exit_code": 0
+    },
+    {
+      "session": 1,
+      "exit_code": 1
+    },
+    {
+      "session": 2,
+      "exit_code": 1
+    },
+    {
+      "session": 3,
+      "exit_code": 1
+    }
+  ],
+  "outliers": [
+    {
+      "session": 1,
+      "sequence": 0,
+      "source_ms": 0.0,
+      "started_replay_ms": 0.013662036508321762,
+      "roundtrip_ms": 88.9028599485755,
+      "server_processing_ms": 86.606,
+      "send_lateness_ms": 0.013662036508321762
+    },
+    {
+      "session": 2,
+      "sequence": 1,
+      "source_ms": 100.0,
+      "started_replay_ms": 100.1200801692903,
+      "roundtrip_ms": 55.506200063973665,
+      "server_processing_ms": 54.573,
+      "send_lateness_ms": 0.12008007615804672
+    },
+    {
+      "session": 3,
+      "sequence": 0,
+      "source_ms": 0.0,
+      "started_replay_ms": 0.009515322744846344,
+      "roundtrip_ms": 88.0462140776217,
+      "server_processing_ms": 86.501,
+      "send_lateness_ms": 0.009515322744846344
+    }
+  ]
+}
