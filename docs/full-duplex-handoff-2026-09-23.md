@@ -257,3 +257,11 @@ default if gating works, and accept the X2-Turn probability gap.
   native-minicpm-o --full-selected`. Progress:
   `.runtime/duplex-plan/results/native/minicpm-campaign-waiter.log` and
   `.runtime/duplex-plan/results/e2e/native-minicpm-o/latest/`.
+
+## Requirement audit
+
+[The requirement-by-requirement audit](full-duplex-requirements-audit.md)
+(2026-09-23) checks every plan gate against committed evidence. No gate is
+fully met. The first release scope is not met, because no item has complete
+traces with playback or cancellation validation. Its "Blocking gaps" list
+orders the remaining work.
