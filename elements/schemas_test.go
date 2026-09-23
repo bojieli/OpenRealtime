@@ -385,7 +385,7 @@ func standardValidatorsBySchema(t *testing.T) map[string]element.ConfigValidator
 
 func standardValidConfigSamples() map[string]string {
 	return map[string]string{
-		"schema://openrealtime/acoustic/noise-filter-config/v1":                        `{"url":"http://127.0.0.1:8125","timeout_ms":30}`,
+		"schema://openrealtime/acoustic/noise-filter-config/v1":                        `{"url":"http://127.0.0.1:8125","timeout_ms":30,"model":"deepfilternet-fir"}`,
 		"schema://openrealtime/acoustic/admission-config/v1":                           `{}`,
 		"schema://openrealtime/acoustic/endpoint-policy-config/v1":                     `{}`,
 		"schema://openrealtime/action/authorized-call-commit-config/v1":                `{}`,

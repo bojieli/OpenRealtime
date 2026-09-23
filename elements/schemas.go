@@ -258,7 +258,7 @@ func standardConfigSchemaDocuments() map[string]schemaObject {
 		"expected_admission", "candidate_sources", "detector",
 	)
 	documents := map[string]schemaObject{
-		"schema://openrealtime/acoustic/noise-filter-config/v1": standardObject("schema://openrealtime/acoustic/noise-filter-config/v1", schemaObject{"url": schemaObject{"type": "string", "minLength": 1}, "timeout_ms": integerSchema(1, 50), "model": schemaObject{"type": "string", "enum": []string{"rnnoise", "deepfilternet", "real-tse"}}}, "url", "timeout_ms"),
+		"schema://openrealtime/acoustic/noise-filter-config/v1": standardObject("schema://openrealtime/acoustic/noise-filter-config/v1", schemaObject{"url": schemaObject{"type": "string", "minLength": 1}, "timeout_ms": integerSchema(1, 50), "model": schemaObject{"type": "string", "enum": []string{"rnnoise", "deepfilternet", "deepfilternet-fir", "real-tse"}}}, "url", "timeout_ms"),
 		"schema://openrealtime/acoustic/admission-config/v1": standardObject(
 			"schema://openrealtime/acoustic/admission-config/v1",
 			schemaObject{
