@@ -63,8 +63,9 @@ def opportunity(segments, onset):
 
 
 def treatment_of(run):
-    """Campaign runs are named <cell>-<treatment>-<pair>; older runs have no treatment."""
-    match = re.fullmatch(r'[A-Z][0-9]+-(v[0-9]+)-[a-z]{2}-[0-9]{2}', Path(run).name)
+    """Campaign runs are named <cell>-<affordance>-<pair>; the treatment is both,
+    so cells are never merged. Other runs are unlabelled."""
+    match = re.fullmatch(r'([A-Z][0-9]+-v[0-9]+)-[a-z]{2}-[0-9]{2}', Path(run).name)
     return match.group(1) if match else 'unlabelled'
 
 

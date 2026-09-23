@@ -54,7 +54,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True, help='new campaign directory')
     parser.add_argument('--pairs', required=True, help='comma-separated pair=prepared-dir entries')
-    parser.add_argument('--treatments', default='v4', help='comma-separated pending-affordance versions')
+    parser.add_argument('--treatments', default='v4',
+                        help='comma-separated pending-affordance versions, optionally cell-qualified (A1:v4)')
+    parser.add_argument('--repeats', type=int, default=1, help="runner repeats per run (the runner's seeded -repeats)")
     parser.add_argument('--cell', default='A2')
     parser.add_argument('--binary', default='.runtime/interactionstudy-bin/interactionstudy')
     parser.add_argument('--timeout', type=int, default=1200)
@@ -62,7 +64,7 @@ def main():
     args.out.mkdir()
     pairs = [entry.split('=', 1) for entry in args.pairs.split(',')]
     treatments = args.treatments.split(',')
-    manifest = {'scope': 'development campaign, not the frozen pilot', 'cell': args.cell,
+    manifest = {'scope': 'development campaign, not the frozen pilot', 'cell': args.cell, 'repeats': args.repeats,
                 'treatments': treatments, 'order': 'interleaved per pair, alternating',
                 'binary_sha256': hashlib.sha256(Path(args.binary).read_bytes()).hexdigest(),
                 'source_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -72,15 +74,18 @@ def main():
     for index, (pair_id, prepared) in enumerate(pairs):
         order = treatments if index % 2 == 0 else list(reversed(treatments))
         for treatment in order:
+            cell, _, affordance = treatment.rpartition(':')
+            cell = cell or args.cell
             while native_active():
                 time.sleep(30)
-            run = args.out / f'{args.cell}-{treatment}-{pair_id}'
-            record = {'pair': pair_id, 'treatment': treatment, 'out': str(run), 'began': time.time(), 'host': host_load()}
+            run = args.out / f'{cell}-{affordance}-{pair_id}'
+            record = {'pair': pair_id, 'treatment': treatment, 'cell': cell, 'out': str(run), 'began': time.time(), 'host': host_load()}
             with open(str(run) + '.log', 'w') as output:
                 try:
-                    code = subprocess.run([args.binary, '-live', '-cells', args.cell, '-pairs', pair_id,
+                    code = subprocess.run([args.binary, '-live', '-cells', cell, '-pairs', pair_id,
+                                           '-repeats', str(args.repeats),
                                            '-prepared-pair', str(Path(prepared) / 'pair.json'),
-                                           '-omit-policy-history', '-pending-affordance', treatment,
+                                           '-omit-policy-history', '-pending-affordance', affordance,
                                            '-out', str(run)], stdout=output, stderr=subprocess.STDOUT,
                                           timeout=args.timeout).returncode
                 except subprocess.TimeoutExpired:
