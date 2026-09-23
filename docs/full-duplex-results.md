@@ -298,6 +298,14 @@ behavior with the same adapter boundaries and input-drop limitations as the
 interruption result. Background speech, talking-to-other, and the selected
 FD-Bench condition remain pending; rendered playback is not established.
 
+The [complete PersonaPlex background-speech category](../deploy/duplex/evidence/native-personaplex/20260923T012919Z-td0w3l3o-background/)
+finished at 04:09 UTC: all 100 recordings completed without task errors,
+54/57 applicable passes (94.7%), and 43 not applicable. Three applicable
+recordings failed the hold criterion (29, 35, 48). The not-applicable recordings
+do not validate hold behavior. Timing and boundaries have the same limitations
+as the preceding categories. Talking-to-other and the selected FD-Bench
+condition remain pending.
+
 The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
 after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
 the observation gap and original incomplete record are preserved. No resource
