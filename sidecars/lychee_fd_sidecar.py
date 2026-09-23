@@ -384,6 +384,13 @@ class LycheeSidecar(Sidecar):
         elif kind == "audio_chunk_pcm":
             pcm = base64.b64decode(event.get("pcm_b64") or "")
             self.stats["audio_chunks"] += 1
+            disposition = ("muted" if self._muted else "empty" if not pcm else
+                           "engine_interrupt" if self.interrupted() and self._turn_open else "forward")
+            self.control.event(self.session_label, "audio_delivery", round_id=event.get("round_id"),
+                               server_emit_ms=event.get("server_audio_emit_epoch_ms"), recv_ms=recv_ms,
+                               pcm_bytes=len(pcm), disposition=disposition,
+                               model_state=self._model_state,
+                               timing_basis="SSE receipt before sidecar write; not rendered playback")
             if self._muted or not pcm:
                 return
             if self.interrupted() and self._turn_open:
