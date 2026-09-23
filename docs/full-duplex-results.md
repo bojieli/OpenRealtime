@@ -291,6 +291,13 @@ buffering remain limitations; this is received-audio timing with adapter turn
 boundaries. The remaining categories and selected FD-Bench condition are still
 running, so this does not establish complete campaign acceptance.
 
+The [complete PersonaPlex backchannel category](../deploy/duplex/evidence/native-personaplex/20260923T012919Z-td0w3l3o-backchannel/)
+finished at 03:36 UTC: all 98 recordings completed without task errors,
+88/88 applicable passes, and 10 not applicable. This is received-audio hold
+behavior with the same adapter boundaries and input-drop limitations as the
+interruption result. Background speech, talking-to-other, and the selected
+FD-Bench condition remain pending; rendered playback is not established.
+
 The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
 after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
 the observation gap and original incomplete record are preserved. No resource
