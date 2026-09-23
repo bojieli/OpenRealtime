@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +55,9 @@ func attachInput(dir, prepared string, pair capability.Pair, variant capability.
 			return fmt.Errorf("input/output sample rates differ")
 		}
 		output = decoded.PCM16LE
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		// A branch that correctly stayed silent has no output recording. The
+		// read error is wrapped, which os.IsNotExist does not see through.
 		return err
 	}
 	stereo, err := stereoWAV(input.PCM16LE, output, rate)
