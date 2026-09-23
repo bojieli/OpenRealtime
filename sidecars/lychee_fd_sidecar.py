@@ -513,6 +513,8 @@ class LycheeSidecar(Sidecar):
         self.control.event(self.session_label, "turn_end", reason=reason, text=text,
                            audio_s=round(samples / MODEL_OUTPUT_RATE, 3),
                            wall_ms=_now_ms() - self._turn_started_ms)
+        if reason in ("model_interrupt", "engine_interrupt"):
+            self.mark_turn_interrupted()
         if text:
             self.text_done(text)
         if waiter is not None:

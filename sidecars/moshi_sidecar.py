@@ -550,6 +550,9 @@ class MoshiSidecar(Sidecar):
             self._muted = mute
             waiter, self._respond_event = self._respond_event, None
             text, self._turn_text = "".join(self._turn_text), []
+        if mute:
+            # Muting is how an interrupt ends a turn: it did not complete.
+            self.mark_turn_interrupted()
         if text.strip():
             # Exactly the concatenated deltas: the engine forwards whatever a
             # terminal text adds beyond them, so a trimmed copy would repeat.

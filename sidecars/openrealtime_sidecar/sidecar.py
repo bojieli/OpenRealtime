@@ -54,6 +54,7 @@ class Sidecar:
         self._output = output_stream
         self._write_lock = threading.Lock()
         self._interrupted = threading.Event()
+        self._turn_interrupted = False
         self._work: queue.Queue[Message | None] = queue.Queue()
         self.instructions = ""
         self.voice = ""
@@ -85,7 +86,13 @@ class Sidecar:
 
     def turn_done(self, *, interrupted: bool = False) -> None:
         """End the model's turn; interrupted when it stopped for the user."""
+        interrupted, self._turn_interrupted = interrupted or self._turn_interrupted, False
         self.send(MessageType.TURN_DONE, turn_status="interrupted" if interrupted else None)
+
+    def mark_turn_interrupted(self) -> None:
+        """Mark the turn being ended as interrupted, for whichever turn_done
+        closes it (a subclass's own, or the base class's after respond)."""
+        self._turn_interrupted = True
 
     def error(self, message: str, *, code: str = "", fatal: bool = False) -> None:
         self.send(MessageType.ERROR, text=message, code=code or None, fatal=fatal or None)
@@ -328,7 +335,7 @@ class Sidecar:
                     else:
                         # An interrupted turn still ends: the engine is waiting
                         # for a boundary, not for completion.
-                        self.turn_done()
+                        self.turn_done(interrupted=True)
                 elif message.type == MessageType.COMMIT:
                     self.on_commit()
                 elif message.type == MessageType.TEXT:
