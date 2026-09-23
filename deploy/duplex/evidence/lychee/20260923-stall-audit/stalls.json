@@ -1,0 +1,262 @@
+[
+  {
+    "session": "lfd-3923757-1790084254573",
+    "stall_ms": 1790084279421,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133734_579.txt",
+    "last_completed_round_before_stall_ms": 1790084271335,
+    "gap_ms": 8086,
+    "rounds_completed_in_prior_8s": 0,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 0
+  },
+  {
+    "session": "lfd-3924702-1790084282527",
+    "stall_ms": 1790084305771,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133802_531.txt",
+    "last_completed_round_before_stall_ms": 1790084297599,
+    "gap_ms": 8172,
+    "rounds_completed_in_prior_8s": 0,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 1
+  },
+  {
+    "session": "lfd-3925694-1790084308939",
+    "stall_ms": 1790084324159,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133828_942.txt",
+    "last_completed_round_before_stall_ms": 1790084324005,
+    "gap_ms": 154,
+    "rounds_completed_in_prior_8s": 22,
+    "rounds_started_in_prior_8s": 22,
+    "rounds_completed_after_stall": 1
+  },
+  {
+    "session": "lfd-3926733-1790084324288",
+    "stall_ms": 1790084348733,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133844_296.txt",
+    "last_completed_round_before_stall_ms": 1790084340640,
+    "gap_ms": 8093,
+    "rounds_completed_in_prior_8s": 0,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 0
+  },
+  {
+    "session": "lfd-3927766-1790084351902",
+    "stall_ms": 1790084376545,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133911_906.txt",
+    "last_completed_round_before_stall_ms": 1790084368475,
+    "gap_ms": 8070,
+    "rounds_completed_in_prior_8s": 0,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 0
+  },
+  {
+    "session": "lfd-3929426-1790084379721",
+    "stall_ms": 1790084405751,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133939_724.txt",
+    "last_completed_round_before_stall_ms": 1790084397651,
+    "gap_ms": 8100,
+    "rounds_completed_in_prior_8s": 0,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 0
+  },
+  {
+    "session": "lfd-3930670-1790084408948",
+    "stall_ms": 1790084434784,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134008_952.txt",
+    "last_completed_round_before_stall_ms": 1790084426793,
+    "gap_ms": 7991,
+    "rounds_completed_in_prior_8s": 1,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 1
+  },
+  {
+    "session": "lfd-3931864-1790084437959",
+    "stall_ms": 1790084460592,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134037_963.txt",
+    "last_completed_round_before_stall_ms": 1790084452640,
+    "gap_ms": 7952,
+    "rounds_completed_in_prior_8s": 1,
+    "rounds_started_in_prior_8s": 0,
+    "rounds_completed_after_stall": 0
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084893815,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084893758,
+    "gap_ms": 57,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 7,
+    "rounds_completed_after_stall": 188
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084904029,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084903095,
+    "gap_ms": 934,
+    "rounds_completed_in_prior_8s": 7,
+    "rounds_started_in_prior_8s": 7,
+    "rounds_completed_after_stall": 179
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084914443,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084913956,
+    "gap_ms": 487,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 168
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084924053,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084923585,
+    "gap_ms": 468,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 158
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084933963,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084933939,
+    "gap_ms": 24,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 7,
+    "rounds_completed_after_stall": 148
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084944272,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084944057,
+    "gap_ms": 215,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 138
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084954381,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084953445,
+    "gap_ms": 936,
+    "rounds_completed_in_prior_8s": 7,
+    "rounds_started_in_prior_8s": 7,
+    "rounds_completed_after_stall": 129
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084964690,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084964095,
+    "gap_ms": 595,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 118
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084974198,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084974175,
+    "gap_ms": 23,
+    "rounds_completed_in_prior_8s": 9,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 107
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084983407,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084982730,
+    "gap_ms": 677,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 98
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084992815,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790084992400,
+    "gap_ms": 415,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 88
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085003126,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085002424,
+    "gap_ms": 702,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 78
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085012539,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085011959,
+    "gap_ms": 580,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 68
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085022153,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085021780,
+    "gap_ms": 373,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 58
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085032269,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085031611,
+    "gap_ms": 658,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 48
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085041682,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085041592,
+    "gap_ms": 90,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 38
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085051794,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085051643,
+    "gap_ms": 151,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 28
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085061907,
+    "stage_log": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "last_completed_round_before_stall_ms": 1790085061647,
+    "gap_ms": 260,
+    "rounds_completed_in_prior_8s": 8,
+    "rounds_started_in_prior_8s": 8,
+    "rounds_completed_after_stall": 18
+  }
+]

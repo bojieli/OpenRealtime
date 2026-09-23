@@ -1,0 +1,62 @@
+[
+  {
+    "source": ".runtime/duplex-plan/logs/lychee-control.jsonl",
+    "file": "lychee-control.jsonl.gz",
+    "uncompressed_sha256": "94029d6b7f01f090d0f199270d88d71861d252c2ab4a1e5a53e2eeec464033a4",
+    "compressed_sha256": "274f769771f34a482ec62d6fdc245f4ff685a9bb940a348f992aad11b72eba29"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133734_579.txt",
+    "file": "realtime_stage_timing_20260922_133734_579.txt.gz",
+    "uncompressed_sha256": "31c756726d49501bd45d8913d8145de77f11b722df3a8d5ae0cca007922c0f9f",
+    "compressed_sha256": "ef18e22dd579feed4a6b849fc204d51c63adaba177d3e4ad06fe3908a0e50e3b"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133802_531.txt",
+    "file": "realtime_stage_timing_20260922_133802_531.txt.gz",
+    "uncompressed_sha256": "137c1fbce2d6e28680edb95f42a8401212c0fdcfe955410bc5472b0d276c989e",
+    "compressed_sha256": "623d21aa4db06d046c2dc5c674a66a49ee891faab57a2f4616a7653e520fe902"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133828_942.txt",
+    "file": "realtime_stage_timing_20260922_133828_942.txt.gz",
+    "uncompressed_sha256": "3a624c877670aaec2e8857d035098161f0c46e416c06acb14b768b3f716d5db9",
+    "compressed_sha256": "118dd2713c87457c78734823ab4b358c8bf881d89f0c685d5845176e6cdded21"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133844_296.txt",
+    "file": "realtime_stage_timing_20260922_133844_296.txt.gz",
+    "uncompressed_sha256": "2893737888facc69b70d6f670a4da304d9271a1b01ee64b87069380e25d72cb9",
+    "compressed_sha256": "983b9c48b866a5330fb50fe67d612a2e01f55525fd063d3969adc0016b7104b0"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133911_906.txt",
+    "file": "realtime_stage_timing_20260922_133911_906.txt.gz",
+    "uncompressed_sha256": "b04cbc3d83518d9a859a2b7bae2c82b2cba2ae8f7abbf2176177ba144d5d9c05",
+    "compressed_sha256": "095bc1920947e5eabe828d0b16ac34a86b2ed1030b297225e8cab57d11586e17"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_133939_724.txt",
+    "file": "realtime_stage_timing_20260922_133939_724.txt.gz",
+    "uncompressed_sha256": "3d3597e7cea20e6f04f65dae4276a5158df8459343a31b60e8083440b370965c",
+    "compressed_sha256": "0d5673fd3282195d1da26a64c160a49597cb7b20b5fda3c2d446de88e91def12"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134008_952.txt",
+    "file": "realtime_stage_timing_20260922_134008_952.txt.gz",
+    "uncompressed_sha256": "3df7fc2f6f5865ae8ebba49b0b805243d8fd437754d51d14894581784f9b5f7d",
+    "compressed_sha256": "092d4f560d5dd10b33b8bd4a4b1a25c54be7c645602de6304b87133cef344ca3"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134037_963.txt",
+    "file": "realtime_stage_timing_20260922_134037_963.txt.gz",
+    "uncompressed_sha256": "97252ae21ec8bf7843ca3d3c87a8c7885f92ee7c93e26e6dcfed80e32b195583",
+    "compressed_sha256": "d044a80a8880d0124af868d9a2af810ba5287062ed41174ca03a82a2178c8dca"
+  },
+  {
+    "source": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd-runtime/stage_timing/realtime_stage_timing_20260922_134104_122.txt",
+    "file": "realtime_stage_timing_20260922_134104_122.txt.gz",
+    "uncompressed_sha256": "f05d33da78a2fa25b64c8cf1e5a715b176b72429e46d19f4144e4fb18e7bcd50",
+    "compressed_sha256": "f378c008044eba79b3843b45e1e0dec4e0c3479a643044e1aa639ac605d1ceac"
+  }
+]
