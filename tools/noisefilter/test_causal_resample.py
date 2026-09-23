@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import os
 
 from causal_resample import FilterResampler
 
@@ -37,3 +38,27 @@ def test_downsampling_rejects_out_of_band_tone():
     signal = np.sin(2 * np.pi * 12000 * np.arange(48000) / 48000)
     output = resampler.down(signal)[1600:]
     assert 20 * np.log10(np.sqrt(np.mean(output ** 2)) * np.sqrt(2)) < -70
+
+
+@pytest.mark.skipif(not os.getenv("DEEPFILTER_LIBRARY") or not os.getenv("DEEPFILTER_MODEL"),
+                    reason="real DeepFilterNet library and model required")
+@pytest.mark.parametrize("rate", [16000, 24000, 48000])
+def test_real_filter_packet_invariance_and_42_ms_delay(rate):
+    from scipy.signal import correlate, correlation_lags
+    from server import DeepFilterNet, FIRDeepFilterStream
+    from test_server import voiced
+    model = DeepFilterNet(os.environ["DEEPFILTER_LIBRARY"], os.environ["DEEPFILTER_MODEL"], pool=0)
+    whole, split = FIRDeepFilterStream(model, rate), FIRDeepFilterStream(model, rate)
+    try:
+        audio = np.asarray(voiced(rate, 2), dtype="<i2")
+        expected = whole.process(audio.tobytes())
+        actual = b"".join(split.process(x.tobytes()) for x in np.array_split(audio, 137))
+        assert actual == expected
+        assert len(actual) == audio.nbytes
+        output = np.frombuffer(actual, dtype="<i2").astype(float)
+        correlation = correlate(output, audio.astype(float), method="fft")
+        lag = correlation_lags(len(output), len(audio))[np.argmax(correlation)]
+        assert abs(lag / rate * 1000 - 42) < 0.2
+    finally:
+        whole.close()
+        split.close()

@@ -3,7 +3,7 @@
 Requires NumPy/SciPy. Each direction adds exactly 48/48000 = 1 ms
 group delay, including at native 48 kHz, so a future service can declare
 one rate-independent delay. No lookahead, packet padding, or end flush.
-This module is not yet selected by the production filter service.
+Selected by the filter service's explicit ``deepfilternet-fir`` model option.
 """
 import numpy as np
 from scipy.signal import firwin, lfilter

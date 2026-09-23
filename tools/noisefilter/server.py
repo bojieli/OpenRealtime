@@ -12,6 +12,9 @@ boundaries without padding each packet or resetting state:
   2-frame (20 ms) lookahead is 30 ms of waveform delay at 48 kHz (window minus
   hop, plus lookahead), so with the FIFO every sample is delayed by 40 ms.
   Build the library and fetch the model with ``tools/noisefilter/build_deepfilter.sh``.
+- ``deepfilternet-fir``: the same model with causal FIR rate conversion instead
+  of linear interpolation/block averaging. Requires NumPy/SciPy and declares
+  42 ms delay at every supported rate (two additional 1 ms FIR delays).
 """
 
 import argparse
@@ -199,6 +202,31 @@ class DeepFilterStream(Stream):
             self.state = None
 
 
+class FIRDeepFilterStream(DeepFilterStream):
+    """DeepFilterNet with causal bandlimited conversion and 42 ms total delay."""
+
+    def __init__(self, model, rate):
+        from causal_resample import FilterResampler
+        self.resampler = FilterResampler(rate)
+        super().__init__(model, rate)
+
+    def process(self, pcm):
+        import numpy as np
+        samples = np.frombuffer(pcm, dtype="<i2")
+        expanded = self.resampler.up(samples)
+        self.pending.extend(expanded)
+        complete = len(self.pending) // 480 * 480
+        for offset in range(0, complete, 480):
+            self.buffer[:] = [x * self.scale for x in self.pending[offset:offset + 480]]
+            self.process_frame()
+            converted = self.resampler.down(np.asarray(self.buffer) / self.scale)
+            if not np.isfinite(converted).all():
+                raise ValueError("non-finite filtered audio")
+            self.output.extend(np.clip(np.rint(converted), -32768, 32767).astype(np.int16))
+        del self.pending[:complete]
+        return np.asarray([self.output.popleft() for _ in samples], dtype="<i2").tobytes()
+
+
 class Sessions:
     def __init__(self, model, limit=32, ttl=120, stream_factory=Stream):
         self.model, self.limit, self.ttl = model, limit, ttl
@@ -358,7 +386,7 @@ def handler_for(
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=["rnnoise", "deepfilternet"], default="rnnoise")
+    parser.add_argument("--model", choices=["rnnoise", "deepfilternet", "deepfilternet-fir"], default="rnnoise")
     parser.add_argument(
         "--library", required=True, help="librnnoise.so, or libdf.so for deepfilternet"
     )
@@ -378,11 +406,13 @@ def main():
     args = parser.parse_args()
     if args.max_sessions < 1:
         parser.error("max-sessions must be positive")
-    if args.model == "deepfilternet":
+    if args.model.startswith("deepfilternet"):
         if not args.deepfilter_model:
             parser.error("--model deepfilternet requires --deepfilter-model")
         model = DeepFilterNet(args.library, args.deepfilter_model, args.atten_lim_db)
         stream_factory, delay, frame = DeepFilterStream, model.audio_delay_ms, model.frame_ms
+        if args.model == "deepfilternet-fir":
+            stream_factory, delay = FIRDeepFilterStream, 42
     else:
         model = RNNoise(args.library)
         stream_factory, delay, frame = Stream, 20, 10
@@ -390,7 +420,7 @@ def main():
     for _ in range(10):
         warm.process(bytes(4800))
     warm.close()
-    if args.model == "deepfilternet":
+    if args.model.startswith("deepfilternet"):
         model.wait_ready()
     server = ThreadingHTTPServer(
         (args.host, args.port),

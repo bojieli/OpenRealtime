@@ -34,8 +34,8 @@ func (config Config) ModelName() string {
 
 func (config Config) Validate() error {
 	if config.ModelName() != "rnnoise" && config.ModelName() != "real-tse" &&
-		config.ModelName() != "deepfilternet" {
-		return errors.New("audio filter model must be rnnoise, deepfilternet, or real-tse")
+		config.ModelName() != "deepfilternet" && config.ModelName() != "deepfilternet-fir" {
+		return errors.New("audio filter model must be rnnoise, deepfilternet, deepfilternet-fir, or real-tse")
 	}
 	u, err := url.Parse(config.URL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
@@ -86,7 +86,7 @@ func New(config Config) (*Client, error) {
 }
 
 // Process returns the same sample count. RNNoise has a 20ms streaming delay,
-// DeepFilterNet3 40ms, and real-tse advertises a 65ms bound including its FIFO
+// DeepFilterNet3 40ms (42ms with FIR conversion), and real-tse advertises a 65ms bound including its FIFO
 // and resampling.
 // The caller must forward this result, never the original PCM, to admission.
 // Large ingress packets are split into <=100ms processing requests, all sharing
@@ -161,6 +161,8 @@ func (client *Client) processChunk(parent context.Context, pcm []byte, rate uint
 		delay = "65"
 	case "deepfilternet":
 		delay = "40"
+	case "deepfilternet-fir":
+		delay = "42" // Two causal FIRs add 1 ms each at all supported rates.
 	}
 	if response.Header.Get("X-Sequence") != request.Header.Get("X-Sequence") || response.Header.Get("X-Filter-Model") != client.config.ModelName() || response.Header.Get("X-Audio-Delay-MS") != delay {
 		return nil, errors.New("noise filter response contract mismatch")

@@ -173,7 +173,7 @@ func TestEachFilterModelPinsItsWaveformDelay(t *testing.T) {
 	t.Parallel()
 	// real-tse is excluded: its frames go through the target-voice worker,
 	// which has its own enrollment path and is covered by target_worker_test.
-	for model, delay := range map[string]string{"rnnoise": "20", "deepfilternet": "40"} {
+	for model, delay := range map[string]string{"rnnoise": "20", "deepfilternet": "40", "deepfilternet-fir": "42"} {
 		var seen string
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			body, _ := io.ReadAll(request.Body)
