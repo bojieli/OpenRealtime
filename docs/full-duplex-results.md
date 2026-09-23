@@ -291,6 +291,13 @@ buffering remain limitations; this is received-audio timing with adapter turn
 boundaries. The remaining categories and selected FD-Bench condition are still
 running, so this does not establish complete campaign acceptance.
 
+The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
+after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
+the observation gap and original incomplete record are preserved. No resource
+stability claim spans that gap. The benchmark process remained live, and a
+subsequent log scan found no server/model errors; this does not prove that all
+log writes succeeded during disk pressure.
+
 Moshi/PersonaPlex shutdown now retains the model lock until its inference
 worker exits. A CPU regression reproduced the old five-second timeout releasing
 shared state while a worker remained live; the fix passes that regression and

@@ -1,0 +1,10 @@
+{
+  "recorded_at": "2026-09-23T03:04:07.061139+00:00",
+  "cause": "resource sampler session 6285 exited 1 with OSError ENOSPC",
+  "last_complete_original_sample": "2026-09-23T02:52:03.807007+00:00",
+  "original_file": "resources.jsonl",
+  "original_trailing_record": "incomplete; preserved unchanged",
+  "resumed_file": "resources-resumed.jsonl",
+  "scope": "resource observations missing during gap; campaign remained live; no missing samples inferred",
+  "disk_available_at_discovery": "10 GiB according to df; historical ENOSPC confirmed from sampler traceback"
+}
