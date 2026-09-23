@@ -1,0 +1,149 @@
+schema_version: 1
+study: interaction-capability
+status: protocol-development
+language: en
+suite:
+  source: bench/capability/fixtures.go
+  revision: draft-2
+  freeze_status: not-frozen
+  pilot_pairs: 24
+  pilot_repeats_planned: 3
+  held_out_pairs_planned: 80
+  held_out_repeats_planned: 3
+  held_out_status: unavailable-until-pilot-and-scoring-freeze
+  provenance: repository-authored synthetic text; no human participants
+  validation_limits:
+    - Word times are authored estimates, not aligned recordings.
+    - Prosodic cues are annotated diagnostics, not independently rated recordings.
+    - Cues describe authored acoustic properties; recordings and independent label agreement remain unvalidated.
+    - Addressing words and times are matched; directional annotations are synthetic metadata.
+    - co-02 requires Spanish output, outside the validated English/French TTS language support.
+    - Concurrent tasks need incremental timing/order scoring beyond lexical screens.
+    - Output-revision timing must be validated against actual playback.
+    - Lexical expectations are draft screens, not validated semantic scores.
+model:
+  provider: local-vllm
+  id: Qwen/Qwen3-8B
+  served_id: qwen3-8b
+  revision: b968826d9c46dd6066d109eabc6255188de91218
+  policy: prompted-joint-action-content
+  trained_microturn_model: false
+  thinking: false
+  temperature: 0
+  max_tokens: 128
+  grammar: compact-action-dependent-json-v2
+  seed_base: 1729
+development_treatments:
+  policy_history:
+    baseline: eight most recent execution records
+    omitted: omit decision records; retain causal observations and heard/partial/pending/plan state
+    selector: live-only omit-policy-history flag; recorded per invocation and action
+    status: development-only; omission has not established paired audible success
+  speech_control_reference_guard:
+    version: 1
+    behavior: reject spoken tokens matching known active or pending-plan IDs before execution
+    rejection_status: control-reference-in-speech
+    limitation: does not detect arbitrary control-language leakage
+    previous_runs: immutable pre-guard recordings retain observed failures
+  playback_state:
+    version: 2
+    behavior: expose requested speech as pending before TTS opens; never mark it heard at startup
+    validation: startup-v2-st03-live-20260922-01; 85 audited requests; paired adaptation failed
+  native_input_delivery:
+    cell_id: DC-native-diagnostic
+    grammar: released DuplexCascade checkpoint grammar
+    tick_ms: 500
+    default_words_per_tick: 2
+    diagnostic_words_per_tick: [1, 2]
+    selector: native_live.py --words-per-tick; manifest and terminal branch records
+    admission: delay-only; accumulate due chunks after inference overruns
+    trace_schema_version: 3
+    status: one-word live completed; response onset after feedback only; no mid-speech adaptation
+    limits:
+      - Native grammar and backbone differ from A1-A3.
+      - Chunk size changes delivery delay; it is an explicit treatment.
+      - Offline response onset after correction does not establish mid-speech adaptation.
+      - Original scoring windows stay fixed despite delayed word admission.
+  feedback_gap:
+    fixture: recorded-st02-gap10-20260922-01
+    source: recorded-st02-20260922-01
+    extra_pre_feedback_silence_seconds: 10
+    branch_source_and_availability_shift_seconds: 10
+    spoken_pcm: unchanged; byte-verified
+    response_window_duration: unchanged
+    purpose: allow prefix admission and initial response before feedback
+    status: Qwen A2 v3-affordance run verified assistant playback spanning feedback onset; native run pending
+  pending_affordance:
+    selector: live-only --pending-affordance; recorded per invocation and action; audited as the request's final line
+    default: v1
+    versions:
+      v1: "When a segment is pending, wait or revise it; new speech cannot be queued behind it." (every request)
+      v2: "When a segment is pending, wait to let it play; revise only to change its words. New speech cannot be queued behind it." (every request)
+      v3: v2 line while a segment is pending; otherwise "Nothing is pending: speak or continue to start new speech now, or wait to stay silent."
+      v4: v2 line while a segment is pending; otherwise the v1 line (only the pending-state wording differs from v1)
+    v3_finding: over 24 pairs the v3 idle line caused verbatim repetition of the last completed sentence (96/292 played transitions); repeat-probe-20260923-01
+    evidence: revise-loop-probe-20260923-01 and qwen-st02-gap10-*-live-20260923-01
+    status: development treatment on pilot pair st-02 only; prompt change, not a scorer or post-decision guard
+schedule:
+  tick_ms: 500
+  admission: only-at-request-start
+  diagnostic: virtual-time-or-wall-clock-annotated
+  real_time_status: paced-recorder-diagnostic-deadline-misses-recorded
+cells:
+  A1:
+    transcript: committed
+    timing: false
+    sound_activity: true
+    cues: false
+    speaker_identity: false
+    planning: incremental
+    availability: annotated-policy-diagnostic-only
+  A2:
+    transcript: committed
+    timing: true
+    sound_activity: true
+    cues: false
+    speaker_identity: false
+    planning: incremental
+    availability: annotated-policy-diagnostic-only
+  A3:
+    transcript: committed
+    timing: true
+    sound_activity: true
+    cues: true
+    speaker_identity: true
+    planning: incremental
+    availability: annotated-policy-diagnostic-only
+  A0:
+    availability: unavailable
+    reason: whole-turn treatment not implemented in study runner
+  A4:
+    availability: unavailable
+    reason: native interface and controlled input admission not yet verified
+  C1:
+    availability: unavailable
+    reason: existing orchestrated baseline not wired into study runner
+  C2:
+    availability: unavailable
+    reason: joint protocol is exercised in A1-A3; separate C comparison is not implemented
+  trained:
+    availability: separate-native-grammar-diagnostic
+    reason: released DuplexCascade weights now present; study playback and paired validation pending
+    checkpoint: sbintuitions/DuplexCascade
+    revision: 31c038ece2f006a28722dd60d1df3868fbb2cc42
+    independent_adaptation: deferred-until-protocol-validation
+synthesis:
+  intended_model: kyutai/tts-1.6b-en_fr
+  sample_rate_hz: 24000
+  intended_voice: expresso/ex03-ex01_happy_001_channel1_334s.wav
+  lookahead_words: 2
+  lookahead_sweep: unsupported
+  diagnostic_output: generated-text-or-paced-recorder-audio
+  playback_status: paced-recorder; prepared pairs include input audio; output word alignment unavailable
+scoring:
+  windows: per-variant Expectation in bench/capability/fixtures.go
+  audible_adaptation: preliminary completed-playback lexical screen; paired capability validation incomplete
+  generated_text_is_heard: false
+  uncertainty_unit: scenario-pair
+  negative_controls: remove-feedback-group
+  deadline_policy: virtual-time results never counted as real-time deadline successes
