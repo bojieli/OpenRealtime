@@ -27,6 +27,14 @@ def test_activity_ignores_silence_and_is_independent_of_packet_boundaries():
     assert not activity.push(tone[:PACKET * 8])
 
 
+@pytest.mark.parametrize('rate', [22050, 24000, 48000])
+def test_activity_uses_output_rate(rate):
+    activity = AudioActivity(rate)
+    samples = rate // 50
+    assert not activity.push(pcm16(np.full(samples * 4, .1)))
+    assert activity.push(pcm16(np.full(samples, .1)))
+
+
 @pytest.mark.parametrize('active', [False, True])
 def test_attempt_requires_activity_after_handshake(active):
     listener = socket.socket()

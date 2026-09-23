@@ -24,14 +24,17 @@ from openrealtime_sidecar.protocol import read_message, write_message
 
 class AudioActivity:
     """Packet-independent 20 ms RMS windows; require five active windows."""
-    def __init__(self):
+    def __init__(self, rate=RATE):
+        if rate <= 0 or rate % 50:
+            raise ValueError('output rate must support integral 20 ms windows')
+        self.window_bytes = rate // 50 * 2
         self.pending = b''
         self.consecutive = 0
         self.detected = False
 
     def push(self, payload):
         self.pending += payload
-        window_bytes = PACKET * 2
+        window_bytes = self.window_bytes
         while len(self.pending) >= window_bytes:
             samples = np.frombuffer(self.pending[:window_bytes], dtype='<i2').astype(np.float64) / 32768
             self.pending = self.pending[window_bytes:]
@@ -71,6 +74,8 @@ def attempt(address, question, timeout, *, sidecar=None, stderr=None):
         ready = read_message(reader)
         if ready is None or ready.type != 'ready':
             raise RuntimeError(f'handshake failed: {ready}')
+        output_rate = int(ready.header.get('output_rate', RATE))
+        activity = AudioActivity(output_rate)
         handshake = time.monotonic()-started
         first_audio = None
         def receive():
@@ -108,7 +113,7 @@ def attempt(address, question, timeout, *, sidecar=None, stderr=None):
         result = {'handshake_s':handshake, 'input_sent_s':sent/RATE,
                   'first_audio_s':first_audio-began if first_audio else None,
                   'audio_bytes':audio_bytes, 'errors':errors,
-                  'active_audio_detected': activity.detected,
+                  'active_audio_detected': activity.detected, 'output_rate': output_rate,
                   'passed':activity.detected and not errors}
         # Abrupt peer disconnect exercises EOF, not a cooperative model stop.
         return result
@@ -151,7 +156,7 @@ def main():
     result = {'address':args.address, 'sidecar':args.sidecar, 'question':args.question,
               'timing_basis':'received PCM packets, not rendered playback',
               'activity_criterion': {'rms_dbfs': -40, 'consecutive_ms': 100,
-                                     'window_ms': 20, 'sample_rate': RATE},
+                                     'window_ms': 20, 'sample_rate': 'negotiated output_rate'},
               'attempts':[]}
     try:
         for _ in range(2):
