@@ -8,7 +8,7 @@ logs every received PCM event (`audio_delivery`); upstream stage timing is kept
 per session. `run.sh` is exact; `analyze_stalls.py` produces
 `stall-correlation.json` (window: 8 s before each stall).
 
-17 of the 60 turns ended `audio_stalled`, and every stall happened in model
+17 of 59 turn endings were `audio_stalled` (33 model interrupts, 9 backend done), and every stall happened in model
 state S (speaking). All 883 received PCM events were forwarded, none muted or
 empty, so the sidecar did not discard delivered audio. All 8 FDB recordings failed
 with the stall error (`fdb.json`).
