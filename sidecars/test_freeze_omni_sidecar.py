@@ -86,5 +86,25 @@ class ShutdownTests(unittest.TestCase):
                 self.assertEqual(cleared, [True])
 
 
+class CacheDiagnosticsTests(unittest.TestCase):
+    def test_views_share_storage_but_snapshot_does_not(self):
+        import copy
+        import torch
+        from freeze_omni_sidecar import cache_storage_summary
+
+        backing = torch.zeros(2, 3, 7, 4)
+        cache = ((backing[0], backing[1]),)
+        live = cache_storage_summary(torch, cache)
+        snapshot = cache_storage_summary(torch, copy.deepcopy(cache))
+        self.assertEqual(live['storage_bytes'], backing.numel() * backing.element_size())
+        self.assertEqual(live['storage_count'], 1)
+        self.assertEqual(live['tensor_shapes'], [[3, 7, 4], [3, 7, 4]])
+        self.assertEqual(snapshot['storage_bytes'], live['storage_bytes'])
+        self.assertFalse(set(live['storages']) & set(snapshot['storages']))
+        self.assertEqual(cache_storage_summary(torch, None)['storage_bytes'], 0)
+        with self.assertRaisesRegex(TypeError, 'unsupported KV cache'):
+            cache_storage_summary(torch, object())
+
+
 if __name__ == '__main__':
     unittest.main()

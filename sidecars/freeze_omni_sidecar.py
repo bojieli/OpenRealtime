@@ -85,6 +85,32 @@ FIRST_PACK_END = (",", "，", "。", "：", "？", "！", ".", ":", "?", "!", "\
 MAX_ANSWER_TOKENS = 500
 
 
+def cache_storage_summary(torch, cache) -> dict:
+    """Count unique backing storage, including aliased views in legacy KV tuples."""
+    storages = {}
+    shapes = []
+    visited = set()
+
+    def visit(value):
+        if id(value) in visited:
+            return
+        visited.add(id(value))
+        if torch.is_tensor(value):
+            storage = value.untyped_storage()
+            key = (str(value.device), storage.data_ptr())
+            storages[key] = storage.nbytes()
+            shapes.append(list(value.shape))
+        elif isinstance(value, (tuple, list)):
+            for child in value:
+                visit(child)
+        elif value is not None:
+            raise TypeError(f"unsupported KV cache representation: {type(value).__name__}")
+
+    visit(cache)
+    return {"storage_bytes": sum(storages.values()), "storage_count": len(storages),
+            "tensor_shapes": shapes, "storages": list(storages)}
+
+
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
@@ -281,6 +307,7 @@ class FreezeOmniSidecar(Sidecar):
         self._gen_lock = threading.Lock()
         self._stop_generation = threading.Event()
         self.generate_outputs = None
+        self._prefill_count = 0
         self.system_role = None
         self.vad = None
         self._mock_energy_open = False
@@ -450,7 +477,28 @@ class FreezeOmniSidecar(Sidecar):
                 self._close_user("model_ss")
                 self._stop_current_generation("model_ss")
                 self._start_generation(copy.deepcopy(outputs), source="model_ss")
+        self._prefill_count += 1
+        if self._prefill_count % 64 == 0:
+            self._record_cache_stats(outputs, "listen")
         return outputs
+
+    def _record_cache_stats(self, outputs, phase: str) -> None:
+        """Metadata only: no tensor copies, synchronization, or cache truncation."""
+        torch = self.engine.torch
+        try:
+            with self._kv_lock:
+                live = cache_storage_summary(torch, outputs.get("past_key_values"))
+                snapshot = cache_storage_summary(
+                    torch, (self.generate_outputs or {}).get("past_key_values"))
+            shared = set(live.pop("storages")) & set(snapshot.pop("storages"))
+            self.control.event(self.session_id, "cache_memory", phase=phase,
+                               live=live, snapshot=snapshot,
+                               shared_storage_count=len(shared),
+                               cuda_allocated_bytes=torch.cuda.memory_allocated(),
+                               cuda_reserved_bytes=torch.cuda.memory_reserved(),
+                               timing_basis="host metadata sample; concurrent inference may advance")
+        except Exception as failure:
+            log(f"cache diagnostics unavailable: {failure}")
 
     def _open_user(self, reason: str) -> None:
         if not self._user_open:
@@ -534,6 +582,7 @@ class FreezeOmniSidecar(Sidecar):
             outputs = pipeline.speech_dialogue(None, **outputs)
             with self._kv_lock:
                 self.generate_outputs = copy.deepcopy(outputs)
+            self._record_cache_stats(outputs, "answer_start")
             if outputs.get("stat") != "cs":
                 self.control.event(self.session_id, "answer_empty", source=source)
                 return
@@ -584,6 +633,7 @@ class FreezeOmniSidecar(Sidecar):
             log(traceback.format_exc())
             self.error(f"generate: {failure}", code="generate_failed")
         finally:
+            self._record_cache_stats(outputs, "answer_end")
             elapsed = _now_ms() - t0
             audio_s = audio_samples / MODEL_OUTPUT_RATE
             self.control.event(self.session_id, "answer_end", source=source,
