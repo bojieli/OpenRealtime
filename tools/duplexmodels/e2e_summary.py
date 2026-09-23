@@ -4,8 +4,8 @@
 Reads .runtime/duplex-plan/results/e2e/<profile>/ and prints one row per
 profile: FDB v1.5 pass counts per category over applicable recordings (with
 the not-applicable count, which is a latency failure of a different kind),
-median yield latency, and FD-Bench answered / premature / median response
-latency. Subsets are smoke measurements; the table says so.
+median yield latency, and FD-Bench answered / premature / median of
+conversation response-latency medians. Subsets are smoke measurements; the table says so.
 
     python tools/duplexmodels/e2e_summary.py [--json out.json] [profile ...]
 """
@@ -64,6 +64,7 @@ def fdbench(directory: Path) -> dict:
     data = json.loads(path.read_text())
     tasks = [t for t in data.get("tasks", []) if not t.get("error")]
     total = lambda key: sum(t.get("metrics", {}).get(key, 0) for t in tasks)  # noqa: E731
+    # Each task metric is already a conversation-level P50, not a turn sample.
     latencies = [t["metrics"]["response_latency_ms"] for t in tasks if "response_latency_ms" in t.get("metrics", {})]
     return {
         "conversations": len(data.get("tasks", [])), "errors": len(data.get("tasks", [])) - len(tasks),
@@ -150,7 +151,7 @@ def main() -> None:
                       "integrity": integrity,
                       "coverage": coverage(directory, run.get("expected_results", [])) if not integrity else "unverified"}
     columns = ["profile", "interrupt yield", "backchannel hold", "background hold", "other-talk hold",
-               "yield p50 ms", "FD-Bench answered/turns", "premature", "resp p50 ms", "load", "coverage"]
+               "yield p50 ms", "FD-Bench answered/turns", "premature", "median conversation resp p50 ms", "load", "coverage"]
     print("Coverage is checked against recorded task populations. Invalid or unverified runs are excluded.\n")
     print("| " + " | ".join(columns) + " |")
     print("|" + " --- |" * len(columns))
