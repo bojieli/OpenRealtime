@@ -723,7 +723,7 @@ model itself was not measured here.
 | --- | --- | --- |
 | DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; strict GPU loading and live ASR/TTS integration passed; public end-to-end transport failures under investigation |
 | PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference and public live-profile smoke passed; full acceptance pending |
-| User's own micro-turn LLM and TTS (cell C2) | pending | No checkpoint locations were provided |
+| User-trained micro-turn LLM and TTS (cell C2) | not applicable | User confirmed on 2026-09-23 that they have never trained these checkpoints; original assumption withdrawn, no user asset dependency |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |
 

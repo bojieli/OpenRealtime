@@ -1,6 +1,6 @@
 # Streaming and full-duplex components: survey and implementation plan
 
-**Research cutoff:** 2026-09-22. **Status:** execution in progress on 2026-09-22; what was built, measured, blocked, and deferred is recorded in [Streaming and full-duplex integration: results](full-duplex-results.md). The proposal text below is unchanged.
+**Research cutoff:** 2026-09-22. **Status:** execution in progress on 2026-09-22; what was built, measured, blocked, and deferred is recorded in [Streaming and full-duplex integration: results](full-duplex-results.md). Scope correction (2026-09-23): the user has never trained micro-turn LLM or TTS checkpoints. The original user-model assumption is withdrawn; C2 is not applicable and released-model integration remains the execution scope.
 
 **Plan revision:** incorporates the expanded open-model survey. This document is the authoritative implementation roadmap; [Open models beyond ASR and TTS](open-duplex-models-survey.md) retains detailed candidate analysis and release evidence. Its proposed ordering is consolidated into the stages below.
 
@@ -10,7 +10,7 @@
 
 OpenRealtime should support three complementary paths through its existing typed graph:
 
-1. **Composable streaming cascade:** streaming ASR → timed text/revisions → a micro-turn language model → incremental text-input/audio-output TTS. This is the first priority and the natural home for the user's trained full-duplex LLM and TTS.
+1. **Composable streaming cascade:** streaming ASR → timed text/revisions → a micro-turn language model → incremental text-input/audio-output TTS. This is the first priority, using released models and their documented native protocols.
 2. **Integrated speech models:** native audio-in/audio-out sessions, optionally exposing text and interaction acts. Preserve their coupled codecs and generation schedules inside a graph element unless the model explicitly supports decomposition.
 3. **Closed live services:** support both independently selectable ASR/TTS APIs and integrated live agents, with explicit control ownership and actual provider semantics.
 
@@ -20,13 +20,13 @@ There are now relevant **text-based full-duplex LLMs**: DuplexCascade releases a
 
 Across these three paths, support independently selected **interaction prediction, speaker/overlap perception, acoustic preprocessing, and background audio understanding**. Translation and speech-plus-action belong to separate task profiles. They must not silently alter the evidence or authority of an otherwise identical cascade.
 
-**First deliverable:** a measured 500 ms micro-turn pipeline using the user's LLM/TTS when their assets are available, plus a native speech/tool reference and one controlled endpoint-evidence comparison. Preserve Qwen3-ASR and Fish S2 Pro as baselines. Add Voxtral or Nemotron streaming ASR first, then the other as a substitution; use Kyutai for faithful DuplexCascade reproduction and CosyVoice for multilingual incremental synthesis. This is an integration priority, not a quality ranking.
+**First deliverable:** a measured 500 ms micro-turn pipeline using released LLM/TTS assets, plus a native speech/tool reference and one controlled endpoint-evidence comparison. Preserve Qwen3-ASR and Fish S2 Pro as baselines. Add Voxtral or Nemotron streaming ASR first, then the other as a substitution; use Kyutai for faithful DuplexCascade reproduction and CosyVoice for multilingual incremental synthesis. This is an integration priority, not a quality ranking.
 
 ### Integration priorities
 
 | Priority | Candidates / capability | Reason and boundary |
 | --- | --- | --- |
-| **Core contracts and user models** | Timed revisions, 500 ms clock, live LLM, incremental TTS, playback reconciliation | Enable actual composition; preserve the user's training-time protocol |
+| **Core contracts and released models** | Timed revisions, 500 ms clock, live LLM, incremental TTS, playback reconciliation | Enable actual composition; preserve each released model's native protocol |
 | **First supporting comparison** | Smart Turn plus a transcript endpoint baseline | Test acoustic versus textual completion evidence without replacing the language model |
 | **First new native reference** | NemotronLabs VoiceChat 11B | Exercise continuous speech and tool-result admission in the existing agent runtime |
 | **Reference reproductions** | DuplexCascade; existing Moshi/PersonaPlex, MiniCPM-o, and closed live paths | Establish faithful model/runtime behavior before substitutions |
@@ -128,7 +128,7 @@ For every ASR, report both **recognition quality** and **when useful evidence be
 
 **DuplexCascade is the clearest first reference for the user's design.** Its text-trained LLM uses conversational control tokens in a cascaded, VAD-free micro-turn system. The public inference repository launches ASR, LLM, and TTS independently, prescribing Kyutai STT/TTS. The model card identifies the fine-tuned Qwen2-7B-Instruct backbone and MIT license, but checkpoint access requires accepting a gate. Reproduce its own schedule and token grammar before changing components; do not assume its micro-turn duration is the user's 500 ms. [Reference implementation](https://github.com/sbintuitions/DuplexCascade), [checkpoint](https://huggingface.co/sbintuitions/DuplexCascade), [paper](https://arxiv.org/abs/2603.09180).
 
-For the user's trained LLM, record: tokenizer/control-token IDs; micro-turn duration and alignment origin; silence versus no-new-text convention; revision handling seen during training; input admission schedule; output act grammar; state reset; tool-result injection; and whether input/output are logically concurrent or serialized within clock steps. A general chat-completion wrapper may erase the training-time protocol.
+For each released micro-turn LLM, record: tokenizer/control-token IDs; micro-turn duration and alignment origin; silence versus no-new-text convention; revision handling seen during training; input admission schedule; output act grammar; state reset; tool-result injection; and whether input/output are logically concurrent or serialized within clock steps. A general chat-completion wrapper may erase the training-time protocol.
 
 An ordinary text LLM remains a valuable baseline with cancellation, prefix caching, and repeated continuation. Name that execution mode **orchestrated micro-turns**. Native micro-turn support means preserving the model's actual state and schedule; it does not require simultaneous GPU kernels, but does require correct admission while the session is producing output.
 
@@ -276,7 +276,7 @@ All stages below are future work. Preserve existing working paths while adding i
 
 | Stage | Concrete deliverable / likely repository surfaces | Exit evidence |
 | --- | --- | --- |
-| **P0: freeze baselines and feasibility** | Capability ledger in `docs/providers.md`; pinned manifests; RTX Pro availability/runtime audit; user-model protocol inventory | Retained ordinary cascade and entitled live-provider baseline traces; exact assets and execution route identified for each first-wave candidate |
+| **P0: freeze baselines and feasibility** | Capability ledger in `docs/providers.md`; pinned manifests; RTX Pro availability/runtime audit; released-model protocol inventory | Retained ordinary cascade and entitled live-provider baseline traces; exact assets and execution route identified for each first-wave candidate |
 | **P1: streaming and evidence contracts** | Versioned graph ports and sidecar v4 conformance; live component extensions; interaction forecasts, playback-reference and speaker/observer schemas; new catalog definitions | Fixtures for revisions, late input, empty ticks, queue pressure, stale observations/audio, tool duplication, and causal channel alignment; existing API behavior preserved |
 | **P2: ASR evidence** | Audit Qwen/Deepgram semantics; first Voxtral or Nemotron streaming element, then the other; timed-transcript/clock element | Realtime-paced multilingual audio, revision/stability traces, and evidence-lag distributions; no unmarked partial concatenation |
 | **P3: incremental TTS** | Same-context synthesis interface; Kyutai/CosyVoice reference path; one closed WebSocket TTS path; existing Fish compatibility path | Audio begins before input ends, continuation stays in context, and cancel/restart reconciles actual playback; no stale-epoch audio after local cutoff |
@@ -289,7 +289,7 @@ All stages below are future work. Preserve existing working paths while adding i
 
 **Dependencies:** P2 and P3 can proceed independently after the relevant P1 contracts. P4's DuplexCascade reproduction needs the prescribed Kyutai stack; the user's checkpoint does not depend on access to DuplexCascade. P5 needs P0 feasibility and P1 live/tool contracts, not completion of every cascade adapter. P6's initial endpoint comparison can run on the existing cascade after P1; dual-channel predictors additionally require a verified playback-reference stream. P7 and P8 are optional extensions, not blockers for the first P9 release.
 
-**First release scope:** one working micro-turn cascade, one native speech/tool profile, and one matched endpoint-evidence comparison, each with complete traces and playback/cancellation validation. Prefer the user's LLM/TTS for the cascade; if assets are unavailable, publish a clearly named reference profile and retain the user-model item as pending. A closed API profile is conditional on account access, not a mandatory dependency. Later releases expand the tested matrix rather than weakening the gates to claim broad support.
+**First release scope:** one working micro-turn cascade, one native speech/tool profile, and one matched endpoint-evidence comparison, each with complete traces and playback/cancellation validation. Use released LLM/TTS assets for the cascade and identify each reference profile and its protocol faithfully. C2 is not applicable; no user checkpoints are expected. A closed API profile is conditional on account access, not a mandatory dependency. Later releases expand the tested matrix rather than weakening the gates to claim broad support.
 
 **Defer explicitly:** DuplexOmni's published multi-GPU recommendation is outside the first single-server profile; SALMONN-omni/OmniFlatten need matching runnable assets before deployment work. Lychee-FD's patched older runtime requires Blackwell validation. Gate failures become documented unavailable profiles with a reason, while independent stages continue.
 
@@ -299,8 +299,8 @@ All stages below are future work. Preserve existing working paths while adding i
 | --- | --- | --- |
 | C0 | Existing Qwen ASR → ordinary continuation LLM → existing Fish path | What does the current system achieve under the new instrumentation? |
 | C1 | Kyutai STT → DuplexCascade → Kyutai TTS | Can the released reference be reproduced faithfully? |
-| C2 | Selected streaming ASR → user's 500 ms LLM → user's TTS | Does the intended training-time protocol survive real delayed/revised input? |
-| C3 | Hold C2 fixed; substitute Voxtral, Nemotron, or Deepgram individually | Which recognition/revision tradeoff helps this same LLM? |
+| C2 | Not applicable: no user-trained checkpoints exist | Original assumption withdrawn after user clarification on 2026-09-23; not a pending dependency |
+| C3 | Hold the released-reference LLM/TTS fixed; substitute Voxtral, Nemotron, or Deepgram individually | Which recognition/revision tradeoff helps this same LLM? |
 | C4 | Hold ASR/LLM fixed; substitute CosyVoice, Fish compatibility, or closed incremental TTS | What is gained by same-context incremental synthesis? |
 | N0 | Moshi / PersonaPlex, each as its native integrated system | Native interaction reference and instruction-following tradeoff |
 | N1 | MiniCPM-o official duplex path | Audio first; visual evidence as a separately labeled treatment |
@@ -372,7 +372,7 @@ For controlled comparisons, hold prompts, input evidence, voice where possible, 
 
 Keep the existing provider proof levels (`documented`, `reachable`, `live-turn`) and add orthogonal evidence for streaming contracts: conformance fixtures, incremental input, concurrent input/output, cancellation/playback, and measured benchmark runs. A model card, a sidecar flag, and a mock test establish different things. None should silently promote a provider to “verified full duplex.”
 
-The first implementation pass needs the user's LLM/TTS checkpoint locations and native inference/training protocols. Further choices include primary languages, deployment/commercial constraints, preferred voices, quality/latency priorities, and allowed concurrency on the shared GPU. These do not block this survey or the protocol design, but they determine the concrete deployment profiles.
+Implementation uses released checkpoints and their native inference/training protocols. No user-trained checkpoints exist or are required. Further choices include primary languages, deployment/commercial constraints, preferred voices, quality/latency priorities, and allowed concurrency on the shared GPU. These do not block this survey or the protocol design, but they determine the concrete deployment profiles.
 
 Track work at the granularity of **model + checkpoint revision + serving runtime + graph profile**, with fields for public assets, license/dependency checks, hardware feasibility, contract conformance, live behavior, benchmark evidence, and next blocking condition. Inference release, training release, and data release are separate statuses. Native speech/tool models and small observers use the same promotion discipline. A failed or unavailable candidate must not be presented as implemented merely because its adapter or deployment recipe exists.
 
