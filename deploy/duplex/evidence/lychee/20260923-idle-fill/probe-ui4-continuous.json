@@ -1,0 +1,82 @@
+{
+  "label": "ui4-continuous",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.124
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    19.06494140625,
+    22.86474609375,
+    24.98876953125
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/4/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.888,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888,
+      "sent_end_s": 15.888,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 45.0,
+  "input_timeline_complete": true,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 32.38908414077014,
+  "first_audio_latency_s": 16.501,
+  "audible_segments": [
+    [
+      32.389,
+      32.629
+    ],
+    [
+      35.103,
+      35.503
+    ],
+    [
+      37.817,
+      38.217
+    ],
+    [
+      40.328,
+      40.728
+    ],
+    [
+      43.413,
+      43.813
+    ]
+  ],
+  "turn_done_s": [
+    54.951
+  ],
+  "text_done": [
+    {
+      "t": 54.951,
+      "text": "Well, take care of an indoor pet by feeding them the right food, keeping their living space clean, and giving them plenty of love and attention. Make sure they have fresh water always and play with them regularly. Oh, and don’t forget regular check-ups with the vet to keep them healthy."
+    }
+  ],
+  "text_deltas": "Well, take care of an indoor pet by feeding them the right food, keeping their living space clean, and giving them plenty of love and attention. Make sure they have fresh water always and play with them regularly. Oh, and don’t forget regular check-ups with the vet to keep them healthy.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 1.84
+}

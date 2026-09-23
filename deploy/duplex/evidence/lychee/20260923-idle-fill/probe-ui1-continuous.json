@@ -1,0 +1,78 @@
+{
+  "label": "ui1-continuous",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.085
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    15.88720703125,
+    22.6953125,
+    25.12109375
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.568,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568,
+      "sent_end_s": 15.568,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 45.0,
+  "input_timeline_complete": true,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 24.905090447049588,
+  "first_audio_latency_s": 9.337,
+  "audible_segments": [
+    [
+      24.905,
+      25.145
+    ],
+    [
+      26.642,
+      27.042
+    ],
+    [
+      28.23,
+      28.63
+    ],
+    [
+      31.368,
+      31.768
+    ]
+  ],
+  "turn_done_s": [
+    37.727
+  ],
+  "text_done": [
+    {
+      "t": 37.727,
+      "text": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot what truly matters. Set up automatic transfers to savings so you dont miss payments. And when shopping, compare prices before impulse buys. Small tweaks add up over time."
+    }
+  ],
+  "text_deltas": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot what truly matters. Set up automatic transfers to savings so you dont miss payments. And when shopping, compare prices before impulse buys. Small tweaks add up over time.You should aim to build an emergency fund with six months of expenses, save for retirement, and set aside money for big purchases or travel. Do any of those feel like your top priority right now?",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 1.84
+}

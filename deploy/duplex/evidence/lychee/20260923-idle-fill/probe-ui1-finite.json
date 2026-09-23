@@ -1,0 +1,70 @@
+{
+  "label": "ui1-finite",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.085
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    26.52392578125,
+    24.66943359375,
+    25.66650390625
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.568,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568,
+      "sent_end_s": 15.568,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 16.58,
+  "input_timeline_complete": false,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": null,
+  "first_audio_latency_s": null,
+  "audible_segments": [
+    [
+      13.388,
+      13.628
+    ],
+    [
+      14.593,
+      14.993
+    ]
+  ],
+  "turn_done_s": [
+    26.311
+  ],
+  "text_done": [
+    {
+      "t": 26.311,
+      "text": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot where your money flows. Set a clear goal like building an emergency fund or paying off debt and link it to a reward that motivates you. Automate savings so a portion of your income goes straight into savings each payday"
+    }
+  ],
+  "text_deltas": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot where your money flows. Set a clear goal like building an emergency fund or paying off debt and link it to a reward that motivates you. Automate savings so a portion of your income goes straight into savings each paydayA great place to start is building an emergency fund to cover unexpected expenses. Saving for retirement and setting aside money for big purchases like a home or a car are also solid long term goals. Do any of those sound like a good starting point for you?",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 1.84
+}
