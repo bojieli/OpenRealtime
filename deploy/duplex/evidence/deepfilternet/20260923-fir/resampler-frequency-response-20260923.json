@@ -1,0 +1,66 @@
+{
+  "method": "one second integer PCM sine, identity frame function; discard first 100 ms, estimate fundamental amplitude; no model inference",
+  "source_sha256": "503da11b25a90169436e93c60993d7884523c6f0a59cebb615052d63c6eb1157",
+  "rows": [
+    {
+      "sample_rate": 16000,
+      "frequency_hz": 250,
+      "gain_db": -0.009
+    },
+    {
+      "sample_rate": 16000,
+      "frequency_hz": 1000,
+      "gain_db": -0.15
+    },
+    {
+      "sample_rate": 16000,
+      "frequency_hz": 3000,
+      "gain_db": -1.393
+    },
+    {
+      "sample_rate": 16000,
+      "frequency_hz": 6000,
+      "gain_db": -6.174
+    },
+    {
+      "sample_rate": 24000,
+      "frequency_hz": 250,
+      "gain_db": -0.003
+    },
+    {
+      "sample_rate": 24000,
+      "frequency_hz": 1000,
+      "gain_db": -0.056
+    },
+    {
+      "sample_rate": 24000,
+      "frequency_hz": 3000,
+      "gain_db": -0.505
+    },
+    {
+      "sample_rate": 24000,
+      "frequency_hz": 6000,
+      "gain_db": -2.041
+    },
+    {
+      "sample_rate": 48000,
+      "frequency_hz": 250,
+      "gain_db": 0.0
+    },
+    {
+      "sample_rate": 48000,
+      "frequency_hz": 1000,
+      "gain_db": -0.0
+    },
+    {
+      "sample_rate": 48000,
+      "frequency_hz": 3000,
+      "gain_db": -0.0
+    },
+    {
+      "sample_rate": 48000,
+      "frequency_hz": 6000,
+      "gain_db": 0.0
+    }
+  ]
+}

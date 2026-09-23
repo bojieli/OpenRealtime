@@ -1,0 +1,65 @@
+{
+  "scope": "single-session direct stream processing, not HTTP or paced concurrency",
+  "load": [
+    14.681640625,
+    13.53173828125,
+    13.3037109375
+  ],
+  "source_sha256": "0cdde6970372cdcf74a6c821ab7f2cf6e62c2f544f00e0a7334f17c01cd4609b",
+  "rows": [
+    {
+      "rate": 16000,
+      "stream": "DeepFilterStream",
+      "packets": 100,
+      "packet_ms": 100,
+      "processing_ms_p50": 5.75121003203094,
+      "processing_ms_p95": 8.040358079597354,
+      "processing_ms_max": 9.82727576047182
+    },
+    {
+      "rate": 16000,
+      "stream": "FIRDeepFilterStream",
+      "packets": 100,
+      "packet_ms": 100,
+      "processing_ms_p50": 6.995753385126591,
+      "processing_ms_p95": 8.218486979603767,
+      "processing_ms_max": 8.669743780046701
+    },
+    {
+      "rate": 24000,
+      "stream": "DeepFilterStream",
+      "packets": 100,
+      "packet_ms": 100,
+      "processing_ms_p50": 7.627005223184824,
+      "processing_ms_p95": 9.792470932006836,
+      "processing_ms_max": 10.274768806993961
+    },
+    {
+      "rate": 24000,
+      "stream": "FIRDeepFilterStream",
+      "packets": 100,
+      "packet_ms": 100,
+      "processing_ms_p50": 7.5141009874641895,
+      "processing_ms_p95": 9.907326544634998,
+      "processing_ms_max": 11.388765648007393
+    },
+    {
+      "rate": 48000,
+      "stream": "DeepFilterStream",
+      "packets": 100,
+      "packet_ms": 100,
+      "processing_ms_p50": 8.498733630403876,
+      "processing_ms_p95": 12.5480224378407,
+      "processing_ms_max": 13.515148311853409
+    },
+    {
+      "rate": 48000,
+      "stream": "FIRDeepFilterStream",
+      "packets": 100,
+      "packet_ms": 100,
+      "processing_ms_p50": 7.685698801651597,
+      "processing_ms_p95": 10.481201717630027,
+      "processing_ms_max": 12.680764775723219
+    }
+  ]
+}
