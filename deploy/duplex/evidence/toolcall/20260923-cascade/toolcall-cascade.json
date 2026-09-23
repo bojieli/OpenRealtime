@@ -1,0 +1,254 @@
+{
+  "suite": "toolcall",
+  "cell": {
+    "name": "cascade-voxtral-qwen3-kyutai",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "d0225ace78d498db9985501cee8eb34d3a522ce1",
+    "modified": false,
+    "executable_sha256": "a301f4f6f99ba05b3eb7187164a7e3ef55c9ae309684839e1bcca0a1d0a0ed8e",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-23T21:32:55Z",
+    "finished_at": "2026-09-23T21:36:31Z"
+  },
+  "expected_tasks": 10,
+  "tasks": [
+    {
+      "id": "weather-paris",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "What's the weather like in Paris right now?",
+        "spoken_after_result": "The current weather in Paris is light rain, with a temperature of 17°C. It's a mild day overall!",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "weather-tokyo",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "How warm is it in Tokyo today?",
+        "spoken_after_result": "The current temperature in Tokyo is 24°C, and the weather is sunny. Let me know if you'd like additional details!",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "weather-london",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "Is it going to rain in London?",
+        "spoken_after_result": "It is currently raining heavily in London, with a temperature of 12°C. You may want to carry an umbrella!",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "add-small",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "Can you add seventeen and twenty-five for me?",
+        "spoken_after_result": "The sum of 17 and 25 is 42.",
+        "tool": "add_numbers"
+      }
+    },
+    {
+      "id": "add-large",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "What is one hundred and twelve plus thirty?",
+        "spoken_after_result": "The sum of 112 and 30 is 142.",
+        "tool": "add_numbers"
+      }
+    },
+    {
+      "id": "timer-ten",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "Set a timer for ten minutes, please.",
+        "spoken_after_result": "The 10-minute timer is now running and will finish at 3:40 PM. Let me know if you need anything else!",
+        "tool": "set_timer"
+      }
+    },
+    {
+      "id": "timer-five",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "Start a five minute timer.",
+        "spoken_after_result": "The five-minute timer has been started and will end at 3:35 PM. Let me know if you need anything else!",
+        "tool": "set_timer"
+      }
+    },
+    {
+      "id": "currency-usd-eur",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "correct_calls": 1,
+        "result_spoken": 1,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "request": "How much is fifty US dollars in euros?",
+        "spoken_after_result": "50 US dollars is equivalent to 46.1 euros.",
+        "tool": "convert_currency"
+      }
+    },
+    {
+      "id": "correction-weather",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "correct_calls": 0,
+        "result_spoken": 0,
+        "stale_calls": 0,
+        "tool_calls": 0
+      },
+      "notes": {
+        "failure": "no tool call",
+        "request": "What's the weather in Rome... sorry, I mean Madrid?",
+        "spoken_after_result": "",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "correction-add",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "correct_calls": 0,
+        "result_spoken": 0,
+        "stale_calls": 0,
+        "tool_calls": 1
+      },
+      "notes": {
+        "failure": "wrong tool or arguments: set_timer {\"minutes\": 19}",
+        "request": "Add eight and nine. No, wait, eight and nineteen.",
+        "spoken_after_result": "The 19-minute timer is set and will end at 3:49 PM.The 19-minute timer is now active and will end at 3:49 PM. Let me know if you need anything else!",
+        "tool": "add_numbers"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 10,
+    "failed": 0,
+    "passed": 8,
+    "pass_rate": 0.8,
+    "complete": true,
+    "distributions": {
+      "correct_calls": {
+        "count": 10,
+        "unit": "count",
+        "min": 0,
+        "p50": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "mean": 0.8
+      },
+      "result_spoken": {
+        "count": 10,
+        "unit": "count",
+        "min": 0,
+        "p50": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "mean": 0.8
+      },
+      "stale_calls": {
+        "count": 10,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "tool_calls": {
+        "count": 10,
+        "unit": "count",
+        "min": 0,
+        "p50": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "mean": 0.9
+      }
+    }
+  }
+}

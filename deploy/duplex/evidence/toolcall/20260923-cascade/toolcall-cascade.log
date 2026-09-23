@@ -1,0 +1,24 @@
+[1/10] weather-paris
+[2/10] weather-tokyo
+[3/10] weather-london
+[4/10] add-small
+[5/10] add-large
+[6/10] timer-ten
+[7/10] timer-five
+[8/10] currency-usd-eur
+[9/10] correction-weather
+[10/10] correction-add
+
+tasks  : 10 completed, 0 failed, of 10 expected
+passed : 8 of 10
+  weather-paris        passed=true  
+  weather-tokyo        passed=true  
+  weather-london       passed=true  
+  add-small            passed=true  
+  add-large            passed=true  
+  timer-ten            passed=true  
+  timer-five           passed=true  
+  currency-usd-eur     passed=true  
+  correction-weather   passed=false no tool call
+  correction-add       passed=false wrong tool or arguments: set_timer {"minutes": 19}
+written to .runtime/duplex-plan/results/native/validate-player-toolcall/toolcall-cascade.json
