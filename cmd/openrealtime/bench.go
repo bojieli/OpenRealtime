@@ -81,7 +81,7 @@ type meetingReviewCLIResources struct {
 // users get is not a measurement of anything.
 func runBench(arguments []string, output io.Writer) error {
 	if len(arguments) == 0 {
-		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|anchor-realtime-cu-review|verify-realtime-cu-review|fdb|fdbv3|fdbench|tau-voice|dynacu|review-candidate|verify-candidate-review> [flags]")
+		return errors.New("usage: openrealtime bench <execution|architecture|meeting|realtime-cu|anchor-realtime-cu-review|verify-realtime-cu-review|fdb|fdbv3|fdbench|toolcall|tau-voice|dynacu|review-candidate|verify-candidate-review> [flags]")
 	}
 	suite := strings.ToLower(strings.TrimSpace(arguments[0]))
 	switch suite {
@@ -93,6 +93,8 @@ func runBench(arguments []string, output io.Writer) error {
 		return runFDB(arguments[1:], output)
 	case "fdbench", "fd-bench":
 		return runFDBench(arguments[1:], output)
+	case "toolcall", "tool-call":
+		return runToolCall(arguments[1:], output)
 	case "fdbv3", "fdb-v3":
 		return runFDBv3(arguments[1:], output)
 	case "tau-voice", "tauvoice", "tau":

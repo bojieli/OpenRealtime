@@ -1,0 +1,228 @@
+{
+  "synthesis": {
+    "url": "http://127.0.0.1:9125",
+    "voice": "default",
+    "model": "kyutai/tts-1.6b-en_fr",
+    "sample_rate": 24000,
+    "leading_silence_s": 0.5
+  },
+  "tasks": [
+    {
+      "id": "weather-paris",
+      "text": "What's the weather like in Paris right now?",
+      "tool": "get_weather",
+      "arguments": {
+        "city": "Paris"
+      },
+      "result": {
+        "city": "Paris",
+        "temperature_c": 17,
+        "condition": "light rain"
+      },
+      "spoken": [
+        "17",
+        "seventeen"
+      ],
+      "audio": "weather-paris.wav",
+      "seconds": 3.22,
+      "sha256": "b73e4aac261e7afbcadb3352a77a39023dc8555d6f29d48cf580ed527c10ac14"
+    },
+    {
+      "id": "weather-tokyo",
+      "text": "How warm is it in Tokyo today?",
+      "tool": "get_weather",
+      "arguments": {
+        "city": "Tokyo"
+      },
+      "result": {
+        "city": "Tokyo",
+        "temperature_c": 24,
+        "condition": "sunny"
+      },
+      "spoken": [
+        "24",
+        "twenty-four",
+        "twenty four"
+      ],
+      "audio": "weather-tokyo.wav",
+      "seconds": 2.5,
+      "sha256": "6be0307e811004c563847230510b56cbe09315a9716878b19915458b6a33988e"
+    },
+    {
+      "id": "weather-london",
+      "text": "Is it going to rain in London?",
+      "tool": "get_weather",
+      "arguments": {
+        "city": "London"
+      },
+      "result": {
+        "city": "London",
+        "temperature_c": 12,
+        "condition": "heavy rain"
+      },
+      "spoken": [
+        "12",
+        "twelve",
+        "heavy"
+      ],
+      "audio": "weather-london.wav",
+      "seconds": 2.5,
+      "sha256": "909f1338d960df7dbcc063ade407c062bdbec47dfc63f8b1dde071edfb6e167b"
+    },
+    {
+      "id": "add-small",
+      "text": "Can you add seventeen and twenty-five for me?",
+      "tool": "add_numbers",
+      "arguments": {
+        "a": 17,
+        "b": 25
+      },
+      "result": {
+        "sum": 42
+      },
+      "spoken": [
+        "42",
+        "forty-two",
+        "forty two"
+      ],
+      "audio": "add-small.wav",
+      "seconds": 3.14,
+      "sha256": "704faf3004f323aa7595989befdc1823b348134c6dde838588a24ec4d8c3eb85"
+    },
+    {
+      "id": "add-large",
+      "text": "What is one hundred and twelve plus thirty?",
+      "tool": "add_numbers",
+      "arguments": {
+        "a": 112,
+        "b": 30
+      },
+      "result": {
+        "sum": 142
+      },
+      "spoken": [
+        "142",
+        "one hundred forty-two",
+        "one hundred and forty-two",
+        "one hundred forty two",
+        "one hundred and forty two"
+      ],
+      "audio": "add-large.wav",
+      "seconds": 4.34,
+      "sha256": "b2be9ac7f20362ec6f50b95c1a75b9a8f16c37db43f38f712bc1069d12bf4b1f"
+    },
+    {
+      "id": "timer-ten",
+      "text": "Set a timer for ten minutes, please.",
+      "tool": "set_timer",
+      "arguments": {
+        "minutes": 10
+      },
+      "result": {
+        "status": "set",
+        "minutes": 10,
+        "ends_at": "3:40 PM"
+      },
+      "spoken": [
+        "3:40",
+        "three forty",
+        "3 40"
+      ],
+      "audio": "timer-ten.wav",
+      "seconds": 3.14,
+      "sha256": "3a0b4e9d1c44464b9a2d5743eddf4bdb0499d9f093744ee331957ec680d7c88e"
+    },
+    {
+      "id": "timer-five",
+      "text": "Start a five minute timer.",
+      "tool": "set_timer",
+      "arguments": {
+        "minutes": 5
+      },
+      "result": {
+        "status": "set",
+        "minutes": 5,
+        "ends_at": "3:35 PM"
+      },
+      "spoken": [
+        "3:35",
+        "three thirty-five",
+        "three thirty five",
+        "3 35"
+      ],
+      "audio": "timer-five.wav",
+      "seconds": 2.42,
+      "sha256": "a8a309adcfa97ec52611e678f95e2bb537d7f06f36ac6283c3275bf925b3d6c7"
+    },
+    {
+      "id": "currency-usd-eur",
+      "text": "How much is fifty US dollars in euros?",
+      "tool": "convert_currency",
+      "arguments": {
+        "amount": 50,
+        "from": "USD",
+        "to": "EUR"
+      },
+      "result": {
+        "amount": 46.1,
+        "currency": "EUR"
+      },
+      "spoken": [
+        "46",
+        "forty-six",
+        "forty six"
+      ],
+      "audio": "currency-usd-eur.wav",
+      "seconds": 3.46,
+      "sha256": "7e0d907a2535f1ca344121119150e43ac58e50d3879cafa688c03cd3b4c93980"
+    },
+    {
+      "id": "correction-weather",
+      "text": "What's the weather in Rome... sorry, I mean Madrid?",
+      "tool": "get_weather",
+      "arguments": {
+        "city": "Madrid"
+      },
+      "stale_arguments": {
+        "city": "Rome"
+      },
+      "result": {
+        "city": "Madrid",
+        "temperature_c": 29,
+        "condition": "clear"
+      },
+      "spoken": [
+        "29",
+        "twenty-nine",
+        "twenty nine"
+      ],
+      "audio": "correction-weather.wav",
+      "seconds": 4.34,
+      "sha256": "f983c9c6f3403e9893014eeea36876bce99ad025e6b016b5d1baebb83db065f2"
+    },
+    {
+      "id": "correction-add",
+      "text": "Add eight and nine. No, wait, eight and nineteen.",
+      "tool": "add_numbers",
+      "arguments": {
+        "a": 8,
+        "b": 19
+      },
+      "stale_arguments": {
+        "a": 8,
+        "b": 9
+      },
+      "result": {
+        "sum": 27
+      },
+      "spoken": [
+        "27",
+        "twenty-seven",
+        "twenty seven"
+      ],
+      "audio": "correction-add.wav",
+      "seconds": 4.5,
+      "sha256": "fb4ae970738c904068470998a450d1466d6bee99a69bf441147bfc4b786425a2"
+    }
+  ]
+}
