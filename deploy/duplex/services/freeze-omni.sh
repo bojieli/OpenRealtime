@@ -50,7 +50,7 @@ case ${1:-status} in
     # The lease then lives on fd 9, inherited by the engine, for exactly as
     # long as the engine runs. The recorded PID leads the process group.
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True HF_HUB_OFFLINE=1 setsid nohup \
-      bash -c 'echo $$ > "$0"; shift
+      bash -c 'echo $$ > "$0"
         need=$1; lock=$2; shift 2; waited=0
         free_mib() {
           local raw
