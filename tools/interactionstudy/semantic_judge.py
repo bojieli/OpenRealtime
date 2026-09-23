@@ -22,9 +22,11 @@ HERE = Path(__file__).resolve().parent
 SYSTEM = ("You evaluate one assistant turn in a live spoken conversation. You receive what the user "
           "said, the goal the assistant's speech should meet in a fixed time window, and a speech "
           "recognition transcript of everything the assistant audibly said in that window. Recognition "
-          "may misspell words. Judge only the transcript: an acknowledgement, a promise, a question "
-          "or a greeting does not meet a goal that asks for content. Do not credit content the goal "
-          "forbids. Reply with JSON only: {\"meets\": true|false, \"quote\": \"words from the transcript "
+          "may misspell words. The window can begin with the end of speech that was already under way "
+          "before the user spoke; that interrupted fragment is expected and neither meets nor fails the "
+          "goal by itself. Judge what the assistant says after it. Judge only the transcript: an "
+          "acknowledgement, a promise, a question or a greeting does not meet a goal that asks for content. "
+          "Do not credit content the goal forbids. Reply with JSON only: {\"meets\": true|false, \"quote\": \"words from the transcript "
           "that decide it, or empty\"}.")
 
 
@@ -123,6 +125,10 @@ VALIDATION = [
     ('st-02', 'skip', 'Continue feeding your starter daily with equal parts flour and water.', False),
     ('pa-03', 'should-correct', "That's unsafe. Adding more acid to neutralize a spill is incorrect.", True),
     ('pa-03', 'should-correct', 'What lab safety instructions are you reviewing?', False),
+    # Boundary cases added with the interrupted-fragment rule (2026-09-23):
+    # the rule must not let a leading fragment carry an empty turn.
+    ('sc-02', 'corrected', 'The butter in a pan over medium. Okay, sure.', False),
+    ('st-02', 'skip', 'Feed it once a day with equal. To bake the loaf, preheat the oven and score the dough.', True),
 ]
 
 
