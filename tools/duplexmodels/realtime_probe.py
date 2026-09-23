@@ -22,6 +22,22 @@ from websockets.sync.client import connect
 RATE = 24_000
 
 
+def wait_configured(ws, timeout: float) -> list[dict]:
+    """Wait for this fresh connection's update acknowledgement, never just created."""
+    deadline = time.monotonic() + timeout
+    events = []
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("session.updated was not received before readiness deadline")
+        event = json.loads(ws.recv(timeout=remaining))
+        events.append({"received_monotonic": time.monotonic(), "event": event})
+        if event.get("type") == "error":
+            raise RuntimeError(f"session configuration failed: {event}")
+        if event.get("type") == "session.updated":
+            return events
+
+
 def load(path: str, channel: int) -> np.ndarray:
     import soundfile as sf  # noqa: PLC0415
 
@@ -47,7 +63,12 @@ def main() -> None:
                         help="answer any response.function_call_arguments.done with this output after --delay")
     parser.add_argument("--delay", type=float, default=3.0)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--wait-configured", action="store_true",
+                        help="start replay after session.updated; preserve setup timing separately")
+    parser.add_argument("--ready-timeout", type=float, default=60.0)
     arguments = parser.parse_args()
+    if arguments.ready_timeout <= 0:
+        parser.error("--ready-timeout must be positive")
 
     audio = load(arguments.wav, arguments.channel)
     if arguments.trim > 0:
@@ -59,7 +80,9 @@ def main() -> None:
     events: list[dict] = []
     t0 = None
     pending_outputs: list[tuple[float, str]] = []
+    connect_started = time.monotonic()
     with connect(arguments.endpoint, max_size=None, open_timeout=30) as ws:
+        connected = time.monotonic()
         session: dict = {"type": "realtime", "audio": {
             "input": {"format": {"type": "audio/pcm", "rate": RATE}},
             "output": {"format": {"type": "audio/pcm", "rate": RATE}}}}
@@ -68,7 +91,16 @@ def main() -> None:
         if arguments.instructions:
             session["instructions"] = arguments.instructions
         ws.send(json.dumps({"type": "session.update", "session": session}))
+        setup_events = wait_configured(ws, arguments.ready_timeout) if arguments.wait_configured else []
         t0 = time.monotonic()
+        events.append({"t": 0, "type": "client.replay_started",
+                       "wait_configured": arguments.wait_configured,
+                       "connection_ms": round((connected - connect_started) * 1000, 3),
+                       "connected_to_replay_ms": round((t0 - connected) * 1000, 3),
+                       "timing_basis": "t is relative to replay start; received events are not rendered playback"})
+        for entry in setup_events:
+            events.append({**entry["event"], "t": round(entry["received_monotonic"] - t0, 3),
+                           "phase": "configuration"})
         sent = 0
         packet = 480
         while sent < len(timeline):
