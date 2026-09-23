@@ -60,8 +60,8 @@ shown here, is `python tools/duplexmodels/asr_summary.py`.
 The raw files behind this table were lost in the 2026-09-23 cleanup. A
 [retained rerun](../deploy/duplex/evidence/asr/20260923-rerun/) of the
 Qwen3-ASR, Voxtral, Nemotron, Kyutai and FunASR rows on the same seeded
-fixtures reproduces their error rates within 0.9 points. Deepgram (billed) was
-not rerun.
+fixtures reproduces their error rates within 0.9 points, and Deepgram Nova-3
+reproduces 4.7% / 13.2% (table 4.5% / 12.9%).
 
 Readings:
 

@@ -16,7 +16,7 @@ full reports. Synthesized audio was not retained; the scores are in the reports.
 - CosyVoice was not measured: its long-running service answered `/health`
   with HTTP 500 (`cosyvoice-health-failure.log`). Restarting it would
   require a model load, which host memory did not allow.
-- Deepgram Aura was not rerun: it is a billed external API.
+- Deepgram Aura 2 (`aura-2-thalia-en`, :9126 service, authorized) was run later: complete-text TTFA p50 0.325 s, RTF 0.44, WER 0.003; audio before the held-back rest on 6/6 sentences; 0 frames after cancel.
 
 Held-back prefix (first half appended, 1.5 s wait): Qwen3-TTS produced audio
 before the rest on 6/6 English and 6/6 Mandarin sentences, and Kyutai on 4/6.

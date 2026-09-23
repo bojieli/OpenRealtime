@@ -20,10 +20,12 @@ reference. `summary.md` is `asr_summary.py` over those records.
 | Qwen3-ASR 0.6B (`qwen-asr`, temporarily started on :9102) | en | 2.1% WER | 2.0% | 655 ms | 847 ms |
 | Voxtral Mini 4B Realtime (`vllm-realtime`, temporarily started on :9101) | en | 2.8% WER | 2.8% | 1,701 ms | 1,702 ms |
 | Voxtral Mini 4B Realtime | zh | 9.1% CER | 9.5% | 2,701 ms | 2,701 ms |
+| Deepgram Nova-3 (closed, local key) | en | 4.7% WER | 4.5% | 1,200 ms | 1,101 ms |
+| Deepgram Nova-3 | zh | 13.2% CER | 12.9% | 2,201 ms | 2,101 ms |
 
 No run withdrew committed text or rewrote shown text, and none failed.
 Error rates reproduce within 0.9 points. First-hypothesis times match within
 about 0.2 s, except multilingual English, which is 0.5 s earlier here. The
 services' load and warm state differ between runs, so latency is not a
 controlled comparison.
-Qwen3-ASR commits only at finalization (first committed p50 6,267 ms; table 6,054 ms); its 698 rewrites are provisional-text revisions, not withdrawals. Not rerun: Deepgram, because it is a billed external API; its rows remain prose-only in the results document.
+Qwen3-ASR commits only at finalization (first committed p50 6,267 ms; table 6,054 ms); its 698 rewrites are provisional-text revisions, not withdrawals. Deepgram ran with the user's authorization and local key. It rewrites text it has already shown (39 en / 73 zh), as in the original table, and never withdraws committed text. Every row of the published table is now retained.
