@@ -3,7 +3,8 @@
 # Upstream pins torch 2.5.1/cu124, which has no Blackwell kernels; the lychee
 # venv runs torch 2.7.1+cu128. The tree is copied out of the pinned Lychee-FD
 # source, patched (lychee-vllm-sm120.patch: sm_120 in the arch list, no
-# vllm-flash-attn - Lychee uses XFORMERS), and its native ops compiled in place.
+# vllm-flash-attn - Lychee uses XFORMERS, with its Hopper-only FA3 path off), and
+# its native ops compiled in place.
 # lychee-fd.sh puts the result first on PYTHONPATH.
 #
 #   deploy/duplex/services/build-lychee-vllm.sh     # MAX_JOBS (default 6) bounds nvcc memory

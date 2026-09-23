@@ -14,7 +14,7 @@
 #            Here: torch 2.7.1+cu128, xformers 0.0.31, the vendored patched vLLM 0.6.5 rebuilt from
 #            source for sm_120 (.runtime/duplex-plan/build/lychee-vllm, patch
 #            deploy/duplex/services/lychee-vllm-sm120.patch: arch list + no vllm-flash-attn),
-#            attention through the XFORMERS backend. venv .runtime/duplex-plan/venvs/lychee
+#            attention through the XFORMERS backend with its FA3 path disabled. venv .runtime/duplex-plan/venvs/lychee
 #            (.runtime/duplex-plan/setup-lychee.sh, then deploy/duplex/services/build-lychee-vllm.sh).
 #
 # Large model: both processes run under the GPU large-model lease, which is

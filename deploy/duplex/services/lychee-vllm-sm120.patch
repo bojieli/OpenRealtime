@@ -36,3 +36,17 @@
  
  if _build_custom_ops():
      ext_modules.append(CMakeExtension(name="vllm._C"))
+--- a/vllm/attention/backends/xformers.py	2026-09-23 11:17:24.076745171 +0000
++++ b/vllm/attention/backends/xformers.py	2026-09-23 11:17:31.827906037 +0000
+@@ -4,6 +4,11 @@
+ 
+ import torch
+ from xformers import ops as xops
++
++# sm_120 build: xformers' FlashAttention-3 kernels are Hopper-only and fail with
++# "invalid argument" on Blackwell, yet the dispatcher tries them first. Use the
++# FlashAttention-2/CUTLASS operators, which run on sm_120.
++xops.fmha._set_use_fa3(False)
+ from xformers.ops.fmha.attn_bias import (AttentionBias,
+                                          BlockDiagonalCausalMask,
+                                          BlockDiagonalMask,
