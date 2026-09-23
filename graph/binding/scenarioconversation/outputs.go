@@ -590,24 +590,23 @@ func (session *session) acceptAdmissionOutcome(envelope element.Envelope) error 
 			pending = candidate
 		}
 	}
-	if pending == nil {
-		// A recogniser that ends the turn closes the stream through the
-		// endpoint policy, not through a frame's silence candidate, so its
-		// close names no audio caller still waiting. It is still the end of
-		// the current utterance: the next frame belongs to a new stream,
-		// exactly as after a silence close.
-		if outcome.Operation == "command" && outcome.Kind == acousticelements.OutcomeSucceeded &&
-			outcome.Code == "force_closed" && outcome.StreamID == session.audioStreamID(session.audioStream) {
-			if _, found := session.closedAudio[outcome.StreamID]; !found &&
-				len(session.closedAudio) >= maximumAdapterMemory {
-				session.audioMu.Unlock()
-				return errors.New("scenario conversation pending closed audio-stream bound reached")
-			}
-			session.closedAudio[outcome.StreamID] = struct{}{}
-			session.audioStream++
+	// A recognizer close may still name an audio request whose result was
+	// delivered but whose caller has not yet removed it. That completed
+	// request is not proof that its stream already closed.
+	if (pending == nil || (pending.completed && pending.streamID == outcome.StreamID)) &&
+		outcome.Operation == "command" && outcome.Kind == acousticelements.OutcomeSucceeded &&
+		outcome.Code == "force_closed" && outcome.StreamID == session.audioStreamID(session.audioStream) {
+		if _, found := session.closedAudio[outcome.StreamID]; !found &&
+			len(session.closedAudio) >= maximumAdapterMemory {
 			session.audioMu.Unlock()
-			return nil
+			return errors.New("scenario conversation pending closed audio-stream bound reached")
 		}
+		session.closedAudio[outcome.StreamID] = struct{}{}
+		session.audioStream++
+		session.audioMu.Unlock()
+		return nil
+	}
+	if pending == nil {
 		session.audioMu.Unlock()
 		// Command outcomes can legitimately arrive after the exact audio caller
 		// was released by a prior terminal state. They remain visible through

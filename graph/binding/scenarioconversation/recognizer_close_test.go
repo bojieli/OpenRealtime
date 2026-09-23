@@ -50,6 +50,55 @@ func TestRecognizerForceCloseAdvancesTheAudioStream(t *testing.T) {
 	}
 }
 
+// Delivering an audio result wakes its caller before that caller removes the
+// pending entry. A recognizer close can retain that frame as a causal parent
+// and arrive during this interval; completing audio did not close the stream.
+func TestRecognizerForceCloseAfterCompletedAudioAdvancesStream(t *testing.T) {
+	session := recognizerCloseSession()
+	stream := session.audioStreamID(1)
+	pending := &pendingAudio{itemID: "frame-1", streamID: stream, result: make(chan error, 1)}
+	session.audioOps[pending.itemID] = pending
+	send := func(operation, code string) error {
+		return session.acceptAdmissionOutcome(element.Envelope{
+			ItemID: operation + ":outcome", SessionID: session.sessionID,
+			CausalParents: []string{pending.itemID},
+			Payload: acousticelements.AdmissionOutcome{
+				Kind: acousticelements.OutcomeSucceeded, Operation: operation,
+				StreamID: stream, Code: code,
+			},
+		})
+	}
+	if err := send("audio", "admitted"); err != nil {
+		t.Fatal(err)
+	}
+	if result := <-pending.result; result != nil {
+		t.Fatal(result)
+	}
+	if err := send("command", "force_closed"); err != nil {
+		t.Fatal(err)
+	}
+	if session.audioStream != 2 {
+		t.Fatalf("recognizer close left audio stream at %d, want 2", session.audioStream)
+	}
+	if _, closed := session.closedAudio[stream]; !closed {
+		t.Fatal("closed stream was not retained for delayed activity")
+	}
+	if err := send("command", "force_closed"); err != nil {
+		t.Fatal(err)
+	}
+	if session.audioStream != 2 {
+		t.Fatal("duplicate close advanced the stream twice")
+	}
+	select {
+	case result := <-pending.result:
+		t.Fatalf("close answered completed audio again: %v", result)
+	default:
+	}
+	if err := send("audio", "admitted"); err == nil {
+		t.Fatal("duplicate audio outcome was accepted")
+	}
+}
+
 // The one frame in flight while its stream closed is refused as terminal. The
 // adapter has moved on, so that frame is the next utterance's first audio and
 // is sent again; while the adapter has not moved on, terminal audio stays an
