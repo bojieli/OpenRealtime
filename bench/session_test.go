@@ -1071,3 +1071,22 @@ func TestWaitConfiguredHoldsWebSocketReplayUntilSessionUpdated(t *testing.T) {
 		}
 	}
 }
+
+func TestPlayoutAudioBetweenCountsOverlapOnThePlayoutClock(t *testing.T) {
+	transcript := bench.Transcript{Moments: []bench.Moment{
+		// Both deltas arrive at once; the second plays after the first.
+		{AtMS: 1_000, Kind: bench.MomentAgentAudio, AudioMS: 500, PlayoutAtMS: 1_000},
+		{AtMS: 1_001, Kind: bench.MomentAgentAudio, AudioMS: 500, PlayoutAtMS: 1_500},
+	}}
+	if got := transcript.AudioBetween(1_200, 2_000); got != 0 {
+		t.Fatalf("arrival window counted %.0f ms", got)
+	}
+	got, known := transcript.PlayoutAudioBetween(1_200, 2_000)
+	if !known || got != 800 {
+		t.Fatalf("playout window = %.0f ms known=%v, want 800", got, known)
+	}
+	transcript.Moments = append(transcript.Moments, bench.Moment{AtMS: 3_000, Kind: bench.MomentAgentAudio, AudioMS: 50})
+	if _, known := transcript.PlayoutAudioBetween(0, 5_000); known {
+		t.Fatal("a delta without a playout position was mixed in")
+	}
+}

@@ -181,6 +181,28 @@ func (transcript Transcript) AudioBetween(fromMS, toMS float64) float64 {
 	return total
 }
 
+// PlayoutAudioBetween is how much agent audio a speaker was playing inside
+// the window: each delta occupies [PlayoutAtMS, PlayoutAtMS+AudioMS) on the
+// recorder's serialized playout clock, and only the overlap counts. It
+// reports false when any agent audio lacks a playout position, because mixing
+// arrival and playout times would measure neither.
+func (transcript Transcript) PlayoutAudioBetween(fromMS, toMS float64) (float64, bool) {
+	total := 0.0
+	for _, moment := range transcript.Moments {
+		if moment.Kind != MomentAgentAudio {
+			continue
+		}
+		if moment.PlayoutAtMS <= 0 {
+			return 0, false
+		}
+		start, end := max(fromMS, moment.PlayoutAtMS), min(toMS, moment.PlayoutAtMS+moment.AudioMS)
+		if end > start {
+			total += end - start
+		}
+	}
+	return total, true
+}
+
 // AudioStartedBetween is agent audio from turns that began inside the window.
 //
 // A silence check asks whether something in the window made the agent speak,

@@ -456,6 +456,13 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 		// scored before this was measured.
 		"event_audible_after_ms": retained.EventAudibleAfterMS,
 	}
+	// The same windows on the playout clock: what a non-flushing speaker was
+	// playing, rather than what had arrived. Reported, not scored.
+	if playing, known := transcript.PlayoutAudioBetween(eventMS-contactMS, eventMS); known {
+		outcome.Metrics["agent_playout_at_event_ms"] = playing
+		held, _ := transcript.PlayoutAudioBetween(eventMS, eventMS+yieldWindow)
+		outcome.Metrics["agent_playout_after_event_ms"] = held
+	}
 	outcome.Notes["agent_was_speaking"] = strconv.FormatBool(speaking)
 
 	if !speaking {
