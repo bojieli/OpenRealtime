@@ -22,3 +22,18 @@ text/audio token counts, vocoder completion, and received PCM. Compare finite
 input with a continuous wall-clock silence tail; preserve the original
 stalled fixtures. Do not relabel silence timeouts as model completion or
 extend timeouts to count the failures as passes.
+
+## Continuing-inference follow-up
+
+`round-activity.json` counts non-null timing fields among rounds completed
+in each stall's preceding eight seconds, parsed from the retained compressed
+logs. All 19 continuing-inference stalls have at least one round reporting
+`first_pcm_out_sec`. The short session has 12 such rounds; each of the 18
+long-session stalls has one. These are upstream production observations,
+not evidence of PCM delivered to the adapter or rendered by a client.
+
+Upstream `app.py` marks `pcm_out` when consuming a Token2Wav message, while
+`_emit_pcm_event` separately suppresses content hashes already seen. Therefore
+production timing alone does not prove delivery. The next reproduction must
+correlate production, hash suppression, SSE emission/receipt, and adapter
+mute/turn state. No root cause or repair is established by this audit.

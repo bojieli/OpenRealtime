@@ -1,0 +1,211 @@
+[
+  {
+    "session": "lfd-3925694-1790084308939",
+    "stall_ms": 1790084324159,
+    "completed_rounds_in_prior_8s": 22,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 16,
+      "first_t2w_submit_sec": 15,
+      "first_pcm_out_sec": 12,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084893815,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084904029,
+    "completed_rounds_in_prior_8s": 7,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 7,
+      "first_t2w_submit_sec": 7,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084914443,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084924053,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084933963,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084944272,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084954381,
+    "completed_rounds_in_prior_8s": 7,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 7,
+      "first_t2w_submit_sec": 7,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084964690,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084974198,
+    "completed_rounds_in_prior_8s": 9,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 9,
+      "first_t2w_submit_sec": 9,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084983407,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790084992815,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085003126,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085012539,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085022153,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085032269,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085041682,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085051794,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  },
+  {
+    "session": "lfd-3932799-1790084463977",
+    "stall_ms": 1790085061907,
+    "completed_rounds_in_prior_8s": 8,
+    "rounds_with_non_null_timing": {
+      "first_speaking_token_sec": 8,
+      "first_t2w_submit_sec": 8,
+      "first_pcm_out_sec": 1,
+      "generation_complete_rel_sec": 0
+    }
+  }
+]
