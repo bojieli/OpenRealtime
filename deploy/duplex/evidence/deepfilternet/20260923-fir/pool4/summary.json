@@ -1,0 +1,67 @@
+{
+  "pool_size": 4,
+  "load_start": [
+    15.9384765625,
+    14.19677734375,
+    13.6923828125
+  ],
+  "load_end": [
+    13.490234375,
+    13.763671875,
+    13.56298828125
+  ],
+  "statuses": [
+    {
+      "session": 0,
+      "exit_code": 0
+    },
+    {
+      "session": 1,
+      "exit_code": 0
+    },
+    {
+      "session": 2,
+      "exit_code": 0
+    },
+    {
+      "session": 3,
+      "exit_code": 0
+    }
+  ],
+  "outliers": [],
+  "first_requests": [
+    {
+      "sequence": 0,
+      "source_ms": 0.0,
+      "started_replay_ms": 0.010015908628702164,
+      "roundtrip_ms": 10.90954802930355,
+      "server_processing_ms": 9.204,
+      "send_lateness_ms": 0.010015908628702164
+    },
+    {
+      "sequence": 0,
+      "source_ms": 0.0,
+      "started_replay_ms": 0.012028031051158905,
+      "roundtrip_ms": 11.281015817075968,
+      "server_processing_ms": 9.2,
+      "send_lateness_ms": 0.012028031051158905
+    },
+    {
+      "sequence": 0,
+      "source_ms": 0.0,
+      "started_replay_ms": 0.012503005564212799,
+      "roundtrip_ms": 10.296948719769716,
+      "server_processing_ms": 8.09,
+      "send_lateness_ms": 0.012503005564212799
+    },
+    {
+      "sequence": 0,
+      "source_ms": 0.0,
+      "started_replay_ms": 0.012869015336036682,
+      "roundtrip_ms": 10.10331092402339,
+      "server_processing_ms": 8.035,
+      "send_lateness_ms": 0.012869015336036682
+    }
+  ],
+  "max_ms": 24.24689009785652
+}

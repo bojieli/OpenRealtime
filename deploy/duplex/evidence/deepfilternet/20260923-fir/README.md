@@ -54,3 +54,10 @@ on the request path. This is a startup bottleneck candidate, not a measured
 allocation attribution. Per-request timings are retained; failures are not
 excluded as warmup. Next comparison should provision four fresh states and
 retain all first packets in the scoring population.
+
+Four-prebuilt-state comparison (`pool4/`): `--state-pool 4`, four independently
+paced 30-second sessions, all 1,200 requests scored including startup.
+Zero 50 ms misses; first requests 10.10–11.28 ms, overall maximum 24.25 ms.
+This supports pool exhaustion as a startup bottleneck, but is not a repeated,
+randomized capacity campaign. Shared-host load and request phasing can differ.
+The previous failed runs remain retained above.

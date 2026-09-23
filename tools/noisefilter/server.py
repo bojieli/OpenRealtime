@@ -403,13 +403,18 @@ def main():
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8125)
     parser.add_argument("--max-sessions", type=int, default=32)
+    parser.add_argument("--state-pool", type=int, default=2,
+                        help="fresh DeepFilterNet states prepared before accepting traffic")
     args = parser.parse_args()
     if args.max_sessions < 1:
         parser.error("max-sessions must be positive")
+    if args.state_pool < 0:
+        parser.error("state-pool must be nonnegative")
     if args.model.startswith("deepfilternet"):
         if not args.deepfilter_model:
             parser.error("--model deepfilternet requires --deepfilter-model")
-        model = DeepFilterNet(args.library, args.deepfilter_model, args.atten_lim_db)
+        model = DeepFilterNet(args.library, args.deepfilter_model, args.atten_lim_db,
+                              pool=args.state_pool)
         stream_factory, delay, frame = DeepFilterStream, model.audio_delay_ms, model.frame_ms
         if args.model == "deepfilternet-fir":
             stream_factory, delay = FIRDeepFilterStream, 42
@@ -421,7 +426,8 @@ def main():
         warm.process(bytes(4800))
     warm.close()
     if args.model.startswith("deepfilternet"):
-        model.wait_ready()
+        if not model.wait_ready():
+            raise RuntimeError("DeepFilterNet state pool did not become ready")
     server = ThreadingHTTPServer(
         (args.host, args.port),
         handler_for(

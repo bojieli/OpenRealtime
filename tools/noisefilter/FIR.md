@@ -8,10 +8,15 @@ NumPy and SciPy in addition to the existing libDF model/library. For example:
   --model deepfilternet-fir \
   --library .runtime/deepfilter-filter/libdf.so \
   --deepfilter-model .runtime/deepfilter-filter/DeepFilterNet3_onnx.tar.gz \
-  --port 9166
+  --port 9166 --state-pool 4
 ```
 
 Set the Go audio-filter configuration's model to `deepfilternet-fir` as well.
+`--state-pool` controls how many fresh model states are prepared before the
+service declares readiness (default two). A burst beyond the available pool
+builds additional states on the request path and can miss its first-packet
+deadline. Four prebuilt states removed startup misses in one four-session,
+30-second comparison; this is not an unlimited admission guarantee.
 The service and client enforce 42 ms waveform delay: 30 ms model, 10 ms
 packet FIFO, and two 1 ms causal FIR delays. The original `deepfilternet`
 option retains its 40 ms contract for matched comparisons.
