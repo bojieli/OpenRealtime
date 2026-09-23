@@ -1,0 +1,20 @@
+2026-09-23T10:10:22Z sidecar launcher 3728646
+2026-09-23T10:10:36Z sidecar ready
+2026-09-23T10:10:38Z reconnect 1 exit 0
+2026-09-23T10:10:39Z reconnect 2 exit 0
+2026-09-23T10:10:41Z reconnect 3 exit 0
+2026-09-23T10:10:42Z server 3729886 healthz 0
+2026-09-23T10:11:02Z readiness gated 1 exit 0
+2026-09-23T10:11:24Z readiness ungated 1 exit 0
+2026-09-23T10:11:46Z readiness gated 2 exit 0
+2026-09-23T10:12:09Z readiness ungated 2 exit 0
+2026-09-23T10:12:31Z readiness gated 3 exit 0
+2026-09-23T10:12:53Z readiness ungated 3 exit 0
+2026-09-23T10:13:15Z readiness gated 4 exit 0
+2026-09-23T10:13:37Z readiness ungated 4 exit 0
+2026-09-23T10:13:59Z readiness gated 5 exit 0
+2026-09-23T10:14:22Z readiness ungated 5 exit 0
+2026-09-23T10:14:44Z readiness gated 6 exit 0
+2026-09-23T10:15:06Z readiness ungated 6 exit 0
+2026-09-23T10:15:12Z sidecar stopped
+2026-09-23T10:15:12Z done
