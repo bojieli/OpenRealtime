@@ -184,3 +184,36 @@ func TestWithoutResponseIdentityTheGapStillEndsTheStream(t *testing.T) {
 		t.Fatalf("latency = %.0f ms found=%v, want the stream ending at 5,400", latency, found)
 	}
 }
+
+// Prefetched audio arrives before the interruption and plays after it.
+func TestPlayoutLatencyCountsAudioQueuedBeforeTheEvent(t *testing.T) {
+	var moments []bench.Moment
+	// A 4-second answer delivered within 100 ms of starting, as an unpaced
+	// server sends it; the speaker plays it from 4,000 to 8,000.
+	for index := 0; index < 80; index++ {
+		moments = append(moments, bench.Moment{
+			AtMS: 4_000 + float64(index)*1.25, Kind: bench.MomentAgentAudio, AudioMS: 50,
+			ResponseID: "resp_first", PlayoutAtMS: 4_000 + float64(index)*50,
+		})
+	}
+	transcript := bench.Transcript{Moments: moments}
+	if latency, found := stopLatency(transcript, 5_000); found {
+		t.Fatalf("arrival-time latency found audio after the event: %.0f ms", latency)
+	}
+	latency, found := playoutStopLatency(transcript, 5_000)
+	if !found || latency != 3_000 {
+		t.Fatalf("playout latency = %.0f ms found=%v, want 3,000", latency, found)
+	}
+}
+
+func TestPlayoutLatencyIsNotGuessedWithoutIdentityOrPositions(t *testing.T) {
+	for name, moment := range map[string]bench.Moment{
+		"no response id":  {AtMS: 4_900, Kind: bench.MomentAgentAudio, AudioMS: 50, PlayoutAtMS: 4_900},
+		"no playout time": {AtMS: 4_900, Kind: bench.MomentAgentAudio, AudioMS: 50, ResponseID: "resp"},
+	} {
+		transcript := bench.Transcript{Moments: []bench.Moment{moment}}
+		if _, found := playoutStopLatency(transcript, 5_000); found {
+			t.Fatalf("%s: playout latency reported", name)
+		}
+	}
+}

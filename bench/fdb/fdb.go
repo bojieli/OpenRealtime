@@ -475,6 +475,9 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 		// did is how long it kept going. A ratio of audio volumes would
 		// conflate "stopped late" with "never stopped", and those are
 		// different failures with different causes.
+		if playout, known := playoutStopLatency(transcript, eventMS); known {
+			outcome.Metrics["playout_yield_latency_no_flush_ms"] = playout
+		}
 		latency, found := stopLatency(transcript, eventMS)
 		if !found {
 			// No audio at all after the event: it stopped immediately.
@@ -560,6 +563,41 @@ func stopLatency(transcript bench.Transcript, eventMS float64) (float64, bool) {
 		return 0, false
 	}
 	return last - eventMS, true
+}
+
+// playoutStopLatency is how long the interrupted response kept sounding on a
+// speaker that plays every received delta in order and never flushes.
+//
+// stopLatency reads arrival times. A server that sends an answer faster than
+// realtime can deliver all of it before the interruption and look as if it
+// yielded at once, while a device still has seconds of it queued. This is the
+// other bound: a client that clears its buffer on speech_started hears less.
+// It needs response identity and playout positions; without them the number
+// would be a guess, so it is not reported.
+func playoutStopLatency(transcript bench.Transcript, eventMS float64) (float64, bool) {
+	interrupted := ""
+	for _, moment := range transcript.Moments {
+		if moment.Kind == bench.MomentAgentAudio && moment.AtMS <= eventMS {
+			interrupted = moment.ResponseID
+		}
+	}
+	if interrupted == "" {
+		return 0, false
+	}
+	end := -1.0
+	for _, moment := range transcript.Moments {
+		if moment.Kind != bench.MomentAgentAudio || moment.ResponseID != interrupted {
+			continue
+		}
+		if moment.PlayoutAtMS <= 0 {
+			return 0, false
+		}
+		end = max(end, moment.PlayoutAtMS+moment.AudioMS)
+	}
+	if end < 0 {
+		return 0, false
+	}
+	return max(0, end-eventMS), true
 }
 
 // Breakdown summarises a result by category, because the four conditions want
