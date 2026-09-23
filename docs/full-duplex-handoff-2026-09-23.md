@@ -265,3 +265,29 @@ default if gating works, and accept the X2-Turn probability gap.
 fully met. The first release scope is not met, because no item has complete
 traces with playback or cancellation validation. Its "Blocking gaps" list
 orders the remaining work.
+
+## Third round (2026-09-23, 12:10–13:45 UTC)
+
+- **Component evidence re-retained** after the cleanup. Every rerun
+  reproduces the published values; see each README:
+  - `asr/20260923-rerun/`: Qwen3-ASR, Voxtral en/zh, Nemotron EN and 3.5,
+    Kyutai STT, FunASR, all within 0.9 points of the published error rates.
+  - `tts/20260923-rerun/`: Kyutai, Qwen3-TTS and VibeVoice timing, held-back
+    prefix, cancel and intelligibility.
+  - `s0/20260923-rerun/`: speaker attribution under overlap.
+
+  Not rerun: Deepgram ASR and Aura (billed), CosyVoice (its service answers
+  `/health` with 500), and the audio observer.
+- **FDB playout metrics** (`d6ab0070`, `4536c718`): yield latency and
+  contact/after-event audio on the speaker clock as well as by arrival; reported, not scored.
+- **DuplexCascade generation** is unbounded exactly as in the released
+  reference (`0c9edbf6`). Bounding it would be a labeled variant.
+- **Running now: the gated micro-turn cascade campaign** (first-release item 1),
+  `microturn-voxtral-qwen3-kyutai --full-selected` on `openrealtime-4536c718`.
+  It started 13:38 UTC, detached with `setsid`; log
+  `.runtime/duplex-plan/results/native/microturn-campaign.log`, results
+  `.runtime/duplex-plan/results/e2e/microturn-voxtral-qwen3-kyutai/latest/`.
+  Voxtral stops when it ends. The MiniCPM-o waiter needs 24 GB of free GPU and
+  45 GB of host RAM, so it will start after this campaign if memory allows.
+  **On completion:** check `finished.json`, retain the evidence under
+  `deploy/duplex/evidence/`, and update the results and audit documents.
