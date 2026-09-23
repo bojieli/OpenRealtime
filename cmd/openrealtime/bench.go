@@ -1066,6 +1066,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdb", flag.ContinueOnError)
 	var reviewConfig candidateReviewCLIConfig
 	var (
+		waitConfigured  bool
 		root            string
 		endpoint        string
 		tokenEnv        string
@@ -1093,6 +1094,8 @@ func runFDB(arguments []string, output io.Writer) error {
 	flags.IntVar(&repeat, "repeat", 0,
 		"attempts per recording; one attempt cannot tell a defect from noise, and the report says "+
 			"how many recordings agreed with themselves")
+	flags.BoolVar(&waitConfigured, "wait-configured", false,
+		"start each replay only after session.updated, reporting the wait; off keeps earlier WebSocket conditions")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies from the reference, such as F2")
@@ -1139,6 +1142,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	runOptions := fdb.Options{
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Repeat: repeat, Timeout: timeout,
+		WaitConfigured:  waitConfigured,
 		Transcripts:     transcripts,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
@@ -1275,6 +1279,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbench", flag.ContinueOnError)
 	var reviewConfig candidateReviewCLIConfig
 	var (
+		waitConfigured  bool
 		root            string
 		endpoint        string
 		tokenEnv        string
@@ -1303,6 +1308,8 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.StringVar(&conditions, "conditions", "", "comma-separated dataset conditions; required")
 	flags.BoolVar(&list, "list", false, "list the conditions this dataset contains and stop")
 	flags.IntVar(&limit, "limit", 0, "stop after this many conversations")
+	flags.BoolVar(&waitConfigured, "wait-configured", false,
+		"start each replay only after session.updated, reporting the wait; off keeps earlier WebSocket conditions")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F4")
@@ -1361,6 +1368,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 		Transcripts: transcripts,
 		Root:        root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
+		WaitConfigured:  waitConfigured,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}

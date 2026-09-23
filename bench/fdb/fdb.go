@@ -180,7 +180,10 @@ type Options struct {
 	// expected to still be speaking. Zero selects 1 s.
 	HoldWindow time.Duration
 	Timeout    time.Duration
-	Progress   func(string)
+	// WaitConfigured starts each replay only after session.updated; see
+	// bench.SessionConfig.WaitConfigured. Off keeps earlier campaigns comparable.
+	WaitConfigured bool
+	Progress       func(string)
 	// RuntimeAttestor captures exact graph execution evidence for each sample.
 	RuntimeAttestor bench.RuntimeAttestor
 	// Evidence receives only new candidate attempts and exact audio captured
@@ -363,8 +366,9 @@ func runSample(
 	}
 	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
-		Instructions: "You are a helpful voice assistant. Answer the user's question.",
-		Realtime:     true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
+		Instructions:   "You are a helpful voice assistant. Answer the user's question.",
+		WaitConfigured: options.WaitConfigured,
+		Realtime:       true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
 		// The scope names this attempt, not the recording behind it. A repeated
 		// run has several attempts at one recording and the reportability check
 		// compares the two, so a scope left at the recording's own identity

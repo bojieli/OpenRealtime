@@ -111,6 +111,9 @@ type Transcript struct {
 	// behavior row into an infrastructure score. Result.Reportable is the
 	// publication gate.
 	ExecutionError string `json:"execution_evidence_error,omitempty"`
+	// ConfigurationWaitMS is how long a gated WebSocket replay waited for
+	// session.updated before its episode began. Absent when not gated.
+	ConfigurationWaitMS *float64 `json:"configuration_wait_ms,omitempty"`
 	// Outstanding lifecycle counts are normally zero. They are retained so a
 	// timeout distinguishes an agent still synthesising/responding from a
 	// harness that merely waited too little after playback.
@@ -290,6 +293,12 @@ type SessionConfig struct {
 	PostPlaybackQuiet time.Duration
 	// Timeout bounds one conversation.
 	Timeout time.Duration
+	// WaitConfigured holds WebSocket replay until session.updated arrives, as
+	// WebRTC always does. A native model that configures for seconds otherwise
+	// queues, and may drop, the recording's opening audio. The wait is outside
+	// the episode clock and reported as Transcript.ConfigurationWaitMS. Off
+	// preserves the WebSocket conditions of earlier campaigns.
+	WaitConfigured bool
 	// Quiet suppresses per-task progress.
 	Quiet bool
 	// CaptureAudio receives a copy of the exact room/input PCM and timed agent
@@ -568,6 +577,18 @@ func PlaySamples(
 		}); err != nil {
 			return Transcript{}, err
 		}
+	}
+	if transport == TransportWebSocket && config.WaitConfigured {
+		began := time.Now()
+		select {
+		case <-recorder.configured:
+		case <-timed.Done():
+			return recorder.snapshot(), fmt.Errorf("wait for session configuration: %w", timed.Err())
+		}
+		waited := float64(time.Since(began).Microseconds()) / 1000
+		recorder.mu.Lock()
+		recorder.configurationWaitMS = &waited
+		recorder.mu.Unlock()
 	}
 	if transport == TransportWebRTC {
 		// RTP and SCTP are independently ordered. A browser can start its media
@@ -887,6 +908,7 @@ type recorder struct {
 	inspection          *openrealtime.InspectionAccess
 	configured          chan struct{}
 	configuredOnce      sync.Once
+	configurationWaitMS *float64
 	audio               *sessionAudioRecorder
 }
 
@@ -962,7 +984,8 @@ func (recorder *recorder) snapshot() Transcript {
 		Moments: moments, PlaybackMS: recorder.playbackMS, Failure: recorder.failure,
 		NegotiatedObservers: negotiatedObservers, Runtime: runtime,
 		OutstandingResponses: recorder.openResponses, OutstandingTools: recorder.openTools,
-		inspection: inspection,
+		ConfigurationWaitMS: recorder.configurationWaitMS,
+		inspection:          inspection,
 	}
 }
 

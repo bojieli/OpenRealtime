@@ -1012,3 +1012,62 @@ func TestAHorizonThatOutlivesASlowCaptureIsStillTheHorizon(t *testing.T) {
 		}
 	}
 }
+
+func TestWaitConfiguredHoldsWebSocketReplayUntilSessionUpdated(t *testing.T) {
+	for _, gated := range []bool{true, false} {
+		var early atomic.Bool
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+			if err != nil {
+				return
+			}
+			defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+			acknowledged := make(chan struct{})
+			for {
+				_, raw, err := connection.Read(request.Context())
+				if err != nil {
+					return
+				}
+				var event struct {
+					Type string `json:"type"`
+				}
+				if json.Unmarshal(raw, &event) != nil {
+					continue
+				}
+				switch event.Type {
+				case "session.update":
+					// A native model configuring its prompt before it can listen.
+					go func() {
+						time.Sleep(300 * time.Millisecond)
+						_ = connection.Write(request.Context(), websocket.MessageText,
+							[]byte(`{"type":"session.updated","session":{}}`))
+						close(acknowledged)
+					}()
+				case "input_audio_buffer.append":
+					select {
+					case <-acknowledged:
+					default:
+						early.Store(true)
+					}
+				}
+			}
+		}))
+		transcript, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+			Endpoint:          "ws" + strings.TrimPrefix(server.URL, "http"),
+			Timeout:           3 * time.Second,
+			TrailingSilence:   time.Millisecond,
+			PostPlaybackQuiet: time.Millisecond,
+			WaitConfigured:    gated,
+		}, make([]int16, 480))
+		server.Close()
+		if err != nil {
+			t.Fatalf("gated=%v: %v", gated, err)
+		}
+		if gated && (early.Load() || transcript.ConfigurationWaitMS == nil || *transcript.ConfigurationWaitMS < 250) {
+			t.Fatalf("gated replay sent early audio=%v, wait=%v", early.Load(), transcript.ConfigurationWaitMS)
+		}
+		if !gated && (!early.Load() || transcript.ConfigurationWaitMS != nil) {
+			t.Fatalf("ungated replay sent early audio=%v, wait=%v", early.Load(), transcript.ConfigurationWaitMS)
+		}
+	}
+}
