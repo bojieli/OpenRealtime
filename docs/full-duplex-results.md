@@ -364,6 +364,16 @@ therefore established as a drop mechanism. Benchmark WebSocket replay still
 starts ungated; changing that alters every earlier campaign's conditions and
 needs an explicit decision and a matched rerun.
 
+The [matched rerun](../deploy/duplex/evidence/native-personaplex/20260923-gating-ab/)
+used the new opt-in `-wait-configured` bench flag, ABBA order and identical
+fixtures, with configuration taking ~4 s under GPU contention. Ungated FDB
+interruption: every session dropped input, 7 of 20 recordings were applicable
+and 5 passed. Gated: no drops, 19 applicable and 19 passed. On 10 FD-Bench
+conversations, ungated missed 6 of 46 turns and passed 3/10 conversations;
+gated missed none and passed 7/10. Every earlier native campaign ran ungated,
+so its applicability and answer counts depend on configuration time under
+that run's load.
+
 Native validation remains incomplete. The retained component artifacts under
 `results/native/` establish narrower findings:
 

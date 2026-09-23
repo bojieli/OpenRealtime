@@ -1,0 +1,534 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "personaplex-fdb-gated",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "c2bdb04fac9c23b22c2d99b875a1216dcbae6232",
+    "modified": true,
+    "executable_sha256": "a5981c3269717c9a2cd5ba05e686633289fa39815588d1e9b20169007e375c12",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-23T09:43:50Z",
+    "finished_at": "2026-09-23T09:52:55Z"
+  },
+  "expected_tasks": 200,
+  "tasks": [
+    {
+      "id": "user_interruption/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 480,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 300,
+        "yield_latency_from_annotation_ms": 733.8540000000003,
+        "yield_latency_ms": 433.85400000000027
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How can I save money more effectively?",
+        "event": "Actually, what are some financial goals I should set?"
+      }
+    },
+    {
+      "id": "user_interruption/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 640,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 240,
+        "yield_latency_from_annotation_ms": 891.0280000000002,
+        "yield_latency_ms": 651.0280000000002
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are the latest trends in smartphones?",
+        "event": "Let's switch to talking about laptops."
+      }
+    },
+    {
+      "id": "user_interruption/3",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "event_audible_after_ms": 140,
+        "yield_latency_from_annotation_ms": 709.8810000000012,
+        "yield_latency_ms": 569.8810000000012
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What's the latest in smart home devices?",
+        "event": "Hold on, what time is the meeting scheduled today?"
+      }
+    },
+    {
+      "id": "user_interruption/4",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "event_audible_after_ms": 480,
+        "yield_latency_from_annotation_ms": 1049.1319999999987,
+        "yield_latency_ms": 569.1319999999987
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How should I take care of indoor plants?",
+        "event": "By the way, what’s the weather going to be like tomorrow?"
+      }
+    },
+    {
+      "id": "user_interruption/5",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 160,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 720,
+        "yield_latency_from_annotation_ms": 841.6689999999999,
+        "yield_latency_ms": 121.66899999999987
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are the benefits of eating more fruits?",
+        "event": "Can we talk about something else?"
+      }
+    },
+    {
+      "id": "user_interruption/6",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 640,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 340,
+        "yield_latency_from_annotation_ms": 1004.1569999999992,
+        "yield_latency_ms": 664.1569999999992
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "Which places do you recommend visiting in Europe?",
+        "event": "Oh, before I forget, do I need a visa to travel to Europe?"
+      }
+    },
+    {
+      "id": "user_interruption/7",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 400,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 1340,
+        "yield_latency_from_annotation_ms": 1656.1999999999998,
+        "yield_latency_ms": 316.1999999999998
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How often should I run to stay fit?",
+        "event": "Oh, by the way, can you tell me about some good running shoes?"
+      }
+    },
+    {
+      "id": "user_interruption/8",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 480,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 220,
+        "yield_latency_from_annotation_ms": 680.1620000000003,
+        "yield_latency_ms": 460.16200000000026
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What’s a good comedy to watch?",
+        "event": "Actually, what are the new movies released?"
+      }
+    },
+    {
+      "id": "user_interruption/9",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 500,
+        "yield_latency_from_annotation_ms": 1031.9279999999999,
+        "yield_latency_ms": 531.9279999999999
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What makes a good smartphone camera?",
+        "event": "By the way, what's the price of the latest model?"
+      }
+    },
+    {
+      "id": "user_interruption/10",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 400,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 140,
+        "yield_latency_from_annotation_ms": 424.71699999999964,
+        "yield_latency_ms": 284.71699999999964
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How can I reduce stress quickly?",
+        "event": "Can we switch to talking about sleep improvement?"
+      }
+    },
+    {
+      "id": "user_interruption/11",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 360,
+        "yield_latency_from_annotation_ms": 917.3150000000005,
+        "yield_latency_ms": 557.3150000000005
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "I'm thinking of buying a new laptop",
+        "event": "Hold that thought. Can we discuss cooking tips instead?"
+      }
+    },
+    {
+      "id": "user_interruption/12",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 260,
+        "yield_latency_from_annotation_ms": 838.8490000000011,
+        "yield_latency_ms": 578.8490000000011
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What should I feed my dog?",
+        "event": "Oh, before I forget, how often should I take my dog to the vet?"
+      }
+    },
+    {
+      "id": "user_interruption/13",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 400,
+        "agent_audio_at_event_ms": 160,
+        "agent_audio_before_event_ms": 560,
+        "event_audible_after_ms": 200,
+        "yield_latency_from_annotation_ms": 531.1130000000003,
+        "yield_latency_ms": 331.1130000000003
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What’s the easiest instrument to start learning?",
+        "event": "Actually, could you suggest some music schools?"
+      }
+    },
+    {
+      "id": "user_interruption/14",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 640,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 160
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_interruption",
+        "context": "Why is recycling important?",
+        "event": "Can we talk about something else?"
+      }
+    },
+    {
+      "id": "user_interruption/15",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 560,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 200,
+        "yield_latency_from_annotation_ms": 691.5069999999996,
+        "yield_latency_ms": 491.5069999999996
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "Can you suggest a good mystery novel?",
+        "event": "Can we talk about something else? What about movies?"
+      }
+    },
+    {
+      "id": "user_interruption/16",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 560,
+        "event_audible_after_ms": 880,
+        "yield_latency_from_annotation_ms": 1743.3639999999996,
+        "yield_latency_ms": 863.3639999999996
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "Could you give me some ideas for dinner tonight?",
+        "event": "Oh, before I forget, do we need more coffee?"
+      }
+    },
+    {
+      "id": "user_interruption/17",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 640,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 320,
+        "yield_latency_from_annotation_ms": 910.031,
+        "yield_latency_ms": 590.031
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What's the weather going to be like this weekend?",
+        "event": "Can we talk about something else? How about any good movies out?"
+      }
+    },
+    {
+      "id": "user_interruption/18",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 720,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 400,
+        "event_audible_after_ms": 280,
+        "yield_latency_from_annotation_ms": 849.7630000000008,
+        "yield_latency_ms": 569.7630000000008
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How often should I water my succulents?",
+        "event": "By the way, have we set up a dinner plan for tonight?"
+      }
+    },
+    {
+      "id": "user_interruption/19",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 500,
+        "yield_latency_from_annotation_ms": 758.0490000000009,
+        "yield_latency_ms": 258.0490000000009
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are some essential things to pack for a tropical vacation?",
+        "event": "Oh, do I need a visa for my trip next month?"
+      }
+    },
+    {
+      "id": "user_interruption/20",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 480,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "event_audible_after_ms": 160,
+        "yield_latency_from_annotation_ms": 635.5169999999998,
+        "yield_latency_ms": 475.5169999999998
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "I'm looking for a new mystery novel to read, any suggestions?",
+        "event": "Actually, wait, what's the weather tomorrow?"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 20,
+    "failed": 0,
+    "passed": 19,
+    "not_applicable": 1,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "180 of 200 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 20,
+        "unit": "ms",
+        "min": 160,
+        "p50": 560,
+        "p90": 648.0000000000001,
+        "p95": 732.0000000000002,
+        "p99": 914.3999999999996,
+        "max": 960,
+        "mean": 532
+      },
+      "agent_audio_at_event_ms": {
+        "count": 20,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 160,
+        "p95": 160,
+        "p99": 160,
+        "max": 160,
+        "mean": 92
+      },
+      "agent_audio_before_event_ms": {
+        "count": 20,
+        "unit": "ms",
+        "min": 400,
+        "p50": 480,
+        "p90": 560,
+        "p95": 560,
+        "p99": 560,
+        "max": 560,
+        "mean": 484
+      },
+      "event_audible_after_ms": {
+        "count": 20,
+        "unit": "ms",
+        "min": 140,
+        "p50": 290,
+        "p90": 736.0000000000002,
+        "p95": 903.0000000000002,
+        "p99": 1252.5999999999995,
+        "max": 1340,
+        "mean": 387
+      },
+      "yield_latency_from_annotation_ms": {
+        "count": 19,
+        "unit": "ms",
+        "min": 424.71699999999964,
+        "p50": 841.6689999999999,
+        "p90": 1170.5455999999986,
+        "p95": 1664.9163999999996,
+        "p99": 1727.6744799999997,
+        "max": 1743.3639999999996,
+        "mean": 889.3808421052634
+      },
+      "yield_latency_ms": {
+        "count": 19,
+        "unit": "ms",
+        "min": 121.66899999999987,
+        "p50": 531.9279999999999,
+        "p90": 653.6538,
+        "p95": 684.0776999999988,
+        "p99": 827.5067399999996,
+        "max": 863.3639999999996,
+        "mean": 490.43347368421064
+      }
+    }
+  }
+}
