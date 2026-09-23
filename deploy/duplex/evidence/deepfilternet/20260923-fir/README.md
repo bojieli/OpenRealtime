@@ -27,3 +27,15 @@ unpaced component measurements, not HTTP/concurrency capacity evidence.
 
 Recognition quality, quiet-backchannel preservation, and paced concurrent
 HTTP performance remain unverified. Default profiles were not changed.
+
+## Paced HTTP follow-up
+
+`http-paced.json`: 30 seconds of deterministic white noise, one session,
+24 kHz, 300 requests of 100 ms each, wall-clock paced. Observed identity
+`deepfilternet-fir`, declared waveform delay 42 ms; HTTP p50 5.34 ms,
+p99 8.13 ms, maximum 8.85 ms, 0 requests over 50 ms. Maximum send lateness
+was 2.70 ms. This does not establish multi-session capacity or speech quality.
+The benchmark now records delay from response headers instead of its old
+hard-coded RNNoise value of 20 ms; the initial run with that bad report field
+is excluded here. Command: `python3 tools/noisefilter/benchmark.py --url
+http://127.0.0.1:9166 --realtime --seconds 30 --report <output>`.

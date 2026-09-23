@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--packet-ms", type=int, default=100)
     parser.add_argument("--budget-ms", type=float, default=50)
+    parser.add_argument("--realtime", action="store_true", help="pace packets by source audio time")
     args = parser.parse_args()
     if args.seconds <= 0 or not 1 <= args.packet_ms <= 100:
         parser.error("seconds must be positive; packet-ms must be 1..100")
@@ -50,11 +51,19 @@ def main():
     identity = uuid.uuid4().hex
     path = endpoint.path.rstrip("/") + "/v1/filter/" + identity
     times, server_times, output = [], [], []
+    contract = None
     chunk = rate * args.packet_ms // 1000 * 2
+    replay_started = time.perf_counter()
+    send_lateness = []
     try:
         for sequence, offset in enumerate(range(0, len(pcm), chunk)):
+            due = replay_started + offset / (rate * 2)
+            if args.realtime:
+                time.sleep(max(0, due - time.perf_counter()))
             body = pcm[offset : offset + chunk]
             started = time.perf_counter()
+            if args.realtime:
+                send_lateness.append(max(0, started - due) * 1000)
             connection.request(
                 "POST",
                 path,
@@ -72,6 +81,12 @@ def main():
                 raise RuntimeError(
                     f"filter failed: {response.status} {filtered[:100]!r}"
                 )
+            observed = (response.getheader("X-Filter-Model"), response.getheader("X-Audio-Delay-MS"))
+            if not all(observed) or response.getheader("X-Sequence") != str(sequence):
+                raise RuntimeError("missing filter identity/delay or incorrect sequence")
+            if contract is not None and observed != contract:
+                raise RuntimeError("filter contract changed during session")
+            contract = observed
             times.append(elapsed)
             server_times.append(float(response.getheader("X-Processing-MS")))
             output.append(filtered)
@@ -90,6 +105,8 @@ def main():
         "samples": len(pcm) // 2,
         "rate_hz": rate,
         "packet_ms": args.packet_ms,
+        "realtime": args.realtime,
+        "send_lateness_ms_max": max(send_lateness) if send_lateness else None,
         "requests": len(times),
         "roundtrip_ms": {
             "p50": statistics.median(times),
@@ -98,7 +115,8 @@ def main():
             "max": max(times),
         },
         "server_p99_ms": percentile(server_times, 0.99),
-        "fixed_audio_delay_ms": 20,
+        "model": contract[0],
+        "fixed_audio_delay_ms": float(contract[1]),
         "budget_ms": args.budget_ms,
         "deadline_misses": sum(t > args.budget_ms for t in times),
         "energy_change_db_after_first_second": 10
