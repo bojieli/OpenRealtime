@@ -283,6 +283,14 @@ not speaking at the event; neither category is validated. These small samples
 are NOT REPORTABLE as a full campaign. Result JSON, profile, and integrity
 metadata are retained under `deploy/duplex/evidence/native-personaplex/`.
 
+The [complete PersonaPlex interruption category](../deploy/duplex/evidence/native-personaplex/20260923T012919Z-td0w3l3o-interruption/)
+finished on 2026-09-23 at 02:58 UTC: 200 recordings completed without task
+errors, 174/180 applicable passes, and 20 not applicable. Applicable yield
+latency was 440 ms p50 and 710 ms p90. Input-frame drops and possible startup
+buffering remain limitations; this is received-audio timing with adapter turn
+boundaries. The remaining categories and selected FD-Bench condition are still
+running, so this does not establish complete campaign acceptance.
+
 Moshi/PersonaPlex shutdown now retains the model lock until its inference
 worker exits. A CPU regression reproduced the old five-second timeout releasing
 shared state while a worker remained live; the fix passes that regression and
