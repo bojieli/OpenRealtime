@@ -61,3 +61,19 @@ Zero 50 ms misses; first requests 10.10–11.28 ms, overall maximum 24.25 ms.
 This supports pool exhaustion as a startup bottleneck, but is not a repeated,
 randomized capacity campaign. Shared-host load and request phasing can differ.
 The previous failed runs remain retained above.
+
+## Quiet-speech regression — do not promote
+
+`quiet-clean.json` reuses the 20 user-backchannel fixture IDs from the earlier
+`denoise-quiet.json`. Full recordings are polyphase-resampled to 16 kHz,
+scaled by 0 or -30 dB, rounded to PCM16, and replayed unpaced in 100 ms
+packets through fresh real model states. A 100 ms silence tail is appended.
+Energy windows are aligned by the respective 40/42 ms delays. No ASR was run.
+
+Mean per-clip retention at original level: legacy -0.646 dB, FIR -0.168 dB.
+At -30 dB input scaling: legacy -19.963 dB, FIR -98.522 dB. Twelve of twenty
+FIR clips lose over 60 dB, versus two legacy clips. The calculation floors
+power at 1e-12; very negative values include effectively silent PCM, not
+meaningful acoustic precision. Root cause is unproven. Do not promote FIR
+to defaults based on passband/latency results; inspect low-level PCM, model
+behavior, scaling, and noise-floor differences before any quality claim.

@@ -1,0 +1,491 @@
+{
+  "scope": "20 existing backchannel fixtures, clean only, aligned energy retention, not intelligibility; 16 kHz PCM input; full recording replayed unpaced",
+  "summary": {
+    "DeepFilterStream|0": -0.6463732406289011,
+    "DeepFilterStream|-30": -19.96283973526106,
+    "FIRDeepFilterStream|0": -0.16814621326247153,
+    "FIRDeepFilterStream|-30": -98.52200874357611
+  },
+  "records": [
+    {
+      "sample": "1",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -2.9598558762002374
+    },
+    {
+      "sample": "1",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.019074270050911928
+    },
+    {
+      "sample": "1",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.22806990768654983
+    },
+    {
+      "sample": "1",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.02471328832529166
+    },
+    {
+      "sample": "2",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -3.51194171765612
+    },
+    {
+      "sample": "2",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -3.0030709281176096
+    },
+    {
+      "sample": "2",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -165.13283810426785
+    },
+    {
+      "sample": "2",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -165.13283810426785
+    },
+    {
+      "sample": "22",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.18336910712402163
+    },
+    {
+      "sample": "22",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.0008931765271432575
+    },
+    {
+      "sample": "22",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.28346277604589615
+    },
+    {
+      "sample": "22",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -161.80868915073248
+    },
+    {
+      "sample": "27",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.4718105895989061
+    },
+    {
+      "sample": "27",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.009183077335018061
+    },
+    {
+      "sample": "27",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -13.344991315164993
+    },
+    {
+      "sample": "27",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.033858809960433896
+    },
+    {
+      "sample": "34",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.14187850441150315
+    },
+    {
+      "sample": "34",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.001803287140162199
+    },
+    {
+      "sample": "34",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -163.27739058633284
+    },
+    {
+      "sample": "34",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -163.27739058633284
+    },
+    {
+      "sample": "39",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.14563697616665444
+    },
+    {
+      "sample": "39",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.018505463859396606
+    },
+    {
+      "sample": "39",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -2.1553425561704858
+    },
+    {
+      "sample": "39",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -2.25294038277259
+    },
+    {
+      "sample": "43",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.09971424803516699
+    },
+    {
+      "sample": "43",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.003821174478382782
+    },
+    {
+      "sample": "43",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.35280549175079384
+    },
+    {
+      "sample": "43",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -161.38443264588528
+    },
+    {
+      "sample": "48",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.22432448246390546
+    },
+    {
+      "sample": "48",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.01842135454101635
+    },
+    {
+      "sample": "48",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.8744577431305911
+    },
+    {
+      "sample": "48",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.2698311003515002
+    },
+    {
+      "sample": "49",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.213589787171906
+    },
+    {
+      "sample": "49",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.03718778245445793
+    },
+    {
+      "sample": "49",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -5.803509635254215
+    },
+    {
+      "sample": "49",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -165.51296034840774
+    },
+    {
+      "sample": "52",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.20450223565531153
+    },
+    {
+      "sample": "52",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.0009278975148312776
+    },
+    {
+      "sample": "52",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -6.950616898007603
+    },
+    {
+      "sample": "52",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -2.5756577194551804
+    },
+    {
+      "sample": "57",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.15461090882570128
+    },
+    {
+      "sample": "57",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.06673592008721806
+    },
+    {
+      "sample": "57",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.22080960234991254
+    },
+    {
+      "sample": "57",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -153.3790743232375
+    },
+    {
+      "sample": "67",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.37394688377347174
+    },
+    {
+      "sample": "67",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.07191363914720145
+    },
+    {
+      "sample": "67",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -7.165250478595836
+    },
+    {
+      "sample": "67",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -154.61200441574658
+    },
+    {
+      "sample": "68",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.18521762403706743
+    },
+    {
+      "sample": "68",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.007900566781841317
+    },
+    {
+      "sample": "68",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.3092893945287943
+    },
+    {
+      "sample": "68",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.16761585956486633
+    },
+    {
+      "sample": "78",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.1883274928262277
+    },
+    {
+      "sample": "78",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.005432372218239816
+    },
+    {
+      "sample": "78",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -5.0568346989721435
+    },
+    {
+      "sample": "78",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -167.7810772133495
+    },
+    {
+      "sample": "80",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.21305368024690105
+    },
+    {
+      "sample": "80",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.034765784972696855
+    },
+    {
+      "sample": "80",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -10.971372154759791
+    },
+    {
+      "sample": "80",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -7.889194107619383
+    },
+    {
+      "sample": "81",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.1882761326071078
+    },
+    {
+      "sample": "81",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.005072284215812692
+    },
+    {
+      "sample": "81",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -2.15879612732019
+    },
+    {
+      "sample": "81",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -167.7810772133495
+    },
+    {
+      "sample": "87",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -1.0756191135940465
+    },
+    {
+      "sample": "87",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.00034298247309665487
+    },
+    {
+      "sample": "87",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.9132765825241216
+    },
+    {
+      "sample": "87",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -163.3631582134065
+    },
+    {
+      "sample": "90",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.2692089945134673
+    },
+    {
+      "sample": "90",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.010138705156122502
+    },
+    {
+      "sample": "90",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -7.431808710131436
+    },
+    {
+      "sample": "90",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -6.971459082077345
+    },
+    {
+      "sample": "92",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -0.2986660701616966
+    },
+    {
+      "sample": "92",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.001848927957535225
+    },
+    {
+      "sample": "92",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -3.146395353008415
+    },
+    {
+      "sample": "92",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -161.73444726496479
+    },
+    {
+      "sample": "98",
+      "level_db": 0,
+      "stream": "DeepFilterStream",
+      "retention_db": -1.823914387508602
+    },
+    {
+      "sample": "98",
+      "level_db": 0,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -0.04588467022073586
+    },
+    {
+      "sample": "98",
+      "level_db": -30,
+      "stream": "DeepFilterStream",
+      "retention_db": -3.479476589218697
+    },
+    {
+      "sample": "98",
+      "level_db": -30,
+      "stream": "FIRDeepFilterStream",
+      "retention_db": -164.48775504171493
+    }
+  ]
+}
