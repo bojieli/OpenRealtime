@@ -711,6 +711,9 @@ minimum-permutation WER:
 | 2 speakers | cpWER 0.74 | **cpWER 0.18** |
 | 4 speakers | cpWER 1.24 | **cpWER 0.17** |
 
+A [retained rerun](../deploy/duplex/evidence/s0/20260923-rerun/) on the rebuilt seeded mixtures
+reproduces these values (0.741 / 1.237 mixed; 0.181 / 0.181 multitalker).
+
 Mixed-audio recognition does not degrade gracefully under overlap - at four
 speakers it is worse than useless - while the diarizer-plus-multitalker path
 holds. That gain is paid for in delay and per-speaker compute, and Sortformer's
