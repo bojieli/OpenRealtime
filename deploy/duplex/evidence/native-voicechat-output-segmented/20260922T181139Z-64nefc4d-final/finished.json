@@ -1,0 +1,118 @@
+{
+  "finished": "2026-09-23T01:19:06.943363+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; 1 task errors"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-campaign",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "0",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T181139Z-64nefc4d/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-campaign",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "0",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T181139Z-64nefc4d/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-campaign",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "0",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T181139Z-64nefc4d/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-campaign",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "0",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T181139Z-64nefc4d/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-campaign",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "0",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260922T181139Z-64nefc4d/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "266.39",
+    "263.94",
+    "265.99"
+  ],
+  "sha256": {
+    "run.json": "354abfd154af1618c7b27e90fea01741df2f2abc82491efb94fc6c641af8f8ab",
+    "profile.yaml": "e33b0c917a32858f508d6c7d68e2c7f85ee5cd8e3e4187c216d43f999fd3f8eb",
+    "fdb-user_interruption.json": "7f953dc507ffd3039e0b1e62342abc39998adad9108e1752543e5e0a61abb67e",
+    "fdb-user_backchannel.json": "2f27cd65207ced92947daa3aa0365546363bd1a853f2ed4d7b3900f0d7615c85",
+    "fdb-background_speech.json": "4ccefd1695fd75946dbeb96dfdddbc6239eab9e864f6983b0678240837091f1b",
+    "fdb-talking_to_other.json": "f1f8bf12bc7139573fa6f535435460aefd78cf128438513c4896dcbb17cc41a4",
+    "fdbench.json": "cfff221e24409b7df30705be69aea3995a9dcbfa9df1be513b5949bb221dcf83"
+  }
+}

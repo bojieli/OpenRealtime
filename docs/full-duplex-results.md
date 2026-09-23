@@ -431,7 +431,7 @@ Native validation remains incomplete. The retained component artifacts under
   A regression reproduces the same protocol error on a standalone space
   token. The receiver fix at `5c9a798c` preserves nonempty whitespace deltas
   while rejecting empty ones; the offending upstream token was not retained.
-  The running campaign remains pinned to its original receiver, and GPU
+  The completed campaign remains pinned to its original receiver, and GPU
   validation of the corrected receiver remains pending.
 
   The same campaign's [complete backchannel category](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-backchannel/)
@@ -446,11 +446,16 @@ Native validation remains incomplete. The retained component artifacts under
   passed the hold criterion, three failed it, and 20 were not applicable.
   All four FDB category commands have finished, but the interruption category
   remains incomplete because of its protocol error. The selected
-  293-conversation FD-Bench condition is still running.
+  [293-conversation FD-Bench condition finished](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-final/)
+  on 2026-09-23 at 01:19 UTC with zero task errors and 84/293 conversation
+  passes. It answered 1089/1382 turns, missed 293, started prematurely
+  on 66 and overran on 852. The median of conversation-level median
+  response latencies was 1,149 ms; median conversation overlap was 3,600 ms.
+  The combined runner exited 1 because of the interruption protocol error.
   The binding fix at `ea210076`
   also preserves standalone whitespace after receiver validation, avoiding
   concatenated words and duplicate final text; its regression passed, but
-  this running campaign predates both whitespace fixes.
+  this completed campaign predates both whitespace fixes.
 
   A [real-model duplicate-result probe](../deploy/duplex/evidence/voicechat/20260922-duplicate-result/)
   delayed a fixed tool result by four seconds and submitted it twice. The
@@ -732,8 +737,8 @@ model itself was not measured here.
 - **Coverage varies by run.** The earlier end-to-end cells are smoke subsets.
   The selected VoiceChat campaign has processed all 498 FDB recordings, but
   one interruption task errored, so that campaign has not established complete
-  FDB acceptance. Its selected 293-conversation FD-Bench condition is still
-  running and does not cover the other FD-Bench conditions. Complete category
+  FDB acceptance. Its selected 293-conversation FD-Bench condition completed
+  without task errors, with 84 conversation passes, and does not cover the other FD-Bench conditions. Complete category
   results are identified above; neither those categories nor the earlier smoke
   results establish a complete, passing end-to-end campaign.
 - **Measured on a shared, loaded machine.** Other users' jobs held the CPU at
