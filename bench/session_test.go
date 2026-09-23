@@ -1090,3 +1090,128 @@ func TestPlayoutAudioBetweenCountsOverlapOnThePlayoutClock(t *testing.T) {
 		t.Fatal("a delta without a playout position was mixed in")
 	}
 }
+
+// playerServer bursts 4 s of agent audio, cancels the response after 500 ms,
+// then sends one late delta for it. refuse answers the truncation with an error.
+func playerServer(t *testing.T, refuse bool, truncations chan<- map[string]any) *httptest.Server {
+	t.Helper()
+	pcm := base64.StdEncoding.EncodeToString(make([]byte, 2*2400)) // 100 ms
+	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		connection, err := websocket.Accept(writer, request, &websocket.AcceptOptions{})
+		if err != nil {
+			return
+		}
+		defer connection.Close(websocket.StatusNormalClosure, "fixture complete")
+		ctx := request.Context()
+		write := func(value map[string]any) {
+			encoded, _ := json.Marshal(value)
+			_ = connection.Write(ctx, websocket.MessageText, encoded)
+		}
+		started := false
+		for {
+			_, raw, err := connection.Read(ctx)
+			if err != nil {
+				return
+			}
+			var event map[string]any
+			if json.Unmarshal(raw, &event) != nil {
+				continue
+			}
+			switch event["type"] {
+			case "input_audio_buffer.append":
+				if started {
+					continue
+				}
+				started = true
+				go func() {
+					for range 40 {
+						write(map[string]any{"type": "response.output_audio.delta", "response_id": "resp_1",
+							"item_id": "item_1", "delta": pcm})
+					}
+					time.Sleep(500 * time.Millisecond)
+					write(map[string]any{"type": "response.done", "response": map[string]any{
+						"id": "resp_1", "status": "cancelled", "status_details": map[string]any{"reason": "turn_detected"}}})
+					time.Sleep(50 * time.Millisecond)
+					write(map[string]any{"type": "response.output_audio.delta", "response_id": "resp_1",
+						"item_id": "item_1", "delta": pcm})
+				}()
+			case "conversation.item.truncate":
+				truncations <- event
+				if refuse {
+					write(map[string]any{"type": "error", "error": map[string]any{
+						"message": "cannot truncate", "event_id": event["event_id"]}})
+				} else {
+					write(map[string]any{"type": "conversation.item.truncated", "item_id": event["item_id"],
+						"content_index": 0, "audio_end_ms": event["audio_end_ms"]})
+				}
+			}
+		}
+	}))
+}
+
+func TestPlayerStopsAndTruncatesACancelledResponse(t *testing.T) {
+	for _, refuse := range []bool{false, true} {
+		truncations := make(chan map[string]any, 4)
+		server := playerServer(t, refuse, truncations)
+		transcript, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+			Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"), Timeout: 5 * time.Second,
+			TrailingSilence: time.Millisecond, PostPlaybackQuiet: 1500 * time.Millisecond, Player: true,
+		}, make([]int16, 480))
+		server.Close()
+		if err != nil || transcript.Failure != "" {
+			t.Fatalf("refuse=%v: err=%v failure=%q", refuse, err, transcript.Failure)
+		}
+		var truncate map[string]any
+		select {
+		case truncate = <-truncations:
+		default:
+			t.Fatalf("refuse=%v: no conversation.item.truncate was sent", refuse)
+		}
+		played, _ := truncate["audio_end_ms"].(float64)
+		if truncate["item_id"] != "item_1" || played < 350 || played > 900 {
+			t.Fatalf("refuse=%v: truncate = %v, want item_1 near 500 ms", refuse, truncate)
+		}
+		var stopped, acknowledged, refused, discarded bool
+		for _, moment := range transcript.Moments {
+			switch {
+			case moment.Kind == bench.MomentPlaybackStopped:
+				stopped = moment.ItemID == "item_1"
+			case moment.Kind == bench.MomentPlaybackTruncated:
+				acknowledged = true
+			case moment.Kind == bench.MomentPlaybackTruncateRefused:
+				refused = true
+			case moment.Kind == bench.MomentAgentAudio && moment.Discarded:
+				discarded = true
+			}
+		}
+		if !stopped || !discarded || acknowledged == refuse || refused != refuse || !transcript.Player {
+			t.Fatalf("refuse=%v: stopped=%v discarded=%v acknowledged=%v refused=%v player=%v",
+				refuse, stopped, discarded, acknowledged, refused, transcript.Player)
+		}
+		heard, known := transcript.PlayoutAudioBetween(0, 60_000)
+		if !known || heard < 350 || heard > 900 {
+			t.Fatalf("refuse=%v: heard %.0f ms of 4,100 sent, want about 500", refuse, heard)
+		}
+	}
+}
+
+func TestWithoutPlayerNothingIsTruncated(t *testing.T) {
+	truncations := make(chan map[string]any, 4)
+	server := playerServer(t, false, truncations)
+	defer server.Close()
+	transcript, err := bench.PlaySamples(t.Context(), bench.SessionConfig{
+		Endpoint: "ws" + strings.TrimPrefix(server.URL, "http"), Timeout: 5 * time.Second,
+		TrailingSilence: time.Millisecond, PostPlaybackQuiet: 1500 * time.Millisecond,
+	}, make([]int16, 480))
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-truncations:
+		t.Fatalf("a client without a player truncated: %v", event)
+	default:
+	}
+	if heard, _ := transcript.PlayoutAudioBetween(0, 60_000); heard < 4_000 || transcript.Player {
+		t.Fatalf("heard %.0f ms player=%v, want all 4,100 ms", heard, transcript.Player)
+	}
+}

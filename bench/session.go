@@ -42,6 +42,12 @@ type Moment struct {
 	// AtMS remains its arrival time; a prefetched response may finish on the
 	// wire before its queued audio has played. Historical moments omit this.
 	PlayoutAtMS float64 `json:"playout_at_ms,omitempty"`
+	// ItemID is the conversation item an audio delta or a playback receipt
+	// belongs to.
+	ItemID string `json:"item_id,omitempty"`
+	// Discarded marks agent audio a SessionConfig.Player client never played:
+	// it arrived for a response the player had already stopped.
+	Discarded bool `json:"discarded,omitempty"`
 	// StreamAtMS is where in the input audio the endpoint says this happened.
 	//
 	// A speech_started event carries audio_start_ms, which is the endpoint's
@@ -81,7 +87,17 @@ const (
 	// MomentScheduled marks a non-audio event the harness injected, so a
 	// transcript shows why the agent spoke when nobody had said anything.
 	MomentScheduled = "scheduled"
-	MomentError     = "error"
+	// MomentPlaybackStopped is a SessionConfig.Player client stopping a
+	// cancelled response it was still playing: AtMS is the stop, AudioMS how
+	// much of the item had played, ItemID the item it truncated.
+	MomentPlaybackStopped = "playback_stopped"
+	// MomentPlaybackTruncated is the server confirming that truncation
+	// (conversation.item.truncated); AudioMS is its audio_end_ms.
+	MomentPlaybackTruncated = "playback_truncated"
+	// MomentPlaybackTruncateRefused is the server rejecting it. The receipt is
+	// recorded as refused rather than failing the conversation.
+	MomentPlaybackTruncateRefused = "playback_truncate_refused"
+	MomentError                   = "error"
 )
 
 // Transcript is the complete timed record of one conversation.
@@ -114,6 +130,9 @@ type Transcript struct {
 	// ConfigurationWaitMS is how long a gated WebSocket replay waited for
 	// session.updated before its episode began. Absent when not gated.
 	ConfigurationWaitMS *float64 `json:"configuration_wait_ms,omitempty"`
+	// Player is set when a SessionConfig.Player client produced this record,
+	// so its playout numbers are what was heard rather than an upper bound.
+	Player bool `json:"player,omitempty"`
 	// Outstanding lifecycle counts are normally zero. They are retained so a
 	// timeout distinguishes an agent still synthesising/responding from a
 	// harness that merely waited too little after playback.
@@ -187,20 +206,44 @@ func (transcript Transcript) AudioBetween(fromMS, toMS float64) float64 {
 // reports false when any agent audio lacks a playout position, because mixing
 // arrival and playout times would measure neither.
 func (transcript Transcript) PlayoutAudioBetween(fromMS, toMS float64) (float64, bool) {
+	stops := transcript.PlaybackStops()
 	total := 0.0
 	for _, moment := range transcript.Moments {
-		if moment.Kind != MomentAgentAudio {
+		if moment.Kind != MomentAgentAudio || moment.Discarded {
 			continue
 		}
 		if moment.PlayoutAtMS <= 0 {
 			return 0, false
 		}
-		start, end := max(fromMS, moment.PlayoutAtMS), min(toMS, moment.PlayoutAtMS+moment.AudioMS)
+		start, end := moment.PlayoutSpan(stops)
+		start, end = max(fromMS, start), min(toMS, end)
 		if end > start {
 			total += end - start
 		}
 	}
 	return total, true
+}
+
+// PlaybackStops maps each response a Player client stopped to the stop time.
+func (transcript Transcript) PlaybackStops() map[string]float64 {
+	stops := map[string]float64{}
+	for _, moment := range transcript.Moments {
+		if moment.Kind == MomentPlaybackStopped && moment.ResponseID != "" {
+			stops[moment.ResponseID] = moment.AtMS
+		}
+	}
+	return stops
+}
+
+// PlayoutSpan is when this agent audio sounded on the playout clock, cut at
+// its response's playback stop when a Player client stopped it.
+func (moment Moment) PlayoutSpan(stops map[string]float64) (float64, float64) {
+	start, end := moment.PlayoutAtMS, moment.PlayoutAtMS+moment.AudioMS
+	if stop, ok := stops[moment.ResponseID]; ok {
+		end = min(end, stop)
+		start = min(start, end)
+	}
+	return start, end
 }
 
 // AudioStartedBetween is agent audio from turns that began inside the window.
@@ -321,6 +364,13 @@ type SessionConfig struct {
 	// the episode clock and reported as Transcript.ConfigurationWaitMS. Off
 	// preserves the WebSocket conditions of earlier campaigns.
 	WaitConfigured bool
+	// Player makes the client behave like a device that plays received audio
+	// in order at realtime. When the server cancels the response it is playing
+	// (response.done, status cancelled), the player stops at once, discards the
+	// rest, and sends conversation.item.truncate with how much it played. It
+	// never stops on its own guess; backchannels are the server's call. Off
+	// keeps the historical client, which never truncates.
+	Player bool
 	// Quiet suppresses per-task progress.
 	Quiet bool
 	// CaptureAudio receives a copy of the exact room/input PCM and timed agent
@@ -551,6 +601,9 @@ func PlaySamples(
 
 	recorder := &recorder{
 		started: time.Now(), configured: make(chan struct{}), audio: audioRecorder,
+	}
+	if config.Player {
+		recorder.player = newPlaybackPlayer()
 	}
 	collected := make(chan Transcript, 1)
 	go func() { collected <- recorder.collect(timed, client, config) }()
@@ -931,6 +984,7 @@ type recorder struct {
 	configured          chan struct{}
 	configuredOnce      sync.Once
 	configurationWaitMS *float64
+	player              *playbackPlayer
 	audio               *sessionAudioRecorder
 }
 
@@ -1007,6 +1061,7 @@ func (recorder *recorder) snapshot() Transcript {
 		NegotiatedObservers: negotiatedObservers, Runtime: runtime,
 		OutstandingResponses: recorder.openResponses, OutstandingTools: recorder.openTools,
 		ConfigurationWaitMS: recorder.configurationWaitMS,
+		Player:              recorder.player != nil,
 		inspection:          inspection,
 	}
 }
@@ -1171,6 +1226,7 @@ func (recorder *recorder) handle(
 		var decoded struct {
 			Delta      string `json:"delta"`
 			ResponseID string `json:"response_id"`
+			ItemID     string `json:"item_id"`
 		}
 		_ = event.Decode(&decoded)
 		payload, err := base64.StdEncoding.DecodeString(decoded.Delta)
@@ -1186,9 +1242,18 @@ func (recorder *recorder) handle(
 			for index := range samples {
 				samples[index] = int16(binary.LittleEndian.Uint16(payload[index*2:]))
 			}
+			audioMS := float64(len(payload)/2) / 24.0
+			if recorder.player != nil && recorder.player.discards(decoded.ResponseID) {
+				recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: audioMS, ResponseID: decoded.ResponseID,
+					ItemID: decoded.ItemID, Discarded: true})
+				break
+			}
 			playout := recorder.audio.addAgent(recorder.at(), samples)
-			recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: float64(len(payload)/2) / 24.0,
-				ResponseID: decoded.ResponseID, PlayoutAtMS: playout})
+			if recorder.player != nil {
+				recorder.player.scheduled(decoded.ResponseID, decoded.ItemID, playout, audioMS)
+			}
+			recorder.add(Moment{Kind: MomentAgentAudio, AudioMS: audioMS,
+				ResponseID: decoded.ResponseID, ItemID: decoded.ItemID, PlayoutAtMS: playout})
 		}
 	case "response.done":
 		var decoded struct {
@@ -1211,6 +1276,16 @@ func (recorder *recorder) handle(
 		recorder.mu.Unlock()
 		recorder.add(Moment{Kind: MomentResponseDone, ResponseID: decoded.Response.ID,
 			ResponseStatus: decoded.Response.Status, ResponseStatusReason: decoded.Response.StatusDetails.Reason})
+		if recorder.player != nil && decoded.Response.Status == "cancelled" {
+			recorder.stopPlayback(ctx, client, decoded.Response.ID)
+		}
+	case "conversation.item.truncated":
+		var decoded struct {
+			ItemID     string  `json:"item_id"`
+			AudioEndMS float64 `json:"audio_end_ms"`
+		}
+		_ = event.Decode(&decoded)
+		recorder.add(Moment{Kind: MomentPlaybackTruncated, ItemID: decoded.ItemID, AudioMS: decoded.AudioEndMS})
 	case "response.function_call_arguments.done":
 		var decoded struct {
 			CallID string `json:"call_id"`
@@ -1288,9 +1363,16 @@ func (recorder *recorder) handle(
 		var decoded struct {
 			Error struct {
 				Message string `json:"message"`
+				EventID string `json:"event_id"`
 			} `json:"error"`
 		}
 		_ = event.Decode(&decoded)
+		if recorder.player != nil && recorder.player.isReceipt(decoded.Error.EventID) {
+			// A receipt the server could not apply is evidence about the
+			// server, not a failure of the conversation being measured.
+			recorder.add(Moment{Kind: MomentPlaybackTruncateRefused, Text: decoded.Error.Message})
+			break
+		}
 		recorder.add(Moment{Kind: MomentError, Text: decoded.Error.Message})
 		recorder.mu.Lock()
 		recorder.failure = decoded.Error.Message

@@ -183,7 +183,10 @@ type Options struct {
 	// WaitConfigured starts each replay only after session.updated; see
 	// bench.SessionConfig.WaitConfigured. Off keeps earlier campaigns comparable.
 	WaitConfigured bool
-	Progress       func(string)
+	// Player replays with a client that stops and truncates cancelled
+	// responses; see bench.SessionConfig.Player.
+	Player   bool
+	Progress func(string)
 	// RuntimeAttestor captures exact graph execution evidence for each sample.
 	RuntimeAttestor bench.RuntimeAttestor
 	// Evidence receives only new candidate attempts and exact audio captured
@@ -367,8 +370,8 @@ func runSample(
 	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions:   "You are a helpful voice assistant. Answer the user's question.",
-		WaitConfigured: options.WaitConfigured,
-		Realtime:       true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
+		WaitConfigured: options.WaitConfigured, Player: options.Player,
+		Realtime: true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
 		// The scope names this attempt, not the recording behind it. A repeated
 		// run has several attempts at one recording and the reportability check
 		// compares the two, so a scope left at the recording's own identity
@@ -483,7 +486,13 @@ func scoreOutcome(outcome *bench.TaskOutcome, transcript bench.Transcript, retai
 		// conflate "stopped late" with "never stopped", and those are
 		// different failures with different causes.
 		if playout, known := playoutStopLatency(transcript, eventMS); known {
-			outcome.Metrics["playout_yield_latency_no_flush_ms"] = playout
+			// A player client stopped where the server cancelled, so this is
+			// what the listener heard; without one it is the no-flush bound.
+			if transcript.Player {
+				outcome.Metrics["audible_yield_latency_ms"] = playout
+			} else {
+				outcome.Metrics["playout_yield_latency_no_flush_ms"] = playout
+			}
 		}
 		latency, found := stopLatency(transcript, eventMS)
 		if !found {
@@ -591,15 +600,17 @@ func playoutStopLatency(transcript bench.Transcript, eventMS float64) (float64, 
 	if interrupted == "" {
 		return 0, false
 	}
+	stops := transcript.PlaybackStops()
 	end := -1.0
 	for _, moment := range transcript.Moments {
-		if moment.Kind != bench.MomentAgentAudio || moment.ResponseID != interrupted {
+		if moment.Kind != bench.MomentAgentAudio || moment.ResponseID != interrupted || moment.Discarded {
 			continue
 		}
 		if moment.PlayoutAtMS <= 0 {
 			return 0, false
 		}
-		end = max(end, moment.PlayoutAtMS+moment.AudioMS)
+		_, stopped := moment.PlayoutSpan(stops)
+		end = max(end, stopped)
 	}
 	if end < 0 {
 		return 0, false

@@ -162,7 +162,10 @@ type Options struct {
 	// WaitConfigured starts each replay only after session.updated; see
 	// bench.SessionConfig.WaitConfigured. Off keeps earlier campaigns comparable.
 	WaitConfigured bool
-	Progress       func(string)
+	// Player replays with a client that stops and truncates cancelled
+	// responses; see bench.SessionConfig.Player.
+	Player   bool
+	Progress func(string)
 	// RuntimeAttestor captures exact graph execution evidence per conversation.
 	RuntimeAttestor bench.RuntimeAttestor
 	// Evidence receives every newly executed candidate conversation and exact
@@ -312,8 +315,8 @@ func runConversation(
 	config := bench.SessionConfig{
 		Endpoint: options.Endpoint, Token: options.Token, Model: options.Model,
 		Instructions:   "You are a helpful voice assistant. Reply briefly to each thing the person says.",
-		WaitConfigured: options.WaitConfigured,
-		Realtime:       true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
+		WaitConfigured: options.WaitConfigured, Player: options.Player,
+		Realtime: true, Timeout: options.Timeout, RuntimeAttestor: options.RuntimeAttestor,
 		AttestationScope: conversation.ID,
 	}
 	if attempt != nil {

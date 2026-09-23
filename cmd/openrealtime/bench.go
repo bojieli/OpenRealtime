@@ -1067,6 +1067,7 @@ func runFDB(arguments []string, output io.Writer) error {
 	var reviewConfig candidateReviewCLIConfig
 	var (
 		waitConfigured  bool
+		player          bool
 		root            string
 		endpoint        string
 		tokenEnv        string
@@ -1096,6 +1097,8 @@ func runFDB(arguments []string, output io.Writer) error {
 			"how many recordings agreed with themselves")
 	flags.BoolVar(&waitConfigured, "wait-configured", false,
 		"start each replay only after session.updated, reporting the wait; off keeps earlier WebSocket conditions")
+	flags.BoolVar(&player, "player", false,
+		"play received audio like a device: stop and send conversation.item.truncate when the server cancels a response")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies from the reference, such as F2")
@@ -1143,6 +1146,7 @@ func runFDB(arguments []string, output io.Writer) error {
 		Root: root, Endpoint: endpoint, Token: deploymentToken, Model: model,
 		Cell: cell, Categories: wanted, Limit: limit, Repeat: repeat, Timeout: timeout,
 		WaitConfigured:  waitConfigured,
+		Player:          player,
 		Transcripts:     transcripts,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
@@ -1280,6 +1284,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 	var reviewConfig candidateReviewCLIConfig
 	var (
 		waitConfigured  bool
+		player          bool
 		root            string
 		endpoint        string
 		tokenEnv        string
@@ -1310,6 +1315,8 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags.IntVar(&limit, "limit", 0, "stop after this many conversations")
 	flags.BoolVar(&waitConfigured, "wait-configured", false,
 		"start each replay only after session.updated, reporting the wait; off keeps earlier WebSocket conditions")
+	flags.BoolVar(&player, "player", false,
+		"play received audio like a device: stop and send conversation.item.truncate when the server cancels a response")
 	flags.StringVar(&cellName, "cell", "reference", "name for this cell")
 	flags.StringVar(&referenceLevels, "reference-levels", "", "comma-separated factor=level overrides describing what this deployment actually runs")
 	flags.StringVar(&varyFactor, "vary", "", "factor this cell varies, such as F4")
@@ -1369,6 +1376,7 @@ func runFDBench(arguments []string, output io.Writer) error {
 		Root:        root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
 		WaitConfigured:  waitConfigured,
+		Player:          player,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}

@@ -77,6 +77,30 @@ func (recorder *sessionAudioRecorder) addAgent(atMS float64, samples []int16) fl
 	return atMS
 }
 
+// cutAt drops agent audio scheduled at or after atMS, as a player that stops
+// there never plays it, and lets the next response start at the stop.
+func (recorder *sessionAudioRecorder) cutAt(atMS float64) {
+	if recorder == nil {
+		return
+	}
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	kept := recorder.agent[:0]
+	for _, chunk := range recorder.agent {
+		if chunk.AtMS >= atMS {
+			continue
+		}
+		if keep := int((atMS - chunk.AtMS) * 24); keep < len(chunk.PCM16) {
+			chunk.PCM16 = chunk.PCM16[:keep]
+		}
+		kept = append(kept, chunk)
+	}
+	recorder.agent = kept
+	if recorder.agentPlayoutMS > atMS {
+		recorder.agentPlayoutMS = atMS
+	}
+}
+
 func (recorder *sessionAudioRecorder) snapshot() SessionAudioCapture {
 	if recorder == nil {
 		return SessionAudioCapture{SampleRateHz: 24_000}
