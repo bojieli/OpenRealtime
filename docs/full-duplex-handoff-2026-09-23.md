@@ -228,3 +228,32 @@ are on main. Only committed evidence under `deploy/duplex/evidence/` remains.
   DuplexCascade long responses, MiniCPM-o full campaign, Fish incremental text,
   ELLSA/BayLing tasks, the remaining 20 FD-Bench conditions (~77 source hours
   per model), closed-provider reruns, and the final requirement audit.
+
+## Second round (2026-09-23, 10:45–12:10 UTC, after the fresh clone)
+
+These follow the user's decisions: rebuild vLLM, gate native campaigns by
+default if gating works, and accept the X2-Turn probability gap.
+
+- **Lychee vLLM rebuilt and versioned.** `deploy/duplex/services/build-lychee-vllm.sh`
+  and `lychee-vllm-sm120.patch` (`35b62d1d`, `b8948731`) rebuild the tree. The
+  lost patch had one undocumented part, now added: disabling xformers' Hopper-only
+  FA3, which aborts on sm_120.
+- **Lychee idle fill verified** (`lychee/20260923-idle-fill/`): both
+  finite-input probes finished without stalls, with ~28 s of silence filled.
+  The run's FDB outcomes are not a behavior measurement. The host was
+  saturated by another project's OpenROAD jobs, and rounds ran at RTF 2–5.
+  **Rerun the FDB check on a quiet host.**
+- **Native campaigns are gated by default** (`f7d279f4`): `e2e_run.py` passes
+  `-wait-configured` and records `wait_configured`; `--ungated` reproduces
+  the earlier conditions.
+- **X2-Turn accepted and scored** (`d762fbc1`, `interaction/20260923-x2-scored/`).
+  The I0 and I1 work directories were rebuilt, and their baselines reproduce
+  the earlier tables. Used only once its frames exist, X2-Turn is at chance:
+  endpoint AUC 0.502 and barge-in balanced accuracy 0.50.
+- **MiniCPM-o full campaign queued, gated.** The first start was OOM-killed:
+  host RAM is held by seven OpenROAD jobs from another project.
+  `.runtime/duplex-plan/results/native/minicpm-campaign-waiter.sh` (detached)
+  starts the model once 45 GB is available, then runs `e2e_run.py
+  native-minicpm-o --full-selected`. Progress:
+  `.runtime/duplex-plan/results/native/minicpm-campaign-waiter.log` and
+  `.runtime/duplex-plan/results/e2e/native-minicpm-o/latest/`.
