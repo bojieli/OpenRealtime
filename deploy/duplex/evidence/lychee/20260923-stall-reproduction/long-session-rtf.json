@@ -1,0 +1,86 @@
+{
+ "session": "probe-long-continuous",
+ "rounds": 852,
+ "input_processed_s": 340.8,
+ "input_sent_s": 605,
+ "per_minute": [
+  {
+   "from_s": 0,
+   "rounds": 105,
+   "median_round_s": 0.482,
+   "median_rtf": 1.21,
+   "input_processed_s": 42.0
+  },
+  {
+   "from_s": 60,
+   "rounds": 97,
+   "median_round_s": 0.487,
+   "median_rtf": 1.22,
+   "input_processed_s": 38.8
+  },
+  {
+   "from_s": 120,
+   "rounds": 92,
+   "median_round_s": 0.512,
+   "median_rtf": 1.28,
+   "input_processed_s": 36.8
+  },
+  {
+   "from_s": 180,
+   "rounds": 90,
+   "median_round_s": 0.544,
+   "median_rtf": 1.36,
+   "input_processed_s": 36.0
+  },
+  {
+   "from_s": 240,
+   "rounds": 84,
+   "median_round_s": 0.547,
+   "median_rtf": 1.37,
+   "input_processed_s": 33.6
+  },
+  {
+   "from_s": 300,
+   "rounds": 86,
+   "median_round_s": 0.556,
+   "median_rtf": 1.39,
+   "input_processed_s": 34.4
+  },
+  {
+   "from_s": 360,
+   "rounds": 80,
+   "median_round_s": 0.563,
+   "median_rtf": 1.41,
+   "input_processed_s": 32.0
+  },
+  {
+   "from_s": 420,
+   "rounds": 79,
+   "median_round_s": 0.531,
+   "median_rtf": 1.33,
+   "input_processed_s": 31.6
+  },
+  {
+   "from_s": 480,
+   "rounds": 78,
+   "median_round_s": 0.576,
+   "median_rtf": 1.44,
+   "input_processed_s": 31.2
+  },
+  {
+   "from_s": 540,
+   "rounds": 53,
+   "median_round_s": 1.096,
+   "median_rtf": 2.74,
+   "input_processed_s": 21.2
+  },
+  {
+   "from_s": 600,
+   "rounds": 8,
+   "median_round_s": 1.304,
+   "median_rtf": 3.26,
+   "input_processed_s": 3.2
+  }
+ ],
+ "basis": "upstream stage timing total_round_sec per 0.4 s strict window"
+}

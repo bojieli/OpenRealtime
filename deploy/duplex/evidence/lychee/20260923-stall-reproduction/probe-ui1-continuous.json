@@ -1,0 +1,126 @@
+{
+  "label": "ui1-continuous",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.087
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    14.90771484375,
+    15.58154296875,
+    15.671875
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.568,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568,
+      "sent_end_s": 15.568,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 45.0,
+  "input_timeline_complete": true,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 15.906764569226652,
+  "first_audio_latency_s": 0.339,
+  "audible_segments": [
+    [
+      8.363,
+      10.131
+    ],
+    [
+      10.735,
+      11.624
+    ],
+    [
+      15.907,
+      17.324
+    ],
+    [
+      17.958,
+      18.358
+    ],
+    [
+      19.17,
+      19.57
+    ],
+    [
+      20.174,
+      20.574
+    ],
+    [
+      21.145,
+      25.118
+    ],
+    [
+      25.535,
+      25.935
+    ],
+    [
+      26.487,
+      26.887
+    ],
+    [
+      27.37,
+      29.203
+    ],
+    [
+      29.904,
+      30.304
+    ],
+    [
+      30.856,
+      33.419
+    ],
+    [
+      34.106,
+      34.506
+    ],
+    [
+      35.045,
+      35.445
+    ],
+    [
+      36.148,
+      38.628
+    ],
+    [
+      39.064,
+      39.664
+    ]
+  ],
+  "turn_done_s": [
+    11.602
+  ],
+  "text_done": [
+    {
+      "t": 11.602,
+      "text": "Youre already taking a smart step by thinking ahead. Try tracking every dollar spent this week so you can spot little habits that add up. Set up automatic transfers to savings each payday even if its just a few dollars at first. Cut back on takeout coffee and unused subscriptions and use cashback apps for small wins."
+    }
+  ],
+  "text_deltas": "Youre already taking a smart step by thinking ahead. Try tracking every dollar spent this week so you can spot little habits that add up. Set up automatic transfers to savings each payday even if its just a few dollars at first. Cut back on takeout coffee and unused subscriptions and use cashback apps for small wins.You should aim to build an emergency fund with six months of expenses, save for retirement, and set aside money for big purchases like a house or a car. Do any of those feel especially important right now?",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 17.48
+}

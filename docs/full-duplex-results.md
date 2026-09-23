@@ -400,6 +400,15 @@ Native validation remains incomplete. The retained component artifacts under
   distinguished it from a normal completion. The regression verifies one
   error and one boundary. This improves failure reporting, not backend progress;
   the 26 recorded stalls still require a real-model diagnosis and rerun.
+  The [rerun on the same fixtures](../deploy/duplex/evidence/lychee/20260923-stall-reproduction/)
+  reproduced 17 stalls, all in speaking state, with every received PCM
+  event forwarded. All 10 finite-input stalls (including the 8 FDB
+  recordings) had zero upstream rounds: generation is clocked by input, and the
+  FDB harness stops sending after the recording, so those FDB failures measure
+  the harness, not the model. Under continuous input, rounds kept running but
+  produced no PCM. Lychee also ran slower than real time throughout: RTF
+  1.21 in the first minute of the 600 s session, 2.7-3.3 at its end, and only
+  ~341 s of input processed. No repair was applied.
 - **Moshi:** the pinned public-Realtime profile completed a two-recording-per-category
   smoke run (`20260922T171034Z-giltdhg4`) without task errors. It answered
   8/8 FD-Bench turns but started 4 prematurely. Interruption yield passed 1/2

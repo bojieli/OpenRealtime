@@ -1,0 +1,111 @@
+{
+  "label": "ui4-finite",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.107
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    13.69677734375,
+    14.6982421875,
+    15.30810546875
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/4/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.888,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888,
+      "sent_end_s": 15.888,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 16.9,
+  "input_timeline_complete": false,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 18.30587416095659,
+  "first_audio_latency_s": 2.418,
+  "audible_segments": [
+    [
+      10.525,
+      11.393
+    ],
+    [
+      11.82,
+      12.822
+    ],
+    [
+      13.241,
+      14.192
+    ],
+    [
+      18.306,
+      21.505
+    ],
+    [
+      22.227,
+      22.627
+    ],
+    [
+      23.245,
+      24.407
+    ],
+    [
+      25.203,
+      25.603
+    ],
+    [
+      26.087,
+      26.487
+    ],
+    [
+      45.379,
+      45.899
+    ]
+  ],
+  "turn_done_s": [
+    14.267,
+    34.139,
+    45.379
+  ],
+  "text_done": [
+    {
+      "t": 14.267,
+      "text": "Well, take care of an indoor pet by feeding them the right food, keeping their living space clean, and giving them love and attention. Make sure they have fresh water always. Take them to the vet for check-ups, and let them play and exercise in safe areas. Simple enough, right?"
+    },
+    {
+      "t": 34.139,
+      "text": "I'm sorry, I don't have the weather forecast for tomorrow. You can check the local news or a weather app for the most accurate information."
+    }
+  ],
+  "text_deltas": "Well, take care of an indoor pet by feeding them the right food, keeping their living space clean, and giving them love and attention. Make sure they have fresh water always. Take them to the vet for check-ups, and let them play and exercise in safe areas. Simple enough, right?I'm sorry, I don't have the weather forecast for tomorrow. You can check the local news or a weather app for the most accurate information.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [
+    {
+      "t": 34.139,
+      "type": "error",
+      "text": "Lychee output stalled before a model completion or yield",
+      "code": "audio_stalled"
+    }
+  ],
+  "logs": [],
+  "output_seconds": 8.2
+}

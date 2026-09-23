@@ -1,0 +1,107 @@
+{
+  "label": "ui1-finite",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.082
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    12.64794921875,
+    14.89111328125,
+    15.4326171875
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.568,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568,
+      "sent_end_s": 15.568,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 16.58,
+  "input_timeline_complete": false,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 15.458918601740152,
+  "first_audio_latency_s": -0.109,
+  "audible_segments": [
+    [
+      15.459,
+      15.699
+    ],
+    [
+      16.197,
+      19.167
+    ],
+    [
+      19.789,
+      20.189
+    ],
+    [
+      25.19,
+      26.612
+    ],
+    [
+      27.396,
+      27.796
+    ],
+    [
+      28.445,
+      30.644
+    ],
+    [
+      31.232,
+      32.1
+    ],
+    [
+      45.586,
+      46.106
+    ]
+  ],
+  "turn_done_s": [
+    20.087,
+    39.745,
+    45.586
+  ],
+  "text_done": [
+    {
+      "t": 20.087,
+      "text": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot where your money flows. Set a clear goal like building an emergency fund or paying off debt and link it to something you value deeply. Use cashback apps or loyalty cards wisely but never spend more just to earn points"
+    },
+    {
+      "t": 39.745,
+      "text": "You should aim to build an emergency fund first, so you have a safety net. Then, set a target to pay off high interest debt quickly. After that, start saving for retirement and think about your dream vacation or a big purchase. What feels most important to you right now?"
+    }
+  ],
+  "text_deltas": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot where your money flows. Set a clear goal like building an emergency fund or paying off debt and link it to something you value deeply. Use cashback apps or loyalty cards wisely but never spend more just to earn pointsYou should aim to build an emergency fund first, so you have a safety net. Then, set a target to pay off high interest debt quickly. After that, start saving for retirement and think about your dream vacation or a big purchase. What feels most important to you right now?",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [
+    {
+      "t": 39.745,
+      "type": "error",
+      "text": "Lychee output stalled before a model completion or yield",
+      "code": "audio_stalled"
+    }
+  ],
+  "logs": [],
+  "output_seconds": 8.2
+}
