@@ -283,6 +283,14 @@ not speaking at the event; neither category is validated. These small samples
 are NOT REPORTABLE as a full campaign. Result JSON, profile, and integrity
 metadata are retained under `deploy/duplex/evidence/native-personaplex/`.
 
+Moshi/PersonaPlex shutdown now retains the model lock until its inference
+worker exits. A CPU regression reproduced the old five-second timeout releasing
+shared state while a worker remained live; the fix passes that regression and
+the existing cancellation/session-isolation checks (four tests). A hung GPU
+call leaves the service busy until restart. The PersonaPlex campaign started
+2026-09-23 at 01:29 UTC is pinned to the earlier code and does not validate this
+fix; a subsequent GPU reconnect check is required.
+
 Native validation remains incomplete. The retained component artifacts under
 `results/native/` establish narrower findings:
 

@@ -300,7 +300,10 @@ class MoshiSidecar(Sidecar):
         self._closing.set()
         self._stop.set()
         if self._stream_thread is not None:
-            self._stream_thread.join(timeout=5)
+            # A slow GPU step still owns recurrent model state. Releasing the
+            # session lock before it exits lets a new session reset that state
+            # underneath it. A hung backend must remain busy until restarted.
+            self._stream_thread.join()
         if self._model is not None:
             self._report_stats()
         if self._holds_model and self._model is not None:
