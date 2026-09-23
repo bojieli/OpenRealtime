@@ -93,6 +93,16 @@ class RunnerTests(unittest.TestCase):
         argv = done['commands']['fdbench.json']['argv']
         self.assertEqual(argv[argv.index('-conditions') + 1], 'cosyvoice2-single-round-combine-med')
 
+    def test_replay_waits_for_configuration_unless_ungated(self):
+        for gated in (True, False):
+            with self.subTest(gated=gated):
+                self.assertEqual(e2e_run.run('sample', 1, 1, wait_configured=gated), 0)
+                run = json.loads((self.parent / 'latest/run.json').read_text())
+                self.assertIs(run['wait_configured'], gated)
+                done = json.loads((self.parent / 'latest/finished.json').read_text())
+                for entry in done['commands'].values():
+                    self.assertEqual('-wait-configured' in entry['argv'], gated)
+
     def test_nondefault_condition_is_recorded_and_not_merged(self):
         condition = 'cosyvoice2-single-round-combine-easy-noisy-bg-0dB'
         self.assertEqual(e2e_run.run('sample', 1, 0, full_selected=True,

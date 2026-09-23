@@ -135,7 +135,7 @@ def terminate(process: subprocess.Popen) -> None:
 
 
 def run(profile: str, per_category: int, conversations: int, *, full_selected: bool = False,
-        fdbench_condition: str = "cosyvoice2-single-round-combine-med") -> int:
+        fdbench_condition: str = "cosyvoice2-single-round-combine-med", wait_configured: bool = True) -> int:
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', profile):
         raise ValueError('invalid profile name')
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', fdbench_condition):
@@ -168,6 +168,10 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
         expected.append('fdbench.json')
     metadata = {
         'schema': 2, 'profile': profile, 'bench_timeout_seconds': bench_timeout,
+        # Replay starts after session.updated: native sidecars that configure for
+        # seconds otherwise drop the recording's opening audio (see the PersonaPlex
+        # gating A/B). Runs made before 2026-09-23 were ungated.
+        'wait_configured': wait_configured,
         'full_selected': full_selected, 'fdbench_condition': fdbench_condition,
         'campaign_scope': f'all FDB categories and complete {fdbench_condition}' if full_selected else 'smoke subset', 'profile_sha256': digest(out / 'profile.yaml'),
         'binary_sha256': digest(binary), 'binary': str(binary),
@@ -218,6 +222,8 @@ def run(profile: str, per_category: int, conversations: int, *, full_selected: b
                 arguments = ['fdbench', '-conditions', fdbench_condition, '-limit', str(0 if full_selected else conversations)]
             else:
                 arguments = ['fdb', '-categories', filename[4:-5], '-limit', str(0 if full_selected else per_category)]
+            if wait_configured:
+                arguments.append('-wait-configured')
             command = [str(binary), 'bench', *arguments, '-endpoint', f'ws://127.0.0.1:{port}/v1/realtime',
                        '-cell', profile, '-out', str(out / filename)]
             with (out / filename.replace('.json', '.log')).open('wb') as log:
@@ -266,12 +272,14 @@ def main() -> None:
                         help='all FDB recordings and all conversations in the selected FD-Bench condition')
     parser.add_argument('--fdbench-condition', default='cosyvoice2-single-round-combine-med',
                         help='one dataset condition; results from different conditions remain separate')
+    parser.add_argument('--ungated', action='store_true',
+                        help='start replay without waiting for session.updated (pre-2026-09-23 conditions)')
     args = parser.parse_args()
     def interrupted(signum, frame):
         raise KeyboardInterrupt(f'signal {signum}')
     signal.signal(signal.SIGTERM, interrupted)
     raise SystemExit(run(args.profile, args.per_category, args.conversations, full_selected=args.full_selected,
-                         fdbench_condition=args.fdbench_condition))
+                         fdbench_condition=args.fdbench_condition, wait_configured=not args.ungated))
 
 
 if __name__ == '__main__':
