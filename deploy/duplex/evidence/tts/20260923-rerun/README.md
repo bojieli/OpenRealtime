@@ -7,10 +7,12 @@ running: Kyutai TTS 1.6B (en), Qwen3-TTS 0.6B (en, zh) and VibeVoice-Realtime
 0.5B (en). The runs were sequential, so they did not contend with each other.
 The host was heavily loaded (load 38–51 on 32 CPUs), which inflates real-time
 factors. `SUMMARY.md` is the tool's own table; the `*.json.gz` files are the
-full reports. Synthesized audio was not retained.
+full reports. Synthesized audio was not retained; the scores are in the reports.
 
-- Not scored for intelligibility: the `score` phase needs the Qwen3-ASR
-  service, which was not running.
+- Intelligibility was scored afterwards (`--phases score`) with a
+  temporarily started Qwen3-ASR service. Complete text: WER 0.000 for all
+  English services, CER 0.004 for Qwen3 Mandarin. Held-back and
+  word-by-word outputs: WER 0.000.
 - CosyVoice was not measured: its long-running service answered `/health`
   with HTTP 500 (`cosyvoice-health-failure.log`). Restarting it would
   require a model load, which host memory did not allow.

@@ -17,12 +17,13 @@ reference. `summary.md` is `asr_summary.py` over those records.
 | Nemotron 3.5 multilingual, 320 ms | zh | 18.9% CER | 18.0% | 2,511 ms | 2,534 ms |
 | Kyutai STT 1B | en | 6.0% WER | 6.0% | 1,408 ms | 1,434 ms |
 | FunASR streaming Paraformer, 600 ms | zh | 11.3% CER | 11.8% | 2,454 ms | 2,679 ms |
+| Qwen3-ASR 0.6B (`qwen-asr`, temporarily started on :9102) | en | 2.1% WER | 2.0% | 655 ms | 847 ms |
 
 No run withdrew committed text or rewrote shown text, and none failed.
 Error rates reproduce within 0.9 points. First-hypothesis times match within
 about 0.2 s, except multilingual English, which is 0.5 s earlier here. The
 services' load and warm state differ between runs, so latency is not a
 controlled comparison.
-Not rerun: Qwen3-ASR, Voxtral and Deepgram, because their services were not
+Qwen3-ASR commits only at finalization (first committed p50 6,267 ms; table 6,054 ms); its 698 rewrites are provisional-text revisions, not withdrawals. Not rerun: Voxtral and Deepgram, because their services were not
 running and loading models was blocked by host memory. Those rows remain
 prose-only in the results document.
