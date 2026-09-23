@@ -8,6 +8,19 @@ from moshi_sidecar import MoshiSidecar, FRAME_SAMPLES
 
 
 class CancellationTests(unittest.TestCase):
+    def test_failed_reset_releases_session_lock(self):
+        def fail():
+            raise ValueError('reset failed')
+        model = SimpleNamespace(lock=threading.Lock(), reset=fail)
+        s = MoshiSidecar(io.BytesIO(), io.BytesIO(), repository='test', mock=False,
+                        device='cpu', shared=model)
+        s.input_rate, s.instructions = 24000, ''
+        with self.assertRaisesRegex(ValueError, 'reset failed'):
+            s.configure(None)
+        self.assertFalse(model.lock.locked())
+        self.assertFalse(s._holds_model)
+        self.assertIsNone(s._model)
+
     def test_shutdown_keeps_model_owned_until_worker_exits(self):
         class SlowWorker(threading.Thread):
             def join(self, timeout=None):

@@ -283,7 +283,13 @@ class MoshiSidecar(Sidecar):
         if not model.lock.acquire(timeout=20):
             raise RuntimeError("the Moshi model is serving another session (batch size 1)")
         self._model, self._holds_model = model, True
-        model.reset()
+        try:
+            model.reset()
+        except Exception:
+            # configure failures return before the base session's on_close.
+            self._model, self._holds_model = None, False
+            model.lock.release()
+            raise
         self._stream_thread = threading.Thread(target=self._stream, daemon=True)
         self._stream_thread.start()
         log("model ready")
