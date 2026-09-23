@@ -62,3 +62,48 @@ def test_real_filter_packet_invariance_and_42_ms_delay(rate):
     finally:
         whole.close()
         split.close()
+
+
+@pytest.mark.skipif(not os.getenv("DEEPFILTER_LIBRARY") or not os.getenv("DEEPFILTER_MODEL"),
+                    reason="real DeepFilterNet library and model required")
+def test_real_filter_http_contract():
+    import http.client
+    import json
+    import threading
+    from http.server import ThreadingHTTPServer
+    from server import DeepFilterNet, FIRDeepFilterStream, Sessions, handler_for
+
+    model = DeepFilterNet(os.environ["DEEPFILTER_LIBRARY"], os.environ["DEEPFILTER_MODEL"], pool=0)
+    sessions = Sessions(model, stream_factory=FIRDeepFilterStream)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(
+        sessions, model_name='deepfilternet-fir', audio_delay_ms=42))
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    connection = http.client.HTTPConnection(*server.server_address, timeout=5)
+    try:
+        connection.request('GET', '/health')
+        response = connection.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read())['audio_delay_ms'] == 42
+        for rate in (16000, 24000, 48000):
+            path = '/v1/filter/' + f'{rate:032x}'
+            for seq, count in enumerate([1, rate//10, 73, rate//100, 17]):
+                pcm = np.zeros(count, dtype='<i2').tobytes()
+                connection.request('POST', path, pcm, {
+                    'X-Sample-Rate': str(rate), 'X-Sequence': str(seq)})
+                response = connection.getresponse()
+                assert response.status == 200
+                assert response.getheader('X-Audio-Delay-MS') == '42'
+                assert response.getheader('X-Filter-Model') == 'deepfilternet-fir'
+                assert response.getheader('X-Sequence') == str(seq)
+                assert len(response.read()) == len(pcm)
+            connection.request('DELETE', path)
+            response = connection.getresponse()
+            assert response.status == 200
+            response.read()
+        assert not sessions.streams
+    finally:
+        connection.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(2)
