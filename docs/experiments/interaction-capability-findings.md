@@ -126,13 +126,40 @@ pass (v3, ov-03) is only an acknowledgement ("let's explore options that meet
 this requirement"). Lexical verdicts are therefore not a usable capability
 score.
 
-**Semantic judge: not validated.** With Qwen3-8B as judge, validation failed.
-It first rejected the confirmed olive-oil correction because the window opens
-on the interrupted "butter" fragment. After a rubric rule for interrupted
-fragments, it rejected a skip that moves to baking after such a fragment. The
-judge refuses to score until it passes. A stronger judge (a larger local model,
-or an external service if approved) or human raters are needed before any
-semantic score is reported.
+**Semantic judge.** Qwen3-8B as judge failed validation and refuses to score.
+`gemini-3.8-flash`, as requested, gave the following results:
+- Audio mode is unusable. Given nine seconds of digital silence, it reported
+  hearing "Heat a couple tablespoons of olive oil over medium heat".
+- Transcript mode, on independent Nemotron ASR of each window, scores 17/18 on
+  known answers. The 18 include real campaign transcripts. Its one error
+  credits an acknowledgement of a constraint (ov-03) as fulfilment.
+- A requirement-based rewording of the goal made it worse (14/18) and was
+  reverted.
+- The judge runs at a declared 0.9 threshold, and every pass is reviewed.
+
+Over the 90 judged variant pairs, `gemini-judge-transcript-03` reports 16
+feedback-only passes (v3 9, v4 7) against 2 from the lexical screen. Single-rater
+review of each pass against its transcripts and control:
+- **Genuine (7):**
+  - v3: sc-02 olive oil; pa-02 "the numbers don't add up"; pa-03 "that
+    instruction is unsafe".
+  - v4: st-01 skip to the connection; st-03 deepen into the refrigerant cycle;
+    pa-02 "revenue decreased from six million to four million"; si-01 answers
+    after a finished sentence.
+- **Weak (3):** v4 ov-02 offers a 20-minute podcast under a 30-minute limit;
+  v4 pr-01 continues after "okay" while the control is silent; v3 si-02 asks
+  to confirm the new date.
+- **Not genuine (4):** v3 ov-03, acknowledgement only; v3 sc-01 and sc-03,
+  acknowledge and redirect with no corrected content; v4 pr-02, the same
+  question as its control.
+- **Null variants (2):** v3 sc-01 and sc-02 "unchanged" are no-change
+  conditions, not adaptation tests.
+
+Genuine audible adaptation therefore occurs in about 7 of 90 variant pairs
+(single repeat), spread over correction, steering, proactive and silence
+families, under both affordances. Gemini's passes are about 60% precise on
+review, so it screens candidates and does not replace review. Its recall is
+not measured.
 
 **Opportunity.** 115 of 192 branches had assistant speech playing at the
 variant's onset. The gap fixtures do create mid-speech situations in most
