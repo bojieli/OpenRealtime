@@ -8,6 +8,7 @@ validation or pilot claim.
 """
 import argparse
 import json
+import re
 from pathlib import Path
 import sys
 
@@ -36,8 +37,11 @@ def pair_rows(run):
         if result_path.exists():
             segments = (json.loads(result_path.read_text()).get('ledger') or {}).get('segments') or []
         onset = min(e['source_start'] for e in variant['events']) if variant else None
+        played = [x for x in segments if x.get('first_played_at') is not None]
         rows.append({'pair': branch.get('pair_id'), 'branch': branch.get('variant_id'),
                      **(opportunity(segments, onset) if onset is not None else {}),
+                     'played_segments': len(played),
+                     'verbatim_repeats': sum(a['text'].strip() == b['text'].strip() for a, b in zip(played, played[1:])),
                      'status': branch.get('status'), 'requests': branch.get('requests', 0),
                      'deadline_misses': branch.get('deadline_misses', 0),
                      'completed_segments': branch.get('completed_segments'),
@@ -56,6 +60,12 @@ def opportunity(segments, onset):
     playing = any(s.get('first_played_at') is not None and s['first_played_at'] <= onset
                   and s.get('last_played_at') is not None and s['last_played_at'] > onset for s in segments)
     return {'feedback_onset_ns': onset, 'heard_before_onset': heard, 'speaking_at_onset': playing}
+
+
+def treatment_of(run):
+    """Campaign runs are named <cell>-<treatment>-<pair>; older runs have no treatment."""
+    match = re.fullmatch(r'[A-Z][0-9]+-(v[0-9]+)-[a-z]{2}-[0-9]{2}', Path(run).name)
+    return match.group(1) if match else 'unlabelled'
 
 
 def silent_verdicts(rows):
@@ -80,15 +90,26 @@ def build(root):
         item = pair_rows(run)
         item['silent'] = silent_verdicts(item['rows'])
         pairs.append(item)
-    by_family = {}
+    by_family, by_treatment = {}, {}
     for item in pairs:
+        treatment = treatment_of(item['run'])
+        pair_id = item['rows'][0]['pair'] if item['rows'] else None
+        family = FAMILIES.get((pair_id or '??')[:2], 'unknown')
         for verdict in item['pairs'] + item['silent']:
-            pair_id = item['rows'][0]['pair'] if item['rows'] else None
-            family = FAMILIES.get((pair_id or '??')[:2], 'unknown')
-            counts = by_family.setdefault(family, {})
+            counts = by_family.setdefault(treatment, {}).setdefault(family, {})
             counts[verdict['verdict']] = counts.get(verdict['verdict'], 0) + 1
+        totals = by_treatment.setdefault(treatment, {'branches': 0, 'requests': 0, 'deadline_misses': 0,
+                                                     'played_segments': 0, 'verbatim_repeats': 0,
+                                                     'completed_segments': 0, 'branches_with_repeats': 0})
+        for r in item['rows']:
+            totals['branches'] += 1
+            totals['branches_with_repeats'] += r['verbatim_repeats'] > 0
+            for key in ('requests', 'deadline_misses', 'played_segments', 'verbatim_repeats'):
+                totals[key] += r[key]
+            totals['completed_segments'] += r['completed_segments'] or 0
     return {'scope': 'development campaign aggregation; descriptive, no uncertainty or pilot claim',
             'root': str(root), 'runs': len(runs), 'pairs': pairs, 'verdicts_by_family': by_family,
+            'totals_by_treatment': by_treatment,
             'incomplete_branches': sum(r['status'] != 'complete' for p in pairs for r in p['rows']),
             'total_requests': sum(r['requests'] for p in pairs for r in p['rows']),
             'total_deadline_misses': sum(r['deadline_misses'] for p in pairs for r in p['rows']),
@@ -105,4 +126,5 @@ if __name__ == '__main__':
     with args.out.open('x') as f:
         json.dump(report, f, indent=2)
         f.write('\n')
-    print(json.dumps(report['verdicts_by_family'], indent=1))
+    print(json.dumps({'totals_by_treatment': report['totals_by_treatment'],
+                      'verdicts_by_family': report['verdicts_by_family']}, indent=1))

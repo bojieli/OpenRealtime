@@ -39,5 +39,12 @@ class OpportunityTest(unittest.TestCase):
         self.assertEqual(campaign_report.opportunity([], 5)['heard_before_onset'], [])
 
 
+class TreatmentTest(unittest.TestCase):
+    def test_treatment_comes_from_the_campaign_run_name(self):
+        self.assertEqual(campaign_report.treatment_of('/x/A2-v4-sc-01'), 'v4')
+        self.assertEqual(campaign_report.treatment_of('/x/qwen-run'), 'unlabelled')
+        self.assertEqual(campaign_report.treatment_of('/x/fresh-st02-gap10-v4-20260923-02'), 'unlabelled')
+
+
 if __name__ == '__main__':
     unittest.main()
