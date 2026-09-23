@@ -252,7 +252,7 @@ default if gating works, and accept the X2-Turn probability gap.
   endpoint AUC 0.502 and barge-in balanced accuracy 0.50.
 - **MiniCPM-o full campaign queued, gated.** The first start was OOM-killed:
   host RAM is held by seven OpenROAD jobs from another project.
-  `.runtime/duplex-plan/results/native/minicpm-campaign-waiter.sh` (detached)
+  `.runtime/duplex-plan/results/native/minicpm-campaign-waiter-d6ab0070.sh` (detached; binary `openrealtime-d6ab0070`, which records the playout yield metric)
   starts the model once 45 GB is available, then runs `e2e_run.py
   native-minicpm-o --full-selected`. Progress:
   `.runtime/duplex-plan/results/native/minicpm-campaign-waiter.log` and

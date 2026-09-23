@@ -103,7 +103,7 @@ traces with playback/cancellation validation.
 
 ## Blocking gaps
 
-1. **Rendered playback receipts.** No layer measures what was actually played or stopped. Every interruption, cancellation and first-release item depends on this.
+1. **Rendered playback receipts.** No layer measures what was actually played or stopped. Every interruption, cancellation and first-release item depends on this. Progress: FDB now also reports `playout_yield_latency_no_flush_ms` (`d6ab0070`). It is the yield measured on the recorder's speaker clock for a client that never flushes, which bounds the prefetch blind spot of arrival timing. FDB hold windows and FD-Bench overlap still count by arrival, and there are still no device receipts.
 2. **DuplexCascade public end-to-end failure (C1).** Long answers exceed the 180 s deadline and there are task errors. The cascade reference has no passing public run.
 3. **A retained micro-turn cascade campaign.** Run the Qwen3-8B fallback or a fixed DuplexCascade at full FDB + FD-Bench scale from a clean checkout, and commit the traces.
 4. **Gated native reruns.** Every retained native campaign ran ungated. Rerun PersonaPlex gated, and complete the queued gated MiniCPM-o campaign.
