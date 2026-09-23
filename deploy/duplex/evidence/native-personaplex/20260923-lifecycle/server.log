@@ -1,0 +1,40 @@
+time=2026-09-23T08:53:26.364Z level=WARN msg="the Realtime endpoint has no bearer token" listen=127.0.0.1:9291 token_env=OPENREALTIME_TOKEN detail="anything that can reach this address can open a session, including a tunnel or proxy placed in front of it"
+OpenRealtime duplex listening on http://127.0.0.1:9291/v1/realtime
+  health   http://127.0.0.1:9291/healthz
+  server profile sha256:39de8137382b34fbf2a6b0645e9ff4c3235815dd8ba3ea47c9f55f5a30bcf8e1
+time=2026-09-23T08:53:29.689Z level=INFO msg="session started" session=sess_000000000001 binding=duplex model=openrealtime
+time=2026-09-23T08:53:49.693Z level=WARN msg="session error" session=sess_000000000001 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:53:49.693Z level=INFO msg="session completed" session=sess_000000000001 duration=22.10542306s
+time=2026-09-23T08:53:53.966Z level=INFO msg="session started" session=sess_000000000002 binding=duplex model=openrealtime
+time=2026-09-23T08:54:11.864Z level=WARN msg="session error" session=sess_000000000002 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:54:11.864Z level=INFO msg="session completed" session=sess_000000000002 duration=19.98084399s
+time=2026-09-23T08:54:16.099Z level=INFO msg="session started" session=sess_000000000003 binding=duplex model=openrealtime
+time=2026-09-23T08:54:36.080Z level=WARN msg="session error" session=sess_000000000003 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:54:36.080Z level=INFO msg="session completed" session=sess_000000000003 duration=22.081558745s
+time=2026-09-23T08:54:40.363Z level=INFO msg="session started" session=sess_000000000004 binding=duplex model=openrealtime
+time=2026-09-23T08:54:58.248Z level=WARN msg="session error" session=sess_000000000004 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:54:58.248Z level=INFO msg="session completed" session=sess_000000000004 duration=19.980890138s
+time=2026-09-23T08:55:05.113Z level=INFO msg="session started" session=sess_000000000005 binding=duplex model=openrealtime
+time=2026-09-23T08:55:25.094Z level=WARN msg="session error" session=sess_000000000005 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:55:25.094Z level=INFO msg="session completed" session=sess_000000000005 duration=24.698316508s
+time=2026-09-23T08:55:30.114Z level=INFO msg="session started" session=sess_000000000006 binding=duplex model=openrealtime
+time=2026-09-23T08:55:47.265Z level=WARN msg="session error" session=sess_000000000006 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:55:47.265Z level=INFO msg="session completed" session=sess_000000000006 duration=19.980797588s
+time=2026-09-23T08:55:53.645Z level=INFO msg="session started" session=sess_000000000007 binding=duplex model=openrealtime
+time=2026-09-23T08:56:13.626Z level=WARN msg="session error" session=sess_000000000007 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:56:13.626Z level=INFO msg="session completed" session=sess_000000000007 duration=24.167540551s
+time=2026-09-23T08:56:18.951Z level=INFO msg="session started" session=sess_000000000008 binding=duplex model=openrealtime
+time=2026-09-23T08:56:35.754Z level=WARN msg="session error" session=sess_000000000008 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:56:35.754Z level=INFO msg="session completed" session=sess_000000000008 duration=19.980915216s
+time=2026-09-23T08:56:40.954Z level=INFO msg="session started" session=sess_000000000009 binding=duplex model=openrealtime
+time=2026-09-23T08:57:00.935Z level=WARN msg="session error" session=sess_000000000009 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:57:00.935Z level=INFO msg="session completed" session=sess_000000000009 duration=23.050406483s
+time=2026-09-23T08:57:06.808Z level=INFO msg="session started" session=sess_000000000010 binding=duplex model=openrealtime
+time=2026-09-23T08:57:23.107Z level=WARN msg="session error" session=sess_000000000010 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:57:23.107Z level=INFO msg="session completed" session=sess_000000000010 duration=19.980892147s
+time=2026-09-23T08:57:29.534Z level=INFO msg="session started" session=sess_000000000011 binding=duplex model=openrealtime
+time=2026-09-23T08:57:49.515Z level=WARN msg="session error" session=sess_000000000011 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:57:49.515Z level=INFO msg="session completed" session=sess_000000000011 duration=24.215304872s
+time=2026-09-23T08:57:55.411Z level=INFO msg="session started" session=sess_000000000012 binding=duplex model=openrealtime
+time=2026-09-23T08:58:11.645Z level=WARN msg="session error" session=sess_000000000012 code=invalid_request_error param="" message="graph mount closed"
+time=2026-09-23T08:58:11.645Z level=INFO msg="session completed" session=sess_000000000012 duration=19.980883894s

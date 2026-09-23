@@ -1,0 +1,35 @@
+{
+  "address": "tcp:127.0.0.1:9146",
+  "sidecar": null,
+  "question": "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/native/voicechat-resume-question.wav",
+  "timing_basis": "received PCM packets, not rendered playback",
+  "activity_criterion": {
+    "rms_dbfs": -40,
+    "consecutive_ms": 100,
+    "window_ms": 20,
+    "sample_rate": "negotiated output_rate"
+  },
+  "attempts": [
+    {
+      "handshake_s": 1.45822708401829,
+      "input_sent_s": 5.24,
+      "first_audio_s": 5.220305204857141,
+      "audio_bytes": 7680,
+      "errors": [],
+      "active_audio_detected": true,
+      "output_rate": 24000,
+      "passed": true
+    },
+    {
+      "handshake_s": 1.6380210970528424,
+      "input_sent_s": 9.8,
+      "first_audio_s": 9.540284459944814,
+      "audio_bytes": 19200,
+      "errors": [],
+      "active_audio_detected": true,
+      "output_rate": 24000,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

@@ -351,6 +351,19 @@ call leaves the service busy until restart. The PersonaPlex campaign started
 2026-09-23 at 01:29 UTC is pinned to the earlier code and does not validate this
 fix; a subsequent GPU reconnect check is required.
 
+That [GPU check](../deploy/duplex/evidence/native-personaplex/20260923-lifecycle/)
+ran from the clean lifecycle checkout `f6f0a3a4`. Three reconnect probes passed
+(six fresh sessions after abrupt disconnects, each with at least 100 ms above
+-40 dBFS), and the sidecar stopped on SIGTERM. Twelve matched readiness replays
+isolated the input drops: clients that waited for `session.updated` dropped
+nothing (0/6 sessions). Clients that started immediately dropped 3–23 frames
+in 6/6 sessions, their input queue reached its 26-frame cap, and drops grew
+with the 2.1–3.7 s configuration time. Gated clients wait 2.1–4.7 s before
+replay; that setup time is reported, not subtracted. Startup buffering is
+therefore established as a drop mechanism. Benchmark WebSocket replay still
+starts ungated; changing that alters every earlier campaign's conditions and
+needs an explicit decision and a matched rerun.
+
 Native validation remains incomplete. The retained component artifacts under
 `results/native/` establish narrower findings:
 

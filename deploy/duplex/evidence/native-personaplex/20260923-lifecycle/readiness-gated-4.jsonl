@@ -1,0 +1,89 @@
+{"t": 0, "type": "client.replay_started", "wait_configured": true, "connection_ms": 1.781, "connected_to_replay_ms": 4186.753, "timing_basis": "t is relative to replay start; received events are not rendered playback"}
+{"event_id": "event_000000000002", "session": {"audio": {"input": {"format": {"type": "audio/pcmu"}, "transcription": {"model": "Qwen/Qwen3-ASR-0.6B"}, "turn_detection": {"create_response": true, "interrupt_response": true, "prefix_padding_ms": 300, "silence_duration_ms": 500, "threshold": 0.5, "type": "server_vad"}}, "output": {"format": {"type": "audio/pcmu"}, "speed": 1}}, "id": "sess_000000000007", "instructions": "", "max_output_tokens": "inf", "model": "openrealtime", "object": "realtime.session", "output_modalities": ["audio"], "tool_choice": "auto", "tools": [], "type": "realtime"}, "type": "session.created", "t": -0.0, "phase": "configuration"}
+{"event_id": "event_000000000003", "session": {"audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "transcription": {"model": "Qwen/Qwen3-ASR-0.6B"}, "turn_detection": {"create_response": true, "interrupt_response": true, "prefix_padding_ms": 300, "silence_duration_ms": 500, "threshold": 0.5, "type": "server_vad"}}, "output": {"format": {"type": "audio/pcm", "rate": 24000}, "speed": 1}}, "id": "sess_000000000007", "instructions": "", "max_output_tokens": "inf", "model": "openrealtime", "object": "realtime.session", "output_modalities": ["audio"], "tool_choice": "auto", "tools": [], "type": "realtime"}, "type": "session.updated", "t": -0.0, "phase": "configuration"}
+{"t": 0.452, "type": "response.created", "event_id": "event_000000000005", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000004", "max_output_tokens": "inf", "object": "realtime.response", "output": [], "output_modalities": ["audio"], "status": "in_progress"}}
+{"t": 0.452, "type": "response.output_item.added", "event_id": "event_000000000007", "item": {"content": [{"transcript": "", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.452, "type": "response.content_part.added", "content_index": 0, "event_id": "event_000000000008", "item_id": "item_000000000006", "output_index": 0, "part": {"transcript": "", "type": "audio"}, "response_id": "resp_000000000004"}
+{"t": 0.452, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " Hey", "event_id": "event_000000000009", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.461, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.461, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.504, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ",", "event_id": "event_000000000012", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.521, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.58, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " let", "event_id": "event_000000000014", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.581, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.659, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.737, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " me", "event_id": "event_000000000017", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.741, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.813, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " know", "event_id": "event_000000000019", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.821, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.898, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 0.977, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " if", "event_id": "event_000000000022", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 0.981, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.032, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.111, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " you", "event_id": "event_000000000025", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 1.121, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.191, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " have", "event_id": "event_000000000027", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 1.201, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.273, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.349, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " any", "event_id": "event_000000000030", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 1.361, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.429, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.499, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 1.564, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.041, "type": "response.output_audio.done", "content_index": 0, "event_id": "event_000000000035", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.041, "type": "response.output_audio_transcript.done", "content_index": 0, "event_id": "event_000000000036", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004", "transcript": " Hey, let me know if you have any"}
+{"t": 2.041, "type": "response.content_part.done", "content_index": 0, "event_id": "event_000000000037", "item_id": "item_000000000006", "output_index": 0, "part": {"transcript": " Hey, let me know if you have any", "type": "audio"}, "response_id": "resp_000000000004"}
+{"t": 2.041, "type": "response.output_item.done", "event_id": "event_000000000038", "item": {"content": [{"transcript": " Hey, let me know if you have any", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}, "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.041, "type": "response.done", "event_id": "event_000000000039", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000004", "max_output_tokens": "inf", "object": "realtime.response", "output": [{"content": [{"transcript": " Hey, let me know if you have any", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}], "output_modalities": ["audio"], "status": "completed"}}
+{"t": 3.086, "type": "response.created", "event_id": "event_000000000041", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000040", "max_output_tokens": "inf", "object": "realtime.response", "output": [], "output_modalities": ["audio"], "status": "in_progress"}}
+{"t": 3.086, "type": "response.output_item.added", "event_id": "event_000000000043", "item": {"content": [{"transcript": "", "type": "output_audio"}], "id": "item_000000000042", "object": "realtime.item", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 3.086, "type": "response.content_part.added", "content_index": 0, "event_id": "event_000000000044", "item_id": "item_000000000042", "output_index": 0, "part": {"transcript": "", "type": "audio"}, "response_id": "resp_000000000040"}
+{"t": 3.086, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " Paris", "event_id": "event_000000000045", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 3.101, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.101, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.161, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.241, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.309, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.376, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.455, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " is", "event_id": "event_000000000052", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 3.461, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.542, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.641, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " the", "event_id": "event_000000000055", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 3.661, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.721, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " capital", "event_id": "event_000000000057", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 3.741, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.797, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.855, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.935, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.015, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.118, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " of", "event_id": "event_000000000063", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 4.121, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.182, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.267, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " France", "event_id": "event_000000000066", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 4.281, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.347, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ",", "event_id": "event_000000000068", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 4.361, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.424, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.497, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.578, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.66, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.827, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " it", "event_id": "event_000000000074", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 4.841, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.902, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " pretty", "event_id": "event_000000000076", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 4.921, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.976, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": "s", "event_id": "event_000000000078", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 4.981, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.055, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.135, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.215, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " famous", "event_id": "event_000000000082", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 5.221, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.297, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ".", "event_id": "event_000000000084", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 5.301, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.386, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.467, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.543, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 6.044, "type": "response.output_audio.done", "content_index": 0, "event_id": "event_000000000089", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 6.044, "type": "response.output_audio_transcript.done", "content_index": 0, "event_id": "event_000000000090", "item_id": "item_000000000042", "output_index": 0, "response_id": "resp_000000000040", "transcript": " Paris is the capital of France, it prettys famous."}
+{"t": 6.044, "type": "response.content_part.done", "content_index": 0, "event_id": "event_000000000091", "item_id": "item_000000000042", "output_index": 0, "part": {"transcript": " Paris is the capital of France, it prettys famous.", "type": "audio"}, "response_id": "resp_000000000040"}
+{"t": 6.044, "type": "response.output_item.done", "event_id": "event_000000000092", "item": {"content": [{"transcript": " Paris is the capital of France, it prettys famous.", "type": "output_audio"}], "id": "item_000000000042", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}, "output_index": 0, "response_id": "resp_000000000040"}
+{"t": 6.044, "type": "response.done", "event_id": "event_000000000093", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000040", "max_output_tokens": "inf", "object": "realtime.response", "output": [{"content": [{"transcript": " Paris is the capital of France, it prettys famous.", "type": "output_audio"}], "id": "item_000000000042", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}], "output_modalities": ["audio"], "status": "completed"}}

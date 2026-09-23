@@ -1,0 +1,32 @@
+{"t": 0, "type": "client.replay_started", "wait_configured": false, "connection_ms": 1.881, "connected_to_replay_ms": 0.076, "timing_basis": "t is relative to replay start; received events are not rendered playback"}
+{"t": 3.178, "type": "session.created", "event_id": "event_000000000002", "session": {"audio": {"input": {"format": {"type": "audio/pcmu"}, "transcription": {"model": "Qwen/Qwen3-ASR-0.6B"}, "turn_detection": {"create_response": true, "interrupt_response": true, "prefix_padding_ms": 300, "silence_duration_ms": 500, "threshold": 0.5, "type": "server_vad"}}, "output": {"format": {"type": "audio/pcmu"}, "speed": 1}}, "id": "sess_000000000008", "instructions": "", "max_output_tokens": "inf", "model": "openrealtime", "object": "realtime.session", "output_modalities": ["audio"], "tool_choice": "auto", "tools": [], "type": "realtime"}}
+{"t": 3.178, "type": "session.updated", "event_id": "event_000000000003", "session": {"audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "transcription": {"model": "Qwen/Qwen3-ASR-0.6B"}, "turn_detection": {"create_response": true, "interrupt_response": true, "prefix_padding_ms": 300, "silence_duration_ms": 500, "threshold": 0.5, "type": "server_vad"}}, "output": {"format": {"type": "audio/pcm", "rate": 24000}, "speed": 1}}, "id": "sess_000000000008", "instructions": "", "max_output_tokens": "inf", "model": "openrealtime", "object": "realtime.session", "output_modalities": ["audio"], "tool_choice": "auto", "tools": [], "type": "realtime"}}
+{"t": 5.108, "type": "response.created", "event_id": "event_000000000005", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000004", "max_output_tokens": "inf", "object": "realtime.response", "output": [], "output_modalities": ["audio"], "status": "in_progress"}}
+{"t": 5.108, "type": "response.output_item.added", "event_id": "event_000000000007", "item": {"content": [{"transcript": "", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.108, "type": "response.content_part.added", "content_index": 0, "event_id": "event_000000000008", "item_id": "item_000000000006", "output_index": 0, "part": {"transcript": "", "type": "audio"}, "response_id": "resp_000000000004"}
+{"t": 5.108, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ",", "event_id": "event_000000000009", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.121, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.121, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.187, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.262, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.339, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.418, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.498, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " that", "event_id": "event_000000000016", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.501, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.569, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": "'", "event_id": "event_000000000018", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.581, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.648, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": "s", "event_id": "event_000000000020", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.661, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.724, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " right", "event_id": "event_000000000022", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.741, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.801, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ".", "event_id": "event_000000000024", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 5.801, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.881, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.96, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 6.031, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 6.105, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 6.561, "type": "response.output_audio.done", "content_index": 0, "event_id": "event_000000000030", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 6.561, "type": "response.output_audio_transcript.done", "content_index": 0, "event_id": "event_000000000031", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004", "transcript": ", that's right."}
+{"t": 6.561, "type": "response.content_part.done", "content_index": 0, "event_id": "event_000000000032", "item_id": "item_000000000006", "output_index": 0, "part": {"transcript": ", that's right.", "type": "audio"}, "response_id": "resp_000000000004"}
+{"t": 6.561, "type": "response.output_item.done", "event_id": "event_000000000033", "item": {"content": [{"transcript": ", that's right.", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}, "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 6.561, "type": "response.done", "event_id": "event_000000000034", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000004", "max_output_tokens": "inf", "object": "realtime.response", "output": [{"content": [{"transcript": ", that's right.", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}], "output_modalities": ["audio"], "status": "completed"}}

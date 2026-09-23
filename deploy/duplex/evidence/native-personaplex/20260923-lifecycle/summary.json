@@ -1,0 +1,334 @@
+{
+  "sessions": [
+    {
+      "session": 1,
+      "kind": "reconnect",
+      "configuration_ms": 1500.95,
+      "dropped_frames": 0,
+      "max_queued_frames": 4,
+      "input_frames": 5,
+      "frame_ms_p95": 274.32,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 2,
+      "kind": "reconnect",
+      "configuration_ms": 1501.72,
+      "dropped_frames": 0,
+      "max_queued_frames": 3,
+      "input_frames": 44,
+      "frame_ms_p95": 39.33,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 3,
+      "kind": "reconnect",
+      "configuration_ms": 1454.92,
+      "dropped_frames": 0,
+      "max_queued_frames": 3,
+      "input_frames": 66,
+      "frame_ms_p95": 34.79,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 4,
+      "kind": "reconnect",
+      "configuration_ms": 1661.22,
+      "dropped_frames": 0,
+      "max_queued_frames": 2,
+      "input_frames": 5,
+      "frame_ms_p95": 135.85,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 5,
+      "kind": "reconnect",
+      "configuration_ms": 1456.39,
+      "dropped_frames": 0,
+      "max_queued_frames": 2,
+      "input_frames": 65,
+      "frame_ms_p95": 35.09,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 6,
+      "kind": "reconnect",
+      "configuration_ms": 1637.24,
+      "dropped_frames": 0,
+      "max_queued_frames": 2,
+      "input_frames": 122,
+      "frame_ms_p95": 34.62,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 7,
+      "kind": "gated",
+      "configuration_ms": 2099.73,
+      "dropped_frames": 0,
+      "max_queued_frames": 2,
+      "input_frames": 249,
+      "frame_ms_p95": 34.66,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 8,
+      "kind": "ungated",
+      "configuration_ms": 2081.06,
+      "dropped_frames": 3,
+      "max_queued_frames": 26,
+      "input_frames": 249,
+      "frame_ms_p95": 34.23,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 9,
+      "kind": "gated",
+      "configuration_ms": 2098.68,
+      "dropped_frames": 0,
+      "max_queued_frames": 1,
+      "input_frames": 249,
+      "frame_ms_p95": 34.36,
+      "frames_over_budget": 1
+    },
+    {
+      "session": 10,
+      "kind": "ungated",
+      "configuration_ms": 2094.25,
+      "dropped_frames": 3,
+      "max_queued_frames": 26,
+      "input_frames": 249,
+      "frame_ms_p95": 78.39,
+      "frames_over_budget": 4
+    },
+    {
+      "session": 11,
+      "kind": "gated",
+      "configuration_ms": 4715.18,
+      "dropped_frames": 0,
+      "max_queued_frames": 3,
+      "input_frames": 249,
+      "frame_ms_p95": 81.5,
+      "frames_over_budget": 24
+    },
+    {
+      "session": 12,
+      "kind": "ungated",
+      "configuration_ms": 2827.92,
+      "dropped_frames": 11,
+      "max_queued_frames": 26,
+      "input_frames": 249,
+      "frame_ms_p95": 80.99,
+      "frames_over_budget": 20
+    },
+    {
+      "session": 13,
+      "kind": "gated",
+      "configuration_ms": 4184.46,
+      "dropped_frames": 0,
+      "max_queued_frames": 2,
+      "input_frames": 249,
+      "frame_ms_p95": 79.37,
+      "frames_over_budget": 10
+    },
+    {
+      "session": 14,
+      "kind": "ungated",
+      "configuration_ms": 3176.19,
+      "dropped_frames": 16,
+      "max_queued_frames": 26,
+      "input_frames": 249,
+      "frame_ms_p95": 81.19,
+      "frames_over_budget": 22
+    },
+    {
+      "session": 15,
+      "kind": "gated",
+      "configuration_ms": 3064.62,
+      "dropped_frames": 0,
+      "max_queued_frames": 2,
+      "input_frames": 249,
+      "frame_ms_p95": 78.79,
+      "frames_over_budget": 5
+    },
+    {
+      "session": 16,
+      "kind": "ungated",
+      "configuration_ms": 3679.77,
+      "dropped_frames": 23,
+      "max_queued_frames": 26,
+      "input_frames": 249,
+      "frame_ms_p95": 79.4,
+      "frames_over_budget": 9
+    },
+    {
+      "session": 17,
+      "kind": "gated",
+      "configuration_ms": 4232.61,
+      "dropped_frames": 0,
+      "max_queued_frames": 3,
+      "input_frames": 249,
+      "frame_ms_p95": 80.13,
+      "frames_over_budget": 16
+    },
+    {
+      "session": 18,
+      "kind": "ungated",
+      "configuration_ms": 3745.46,
+      "dropped_frames": 23,
+      "max_queued_frames": 26,
+      "input_frames": 249,
+      "frame_ms_p95": 80.1,
+      "frames_over_budget": 12
+    }
+  ],
+  "summary": {
+    "reconnect": {
+      "sessions": 6,
+      "sessions_with_drops": 0,
+      "dropped_frames": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "configuration_ms": [
+        1500.95,
+        1501.72,
+        1454.92,
+        1661.22,
+        1456.39,
+        1637.24
+      ],
+      "max_queued_frames": [
+        4,
+        3,
+        3,
+        2,
+        2,
+        2
+      ]
+    },
+    "gated": {
+      "sessions": 6,
+      "sessions_with_drops": 0,
+      "dropped_frames": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "configuration_ms": [
+        2099.73,
+        2098.68,
+        4715.18,
+        4184.46,
+        3064.62,
+        4232.61
+      ],
+      "max_queued_frames": [
+        2,
+        1,
+        3,
+        2,
+        2,
+        3
+      ]
+    },
+    "ungated": {
+      "sessions": 6,
+      "sessions_with_drops": 6,
+      "dropped_frames": [
+        3,
+        3,
+        11,
+        16,
+        23,
+        23
+      ],
+      "configuration_ms": [
+        2081.06,
+        2094.25,
+        2827.92,
+        3176.19,
+        3679.77,
+        3745.46
+      ],
+      "max_queued_frames": [
+        26,
+        26,
+        26,
+        26,
+        26,
+        26
+      ]
+    }
+  },
+  "readiness_answers": {
+    "gated-1": {
+      "connected_to_replay_ms": 2124.753,
+      "transcript": ", that's the capital of France, right?",
+      "mentions_paris_or_france": true
+    },
+    "gated-2": {
+      "connected_to_replay_ms": 2099.942,
+      "transcript": " Yeah, the capital of France is Paris, that's the one, you know it's famous for the Eiffel Tower.",
+      "mentions_paris_or_france": true
+    },
+    "gated-3": {
+      "connected_to_replay_ms": 4717.594,
+      "transcript": ", that's the capital of France, you know, it's famous for the Eiffel Tower and great food.",
+      "mentions_paris_or_france": true
+    },
+    "gated-4": {
+      "connected_to_replay_ms": 4186.753,
+      "transcript": " Paris is the capital of France, it prettys famous.",
+      "mentions_paris_or_france": true
+    },
+    "gated-5": {
+      "connected_to_replay_ms": 3068.072,
+      "transcript": ", the capital of France is Paris, it' right in the middle of the country.",
+      "mentions_paris_or_france": true
+    },
+    "gated-6": {
+      "connected_to_replay_ms": 4234.517,
+      "transcript": ", that's the capital of France, you know, it's the city of love.",
+      "mentions_paris_or_france": true
+    },
+    "ungated-1": {
+      "connected_to_replay_ms": 0.068,
+      "transcript": ", that's the capital of France, you know.",
+      "mentions_paris_or_france": true
+    },
+    "ungated-2": {
+      "connected_to_replay_ms": 0.068,
+      "transcript": ", that's the capital of France, you know it' got the Eiffel Tower and all that.",
+      "mentions_paris_or_france": true
+    },
+    "ungated-3": {
+      "connected_to_replay_ms": 0.065,
+      "transcript": ", it's the capital of France, you know, that big city with all the parks.",
+      "mentions_paris_or_france": true
+    },
+    "ungated-4": {
+      "connected_to_replay_ms": 0.076,
+      "transcript": ", that's right.",
+      "mentions_paris_or_france": false
+    },
+    "ungated-5": {
+      "connected_to_replay_ms": 0.062,
+      "transcript": " Paris is the capital of France.",
+      "mentions_paris_or_france": true
+    },
+    "ungated-6": {
+      "connected_to_replay_ms": 0.067,
+      "transcript": " Hey, let me know if you have any questions.",
+      "mentions_paris_or_france": false
+    }
+  },
+  "session_order": "stats line 1-6 are the three reconnect probes (two sessions each); 7-18 alternate gated/ungated replays starting gated",
+  "answer_basis": "server transcript of the model output; keyword match only, not an intelligibility or correctness score"
+}

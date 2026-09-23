@@ -1,0 +1,79 @@
+{"t": 0, "type": "client.replay_started", "wait_configured": false, "connection_ms": 1.829, "connected_to_replay_ms": 0.068, "timing_basis": "t is relative to replay start; received events are not rendered playback"}
+{"t": 2.083, "type": "session.created", "event_id": "event_000000000002", "session": {"audio": {"input": {"format": {"type": "audio/pcmu"}, "transcription": {"model": "Qwen/Qwen3-ASR-0.6B"}, "turn_detection": {"create_response": true, "interrupt_response": true, "prefix_padding_ms": 300, "silence_duration_ms": 500, "threshold": 0.5, "type": "server_vad"}}, "output": {"format": {"type": "audio/pcmu"}, "speed": 1}}, "id": "sess_000000000002", "instructions": "", "max_output_tokens": "inf", "model": "openrealtime", "object": "realtime.session", "output_modalities": ["audio"], "tool_choice": "auto", "tools": [], "type": "realtime"}}
+{"t": 2.083, "type": "session.updated", "event_id": "event_000000000003", "session": {"audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "transcription": {"model": "Qwen/Qwen3-ASR-0.6B"}, "turn_detection": {"create_response": true, "interrupt_response": true, "prefix_padding_ms": 300, "silence_duration_ms": 500, "threshold": 0.5, "type": "server_vad"}}, "output": {"format": {"type": "audio/pcm", "rate": 24000}, "speed": 1}}, "id": "sess_000000000002", "instructions": "", "max_output_tokens": "inf", "model": "openrealtime", "object": "realtime.session", "output_modalities": ["audio"], "tool_choice": "auto", "tools": [], "type": "realtime"}}
+{"t": 2.501, "type": "response.created", "event_id": "event_000000000005", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000004", "max_output_tokens": "inf", "object": "realtime.response", "output": [], "output_modalities": ["audio"], "status": "in_progress"}}
+{"t": 2.501, "type": "response.output_item.added", "event_id": "event_000000000007", "item": {"content": [{"transcript": "", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.501, "type": "response.content_part.added", "content_index": 0, "event_id": "event_000000000008", "item_id": "item_000000000006", "output_index": 0, "part": {"transcript": "", "type": "audio"}, "response_id": "resp_000000000004"}
+{"t": 2.501, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " Hey", "event_id": "event_000000000009", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.521, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.521, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.535, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ",", "event_id": "event_000000000012", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.541, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.568, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " let", "event_id": "event_000000000014", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.581, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.602, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.635, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.669, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " me", "event_id": "event_000000000018", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.681, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.702, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " know", "event_id": "event_000000000020", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.721, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.734, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.763, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " if", "event_id": "event_000000000023", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 2.781, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.791, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.82, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.849, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 2.877, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.061, "type": "response.output_audio.done", "content_index": 0, "event_id": "event_000000000029", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 3.061, "type": "response.output_audio_transcript.done", "content_index": 0, "event_id": "event_000000000030", "item_id": "item_000000000006", "output_index": 0, "response_id": "resp_000000000004", "transcript": " Hey, let me know if"}
+{"t": 3.061, "type": "response.content_part.done", "content_index": 0, "event_id": "event_000000000031", "item_id": "item_000000000006", "output_index": 0, "part": {"transcript": " Hey, let me know if", "type": "audio"}, "response_id": "resp_000000000004"}
+{"t": 3.061, "type": "response.output_item.done", "event_id": "event_000000000032", "item": {"content": [{"transcript": " Hey, let me know if", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}, "output_index": 0, "response_id": "resp_000000000004"}
+{"t": 3.061, "type": "response.done", "event_id": "event_000000000033", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000004", "max_output_tokens": "inf", "object": "realtime.response", "output": [{"content": [{"transcript": " Hey, let me know if", "type": "output_audio"}], "id": "item_000000000006", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}], "output_modalities": ["audio"], "status": "completed"}}
+{"t": 3.389, "type": "response.created", "event_id": "event_000000000035", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000034", "max_output_tokens": "inf", "object": "realtime.response", "output": [], "output_modalities": ["audio"], "status": "in_progress"}}
+{"t": 3.389, "type": "response.output_item.added", "event_id": "event_000000000037", "item": {"content": [{"transcript": "", "type": "output_audio"}], "id": "item_000000000036", "object": "realtime.item", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.389, "type": "response.content_part.added", "content_index": 0, "event_id": "event_000000000038", "item_id": "item_000000000036", "output_index": 0, "part": {"transcript": "", "type": "audio"}, "response_id": "resp_000000000034"}
+{"t": 3.389, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ",", "event_id": "event_000000000039", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.401, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.401, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.418, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.446, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.475, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.503, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.532, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " that", "event_id": "event_000000000046", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.541, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.56, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": "'", "event_id": "event_000000000048", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.561, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.615, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": "s", "event_id": "event_000000000050", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.621, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.695, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " the", "event_id": "event_000000000052", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.701, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.775, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " capital", "event_id": "event_000000000054", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 3.781, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.855, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 3.935, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.015, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.095, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.175, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " of", "event_id": "event_000000000060", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 4.181, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.255, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.335, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " France", "event_id": "event_000000000063", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 4.341, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.417, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ",", "event_id": "event_000000000065", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 4.423, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.496, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.575, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.655, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.735, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " you", "event_id": "event_000000000070", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 4.741, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.815, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": " know", "event_id": "event_000000000072", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 4.821, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.895, "type": "response.output_audio_transcript.delta", "content_index": 0, "delta": ".", "event_id": "event_000000000074", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 4.901, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 4.975, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.055, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.136, "type": "response.output_audio.delta", "bytes": 3840}
+{"t": 5.621, "type": "response.output_audio.done", "content_index": 0, "event_id": "event_000000000079", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 5.621, "type": "response.output_audio_transcript.done", "content_index": 0, "event_id": "event_000000000080", "item_id": "item_000000000036", "output_index": 0, "response_id": "resp_000000000034", "transcript": ", that's the capital of France, you know."}
+{"t": 5.621, "type": "response.content_part.done", "content_index": 0, "event_id": "event_000000000081", "item_id": "item_000000000036", "output_index": 0, "part": {"transcript": ", that's the capital of France, you know.", "type": "audio"}, "response_id": "resp_000000000034"}
+{"t": 5.621, "type": "response.output_item.done", "event_id": "event_000000000082", "item": {"content": [{"transcript": ", that's the capital of France, you know.", "type": "output_audio"}], "id": "item_000000000036", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}, "output_index": 0, "response_id": "resp_000000000034"}
+{"t": 5.621, "type": "response.done", "event_id": "event_000000000083", "response": {"audio": {"output": {"format": {"type": "audio/pcm", "rate": 24000}, "voice": ""}}, "conversation_id": "conv_000000000001", "id": "resp_000000000034", "max_output_tokens": "inf", "object": "realtime.response", "output": [{"content": [{"transcript": ", that's the capital of France, you know.", "type": "output_audio"}], "id": "item_000000000036", "object": "realtime.item", "role": "assistant", "status": "completed", "type": "message"}], "output_modalities": ["audio"], "status": "completed"}}
