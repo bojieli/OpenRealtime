@@ -40,3 +40,28 @@ class JudgeTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GeminiBackendTest(unittest.TestCase):
+    def test_parses_structured_verdict_and_sends_audio_inline(self):
+        import tempfile, types
+        seen = {}
+
+        def fake(request, timeout):
+            seen['body'] = json.loads(request.data)
+            seen['key'] = request.get_header('X-goog-api-key')
+            return io.BytesIO(json.dumps({'modelVersion': 'm-001', 'candidates': [{'content': {'parts': [
+                {'text': '{"meets": true, "quote": "olive oil"}'}]}}]}).encode())
+        with tempfile.NamedTemporaryFile(suffix='.wav') as wav, patch.dict('os.environ', {'GEMINI_API_KEY': 'k'}), \
+                patch('urllib.request.urlopen', fake):
+            wav.write(b'RIFF')
+            wav.flush()
+            verdict = judge.ask_gemini('m', 'goal', audio=wav.name)
+        self.assertEqual((verdict['meets'], verdict['model_version']), (True, 'm-001'))
+        parts = seen['body']['contents'][0]['parts']
+        self.assertEqual(parts[1]['inline_data']['mime_type'], 'audio/wav')
+        self.assertIn('audio recording', seen['body']['systemInstruction']['parts'][0]['text'])
+        self.assertEqual(seen['key'], 'k')
+        args = types.SimpleNamespace(backend='local', url='u', model='m')
+        with self.assertRaisesRegex(ValueError, 'requires the gemini backend'):
+            judge.judge(args, 'goal', audio=wav.name)
