@@ -667,6 +667,15 @@ Endpoint and overlap analyses now exclude these arrays unless prefix stability
 and nonnegative availability are explicitly verified. Existing offline X2-Turn
 scores must not be promoted to causal endpoint or interruption measurements.
 A fresh streaming or per-prefix evaluation remains required.
+A [padding-aware prefix check](../deploy/duplex/evidence/interaction/20260923-x2-prefix/)
+explains most of that. The offline runtime pads each buffer and returns frames
+computed over the right padding, and the earlier probe scored those frames.
+With the buffer length held fixed, silencing all audio after
+(f + 7) × 80 ms leaves frame f exactly unchanged (3.2e-4 at the declared
+6-frame delay), so no future information leaks. Shortening the buffer still
+changes early probabilities by up to 0.12, deterministically and without
+changing the argmax label. The arrays therefore remain excluded under the
+existing 1e-3 rule; accepting that fidelity gap is a separate decision.
 Reanalysis in separate work directories completed successfully: the endpoint
 analysis warned and excluded X2-Turn; the overlap directory had no X2-Turn
 score file. All existing numerical comparisons were unchanged (only the copied

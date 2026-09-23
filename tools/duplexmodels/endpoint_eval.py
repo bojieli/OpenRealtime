@@ -620,43 +620,73 @@ def cmd_score_external(args) -> None:
 
 
 def cmd_x2turn_timing(args) -> None:
-    """Measure when an X2-Turn frame exists and whether earlier frames change when later audio arrives."""
+    """Find when an X2-Turn frame stops depending on audio that has not arrived yet.
+
+    The offline runtime pads the right edge of every buffer with synthetic
+    silence and returns frames for it, so a prefix call's trailing frames are
+    not observations. For each candidate delay A, frame f of a prefix of t
+    seconds is admissible only if (f + 1 + A) x 80 ms <= t; admissible frames
+    must equal the full-buffer frames. The smallest A meeting the tolerance on
+    every prefix is the availability delay. Two controls separate causes: the
+    full buffer decoded twice (run-to-run noise), and the prefix followed by
+    silence to full length (future content versus buffer length). Inference
+    compute time is excluded.
+    """
     import requests
 
     session = requests.Session()
+    health = session.get(args.url + "/health", timeout=10).json()
     files = [os.path.join(FDB15, "user_interruption", str(i), "input.wav") for i in (1, 2, 3)]
-    rows, delays, worst = [], [], 0.0
+    tolerance, candidates = 1e-3, range(0, 16)
+    worst = {a: 0.0 for a in candidates}
+    rows, noise = [], []
+
+    def frames(audio):
+        return session.post(f"{args.url}/v1/turn-state/x2turn", params={"frames": 0},
+                            data=audio.astype("<f4").tobytes(), timeout=600).json()["frames"]
+
+    def differences(part, ref):
+        return [max(abs(a["p"][c] - b["p"][c]) for c in a["p"]) for a, b in zip(part, ref)]
+
+    def admissible(diffs, t, a):
+        return [d for f, d in enumerate(diffs) if (f + 1 + a) * 0.08 <= t + 1e-9]
+
     for path in files:
         audio = load_audio(path)
-        full = session.post(f"{args.url}/v1/turn-state/x2turn", params={"frames": 0},
-                            data=audio.astype("<f4").tobytes(), timeout=600).json()
-        ref = full["frames"]
-        for t in (3.04, 4.0, 6.96, 8.0, 9.6):
+        ref = frames(audio)
+        again = frames(audio)
+        noise.append({"file": path, "frames": len(ref), "identical_length": len(again) == len(ref),
+                      "max_abs_diff": round(max(differences(again, ref), default=0.0), 6)})
+        for t in (1.6, 2.4, 3.04, 4.0, 4.72, 6.0, 6.96, 8.0, 9.6):
             n = int(round(t * SR))
-            part = session.post(f"{args.url}/v1/turn-state/x2turn", params={"frames": 0},
-                                data=audio[:n].astype("<f4").tobytes(), timeout=600).json()["frames"]
-            k = len(part)
-            diff = max((abs(a["p"][c] - b["p"][c]) for a, b in zip(part, ref) for c in a["p"]), default=0.0)
-            tail = max((abs(a["p"][c] - b["p"][c]) for a, b in zip(part[-3:], ref[k - 3:k]) for c in a["p"]),
-                       default=0.0)
-            # trailing frames whose value still changes once later audio arrives are provisional
-            provisional = 0
-            for a, b in zip(reversed(part), reversed(ref[:k])):
-                if max(abs(a["p"][c] - b["p"][c]) for c in a["p"]) > 0.02:
-                    provisional += 1
-                else:
-                    break
-            delay = int(round(t / 0.08)) - k + provisional
-            delays.append(delay)
-            worst = max(worst, diff)
-            rows.append({"file": path, "t": t, "frames": k, "provisional_tail_frames": provisional, "delay_frames": delay, "max_abs_diff_vs_full": round(diff, 5),
-                         "last3_max_abs_diff": round(tail, 5)})
-    out = {"available_after_frames": max(delays), "delays_seen": sorted(set(delays)),
-           "max_abs_diff_prefix_vs_full": round(worst, 5), "rows": rows,
+            if n >= len(audio):
+                continue
+            part = frames(audio[:n])
+            diffs = differences(part, ref)
+            masked = frames(np.concatenate([audio[:n], np.zeros(len(audio) - n, dtype=audio.dtype)]))
+            masked_diffs = differences(masked, ref)
+            row = {"file": path, "t": t, "prefix_frames": len(part), "full_frames": len(ref),
+                   "max_abs_diff_by_delay": {}, "same_length_future_silenced": {}}
+            for a in candidates:
+                value = max(admissible(diffs, t, a), default=0.0)
+                row["max_abs_diff_by_delay"][a] = round(value, 6)
+                row["same_length_future_silenced"][a] = round(max(admissible(masked_diffs, t, a), default=0.0), 6)
+                worst[a] = max(worst[a], value)
+            rows.append(row)
+            print(json.dumps({"file": path, "t": t, "d6": row["max_abs_diff_by_delay"][6],
+                              "masked_d6": row["same_length_future_silenced"][6]}), flush=True)
+    passing = [a for a in candidates if worst[a] <= tolerance]
+    delay = min(passing) if passing else None
+    out = {"causal_prefix_verified": delay is not None, "available_after_frames": delay,
+           "max_abs_diff_prefix_vs_full": round(worst[delay], 6) if delay is not None else round(min(worst.values()), 6),
+           "tolerance": tolerance, "max_abs_diff_by_delay": {a: round(v, 6) for a, v in worst.items()},
+           "full_buffer_repeat": noise, "rows": rows, "server_health": health,
            "meaning": "frame f (covering [f, f+1) x 80 ms) is first produced once (f + 1 + available_after_frames) x 80 "
-                      "ms of audio exist; max_abs_diff says whether its value changes once later audio arrives"}
+                      "ms of audio exist and no later audio changes it; frames a prefix call returns past that point "
+                      "are computed over the runtime's synthetic right padding and are not observations",
+           "excludes": "inference compute time; the offline re-decode, not the patched-vLLM stream"}
     json.dump(out, open(os.path.join(args.work, "x2turn_timing.json"), "w"), indent=2)
-    print(json.dumps(out, indent=2))
+    print(json.dumps({k: v for k, v in out.items() if k != "rows"}, indent=2))
 
 
 # --------------------------------------------------------------------------
