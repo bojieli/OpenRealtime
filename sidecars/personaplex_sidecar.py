@@ -77,6 +77,7 @@ class PersonaPlexModel:
 
 class PersonaPlexSidecar(MoshiSidecar):
     def configure(self, hello):
+        configuring = time.monotonic()
         self.model_name = REPOSITORY + ("/mock" if self.mock else "")
         if self.input_rate != MODEL_RATE:
             self._resampler = LinearResampler(self.input_rate, MODEL_RATE)
@@ -94,6 +95,7 @@ class PersonaPlexSidecar(MoshiSidecar):
                 model.lock.release()
                 raise
             self._stream_thread = threading.Thread(target=self._stream, daemon=True)
+        self._record_configuration_complete(configuring)
         self._stream_thread.start()
 
 

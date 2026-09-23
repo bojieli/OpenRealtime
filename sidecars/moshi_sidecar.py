@@ -272,6 +272,7 @@ class MoshiSidecar(Sidecar):
     # --- lifecycle ----------------------------------------------------------
 
     def configure(self, hello) -> None:
+        configuring = time.monotonic()
         self.model_name = self.repository
         if self.instructions.strip():
             log("moshi has no instruction channel; the session instructions are not given to the model")
@@ -281,6 +282,7 @@ class MoshiSidecar(Sidecar):
         if self.mock:
             log("moshi sidecar running in mock mode; no model is loaded")
             self._stream_thread = threading.Thread(target=self._mock_stream, daemon=True)
+            self._record_configuration_complete(configuring)
             self._stream_thread.start()
             return
         model = self._shared or MoshiModel(self.repository, self.device, self.seed, self.revision)
@@ -297,8 +299,19 @@ class MoshiSidecar(Sidecar):
             model.lock.release()
             raise
         self._stream_thread = threading.Thread(target=self._stream, daemon=True)
+        self._record_configuration_complete(configuring)
         self._stream_thread.start()
         log("model ready")
+
+    def _record_configuration_complete(self, started: float) -> None:
+        # Includes model acquisition/reset and prompt prefill. This precedes
+        # thread start and the base class's ready write; it is not client receipt.
+        completed = time.monotonic()
+        self._stats["configuration_ms"] = round((completed - started) * 1000, 2)
+        self._stats["configuration_complete_session_ms"] = round(
+            (completed - self._session_began) * 1000, 2)
+        self._stats["configuration_timing_basis"] = (
+            "sidecar configure before inference thread start; not client-visible ready")
 
     def _read_loop(self) -> None:
         try:

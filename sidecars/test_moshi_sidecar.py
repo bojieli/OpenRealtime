@@ -9,6 +9,27 @@ from moshi_sidecar import MoshiSidecar, FRAME_SAMPLES
 
 
 class CancellationTests(unittest.TestCase):
+    def test_configuration_timing_includes_reset_before_worker_starts(self):
+        from personaplex_sidecar import PersonaPlexSidecar
+        for cls in (MoshiSidecar, PersonaPlexSidecar):
+            with self.subTest(sidecar=cls.__name__):
+                clock = [102.0]
+                def reset(*args):
+                    clock[0] = 105.0
+                model = SimpleNamespace(lock=threading.Lock(), reset=reset)
+                s = cls(io.BytesIO(), io.BytesIO(), repository='test', mock=False,
+                        device='cpu', shared=model)
+                s._session_began = 100.0
+                observed = []
+                worker = SimpleNamespace(start=lambda: observed.append(dict(s._stats)))
+                with patch('moshi_sidecar.time.monotonic', side_effect=lambda: clock[0]), \
+                     patch('moshi_sidecar.threading.Thread', return_value=worker):
+                    s.configure(None)
+                model.lock.release()
+                self.assertEqual(observed[0]['configuration_ms'], 3000)
+                self.assertEqual(observed[0]['configuration_complete_session_ms'], 5000)
+                self.assertIn('not client-visible ready', observed[0]['configuration_timing_basis'])
+
     def test_startup_trace_distinguishes_burst_from_paced_input_and_is_bounded(self):
         frame = np.zeros(FRAME_SAMPLES, dtype='<i2').tobytes()
         traces = []
