@@ -1,7 +1,9 @@
 # Interaction capability study: implementation and GPU execution plan
 
-**Status:** proposed, 2026-09-22. This document does not claim implementation or
-GPU execution. **Design:** [questions, treatments, and scoring](interaction-capability-study.md).
+**Status:** protocol development, 2026-09-23. The joint policy, playback ledger,
+content screen and live runner are implemented (`bench/capability`,
+`tools/interactionstudy`). P0–P2 acceptance and the pilot remain incomplete.
+Development findings are in [interaction-capability-findings.md](experiments/interaction-capability-findings.md). **Design:** [questions, treatments, and scoring](interaction-capability-study.md).
 Inspected repository: `293e4f74b43b3116e2e2e2786e379381dde3e77f`.
 
 ## Execution target and first decision
