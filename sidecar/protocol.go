@@ -112,6 +112,9 @@ const (
 	TypeOutputAudio MessageType = "output_audio"
 	// TypeTurnDone marks the end of one model turn.
 	TypeTurnDone MessageType = "turn_done"
+	// TurnInterrupted is the turn_done status of a turn the model stopped
+	// because the user took the floor.
+	TurnInterrupted = "interrupted"
 	// TypeToolCall reports a call the model wants made. A sidecar that cannot
 	// call tools never sends it.
 	TypeToolCall MessageType = "tool_call"
@@ -172,6 +175,11 @@ type Message struct {
 	Arguments json.RawMessage `json:"arguments,omitempty"`
 	Output    json.RawMessage `json:"output,omitempty"`
 	Error     string          `json:"error,omitempty"`
+
+	// Turn end. Empty means the model finished what it was saying;
+	// TurnInterrupted means it stopped because the user took the floor, which
+	// the engine reports to clients as a cancelled response.
+	TurnStatus string `json:"turn_status,omitempty"`
 
 	// Errors.
 	Code  string `json:"code,omitempty"`
@@ -368,8 +376,12 @@ func (message Message) Validate() error {
 		}
 	case TypeElementFrame:
 		return validateElementFrame(message)
+	case TypeTurnDone:
+		if message.TurnStatus != "" && message.TurnStatus != TurnInterrupted {
+			return fmt.Errorf("unknown turn_done status %q", message.TurnStatus)
+		}
 	case TypeCommit, TypeRespond, TypeInterrupt, TypeBye, TypeSpeechStarted, TypeSpeechStopped,
-		TypeTextDone, TypeTurnDone, TypeLog, TypeToolsUpdate:
+		TypeTextDone, TypeLog, TypeToolsUpdate:
 	default:
 		return fmt.Errorf("unknown sidecar message type %q", message.Type)
 	}

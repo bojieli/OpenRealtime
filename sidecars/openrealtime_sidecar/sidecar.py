@@ -83,8 +83,9 @@ class Sidecar:
         if pcm16:
             self.send(MessageType.OUTPUT_AUDIO, pcm16)
 
-    def turn_done(self) -> None:
-        self.send(MessageType.TURN_DONE)
+    def turn_done(self, *, interrupted: bool = False) -> None:
+        """End the model's turn; interrupted when it stopped for the user."""
+        self.send(MessageType.TURN_DONE, turn_status="interrupted" if interrupted else None)
 
     def error(self, message: str, *, code: str = "", fatal: bool = False) -> None:
         self.send(MessageType.ERROR, text=message, code=code or None, fatal=fatal or None)

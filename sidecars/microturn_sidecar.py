@@ -914,7 +914,7 @@ class MicroTurnSidecar(Sidecar):
         if heard.strip():
             self.text_done(heard)
             self.dialogue.append({"role": "assistant", "content": heard + " -"})
-        self.turn_done()
+        self.turn_done(interrupted=True)
         log(f"stopped speaking: {reason}")
 
     def _heard_text(self) -> str:

@@ -79,7 +79,7 @@ func (runtime *runtime) mirrorMessage(message sidecar.Message) error {
 	case sidecar.TypeOutputAudio:
 		return runtime.forwardAudio(message)
 	case sidecar.TypeTurnDone:
-		return runtime.finishTurn()
+		return runtime.finishTurn(message.TurnStatus == sidecar.TurnInterrupted)
 	case sidecar.TypeToolCall:
 		return runtime.modelToolCall(message)
 	case sidecar.TypeError:
@@ -244,7 +244,10 @@ func (runtime *runtime) forwardAudio(message sidecar.Message) error {
 	return runtime.sink.SpeechAudio(runtime.ctx, utterance, frame)
 }
 
-func (runtime *runtime) finishTurn() error {
+// finishTurn ends the model's utterance. An interrupted turn is not a
+// completed one: clients see its response cancelled, which is what tells a
+// player to stop and report where it stopped.
+func (runtime *runtime) finishTurn(interrupted bool) error {
 	runtime.stateMu.Lock()
 	utterance := runtime.utterance
 	runtime.utterance = nil
@@ -253,7 +256,7 @@ func (runtime *runtime) finishTurn() error {
 	if utterance == nil {
 		return nil
 	}
-	return runtime.sink.SpeechEnd(runtime.ctx, *utterance, action.Outcome{Completed: true})
+	return runtime.sink.SpeechEnd(runtime.ctx, *utterance, action.Outcome{Completed: !interrupted})
 }
 
 // modelToolCall commits and dispatches the bounded fast-action subset when the
