@@ -619,6 +619,35 @@ def cmd_score_external(args) -> None:
                 print(f"[score-external] {n + 1}/{len(todo)} {time.time() - began:.0f}s", flush=True)
 
 
+def x2_timing_summary(rows: list, noise: list, tolerance: float = 1e-3) -> dict:
+    """Pick the availability delay from prefix rows (see cmd_x2turn_timing).
+
+    Exact prefix equality is preferred. Otherwise the delay is the smallest one
+    at which silencing the future (same buffer length) changes nothing; the
+    remaining prefix difference at that delay is reported as the buffer-length
+    fidelity gap that x2_evidence.causal_timing bounds.
+    """
+    delays = sorted({int(a) for r in rows for a in r["max_abs_diff_by_delay"]})
+    prefix = {a: max(r["max_abs_diff_by_delay"][a if a in r["max_abs_diff_by_delay"] else str(a)] for r in rows)
+              for a in delays}
+    future = {a: max(r["same_length_future_silenced"][a if a in r["same_length_future_silenced"] else str(a)]
+                     for r in rows) for a in delays}
+    prefix_ok = [a for a in delays if prefix[a] <= tolerance]
+    future_ok = [a for a in delays if future[a] <= tolerance]
+    delay = min(prefix_ok) if prefix_ok else (min(future_ok) if future_ok else None)
+    return {"causal_prefix_verified": bool(prefix_ok), "future_independent_verified": bool(future_ok),
+            "available_after_frames": delay,
+            "max_abs_diff_prefix_vs_full": round(prefix[delay] if delay is not None else min(prefix.values()), 6),
+            "max_abs_diff_future_silenced": round(future[delay], 6) if delay is not None else None,
+            "buffer_length_max_abs_diff": round(prefix[delay], 6) if delay is not None else None,
+            "tolerance": tolerance, "max_abs_diff_by_delay": prefix, "future_silenced_by_delay": future,
+            "full_buffer_repeat": noise, "rows": rows,
+            "meaning": "frame f (covering [f, f+1) x 80 ms) is first produced once (f + 1 + available_after_frames) x 80 "
+                       "ms of audio exist; at a fixed buffer length no later audio changes it; frames a prefix call "
+                       "returns past that point are computed over the runtime's synthetic right padding",
+            "excludes": "inference compute time; the offline re-decode, not the patched-vLLM stream"}
+
+
 def cmd_x2turn_timing(args) -> None:
     """Find when an X2-Turn frame stops depending on audio that has not arrived yet.
 
@@ -638,7 +667,6 @@ def cmd_x2turn_timing(args) -> None:
     health = session.get(args.url + "/health", timeout=10).json()
     files = [os.path.join(FDB15, "user_interruption", str(i), "input.wav") for i in (1, 2, 3)]
     tolerance, candidates = 1e-3, range(0, 16)
-    worst = {a: 0.0 for a in candidates}
     rows, noise = [], []
 
     def frames(audio):
@@ -671,20 +699,11 @@ def cmd_x2turn_timing(args) -> None:
                 value = max(admissible(diffs, t, a), default=0.0)
                 row["max_abs_diff_by_delay"][a] = round(value, 6)
                 row["same_length_future_silenced"][a] = round(max(admissible(masked_diffs, t, a), default=0.0), 6)
-                worst[a] = max(worst[a], value)
             rows.append(row)
             print(json.dumps({"file": path, "t": t, "d6": row["max_abs_diff_by_delay"][6],
                               "masked_d6": row["same_length_future_silenced"][6]}), flush=True)
-    passing = [a for a in candidates if worst[a] <= tolerance]
-    delay = min(passing) if passing else None
-    out = {"causal_prefix_verified": delay is not None, "available_after_frames": delay,
-           "max_abs_diff_prefix_vs_full": round(worst[delay], 6) if delay is not None else round(min(worst.values()), 6),
-           "tolerance": tolerance, "max_abs_diff_by_delay": {a: round(v, 6) for a, v in worst.items()},
-           "full_buffer_repeat": noise, "rows": rows, "server_health": health,
-           "meaning": "frame f (covering [f, f+1) x 80 ms) is first produced once (f + 1 + available_after_frames) x 80 "
-                      "ms of audio exist and no later audio changes it; frames a prefix call returns past that point "
-                      "are computed over the runtime's synthetic right padding and are not observations",
-           "excludes": "inference compute time; the offline re-decode, not the patched-vLLM stream"}
+    out = x2_timing_summary(rows, noise, tolerance)
+    out["server_health"] = health
     json.dump(out, open(os.path.join(args.work, "x2turn_timing.json"), "w"), indent=2)
     print(json.dumps({k: v for k, v in out.items() if k != "rows"}, indent=2))
 

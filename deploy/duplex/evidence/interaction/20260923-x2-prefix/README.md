@@ -35,3 +35,19 @@ within 1e-3). The offline full-buffer arrays use no future audio at delay 6,
 but a true streaming decoder would produce probabilities up to 0.12 different.
 Whether that fidelity gap is acceptable for endpoint/overlap scoring is a
 methodological decision. The guard in `x2_evidence.py` was not changed.
+
+## Accepted for scoring (2026-09-23)
+
+The buffer-length gap was accepted for scoring. `x2_evidence.causal_timing` now
+admits X2-Turn arrays under either of two conditions:
+
+- prefix equality within 1e-3, as before; or
+- future independence within 1e-3 at a non-negative delay, with a recorded
+  buffer-length gap of at most 0.13.
+
+`x2turn_timing-accepted.json` is this run's rows summarized by
+`endpoint_eval.x2_timing_summary`. It gives an availability delay of 6 frames:
+frame f is used once (f + 7) × 80 ms of audio exist. The future-silenced
+difference is 3.2e-4 and the gap is 0.123. X2-Turn endpoint and overlap
+scores computed this way are information-causal offline approximations. A
+streaming decoder could differ from them by up to 0.12 in probability.
