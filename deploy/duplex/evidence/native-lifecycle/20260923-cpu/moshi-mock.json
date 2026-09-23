@@ -1,0 +1,132 @@
+{
+  "sidecar": {
+    "suite": "sidecar-protocol-v1",
+    "passed": true,
+    "version": 1,
+    "model": "kyutai/moshiko-pytorch-bf16",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "native_vad",
+      "barge_in"
+    ],
+    "checks": [
+      {
+        "name": "handshake completes",
+        "required": true,
+        "passed": true,
+        "detail": "kyutai/moshiko-pytorch-bf16 at 24000 Hz"
+      },
+      {
+        "name": "declares the protocol version it speaks",
+        "required": true,
+        "passed": true,
+        "detail": "declared 1"
+      },
+      {
+        "name": "declares its model identity",
+        "required": true,
+        "passed": true,
+        "detail": "kyutai/moshiko-pytorch-bf16"
+      },
+      {
+        "name": "declares an output sample rate",
+        "required": true,
+        "passed": true,
+        "detail": "24000 Hz"
+      },
+      {
+        "name": "accepts input audio",
+        "required": true,
+        "passed": true,
+        "detail": "1.5 s at 24000 Hz"
+      },
+      {
+        "name": "accepts a respond request",
+        "required": true,
+        "passed": true
+      },
+      {
+        "name": "produces a turn",
+        "required": true,
+        "passed": true,
+        "detail": "text=\"This is the Moshi sidecar running without a model.\" audio=19200 bytes"
+      },
+      {
+        "name": "produces output audio",
+        "required": true,
+        "passed": true,
+        "detail": "19200 bytes"
+      },
+      {
+        "name": "output audio contains whole PCM16 samples",
+        "required": true,
+        "passed": true,
+        "detail": "19200 bytes"
+      },
+      {
+        "name": "marks the end of its turn",
+        "required": true,
+        "passed": true
+      },
+      {
+        "name": "reports no error during a normal turn",
+        "required": true,
+        "passed": true
+      },
+      {
+        "name": "reports what it heard",
+        "required": false,
+        "passed": true,
+        "skipped": true,
+        "detail": "transcript capability not declared"
+      },
+      {
+        "name": "accepts injected text",
+        "required": false,
+        "passed": true,
+        "skipped": true,
+        "detail": "text injection capability not declared; the binding falls back to hand-off"
+      },
+      {
+        "name": "declares tool support with a tools capability",
+        "required": false,
+        "passed": true,
+        "skipped": true,
+        "detail": "tools capability not declared"
+      },
+      {
+        "name": "accepts direct visual input",
+        "required": false,
+        "passed": true,
+        "skipped": true,
+        "detail": "protocol v3 visual-input capability not selected"
+      },
+      {
+        "name": "accepts a typed interaction act",
+        "required": false,
+        "passed": true,
+        "skipped": true,
+        "detail": "protocol v2 interaction-acts capability not selected"
+      },
+      {
+        "name": "accepts an interrupt",
+        "required": true,
+        "passed": true,
+        "detail": "\u003cnil\u003e"
+      },
+      {
+        "name": "survives an interrupt",
+        "required": true,
+        "passed": true,
+        "detail": "\u003cnil\u003e"
+      },
+      {
+        "name": "closes cleanly",
+        "required": true,
+        "passed": true
+      }
+    ]
+  }
+}

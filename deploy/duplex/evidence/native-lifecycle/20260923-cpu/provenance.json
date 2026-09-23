@@ -1,0 +1,11 @@
+{
+  "revision": "3c01b9837ab0d27da4e9fdbefbf9d6843a901ca9",
+  "files": {
+    "sidecars/moshi_sidecar.py": "8bd17ad6ef169c094e22d8401915a20e132137ce674932d0b1a79498e2c14f32",
+    "sidecars/personaplex_sidecar.py": "179c58f176f783f08192834efdfcc57ba43e5e73abd43de27b5f903fbb1d593c",
+    "sidecars/test_moshi_sidecar.py": "ba3a93c8f3c3e67b4f477e5a86dfba45a9f287f0a8a93cc437281ea4586ff71e",
+    "sidecars/test_personaplex_sidecar.py": "bcb5e431263f6e7cc797c2ca2350ad3f7d18bef2ea47f6bd9f81b53e6beba9fd"
+  },
+  "binary_sha256": "32db2bfc648c81d729e2712b6802bfa8dd5dea733c35014a0dfa629450966b58",
+  "scope": "CPU lifecycle regression and mocked sidecar protocol v1 only; GPU reconnect remains pending"
+}
