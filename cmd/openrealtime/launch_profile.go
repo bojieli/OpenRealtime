@@ -838,6 +838,7 @@ func writeCreateOnlyLaunchProfile(path string, payload []byte) (resultErr error)
 // the frozen profile would not record.
 func bindScenarioProfileSettings(flags *flag.FlagSet, options *scenarioProfileOptions) {
 	flags.StringVar(&options.noiseFilterURL, "noise-filter-url", options.noiseFilterURL, "pre-ASR audio filter service base URL")
+	flags.StringVar(&options.noiseFilterModel, "noise-filter-model", options.noiseFilterModel, "pre-ASR filter model: rnnoise, deepfilternet, deepfilternet-fir, or real-tse")
 	flags.IntVar(&options.noiseFilterTimeoutMS, "noise-filter-timeout-ms", options.noiseFilterTimeoutMS, "strict per-ingress-packet filtering deadline, 1..50ms")
 	flags.Func("case", "exact scenario name; repeat to freeze a diagnostic subset (default: all cases)", func(name string) error {
 		options.cases = append(options.cases, name)

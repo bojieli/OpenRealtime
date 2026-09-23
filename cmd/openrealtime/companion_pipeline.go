@@ -178,8 +178,7 @@ func describeRoomPipeline(output io.Writer, pipeline roomPipeline) {
 	text("speaker-url", selection.speakerURL)
 	text("noise-filter-url", selection.noiseFilterURL)
 	if selection.noiseFilterModel != "" {
-		// The filter model is fixed by the pipeline; no setting chooses it.
-		fmt.Fprintf(output, "# noise filter model: %s\n", strconv.Quote(selection.noiseFilterModel))
+		text("noise-filter-model", selection.noiseFilterModel)
 	}
 	number("gate-silence-ms", int64(selection.gateSilenceMS))
 }
