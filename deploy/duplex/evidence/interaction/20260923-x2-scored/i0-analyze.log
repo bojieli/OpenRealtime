@@ -1,0 +1,117 @@
+records with both evidence types: 2407 of 2407 points
+{
+  "records": {
+    "calibration": 1187,
+    "test": 1196
+  },
+  "fusion": {
+    "features": [
+      "logit P_smart_turn",
+      "logit P_livekit(reference)"
+    ],
+    "coef": [
+      0.1058,
+      0.8112
+    ],
+    "intercept": 1.4803,
+    "fit": "sklearn LogisticRegression(C=1) on the calibration split, 200 ms checkpoint"
+  },
+  "single_shot_200ms": {
+    "calibration": {
+      "smart_turn_auc": 0.6964228452323689,
+      "livekit_auc": 0.8967437985295127,
+      "fusion_auc": 0.9000807393664536
+    },
+    "test": {
+      "smart_turn_auc": 0.680712925810965,
+      "livekit_auc": 0.879356947984399,
+      "fusion_auc": 0.8828800789585103
+    },
+    "test_calibration": {
+      "smart_turn_platt": {
+        "brier": 0.2272,
+        "ece_10bin": 0.0566
+      },
+      "livekit_platt": {
+        "brier": 0.1386,
+        "ece_10bin": 0.0396
+      },
+      "fusion": {
+        "brier": 0.1363,
+        "ece_10bin": 0.0455
+      },
+      "smart_turn_raw": {
+        "brier": 0.3165,
+        "ece_10bin": 0.2915
+      }
+    }
+  },
+  "per_source_auc_test": {
+    "fdbench/chattts-easy": {
+      "test_holds": 24,
+      "test_endpoints": 78,
+      "smart_turn_auc": 0.44177350427350426,
+      "livekit_auc": 0.7943376068376068,
+      "fusion_auc": 0.7793803418803419
+    },
+    "fdbench/cosyvoice2-easy": {
+      "test_holds": 140,
+      "test_endpoints": 106,
+      "smart_turn_auc": 0.548921832884097,
+      "livekit_auc": 0.9242587601078167,
+      "fusion_auc": 0.9211590296495957
+    },
+    "fdbench/cosyvoice2-easy-noisy-bg-0dB": {
+      "test_holds": 66,
+      "test_endpoints": 49,
+      "smart_turn_auc": 0.5820964749536178,
+      "livekit_auc": 0.9288806431663574,
+      "fusion_auc": 0.9257884972170686
+    },
+    "fdbench/f5tts-easy": {
+      "test_holds": 42,
+      "test_endpoints": 100,
+      "smart_turn_auc": 0.5635714285714286,
+      "livekit_auc": 0.8938095238095238,
+      "fusion_auc": 0.8835714285714286
+    },
+    "fdbv15-backchannel": {
+      "test_holds": 0,
+      "test_endpoints": 53,
+      "smart_turn_auc": null,
+      "livekit_auc": null,
+      "fusion_auc": null
+    },
+    "fdbv15-interruption": {
+      "test_holds": 80,
+      "test_endpoints": 195,
+      "smart_turn_auc": 0.6217307692307692,
+      "livekit_auc": 0.8805128205128205,
+      "fusion_auc": 0.8709615384615386
+    },
+    "fdbv3": {
+      "test_holds": 215,
+      "test_endpoints": 48,
+      "smart_turn_auc": 0.8131782945736434,
+      "livekit_auc": 0.7767926356589148,
+      "fusion_auc": 0.806782945736434
+    }
+  }
+}
+premature<=0.05
+  smart_turn    0.9925 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.0159, 'fallback_rate': 0.9984, 'added_wait_mean_ms': np.float64(1800.0), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  livekit       0.4925 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.0688, 'fallback_rate': 0.5087, 'added_wait_mean_ms': np.float64(915.7), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  fusion        0.865 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.0547, 'fallback_rate': 0.5199, 'added_wait_mean_ms': np.float64(956.1), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  silence_timer 1.2 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.0564, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(1000.0), 'added_wait_p50_ms': np.float64(1000.0), 'added_wait_p90_ms': np.float64(1000.0), 'added_wait_p95_ms': np.float64(1000.0)}
+premature<=0.1
+  smart_turn    0.99 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.0988, 'fallback_rate': 0.5533, 'added_wait_mean_ms': np.float64(1135.2), 'added_wait_p50_ms': np.float64(1800.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  livekit       0.28 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.1323, 'fallback_rate': 0.3211, 'added_wait_mean_ms': np.float64(578.1), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  fusion        0.7225 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.1252, 'fallback_rate': 0.3021, 'added_wait_mean_ms': np.float64(558.2), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  silence_timer 0.95 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.1199, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(750.0), 'added_wait_p50_ms': np.float64(750.0), 'added_wait_p90_ms': np.float64(750.0), 'added_wait_p95_ms': np.float64(750.0)}
+premature<=0.2
+  smart_turn    0.9875 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.1905, 'fallback_rate': 0.3529, 'added_wait_mean_ms': np.float64(791.4), 'added_wait_p50_ms': np.float64(400.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  livekit       0.15 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.2081, 'fallback_rate': 0.186, 'added_wait_mean_ms': np.float64(334.8), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  fusion        0.57 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.1958, 'fallback_rate': 0.1494, 'added_wait_mean_ms': np.float64(280.1), 'added_wait_p50_ms': np.float64(0.0), 'added_wait_p90_ms': np.float64(1800.0), 'added_wait_p95_ms': np.float64(1800.0)}
+  silence_timer 0.75 {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.2099, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(550.0), 'added_wait_p50_ms': np.float64(550.0), 'added_wait_p90_ms': np.float64(550.0), 'added_wait_p95_ms': np.float64(550.0)}
+default 500 ms timer: {'holds': 567, 'endpoints': 629, 'premature_endpoint_rate': 0.4586, 'fallback_rate': 0.0, 'added_wait_mean_ms': np.float64(300.0), 'added_wait_p50_ms': np.float64(300.0), 'added_wait_p90_ms': np.float64(300.0), 'added_wait_p95_ms': np.float64(300.0)}
+wrote /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/interaction/i0/i0_results_reference.json

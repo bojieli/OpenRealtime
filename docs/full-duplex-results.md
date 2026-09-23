@@ -676,6 +676,12 @@ With the buffer length held fixed, silencing all audio after
 changes early probabilities by up to 0.12, deterministically and without
 changing the argmax label. The arrays therefore remain excluded under the
 existing 1e-3 rule; accepting that fidelity gap is a separate decision.
+That gap was then accepted, and X2-Turn was [scored in I0 and I1](../deploy/duplex/evidence/interaction/20260923-x2-scored/)
+with frames used only once (f + 7) × 80 ms of audio exist. The rebuilt
+baselines reproduce the earlier tables within 0.001 AUC. X2-Turn is at chance
+in both cells: endpoint AUC 0.502 at 200 ms of silence (Smart Turn 0.681 on the
+same points), and balanced accuracy 0.50 for barge-in, with every
+interruption missed by its own rule.
 Reanalysis in separate work directories completed successfully: the endpoint
 analysis warned and excluded X2-Turn; the overlap directory had no X2-Turn
 score file. All existing numerical comparisons were unchanged (only the copied
