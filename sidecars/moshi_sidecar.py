@@ -263,6 +263,11 @@ class MoshiSidecar(Sidecar):
                        "turns": 0, "interrupts": 0, "audio_frames_sent": 0,
                        "max_input_packet_samples": 0, "max_queued_frames": 0}
         self._session_began = time.monotonic()
+        # First packets only: enough to identify a buffered startup burst without
+        # retaining an unbounded trace or audio. Times are callback arrivals at
+        # this sidecar, not capture timestamps or client-visible readiness.
+        self._input_startup: list[dict] = []
+        self._input_samples = 0
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -322,9 +327,11 @@ class MoshiSidecar(Sidecar):
 
     def on_audio(self, pcm16: bytes) -> None:
         """Queue input for the frame loop, in 80 ms Mimi frames."""
+        arrived_ms = (time.monotonic() - self._session_began) * 1000
         samples = np.frombuffer(pcm16[: len(pcm16) // 2 * 2], dtype="<i2").astype(np.float32) / 32768.0
         if self._resampler is not None:
             samples = self._resampler(samples)
+        self._input_samples += len(samples)
         self._stats["max_input_packet_samples"] = max(self._stats["max_input_packet_samples"], len(samples))
         self._pending = np.concatenate([self._pending, samples])
         while len(self._pending) >= FRAME_SAMPLES:
@@ -346,6 +353,15 @@ class MoshiSidecar(Sidecar):
                     self._stats["dropped_frames"] += 1
                 except queue.Empty:
                     break
+        if len(self._input_startup) < 64:
+            self._input_startup.append({
+                "arrival_session_ms": round(arrived_ms, 2),
+                "model_rate_samples": len(samples),
+                "cumulative_model_rate_samples": self._input_samples,
+                "queued_frames_after": self._frames.qsize(),
+                "model_frames": self._stats["frames"],
+                "dropped_frames": self._stats["dropped_frames"],
+            })
 
     def on_text(self, text: str, role: str) -> None:
         """Refuse injected text visibly.
@@ -547,6 +563,9 @@ class MoshiSidecar(Sidecar):
     def _report_stats(self, *, final: bool = True) -> None:
         frames = np.array(self._frame_ms, dtype=np.float64)
         summary = dict(self._stats)
+        summary["input_startup"] = list(self._input_startup)
+        summary["input_startup_sample_rate"] = MODEL_RATE
+        summary["input_startup_timing_basis"] = "sidecar on_audio arrival since session construction; not capture or ready"
         summary["session_seconds"] = round(time.monotonic() - self._session_began, 1)
         if frames.size:
             summary.update({

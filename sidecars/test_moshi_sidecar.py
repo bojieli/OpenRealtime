@@ -2,12 +2,31 @@
 import io
 import unittest
 import threading
+from unittest.mock import patch
 from types import SimpleNamespace
 import numpy as np
 from moshi_sidecar import MoshiSidecar, FRAME_SAMPLES
 
 
 class CancellationTests(unittest.TestCase):
+    def test_startup_trace_distinguishes_burst_from_paced_input_and_is_bounded(self):
+        frame = np.zeros(FRAME_SAMPLES, dtype='<i2').tobytes()
+        traces = []
+        for interval in (.001, .080):
+            s = MoshiSidecar(io.BytesIO(), io.BytesIO(), repository='test', mock=False, device='cpu')
+            s._session_began = 100
+            for index in range(70):
+                with patch('moshi_sidecar.time.monotonic', return_value=103 + index * interval):
+                    s.on_audio(frame)
+                s._frames.get_nowait()
+            self.assertEqual(len(s._input_startup), 64)
+            self.assertEqual(s._input_startup[0]['arrival_session_ms'], 3000)
+            self.assertEqual(s._input_startup[-1]['cumulative_model_rate_samples'], 64 * FRAME_SAMPLES)
+            self.assertEqual(s._input_startup[-1]['dropped_frames'], 0)
+            traces.append(s._input_startup)
+        self.assertEqual(traces[0][-1]['arrival_session_ms'], 3063)
+        self.assertEqual(traces[1][-1]['arrival_session_ms'], 8040)
+
     def test_input_overflow_records_burst_and_preserves_newest_frames(self):
         s = MoshiSidecar(io.BytesIO(), io.BytesIO(), repository='test', mock=False, device='cpu')
         s.options.max_backlog_frames = 2
