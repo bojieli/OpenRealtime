@@ -77,3 +77,47 @@ power at 1e-12; very negative values include effectively silent PCM, not
 meaningful acoustic precision. Root cause is unproven. Do not promote FIR
 to defaults based on passband/latency results; inspect low-level PCM, model
 behavior, scaling, and noise-floor differences before any quality claim.
+
+## Quiet-speech cause: the model's local-SNR gate, not the FIR conversion
+
+`quiet_diagnose.py` (in `tools/noisefilter/`) repeats the probe above with
+libDF's per-frame local SNR (`df_process_frame`'s return value) and a count
+of exactly-zero 10 ms output frames. It measures retention over the **full
+recording** rather than the backchannel window, so failing clips read tens
+of dB instead of about -160 dB. The same 12 clips fail: each has over 95% of
+its FIR output frames exactly zero. Repeat runs are bit-identical
+(`quiet-lsnr-input-repeat.json`, maximum difference 0.0 dB).
+
+| input.wav, -30 dB | mean retention | clips >60 dB lost |
+| --- | ---: | ---: |
+| legacy stream | -7.35 dB | 0 |
+| FIR stream | -43.14 dB | 4 |
+| offline `resample_poly` to 48 kHz, fed straight to the model (`native48`) | -40.88 dB | 3 |
+| FIR with ±1 LSB TPDF dither before PCM16 rounding | -43.24 dB | 4 |
+
+At original level all four variants retain within 0.6 dB (`quiet-lsnr-input.json`;
+`quiet-lsnr-clean-input.json` gives the same picture for `clean_input.wav`).
+
+What this establishes:
+
+- Whenever a clip's maximum per-frame local SNR stays below about -10 dB, the
+  model zeroes every output frame (clips 2, 43 and 67 reach at most about -11 dB
+  in the FIR path and are 100% zero). The gate acts per frame: clip 22 reaches
+  +22 dB on a few frames and is still 99.6% zero. Audible speech frames at the
+  original level read up to about +35 dB.
+- A correct offline conversion (`native48`) fails like FIR. The FIR stream is
+  not corrupting the signal; digital zeros are not the trigger (dither changes
+  nothing).
+- The legacy path's higher local SNR on the same clips (for example 43: +32 dB
+  legacy versus -11.5 dB FIR) coincides with its linear-interpolation images
+  above 8 kHz. Legacy "preservation" therefore depends on a conversion artifact
+  and is not a property to restore.
+- Bounding attenuation with `atten_lim_db=30` (`quiet-lsnr-clean-input-atten30.json`)
+  removes the >60 dB collapses but still loses 18.2 dB mean for FIR at -30 dB.
+  That is a cap, not preservation.
+
+Not established: recognition impact, which clips a real user produces at such
+levels, and whether an input-level normalisation stage would be preferable to
+an attenuation limit. Neither path is a quiet-speech-safe default. FIR remains
+unpromoted; the regression is a property of DeepFilterNet3 on band-limited
+low-level input that the legacy path masks.

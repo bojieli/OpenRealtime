@@ -659,6 +659,16 @@ not establish concurrent capacity or improved recognition/backchannel
 preservation. Default profiles retain the earlier path. See the
 [FIR evidence](../deploy/duplex/evidence/deepfilternet/20260923-fir/README.md).
 
+Quiet backchannels scaled by -30 dB expose DeepFilterNet3's own local-SNR
+gate: a clip whose per-frame local SNR never exceeds about -10 dB is output as
+exact zeros. Fed through FIR, 12 of 20 clips lose over 95% of their frames;
+a clean offline 48 kHz conversion straight into the model fails the same way
+(full-recording mean retention -40.9 dB versus FIR -43.1 dB), and dither does
+not help. The legacy path retains -7.4 dB only because its interpolation
+images above 8 kHz raise the model's SNR estimate. An attenuation limit of
+30 dB caps the loss (FIR -18.2 dB mean) without preserving the speech.
+Neither conversion is quiet-speech safe; FIR stays unpromoted.
+
 **Background audio understanding (cell A0).** Audio Flamingo 3 serves bounded
 windows off the critical path, every answer carrying when it became available
 and when it expires, shedding load rather than queueing. As a four-way

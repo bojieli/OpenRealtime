@@ -39,5 +39,8 @@ PYTHONPATH=tools/noisefilter \
   tools/noisefilter/test_causal_resample.py
 ```
 
-Downstream ASR quality, quiet-backchannel preservation, and concurrent HTTP
-latency remain to be compared before promoting this option into default profiles.
+Downstream ASR quality and concurrent HTTP latency remain to be compared before
+promoting this option into default profiles. Quiet backchannels are not
+preserved: at -30 dB the model's local-SNR gate zeroes many clips, and a clean
+offline 48 kHz conversion fails the same way. `quiet_diagnose.py` reproduces
+this with per-frame local SNR; see the evidence README for measurements.
