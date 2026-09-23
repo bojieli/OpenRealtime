@@ -164,3 +164,46 @@ not measured.
 **Opportunity.** 115 of 192 branches had assistant speech playing at the
 variant's onset. The gap fixtures do create mid-speech situations in most
 branches.
+
+## A1 against A2 over all 24 pilot pairs, v4 (2026-09-23)
+
+`pilot-dev-a1a2-20260923-13`: the same pinned fixtures, A1 (untimed transcript)
+and A2 (timed) interleaved per pair, v4 affordance, one repeat. All 48 runs
+completed, and the causal audit passes 11,288 requests.
+
+| | A1 | A2 |
+| --- | ---: | ---: |
+| Branches talking over the user's opening question | 8/96 (2 pairs) | 4/96 (1 pair) |
+| Feedback branches talking over the user's feedback | 25/48 | 25/48 |
+| Branches that never speak | 20/96 | 9/96 |
+| Played sentences | 178 | 249 |
+| Verbatim repeats | 17 | 43 |
+| 500 ms deadline misses | 391 | 603 |
+
+**Timing contrast: revised.** The earlier result (A1 talked over the opening
+question in 12/12 branches, A2 in 0/12, st-02) does not generalise. Under v4,
+neither cell talks over st-02's opening. The remaining overlaps are all
+revision-family greetings ("Welcome to the podcast recommendations…") in both
+cells. The earlier effect was an interaction between missing timing and v3's
+idle line, which invited an unprompted greeting. Under v4, removing timing
+mainly makes the policy quieter. Both cells talk over the user's feedback in
+about half of the feedback branches. Neither has a policy for yielding.
+
+**Adaptation.** The Gemini judge (validation 17/18, same known failure)
+reported 8 feedback-only passes. Review:
+- **A2: 4 genuine.**
+  - ov-01: "I can make it dairy free with a vegan chocolate sauce", revising
+    its lava-cake suggestion after "nothing with dairy".
+  - pa-02: "the revenue decreased from six million to four million".
+  - st-02 deepen: "the feeding schedule typically involves feeding your starter
+    every twelve…".
+  - st-03 deepen: "the refrigerant cycle starts with a compressor…".
+- **A1: 2 genuine** (pa-03 "that's a dangerous instruction"; si-01 asks the
+  booking time), **1 weak** (ov-01 promises dairy-free options) and 1
+  null-variant pass.
+
+**Repeatability.** pa-02, st-02 deepen and st-03 deepen adapted audibly under A2
+with v4 in both independent campaigns (`…-combined-20260923-12` and this one).
+This is the first evidence that particular adaptations recur rather than
+occurring once. It is still a handful of pairs out of 24, with one repeat per
+campaign and single-rater review.
