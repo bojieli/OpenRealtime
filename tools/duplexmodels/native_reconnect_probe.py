@@ -10,6 +10,8 @@ This energy criterion does not establish intelligibility or answer correctness.
 import argparse
 import json
 import socket
+import shlex
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -39,10 +41,23 @@ class AudioActivity:
         return self.detected
 
 
-def attempt(address, question, timeout):
-    host, port = address.removeprefix('tcp:').rsplit(':', 1)
+def attempt(address, question, timeout, *, sidecar=None, stderr=None):
     started = time.monotonic()
-    connection = socket.create_connection((host, int(port)), timeout=timeout)
+    process = None
+    if sidecar:
+        connection, child = socket.socketpair()
+        try:
+            process = subprocess.Popen(shlex.split(sidecar), stdin=child, stdout=child,
+                                       stderr=stderr)
+        except BaseException:
+            connection.close()
+            raise
+        finally:
+            child.close()
+        connection.settimeout(timeout)
+    else:
+        host, port = address.removeprefix('tcp:').rsplit(':', 1)
+        connection = socket.create_connection((host, int(port)), timeout=timeout)
     reader = connection.makefile('rb')
     writer = connection.makefile('wb', buffering=0)
     received = threading.Event()
@@ -50,6 +65,7 @@ def attempt(address, question, timeout):
     audio_bytes = 0
     activity = AudioActivity()
     thread = None
+    result = None
     try:
         write_message(writer, 'hello', version=1, sample_rate=RATE)
         ready = read_message(reader)
@@ -105,24 +121,41 @@ def attempt(address, question, timeout):
             thread.join(2)
         for handle in (reader, writer, connection):
             handle.close()
+        if process is not None:
+            try:
+                process.wait(timeout=5)
+                if result is not None:
+                    result['sidecar_exit_code'] = process.returncode
+                    if process.returncode != 0:
+                        result['passed'] = False
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                if result is not None:
+                    result['errors'].append('sidecar did not exit within 5 s of disconnect')
+                    result['passed'] = False
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--address', default='tcp:127.0.0.1:9147')
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument('--address')
+    transport.add_argument('--sidecar', help='spawn this stdio sidecar command for each session')
     parser.add_argument('--question', required=True)
     parser.add_argument('--timeout', type=float, default=30)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
+    if not args.address and not args.sidecar:
+        args.address = 'tcp:127.0.0.1:9147'
     question = load_audio(args.question)
-    result = {'address':args.address, 'question':args.question,
+    result = {'address':args.address, 'sidecar':args.sidecar, 'question':args.question,
               'timing_basis':'received PCM packets, not rendered playback',
               'activity_criterion': {'rms_dbfs': -40, 'consecutive_ms': 100,
                                      'window_ms': 20, 'sample_rate': RATE},
               'attempts':[]}
     try:
         for _ in range(2):
-            row = attempt(args.address, question, args.timeout)
+            row = attempt(args.address, question, args.timeout, sidecar=args.sidecar)
             result['attempts'].append(row)
             if not row['passed']:
                 break

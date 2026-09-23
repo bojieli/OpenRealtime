@@ -1,5 +1,8 @@
 import socket
 import threading
+import shlex
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -56,3 +59,28 @@ def test_attempt_requires_activity_after_handshake(active):
     assert not failures
     assert result['audio_bytes'] > 0
     assert result['passed'] is active
+
+
+@pytest.mark.parametrize('exit_code', [0, 1])
+def test_stdio_disconnect_requires_clean_process_exit(tmp_path, exit_code):
+    script = tmp_path / 'stdio_peer.py'
+    sidecars = str(Path(__file__).resolve().parents[2] / 'sidecars')
+    script.write_text(f'''
+import sys
+sys.path.insert(0, {sidecars!r})
+from openrealtime_sidecar.protocol import read_message, write_message
+reader, writer = sys.stdin.buffer, sys.stdout.buffer
+assert read_message(reader).type == 'hello'
+write_message(writer, 'ready', version=1, sample_rate=24000)
+assert read_message(reader).type == 'audio'
+write_message(writer, 'output_audio', b'\\x00\\x10' * 2400)
+while read_message(reader) is not None:
+    pass
+sys.exit({exit_code})
+''')
+    command = shlex.join([sys.executable, str(script)])
+    for _ in range(2):
+        result = attempt(None, np.zeros(PACKET), 2, sidecar=command)
+        assert result['active_audio_detected']
+        assert result['sidecar_exit_code'] == exit_code
+        assert result['passed'] is (exit_code == 0)
