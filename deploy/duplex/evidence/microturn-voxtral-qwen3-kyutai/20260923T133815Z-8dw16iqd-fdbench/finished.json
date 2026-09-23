@@ -1,0 +1,121 @@
+{
+  "finished": "2026-09-23T21:25:31.702146+00:00",
+  "exit_code": 0,
+  "errors": [],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-4536c718",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "microturn-voxtral-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-voxtral-qwen3-kyutai/runs/20260923T133815Z-8dw16iqd/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-4536c718",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "microturn-voxtral-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-voxtral-qwen3-kyutai/runs/20260923T133815Z-8dw16iqd/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-4536c718",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "microturn-voxtral-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-voxtral-qwen3-kyutai/runs/20260923T133815Z-8dw16iqd/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-4536c718",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "microturn-voxtral-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-voxtral-qwen3-kyutai/runs/20260923T133815Z-8dw16iqd/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-4536c718",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "microturn-voxtral-qwen3-kyutai",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/microturn-voxtral-qwen3-kyutai/runs/20260923T133815Z-8dw16iqd/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "13.50",
+    "14.73",
+    "17.28"
+  ],
+  "sha256": {
+    "run.json": "ede406cbd8f3598f06ba60505495e8e77ed4adeac87964e374ce5ff69c88653c",
+    "profile.yaml": "d00ca46645603d345f4cad9e5c6e41b7e9da74553ccb2026b777003bdf966c7a",
+    "fdb-user_interruption.json": "8322e7acf8febc1a0b64313862acb63e8c9ad09bce9e423d62b7967cfa93e22f",
+    "fdb-user_backchannel.json": "2faaa99b7eb4147afe40bbd20da11ad2f5ca5cc337c4830dfe57532523728e2c",
+    "fdb-background_speech.json": "8798e52e4b645066f45a2fba5cf290c254d6a621359f45711588aee76a78f0ab",
+    "fdb-talking_to_other.json": "c7b9409553fb6742de82ea57d36c680715fd831ac37ffccd39d20bed575315da",
+    "fdbench.json": "36b15706ad9a3f381198705fe96d185f0fa2626134302be6d570cce1ff226a86"
+  }
+}

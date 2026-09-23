@@ -343,6 +343,17 @@ disk-full event and an unidentified GPU-contention window from 08:11 to 08:42.
 The campaign ran the old backend, so the new drop diagnostics do not apply.
 This is one of 21 FD-Bench conditions.
 
+The [gated micro-turn cascade campaign](../deploy/duplex/evidence/microturn-voxtral-qwen3-kyutai/20260923T133815Z-8dw16iqd-fdbench/)
+(Voxtral, then a Qwen3-8B controller ticking every 500 ms and a streamed
+Qwen3-8B answer, then Kyutai TTS) completed every FDB recording and the
+selected FD-Bench condition with zero task errors on 2026-09-23. FDB applicable
+passes: interruption 188/188, backchannel 86/94, background speech 71/89,
+talking to other 78/93. FD-Bench: 242/293 conversations passed, with 1,356
+turns answered, 26 missed, 37 premature and 927 overrun, and a median response
+latency of 854 ms. It yields reliably, holds less well through speech not
+addressed to it, and starts early far less often than the native models. This
+is the first first-release-scope cascade with a complete retained campaign.
+
 The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
 after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
 the observation gap and original incomplete record are preserved. No resource
