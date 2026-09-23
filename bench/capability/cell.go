@@ -168,6 +168,9 @@ type Self struct {
 	Began time.Duration
 	// Heard is what has audibly played, from playback marks.
 	Heard string
+	// Partial describes partially played or interrupted segments, whose exact
+	// heard words are unknown.
+	Partial string
 	// Pending is text accepted by the synthesiser that has not yet played.
 	Pending string
 	// Plan is content the policy intends to say and has not yet sent.
@@ -320,7 +323,8 @@ func (cell Cell) own(observation Observation, self Self) string {
 		lines = append(lines, "You are SILENT.")
 	}
 	lines = append(lines, fmt.Sprintf("The user has actually heard you say: %q", self.Heard))
-	lines = append(lines, fmt.Sprintf("Handed to the voice but not yet heard: %q", self.Pending))
+	lines = append(lines, "Partially played or interrupted speech (not a complete transcript): "+self.Partial)
+	lines = append(lines, fmt.Sprintf("Cancelable speech state (partial playback is described above): %q", self.Pending))
 	lines = append(lines, fmt.Sprintf("Your plan for what to say next, not yet sent and still changeable: %q", self.Plan))
 	return strings.Join(lines, "\n")
 }
