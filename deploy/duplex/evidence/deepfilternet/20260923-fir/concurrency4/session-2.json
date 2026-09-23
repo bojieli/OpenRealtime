@@ -1,0 +1,22 @@
+{
+  "input": "deterministic white noise",
+  "samples": 720000,
+  "rate_hz": 24000,
+  "packet_ms": 100,
+  "realtime": true,
+  "send_lateness_ms_max": 2.3384056985378265,
+  "requests": 300,
+  "roundtrip_ms": {
+    "p50": 5.607621511444449,
+    "p95": 7.899257820099592,
+    "p99": 9.268444962799549,
+    "max": 89.7593810223043
+  },
+  "server_p99_ms": 8.343,
+  "model": "deepfilternet-fir",
+  "fixed_audio_delay_ms": 42.0,
+  "budget_ms": 50,
+  "deadline_misses": 1,
+  "energy_change_db_after_first_second": -127.6399407402607,
+  "scope": "single-session audio frontend; no ASR, speaker, or dialogue accuracy claim"
+}

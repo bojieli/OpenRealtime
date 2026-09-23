@@ -39,3 +39,9 @@ The benchmark now records delay from response headers instead of its old
 hard-coded RNNoise value of 20 ms; the initial run with that bad report field
 is excluded here. Command: `python3 tools/noisefilter/benchmark.py --url
 http://127.0.0.1:9166 --realtime --seconds 30 --report <output>`.
+
+Four-session follow-up (`concurrency4/`): 1,200 requests total, one exceeded
+50 ms (89.76 ms). One benchmark process correctly exited 1; three exited 0.
+Per-session p99 ranged 8.85–9.51 ms. This fails a zero-deadline-miss
+four-session gate despite low typical latency. The reports do not retain
+per-request timestamps, so the outlier's position/cause is not established.

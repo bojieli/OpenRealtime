@@ -648,6 +648,17 @@ polyphase resampling. Quiet backchannels mixed with noise also lost word
 recall (0.82 to 0.44 in the recorded probe). Runtime resampling and quiet-speech
 preservation remain open acceptance items; this is an experimental branch.
 
+The explicit `deepfilternet-fir` option added on 2026-09-23 replaces that
+conversion with causal FIRs. Real-library tests measured 42.0 ms total delay
+at 16/24/48 kHz and identical output across packet splits; the Go client pins
+the separate 42 ms contract. Isolated conversion loss at 6 kHz is below
+0.1 dB, versus 6.17 dB for the old 16 kHz path. A 300-request paced HTTP
+check had zero 50 ms deadline misses (p99 8.13 ms), but four concurrent
+sessions had one miss among 1,200 requests (89.76 ms maximum). This does
+not establish concurrent capacity or improved recognition/backchannel
+preservation. Default profiles retain the earlier path. See the
+[FIR evidence](../deploy/duplex/evidence/deepfilternet/20260923-fir/README.md).
+
 **Background audio understanding (cell A0).** Audio Flamingo 3 serves bounded
 windows off the critical path, every answer carrying when it became available
 and when it expires, shedding load rather than queueing. As a four-way
