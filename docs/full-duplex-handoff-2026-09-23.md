@@ -169,3 +169,62 @@ preserve model assets, installed environments, results and unrelated caches.
 
 No full-goal completion claim is justified. Resume from the existing campaign,
 not from a fresh download/reimplementation pass.
+
+## Progress after resumption (2026-09-23, 08:05–10:45 UTC)
+
+Every item below is committed and pushed; the results document links the evidence.
+
+- **Item 1, PersonaPlex campaign: done.** 293/293 FD-Bench conversations,
+  zero task errors, 77 passes; evidence `native-personaplex/20260923T012919Z-td0w3l3o-fdbench/`.
+  The runner died around 08:05 without its `finally`, so completion was
+  reconstructed from the surviving benchmark child. Every one of the 791
+  sessions dropped input frames.
+- **Items 2–4, lifecycle and readiness: done for PersonaPlex and Moshi.**
+  Reconnect passed 3/3 on each. PersonaPlex drops come from audio sent before
+  `session.updated` while the sidecar configures (2–5 s). The benchmark now
+  has an opt-in `-wait-configured` flag (`9f6dd353`). A matched ABBA rerun
+  (`native-personaplex/20260923-gating-ab/`) showed ungated replay turns FDB
+  interruption applicability from 19/20 into 7/20 and misses 6/46 FD-Bench
+  turns, versus 0/46 gated. Every earlier native campaign ran ungated.
+  Moshi configures in under 0.25 s and drops nothing, but only 5/12 replies
+  addressed the question.
+- **Item 5, Freeze-Omni: diagnosed, not fixed.** The KV history is never
+  truncated (10,062 tokens after 10 minutes), and the deep-copied snapshot
+  shares no storage (865 MB each). Process memory grew from 17.3 to 25.1 GiB.
+  The launcher bug that made it wait forever is fixed (`2c56bb40`).
+- **Item 6, Lychee: diagnosed; fix committed but not GPU-verified.** Finite
+  input halts its input-clocked generation, which explains all 8 FDB stalls.
+  It also runs slower than real time: RTF 1.21 rising to 3.3. The sidecar now
+  idle-fills wall-clock silence (`c2bdb04f`). GPU verification is **blocked**:
+  the patched sm_120 vLLM tree in `.runtime/duplex-plan/build/` was deleted.
+- **DeepFilterNet FIR:** the quiet-speech loss is the model's local-SNR gate.
+  A clean offline 48 kHz conversion fails the same way; legacy "retention"
+  came from interpolation images. FIR stays unpromoted.
+- **X2-Turn:** with padding frames excluded and the buffer length fixed, no
+  future audio leaks (exact at a 7-frame delay). Shorter buffers still shift
+  probabilities by up to 0.12, so the scoring guard is unchanged. Accepting
+  that gap is a decision still to make.
+
+## Lost in the 10:16 UTC space cleanup
+
+The checkout was deleted and re-cloned. `.runtime` was kept, except for
+`.runtime/duplex-plan/results/` (raw campaign data and non-committed probe
+output) and `.runtime/duplex-plan/build/`. `build/` held the Lychee vLLM
+build, its patch and build script, and the 600 s long-session input
+`long-input-600s.wav`. The worktrees `OpenRealtime-duplex-next-validation`
+and `OpenRealtime-duplex-lifecycle-validation` are gone; all their commits
+are on main. Only committed evidence under `deploy/duplex/evidence/` remains.
+
+## Still open
+
+- Rebuild the Lychee vLLM tree (or restore it from backup), then run the
+  idle-fill verification (same fixtures as `lychee/20260923-stall-reproduction/`).
+- Decide whether native campaigns should run with `-wait-configured`. If so,
+  rerun them; the gated results are not comparable with earlier ungated ones.
+- Freeze-Omni context bounding, Lychee throughput and a missing yield signal
+  after speech, and Moshi answer relevance each need a design decision and a
+  matched quality run.
+- Unchanged from above: graph-native sidecar-v4 acceptance, playback receipts,
+  DuplexCascade long responses, MiniCPM-o full campaign, Fish incremental text,
+  ELLSA/BayLing tasks, the remaining 20 FD-Bench conditions (~77 source hours
+  per model), closed-provider reruns, and the final requirement audit.
