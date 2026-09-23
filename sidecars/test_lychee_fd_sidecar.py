@@ -3,7 +3,7 @@ import threading
 import base64
 import types
 import unittest
-from lychee_fd_sidecar import LycheeSidecar
+from lychee_fd_sidecar import LycheeSession, LycheeSidecar
 
 
 class TurnTests(unittest.TestCase):
@@ -52,6 +52,39 @@ class TurnTests(unittest.TestCase):
         s._finish_turn('audio_stalled')
         s._finish_turn('audio_stalled')
         self.assertEqual(events, [('error', 'audio_stalled'), ('text', 'partial answer'), ('end', None)])
+
+
+class IdleFillTests(unittest.TestCase):
+    def session(self, idle_fill_ms):
+        return LycheeSession('http://127.0.0.1:1', start_payload={}, on_event=None,
+                             chunk_ms=200, idle_fill_ms=idle_fill_ms)
+
+    def uploaded(self, s):
+        chunks = []
+        while not s._uploads.empty():
+            chunks.append(s._uploads.get_nowait())
+        return b''.join(chunks) + bytes(s._pending)
+
+    def test_input_that_stops_is_continued_with_wall_clock_silence(self):
+        s = self.session(400)
+        s.push(b'\x01\x00' * 3200, now=100.0)          # 200 ms of input at 16 kHz
+        self.assertEqual(s.fill_silence(now=100.5), 0)  # 300 ms behind: normal jitter
+        self.assertEqual(s.fill_silence(now=101.0), 12800)
+        self.assertEqual(s.fill_silence(now=101.0), 0)
+        data = self.uploaded(s)
+        self.assertEqual(len(data), 2 * 16000)
+        self.assertEqual(data[:6400], b'\x01\x00' * 3200)
+        self.assertEqual(data[6400:], bytes(2 * 12800))
+        self.assertEqual(s.filled_samples, 12800)
+
+    def test_input_keeping_pace_and_disabled_fill_add_nothing(self):
+        s = self.session(400)
+        self.assertEqual(s.fill_silence(now=5.0), 0)    # nothing pushed yet
+        s.push(bytes(2 * 16000), now=100.0)
+        self.assertEqual(s.fill_silence(now=101.2), 0)
+        off = self.session(0)
+        off.push(bytes(2), now=100.0)
+        self.assertEqual(off.fill_silence(now=200.0), 0)
 
 
 if __name__ == '__main__':

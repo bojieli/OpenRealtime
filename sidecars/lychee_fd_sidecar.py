@@ -113,7 +113,8 @@ class LycheeSession:
     caller that is feeding audio.
     """
 
-    def __init__(self, base_url: str, *, start_payload: dict, on_event, chunk_ms: int = 200) -> None:
+    def __init__(self, base_url: str, *, start_payload: dict, on_event, chunk_ms: int = 200,
+                 idle_fill_ms: int = 400) -> None:
         parsed = urllib.parse.urlparse(base_url)
         self.host = parsed.hostname or "127.0.0.1"
         self.port = parsed.port or 80
@@ -130,6 +131,16 @@ class LycheeSession:
         self._done = threading.Event()
         self._threads: list[threading.Thread] = []
         self.upload_errors = 0
+        # The backend only advances when input arrives: a client that stops
+        # sending (a replayed file ending, a muted track) freezes an answer
+        # mid-sentence. Like the Moshi loop, keep wall-clock time flowing with
+        # silence once input falls further behind than this; 0 disables it.
+        self.idle_fill_ms = idle_fill_ms
+        self.filled_samples = 0
+        self._pushed_samples = 0
+        self._first_push: float | None = None
+        self._push_lock = threading.Lock()
+        self._stopping = threading.Event()
 
     def _request(self, method: str, path: str, body: bytes | None = None,
                  headers: dict | None = None, timeout: float = 30.0) -> dict:
@@ -149,17 +160,41 @@ class LycheeSession:
                                json.dumps(self.start_payload).encode(),
                                {"Content-Type": "application/json"})
         self.session_id = result["session_id"]
-        for target in (self._events_loop, self._upload_loop):
+        for target in (self._events_loop, self._upload_loop, self._fill_loop):
             thread = threading.Thread(target=target, daemon=True)
             thread.start()
             self._threads.append(thread)
         return result
 
-    def push(self, pcm16: bytes) -> None:
+    def push(self, pcm16: bytes, now: float | None = None) -> None:
+        with self._push_lock:
+            if self._first_push is None:
+                self._first_push = time.monotonic() if now is None else now
+            self._append(pcm16)
+
+    def _append(self, pcm16: bytes) -> None:
+        self._pushed_samples += len(pcm16) // 2
         self._pending.extend(pcm16)
         while len(self._pending) >= self.chunk_bytes:
             self._uploads.put(bytes(self._pending[:self.chunk_bytes]))
             del self._pending[:self.chunk_bytes]
+
+    def fill_silence(self, now: float | None = None) -> int:
+        """Bring input up to the wall clock with silence once it lags by idle_fill_ms."""
+        with self._push_lock:
+            if self.idle_fill_ms <= 0 or self._first_push is None:
+                return 0
+            now = time.monotonic() if now is None else now
+            behind = int((now - self._first_push) * MODEL_INPUT_RATE) - self._pushed_samples
+            if behind * 1000 < self.idle_fill_ms * MODEL_INPUT_RATE:
+                return 0
+            self._append(bytes(2 * behind))
+            self.filled_samples += behind
+            return behind
+
+    def _fill_loop(self) -> None:
+        while not self._stopping.wait(0.1) and not self._done.is_set():
+            self.fill_silence()
 
     def wall_ms_of(self, audio_ms: float) -> int | None:
         """Wall time at which input position ``audio_ms`` was handed to the backend."""
@@ -240,6 +275,7 @@ class LycheeSession:
             self._done.set()
 
     def stop(self, wait: float = 10.0) -> None:
+        self._stopping.set()
         if self._pending:
             self._uploads.put(bytes(self._pending))
             self._pending.clear()
@@ -265,7 +301,7 @@ class LycheeSidecar(Sidecar):
 
     def __init__(self, input_stream, output_stream, *, mock: bool, backend: str, voice: str,
                  start_speak_factor: float, chunk_ms: int, drain_ms: int, respond_wait: float,
-                 control: ControlLog) -> None:
+                 control: ControlLog, idle_fill_ms: int = 400) -> None:
         super().__init__(input_stream, output_stream)
         self.mock = mock
         self.backend = backend
@@ -273,6 +309,7 @@ class LycheeSidecar(Sidecar):
         self.start_speak_factor = start_speak_factor
         self.chunk_ms = chunk_ms
         self.drain_ms = drain_ms
+        self.idle_fill_ms = idle_fill_ms
         self.respond_wait = respond_wait
         self.control = control
         self.session_label = f"lfd-{os.getpid()}-{_now_ms()}"
@@ -311,7 +348,7 @@ class LycheeSidecar(Sidecar):
             "infer_window_ms": 400,
             "stage_timing_log": True,
             "control_prob_trace_log": True,
-        }, on_event=self._on_backend_event, chunk_ms=self.chunk_ms)
+        }, on_event=self._on_backend_event, chunk_ms=self.chunk_ms, idle_fill_ms=self.idle_fill_ms)
         result = self.session.start()
         self.control.event(self.session_label, "session_start", backend_session=result.get("session_id"),
                            infer_window_ms=result.get("infer_window_ms"),
@@ -325,7 +362,9 @@ class LycheeSidecar(Sidecar):
         if self.session is not None:
             self.session.stop()
         self.control.event(self.session_label, "session_end", **self.stats,
-                           upload_errors=self.session.upload_errors if self.session else 0)
+                           upload_errors=self.session.upload_errors if self.session else 0,
+                           filled_input_ms=round(self.session.filled_samples * 1000 / MODEL_INPUT_RATE)
+                           if self.session else 0)
 
     # --- input --------------------------------------------------------------
 
@@ -522,6 +561,8 @@ def main() -> None:
     parser.add_argument("--chunk-ms", type=int, default=200, help="upload chunk size (frontend test page: 200)")
     parser.add_argument("--drain-ms", type=int, default=800,
                         help="after the model yields, end the turn once no audio arrived for this long")
+    parser.add_argument("--idle-fill-ms", type=int, default=400,
+                        help="feed wall-clock silence once input lags this far behind (0 disables)")
     parser.add_argument("--respond-wait", type=float, default=8.0,
                         help="seconds a respond request waits for the model's own turn")
     parser.add_argument("--control-log", default=os.environ.get("LYCHEE_FD_CONTROL_LOG", ""),
@@ -534,6 +575,7 @@ def main() -> None:
         voice=arguments.voice, start_speak_factor=arguments.start_speak_factor,
         chunk_ms=arguments.chunk_ms, drain_ms=arguments.drain_ms,
         respond_wait=arguments.respond_wait, control=ControlLog(arguments.control_log or None),
+        idle_fill_ms=arguments.idle_fill_ms,
     ).run()
 
 
