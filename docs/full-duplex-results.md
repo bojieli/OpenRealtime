@@ -59,8 +59,9 @@ state an absolute word lag. The full table, including the configurations not
 shown here, is `python tools/duplexmodels/asr_summary.py`.
 The raw files behind this table were lost in the 2026-09-23 cleanup. A
 [retained rerun](../deploy/duplex/evidence/asr/20260923-rerun/) of the
-Nemotron, Kyutai and FunASR rows on the same seeded fixtures reproduces their
-error rates within 0.9 points. Qwen3-ASR, Voxtral and Deepgram were not rerun.
+Qwen3-ASR, Voxtral, Nemotron, Kyutai and FunASR rows on the same seeded
+fixtures reproduces their error rates within 0.9 points. Deepgram (billed) was
+not rerun.
 
 Readings:
 
