@@ -1,0 +1,15 @@
+{
+  "captured_at": "2026-09-23T01:29:57.657809+00:00",
+  "engine_revision": "1d221b9b99b76211e2a158df8ca8e228f1c88c9d",
+  "binary_sha256": "32db2bfc648c81d729e2712b6802bfa8dd5dea733c35014a0dfa629450966b58",
+  "upstream_revision": "3428dfd95309a7f3c84fd93259ded0f810d1ff91",
+  "upstream_tree_modified": false,
+  "checkpoint_revision": "fdaf4090a61cb315c138a1faee287ffd6c716309",
+  "prior_artifact_manifest": "deploy/duplex/evidence/personaplex/20260922-preflight/artifacts.json",
+  "prior_artifact_manifest_sha256": "230bdc2e779e9b802ef0812d840b9481ddb8ea3b90eec1ec82d51159c5a9188d",
+  "voice_sha256": "b76cca73bcc8402e08ec3128c422160e95411a3b0af1503cb955aecf027f3e73",
+  "backend_pid": 3808281,
+  "backend_command": "/home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/venvs/kyutai/bin/python sidecars/personaplex_sidecar.py --snapshot /home/ubuntu/.cache/huggingface/hub/models--nvidia--personaplex-7b-v1/snapshots/fdaf4090a61cb315c138a1faee287ffd6c716309 --voice /home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/data/personaplex/voices/NATF2.pt --listen tcp:127.0.0.1:9146 --stats-file /home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/results/native/personaplex-stats.jsonl ",
+  "output_boundary_policy": "adapter RMS/hangover, not native EOS",
+  "timing_basis": "benchmark received audio, not device playback receipts"
+}

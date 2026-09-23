@@ -1,0 +1,74 @@
+{
+  "source": "personaplex-stats-campaign.jsonl: one record per session in server order; backend PID 3808281 only",
+  "session_order_basis": "stats line n = server sess_n; FDB categories 1-498, FD-Bench 499-791",
+  "all": {
+    "sessions": 791,
+    "sessions_with_drops": 791,
+    "dropped_frames": 3994,
+    "input_frames": 243449,
+    "drop_fraction": 0.01641,
+    "median_drops": 4,
+    "max_drops": 257,
+    "frame_ms_p95_median": 35.22,
+    "frame_ms_max_max": 24992.21,
+    "sessions_with_frames_over_budget": 791
+  },
+  "fdb": {
+    "sessions": 498,
+    "sessions_with_drops": 498,
+    "dropped_frames": 2041,
+    "input_frames": 91744,
+    "drop_fraction": 0.02225,
+    "median_drops": 4.0,
+    "max_drops": 7,
+    "frame_ms_p95_median": 35.845,
+    "frame_ms_max_max": 352.04,
+    "sessions_with_frames_over_budget": 498
+  },
+  "fdbench": {
+    "sessions": 293,
+    "sessions_with_drops": 293,
+    "dropped_frames": 1953,
+    "input_frames": 151705,
+    "drop_fraction": 0.01287,
+    "median_drops": 4,
+    "max_drops": 257,
+    "frame_ms_p95_median": 34.2,
+    "frame_ms_max_max": 24992.21,
+    "sessions_with_frames_over_budget": 293
+  },
+  "contention_window_0811_0842": {
+    "sessions": 36,
+    "sessions_with_drops": 36,
+    "dropped_frames": 674,
+    "input_frames": 19327,
+    "drop_fraction": 0.03487,
+    "median_drops": 15.5,
+    "max_drops": 48,
+    "frame_ms_p95_median": 60.355000000000004,
+    "frame_ms_max_max": 317.68,
+    "sessions_with_frames_over_budget": 36,
+    "note": "frame p95 rose from ~34 ms to 57-81 ms with no GPU memory change; source process not identified; the handoff agent ran CPU-only DeepFilterNet diagnostics 08:09-08:15"
+  },
+  "outliers": [
+    {
+      "session": 524,
+      "start": "2026-09-23T05:03:29.096Z",
+      "dropped_frames": 257,
+      "frame_ms_max": 24992.21
+    },
+    {
+      "session": 533,
+      "start": "2026-09-23T05:10:57.698Z",
+      "dropped_frames": 4,
+      "frame_ms_max": 5883.92
+    },
+    {
+      "session": 534,
+      "start": "2026-09-23T05:11:49.105Z",
+      "dropped_frames": 128,
+      "frame_ms_max": 7418.03
+    }
+  ],
+  "outlier_context": "sessions 524/533/534 (05:03-05:12) follow the second disk-full event around 04:55; see 20260923-disk-pressure"
+}

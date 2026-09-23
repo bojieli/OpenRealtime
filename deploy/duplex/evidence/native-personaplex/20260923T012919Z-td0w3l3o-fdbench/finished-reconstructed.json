@@ -1,0 +1,22 @@
+{
+  "finished": "2026-09-23T08:49:41.197888+00:00",
+  "reconstructed": true,
+  "reason": "runner PID 3810341 was killed ~08:05:48-08:05:58 UTC without executing its finally block; fdbench child PID survived in its own session",
+  "fdbench_exit_code": "unobservable (process is not a child of the finalizer)",
+  "fdbench_validation_error": "",
+  "server_alive_at_bench_exit": true,
+  "load_average_end": [
+    "17.44",
+    "16.05",
+    "15.84"
+  ],
+  "sha256": {
+    "run.json": "8b1279515af01abba273e01b3d93789df3c56f4222e0d2facb9f8bee6bea4b41",
+    "profile.yaml": "d3aecdd90d5d58181e2ed58ddda9173f03f7e7308218f7a4e2089f06d5181ec8",
+    "fdb-user_interruption.json": "83149c2de5e221ec4493276b3f5c21f124d4f87ad5c2b2856f43199068678c3d",
+    "fdb-user_backchannel.json": "c9b37e72492d90d529559f029f4232b0e063e56fe14a947284f628d2dcfca41f",
+    "fdb-background_speech.json": "e3e9b62331edb4169077b2b90c940537be28b47fc7424b90346bad2d8ad8e92b",
+    "fdb-talking_to_other.json": "006176af77ada37c69a379f264074a4b7af7580753fdba707bea8b0c32ec3d54",
+    "fdbench.json": "7b3c7f07cc78ff3a352a98cd4fcf07db87f1afdf8827fae4e4f47783178b70b7"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "server_pid": 3810353,
+  "stopped_at": "2026-09-23T08:50:17.320866+00:00",
+  "signal": "SIGTERM to its own process group",
+  "reason": "runner loss meant its finally-block termination never ran; ownership verified by the run's profile path in the server cmdline",
+  "last_session_completed": "sess_000000000791 at 2026-09-23T08:49:30Z"
+}

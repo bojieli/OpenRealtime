@@ -1,0 +1,7 @@
+{
+  "recorded_at": "2026-09-23T08:08:44Z",
+  "event": "runner python PID 3810341 absent; last sample from runner-attached sampler 2026-09-23T08:05:48.251073Z",
+  "surviving": {"fdbench_pid": 2874038, "server_pid": 3810353, "personaplex_backend_pid": 3808281},
+  "progress_at_discovery": "245/293 FD-Bench conversations started",
+  "consequence": "runner finished.json will never be written; finalize_orphan.py writes finished-reconstructed.json and resources-resumed-2.jsonl; resource gap from 08:05:48 until its attached record; runner's server termination must be done manually"
+}

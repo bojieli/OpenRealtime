@@ -313,6 +313,23 @@ the hold criterion. All four FDB categories are complete; the selected
 293-conversation FD-Bench condition remains pending. These scores retain the
 received-audio, adapter-boundary, and input-drop limitations above.
 
+The [selected PersonaPlex FD-Bench condition](../deploy/duplex/evidence/native-personaplex/20260923T012919Z-td0w3l3o-fdbench/)
+finished at 08:49 UTC: all 293 `cosyvoice2-single-round-combine-med`
+conversations completed without task errors. Of 1,382 turns, 1,358 were
+answered and 24 missed; 249 started prematurely (51 of those after audible
+speech had ended) and 955 overran. 77/293 conversations passed. The
+per-conversation median response latency was 274.5 ms at p50 and 529.9 ms at
+maximum. Against VoiceChat on the same condition (1,089 answered, 293 missed,
+66 premature, 84/293 passes), PersonaPlex answers almost every turn quickly
+but starts early and overlaps the user more. The runner process was lost at
+about 08:05:48 UTC. The benchmark child completed; the completion record is
+reconstructed (no observable exit code) and the resource gap is retained.
+Every one of the 791 campaign sessions dropped input frames: 2.2% for FDB and
+1.3% for FD-Bench, median 4 per session. Outliers followed the 04:55
+disk-full event and an unidentified GPU-contention window from 08:11 to 08:42.
+The campaign ran the old backend, so the new drop diagnostics do not apply.
+This is one of 21 FD-Bench conditions.
+
 The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
 after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
 the observation gap and original incomplete record are preserved. No resource
@@ -793,7 +810,7 @@ model itself was not measured here.
 | Qwen3-8B as micro-turn controller | micro-turn LLM | `microturn` sidecar, orchestrated mode | measured end to end |
 | DuplexCascade | micro-turn LLM | `native-duplexcascade` profile and native sidecar | real ASR/model/TTS probes passed; public transport validation ongoing |
 | Moshi, VoiceChat 11B, MiniCPM-o 4.5, Lychee-FD, Freeze-Omni | native duplex | sidecar protocol v1 | see the native section; all pass mock conformance |
-| PersonaPlex 7B | native duplex | `native-personaplex` profile, sidecar protocol v1 | public smoke measured; all four FDB categories complete, selected FD-Bench campaign in progress |
+| PersonaPlex 7B | native duplex | `native-personaplex` profile, sidecar protocol v1 | all four FDB categories and the selected FD-Bench condition complete (one of 21 conditions); input drops open |
 | Smart Turn v3.2, LiveKit, VAP, DualTurn, SoulX-Duplug | interaction prediction | turn service + `-turn-end-url` hook | measured (I0, I1); scope and partial sweeps described above |
 | X2-Turn | interaction prediction | turn service and offline harness | offline output retained; causal endpoint/overlap evidence excluded pending prefix validation |
 | Sortformer + multitalker Parakeet | speaker attribution | offline pipeline | see the perception section |
@@ -808,7 +825,7 @@ model itself was not measured here.
 | Item | Status | Reason |
 | --- | --- | --- |
 | DuplexCascade checkpoint (cell C1 as released) | in progress | Gated-file access verified with saved HF credentials, revision `31c038ece2f006a28722dd60d1df3868fbb2cc42`. Checkpoint downloaded and all 10 file sizes verified; strict GPU loading and live ASR/TTS integration passed; public end-to-end transport failures under investigation |
-| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference and public live-profile smoke passed; full acceptance pending |
+| PersonaPlex 7B (cell N0 second half) | in progress | Gated-file access verified with saved HF credentials, revision `fdaf4090a61cb315c138a1faee287ffd6c716309`. Checkpoint downloaded and all 16 file sizes verified; upstream GPU audio inference and public live-profile smoke passed; all FDB categories and one FD-Bench condition complete; full acceptance pending |
 | User-trained micro-turn LLM and TTS (cell C2) | not applicable | User confirmed on 2026-09-23 that they have never trained these checkpoints; original assumption withdrawn, no user asset dependency |
 | DuplexOmni | deferred | Upstream recommends eight H20 GPUs for low-latency serving |
 | SALMONN-omni, OmniFlatten | deferred | No matching runnable release assets |
