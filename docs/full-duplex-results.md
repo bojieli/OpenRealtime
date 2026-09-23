@@ -199,7 +199,12 @@ playout progressing normally, with a successful initial model interruption,
 while the follow-up answer filled the 30 s queue. The transport now negotiates
 byte credits, so synthesis sends only the audio the consumer has capacity to
 receive while control messages remain readable. Backend generation queues are
-not bounded by this transport change. The follow-up public attempt
+not bounded by this transport change. This matches the released reference:
+upstream `server.py` (revision `4289302`) generates up to 64 tokens per 0.5 s
+tick and streams each chunk to TTS, with no coupling to playback. A bounded
+variant would pause generation on the playout backlog, which is not the
+released protocol. It would have to be a separately labeled cell, not a
+fix to the C1 reproduction. The follow-up public attempt
 `20260922T162928Z-tbyao6ly` delivered 164.24 s of PCM without the keepalive
 failure, but its roughly 436-word response exceeded the benchmark's three-minute
 conversation deadline. Later connections encountered the still-occupied session.

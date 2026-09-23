@@ -109,7 +109,7 @@ traces with playback/cancellation validation.
 4. **Gated native reruns.** Every retained native campaign ran ungated. Rerun PersonaPlex gated, and complete the queued gated MiniCPM-o campaign.
 5. **FD-Bench coverage.** Native campaigns cover 1 of 21 conditions (293 of 6,147 conversations).
 6. **Tool correctness in public sessions (N2).** Needed: public tool routing, corrections, tool results during interruption, external execution receipts, and a modular baseline with the same schemas.
-7. **Unbounded state.** Freeze-Omni KV growth is diagnosed but not fixed. DuplexCascade backend queues are unbounded. There is no stress-fixture suite for queues or dropped repairs.
+7. **Unbounded state.** Freeze-Omni KV growth is diagnosed but not fixed. DuplexCascade generation is unbounded exactly as in the released reference, which has no playback coupling (64 tokens per tick); bounding it is a labeled variant, not a C1 fix. There is no stress-fixture suite for queues or dropped repairs.
 8. **Endpoint comparison inside the running cascade (I0/I1 → P6).** Needs observation traces, one controller policy and real overlap fixtures.
 9. **Retain the component evidence.** ASR, TTS-comparison, micro-turn trace, S0 and observer results exist only as prose; their raw files were deleted.
 10. **Closed-provider reference (R0).** Verified reruns with digests, command statuses and network/cost records.
