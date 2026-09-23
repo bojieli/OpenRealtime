@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-23T04:56:19.010452+00:00",
+  "event": "filesystem observed zero available bytes during live FD-Bench",
+  "action": "removed 39 compiled .o intermediates from task-owned lychee-vllm/build; 547500976 logical bytes; no active compiler; sources and shared libraries preserved",
+  "sampler": "session 24830 confirmed live after cleanup; complete sample observed 04:56:00.900069 UTC",
+  "limitation": "absence of logged errors does not prove all writes succeeded during full filesystem",
+  "free_bytes_after": 352632832
+}

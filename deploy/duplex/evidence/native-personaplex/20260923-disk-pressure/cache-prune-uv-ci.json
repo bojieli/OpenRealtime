@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-23T04:57:27.046959+00:00",
+  "command": "uv cache prune --ci --offline",
+  "force": false,
+  "removed_files": 289008,
+  "reported_removed_gib": 49.2,
+  "free_bytes_after": 10958073856,
+  "note": "cache logical removal exceeds disk recovery due to installed hardlinks; installed environments preserved"
+}

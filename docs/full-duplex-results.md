@@ -320,6 +320,12 @@ stability claim spans that gap. The benchmark process remained live, and a
 subsequent log scan found no server/model errors; this does not prove that all
 log writes succeeded during disk pressure.
 
+A [second disk-full observation and cleanup record](../deploy/duplex/evidence/native-personaplex/20260923-disk-pressure/)
+was retained during FD-Bench around 04:55 UTC. The runner and resumed sampler
+remained live after cleanup, but successful logging throughout the full-disk
+interval is not established. Cache cleanup restored roughly 11 GiB available
+space without removing installed environments, model assets, or results.
+
 Moshi/PersonaPlex shutdown now retains the model lock until its inference
 worker exits. A CPU regression reproduced the old five-second timeout releasing
 shared state while a worker remained live; the fix passes that regression and

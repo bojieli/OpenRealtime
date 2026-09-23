@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-23T03:38:32.665305+00:00",
+  "scope": "/home/ubuntu/.cache/pip/http-v2",
+  "policy": "pip HTTP download cache regular files older than one hour only; no installed packages or model assets",
+  "removed_files": 2352,
+  "removed_logical_bytes": 4950614246,
+  "free_bytes_before": 5002502144,
+  "free_bytes_after": 9958768640,
+  "errors": []
+}

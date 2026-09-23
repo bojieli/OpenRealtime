@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-23T04:11:30.633338+00:00",
+  "actions": [
+    "uv cache prune --offline: no unused entries",
+    "go clean -cache: rebuildable Go compilation cache only"
+  ],
+  "free_bytes_after": 16071131136,
+  "preserved": "source, installed environments, benchmark executables, checkpoints, results"
+}
