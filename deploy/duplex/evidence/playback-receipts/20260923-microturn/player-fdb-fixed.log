@@ -1,0 +1,29 @@
+[1/20] user_interruption/1
+[2/20] user_interruption/2
+[3/20] user_interruption/3
+[4/20] user_interruption/4
+[5/20] user_interruption/5
+[6/20] user_interruption/6
+[7/20] user_interruption/7
+[8/20] user_interruption/8
+[9/20] user_interruption/9
+[10/20] user_interruption/10
+[11/20] user_interruption/11
+[12/20] user_interruption/12
+[13/20] user_interruption/13
+[14/20] user_interruption/14
+[15/20] user_interruption/15
+[16/20] user_interruption/16
+[17/20] user_interruption/17
+[18/20] user_interruption/18
+[19/20] user_interruption/19
+[20/20] user_interruption/20
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : d0225ace78d4 on ubuntu
+tasks      : 20 completed, 0 failed, of 200 expected
+score      : 19/19 applicable, unavailable (incomplete campaign) (1 not applicable)
+  user_interruption  yield  19/19 applicable  unavailable (incomplete campaign)  (1 not applicable)
+
+NOT REPORTABLE: cell "microturn-player" is not reportable: 180 of 200 tasks were not attempted
+written to .runtime/duplex-plan/results/native/validate-player-2/player-fdb.json

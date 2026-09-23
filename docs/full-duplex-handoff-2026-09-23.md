@@ -291,3 +291,19 @@ orders the remaining work.
   45 GB of host RAM, so it will start after this campaign if memory allows.
   **On completion:** check `finished.json`, retain the evidence under
   `deploy/duplex/evidence/`, and update the results and audit documents.
+
+## Playback receipts and tool correctness (2026-09-23, evening)
+
+The user agreed to two simple projects:
+
+- **Playback receipts** (`1bab9039`, fixed server side in `d0225ace`) are
+  validated on the micro-turn cascade: 35/35 truncations confirmed, audible
+  yield p50 44 ms (`playback-receipts/20260923-microturn/`). Only the
+  micro-turn sidecar marks interrupted turns so far. Moshi, PersonaPlex,
+  Lychee and the other native sidecars still end every turn as completed.
+- **Tool correctness** (`48b3a30d`): 8/10 on the ordinary cascade
+  (`toolcall/20260923-cascade/`). Both failures are corrections: a
+  fabricated weather answer with no call, and a misheard, split request that
+  became a timer. The VoiceChat run waits for host memory.
+- **The micro-turn cascade campaign completed** (`8fa60c70`): 242/293 FD-Bench
+  conversations and all FDB categories, with no task errors.

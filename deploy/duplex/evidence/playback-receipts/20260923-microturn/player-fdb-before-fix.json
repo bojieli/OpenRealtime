@@ -1,0 +1,470 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "microturn-player",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "34dc92e284865fc3c10b027f94278738ad58a231",
+    "modified": false,
+    "executable_sha256": "a301f4f6f99ba05b3eb7187164a7e3ef55c9ae309684839e1bcca0a1d0a0ed8e",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-23T21:26:19Z",
+    "finished_at": "2026-09-23T21:32:51Z"
+  },
+  "expected_tasks": 200,
+  "tasks": [
+    {
+      "id": "user_interruption/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_playout_after_event_ms": 152.51500000000033,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 152.51500000000033,
+        "event_audible_after_ms": 300,
+        "yield_latency_from_annotation_ms": 352.5730000000003,
+        "yield_latency_ms": 52.57300000000032
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How can I save money more effectively?",
+        "event": "Actually, what are some financial goals I should set?"
+      }
+    },
+    {
+      "id": "user_interruption/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_playout_after_event_ms": 126.10099999999966,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 126.10099999999966,
+        "event_audible_after_ms": 240,
+        "yield_latency_from_annotation_ms": 266.2439999999997,
+        "yield_latency_ms": 26.243999999999687
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are the latest trends in smartphones?",
+        "event": "Let's switch to talking about laptops."
+      }
+    },
+    {
+      "id": "user_interruption/3",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_playout_after_event_ms": 98.11500000000069,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 98.11500000000069,
+        "event_audible_after_ms": 140,
+        "yield_latency_from_annotation_ms": 0,
+        "yield_latency_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What's the latest in smart home devices?",
+        "event": "Hold on, what time is the meeting scheduled today?"
+      }
+    },
+    {
+      "id": "user_interruption/4",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_playout_after_event_ms": 87.27499999999873,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 87.27499999999873,
+        "event_audible_after_ms": 480,
+        "yield_latency_from_annotation_ms": 0,
+        "yield_latency_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How should I take care of indoor plants?",
+        "event": "By the way, what’s the weather going to be like tomorrow?"
+      }
+    },
+    {
+      "id": "user_interruption/5",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 400,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 99.59299999999985,
+        "event_audible_after_ms": 720
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_interruption",
+        "context": "What are the benefits of eating more fruits?",
+        "event": "Can we talk about something else?"
+      }
+    },
+    {
+      "id": "user_interruption/6",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 40,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_playout_after_event_ms": 130.02899999999954,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 130.02899999999954,
+        "event_audible_after_ms": 340,
+        "yield_latency_from_annotation_ms": 370.0059999999994,
+        "yield_latency_ms": 30.005999999999403
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "Which places do you recommend visiting in Europe?",
+        "event": "Oh, before I forget, do I need a visa to travel to Europe?"
+      }
+    },
+    {
+      "id": "user_interruption/7",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 520,
+        "agent_playout_after_event_ms": 164.1279999999997,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 164.1279999999997,
+        "event_audible_after_ms": 1340,
+        "yield_latency_from_annotation_ms": 1404.1459999999997,
+        "yield_latency_ms": 64.14599999999973
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How often should I run to stay fit?",
+        "event": "Oh, by the way, can you tell me about some good running shoes?"
+      }
+    },
+    {
+      "id": "user_interruption/8",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_playout_after_event_ms": 69.42299999999977,
+        "agent_playout_at_event_ms": 100,
+        "audible_yield_latency_ms": 69.42299999999977,
+        "event_audible_after_ms": 220,
+        "yield_latency_from_annotation_ms": 0,
+        "yield_latency_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What’s a good comedy to watch?",
+        "event": "Actually, what are the new movies released?"
+      }
+    },
+    {
+      "id": "user_interruption/9",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What makes a good smartphone camera?",
+        "event": "By the way, what's the price of the latest model?"
+      }
+    },
+    {
+      "id": "user_interruption/10",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How can I reduce stress quickly?",
+        "event": "Can we switch to talking about sleep improvement?"
+      }
+    },
+    {
+      "id": "user_interruption/11",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "I'm thinking of buying a new laptop",
+        "event": "Hold that thought. Can we discuss cooking tips instead?"
+      }
+    },
+    {
+      "id": "user_interruption/12",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What should I feed my dog?",
+        "event": "Oh, before I forget, how often should I take my dog to the vet?"
+      }
+    },
+    {
+      "id": "user_interruption/13",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What’s the easiest instrument to start learning?",
+        "event": "Actually, could you suggest some music schools?"
+      }
+    },
+    {
+      "id": "user_interruption/14",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "Why is recycling important?",
+        "event": "Can we talk about something else?"
+      }
+    },
+    {
+      "id": "user_interruption/15",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "Can you suggest a good mystery novel?",
+        "event": "Can we talk about something else? What about movies?"
+      }
+    },
+    {
+      "id": "user_interruption/16",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "Could you give me some ideas for dinner tonight?",
+        "event": "Oh, before I forget, do we need more coffee?"
+      }
+    },
+    {
+      "id": "user_interruption/17",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What's the weather going to be like this weekend?",
+        "event": "Can we talk about something else? How about any good movies out?"
+      }
+    },
+    {
+      "id": "user_interruption/18",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How often should I water my succulents?",
+        "event": "By the way, have we set up a dinner plan for tonight?"
+      }
+    },
+    {
+      "id": "user_interruption/19",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What are some essential things to pack for a tropical vacation?",
+        "event": "Oh, do I need a visa for my trip next month?"
+      }
+    },
+    {
+      "id": "user_interruption/20",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "I'm looking for a new mystery novel to read, any suggestions?",
+        "event": "Actually, wait, what's the weather tomorrow?"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 8,
+    "failed": 12,
+    "passed": 7,
+    "not_applicable": 1,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "180 of 200 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 8,
+        "unit": "ms",
+        "min": 0,
+        "p50": 20,
+        "p90": 80,
+        "p95": 80,
+        "p99": 80,
+        "max": 80,
+        "mean": 30
+      },
+      "agent_audio_at_event_ms": {
+        "count": 8,
+        "unit": "ms",
+        "min": 0,
+        "p50": 120,
+        "p90": 120,
+        "p95": 120,
+        "p99": 120,
+        "max": 120,
+        "mean": 95
+      },
+      "agent_audio_before_event_ms": {
+        "count": 8,
+        "unit": "ms",
+        "min": 400,
+        "p50": 520,
+        "p90": 520,
+        "p95": 520,
+        "p99": 520,
+        "max": 520,
+        "mean": 495
+      },
+      "agent_playout_after_event_ms": {
+        "count": 8,
+        "unit": "ms",
+        "min": 0,
+        "p50": 112.10800000000017,
+        "p90": 155.99890000000013,
+        "p95": 160.0634499999999,
+        "p99": 163.31508999999974,
+        "max": 164.1279999999997,
+        "mean": 103.4482499999998
+      },
+      "agent_playout_at_event_ms": {
+        "count": 8,
+        "unit": "ms",
+        "min": 99.59299999999985,
+        "p50": 100,
+        "p90": 100,
+        "p95": 100,
+        "p99": 100,
+        "max": 100,
+        "mean": 99.94912499999998
+      },
+      "audible_yield_latency_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 69.42299999999977,
+        "p50": 126.10099999999966,
+        "p90": 157.1602000000001,
+        "p95": 160.64409999999987,
+        "p99": 163.43121999999974,
+        "max": 164.1279999999997,
+        "mean": 118.2265714285712
+      },
+      "event_audible_after_ms": {
+        "count": 8,
+        "unit": "ms",
+        "min": 140,
+        "p50": 320,
+        "p90": 905.9999999999999,
+        "p95": 1122.9999999999998,
+        "p99": 1296.6,
+        "max": 1340,
+        "mean": 472.5
+      },
+      "yield_latency_from_annotation_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 266.2439999999997,
+        "p90": 783.6619999999999,
+        "p95": 1093.9039999999989,
+        "p99": 1342.0975999999991,
+        "max": 1404.1459999999997,
+        "mean": 341.85271428571417
+      },
+      "yield_latency_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 26.243999999999687,
+        "p90": 57.20220000000009,
+        "p95": 60.674099999999896,
+        "p99": 63.451619999999764,
+        "max": 64.14599999999973,
+        "mean": 24.70985714285702
+      }
+    }
+  }
+}
