@@ -1,0 +1,122 @@
+{
+  "finished": "2026-09-23T01:25:31.803021+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; incomplete benchmark: 198 of 200 tasks were not attempted",
+    "fdb-user_backchannel.json: exit 0; incomplete benchmark: 96 of 98 tasks were not attempted",
+    "fdb-background_speech.json: exit 0; incomplete benchmark: 98 of 100 tasks were not attempted",
+    "fdb-talking_to_other.json: exit 0; incomplete benchmark: 98 of 100 tasks were not attempted",
+    "fdbench.json: exit 0; incomplete benchmark: 291 of 293 tasks were not attempted"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-68c15b3e",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260923T012129Z-7qxo_vhv/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 198 of 200 tasks were not attempted"
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-68c15b3e",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260923T012129Z-7qxo_vhv/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 96 of 98 tasks were not attempted"
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-68c15b3e",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260923T012129Z-7qxo_vhv/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 98 of 100 tasks were not attempted"
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-68c15b3e",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260923T012129Z-7qxo_vhv/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 98 of 100 tasks were not attempted"
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-68c15b3e",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "2",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-voicechat-output-segmented",
+        "-out",
+        "/home/ubuntu/OpenRealtime-duplex-next-validation/.runtime/duplex-plan/results/e2e/native-voicechat-output-segmented/runs/20260923T012129Z-7qxo_vhv/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 291 of 293 tasks were not attempted"
+    }
+  },
+  "load_average_end": [
+    "287.82",
+    "285.27",
+    "276.03"
+  ],
+  "sha256": {
+    "run.json": "6268a75f3e4f2583d62448217fff3e2d6eabb879a207578db9aaa57c3c51df77",
+    "profile.yaml": "e33b0c917a32858f508d6c7d68e2c7f85ee5cd8e3e4187c216d43f999fd3f8eb",
+    "fdb-user_interruption.json": "1e4857d3a951ae04a62e23d2a860ba97a754630be125337edc12422eb5c19a09",
+    "fdb-user_backchannel.json": "120a377c5db69cb2e547dd3d638fcbf276368e94ceb85966b827f073be6fb6eb",
+    "fdb-background_speech.json": "891d3aad5d824f0e1e7fd9cf3cd679c47b715305597178b644dd297f2b083db8",
+    "fdb-talking_to_other.json": "775dd057085fd11bb27644b294b6b0fc0b51426b270317b8910d523e2cf511bc",
+    "fdbench.json": "6007da0c0f16083eba58e60cc310b9eb1c36a2abb216226c01056acc0d2f3cb6"
+  }
+}

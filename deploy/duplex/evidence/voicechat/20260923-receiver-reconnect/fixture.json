@@ -1,0 +1,8 @@
+{
+  "purpose": "Target original user_interruption/68 protocol error using corrected receiver; not a full category campaign",
+  "source": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/68",
+  "sha256": {
+    "metadata.json": "464732ea3f33865d355ef6b6fa30b9a6ebd8d6e26d71cd49a9acd0c14f13b676",
+    "input.wav": "4bd8db77a5b31a781390d1a456a230625cc152c5239ed72c2269a807fd1294e1"
+  }
+}

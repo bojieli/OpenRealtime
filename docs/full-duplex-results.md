@@ -432,7 +432,7 @@ Native validation remains incomplete. The retained component artifacts under
   token. The receiver fix at `5c9a798c` preserves nonempty whitespace deltas
   while rejecting empty ones; the offending upstream token was not retained.
   The completed campaign remains pinned to its original receiver, and GPU
-  validation of the corrected receiver remains pending.
+  validation of the corrected receiver is recorded below.
 
   The same campaign's [complete backchannel category](../deploy/duplex/evidence/native-voicechat-output-segmented/20260922T181139Z-64nefc4d-backchannel/)
   processed all 98 recordings without task errors: 94/94 applicable recordings
@@ -456,6 +456,15 @@ Native validation remains incomplete. The retained component artifacts under
   also preserves standalone whitespace after receiver validation, avoiding
   concatenated words and duplicate final text; its regression passed, but
   this completed campaign predates both whitespace fixes.
+
+  [Post-fix GPU validation on 2026-09-23](../deploy/duplex/evidence/voicechat/20260923-receiver-reconnect/)
+  completed three repeats of interruption/68 without protocol errors, but only
+  one passed the yield criterion (1,017 / 2,305 / 944 ms). A separate smoke
+  completed eight FDB recordings and two FD-Bench conversations without task
+  errors: seven FDB passes, seven of eight turns answered, no premature starts.
+  Two fresh stdio sessions produced active audio and exited cleanly on abrupt
+  disconnect using the output-rate-corrected reconnect probe. These checks do
+  not replace the failed full campaign or establish rendered playback control.
 
   A [real-model duplicate-result probe](../deploy/duplex/evidence/voicechat/20260922-duplicate-result/)
   delayed a fixed tool result by four seconds and submitted it twice. The

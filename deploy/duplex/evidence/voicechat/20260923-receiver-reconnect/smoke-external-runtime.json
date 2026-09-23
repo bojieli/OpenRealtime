@@ -1,0 +1,15 @@
+{
+  "engine_revision": "b33f5c6ff0814fa547e3085bf05bd6b18af78b3c",
+  "runtime_revision": "9005d789033b8c3ec5876a7a68c4e2d9238f5c69",
+  "runtime_patch_sha256": "aa146449ae95bb1294e138de10fdd640b1ba14da355888a05083211cb57dd4da",
+  "runtime_patch": "deploy/duplex/patches/voicechat-boundary-diagnostics.patch",
+  "checkpoint_revision": "a4c40ca5b4fe77db13e9840ca4a2b91becf030c8",
+  "binary_sha256": "32db2bfc648c81d729e2712b6802bfa8dd5dea733c35014a0dfa629450966b58",
+  "output_boundary_policy": {
+    "decoded_quiet_ms": 800,
+    "rms_threshold": 0.01,
+    "source": "adapter, not model EOS"
+  },
+  "limitation": "Shared GPU; sampler diagnostics enabled; receipt timing is not rendered playback",
+  "runtime_diff_sha256": "aa146449ae95bb1294e138de10fdd640b1ba14da355888a05083211cb57dd4da"
+}

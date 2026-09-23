@@ -1,0 +1,14 @@
+[1/3] user_interruption/68#1
+[2/3] user_interruption/68#2
+[3/3] user_interruption/68#3
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : ec6488a0806c on ubuntu
+tasks      : 3 completed, 0 failed, of 3 expected
+score      : 1/3 applicable, 33.3% (0 not applicable)
+stability  : 1 recordings x 3 attempts; 0 always passed, 0 always failed, 0 always inapplicable, 1 disagreed with themselves
+  unsettled  user_interruption/68
+  user_interruption  yield  1/3 applicable  33.3%  (0 not applicable)
+
+reportable
+written to .runtime/duplex-plan/results/native/voicechat-receiver-regression-20260923/fdb.json

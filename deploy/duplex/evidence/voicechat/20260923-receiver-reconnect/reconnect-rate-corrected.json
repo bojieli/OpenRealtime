@@ -1,0 +1,37 @@
+{
+  "address": null,
+  "sidecar": ".runtime/duplex-plan/venvs/vllm-omni-native/bin/python sidecars/voicechat_sidecar.py --server ws://127.0.0.1:9140/v1/realtime --output-quiet-ms 800",
+  "question": ".runtime/duplex-plan/results/native/voicechat-resume-question.wav",
+  "timing_basis": "received PCM packets, not rendered playback",
+  "activity_criterion": {
+    "rms_dbfs": -40,
+    "consecutive_ms": 100,
+    "window_ms": 20,
+    "sample_rate": "negotiated output_rate"
+  },
+  "attempts": [
+    {
+      "handshake_s": 1.5499498709104955,
+      "input_sent_s": 1.98,
+      "first_audio_s": 1.8822266766801476,
+      "audio_bytes": 7056,
+      "errors": [],
+      "active_audio_detected": true,
+      "output_rate": 22050,
+      "passed": true,
+      "sidecar_exit_code": 0
+    },
+    {
+      "handshake_s": 1.2246420797891915,
+      "input_sent_s": 2.16,
+      "first_audio_s": 2.068839085754007,
+      "audio_bytes": 7056,
+      "errors": [],
+      "active_audio_detected": true,
+      "output_rate": 22050,
+      "passed": true,
+      "sidecar_exit_code": 0
+    }
+  ],
+  "passed": true
+}

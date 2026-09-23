@@ -1,0 +1,144 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-voicechat-output-segmented",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "b33f5c6ff0814fa547e3085bf05bd6b18af78b3c",
+    "modified": false,
+    "executable_sha256": "32db2bfc648c81d729e2712b6802bfa8dd5dea733c35014a0dfa629450966b58",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-23T01:22:08Z",
+    "finished_at": "2026-09-23T01:22:45Z"
+  },
+  "expected_tasks": 98,
+  "tasks": [
+    {
+      "id": "user_backchannel/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 79.95833333333333,
+        "agent_audio_before_event_ms": 239.95833333333331,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 0
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Present a thorough explanation of global warming.",
+        "event": "yes yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 960,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 480,
+        "agent_audio_hold_window_ms": 960,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Detail photosynthesis in full.",
+        "event": "right yeah"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 2,
+    "failed": 0,
+    "passed": 2,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "96 of 98 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 960,
+        "p50": 960,
+        "p90": 960,
+        "p95": 960,
+        "p99": 960,
+        "max": 960,
+        "mean": 960
+      },
+      "agent_audio_at_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 79.95833333333333,
+        "p50": 79.97916666666666,
+        "p90": 79.99583333333334,
+        "p95": 79.99791666666667,
+        "p99": 79.99958333333333,
+        "max": 80,
+        "mean": 79.97916666666666
+      },
+      "agent_audio_before_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 239.95833333333331,
+        "p50": 359.97916666666663,
+        "p90": 455.99583333333334,
+        "p95": 467.9979166666667,
+        "p99": 477.5995833333333,
+        "max": 480,
+        "mean": 359.97916666666663
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 960,
+        "p50": 960,
+        "p90": 960,
+        "p95": 960,
+        "p99": 960,
+        "max": 960,
+        "mean": 960
+      },
+      "event_audible_after_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 0,
+        "p50": 10,
+        "p90": 18,
+        "p95": 19,
+        "p99": 19.8,
+        "max": 20,
+        "mean": 10
+      }
+    }
+  }
+}

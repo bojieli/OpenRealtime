@@ -1,0 +1,43 @@
+voicechat hello: rate=24000 tools=[] instructions=''
+voicechat upstream session openrealtime-9ec413234e3442a592b56e4106cead7d created; capabilities={"adapter_patterns": ["scheduler_data_plane"], "chunk_period_ms": 80, "implementation_level": "model_native_duplex", "input_modes": ["append_audio_chunk"], "requires_model_runner_kv": true, "requires_native_stage_role": true, "session_admission_mode": "engine_managed", "signal_sources": ["model_native", "client_event"], "stage_handoff_transport": "scheduler_data_plane", "supports_audio_truncate": false, "supports_barge_in": false, "supports_client_commit": true, "supports_core_kv_lease": false, "supports_core_resumable_request": true, "supports_external_turn_signal": false, "supports_independent_io_streams": true, "supports_input_append": true, "supports_kv_lease": false, "supports_model_internal_state": true, "supports_model_native_turn_policy": true, "supports_multi_session": false, "supports_multi_session_same_replica": false, "supports_playback_ack": true, "supports_realtime_endpoint": true, "supports_reencode_context": false, "supports_replace_latest_chunk": false, "supports_rollback_to_checkpoint": false, "supports_scheduler_native_append": false, "supports_session_adapter": true, "supports_session_lease": true, "supports_session_resume": true, "supports_stage_connector_handoff": true, "supports_stage_resumption": true, "supports_turn_commit_only": false, "target_barge_in_latency_ms": null}
+voicechat session closed: real_frames=24 fill_frames=0 audio_end_ms=1920
+voicechat hello: rate=24000 tools=[] instructions=''
+voicechat upstream session openrealtime-d0751f16311442678e1a9190c2580d2d created; capabilities={"adapter_patterns": ["scheduler_data_plane"], "chunk_period_ms": 80, "implementation_level": "model_native_duplex", "input_modes": ["append_audio_chunk"], "requires_model_runner_kv": true, "requires_native_stage_role": true, "session_admission_mode": "engine_managed", "signal_sources": ["model_native", "client_event"], "stage_handoff_transport": "scheduler_data_plane", "supports_audio_truncate": false, "supports_barge_in": false, "supports_client_commit": true, "supports_core_kv_lease": false, "supports_core_resumable_request": true, "supports_external_turn_signal": false, "supports_independent_io_streams": true, "supports_input_append": true, "supports_kv_lease": false, "supports_model_internal_state": true, "supports_model_native_turn_policy": true, "supports_multi_session": false, "supports_multi_session_same_replica": false, "supports_playback_ack": true, "supports_realtime_endpoint": true, "supports_reencode_context": false, "supports_replace_latest_chunk": false, "supports_rollback_to_checkpoint": false, "supports_scheduler_native_append": false, "supports_session_adapter": true, "supports_session_lease": true, "supports_session_resume": true, "supports_stage_connector_handoff": true, "supports_stage_resumption": true, "supports_turn_commit_only": false, "target_barge_in_latency_ms": null}
+voicechat session closed: real_frames=27 fill_frames=0 audio_end_ms=2160
+{
+  "address": null,
+  "sidecar": ".runtime/duplex-plan/venvs/vllm-omni-native/bin/python sidecars/voicechat_sidecar.py --server ws://127.0.0.1:9140/v1/realtime --output-quiet-ms 800",
+  "question": ".runtime/duplex-plan/results/native/voicechat-resume-question.wav",
+  "timing_basis": "received PCM packets, not rendered playback",
+  "activity_criterion": {
+    "rms_dbfs": -40,
+    "consecutive_ms": 100,
+    "window_ms": 20,
+    "sample_rate": "negotiated output_rate"
+  },
+  "attempts": [
+    {
+      "handshake_s": 1.5499498709104955,
+      "input_sent_s": 1.98,
+      "first_audio_s": 1.8822266766801476,
+      "audio_bytes": 7056,
+      "errors": [],
+      "active_audio_detected": true,
+      "output_rate": 22050,
+      "passed": true,
+      "sidecar_exit_code": 0
+    },
+    {
+      "handshake_s": 1.2246420797891915,
+      "input_sent_s": 2.16,
+      "first_audio_s": 2.068839085754007,
+      "audio_bytes": 7056,
+      "errors": [],
+      "active_audio_detected": true,
+      "output_rate": 22050,
+      "passed": true,
+      "sidecar_exit_code": 0
+    }
+  ],
+  "passed": true
+}
