@@ -104,6 +104,9 @@ Readings:
   incremental input. The later component report (`results/tts/SUMMARY.md`)
   records Qwen3 producing early audio on 6/6 English prefixes and CosyVoice
   on 1/6; those are separate runs, not a matched latency comparison.
+  A [retained 2026-09-23 rerun](../deploy/duplex/evidence/tts/20260923-rerun/)
+  of that component report, on a loaded host, again shows Qwen3 at 6/6 (en and zh)
+  and Kyutai at 4/6. CosyVoice's service was unhealthy and was not rerun.
   Deepgram requires an explicit flush rather than token-by-token admission.
 - **Cancellation is clean everywhere**: no service delivered any audio after
   the cancel was acknowledged, which is the property the runtime needs to stop
