@@ -207,3 +207,42 @@ with v4 in both independent campaigns (`…-combined-20260923-12` and this one).
 This is the first evidence that particular adaptations recur rather than
 occurring once. It is still a handful of pairs out of 24, with one repeat per
 campaign and single-rater review.
+
+## Three-campaign repeatability, A2 with v4 (2026-09-23)
+
+A third A2/v4 campaign (`pilot-dev-a2v4-repeat3-20260923-14`: 24 runs, 5,597
+audited requests, zero violations) gives three independent runs per pair
+under the same fixtures. Gemini-judged feedback-only passes, reviewed, per pair:
+
+| Pair / variant | Passes | Reviewed as |
+| --- | ---: | --- |
+| st-03 deepen | 3/3 | genuine every time |
+| pa-02 should-correct | 3/3 | genuine every time |
+| ov-01 before-playing | 2/3 | one genuine revision, one promise only |
+| st-01 skip, st-02 deepen, si-01 sentence-finished, ov-02 | 1/3 each | genuine or weak once |
+| pr-01, pr-02 affirmative | 1/3 each | weak |
+| sc-01 unchanged | 1/3 | null variant |
+
+Correction to the A1/A2 section: counting only the Gemini verdicts, st-02
+deepen passed in one of the three campaigns, not two. The earlier count mixed
+a manual review of campaign 1 with the judge's verdict in campaign 2.
+
+**Milestone evidence (partial).** In st-03 deepen, the assistant was
+mid-sentence ("Even when it's cold, there's still some heat in the air") when
+the user said "go back and explain the refrigerant cycle more slowly", in all
+three runs. It let that sentence finish, and its next content turned to the
+refrigerant cycle and compressor. The muted control never reached that content.
+This is repeatable, paired, audible mid-speech content adaptation, verified by
+independent ASR, the Gemini judge and review. It rests on one pair. The same
+pair's skip branch fails 3/3, so P2's acceptance (opposite continuations for
+"I know that part" and "explain that part") is not met. pa-02 recurs 3/3 but is
+proactive correction: the assistant was not speaking at the user's claim.
+
+Open items this development round cannot complete alone:
+- The native reference: the DuplexCascade checkpoint is no longer in the local
+  cache, and re-downloading needs approval and disk.
+- The P3 memory probe: it needs about 25 GB of free GPU memory or a small
+  local model with weights.
+- A3: it needs validated, consented prosody recordings.
+- Human listening ratings, and the prompt/scorer freeze before the
+  preregistered pilot.
