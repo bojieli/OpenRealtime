@@ -306,6 +306,13 @@ do not validate hold behavior. Timing and boundaries have the same limitations
 as the preceding categories. Talking-to-other and the selected FD-Bench
 condition remain pending.
 
+The [complete PersonaPlex talking-to-other category](../deploy/duplex/evidence/native-personaplex/20260923T012919Z-td0w3l3o-other/)
+finished at 04:42 UTC: all 100 recordings completed without task errors,
+69/70 applicable passes (98.6%), and 30 not applicable. Recording 73 failed
+the hold criterion. All four FDB categories are complete; the selected
+293-conversation FD-Bench condition remains pending. These scores retain the
+received-audio, adapter-boundary, and input-drop limitations above.
+
 The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
 after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
 the observation gap and original incomplete record are preserved. No resource
