@@ -1,0 +1,38 @@
+--- a/CMakeLists.txt	2026-09-23 10:55:16.116180806 +0000
++++ b/CMakeLists.txt	2026-09-23 10:55:16.132181138 +0000
+@@ -34,7 +34,7 @@
+ set(PYTHON_SUPPORTED_VERSIONS "3.9" "3.10" "3.11" "3.12")
+ 
+ # Supported NVIDIA architectures.
+-set(CUDA_SUPPORTED_ARCHS "7.0;7.2;7.5;8.0;8.6;8.7;8.9;9.0")
++set(CUDA_SUPPORTED_ARCHS "7.0;7.2;7.5;8.0;8.6;8.7;8.9;9.0;12.0")
+ 
+ # Supported AMD GPU architectures.
+ set(HIP_SUPPORTED_ARCHS "gfx906;gfx908;gfx90a;gfx940;gfx941;gfx942;gfx1030;gfx1100;gfx1101")
+@@ -482,10 +482,9 @@
+     WITH_SOABI)
+ endif()
+ 
+-# vllm-flash-attn currently only supported on CUDA
+-if (NOT VLLM_TARGET_DEVICE STREQUAL "cuda")
+-  return()
+-endif ()
++# sm_120 build: the pinned vllm-flash-attn has no Blackwell kernels; Lychee
++# runs attention through the XFORMERS backend, so the library is not built.
++return()
+ 
+ # vLLM flash attention requires VLLM_GPU_ARCHES to contain the set of target
+ # arches in the CMake syntax (75-real, 89-virtual, etc), since we clear the
+--- a/setup.py	2026-09-23 10:55:16.116180806 +0000
++++ b/setup.py	2026-09-23 10:55:16.132181138 +0000
+@@ -575,9 +575,7 @@
+ if _is_hip():
+     ext_modules.append(CMakeExtension(name="vllm._rocm_C"))
+ 
+-if _is_cuda():
+-    ext_modules.append(
+-        CMakeExtension(name="vllm.vllm_flash_attn.vllm_flash_attn_c"))
++# sm_120 build: vllm-flash-attn is not built (see CMakeLists.txt).
+ 
+ if _build_custom_ops():
+     ext_modules.append(CMakeExtension(name="vllm._C"))

@@ -13,9 +13,9 @@
 #            which has no sm_120 kernels ("no kernel image is available for execution on the device").
 #            Here: torch 2.7.1+cu128, xformers 0.0.31, the vendored patched vLLM 0.6.5 rebuilt from
 #            source for sm_120 (.runtime/duplex-plan/build/lychee-vllm, patch
-#            .runtime/duplex-plan/build/lychee-vllm-sm120.patch: arch list + no vllm-flash-attn),
+#            deploy/duplex/services/lychee-vllm-sm120.patch: arch list + no vllm-flash-attn),
 #            attention through the XFORMERS backend. venv .runtime/duplex-plan/venvs/lychee
-#            (.runtime/duplex-plan/setup-lychee.sh, then build/build-lychee-vllm.sh).
+#            (.runtime/duplex-plan/setup-lychee.sh, then deploy/duplex/services/build-lychee-vllm.sh).
 #
 # Large model: both processes run under the GPU large-model lease, which is
 # taken first; the launcher then waits (holding it) for enough free memory.
