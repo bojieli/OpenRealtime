@@ -81,6 +81,21 @@ def main():
         record['status'] = 'complete'
     except BaseException as exc:
         record.update(status='failed', error=repr(exc))
+        # On a shared GPU an out-of-memory failure is ambiguous: record this
+        # process's own peak and every process's usage at the moment it failed.
+        try:
+            import torch
+            record['peak_allocated_bytes_at_failure'] = torch.cuda.max_memory_allocated()
+            record['peak_reserved_bytes_at_failure'] = torch.cuda.max_memory_reserved()
+        except Exception:
+            pass
+        try:
+            import subprocess
+            record['gpu_processes_at_failure'] = subprocess.run(
+                ['nvidia-smi', '--query-compute-apps=pid,used_memory', '--format=csv,noheader,nounits'],
+                capture_output=True, text=True, timeout=10).stdout.split('\n')
+        except Exception:
+            pass
         raise
     finally:
         write()
