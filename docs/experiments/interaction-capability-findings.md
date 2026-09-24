@@ -284,3 +284,26 @@ maximum of 68.
   compressor…") matches the three earlier passes. On review st-03 deepen
   adapted in 4/4 A2 runs. The judge misses some genuine adaptations as well as
   crediting some acknowledgements.
+
+## Native reference re-established (2026-09-24)
+
+`native-st02-gap10-live-20260924-01` reran DuplexCascade on the fresh-clone
+st-02 gap10 fixture. The checkpoint (revision 31c038ec…) was verified against
+the Hub's SHA-256 values, and the base was Qwen2-7B-Instruct f2826a00…. The run
+used two-word delivery, all four branches completed with 75 requests each, and
+there were no admission violations. Independent Nemotron ASR of the original
+windows:
+
+- **Deepen:** native control cancelled the backlog at 23.4 s, and new speech
+  was first heard at 26.3 s: "…certainly the feeding schedule for your
+  sourdough starter is crucial for its health". The lost run had 23.42 s and
+  26.21 s with the same wording.
+- **Skip and both muted controls:** no native-control cancel. They play the
+  stale backlog ("materials needed … all purpose or bread flour works well").
+
+The provisional native finding is therefore re-established on a different
+synthesis of the same fixture, with near-identical timing. DuplexCascade
+adapts audibly to "explain that part in more detail" and not to "skip ahead".
+The prompted A2 policy shows the same asymmetry on its steering pairs: deepen
+adapts, skip mostly fails. The in-window content is still introductory, and
+the model still reads markdown aloud and runs far ahead of playback.
