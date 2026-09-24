@@ -246,3 +246,41 @@ Open items this development round cannot complete alone:
 - A3: it needs validated, consented prosody recordings.
 - Human listening ratings, and the prompt/scorer freeze before the
   preregistered pilot.
+
+## Background deliberation: A2 against A2D against A2T (2026-09-24)
+
+`pilot-dev-deliberation-20260924-01`: the same 24 pinned pairs, v4, cells A2,
+A2D and A2T interleaved per pair, one repeat. The causal audit, including the
+deliberation checks, passes 11,618 requests. Median host load was 18, with a
+maximum of 68.
+
+- **A2T (thinking at every tick) is worse.** 17 of 96 branches failed: 10
+  thinking runs exceeded the 4,000-token budget and 7 actions were malformed
+  without the decoding grammar. It made 8–9 decisions per trial against about
+  60, and had 2 Gemini passes after review (one genuine st-01 skip, one weak).
+- **A2D (background deliberation) matches A2 on the judge, 4 passes each.**
+  A2D's one new pass, the first st-03 skip success, came from its fast path,
+  not a deliberation. The 43 deliberations ended as follows: 13 executed, 13
+  chose wait, 11 were unfinished at trial end, 3 superseded, 3 errored.
+  Latency was median 10.1 s, p90 16.1 s, maximum 34.8 s.
+- **Deliberations were often right but late.** Executed deliberations produced
+  the correct change where the fast policy never did: "must-see attractions
+  like Fushimi Inari Shrine" for Kyoto, "starting with olive oil…", "a
+  dairy-free chocolate mousse…", and "Lisbon is the capital of Portugal, not
+  Spain". Only 6 of 13 began playing inside the scoring window. The others
+  were heard 1–3 s after it closed. One, ov-01 before-playing, was in time and
+  included an explicit repair ("I should have mentioned it's dairy-free…").
+- **Interpretation (development evidence).** Given time, the same 8B model
+  frequently produces the content change the per-tick policy misses, so the
+  per-tick failures are largely a compute and latency limit, not missing
+  information in A2. At about 10 s per deliberation, prompted thinking cannot
+  meet conversational windows. This supports P3 (a trained fast micro-turn
+  policy) over further prompting, and a window-agnostic "correct but late"
+  score should be reported beside in-window success.
+- **A defect found:** a deliberation spoke "segment-23". The guard now
+  rejects any segment ID in the trial (see the commit).
+- **Judge recall.** In this campaign Gemini rejected A2's st-03 deepen, whose
+  transcript ("…using a refrigerant cycle. The refrigerant cycle starts with a
+  compressor…") matches the three earlier passes. On review st-03 deepen
+  adapted in 4/4 A2 runs. The judge misses some genuine adaptations as well as
+  crediting some acknowledgements.
