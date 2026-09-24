@@ -1,0 +1,107 @@
+[1/98] user_backchannel/1
+[2/98] user_backchannel/2
+[3/98] user_backchannel/3
+[4/98] user_backchannel/4
+[5/98] user_backchannel/5
+[6/98] user_backchannel/6
+[7/98] user_backchannel/7
+[8/98] user_backchannel/8
+[9/98] user_backchannel/9
+[10/98] user_backchannel/10
+[11/98] user_backchannel/11
+[12/98] user_backchannel/12
+[13/98] user_backchannel/13
+[14/98] user_backchannel/14
+[15/98] user_backchannel/15
+[16/98] user_backchannel/16
+[17/98] user_backchannel/17
+[18/98] user_backchannel/18
+[19/98] user_backchannel/19
+[20/98] user_backchannel/20
+[21/98] user_backchannel/21
+[22/98] user_backchannel/22
+[23/98] user_backchannel/23
+[24/98] user_backchannel/24
+[25/98] user_backchannel/25
+[26/98] user_backchannel/26
+[27/98] user_backchannel/27
+[28/98] user_backchannel/28
+[29/98] user_backchannel/29
+[30/98] user_backchannel/30
+[31/98] user_backchannel/31
+[32/98] user_backchannel/32
+[33/98] user_backchannel/33
+[34/98] user_backchannel/34
+[35/98] user_backchannel/35
+[36/98] user_backchannel/36
+[37/98] user_backchannel/37
+[38/98] user_backchannel/38
+[39/98] user_backchannel/39
+[40/98] user_backchannel/40
+[41/98] user_backchannel/41
+[42/98] user_backchannel/42
+[43/98] user_backchannel/43
+[44/98] user_backchannel/44
+[45/98] user_backchannel/45
+[46/98] user_backchannel/46
+[47/98] user_backchannel/47
+[48/98] user_backchannel/48
+[49/98] user_backchannel/49
+[50/98] user_backchannel/50
+[51/98] user_backchannel/51
+[52/98] user_backchannel/52
+[53/98] user_backchannel/53
+[54/98] user_backchannel/54
+[55/98] user_backchannel/55
+[56/98] user_backchannel/56
+[57/98] user_backchannel/57
+[58/98] user_backchannel/58
+[59/98] user_backchannel/59
+[60/98] user_backchannel/60
+[61/98] user_backchannel/61
+[62/98] user_backchannel/62
+[63/98] user_backchannel/63
+[64/98] user_backchannel/64
+[65/98] user_backchannel/65
+[66/98] user_backchannel/66
+[67/98] user_backchannel/67
+[68/98] user_backchannel/68
+[69/98] user_backchannel/69
+[70/98] user_backchannel/70
+[71/98] user_backchannel/71
+[72/98] user_backchannel/72
+[73/98] user_backchannel/73
+[74/98] user_backchannel/74
+[75/98] user_backchannel/75
+[76/98] user_backchannel/76
+[77/98] user_backchannel/77
+[78/98] user_backchannel/78
+[79/98] user_backchannel/79
+[80/98] user_backchannel/80
+[81/98] user_backchannel/81
+[82/98] user_backchannel/82
+[83/98] user_backchannel/83
+[84/98] user_backchannel/84
+[85/98] user_backchannel/85
+[86/98] user_backchannel/86
+[87/98] user_backchannel/87
+[88/98] user_backchannel/88
+[89/98] user_backchannel/89
+[90/98] user_backchannel/90
+[91/98] user_backchannel/91
+[92/98] user_backchannel/92
+[93/98] user_backchannel/93
+[94/98] user_backchannel/94
+[95/98] user_backchannel/95
+[96/98] user_backchannel/96
+[97/98] user_backchannel/97
+[98/98] user_backchannel/98
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : 067505baa084 on ubuntu
+tasks      : 98 completed, 0 failed, of 98 expected
+score      : 93/93 applicable, 100.0% (5 not applicable)
+  user_backchannel   hold  93/93 applicable  100.0%  (5 not applicable)
+
+reportable
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-personaplex/runs/20260923T215940Z-rnwu_yu5/fdb-user_backchannel.json
