@@ -22,6 +22,13 @@ const (
 	elementConformanceCancelRunID     = "conformance-run-cancel"
 	elementConformancePendingID       = "conformance-request-cancel"
 	elementConformanceCancelID        = "conformance-cancel-1"
+	// A second pending run, cancelled while the worker is held busy.
+	elementConformanceBusyCancelRunID = "conformance-run-cancel-busy"
+	elementConformanceBusyPendingID   = "conformance-request-cancel-busy"
+	elementConformanceBusyCancelID    = "conformance-cancel-busy"
+	elementConformanceBusyRunID       = "conformance-run-busy"
+	elementConformanceBusyID          = "conformance-request-busy"
+	elementConformanceHoldMS          = 3000
 )
 
 var (
@@ -72,6 +79,7 @@ func StandardElementConformanceHello() Message {
 type elementConformanceRequest struct {
 	Challenge     string `json:"challenge"`
 	WaitForCancel bool   `json:"wait_for_cancel,omitempty"`
+	HoldMS        int    `json:"hold_ms,omitempty"`
 }
 
 type elementConformanceCancel struct {
@@ -228,6 +236,8 @@ func runElementConformance(ctx context.Context, options ConformanceOptions) Conf
 				canceled.Envelope.CausalParents))
 	}
 
+	runBusyCancellation(ctx, client, record)
+
 	if err := client.Close(); err != nil {
 		record("closes cleanly", true, false, err.Error())
 	} else {
@@ -235,6 +245,100 @@ func runElementConformance(ctx context.Context, options ConformanceOptions) Conf
 	}
 	report.Passed = len(report.Failures) == 0
 	return report
+}
+
+// runBusyCancellation checks two properties the protocol states. An interrupt
+// port is served on the reader thread, ahead of the work queue, so a
+// cancellation is acknowledged while other work still occupies the worker.
+// And once a run's cancellation is acknowledged, nothing more is sent for it.
+func runBusyCancellation(
+	ctx context.Context, client *Client, record func(string, bool, bool, string),
+) {
+	send := func(port string, envelope WireEnvelope) bool {
+		if err := client.Send(Message{Type: TypeElementFrame, Port: port, Envelope: &envelope}); err != nil {
+			record("acknowledges cancellation while the worker is busy", true, false, err.Error())
+			return false
+		}
+		return true
+	}
+	request := func(itemID, runID string, value elementConformanceRequest, sequence uint64) WireEnvelope {
+		encoded, _ := json.Marshal(value)
+		return WireEnvelope{
+			Type: elementConformanceRequestType.Clone(), ItemID: itemID, SessionID: "sidecar-conformance",
+			RunID: runID, Sequence: sequence, TraceID: "sidecar-conformance-busy", CancellationScope: runID,
+			JSON: encoded,
+		}
+	}
+	if !send("request", request(elementConformanceBusyPendingID, elementConformanceBusyCancelRunID,
+		elementConformanceRequest{Challenge: elementConformanceCancelChallenge, WaitForCancel: true}, 3)) {
+		return
+	}
+	if !send("request", request(elementConformanceBusyID, elementConformanceBusyRunID,
+		elementConformanceRequest{Challenge: "busy", HoldMS: elementConformanceHoldMS}, 4)) {
+		return
+	}
+	// Let the held request reach the worker before the cancellation arrives.
+	time.Sleep(200 * time.Millisecond)
+	cancelJSON, _ := json.Marshal(elementConformanceCancel{Reason: "cancel while busy"})
+	began := time.Now()
+	if !send("cancel", WireEnvelope{
+		Type: elementConformanceCancelType.Clone(), ItemID: elementConformanceBusyCancelID,
+		SessionID: "sidecar-conformance", RunID: elementConformanceBusyCancelRunID, Sequence: 5,
+		TraceID: "sidecar-conformance-busy", CancellationScope: elementConformanceBusyCancelRunID,
+		CausalParents: []string{elementConformanceBusyPendingID}, JSON: cancelJSON,
+	}) {
+		return
+	}
+	limit := time.Duration(elementConformanceHoldMS) * time.Millisecond / 3
+	acknowledged := false
+	late := 0
+	deadline := time.NewTimer(time.Duration(elementConformanceHoldMS)*time.Millisecond + 10*time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			record("acknowledges cancellation while the worker is busy", true, false, ctx.Err().Error())
+			return
+		case <-deadline.C:
+			record("acknowledges cancellation while the worker is busy", true, acknowledged,
+				"the held request never completed")
+			return
+		case frame, open := <-client.Frames():
+			if !open {
+				record("acknowledges cancellation while the worker is busy", true, false, "sidecar closed")
+				return
+			}
+			if frame.Type == TypeError {
+				record("acknowledges cancellation while the worker is busy", true, false, frame.Message())
+				return
+			}
+			if frame.Type != TypeElementFrame || frame.Envelope == nil {
+				continue
+			}
+			switch frame.Envelope.RunID {
+			case elementConformanceBusyCancelRunID:
+				if acknowledged {
+					late++
+					continue
+				}
+				acknowledged = true
+				waited := time.Since(began)
+				record("acknowledges cancellation while the worker is busy", true, waited < limit,
+					fmt.Sprintf("acknowledged after %s with a %d ms request occupying the worker",
+						waited.Round(time.Millisecond), elementConformanceHoldMS))
+			case elementConformanceBusyRunID:
+				// The held request finished; everything for the cancelled run
+				// would have arrived by now.
+				if !acknowledged {
+					record("acknowledges cancellation while the worker is busy", true, false,
+						"the held request finished before the cancellation was acknowledged")
+				}
+				record("sends nothing for a run after acknowledging its cancellation", true, late == 0,
+					fmt.Sprintf("%d frames after the acknowledgement", late))
+				return
+			}
+		}
+	}
 }
 
 func awaitElementConformanceResult(

@@ -249,7 +249,7 @@ openrealtime conformance sidecar -protocol-version 4 \
   -- python3 sidecars/v4_conformance_sidecar.py
 ```
 
-The suite offers the bundled probe descriptor and checks fifteen things: that
+The suite offers the bundled probe descriptor and checks seventeen things: that
 the probe is valid; that the handshake completes; that the sidecar declares
 version 4; that it attests the exact probe descriptor, an immutable runtime
 artifact, and the exact applied configuration; that it negotiates every
@@ -257,8 +257,11 @@ selected port; that it accepts a typed request and produces a typed result
 carrying the challenge and a success status; that the result preserves run and
 causal correlation; that it accepts a pending request and a typed cancellation
 on the interrupt port; that it acknowledges the cancellation with a canceled
-result; and that the acknowledgement preserves the cancellation scope and both
-causes. `TestRunConformanceV4AgainstBundledPythonSDK` runs the same suite
+result; that the acknowledgement preserves the cancellation scope and both
+causes; that a cancellation is acknowledged while another request (`hold_ms`
+3,000) still occupies the worker, because interrupt ports are served on the
+reader thread; and that nothing more is sent for a run once its cancellation
+has been acknowledged. `TestRunConformanceV4AgainstBundledPythonSDK` runs the same suite
 against the Python fixture as a real subprocess in the ordinary test run, and
 it is the one sidecar version exercised that way.
 

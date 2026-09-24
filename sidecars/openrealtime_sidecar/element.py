@@ -16,6 +16,7 @@ import queue
 import re
 import sys
 import threading
+import time
 import traceback
 from typing import Any, BinaryIO
 
@@ -950,12 +951,18 @@ class ConformanceElementSidecar(ElementSidecar):
             raise ValueError("conformance ports use JSON-only payloads")
         value = envelope.get("json")
         if port == "request":
-            if not isinstance(value, dict) or set(value) - {"challenge", "wait_for_cancel"}:
+            if not isinstance(value, dict) or set(value) - {"challenge", "wait_for_cancel", "hold_ms"}:
                 raise ValueError("v4 conformance request has invalid fields")
             challenge = value.get("challenge")
             if not isinstance(challenge, str) or not challenge.strip():
                 raise ValueError("v4 conformance request requires a challenge")
             if not value.get("wait_for_cancel", False):
+                hold = value.get("hold_ms", 0)
+                if not isinstance(hold, int) or isinstance(hold, bool) or not 0 <= hold <= 10_000:
+                    raise ValueError("v4 conformance hold_ms must be an integer from 0 to 10000")
+                # Occupies the work queue, so the suite can show that an
+                # interrupt port is still served on the reader thread.
+                time.sleep(hold / 1000)
                 self._send_result(envelope, challenge, "ok", [envelope["item_id"]])
                 return
             scope = envelope.get("cancellation_scope") or envelope.get("run_id")

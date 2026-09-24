@@ -312,6 +312,45 @@ func serveV4Probe(
 			done <- err
 			return
 		}
+		// Busy cancellation: a second pending request, a request that holds
+		// the worker, then a cancellation for the pending one. A correct
+		// sidecar acknowledges the cancellation before finishing the held work.
+		frames := make([]sidecar.Message, 3)
+		for index := range frames {
+			if frames[index], err = reader.Read(); err != nil {
+				done <- err
+				return
+			}
+		}
+		busyPending, busy, busyCancel := frames[0], frames[1], frames[2]
+		if busyPending.Port != "request" || busy.Port != "request" || busyCancel.Port != "cancel" ||
+			busyCancel.Envelope == nil || busyPending.Envelope == nil || busy.Envelope == nil ||
+			busyCancel.Envelope.RunID != busyPending.Envelope.RunID {
+			done <- fmt.Errorf("v4 busy cancellation frames = %+v", frames)
+			return
+		}
+		for _, answer := range []struct {
+			envelope *sidecar.WireEnvelope
+			status   string
+			parents  []string
+		}{
+			{busyPending.Envelope, "canceled", []string{busyPending.Envelope.ItemID, busyCancel.Envelope.ItemID}},
+			{busy.Envelope, "ok", []string{busy.Envelope.ItemID}},
+		} {
+			encoded, _ := json.Marshal(v4ProbeResult{Challenge: "busy", Status: answer.status})
+			result := sidecar.WireEnvelope{
+				Type: resultType.Type, ItemID: "conformance-result-" + answer.envelope.RunID,
+				SessionID: answer.envelope.SessionID, RunID: answer.envelope.RunID, Sequence: 3,
+				TraceID: answer.envelope.TraceID, CancellationScope: answer.envelope.CancellationScope,
+				CausalParents: answer.parents, JSON: encoded,
+			}
+			if err := writer.Write(sidecar.Message{
+				Type: sidecar.TypeElementFrame, Port: "result", Envelope: &result,
+			}); err != nil {
+				done <- err
+				return
+			}
+		}
 		bye, err := reader.Read()
 		if err != nil {
 			done <- err
