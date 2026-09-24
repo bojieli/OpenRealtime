@@ -43,6 +43,7 @@ class TreatmentTest(unittest.TestCase):
     def test_treatment_comes_from_the_campaign_run_name(self):
         self.assertEqual(campaign_report.treatment_of('/x/A2-v4-sc-01'), 'A2-v4')
         self.assertEqual(campaign_report.treatment_of('/x/A1-v4-sc-01'), 'A1-v4')
+        self.assertEqual(campaign_report.treatment_of('/x/A2D-v4-sc-01'), 'A2D-v4')
         self.assertEqual(campaign_report.treatment_of('/x/qwen-run'), 'unlabelled')
         self.assertEqual(campaign_report.treatment_of('/x/fresh-st02-gap10-v4-20260923-02'), 'unlabelled')
 
