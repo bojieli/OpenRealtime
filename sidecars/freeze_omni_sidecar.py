@@ -83,6 +83,10 @@ FIRST_PACK_END = (",", "，", "。", "：", "？", "！", ".", ":", "?", "!", "\
 #: Upstream demo server stops an answer after 500 tokens; its offline
 #: bin/inference.py after 128.
 MAX_ANSWER_TOKENS = 500
+# Qwen2-7B's context is 32,768 positions. Upstream never trims the history
+# (its demo resets per recording), so a long session would run into it; the
+# session ends cleanly below it instead.
+MAX_CONTEXT_TOKENS = 28_000
 
 
 def cache_storage_summary(torch, cache) -> dict:
@@ -285,9 +289,13 @@ class FreezeOmniSidecar(Sidecar):
     def __init__(self, input_stream, output_stream, *, mock: bool = False,
                  engine: FreezeOmniEngine | None = None, engine_factory=None,
                  control: ControlLog | None = None, pace: bool = True,
-                 max_answer_tokens: int = MAX_ANSWER_TOKENS) -> None:
+                 max_answer_tokens: int = MAX_ANSWER_TOKENS,
+                 max_context_tokens: int = MAX_CONTEXT_TOKENS,
+                 release_allocator_cache: bool = True) -> None:
         super().__init__(input_stream, output_stream)
         self.max_answer_tokens = max_answer_tokens
+        self.max_context_tokens = max_context_tokens
+        self.release_allocator_cache = release_allocator_cache
         self._pacer = OutputPacer(super().send, MODEL_OUTPUT_RATE,
                                   should_drop=self.interrupted) if pace else None
         self.mock = mock
@@ -482,6 +490,36 @@ class FreezeOmniSidecar(Sidecar):
             self._record_cache_stats(outputs, "listen")
         return outputs
 
+    def _context_tokens(self) -> int:
+        """Length of the conversation history held in the KV cache."""
+        with self._kv_lock:
+            cache = (self.generate_outputs or {}).get("past_key_values")
+        try:
+            return int(cache[0][0].size(2))
+        except (TypeError, IndexError, AttributeError):
+            return 0
+
+    def _after_answer(self) -> None:
+        """Bound what a long session costs, without changing what it says.
+
+        The history keeps growing (upstream behaviour), and the CUDA caching
+        allocator keeps every ever-larger transient block it has used; the
+        2026-09-23 endurance run grew 7.5 GiB reserved against 2.4 GiB
+        allocated. Returning unused cached blocks after each answer changes no
+        computation. Past the context limit the session ends with an error
+        rather than failing inside the model or on out-of-memory.
+        """
+        if self.mock or self.engine is None:
+            return
+        tokens = self._context_tokens()
+        if self.max_context_tokens and tokens >= self.max_context_tokens:
+            self.control.event(self.session_id, "context_limit", tokens=tokens, limit=self.max_context_tokens)
+            self.error(f"conversation reached {tokens} context tokens (limit {self.max_context_tokens}); "
+                       "start a new session", code="context_limit", fatal=True)
+        torch = self.engine.torch
+        if self.release_allocator_cache and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def _record_cache_stats(self, outputs, phase: str) -> None:
         """Metadata only: no tensor copies, synchronization, or cache truncation."""
         torch = self.engine.torch
@@ -644,6 +682,7 @@ class FreezeOmniSidecar(Sidecar):
                 self.text_done(whole_text)
             if emit_turn_done:
                 self.turn_done()
+            self._after_answer()
             # Text that arrived during the answer applies to the context now.
             with self._kv_lock:
                 if self._pending_text and self.generate_outputs is not None and not self._user_open:
@@ -916,6 +955,10 @@ def main() -> None:
                         help="stop an answer after this many tokens (upstream server 500, inference.py 128)")
     parser.add_argument("--max-turn-tokens", type=int, default=0,
                         help="relay mode: ask the engine to stop an answer after this many tokens (0 = engine's budget)")
+    parser.add_argument("--max-context-tokens", type=int, default=MAX_CONTEXT_TOKENS,
+                        help="end the session with a context_limit error past this many history tokens (0 = never)")
+    parser.add_argument("--keep-allocator-cache", action="store_true",
+                        help="do not return cached CUDA memory after each answer (pre-2026-09-24 behaviour)")
     parser.add_argument("--no-pace", action="store_true",
                         help="send audio as synthesised instead of at playback pace")
     arguments = parser.parse_args()
@@ -947,11 +990,15 @@ def main() -> None:
         serve(arguments.listen,
               lambda reader, writer: FreezeOmniSidecar(reader, writer, engine=engine, control=control,
                                                      pace=pace,
-                                                     max_answer_tokens=arguments.max_answer_tokens),
+                                                     max_answer_tokens=arguments.max_answer_tokens,
+                                                     max_context_tokens=arguments.max_context_tokens,
+                                                     release_allocator_cache=not arguments.keep_allocator_cache),
               arguments.max_sessions)
         return
     FreezeOmniSidecar(protocol_in, protocol_out, engine_factory=load, control=control,
-                      pace=pace, max_answer_tokens=arguments.max_answer_tokens).run()
+                      pace=pace, max_answer_tokens=arguments.max_answer_tokens,
+                      max_context_tokens=arguments.max_context_tokens,
+                      release_allocator_cache=not arguments.keep_allocator_cache).run()
 
 
 if __name__ == "__main__":

@@ -108,3 +108,36 @@ class CacheDiagnosticsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AfterAnswerTests(unittest.TestCase):
+    def sidecar(self, tokens, *, limit, release=True):
+        import types
+        from freeze_omni_sidecar import FreezeOmniSidecar
+        s = FreezeOmniSidecar.__new__(FreezeOmniSidecar)
+        s.mock, s._kv_lock, s.session_id = False, threading.Lock(), 'test'
+        s.max_context_tokens, s.release_allocator_cache = limit, release
+        emptied, errors, events = [], [], []
+        cuda = types.SimpleNamespace(is_available=lambda: True, empty_cache=lambda: emptied.append(1))
+        s.engine = types.SimpleNamespace(torch=types.SimpleNamespace(cuda=cuda))
+        key = types.SimpleNamespace(size=lambda dim: tokens if dim == 2 else 1)
+        s.generate_outputs = {'past_key_values': ((key, key),)}
+        s.control = types.SimpleNamespace(event=lambda *a, **k: events.append(a[1]))
+        s.error = lambda text, **kw: errors.append(kw)
+        return s, emptied, errors, events
+
+    def test_cache_released_after_each_answer_unless_kept(self):
+        for release, expected in ((True, [1]), (False, [])):
+            s, emptied, errors, _ = self.sidecar(1000, limit=28000, release=release)
+            s._after_answer()
+            self.assertEqual(emptied, expected)
+            self.assertEqual(errors, [])
+
+    def test_context_limit_ends_the_session_with_a_fatal_error(self):
+        s, _, errors, events = self.sidecar(28000, limit=28000)
+        s._after_answer()
+        self.assertEqual(errors, [{'code': 'context_limit', 'fatal': True}])
+        self.assertEqual(events, ['context_limit'])
+        s, _, errors, _ = self.sidecar(10**6, limit=0)
+        s._after_answer()
+        self.assertEqual(errors, [], 'a zero limit must never end the session')
