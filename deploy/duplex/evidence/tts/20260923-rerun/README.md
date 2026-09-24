@@ -13,9 +13,13 @@ full reports. Synthesized audio was not retained; the scores are in the reports.
   temporarily started Qwen3-ASR service. Complete text: WER 0.000 for all
   English services, CER 0.004 for Qwen3 Mandarin. Held-back and
   word-by-word outputs: WER 0.000.
-- CosyVoice was not measured: its long-running service answered `/health`
-  with HTTP 500 (`cosyvoice-health-failure.log`). Restarting it would
-  require a model load, which host memory did not allow.
+- CosyVoice 3 0.5B was measured on 2026-09-24 once its environment was
+  rebuilt and a fresh service was running. That service was restarted outside
+  this session, and the earlier HTTP 500 was the lost venv. The host load was
+  about 60, and the gated PersonaPlex campaign shared the GPU. Complete-text
+  RTF was 1.49 (en) and 2.39 (zh), so slower than real time here. Audio came
+  before the held-back rest on 4/6 (en) and 2/6 (zh) sentences, nothing after
+  cancel, and WER 0.000 / CER 0.007.
 - Deepgram Aura 2 (`aura-2-thalia-en`, :9126 service, authorized) was run later: complete-text TTFA p50 0.325 s, RTF 0.44, WER 0.003; audio before the held-back rest on 6/6 sentences; 0 frames after cancel.
 
 Held-back prefix (first half appended, 1.5 s wait): Qwen3-TTS produced audio
