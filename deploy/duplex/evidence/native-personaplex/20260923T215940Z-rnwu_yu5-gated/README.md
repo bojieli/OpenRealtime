@@ -9,8 +9,9 @@ sidecar on the repaired kyutai venv. Started 2026-09-23 at 21:59 UTC.
 | --- | --- | --- |
 | user_interruption | 182/186 (14), yield p50 442 ms | 174/180 (20), 435 ms |
 | user_backchannel | 93/93 (5) | 88/88 (10) |
+| background_speech | 66/67 (33) | 54/57 (43) |
+| talking_to_other | 74/75 (25) | 69/70 (30) |
 
 Neither category has task errors. Gating adds a few applicable recordings
 here. The large effect in `../20260923-gating-ab/` came from a run where
-configuration took about 4 s; the morning campaign configured faster. The
-remaining categories and FD-Bench will be added when they finish.
+configuration took about 4 s; the morning campaign configured faster. FD-Bench will be added when it finishes.
