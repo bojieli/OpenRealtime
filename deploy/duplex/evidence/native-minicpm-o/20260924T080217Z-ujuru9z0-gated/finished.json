@@ -1,0 +1,104 @@
+{
+  "finished": "2026-09-24T13:45:16.710081+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_backchannel.json: exit 0; 1 task errors",
+    "fdb-background_speech.json: exit 0; 1 task errors",
+    "local sidecar source inventory changed during run"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-d0225ace",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260924T080217Z-ujuru9z0/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-d0225ace",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260924T080217Z-ujuru9z0/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-d0225ace",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260924T080217Z-ujuru9z0/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": "1 task errors"
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-d0225ace",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9290/v1/realtime",
+        "-cell",
+        "native-minicpm-o",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-minicpm-o/runs/20260924T080217Z-ujuru9z0/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "196.38",
+    "149.94",
+    "96.10"
+  ],
+  "sha256": {
+    "run.json": "ce517ec8da7e21ca4d1e59248a2c8dd71c40e8c7fb90d429c3cecdb166459f0b",
+    "profile.yaml": "28c8aaf20fdd55ece70d44ade06035add9d1f06647e344c64d6805eeba27e77d",
+    "fdb-user_interruption.json": "4bd3f3a4ce3de6a3c373dadd9fc1813846b66c44582d1e5635a3de1d1a9bbb72",
+    "fdb-user_backchannel.json": "a259ebdb7004f8c4ccf2757af09e7b01cf3831b9e88d8ee3853a3b04d5b5c364",
+    "fdb-background_speech.json": "3d23b145657d4be139a03643a54335fcca63a49dd363ef45b20095a3028e44d1",
+    "fdb-talking_to_other.json": "ea0f3804ac847d773ee5a1376de7ae4a3330a47b2921e90b33d86f66523a7a10"
+  }
+}

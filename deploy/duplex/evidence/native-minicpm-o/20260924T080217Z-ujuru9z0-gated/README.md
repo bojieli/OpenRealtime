@@ -15,3 +15,17 @@ two-recordings-per-category smoke run.
 All four FDB categories are complete. MiniCPM-o holds through every
 applicable non-interruption, but yields to only 14 of 184 real interruptions.
 The FD-Bench condition was still running when this was retained.
+
+## Runner stop before FD-Bench, and task errors
+
+`finished.json` reports exit 1. The runner refused to start FD-Bench because
+the local sidecar source inventory changed during the run: this session
+edited `sidecars/freeze_omni_sidecar.py` and the v4 probe in the Python SDK
+while the campaign ran. Neither is used by MiniCPM-o, but the runner's
+integrity check correctly stops on any change. The four FDB results are
+unaffected; they completed before the check. The selected FD-Bench condition
+was rerun gated through the same server binary afterwards (see
+`../` once retained).
+
+Two recordings timed out: `user_backchannel/17` and `background_speech/92`
+("the conversation did not finish before the timeout").
