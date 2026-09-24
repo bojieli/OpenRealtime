@@ -198,6 +198,13 @@ func auditLive(root, out string) error {
 		if readErr != nil {
 			return readErr
 		}
+		if cell.Deliberation == "background" {
+			problems, err := auditDeliberations(filepath.Join(filepath.Dir(path), "deliberations.jsonl"), cell)
+			if err != nil {
+				return err
+			}
+			violations = append(violations, problems...)
+		}
 	}
 	if checked == 0 {
 		violations = append(violations, "no decisions checked")
@@ -250,4 +257,61 @@ func auditHistorySuffix(suffix string, history []executedDecision, omitted bool)
 		return fmt.Errorf("model execution history differs from preceding decisions")
 	}
 	return nil
+}
+
+// auditDeliberations checks each background deliberation of an A2D trial: its
+// snapshot holds no evidence admitted after the snapshot, its request is the
+// declared rendering of that snapshot plus the declared hint, and an executed
+// proposal saw no new user words and was admitted only after it finished.
+func auditDeliberations(path string, cell capability.Cell) ([]string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var violations []string
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		if line == "" {
+			continue
+		}
+		var row struct {
+			ID          int                    `json:"deliberation_id"`
+			SnapshotAt  time.Duration          `json:"snapshot_ns"`
+			WordsAt     int                    `json:"user_words_at_snapshot"`
+			Observation capability.Observation `json:"observation"`
+			Self        capability.Self        `json:"self_at_snapshot"`
+			FinishedAt  time.Duration          `json:"finished_ns"`
+			CheckAt     time.Duration          `json:"admission_check_ns"`
+			WordsCheck  int                    `json:"user_words_at_check"`
+			Decision    capability.Decision    `json:"decision"`
+			Status      string                 `json:"status"`
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			return nil, err
+		}
+		fail := func(message string) {
+			violations = append(violations, fmt.Sprintf("%s: deliberation-%d: %s", path, row.ID, message))
+		}
+		for _, word := range row.Observation.Words {
+			if word.AdmittedAt > row.SnapshotAt {
+				fail("snapshot contains a word admitted after it")
+			}
+		}
+		if !hasSpoken(row.Self) {
+			fail("deliberation started before the assistant had spoken")
+		}
+		var request struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if json.Unmarshal(row.Decision.Request, &request) != nil || len(request.Messages) != 2 ||
+			!strings.HasPrefix(request.Messages[1].Content, cell.Render(row.Observation, row.Self)) ||
+			!strings.HasSuffix(request.Messages[1].Content, deliberationHint) {
+			fail("request differs from the declared snapshot rendering and hint")
+		}
+		if row.Status == "synthesis-started" && (row.WordsCheck != row.WordsAt || row.CheckAt < row.FinishedAt || row.FinishedAt < row.SnapshotAt) {
+			fail("executed a proposal after newer user words, or before it finished")
+		}
+	}
+	return violations, nil
 }

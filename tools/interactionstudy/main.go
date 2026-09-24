@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -223,8 +224,8 @@ func run() error {
 				if err != nil {
 					return err
 				}
-				if cellID != "A1" && cellID != "A2" && cellID != "A3" {
-					return fmt.Errorf("live diagnostic implements A1-A3")
+				if !slices.Contains([]string{"A1", "A2", "A3", "A2D", "A2T"}, cellID) {
+					return fmt.Errorf("live diagnostic implements A1-A3, A2D and A2T")
 				}
 				for repeat := 0; repeat < *repeats; repeat++ {
 					policy.Seed = *seed + repeat

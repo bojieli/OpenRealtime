@@ -204,3 +204,27 @@ func TestPolicyRequestAndResponseHandling(t *testing.T) {
 		t.Fatal("accepted a zero token budget")
 	}
 }
+
+func TestThinkingPolicyTakesTheFinalActionAfterReasoning(t *testing.T) {
+	var seen map[string]any
+	reply := `<think>maybe {"act":"wait","text":"","replaces_pending":""} is best</think>` +
+		`{"act":"revise","text":"Now the connection.","replaces_pending":"segment-4"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&seen)
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{
+			"finish_reason": "stop", "message": map[string]string{"content": reply}}}})
+	}))
+	defer server.Close()
+	policy := capability.JointPolicy{URL: server.URL, Model: "m", MaxTokens: 4000, Thinking: true}
+	decision, err := policy.Decide(context.Background(), "", "")
+	if err != nil || decision.Action.Act != "revise" || decision.Action.ReplacesPending != "segment-4" {
+		t.Fatalf("decision %+v err %v", decision.Action, err)
+	}
+	if seen["structured_outputs"] != nil || seen["chat_template_kwargs"].(map[string]any)["enable_thinking"] != true {
+		t.Fatalf("thinking request %v", seen)
+	}
+	reply = `<think>{"act":"speak","text":"inside reasoning only","replaces_pending":""}</think>no action here`
+	if _, err = policy.Decide(context.Background(), "", ""); err == nil {
+		t.Fatal("accepted an action that appeared only inside the reasoning")
+	}
+}

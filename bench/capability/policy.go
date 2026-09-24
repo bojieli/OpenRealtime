@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -83,6 +84,9 @@ var actionGrammar = `(\{"act":"(wait|yield)","text":"","replaces_pending":""\}` 
 	`|\{"act":"(speak|continue|backchannel)","text":"` + jsonString + `","replaces_pending":""\}` +
 	`|\{"act":"revise","text":"` + jsonString + `","replaces_pending":"` + jsonString + `"\})`
 
+// actionObject finds a flat JSON object that starts with the act key.
+var actionObject = regexp.MustCompile(`\{"act"\s*:[^{}]*\}`)
+
 // JointPolicy asks an OpenAI-compatible chat endpoint for one joint action.
 type JointPolicy struct {
 	URL       string
@@ -91,7 +95,10 @@ type JointPolicy struct {
 	Seed      int
 	// Prompt overrides JointPrompt for an explicitly declared treatment.
 	Prompt string
-	Client *http.Client
+	// Thinking enables the model's reasoning. Decoding is then unconstrained,
+	// and the action is the last JSON action object after any reasoning text.
+	Thinking bool
+	Client   *http.Client
 }
 
 // Decision retains the exact request and response alongside the action.
@@ -120,15 +127,18 @@ func (p JointPolicy) Decide(ctx context.Context, instructions, observation strin
 	if prompt == "" {
 		prompt = JointPrompt
 	}
-	request, err := json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model": p.Model, "temperature": 0, "seed": p.Seed, "max_tokens": p.MaxTokens,
-		"chat_template_kwargs": map[string]bool{"enable_thinking": false},
-		"structured_outputs":   map[string]string{"regex": actionGrammar},
+		"chat_template_kwargs": map[string]bool{"enable_thinking": p.Thinking},
 		"messages": []map[string]string{
 			{"role": "system", "content": prompt + "\n\nSession instructions:\n" + instructions},
 			{"role": "user", "content": observation},
 		},
-	})
+	}
+	if !p.Thinking {
+		payload["structured_outputs"] = map[string]string{"regex": actionGrammar}
+	}
+	request, err := json.Marshal(payload)
 	if err != nil {
 		return fail(err)
 	}
@@ -169,7 +179,19 @@ func (p JointPolicy) Decide(ctx context.Context, instructions, observation strin
 	if parsed.Choices[0].FinishReason != "stop" {
 		return fail(fmt.Errorf("truncated action: finish_reason %q", parsed.Choices[0].FinishReason))
 	}
-	if err = json.Unmarshal([]byte(parsed.Choices[0].Message.Content), &decision.Action); err != nil {
+	content := parsed.Choices[0].Message.Content
+	if p.Thinking {
+		// Reasoning may precede the action inline; only the last action counts.
+		if at := strings.LastIndex(content, "</think>"); at >= 0 {
+			content = content[at+len("</think>"):]
+		}
+		found := actionObject.FindAllString(content, -1)
+		if len(found) == 0 {
+			return fail(fmt.Errorf("no action object after reasoning"))
+		}
+		content = found[len(found)-1]
+	}
+	if err = json.Unmarshal([]byte(content), &decision.Action); err != nil {
 		return fail(fmt.Errorf("action is not JSON: %w", err))
 	}
 	if err = decision.Action.Validate(); err != nil {

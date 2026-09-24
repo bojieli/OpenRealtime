@@ -251,10 +251,27 @@ func runLive(ctx context.Context, dir string, pair capability.Pair, variant capa
 	// Every started trial retains evidence, including timeout and write/request
 	// failure paths. A missing result must never masquerade as an omitted case.
 	sessionID := filepath.Base(filepath.Dir(dir)) + "/" + filepath.Base(dir)
+	var bg *background
+	switch cell.Deliberation {
+	case "":
+	case "synchronous":
+		policy.Thinking, policy.MaxTokens = true, thinkingTokens
+	case "background":
+		bg, err = newBackground(dir, policy, pair.Instructions, origin, map[string]any{
+			"pair_id": pair.ID, "variant_id": variant.ID, "cell_id": cell.ID, "session_id": sessionID})
+		if err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unknown deliberation %q", cell.Deliberation)
+	}
 	defer func() {
 		reason := "trial-horizon"
 		if runErr != nil {
 			reason = "trial-failure"
+		}
+		if bg != nil {
+			runErr = errors.Join(runErr, bg.close(time.Since(origin), userWords(admitted)))
 		}
 		speech.stop(reason)
 		speech.workers.Wait()
@@ -273,6 +290,21 @@ func runLive(ctx context.Context, dir string, pair capability.Pair, variant capa
 		fresh := source.Advance(now)
 		admitted = append(admitted, fresh...)
 		listener.Admit(fresh)
+		words := userWords(admitted)
+		if bg != nil {
+			// A finished proposal is applied before this tick's fast decision,
+			// so the fast policy observes its effect. Newer user words make an
+			// unfinished one obsolete.
+			if d := bg.finished(); d != nil {
+				if err = bg.admit(ctx, d, now, words, &speech, config); err != nil {
+					return err
+				}
+			} else if bg.current != nil && words > bg.current.userWords {
+				if err = bg.supersede(now, words); err != nil {
+					return err
+				}
+			}
+		}
 		self, active := speech.state()
 		observation := listener.Observe(now)
 		rendered := cell.Render(observation, self)
@@ -287,6 +319,18 @@ func runLive(ctx context.Context, dir string, pair capability.Pair, variant capa
 		rendered += "\nCurrent pending segment ID: " + active
 		line, _ := affordanceLine(affordance, active)
 		rendered += "\n" + line
+		// Deliberation targets feedback to the assistant's speech, so it starts
+		// only on new user words once the assistant has spoken; the fast path
+		// alone answers the opening request.
+		if bg != nil {
+			if !hasSpoken(self) {
+				// Words before any assistant speech are the opening request,
+				// never a trigger, even once speech has begun.
+				bg.lastWords = words
+			} else if bg.current == nil && words > bg.lastWords {
+				bg.start(ctx, now, words, observation, self, rendered)
+			}
+		}
 		decision, callErr := policy.Decide(ctx, pair.Instructions, rendered)
 		decisions++
 		action := decision.Action

@@ -71,6 +71,12 @@ type Cell struct {
 	// control question, then a separate answer stream that new evidence can
 	// only stop, never change.
 	Joint bool `json:"joint"`
+	// Deliberation adds thinking-enabled decisions. "background" keeps the
+	// per-tick fast policy and runs a thinking request from the snapshot at
+	// new user words, admitting its result as a proposal at a later tick if
+	// no newer user words arrived meanwhile. "synchronous" makes every tick's
+	// decision a blocking thinking request. Empty means neither.
+	Deliberation string `json:"deliberation,omitempty"`
 
 	Availability Availability `json:"availability"`
 	// Unavailable is why, and is required when the cell is not runnable.
@@ -110,7 +116,21 @@ func Cells() []Cell {
 		"sparse temporal representation: timed text, observed silence, own heard speech, a revisable plan",
 		"A1 for timing; A3 for acoustic annotation",
 		Channels{Timing: true, Sound: true},
-	), microturn("A3",
+	), func() Cell {
+		c := microturn("A2D",
+			"A2 plus background deliberation: thinking requests run across ticks and revise pending content",
+			"A2, identical evidence and fast policy; A2T, the same thinking without parallelism",
+			Channels{Timing: true, Sound: true})
+		c.Deliberation = "background"
+		return c
+	}(), func() Cell {
+		c := microturn("A2T",
+			"A2 with every tick's decision a blocking thinking request",
+			"A2D, which runs the same thinking in parallel with the per-tick policy",
+			Channels{Timing: true, Sound: true})
+		c.Deliberation = "synchronous"
+		return c
+	}(), microturn("A3",
 		"A2 plus causally available acoustic evidence, testing what transcription loses",
 		"A2, which runs the identical schedule with the acoustic rows withheld",
 		Channels{Timing: true, Sound: true, Cues: true, Speakers: true},
