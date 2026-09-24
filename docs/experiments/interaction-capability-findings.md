@@ -307,3 +307,15 @@ adapts audibly to "explain that part in more detail" and not to "skip ahead".
 The prompted A2 policy shows the same asymmetry on its steering pairs: deepen
 adapts, skip mostly fails. The in-window content is still introductory, and
 the model still reads markdown aloud and runs far ahead of playback.
+
+## P3 adaptation memory probe: first attempt (2026-09-24)
+
+`p3-memory-probe-qwen3-8b-20260924-01`: Qwen3-8B (b968826d…), BF16 with LoRA
+r=16 on all attention and MLP projections (43.6 M trainable of 8.23 B), 4k
+context, microbatch one, gradient checkpointing, synthetic token IDs. The model
+loaded in 12 s and held 16.6 GB, starting from 41.9 GB free. The first training
+step ran out of memory: a 192 MiB allocation failed with 118 MiB free while
+other users' processes shared the GPU. Without the probe's own peak, the
+failure cannot be attributed to its activations or to concurrent growth. The
+probe now records both on failure and is requeued to wait for 48 GB free. No
+seconds-per-step or peak figure exists yet, so no P3 budget is estimated.
