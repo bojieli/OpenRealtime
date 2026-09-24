@@ -364,3 +364,19 @@ OpenAI/Gemini runs and the bounded DuplexCascade variant still need an explicit 
 
   Steps 4–5 are about 17 h each. On completion, retain each step's results under
   `deploy/duplex/evidence/` and update the results and audit documents.
+
+## Closed-provider reference runs (R0), authorized 2026-09-24
+
+The user approved paid OpenAI and Gemini runs. Smoke findings:
+- OpenAI Live works, but the profile's background model `gpt-5-mini` refuses
+  streaming for this unverified organization. The profile now uses
+  `gpt-5.4-mini` (`b67930e1`).
+- Gemini Live works. One session in the first smoke closed with "Resource has
+  been exhausted (check quota)"; the second smoke had none. Watch for quota
+  errors in the full run.
+
+Both full-selected gated campaigns started at 14:20 UTC, detached:
+`.runtime/duplex-plan/results/native/closed-{openai,gemini}-live-campaign.sh`,
+logs `…-campaign.log`, results `.runtime/duplex-plan/results/e2e/closed-*-live/latest/`.
+Keys are read from `~/.bashrc` at run time and are not stored anywhere else.
+On completion, check for quota and provider errors before comparing scores.
