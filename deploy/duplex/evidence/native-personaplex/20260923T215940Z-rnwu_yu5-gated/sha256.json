@@ -1,5 +1,5 @@
 {
-  "README.md": "98ced3b9b82ec5b3e018cdee9ede32e78431eafc1896ba9a8ab10efdff16452a",
+  "README.md": "73c5579aa9b335001205af2238ba122f0b1f303fec05866ee4da9c46fec604e2",
   "fdb-background_speech.json": "04249efdc47894e094516b8e61f239fd6d8ac0ffcfca6892900eae2a6757fbc6",
   "fdb-background_speech.log": "b326c0ac192539145fe87ac66395ed0cae27fbaf11105739def59fe94b5357e2",
   "fdb-talking_to_other.json": "d29b89800bbcf868415b66795fcf02f6de9f3242de72e749eda51e45daf9cc1f",
@@ -8,7 +8,12 @@
   "fdb-user_backchannel.log": "40986463c67dd05c959d5dd5b887de8d418fdc269fe0f2a36e8288fb1b5aa3de",
   "fdb-user_interruption.json": "0aa2bfe59e1309d0b90f7cc00f618c621c193c907fd67a5a26bc9c0e8ff2a23b",
   "fdb-user_interruption.log": "e5190d616df5fcb3e37a9a0ea01afadf9e531b36d2f1b60eab09a407c217479b",
+  "fdbench.json": "e8f28f0fd4a06eb5a10f0fef9d655575b6c0cc17c12848f2524c89b4470f5822",
+  "fdbench.log": "31385b572a850ba8ae956f9d3995d66b4df39343599a546348727e48b1ccf4cb",
+  "finished.json": "615f3cd19ed45271ec1dad0535c3fcf2eeb4fade18325a3b0bdf6ff07d0b3269",
   "healthz.json": "6c990144b7db7086610106b7ca9f222bfe2fc5559e9636964521cddc27483dfb",
+  "personaplex-stats.jsonl.gz": "cc148056ec983530d1b715667e345476d409e2ba5d9d480b6604674dfcdccb4e",
   "profile.yaml": "d3aecdd90d5d58181e2ed58ddda9173f03f7e7308218f7a4e2089f06d5181ec8",
-  "run.json": "be10b15579ade9a01ef47a6a88a80a2f0031d28357ab6b011bab502fce825d7a"
+  "run.json": "be10b15579ade9a01ef47a6a88a80a2f0031d28357ab6b011bab502fce825d7a",
+  "server.log.gz": "b403d46c3029d421979d2bb328644d8a13e66e53ce5c2c9911c1577c5987a7e2"
 }

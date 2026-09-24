@@ -343,6 +343,13 @@ disk-full event and an unidentified GPU-contention window from 08:11 to 08:42.
 The campaign ran the old backend, so the new drop diagnostics do not apply.
 This is one of 21 FD-Bench conditions.
 
+A [gated PersonaPlex rerun](../deploy/duplex/evidence/native-personaplex/20260923T215940Z-rnwu_yu5-gated/)
+of the same scope dropped no input frames in any of its 791 sessions. FDB
+applicable passes: interruption 182/186, backchannel 93/93, background speech
+66/67, talking to other 74/75. On FD-Bench it passed 129/293 conversations,
+against 77 ungated, with 179 premature starts instead of 249. Every earlier
+native score should be read as ungated.
+
 The [gated micro-turn cascade campaign](../deploy/duplex/evidence/microturn-voxtral-qwen3-kyutai/20260923T133815Z-8dw16iqd-fdbench/)
 (Voxtral, then a Qwen3-8B controller ticking every 500 ms and a streamed
 Qwen3-8B answer, then Kyutai TTS) completed every FDB recording and the
