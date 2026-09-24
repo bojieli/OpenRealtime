@@ -10,6 +10,8 @@ two-recordings-per-category smoke run.
 | user_interruption | 14/184 | 16 | 0 | yield p50 466 ms |
 | user_backchannel | 91/91 | 7 | 1 | |
 | background_speech | 83/83 | 17 | 1 | |
+| talking_to_other | 88/88 | 12 | 0 | |
 
-Talking-to-other and the FD-Bench condition were still running when this was
-retained.
+All four FDB categories are complete. MiniCPM-o holds through every
+applicable non-interruption, but yields to only 14 of 184 real interruptions.
+The FD-Bench condition was still running when this was retained.

@@ -1,7 +1,9 @@
 {
-  "README.md": "0bcd85a3f618f53da646222506e00dc6e39d4c37cd891d4913fd98b3c6d6da70",
+  "README.md": "81dd6857276c06c822729078d9157ce9b7dd0e7559f3ba62f62b712c8cc6c333",
   "fdb-background_speech.json": "3d23b145657d4be139a03643a54335fcca63a49dd363ef45b20095a3028e44d1",
   "fdb-background_speech.log": "92d6d3f5a547d649f64422bffc15fc5d58d444405df5a47d7a22888f538e0d7d",
+  "fdb-talking_to_other.json": "ea0f3804ac847d773ee5a1376de7ae4a3330a47b2921e90b33d86f66523a7a10",
+  "fdb-talking_to_other.log": "5a6350c75d140bbaec4dd7f2bd8f2fed10426e0df551837302bd3a25da426d74",
   "fdb-user_backchannel.json": "a259ebdb7004f8c4ccf2757af09e7b01cf3831b9e88d8ee3853a3b04d5b5c364",
   "fdb-user_backchannel.log": "6cfe461af5a0dc0633583a3c0673a097a7a606d630107052a5017ccc89a7fc4f",
   "fdb-user_interruption.json": "4bd3f3a4ce3de6a3c373dadd9fc1813846b66c44582d1e5635a3de1d1a9bbb72",
