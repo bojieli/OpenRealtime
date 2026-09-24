@@ -118,3 +118,29 @@ func TestDeliberationWaitsUntilTheAssistantHasSpoken(t *testing.T) {
 		}
 	}
 }
+
+func TestProposalNamingAnOlderSegmentIsRejected(t *testing.T) {
+	// A campaign deliberation spoke "segment-23": an older segment, neither
+	// pending nor the proposal's own replacement target.
+	dir := t.TempDir()
+	bg, err := newBackground(dir, capability.JointPolicy{}, "", time.Now(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var speech liveSpeech
+	if err = speech.ledger.Add("segment-23", "an earlier sentence", 0, 24000); err != nil {
+		t.Fatal(err)
+	}
+	d := &deliberation{id: 1, userWords: 4, done: make(chan struct{}),
+		decision: capability.Decision{Action: capability.Action{Act: "revise", Text: "segment-23", ReplacesPending: "segment-30"}}}
+	if err = bg.admit(context.Background(), d, time.Second, 4, &speech, speechsocket.Config{}); err != nil {
+		t.Fatal(err)
+	}
+	bg.close(2*time.Second, 4)
+	if got := readStatuses(t, dir); strings.Join(got, ",") != "control-reference-in-speech" {
+		t.Fatalf("statuses %v", got)
+	}
+	if _, active := speech.state(); active != "" {
+		t.Fatal("leaked control reference was sent to speech")
+	}
+}

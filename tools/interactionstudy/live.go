@@ -173,6 +173,19 @@ func (s *liveSpeech) stop(reason string) {
 	s.openingText = ""
 	s.cancel = nil
 }
+
+// knownIDs lists every segment ID of the trial, so speech that names any of
+// them, not only the currently pending one, is rejected as a control leak.
+func (s *liveSpeech) knownIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := []string{s.active}
+	for _, segment := range s.ledger.Segments {
+		ids = append(ids, segment.ID)
+	}
+	return ids
+}
+
 func (s *liveSpeech) state() (capability.Self, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -339,7 +352,7 @@ func runLive(ctx context.Context, dir string, pair capability.Pair, variant capa
 		// the returned action against current state, not the stale snapshot.
 		_, currentActive := speech.state()
 		status := "no-output"
-		if callErr == nil && speechContainsReference(action.Text, active, currentActive) {
+		if callErr == nil && speechContainsReference(action.Text, append(speech.knownIDs(), active, currentActive)...) {
 			// Reject a leaked control reference before canceling
 			// playback or sending any text to synthesis. Do not rewrite it.
 			status = "control-reference-in-speech"

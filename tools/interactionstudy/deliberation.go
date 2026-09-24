@@ -156,7 +156,7 @@ func (b *background) admit(ctx context.Context, d *deliberation, now time.Durati
 	case action.Act == "yield":
 		speech.stop("deliberation-yield")
 		status = "cancel"
-	case speechContainsReference(action.Text, active, action.ReplacesPending):
+	case speechContainsReference(action.Text, append(speech.knownIDs(), active, action.ReplacesPending)...):
 		status = "control-reference-in-speech"
 	default:
 		if active != "" {
