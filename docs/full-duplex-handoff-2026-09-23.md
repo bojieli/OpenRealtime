@@ -331,3 +331,36 @@ The user agreed to two simple projects:
   (`.runtime/duplex-plan/results/native/minicpm-campaign-queue.sh`, log
   `minicpm-campaign-queue.log`). It waits for GPU memory and the large-model
   lease, which the peer interaction-capability study currently holds.
+
+## 2026-09-24 afternoon: GPU handed over, approved work under way
+
+The user gave this work the whole GPU. The peer study's queued memory probe and
+nine idle shared services were stopped. Kept: MiniCPM-o (running campaign),
+Qwen3-8B on :9100 (its slow provider) and Kyutai TTS on :9125. The user's
+"continue" was taken as approval for the recommended low-risk items. The paid
+OpenAI/Gemini runs and the bounded DuplexCascade variant still need an explicit yes.
+
+- **Freeze-Omni** (`f636ac17`): cached CUDA memory is returned after each
+  answer, and the session ends with a fatal `context_limit` error past 28,000
+  history tokens. Neither changes what the model says. Option B (sharing the
+  snapshot) was not done, because upstream deep-copies it and aliasing safety
+  was not verified.
+- **Sidecar v4** (`3461f63c`): two conformance checks for stated behaviour.
+  Cancellation is acknowledged while a 3 s request holds the worker (7 ms
+  measured), and nothing is sent for a run after its acknowledgement. Late
+  input, empty ticks and duplicate results are not defined by v4 and would need
+  protocol design, not tests.
+- **FD-Bench sampling** (`52270ffc`): `-sample-per-condition` / `-sample-seed`
+  (seeded per condition, reported as incomplete).
+- **MiniCPM-o gated campaign**: interruption 14/184, backchannel 91/91 and
+  background speech 83/83 applicable passes (`1e56aff9`); the rest is running.
+- **Queued after it** (`.runtime/duplex-plan/results/native/gpu-queue-20260924.sh`,
+  log `gpu-queue-20260924.log`):
+  1. Freeze-Omni endurance on the new 600 s input (`long_input.py`, `b7b68848`)
+  2. VoiceChat tool suite
+  3. Lychee FDB recheck
+  4. Sampled FD-Bench for PersonaPlex, 50 × 20 conditions
+  5. The same for the micro-turn cascade
+
+  Steps 4–5 are about 17 h each. On completion, retain each step's results under
+  `deploy/duplex/evidence/` and update the results and audit documents.
