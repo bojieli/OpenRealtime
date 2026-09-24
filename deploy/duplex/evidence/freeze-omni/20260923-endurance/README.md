@@ -39,3 +39,15 @@ roughly half an hour. That extrapolation is not measured. Any fix bounds the
 model's context and so changes model behavior: a history window, snapshot
 sharing or copy-on-write, or `empty_cache` between turns. Each needs its own
 matched quality run, so none was applied.
+
+## Upstream behaviour (checked 2026-09-24)
+
+The growth reproduces upstream Freeze-Omni `163a248` exactly; it is not a
+sidecar defect. Upstream `bin/server.py` also keeps the whole conversation in
+the KV cache and deep-copies the full state into `generate_outputs` after
+every step. It limits each *answer* to 500 tokens, as the sidecar does, but
+puts no limit on the history. What bounds it upstream is the demo lifecycle:
+`recording-started` / `recording-stopped` call `reset()`, which restores the
+system prompt and drops all history, and an idle session disconnects after
+600 s. A client that keeps one session open, as this probe does, grows
+without bound upstream too.
