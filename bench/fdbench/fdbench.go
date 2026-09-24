@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -98,6 +100,33 @@ func Load(root string, conditions []string, limit int) ([]Conversation, error) {
 	return conversations, nil
 }
 
+// LoadSample reads perCondition conversations from each condition, chosen by
+// a seeded shuffle of that condition's names so the sample is reproducible and
+// not biased toward whatever sorts first. Conditions smaller than the sample
+// are read whole.
+func LoadSample(root string, conditions []string, perCondition int, seed int64) ([]Conversation, error) {
+	if perCondition <= 0 {
+		return nil, errors.New("a sample needs a positive size per condition")
+	}
+	var conversations []Conversation
+	for _, condition := range conditions {
+		loaded, err := Load(root, []string{condition}, 0)
+		if err != nil {
+			return nil, err
+		}
+		hash := fnv.New64a()
+		_, _ = hash.Write([]byte(condition))
+		shuffle := rand.New(rand.NewSource(seed ^ int64(hash.Sum64())))
+		shuffle.Shuffle(len(loaded), func(left, right int) { loaded[left], loaded[right] = loaded[right], loaded[left] })
+		if len(loaded) > perCondition {
+			loaded = loaded[:perCondition]
+		}
+		sort.Slice(loaded, func(left, right int) bool { return loaded[left].ID < loaded[right].ID })
+		conversations = append(conversations, loaded...)
+	}
+	return conversations, nil
+}
+
 // Count reports how many conversations a set of conditions contains, which is
 // what a cell's expected task count must be.
 func Count(root string, conditions []string) (int, error) {
@@ -154,6 +183,10 @@ type Options struct {
 	Model      string
 	Cell       bench.Cell
 	Limit      int
+	// SamplePerCondition, when positive, replaces Limit with a seeded random
+	// sample of this many conversations from each condition.
+	SamplePerCondition int
+	SampleSeed         int64
 	// LatencyBudget is how long after a turn ends a reply may take before it
 	// counts as late. Zero selects 2 s, which is roughly where a person starts
 	// wondering whether the line dropped.
@@ -207,7 +240,15 @@ func Run(ctx context.Context, options Options) (bench.Result, error) {
 	if options.Timeout <= 0 {
 		options.Timeout = 5 * time.Minute
 	}
-	conversations, err := Load(options.Root, options.Conditions, options.Limit)
+	var conversations []Conversation
+	var err error
+	if options.SamplePerCondition > 0 {
+		// A sample is reported against the full conditions, so it can never
+		// read as complete coverage.
+		conversations, err = LoadSample(options.Root, options.Conditions, options.SamplePerCondition, options.SampleSeed)
+	} else {
+		conversations, err = Load(options.Root, options.Conditions, options.Limit)
+	}
 	if err != nil {
 		return bench.Result{}, err
 	}

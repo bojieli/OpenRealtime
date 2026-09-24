@@ -1285,25 +1285,27 @@ func runFDBench(arguments []string, output io.Writer) error {
 	flags := flag.NewFlagSet("openrealtime bench fdbench", flag.ContinueOnError)
 	var reviewConfig candidateReviewCLIConfig
 	var (
-		waitConfigured  bool
-		player          bool
-		root            string
-		endpoint        string
-		tokenEnv        string
-		model           string
-		out             string
-		conditions      string
-		list            bool
-		limit           int
-		cellName        string
-		referenceLevels string
-		varyFactor      string
-		varyLevel       string
-		executionPath   string
-		inspectionGraph string
-		budget          time.Duration
-		timeout         time.Duration
-		transcripts     string
+		samplePerCondition int
+		sampleSeed         int64
+		waitConfigured     bool
+		player             bool
+		root               string
+		endpoint           string
+		tokenEnv           string
+		model              string
+		out                string
+		conditions         string
+		list               bool
+		limit              int
+		cellName           string
+		referenceLevels    string
+		varyFactor         string
+		varyLevel          string
+		executionPath      string
+		inspectionGraph    string
+		budget             time.Duration
+		timeout            time.Duration
+		transcripts        string
 	)
 	flags.StringVar(&root, "dataset", ".runtime/fd-bench/dataset", "FD-Bench dataset root")
 	flags.StringVar(&endpoint, "endpoint", "ws://127.0.0.1:8765/v1/realtime", "server endpoint")
@@ -1314,6 +1316,9 @@ func runFDBench(arguments []string, output io.Writer) error {
 		"write one timed record per conversation into this directory; a score cannot say where a millisecond went")
 	flags.StringVar(&conditions, "conditions", "", "comma-separated dataset conditions; required")
 	flags.BoolVar(&list, "list", false, "list the conditions this dataset contains and stop")
+	flags.IntVar(&samplePerCondition, "sample-per-condition", 0,
+		"run a seeded random sample of this many conversations from each condition (reported as incomplete)")
+	flags.Int64Var(&sampleSeed, "sample-seed", 20260924, "seed for -sample-per-condition")
 	flags.IntVar(&limit, "limit", 0, "stop after this many conversations")
 	flags.BoolVar(&waitConfigured, "wait-configured", false,
 		"start each replay only after session.updated, reporting the wait; off keeps earlier WebSocket conditions")
@@ -1377,8 +1382,9 @@ func runFDBench(arguments []string, output io.Writer) error {
 		Transcripts: transcripts,
 		Root:        root, Conditions: selected, Endpoint: endpoint, Token: deploymentToken,
 		Model: model, Cell: cell, Limit: limit, LatencyBudget: budget, Timeout: timeout,
-		WaitConfigured:  waitConfigured,
-		Player:          player,
+		WaitConfigured:     waitConfigured,
+		Player:             player,
+		SamplePerCondition: samplePerCondition, SampleSeed: sampleSeed,
 		RuntimeAttestor: attestor,
 		Progress:        func(line string) { fmt.Fprintln(output, line) },
 	}
