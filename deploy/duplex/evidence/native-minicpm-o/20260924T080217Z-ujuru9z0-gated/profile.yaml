@@ -1,0 +1,10 @@
+# N1 audio-only official MiniCPM-o 4.5 duplex route; warmed sidecar :9145.
+# Start services/minicpm-o-duplex.sh with its default official call preset.
+# One-second native units; output paced by the sidecar. No visual input here.
+# Public acceptance pending for this profile; historical smoke runs are separate.
+binding: duplex
+sidecar-address: tcp:127.0.0.1:9145
+sidecar-protocol: 1
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b
