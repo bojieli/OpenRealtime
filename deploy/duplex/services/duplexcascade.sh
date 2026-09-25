@@ -37,16 +37,17 @@ with socket.socket() as s: s.bind(('127.0.0.1',int(sys.argv[1])))
 PY
   mkdir -p "$PLAN/pids" "$PLAN/logs" "$PLAN/results/native"
   cd "$ROOT"
-  # No queue while owning the lock; fail if another large model is active.
+  # Wait up to 60 s for the lease (a previous model may still be exiting),
+  # then fail rather than queue behind another active large model.
   env -u HF_TOKEN HF_HUB_OFFLINE=1 OMP_NUM_THREADS=4 setsid nohup \
-    flock -n "$PLAN/gpu/large.lock" "$PYTHON" sidecars/duplexcascade_sidecar.py \
+    flock -w 60 "$PLAN/gpu/large.lock" "$PYTHON" sidecars/duplexcascade_sidecar.py \
     --source "$SOURCE" --snapshot "$SNAPSHOT" --base "$BASE" \
     --listen "tcp:127.0.0.1:$PORT" --trace-dir "$PLAN/results/native/$TRACES" "${EXTRA[@]}" \
     > "$LOG" 2>&1 < /dev/null &
   pid=$!
   echo "$pid" > "$PIDFILE"
-  for ((i=0;i<180;i++)); do
-    kill -0 "$pid" 2>/dev/null || { echo "exited; see $LOG" >&2; exit 1; }
+  for ((i=0;i<240;i++)); do
+    kill -0 "$pid" 2>/dev/null || { echo "exited; see $LOG (empty: large-model lease still held after 60 s)" >&2; exit 1; }
     if grep -Fq "sidecar listening on tcp:127.0.0.1:$PORT" "$LOG"; then
       echo "ready on tcp:127.0.0.1:$PORT (pid $pid)"; exit 0
     fi

@@ -54,12 +54,12 @@ PYTHON
     cd "$ROOT"
     # Fail immediately if the lease is busy; never wait for capacity while
     # holding it. Stop targets only the verified service process group.
-    setsid nohup flock -n "$PLAN/gpu/large.lock" "$ROOT/.runtime/fish-env/bin/python" \
+    setsid nohup flock -w 60 "$PLAN/gpu/large.lock" "$ROOT/.runtime/fish-env/bin/python" \
       tools/duplexmodels/tts_fish.py --port "$PORT" "$@" > "$LOG" 2>&1 < /dev/null &
     pid=$!
     echo "$pid" > "$PIDFILE"
-    for ((i=0;i<300;i++)); do
-      kill -0 "$pid" 2>/dev/null || { echo "exited; see $LOG" >&2; exit 1; }
+    for ((i=0;i<360;i++)); do
+      kill -0 "$pid" 2>/dev/null || { echo "exited; see $LOG (empty: large-model lease still held after 60 s)" >&2; exit 1; }
       if curl -sf "http://127.0.0.1:$PORT/health" >/dev/null; then
         echo "ready on :$PORT (pid $pid)"; exit 0
       fi
