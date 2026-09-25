@@ -1,4 +1,4 @@
-# MiniCPM-o gated campaign (in progress)
+# MiniCPM-o gated campaign
 
 First full campaign for `native-minicpm-o`: official duplex MiniCPM-o 4.5,
 audio only. Gated replay (`wait_configured: true`), binary `openrealtime-d0225ace`.
@@ -14,7 +14,7 @@ two-recordings-per-category smoke run.
 
 All four FDB categories are complete. MiniCPM-o holds through every
 applicable non-interruption, but yields to only 14 of 184 real interruptions.
-The FD-Bench condition was still running when this was retained.
+FD-Bench is retained separately in `../20260924-fdbench-gated/` (85/293).
 
 ## Runner stop before FD-Bench, and task errors
 
@@ -24,8 +24,7 @@ edited `sidecars/freeze_omni_sidecar.py` and the v4 probe in the Python SDK
 while the campaign ran. Neither is used by MiniCPM-o, but the runner's
 integrity check correctly stops on any change. The four FDB results are
 unaffected; they completed before the check. The selected FD-Bench condition
-was rerun gated through the same server binary afterwards (see
-`../` once retained).
+was rerun gated afterwards: `../20260924-fdbench-gated/`.
 
 Two recordings timed out: `user_backchannel/17` and `background_speech/92`
 ("the conversation did not finish before the timeout").
