@@ -1,0 +1,10 @@
+# Bounded DuplexCascade: NOT the released C1 protocol, a separately labeled cell.
+# Same as native-duplexcascade except the sidecar skips silent 500 ms ticks while
+# more than 2 s of synthesized audio awaits playout (ticks with new words run).
+# Start with: DUPLEXCASCADE_MAX_BACKLOG_S=2 deploy/duplex/services/duplexcascade.sh start
+binding: duplex
+sidecar-address: tcp:127.0.0.1:9148
+sidecar-protocol: 1
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

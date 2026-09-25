@@ -91,5 +91,56 @@ class LoopTests(unittest.IsolatedAsyncioTestCase):
         finally:
             release.set()
 
+    async def test_bounded_variant_skips_only_silent_ticks_over_the_backlog(self):
+        backlog = [0.0]
+        chunks, traces = [], []
+        class Session:
+            def step(self, text):
+                chunks.append(text)
+                return [text]
+            def events(self, tokens): return []
+        class Speech:
+            async def apply(self, events):
+                # Each generated tick leaves 5 s of unplayed speech.
+                backlog[0] = 5.0
+            async def close(self): pass
+        words = asyncio.Queue()
+        await words.put(SimpleNamespace(text='hi', arrived=0))
+        loop = DuplexCascadeLoop(Session(), Speech(), words, tick_seconds=.005, trace=traces.append,
+                                 backlog=lambda: backlog[0], max_backlog_seconds=2)
+        async def until(condition):
+            async def poll():
+                while not condition(): await asyncio.sleep(.001)
+            await asyncio.wait_for(poll(), 2)
+        task = asyncio.create_task(loop.run())
+        await until(lambda: len(traces) >= 4)
+        self.assertEqual(chunks, ['hi'])
+        self.assertTrue(all(t.get('skipped') == 'backlog' for t in traces[1:]))
+        await words.put(SimpleNamespace(text='wait', arrived=0))
+        await until(lambda: len(chunks) >= 2)
+        self.assertEqual(chunks[1], 'wait')
+        backlog[0] = 1.0
+        await until(lambda: len(chunks) >= 3)
+        loop.closed = True
+        await asyncio.wait_for(task, 2)
+        self.assertEqual(chunks[2], '')
+
+    async def test_faithful_default_generates_regardless_of_backlog(self):
+        chunks = []
+        class Session:
+            def step(self, text):
+                chunks.append(text)
+                if len(chunks) == 3: loop.closed = True
+                return [text]
+            def events(self, tokens): return []
+        class Speech:
+            async def apply(self, events): pass
+            async def close(self): pass
+        words = asyncio.Queue()
+        await words.put(SimpleNamespace(text='hi', arrived=0))
+        loop = DuplexCascadeLoop(Session(), Speech(), words, tick_seconds=.001, backlog=lambda: 99.0)
+        await asyncio.wait_for(loop.run(), 2)
+        self.assertEqual(chunks, ['hi', '', ''])
+
 
 if __name__ == '__main__': unittest.main()

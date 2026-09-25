@@ -4,9 +4,17 @@ import time
 
 
 class DuplexCascadeLoop:
-    def __init__(self, session, speech, words, *, tick_seconds=.5, trace=None, separator=" "):
+    def __init__(self, session, speech, words, *, tick_seconds=.5, trace=None, separator=" ",
+                 backlog=None, max_backlog_seconds=None):
         if tick_seconds <= 0:
             raise ValueError('tick duration must be positive')
+        if max_backlog_seconds is not None and (backlog is None or max_backlog_seconds <= 0):
+            raise ValueError('a backlog bound needs a positive limit and a backlog reader')
+        # Off by default: upstream generates every tick however much speech is
+        # still unplayed. The bounded variant skips silent ticks while more
+        # than max_backlog_seconds of audio awaits playout; ticks carrying new
+        # words always run so the model hears the user.
+        self.backlog, self.max_backlog_seconds = backlog, max_backlog_seconds
         self.session, self.speech, self.words = session, speech, words
         self.tick_seconds, self.trace = tick_seconds, trace
         self.separator = separator
@@ -28,6 +36,14 @@ class DuplexCascadeLoop:
                 began = time.monotonic()
                 while not self.words.empty():
                     pending.append(self.words.get_nowait())
+                if not pending and self.max_backlog_seconds is not None:
+                    queued = self.backlog()
+                    if queued > self.max_backlog_seconds:
+                        if self.trace:
+                            self.trace({'tick': index, 'skipped': 'backlog', 'queued_audio_s': queued})
+                        index += 1
+                        deadline += self.tick_seconds
+                        continue
                 admitted, pending = pending, []
                 chunk = self.separator.join(word.text for word in admitted)
                 # Inference must not block ASR's socket reader. Shielding keeps

@@ -3,7 +3,14 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
 PLAN="$ROOT/.runtime/duplex-plan"
-PORT="${DUPLEXCASCADE_PORT:-9147}"
+# DUPLEXCASCADE_MAX_BACKLOG_S selects the bounded variant (not the released
+# protocol): its own port and traces, so the faithful profile cannot reach it.
+BOUND="${DUPLEXCASCADE_MAX_BACKLOG_S:-}"
+if [[ -n "$BOUND" ]]; then
+  PORT="${DUPLEXCASCADE_PORT:-9148}"; TRACES=duplexcascade-bounded-traces; EXTRA=(--max-backlog-seconds "$BOUND")
+else
+  PORT="${DUPLEXCASCADE_PORT:-9147}"; TRACES=duplexcascade-traces; EXTRA=()
+fi
 PIDFILE="$PLAN/pids/duplexcascade.pid"
 LOG="$PLAN/logs/duplexcascade.log"
 SOURCE="$PLAN/src/DuplexCascade"
@@ -34,7 +41,7 @@ PY
   env -u HF_TOKEN HF_HUB_OFFLINE=1 OMP_NUM_THREADS=4 setsid nohup \
     flock -n "$PLAN/gpu/large.lock" "$PYTHON" sidecars/duplexcascade_sidecar.py \
     --source "$SOURCE" --snapshot "$SNAPSHOT" --base "$BASE" \
-    --listen "tcp:127.0.0.1:$PORT" --trace-dir "$PLAN/results/native/duplexcascade-traces" \
+    --listen "tcp:127.0.0.1:$PORT" --trace-dir "$PLAN/results/native/$TRACES" "${EXTRA[@]}" \
     > "$LOG" 2>&1 < /dev/null &
   pid=$!
   echo "$pid" > "$PIDFILE"

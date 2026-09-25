@@ -93,7 +93,8 @@ class NativeCascade(Sidecar):
         self.recognizer = AppendOnlyRecognizer(self.args.asr,words)
         self.player = PacedAudio(self.audio,rate=self.output_rate)
         self.speech = DuplexCascadeSpeech(self._context,self._audio,self._text,self._cancel)
-        self.clock = DuplexCascadeLoop(self.backend.session(),self.speech,words,separator='',trace=self._trace)
+        self.clock = DuplexCascadeLoop(self.backend.session(),self.speech,words,separator='',trace=self._trace,
+                                       backlog=self._backlog,max_backlog_seconds=getattr(self.args,'max_backlog_seconds',None))
         tasks = [asyncio.create_task(self.recognizer.run()),asyncio.create_task(self.player.run()),
                  asyncio.create_task(self.clock.run())]
         self.initialized.set()
@@ -118,6 +119,9 @@ class NativeCascade(Sidecar):
             for result in results:
                 if isinstance(result,Exception):
                     log(f'native component shutdown: {result}')
+
+    def _backlog(self):
+        return len(self.player.buffer)/(2*self.output_rate)
 
     def _trace(self, tick):
         if self.trace:
@@ -195,6 +199,8 @@ def main():
     p.add_argument('--voice',default='default')
     p.add_argument('--listen',default='')
     p.add_argument('--trace-dir',type=Path)
+    p.add_argument('--max-backlog-seconds',type=float,
+                   help='bounded variant (not upstream): skip silent ticks while more unplayed audio is queued')
     a=p.parse_args()
     free = int(subprocess.check_output(
         ['nvidia-smi','--query-gpu=memory.free','--format=csv,noheader,nounits'],text=True).splitlines()[0])
