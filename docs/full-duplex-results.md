@@ -233,6 +233,20 @@ premature starts, 4,960 ms overlap and 1,547 ms response latency. These are
 partial smoke observations within a failed run, not a supported profile.
 The complete attempt is retained under `deploy/duplex/evidence/native-duplexcascade/`.
 
+A [faithful vs bounded A/B](../deploy/duplex/evidence/duplexcascade-ab/20260925/)
+(approved 2026-09-25) tested whether the playout backlog causes these
+failures. The bounded cell skips silent ticks while more than 2 s of audio is
+unplayed; it is a separately labeled cell, not C1. Both cells ran the gated smoke
+scope. The bound worked as designed: median unplayed audio fell from 30 s
+(a full queue on 53% of ticks) to 3.2 s. It changed nothing else. There were
+12 and 14 FDB timeouts, and 0/12 FD-Bench conversations passed in both cells
+(16 and 18 of 55 turns answered). Both cells generated about 290 words of
+speech per session, with a maximum of about 600. The released model's answers are
+long, and pacing them to playback cannot shorten them. Host load (77 to 431
+on 32 cores) put 23% and 56% of ticks over deadline. That affects reaction
+timing, not answer length, so the conclusion stands. C1's public failure is
+answer length.
+
 The new native sidecar also passed a real protocol question probe: “Paris,”
 2.0 s of paced output audio, one output turn boundary, and no protocol errors.
 First audible packets arrived 1.445 s after the supplied question ended.
@@ -496,7 +510,9 @@ Native validation remains incomplete. The retained component artifacts under
   working: 27.7 s filled, and rounds ran to the end at 0.77 to 1.05 times real
   time. Every probe still ended in `audio_stalled`, 8 s after a complete second
   answer. Lychee stayed in its speaking state without sending audio or
-  signalling completion. The FDB rerun is queued with a current binary.
+  signalling completion. The [2026-09-25 rerun](../deploy/duplex/evidence/lychee/20260925-fill-recheck-loaded/)
+  with a current binary measured nothing: at load 360 to 400, Lychee produced
+  no audio in any probe, and 7 of 8 FDB recordings were not applicable.
 - **Moshi:** the pinned public-Realtime profile completed a two-recording-per-category
   smoke run (`20260922T171034Z-giltdhg4`) without task errors. It answered
   8/8 FD-Bench turns but started 4 prematurely. Interruption yield passed 1/2

@@ -420,3 +420,21 @@ Running (detached):
   `gpu-queue-20260925.sh`. It runs VoiceChat toolcall with output
   segmentation, the Lychee FDB recheck with binary `b7b68848`, then the
   PersonaPlex 50 × 20 sample.
+
+## State at 2026-09-25 19:50 UTC
+
+- **DuplexCascade A/B done** (`duplexcascade-ab/20260925/`). The 2 s bound keeps
+  unplayed audio near 3 s, but FDB timeouts (12 and 14) and FD-Bench (0/12)
+  are unchanged. Both cells generate about 290 words per session: C1 fails on
+  answer length. Load differed (23% and 56% of ticks late), which does not affect
+  that conclusion.
+- **VoiceChat tools: 0/10, refused by design.** With segmentation, all tasks
+  complete. VoiceChat proposed correct `get_weather` calls in 2 sessions, but
+  `modelToolCall` refuses non-`computer.*` calls from a native model
+  (`docs/sidecar-protocol-3.md`). Routing proposals to the client is an
+  owner decision.
+- **Lychee recheck: starved** (load 360–400, no audio). It needs a quiet host.
+- **Running:** the PersonaPlex 50 × 20 sample (`fdbench-sample-personaplex-20260925/`,
+  about 17 h; 1 of the first 50 sessions dropped input) and the Gemini rerun.
+- **Host:** another project's OpenROAD and simulation jobs hold load at 250–500.
+  Any latency-sensitive run now is confounded.

@@ -1,0 +1,30 @@
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat function channel proposed get_weather({"city": "Paris"}) call_id=call_b45d9a7f5f274050895323f49696080b
+sidecar: voicechat tool_result for call_b45d9a7f5f274050895323f49696080b after 0.01s: Error: the fast provider has execution authority only for declared, bounded computer actions
+sidecar: voicechat function channel proposed get_weather({"city": "Paris"}) call_id=call_f4f4b11ee35f444eb62952e09e514534
+sidecar: voicechat tool_result for call_f4f4b11ee35f444eb62952e09e514534 after 0.00s: Error: the fast provider has execution authority only for declared, bounded computer actions
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat function channel proposed get_weather({"city": "London"}) call_id=call_13159ec838364fc1a0257b6141b52cfe
+sidecar: voicechat tool_result for call_13159ec838364fc1a0257b6141b52cfe after 0.00s: Error: the fast provider has execution authority only for declared, bounded computer actions
+sidecar: voicechat function channel proposed get_weather({"city": "London"}) call_id=call_7bab10c6e36043d299a6b62a53facce8
+sidecar: voicechat tool_result for call_7bab10c6e36043d299a6b62a53facce8 after 0.00s: Error: the fast provider has execution authority only for declared, bounded computer actions
+sidecar: voicechat function channel proposed get_weather({"city": "London"}) call_id=call_dc95af2edb8741ff964503c7939e3771
+sidecar: voicechat tool_result for call_dc95af2edb8741ff964503c7939e3771 after 0.00s: Error: the fast provider has execution authority only for declared, bounded computer actions
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 80 ms of engine audio; reopening the upstream session so the tool prompt enters the model
+sidecar: voicechat hello: rate=24000 tools=[] instructions=''
+sidecar: voicechat tools changed after 0 ms of engine audio; reopening the upstream session so the tool prompt enters the model

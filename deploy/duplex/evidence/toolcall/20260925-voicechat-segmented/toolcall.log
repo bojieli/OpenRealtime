@@ -1,0 +1,24 @@
+[1/10] weather-paris
+[2/10] weather-tokyo
+[3/10] weather-london
+[4/10] add-small
+[5/10] add-large
+[6/10] timer-ten
+[7/10] timer-five
+[8/10] currency-usd-eur
+[9/10] correction-weather
+[10/10] correction-add
+
+tasks  : 10 completed, 0 failed, of 10 expected
+passed : 0 of 10
+  weather-paris        passed=false no tool call
+  weather-tokyo        passed=false no tool call
+  weather-london       passed=false no tool call
+  add-small            passed=false no tool call
+  add-large            passed=false no tool call
+  timer-ten            passed=false no tool call
+  timer-five           passed=false no tool call
+  currency-usd-eur     passed=false no tool call
+  correction-weather   passed=false no tool call
+  correction-add       passed=false no tool call
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/native/toolcall-voicechat-segmented-20260925/toolcall.json

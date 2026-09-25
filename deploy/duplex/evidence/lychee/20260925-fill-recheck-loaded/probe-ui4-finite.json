@@ -1,0 +1,54 @@
+{
+  "label": "ui4-finite",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.144
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    368.93896484375,
+    369.4873046875,
+    392.4814453125
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/4/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.888,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888,
+      "sent_end_s": 15.888,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 16.9,
+  "input_timeline_complete": false,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": null,
+  "first_audio_latency_s": null,
+  "audible_segments": [],
+  "turn_done_s": [],
+  "text_done": [],
+  "text_deltas": "",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [],
+  "logs": [],
+  "output_seconds": 0.0
+}
