@@ -1,0 +1,17 @@
+[1/8] user_interruption/1
+[2/8] user_interruption/2
+[3/8] user_interruption/3
+[4/8] user_interruption/4
+[5/8] user_interruption/5
+[6/8] user_interruption/6
+[7/8] user_interruption/7
+[8/8] user_interruption/8
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : 62114cbadff6 on ubuntu
+tasks      : 0 completed, 8 failed, of 200 expected
+score      : 0/0 applicable, unavailable (no applicable recordings) (0 not applicable)
+  user_interruption  yield  0/0 applicable  unavailable (no applicable recordings)  (0 not applicable)
+
+NOT REPORTABLE: cell "lychee-fill" is not reportable: 192 of 200 tasks were not attempted
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/native/lychee-fill-20260923/fdb.json

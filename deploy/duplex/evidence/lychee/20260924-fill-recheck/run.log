@@ -1,0 +1,9 @@
+lychee-fd starting (pid 290576, log /home/ubuntu/OpenRealtime/.runtime/duplex-plan/logs/lychee-fd.log, port 9143)
+2026-09-24T18:51:23Z lychee ready
+2026-09-24T18:53:31Z fdb exit 0
+2026-09-24T18:54:23Z probe ui1 continuous exit 1
+2026-09-24T18:55:11Z probe ui1 finite exit 1
+2026-09-24T18:55:57Z probe ui4 continuous exit 1
+2026-09-24T18:56:43Z probe ui4 finite exit 1
+lychee-fd stopped
+2026-09-24T18:56:43Z done

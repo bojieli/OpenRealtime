@@ -1,0 +1,135 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "lychee-fill",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "62114cbadff62f838f66b236460eb5ea3448eb63",
+    "modified": false,
+    "executable_sha256": "32db2bfc648c81d729e2712b6802bfa8dd5dea733c35014a0dfa629450966b58",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-24T18:51:26Z",
+    "finished_at": "2026-09-24T18:53:31Z"
+  },
+  "expected_tasks": 200,
+  "tasks": [
+    {
+      "id": "user_interruption/1",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How can I save money more effectively?",
+        "event": "Actually, what are some financial goals I should set?"
+      }
+    },
+    {
+      "id": "user_interruption/2",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What are the latest trends in smartphones?",
+        "event": "Let's switch to talking about laptops."
+      }
+    },
+    {
+      "id": "user_interruption/3",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What's the latest in smart home devices?",
+        "event": "Hold on, what time is the meeting scheduled today?"
+      }
+    },
+    {
+      "id": "user_interruption/4",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How should I take care of indoor plants?",
+        "event": "By the way, what’s the weather going to be like tomorrow?"
+      }
+    },
+    {
+      "id": "user_interruption/5",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What are the benefits of eating more fruits?",
+        "event": "Can we talk about something else?"
+      }
+    },
+    {
+      "id": "user_interruption/6",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "Which places do you recommend visiting in Europe?",
+        "event": "Oh, before I forget, do I need a visa to travel to Europe?"
+      }
+    },
+    {
+      "id": "user_interruption/7",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How often should I run to stay fit?",
+        "event": "Oh, by the way, can you tell me about some good running shoes?"
+      }
+    },
+    {
+      "id": "user_interruption/8",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: decode sidecar header: json: unknown field \"turn_status\"",
+      "notes": {
+        "category": "user_interruption",
+        "context": "What’s a good comedy to watch?",
+        "event": "Actually, what are the new movies released?"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 0,
+    "failed": 8,
+    "passed": 0,
+    "pass_rate": 0,
+    "complete": false,
+    "incompleteness": "192 of 200 tasks were not attempted"
+  }
+}

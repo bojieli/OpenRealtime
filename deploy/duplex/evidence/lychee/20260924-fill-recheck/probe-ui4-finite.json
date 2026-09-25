@@ -1,0 +1,86 @@
+{
+  "label": "ui4-finite",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.138
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    48.04443359375,
+    48.7373046875,
+    47.81005859375
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/4/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.888,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.888,
+      "sent_end_s": 15.888,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 16.9,
+  "input_timeline_complete": false,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 15.77891538804397,
+  "first_audio_latency_s": -0.109,
+  "audible_segments": [
+    [
+      5.516,
+      8.895
+    ],
+    [
+      12.852,
+      19.572
+    ],
+    [
+      20.133,
+      26.756
+    ]
+  ],
+  "turn_done_s": [
+    8.816,
+    34.107
+  ],
+  "text_done": [
+    {
+      "t": 8.816,
+      "text": "Well, take care of an indoor pet by feeding them the right food, keeping their living space clean, and giving them love and attention. Make sure they have fresh water always. Take them to the vet for check-ups, and let them play and exercise safely. That’s the basics."
+    },
+    {
+      "t": 34.107,
+      "text": "I'm sorry, but I don't have the current weather forecast for tomorrow. You can check the weather app or website for the most accurate information."
+    }
+  ],
+  "text_deltas": "Well, take care of an indoor pet by feeding them the right food, keeping their living space clean, and giving them love and attention. Make sure they have fresh water always. Take them to the vet for check-ups, and let them play and exercise safely. That’s the basics.I'm sorry, but I don't have the current weather forecast for tomorrow. You can check the weather app or website for the most accurate information.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [
+    {
+      "t": 34.107,
+      "type": "error",
+      "text": "Lychee output stalled before a model completion or yield",
+      "code": "audio_stalled"
+    }
+  ],
+  "logs": [],
+  "output_seconds": 15.56
+}

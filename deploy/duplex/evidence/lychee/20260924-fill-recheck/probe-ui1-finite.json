@@ -1,0 +1,114 @@
+{
+  "label": "ui1-finite",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.194
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    49.3466796875,
+    49.37451171875,
+    47.90283203125
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.568,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568,
+      "sent_end_s": 15.568,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 16.58,
+  "input_timeline_complete": false,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 15.404411906376481,
+  "first_audio_latency_s": -0.164,
+  "audible_segments": [
+    [
+      5.575,
+      8.739
+    ],
+    [
+      12.383,
+      19.016
+    ],
+    [
+      19.525,
+      21.064
+    ],
+    [
+      21.601,
+      22.388
+    ],
+    [
+      23.179,
+      23.579
+    ],
+    [
+      24.308,
+      24.708
+    ],
+    [
+      25.199,
+      25.599
+    ],
+    [
+      26.094,
+      26.494
+    ],
+    [
+      27.114,
+      28.222
+    ],
+    [
+      28.632,
+      33.246
+    ]
+  ],
+  "turn_done_s": [
+    8.758,
+    40.857
+  ],
+  "text_done": [
+    {
+      "t": 8.758,
+      "text": "Youre already taking a smart step by thinking ahead. Try tracking every dollar spent for a week or two—it helps spot habits you might not notice otherwise. Set a clear goal like saving ten percent of your income or building an emergency fund. And dont forget to automate it so it happens without needing extra thought. Small steps"
+    },
+    {
+      "t": 40.857,
+      "text": "A great place to start is building an emergency fund to cover unexpected expenses. Setting a target for retirement savings and planning for big purchases like a home or a car are also smart long term goals."
+    }
+  ],
+  "text_deltas": "Youre already taking a smart step by thinking ahead. Try tracking every dollar spent for a week or two—it helps spot habits you might not notice otherwise. Set a clear goal like saving ten percent of your income or building an emergency fund. And dont forget to automate it so it happens without needing extra thought. Small stepsA great place to start is building an emergency fund to cover unexpected expenses. Setting a target for retirement savings and planning for big purchases like a home or a car are also smart long term goals.",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [
+    {
+      "t": 40.857,
+      "type": "error",
+      "text": "Lychee output stalled before a model completion or yield",
+      "code": "audio_stalled"
+    }
+  ],
+  "logs": [],
+  "output_seconds": 17.72
+}

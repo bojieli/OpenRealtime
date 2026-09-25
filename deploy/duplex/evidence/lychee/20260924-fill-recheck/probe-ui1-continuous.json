@@ -1,0 +1,90 @@
+{
+  "label": "ui1-continuous",
+  "scenario": "question",
+  "ready": {
+    "type": "ready",
+    "version": 1,
+    "model": "HIT-TMG/Lychee-FD",
+    "output_rate": 24000,
+    "capabilities": [
+      "full_duplex",
+      "native_interaction",
+      "barge_in"
+    ],
+    "handshake_s": 0.188
+  },
+  "timing_basis": "received packets; no rendered playback receipts",
+  "load_average": [
+    50.07421875,
+    49.677734375,
+    47.9248046875
+  ],
+  "question": "/home/ubuntu/OpenRealtime/.runtime/full-duplex-bench-v1.5/dataset/user_interruption/1/input.wav",
+  "question_start_s": 1.0,
+  "question_end_s": 15.568,
+  "scheduled_question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568
+    }
+  ],
+  "question_windows": [
+    {
+      "start_s": 1.0,
+      "end_s": 15.568,
+      "sent_end_s": 15.568,
+      "complete": true
+    }
+  ],
+  "input_audio_sent_s": 45.0,
+  "input_timeline_complete": true,
+  "input_timing_basis": "successful client writes; not server consumption acknowledgements",
+  "repeat_question_every_s": 0,
+  "first_audio_s": 15.463027895893902,
+  "first_audio_latency_s": -0.105,
+  "audible_segments": [
+    [
+      6.027,
+      9.066
+    ],
+    [
+      12.708,
+      17.397
+    ],
+    [
+      18.014,
+      21.089
+    ],
+    [
+      21.875,
+      31.16
+    ]
+  ],
+  "turn_done_s": [
+    8.956,
+    38.561
+  ],
+  "text_done": [
+    {
+      "t": 8.956,
+      "text": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot what truly matters. Set a clear goal like saving ten percent of each paycheck and automate it so it sticks. Small tweaks add up—swap daily coffee runs to homemade brew and youll see the difference. Every little bit"
+    },
+    {
+      "t": 38.561,
+      "text": "You should aim to build an emergency fund first, then focus on paying off high interest debt. After that, setting aside money for retirement and your next big purchase makes a lot of sense. What feels most important to you right now?"
+    }
+  ],
+  "text_deltas": "Youre already taking a smart step by thinking ahead. Try tracking every expense for a month to spot what truly matters. Set a clear goal like saving ten percent of each paycheck and automate it so it sticks. Small tweaks add up—swap daily coffee runs to homemade brew and youll see the difference. Every little bitYou should aim to build an emergency fund first, then focus on paying off high interest debt. After that, setting aside money for retirement and your next big purchase makes a lot of sense. What feels most important to you right now?",
+  "tool_calls": [],
+  "tool_results": [],
+  "errors": [
+    {
+      "t": 38.561,
+      "type": "error",
+      "text": "Lychee output stalled before a model completion or yield",
+      "code": "audio_stalled"
+    }
+  ],
+  "logs": [],
+  "output_seconds": 18.76
+}
