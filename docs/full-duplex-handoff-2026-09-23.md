@@ -380,3 +380,43 @@ Both full-selected gated campaigns started at 14:20 UTC, detached:
 logs `…-campaign.log`, results `.runtime/duplex-plan/results/e2e/closed-*-live/latest/`.
 Keys are read from `~/.bashrc` at run time and are not stored anywhere else.
 On completion, check for quota and provider errors before comparing scores.
+
+## State at 2026-09-25 15:20 UTC
+
+Retained and documented (results and audit updated, `7abd4f7f`):
+- **OpenAI Realtime reference**: complete and clean. Interruption 12/134,
+  holds near perfect, FD-Bench 20/293.
+- **Gemini reference: invalid.** 51 task errors came from the background
+  reasoner's default 2,048-token limit (MAX_TOKENS ends the voice session), and
+  18 from Live quota. The profile sets `slow-max-tokens: 8192` (`4b51023c`).
+- **MiniCPM-o FD-Bench**: 85/293, with 983/1,382 turns overrun.
+- **Freeze-Omni with release and cap**: 600 s ends +4.3 GiB (was +7.8);
+  the peak still tracks context. The input differs, so this is not matched.
+- **Micro-turn sampled FD-Bench**: 408/1000. Clean speech passes 26–47/50;
+  0 dB noise passes 0–1/50, by missed turns.
+- **Lychee recheck**: FDB invalid (stale pinned binary, all tasks failed at
+  the decoder, step exit 0). Its probes stall 8 s after complete answers:
+  Lychee never signals the end of speaking.
+- **VoiceChat toolcall**: 10/10 timeouts on the default profile, which never
+  closed a response.
+- **PersonaPlex sample**: never started. It ran 1 s after Lychee's stop while
+  the lease was still held, and `flock -n` failed silently. Four launchers now
+  wait 60 s for the lease (`31e3fef4`).
+- Two stale servers from 2026-09-23 (ports 9291 and 9294, another worktree)
+  were killed at the user's request.
+
+Running (detached):
+- **DuplexCascade A/B** (`b9302dd8`, user-approved): the faithful
+  `native-duplexcascade` cell, then `native-duplexcascade-bounded`. The
+  bounded cell skips silent ticks while more than 2 s of audio is unplayed.
+  Both use the e2e smoke of 10 per FDB category and 12 FD-Bench, gated.
+  Script `.runtime/duplex-plan/results/native/duplexcascade-ab-20260925.sh`,
+  log `duplexcascade-ab-20260925.log`. **Host load is 170–190 on 32 cores** from
+  another project's OpenROAD jobs. Compare each cell's `deadline_missed` fraction
+  (traces in `duplexcascade{,-bounded}-traces/`) before comparing scores.
+- **Gemini rerun** with the corrected profile:
+  `closed-gemini-live-campaign-20260925.sh`, about 12 h.
+- **Follow-up GPU queue**, which waits for the A/B:
+  `gpu-queue-20260925.sh`. It runs VoiceChat toolcall with output
+  segmentation, the Lychee FDB recheck with binary `b7b68848`, then the
+  PersonaPlex 50 × 20 sample.
