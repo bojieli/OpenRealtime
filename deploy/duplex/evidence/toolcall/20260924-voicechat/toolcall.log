@@ -1,0 +1,27 @@
+[1/10] weather-paris
+[2/10] weather-tokyo
+[3/10] weather-london
+[4/10] add-small
+[5/10] add-large
+[6/10] timer-ten
+[7/10] timer-five
+[8/10] currency-usd-eur
+[9/10] correction-weather
+[10/10] correction-add
+
+tasks  : 0 completed, 10 failed, of 10 expected
+passed : 0 of 0
+  weather-paris        passed=false error: the conversation did not finish before the timeout
+  weather-tokyo        passed=false error: the conversation did not finish before the timeout
+  weather-london       passed=false error: the conversation did not finish before the timeout
+  add-small            passed=false error: the conversation did not finish before the timeout
+  add-large            passed=false error: the conversation did not finish before the timeout
+  timer-ten            passed=false error: the conversation did not finish before the timeout
+  timer-five           passed=false error: the conversation did not finish before the timeout
+  currency-usd-eur     passed=false error: the conversation did not finish before the timeout
+  correction-weather   passed=false error: the conversation did not finish before the timeout
+  correction-add       passed=false error: the conversation did not finish before the timeout
+
+NOT REPORTABLE: cell "native-voicechat" is not reportable: 10 of 10 tasks did not complete
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/native/toolcall-voicechat-20260924/toolcall.json
+openrealtime: no tool-call task completed

@@ -361,6 +361,39 @@ latency of 854 ms. It yields reliably, holds less well through speech not
 addressed to it, and starts early far less often than the native models. This
 is the first first-release-scope cascade with a complete retained campaign.
 
+The same cascade's [sampled coverage of the other 20 FD-Bench conditions](../deploy/duplex/evidence/microturn-voxtral-qwen3-kyutai/20260924-fdbench-sample/)
+(50 seeded conversations per condition, 1,000 in all, gated, no task errors)
+passed 408/1000. On clean speech it passed 26 to 47 of 50 for every
+synthesizer. Noise broke it by silence: at 0 dB background or gap noise it
+passed 0 or 1 of 50 and missed 124 to 170 of about 235 turns. Gap noise hurt
+more than background noise at 20 dB (11 to 12 against 20 to 34 passes). The
+likely cause is recognition and endpointing under noise, but the run does not
+separate ASR output from controller decisions.
+
+The [complete MiniCPM-o campaign](../deploy/duplex/evidence/native-minicpm-o/20260924T080217Z-ujuru9z0-gated/)
+(gated, official duplex MiniCPM-o 4.5, audio only) yielded to 14 of 184
+applicable interruptions, with a 466 ms p50 on the passes. It held through
+91/91 backchannels, 83/83 background speech and 88/88 talking to other.
+[Its FD-Bench condition](../deploy/duplex/evidence/native-minicpm-o/20260924-fdbench-gated/)
+passed 85/293 conversations with no task errors. It answered 1,010/1,382 turns,
+missed 372 and overran 983, at a 1,148 ms median response latency and about 11 s
+of overlap per conversation. MiniCPM-o answers but does not stop.
+
+Closed references, gated full campaigns (plan cell R0):
+
+- [OpenAI Realtime](../deploy/duplex/evidence/closed-openai-live/20260924T142415Z-h5liv64g-gated/)
+  (`gpt-5.4-mini` background reasoner) had no task errors. Interruption 12/134
+  applicable (216 ms p50 on passes), backchannel 42/42, background speech
+  43/45, talking to other 58/58. FD-Bench: 20/293 conversations; 1,155/1,382
+  turns answered, 331 premature, 886 overrun. The reference model holds well
+  but rarely yields within the benchmark window and often starts early.
+- [Gemini Live](../deploy/duplex/evidence/closed-gemini-live/20260924T142415Z-ehj7snog-gated/)
+  is **invalid for comparison.** 51 of its 71 task errors came from our
+  configuration: the background reasoner (`gemini-3.5-flash`) ran at the
+  default 2,048-token limit, spent it thinking, and the MAX_TOKENS stop
+  ended the voice session. 18 more were Live quota closes. The profile now
+  sets `slow-max-tokens: 8192`, and a rerun started on 2026-09-25.
+
 The PersonaPlex campaign's [resource sampler encountered ENOSPC](../deploy/duplex/evidence/native-personaplex/20260923-resource-gap/)
 after its last complete sample at 02:52:03 UTC. Sampling resumed in a new file;
 the observation gap and original incomplete record are preserved. No resource
@@ -426,6 +459,12 @@ Native validation remains incomplete. The retained component artifacts under
   it (865 MB each). Process VRAM rose from 17,312 to 25,118 MiB, and reserved
   memory grew faster than allocated. Bounding the context changes model
   behavior, so no fix was applied without a matched quality run.
+  [With `empty_cache()` after each answer and a 28,000-token cap](../deploy/duplex/evidence/freeze-omni/20260924-endurance-bounded/)
+  (`f636ac17`; the context itself unchanged), a 600 s probe ended 4.3 GiB
+  above its start instead of 7.8 GiB. Its peak still tracked context length:
+  26,508 MiB at 11,539 tokens. The input was rebuilt after the workspace
+  deletion, so this is not a matched comparison. The cap turns an eventual
+  OOM, about 25 minutes in by extrapolation, into an explicit session error.
   A separate shutdown regression reproduced session-state release while a
   listening or generation worker remained alive after its join timeout.
   Shutdown now waits for both workers before clearing caches and returning the
@@ -450,6 +489,14 @@ Native validation remains incomplete. The retained component artifacts under
   produced no PCM. Lychee also ran slower than real time throughout: RTF
   1.21 in the first minute of the 600 s session, 2.7-3.3 at its end, and only
   ~341 s of input processed. No repair was applied.
+  A [recheck of the idle fill](../deploy/duplex/evidence/lychee/20260924-fill-recheck/)
+  on the rebuilt backend has no valid FDB result. Its script pinned a binary
+  older than the sidecar's `turn_status` field, and all 8 tasks failed at the
+  header decoder while the step still exited 0. Its four probes show the fill
+  working: 27.7 s filled, and rounds ran to the end at 0.77 to 1.05 times real
+  time. Every probe still ended in `audio_stalled`, 8 s after a complete second
+  answer. Lychee stayed in its speaking state without sending audio or
+  signalling completion. The FDB rerun is queued with a current binary.
 - **Moshi:** the pinned public-Realtime profile completed a two-recording-per-category
   smoke run (`20260922T171034Z-giltdhg4`) without task errors. It answered
   8/8 FD-Bench turns but started 4 prematurely. Interruption yield passed 1/2

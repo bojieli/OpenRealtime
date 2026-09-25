@@ -1,0 +1,147 @@
+{
+  "suite": "toolcall",
+  "cell": {
+    "name": "native-voicechat",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "62114cbadff62f838f66b236460eb5ea3448eb63",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-24T18:40:23Z",
+    "finished_at": "2026-09-24T18:50:23Z"
+  },
+  "expected_tasks": 10,
+  "tasks": [
+    {
+      "id": "weather-paris",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "What's the weather like in Paris right now?",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "weather-tokyo",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "How warm is it in Tokyo today?",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "weather-london",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "Is it going to rain in London?",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "add-small",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "Can you add seventeen and twenty-five for me?",
+        "tool": "add_numbers"
+      }
+    },
+    {
+      "id": "add-large",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "What is one hundred and twelve plus thirty?",
+        "tool": "add_numbers"
+      }
+    },
+    {
+      "id": "timer-ten",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "Set a timer for ten minutes, please.",
+        "tool": "set_timer"
+      }
+    },
+    {
+      "id": "timer-five",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "Start a five minute timer.",
+        "tool": "set_timer"
+      }
+    },
+    {
+      "id": "currency-usd-eur",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "How much is fifty US dollars in euros?",
+        "tool": "convert_currency"
+      }
+    },
+    {
+      "id": "correction-weather",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "What's the weather in Rome... sorry, I mean Madrid?",
+        "tool": "get_weather"
+      }
+    },
+    {
+      "id": "correction-add",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "request": "Add eight and nine. No, wait, eight and nineteen.",
+        "tool": "add_numbers"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 0,
+    "failed": 10,
+    "passed": 0,
+    "pass_rate": 0,
+    "complete": false,
+    "incompleteness": "10 of 10 tasks did not complete"
+  }
+}
